@@ -35,6 +35,8 @@ model Tenant {
   tasks            Task[]
   issues           Issue[]
   priceBook        PriceBookItem[]
+  items            Item[]
+  itemCategories   ItemCategory[]
   qboIntegration     QuickBooksIntegration?
   integrationConnections IntegrationConnection[]
   paymentTransactions    PaymentTransaction[]
@@ -655,6 +657,7 @@ model Vendor {
   // Relationships
   tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   purchaseOrders PurchaseOrder[]
+  items          Item[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -741,6 +744,72 @@ model PriceBookItem {
   @@index([tenantId])
   @@index([tenantId, category])
   @@map("price_book_items")
+}
+
+// ============================================
+// ITEMS (PRODUCTS/SERVICES)
+// ============================================
+
+enum ItemType {
+  PRODUCT
+  SERVICE
+  MATERIAL
+  FEE
+}
+
+model ItemCategory {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  description String? @db.Text
+  isActive  Boolean  @default(true)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  items   Item[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@index([tenantId, isActive])
+  @@map("item_categories")
+}
+
+model Item {
+  id              String     @id @default(cuid())
+  tenantId        String
+  name            String
+  sku             String?
+  type            ItemType   @default(PRODUCT)
+  description     String?    @db.Text
+  unit            String     @default("ea")
+  defaultUnitCost Decimal?  @db.Decimal(10, 2)
+  defaultUnitPrice Decimal   @db.Decimal(10, 2)
+  taxable         Boolean    @default(true)
+  taxRate         Decimal?   @db.Decimal(5, 4)
+  isActive        Boolean    @default(true)
+  vendorId        String?
+  categoryId      String?
+  tags            String[]   @default([])
+  notes           String?    @db.Text
+
+  // Relationships
+  tenant  Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vendor  Vendor?      @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  category ItemCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, sku])
+  @@index([tenantId])
+  @@index([tenantId, type])
+  @@index([tenantId, isActive])
+  @@index([tenantId, categoryId])
+  @@index([tenantId, vendorId])
+  @@index([sku])
+  @@map("items")
 }
 
 // ============================================

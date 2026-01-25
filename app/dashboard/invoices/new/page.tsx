@@ -6,8 +6,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ArrowLeft, Save, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, Save, Plus, Trash2, Package } from 'lucide-react'
 import Link from 'next/link'
+import { ItemPicker } from '@/components/items/ItemPicker'
 
 interface Client {
   id: string
@@ -29,6 +30,8 @@ export default function NewInvoicePage() {
   const [clients, setClients] = useState<Client[]>([])
   const [jobs, setJobs] = useState<any[]>([])
   const [lineItems, setLineItems] = useState<LineItem[]>([{ description: '', quantity: '1', unitPrice: '0' }])
+  const [showItemPicker, setShowItemPicker] = useState(false)
+  const [itemPickerIndex, setItemPickerIndex] = useState<number | null>(null)
   const [formData, setFormData] = useState({
     clientId: clientIdParam || '',
     jobId: jobIdParam || '',
@@ -91,6 +94,24 @@ export default function NewInvoicePage() {
     const updated = [...lineItems]
     updated[index] = { ...updated[index], [field]: value }
     setLineItems(updated)
+  }
+
+  const handleItemSelect = (item: any) => {
+    const index = itemPickerIndex ?? lineItems.length - 1
+    const updated = [...lineItems]
+    updated[index] = {
+      description: item.name + (item.description ? ` - ${item.description}` : ''),
+      quantity: '1',
+      unitPrice: item.defaultUnitPrice.toString(),
+    }
+    setLineItems(updated)
+    setShowItemPicker(false)
+    setItemPickerIndex(null)
+  }
+
+  const openItemPicker = (index?: number) => {
+    setItemPickerIndex(index ?? null)
+    setShowItemPicker(true)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -210,17 +231,35 @@ export default function NewInvoicePage() {
                 </div>
 
                 <div>
-                  <Label>Line Items *</Label>
+                  <div className="flex items-center justify-between mb-2">
+                    <Label>Line Items *</Label>
+                    <Button type="button" variant="outline" size="sm" onClick={() => openItemPicker()}>
+                      <Package className="mr-2 h-4 w-4" />
+                      Add from Items
+                    </Button>
+                  </div>
                   <div className="space-y-2">
                     {lineItems.map((item, index) => (
                       <div key={index} className="flex gap-2 items-end">
                         <div className="flex-1">
-                          <Input
-                            placeholder="Description"
-                            value={item.description}
-                            onChange={(e) => updateLineItem(index, 'description', e.target.value)}
-                            required
-                          />
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="Description"
+                              value={item.description}
+                              onChange={(e) => updateLineItem(index, 'description', e.target.value)}
+                              required
+                              className="flex-1"
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openItemPicker(index)}
+                              title="Select from items"
+                            >
+                              <Package className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </div>
                         <div className="w-24">
                           <Input
@@ -259,6 +298,15 @@ export default function NewInvoicePage() {
                     </Button>
                   </div>
                 </div>
+                {showItemPicker && (
+                  <ItemPicker
+                    onSelect={handleItemSelect}
+                    onClose={() => {
+                      setShowItemPicker(false)
+                      setItemPickerIndex(null)
+                    }}
+                  />
+                )}
               </CardContent>
             </Card>
 
