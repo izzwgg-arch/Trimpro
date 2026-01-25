@@ -38,7 +38,7 @@ const navigation = [
   { name: 'Estimates', href: '/dashboard/estimates', icon: FileText, permission: 'estimates.view' },
   { name: 'Invoices', href: '/dashboard/invoices', icon: DollarSign, permission: 'invoices.view' },
   { name: 'Purchase Orders', href: '/dashboard/purchase-orders', icon: ShoppingCart },
-  { name: 'Items', href: '/dashboard/items', icon: Package, permission: 'items.view' },
+  { name: 'Items', href: '/dashboard/items', icon: Package },
   { name: 'Tasks', href: '/dashboard/tasks', icon: CheckSquare, permission: 'tasks.view' },
   { name: 'Issues', href: '/dashboard/issues', icon: AlertCircle, permission: 'issues.view' },
   { name: 'Teams', href: '/dashboard/teams', icon: Users, permission: 'teams.view' },
