@@ -64,11 +64,18 @@ pm2 delete $APP_NAME 2>/dev/null || true
 
 echo ""
 echo "🚀 Step 6: Starting application with PM2..."
-# Load environment variables from .env file if it exists
+# Load environment variables from .env file if it exists and export them
 if [ -f .env ]; then
-    export $(cat .env | grep -v '^#' | xargs)
+    set -a
+    source .env
+    set +a
 fi
-PORT=$PORT HOSTNAME=0.0.0.0 NODE_ENV=production pm2 start npm --name "$APP_NAME" -- start
+# Use ecosystem file if it exists, otherwise start directly
+if [ -f ecosystem.config.js ]; then
+    pm2 start ecosystem.config.js
+else
+    PORT=$PORT HOSTNAME=0.0.0.0 NODE_ENV=production pm2 start npm --name "$APP_NAME" -- start
+fi
 
 echo ""
 echo "💾 Step 7: Saving PM2 configuration..."
