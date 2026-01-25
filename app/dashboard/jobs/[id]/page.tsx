@@ -20,6 +20,7 @@ import {
   Edit,
   Plus,
   Building2,
+  Trash2,
 } from 'lucide-react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
@@ -138,6 +139,7 @@ export default function JobDetailPage() {
   const jobId = params.id as string
   const [job, setJob] = useState<JobDetail | null>(null)
   const [loading, setLoading] = useState(true)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     fetchJob()
@@ -181,6 +183,54 @@ export default function JobDetailPage() {
       setJob(null)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!job) return
+
+    const confirmed = window.confirm(
+      `Are you sure you want to delete job "${job.title}"?\n\n` +
+      (job._count.invoices > 0
+        ? 'This job has invoices and cannot be deleted. It will be cancelled instead.'
+        : 'This action cannot be undone.')
+    )
+
+    if (!confirmed) return
+
+    setDeleting(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+
+      const response = await fetch(`/api/jobs/${jobId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      if (response.status === 401) {
+        router.push('/auth/login')
+        return
+      }
+
+      if (!response.ok) {
+        const error = await response.json()
+        alert(error.error || 'Failed to delete job')
+        setDeleting(false)
+        return
+      }
+
+      // Redirect to jobs list after successful deletion
+      router.push('/dashboard/jobs')
+    } catch (error) {
+      console.error('Error deleting job:', error)
+      alert('Failed to delete job')
+      setDeleting(false)
     }
   }
 
@@ -236,6 +286,15 @@ export default function JobDetailPage() {
           <Button variant="outline" onClick={() => router.push(`/dashboard/jobs/${jobId}/edit`)}>
             <Edit className="mr-2 h-4 w-4" />
             Edit
+          </Button>
+          <Button 
+            variant="outline" 
+            onClick={handleDelete}
+            disabled={deleting}
+            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            {deleting ? 'Deleting...' : 'Delete'}
           </Button>
         </div>
       </div>
