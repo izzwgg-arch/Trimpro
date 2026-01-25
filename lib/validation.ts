@@ -98,8 +98,24 @@ export const createJobSchema = z.object({
       return 3 // default
     })
   ]).optional(),
-  scheduledStart: z.string().datetime().optional().nullable(),
-  scheduledEnd: z.string().datetime().optional().nullable(),
+  scheduledStart: z.union([
+    z.string().datetime(),
+    z.string().transform((val) => {
+      if (!val || val.trim() === '') return null
+      const date = new Date(val)
+      return isNaN(date.getTime()) ? null : date.toISOString()
+    }),
+    z.null()
+  ]).optional().nullable(),
+  scheduledEnd: z.union([
+    z.string().datetime(),
+    z.string().transform((val) => {
+      if (!val || val.trim() === '') return null
+      const date = new Date(val)
+      return isNaN(date.getTime()) ? null : date.toISOString()
+    }),
+    z.null()
+  ]).optional().nullable(),
   estimateAmount: z.string().or(z.number()).optional().nullable(),
   jobSite: z.object({
     street: z.string(),
