@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { Plus, Search, Filter, Briefcase, Calendar, DollarSign } from 'lucide-react'
+import { Plus, Search, Filter, Briefcase, Calendar, DollarSign, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 
 interface Job {
@@ -63,6 +63,7 @@ export default function JobsPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   useEffect(() => {
     fetchJobs()
@@ -95,6 +96,51 @@ export default function JobsPage() {
       console.error('Failed to fetch jobs:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleDelete = async (jobId: string, jobTitle: string) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to delete job "${jobTitle}"?\n\n` +
+      'This action cannot be undone. If the job has invoices, it will be cancelled instead.'
+    )
+
+    if (!confirmed) return
+
+    setDeletingId(jobId)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+
+      const response = await fetch(`/api/jobs/${jobId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      if (response.status === 401) {
+        router.push('/auth/login')
+        return
+      }
+
+      if (!response.ok) {
+        const error = await response.json()
+        alert(error.error || 'Failed to delete job')
+        setDeletingId(null)
+        return
+      }
+
+      // Refresh the jobs list
+      fetchJobs()
+    } catch (error) {
+      console.error('Error deleting job:', error)
+      alert('Failed to delete job')
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -254,6 +300,18 @@ export default function JobsPage() {
                         <span>{job._count.issues} issues</span>
                       )}
                     </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleDelete(job.id, job.title)
+                      }}
+                      disabled={deletingId === job.id}
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50 h-7 px-2"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
                   </div>
                 </div>
               </CardContent>
