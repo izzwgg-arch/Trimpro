@@ -64,6 +64,10 @@ pm2 delete $APP_NAME 2>/dev/null || true
 
 echo ""
 echo "🚀 Step 6: Starting application with PM2..."
+# Load environment variables from .env file if it exists
+if [ -f .env ]; then
+    export $(cat .env | grep -v '^#' | xargs)
+fi
 PORT=$PORT HOSTNAME=0.0.0.0 NODE_ENV=production pm2 start npm --name "$APP_NAME" -- start
 
 echo ""
