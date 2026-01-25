@@ -83,8 +83,13 @@ export default function NewRequestPage() {
         return
       }
 
-      const request = await response.json()
-      router.push(`/dashboard/requests/${request.id}`)
+      const data = await response.json()
+      if (data.lead && data.lead.id) {
+        router.push(`/dashboard/requests/${data.lead.id}`)
+      } else {
+        alert('Request created but unable to redirect. Please refresh the page.')
+        router.push('/dashboard/requests')
+      }
     } catch (error) {
       console.error('Error creating request:', error)
       alert('Failed to create request')
