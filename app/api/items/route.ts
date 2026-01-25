@@ -10,6 +10,7 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const search = searchParams.get('search') || ''
   const type = searchParams.get('type') || 'all'
+  const kind = searchParams.get('kind') || 'all' // 'all' | 'SINGLE' | 'BUNDLE'
   const categoryId = searchParams.get('categoryId') || ''
   const vendorId = searchParams.get('vendorId') || ''
   const active = searchParams.get('active')
@@ -32,6 +33,10 @@ export async function GET(request: NextRequest) {
 
     if (type !== 'all') {
       where.type = type
+    }
+
+    if (kind !== 'all') {
+      where.kind = kind
     }
 
     if (categoryId) {

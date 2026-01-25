@@ -14,6 +14,7 @@ interface Item {
   name: string
   sku: string | null
   type: string
+  kind: string
   description: string | null
   unit: string
   defaultUnitCost: number | null
@@ -59,6 +60,7 @@ export default function ItemsPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
+  const [kindFilter, setKindFilter] = useState('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [activeFilter, setActiveFilter] = useState('all')
   const [showImportDialog, setShowImportDialog] = useState(false)
@@ -68,7 +70,7 @@ export default function ItemsPage() {
   useEffect(() => {
     fetchItems()
     fetchCategories()
-  }, [search, typeFilter, categoryFilter, activeFilter])
+  }, [search, typeFilter, kindFilter, categoryFilter, activeFilter])
 
   const fetchCategories = async () => {
     try {
@@ -91,6 +93,7 @@ export default function ItemsPage() {
       const params = new URLSearchParams({
         search,
         type: typeFilter,
+        kind: kindFilter,
         categoryId: categoryFilter !== 'all' ? categoryFilter : '',
         active: activeFilter !== 'all' ? activeFilter : '',
         page: '1',
@@ -265,9 +268,13 @@ export default function ItemsPage() {
             <Upload className="mr-2 h-4 w-4" />
             Import CSV
           </Button>
-          <Button onClick={() => router.push('/dashboard/items/new')}>
+          <Button onClick={() => router.push('/dashboard/items/new')} variant="outline">
             <Plus className="mr-2 h-4 w-4" />
             New Item
+          </Button>
+          <Button onClick={() => router.push('/dashboard/items/new?kind=bundle')}>
+            <Plus className="mr-2 h-4 w-4" />
+            New Bundle
           </Button>
         </div>
       </div>
@@ -325,6 +332,15 @@ export default function ItemsPage() {
                 <option value="SERVICE">Service</option>
                 <option value="MATERIAL">Material</option>
                 <option value="FEE">Fee</option>
+              </select>
+              <select
+                value={kindFilter}
+                onChange={(e) => setKindFilter(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="all">All Kinds</option>
+                <option value="SINGLE">Single Items</option>
+                <option value="BUNDLE">Bundles</option>
               </select>
               <select
                 value={categoryFilter}
@@ -396,9 +412,16 @@ export default function ItemsPage() {
                   {items.map((item) => (
                     <tr key={item.id} className="border-b hover:bg-gray-50">
                       <td className="py-3 px-4">
-                        <Link href={`/dashboard/items/${item.id}`} className="text-primary hover:underline font-medium">
-                          {item.name}
-                        </Link>
+                        <div className="flex items-center space-x-2">
+                          <Link href={`/dashboard/items/${item.id}`} className="text-primary hover:underline font-medium">
+                            {item.name}
+                          </Link>
+                          {item.kind === 'BUNDLE' && (
+                            <span className="px-2 py-0.5 text-xs rounded-full bg-purple-100 text-purple-800">
+                              Bundle
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-3 px-4 text-gray-600">{item.sku || '-'}</td>
                       <td className="py-3 px-4">

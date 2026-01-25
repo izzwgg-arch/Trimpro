@@ -16,9 +16,14 @@ interface Client {
 }
 
 interface LineItem {
+  id?: string
   description: string
   quantity: string
   unitPrice: string
+  groupId?: string
+  groupName?: string
+  isGroupHeader?: boolean
+  sourceItemId?: string
 }
 
 export default function NewEstimatePage() {
@@ -73,17 +78,39 @@ export default function NewEstimatePage() {
     setLineItems(updated)
   }
 
-  const handleItemSelect = (item: any) => {
-    const index = itemPickerIndex ?? lineItems.length - 1
-    const updated = [...lineItems]
-    updated[index] = {
-      description: item.name + (item.description ? ` - ${item.description}` : ''),
-      quantity: '1',
-      unitPrice: item.defaultUnitPrice.toString(),
+  const handleItemSelect = async (item: any) => {
+    if (item.kind === 'BUNDLE') {
+      // Handle bundle - this will be expanded when estimate is created
+      // For now, add as a group header placeholder
+      const groupId = `group-${Date.now()}`
+      const updated = [...lineItems]
+      updated.push({
+        description: item.name,
+        quantity: '1',
+        unitPrice: item.defaultUnitPrice.toString(),
+        groupId,
+        groupName: item.name,
+        isGroupHeader: true,
+        sourceItemId: item.id,
+      })
+      setLineItems(updated)
+      setShowItemPicker(false)
+      setItemPickerIndex(null)
+      alert('Bundle selected. Bundle will be expanded when estimate is saved.')
+    } else {
+      // Handle single item
+      const index = itemPickerIndex ?? lineItems.length - 1
+      const updated = [...lineItems]
+      updated[index] = {
+        description: item.name + (item.description ? ` - ${item.description}` : ''),
+        quantity: '1',
+        unitPrice: item.defaultUnitPrice.toString(),
+        sourceItemId: item.id,
+      }
+      setLineItems(updated)
+      setShowItemPicker(false)
+      setItemPickerIndex(null)
     }
-    setLineItems(updated)
-    setShowItemPicker(false)
-    setItemPickerIndex(null)
   }
 
   const openItemPicker = (index?: number) => {

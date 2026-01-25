@@ -37,6 +37,9 @@ model Tenant {
   priceBook        PriceBookItem[]
   items            Item[]
   itemCategories   ItemCategory[]
+  bundleDefinitions BundleDefinition[]
+  bundleComponents BundleComponent[]
+  documentLineGroups DocumentLineGroup[]
   qboIntegration     QuickBooksIntegration?
   integrationConnections IntegrationConnection[]
   paymentTransactions    PaymentTransaction[]
@@ -464,17 +467,24 @@ model Estimate {
 }
 
 model EstimateLineItem {
-  id          String  @id @default(cuid())
-  estimateId  String
-  description String
-  quantity    Decimal @db.Decimal(10, 2)
-  unitPrice   Decimal @db.Decimal(10, 2)
-  total       Decimal @db.Decimal(10, 2)
-  sortOrder   Int     @default(0)
+  id              String  @id @default(cuid())
+  estimateId      String
+  groupId         String? // FK to DocumentLineGroup
+  sourceItemId    String? // FK to Item (template reference)
+  sourceBundleId  String? // FK to BundleDefinition (if derived from nested bundle)
+  description     String
+  quantity        Decimal @db.Decimal(10, 2)
+  unitPrice       Decimal @db.Decimal(10, 2)
+  total           Decimal @db.Decimal(10, 2)
+  sortOrder       Int     @default(0)
 
-  estimate Estimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  estimate Estimate            @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  group    DocumentLineGroup?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  sourceItem Item?             @relation("EstimateLineItemSource", fields: [sourceItemId], references: [id], onDelete: SetNull)
 
   @@index([estimateId])
+  @@index([groupId])
+  @@index([sourceItemId])
   @@map("estimate_line_items")
 }
 
@@ -550,17 +560,24 @@ model Invoice {
 }
 
 model InvoiceLineItem {
-  id          String  @id @default(cuid())
-  invoiceId   String
-  description String
-  quantity    Decimal @db.Decimal(10, 2)
-  unitPrice   Decimal @db.Decimal(10, 2)
-  total       Decimal @db.Decimal(10, 2)
-  sortOrder   Int     @default(0)
+  id              String  @id @default(cuid())
+  invoiceId       String
+  groupId         String? // FK to DocumentLineGroup
+  sourceItemId    String? // FK to Item (template reference)
+  sourceBundleId  String? // FK to BundleDefinition (if derived from nested bundle)
+  description     String
+  quantity        Decimal @db.Decimal(10, 2)
+  unitPrice       Decimal @db.Decimal(10, 2)
+  total           Decimal @db.Decimal(10, 2)
+  sortOrder       Int     @default(0)
 
-  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoice Invoice           @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  group   DocumentLineGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  sourceItem Item?          @relation("InvoiceLineItemSource", fields: [sourceItemId], references: [id], onDelete: SetNull)
 
   @@index([invoiceId])
+  @@index([groupId])
+  @@index([sourceItemId])
   @@map("invoice_line_items")
 }
 
@@ -757,6 +774,11 @@ enum ItemType {
   FEE
 }
 
+enum ItemKind {
+  SINGLE
+  BUNDLE
+}
+
 model ItemCategory {
   id        String   @id @default(cuid())
   tenantId  String
@@ -782,6 +804,7 @@ model Item {
   name            String
   sku             String?
   type            ItemType   @default(PRODUCT)
+  kind            ItemKind   @default(SINGLE)
   description     String?    @db.Text
   unit            String     @default("ea")
   defaultUnitCost Decimal?  @db.Decimal(10, 2)
@@ -798,6 +821,10 @@ model Item {
   tenant  Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   vendor  Vendor?      @relation(fields: [vendorId], references: [id], onDelete: SetNull)
   category ItemCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  bundleDefinition BundleDefinition?
+  bundleComponents BundleComponent[]
+  estimateLineItems EstimateLineItem[] @relation("EstimateLineItemSource")
+  invoiceLineItems InvoiceLineItem[] @relation("InvoiceLineItemSource")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -805,11 +832,91 @@ model Item {
   @@unique([tenantId, sku])
   @@index([tenantId])
   @@index([tenantId, type])
+  @@index([tenantId, kind])
   @@index([tenantId, isActive])
   @@index([tenantId, categoryId])
   @@index([tenantId, vendorId])
   @@index([sku])
   @@map("items")
+}
+
+model BundleDefinition {
+  id          String   @id @default(cuid())
+  itemId      String   @unique
+  tenantId    String
+  name        String
+  description String?  @db.Text
+  isActive    Boolean  @default(true)
+  
+  // Pricing strategy
+  pricingStrategy String @default("SUM_COMPONENTS") // SUM_COMPONENTS | OVERRIDE_PRICE
+  
+  // Relationships
+  item      Item              @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  components BundleComponent[]
+  nestedIn  BundleComponent[] @relation("BundleNested")
+  documentLineGroups DocumentLineGroup[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([tenantId])
+  @@index([itemId])
+  @@map("bundle_definitions")
+}
+
+model BundleComponent {
+  id                      String   @id @default(cuid())
+  bundleId                String
+  tenantId                String
+  componentType           String   // "ITEM" | "BUNDLE"
+  componentItemId         String?  // FK to Item (if componentType = "ITEM")
+  componentBundleId       String?  // FK to BundleDefinition (if componentType = "BUNDLE")
+  quantity                Decimal  @db.Decimal(10, 2)
+  sortOrder               Int      @default(0)
+  defaultUnitPriceOverride Decimal? @db.Decimal(10, 2)
+  defaultUnitCostOverride  Decimal? @db.Decimal(10, 2)
+  notes                   String?  @db.Text
+  
+  // Relationships
+  bundle          BundleDefinition @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  componentItem   Item?            @relation(fields: [componentItemId], references: [id], onDelete: SetNull)
+  componentBundle BundleDefinition? @relation("BundleNested", fields: [componentBundleId], references: [id], onDelete: SetNull)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([bundleId])
+  @@index([tenantId])
+  @@index([componentItemId])
+  @@index([componentBundleId])
+  @@map("bundle_components")
+}
+
+model DocumentLineGroup {
+  id              String   @id @default(cuid())
+  tenantId        String
+  documentType    String   // "ESTIMATE" | "INVOICE"
+  documentId      String
+  name            String
+  sourceBundleId  String?  // FK to BundleDefinition (nullable for manual groups)
+  sourceBundleName String?
+  sourceBundleUpdatedAt DateTime?
+  
+  // Relationships
+  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sourceBundle    BundleDefinition? @relation(fields: [sourceBundleId], references: [id], onDelete: SetNull)
+  estimateLineItems EstimateLineItem[]
+  invoiceLineItems InvoiceLineItem[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([tenantId, documentType, documentId])
+  @@index([sourceBundleId])
+  @@map("document_line_groups")
 }
 
 // ============================================

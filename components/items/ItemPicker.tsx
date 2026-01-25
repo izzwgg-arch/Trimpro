@@ -10,6 +10,7 @@ interface Item {
   name: string
   sku: string | null
   type: string
+  kind: string
   description: string | null
   unit: string
   defaultUnitPrice: number
@@ -105,7 +106,14 @@ export function ItemPicker({ onSelect, onClose }: ItemPickerProps) {
                 >
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="font-medium text-gray-900">{item.name}</div>
+                      <div className="flex items-center space-x-2">
+                        <div className="font-medium text-gray-900">{item.name}</div>
+                        {item.kind === 'BUNDLE' && (
+                          <span className="px-2 py-0.5 text-xs rounded-full bg-purple-100 text-purple-800">
+                            Bundle
+                          </span>
+                        )}
+                      </div>
                       {item.sku && <div className="text-sm text-gray-500">SKU: {item.sku}</div>}
                       {item.description && (
                         <div className="text-sm text-gray-600 mt-1 line-clamp-1">{item.description}</div>
