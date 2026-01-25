@@ -54,13 +54,14 @@
     @apply border-border;
   }
   html, body {
-    @apply bg-background text-foreground;
+    @apply bg-gray-100 text-foreground;
     height: 100%;
     min-height: 100vh;
   }
   #__next {
     height: 100%;
     min-height: 100vh;
+    background-color: rgb(243 244 246); /* gray-100 */
   }
 }
 
