@@ -115,6 +115,7 @@ export default function ItemsPage() {
       }
 
       const data = await response.json()
+      console.log('Fetched items:', data.items?.length || 0, 'items')
       setItems(data.items || [])
     } catch (error) {
       console.error('Failed to fetch items:', error)

@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
       where.vendorId = vendorId
     }
 
-    if (active !== null && active !== undefined) {
+    if (active !== null && active !== undefined && active !== '') {
       where.isActive = active === 'true'
     }
 
