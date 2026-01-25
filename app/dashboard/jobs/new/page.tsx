@@ -111,8 +111,13 @@ export default function NewJobPage() {
         return
       }
 
-      const job = await response.json()
-      router.push(`/dashboard/jobs/${job.id}`)
+      const data = await response.json()
+      if (data.job && data.job.id) {
+        router.push(`/dashboard/jobs/${data.job.id}`)
+      } else {
+        alert('Job created but unable to redirect. Please refresh the page.')
+        router.push('/dashboard/jobs')
+      }
     } catch (error) {
       console.error('Error creating job:', error)
       alert('Failed to create job')
