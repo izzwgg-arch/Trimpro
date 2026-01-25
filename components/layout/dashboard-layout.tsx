@@ -63,10 +63,10 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex h-screen bg-gray-100">
+    <div className="flex h-full min-h-screen bg-gray-100">
       <Sidebar />
       <main className="flex-1 overflow-y-auto bg-gray-100 min-h-0">
-        <div className="p-6 min-h-[calc(100vh-0px)] bg-gray-100">{children}</div>
+        <div className="p-6 bg-gray-100">{children}</div>
       </main>
     </div>
   )
