@@ -184,37 +184,79 @@ When an admin adds a user:
 
 ## Deployment
 
+### Git-Based Deployment (Recommended)
+
+All deployments are now done via Git. The repository is synced and ready for deployment.
+
+**On the server:**
+
+1. **First-time setup:**
+   ```bash
+   # Clone the repository
+   cd ~/apps
+   git clone https://github.com/izzwgg-arch/Trimpro.git trimpro
+   cd trimpro
+   
+   # Create .env file with production environment variables
+   nano .env
+   
+   # Run deployment script
+   chmod +x deploy-from-git.sh
+   ./deploy-from-git.sh
+   ```
+
+2. **For subsequent deployments:**
+   ```bash
+   cd ~/apps/trimpro
+   git pull origin master
+   ./deploy-from-git.sh
+   ```
+
+   Or simply:
+   ```bash
+   cd ~/apps/trimpro && git pull && ./deploy-from-git.sh
+   ```
+
+The `deploy-from-git.sh` script will:
+- Pull latest code from GitHub
+- Install dependencies
+- Generate Prisma Client
+- Update database schema
+- Build the Next.js application
+- Restart PM2 process
+
 ### Server Setup
 
 The server is already bootstrapped. See `SERVER-BOOTSTRAP-SUMMARY.md` for details.
 
-### Deploy Application
-
-```bash
-# Build
-npm run build
-
-# Start production server
-npm start
-```
-
 ### Environment Variables
 
-Ensure all production environment variables are set on your server.
+Ensure all production environment variables are set in `.env` file on your server.
 
 ### Database Migrations
 
+The deployment script automatically runs `prisma db push`. For production migrations:
+
 ```bash
 # On server
-npm run db:migrate
+cd ~/apps/trimpro
+npx prisma migrate deploy
 ```
 
-### PM2
-
-The app runs with PM2. To update:
+### PM2 Management
 
 ```bash
-pm2 restart trim-pro
+# View logs
+pm2 logs trimpro
+
+# Restart app
+pm2 restart trimpro
+
+# Stop app
+pm2 stop trimpro
+
+# Monitor
+pm2 monit
 ```
 
 ## Project Structure
