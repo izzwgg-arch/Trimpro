@@ -166,15 +166,20 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // Create activity
-    await prisma.activity.create({
-      data: {
-        tenantId: user.tenantId,
-        userId: user.id,
-        type: 'OTHER',
-        description: `Item "${name}" created`,
-      },
-    })
+    // Create activity (non-blocking)
+    try {
+      await prisma.activity.create({
+        data: {
+          tenantId: user.tenantId,
+          userId: user.id,
+          type: 'OTHER',
+          description: `Item "${name}" created`,
+        },
+      })
+    } catch (activityError) {
+      // Log but don't fail the request if activity creation fails
+      console.error('Failed to create activity for item:', activityError)
+    }
 
     return NextResponse.json({ item }, { status: 201 })
   } catch (error: any) {
