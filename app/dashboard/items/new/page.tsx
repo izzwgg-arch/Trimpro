@@ -159,15 +159,23 @@ export default function NewItemPage() {
 
       if (!response.ok) {
         const error = await response.json()
+        console.error('Create item error response:', error)
         alert(error.error || 'Failed to create item')
+        setLoading(false)
         return
       }
 
       const data = await response.json()
+      if (!data.item || !data.item.id) {
+        console.error('Invalid response data:', data)
+        alert('Item created but invalid response received')
+        setLoading(false)
+        return
+      }
       router.push(`/dashboard/items/${data.item.id}`)
     } catch (error) {
       console.error('Error creating item:', error)
-      alert('Failed to create item')
+      alert('Failed to create item. Check console for details.')
     } finally {
       setLoading(false)
     }

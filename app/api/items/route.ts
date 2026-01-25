@@ -81,9 +81,12 @@ export async function GET(request: NextRequest) {
         totalPages: Math.ceil(total / limit),
       },
     })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Get items error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json({ 
+      error: error?.message || 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? error?.stack : undefined
+    }, { status: 500 })
   }
 }
 
@@ -174,8 +177,13 @@ export async function POST(request: NextRequest) {
     })
 
     return NextResponse.json({ item }, { status: 201 })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Create item error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    // Return more detailed error message
+    const errorMessage = error?.message || 'Internal server error'
+    return NextResponse.json({ 
+      error: errorMessage,
+      details: process.env.NODE_ENV === 'development' ? error?.stack : undefined
+    }, { status: 500 })
   }
 }
