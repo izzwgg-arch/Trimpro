@@ -18,6 +18,19 @@ export async function GET(
         tenantId: user.tenantId,
       },
       include: {
+        vendorRef: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+            address: true,
+            city: true,
+            state: true,
+            zipCode: true,
+            contactPerson: true,
+          },
+        },
         job: {
           include: {
             client: {
@@ -56,13 +69,17 @@ export async function GET(
     const subtotal = purchaseOrder.lineItems.reduce((sum, item) => {
       return sum + (Number(item.quantity) * Number(item.unitPrice))
     }, 0)
-    const total = subtotal
+    const total = Number(purchaseOrder.total)
+    const tax = 0 // Tax not stored in schema, would need migration
+    const shipping = 0 // Shipping not stored in schema, would need migration
     const receivedTotal = 0 // Receipts tracking would require a separate model
 
     return NextResponse.json({
       purchaseOrder: {
         ...purchaseOrder,
         subtotal,
+        tax,
+        shipping,
         total,
         receivedTotal,
         balance: total - receivedTotal,
@@ -87,10 +104,14 @@ export async function PUT(
     const body = await request.json()
     const {
       vendor,
+      vendorId,
       jobId,
       status,
       expectedDate,
+      orderDate,
       lineItems,
+      tax,
+      shipping,
     } = body
 
     // Get existing PO
@@ -105,16 +126,64 @@ export async function PUT(
       return NextResponse.json({ error: 'Purchase order not found' }, { status: 404 })
     }
 
+    // Get vendor info if vendorId provided
+    let vendorName = existing.vendor
+    if (vendorId !== undefined) {
+      if (vendorId) {
+        const vendorRecord = await prisma.vendor.findFirst({
+          where: {
+            id: vendorId,
+            tenantId: user.tenantId,
+          },
+        })
+        if (!vendorRecord) {
+          return NextResponse.json({ error: 'Vendor not found' }, { status: 404 })
+        }
+        vendorName = vendorRecord.name
+      } else {
+        vendorName = vendor || existing.vendor
+      }
+    } else if (vendor !== undefined) {
+      vendorName = vendor
+    }
+
+    // Calculate totals if line items updated
+    let total = Number(existing.total)
+    if (lineItems && Array.isArray(lineItems)) {
+      const subtotal = lineItems.reduce((sum, item) => {
+        return sum + (parseFloat(item.quantity || 0) * parseFloat(item.unitPrice || 0))
+      }, 0)
+      const taxAmount = parseFloat(tax || 0)
+      const shippingAmount = parseFloat(shipping || 0)
+      total = subtotal + taxAmount + shippingAmount
+    }
+
     // Update purchase order
     const purchaseOrder = await prisma.purchaseOrder.update({
       where: { id: params.id },
       data: {
-        vendor: vendor !== undefined ? vendor : existing.vendor,
+        vendor: vendorName,
+        vendorId: vendorId !== undefined ? (vendorId || null) : existing.vendorId,
         jobId: jobId !== undefined ? (jobId || null) : existing.jobId,
         status: status !== undefined ? status : existing.status,
+        orderDate: orderDate !== undefined ? (orderDate ? new Date(orderDate) : null) : existing.orderDate,
         expectedDate: expectedDate !== undefined ? (expectedDate ? new Date(expectedDate) : null) : existing.expectedDate,
+        total,
       },
       include: {
+        vendorRef: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+            address: true,
+            city: true,
+            state: true,
+            zipCode: true,
+            contactPerson: true,
+          },
+        },
         job: {
           include: {
             client: {
@@ -159,9 +228,31 @@ export async function PUT(
       }
     }
 
-    // Note: Activity creation would require a valid ActivityType enum value
+    // Create activity
+    await prisma.activity.create({
+      data: {
+        tenantId: user.tenantId,
+        userId: user.id,
+        type: 'OTHER',
+        description: `Purchase order ${purchaseOrder.poNumber} updated`,
+      },
+    })
 
-    return NextResponse.json({ purchaseOrder })
+    // Calculate totals for response
+    const responseSubtotal = purchaseOrder.lineItems.reduce((sum, item) => {
+      return sum + (Number(item.quantity) * Number(item.unitPrice))
+    }, 0)
+    const taxAmount = parseFloat(tax || 0)
+    const shippingAmount = parseFloat(shipping || 0)
+
+    return NextResponse.json({
+      purchaseOrder: {
+        ...purchaseOrder,
+        subtotal: responseSubtotal,
+        tax: taxAmount,
+        shipping: shippingAmount,
+      },
+    })
   } catch (error) {
     console.error('Update purchase order error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

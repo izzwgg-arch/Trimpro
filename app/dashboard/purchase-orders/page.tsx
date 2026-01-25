@@ -11,34 +11,34 @@ import Link from 'next/link'
 
 interface PurchaseOrder {
   id: string
-  title: string
   poNumber: string
   status: string
-  dueDate: string | null
-  vendor: {
+  expectedDate: string | null
+  orderDate: string | null
+  vendor: string
+  vendorId: string | null
+  vendorRef: {
     id: string
     name: string
-  }
+    email: string | null
+  } | null
   job: {
     id: string
     jobNumber: string
     title: string
   } | null
-  createdBy: {
-    firstName: string
-    lastName: string
-  }
   subtotal: number
-  tax: number
+  tax?: number
+  shipping?: number
   total: number
 }
 
 const statusColors: Record<string, string> = {
   DRAFT: 'bg-gray-100 text-gray-800',
-  SENT: 'bg-blue-100 text-blue-800',
+  PENDING_APPROVAL: 'bg-yellow-100 text-yellow-800',
+  APPROVED: 'bg-blue-100 text-blue-800',
+  ORDERED: 'bg-purple-100 text-purple-800',
   RECEIVED: 'bg-green-100 text-green-800',
-  PARTIAL: 'bg-yellow-100 text-yellow-800',
-  COMPLETED: 'bg-green-100 text-green-800',
   CANCELLED: 'bg-red-100 text-red-800',
 }
 
@@ -95,7 +95,7 @@ export default function PurchaseOrdersPage() {
   }
 
   const totalValue = purchaseOrders.reduce((sum, po) => sum + po.total, 0)
-  const openPOs = purchaseOrders.filter((po) => ['DRAFT', 'SENT', 'RECEIVED', 'PARTIAL'].includes(po.status))
+  const openPOs = purchaseOrders.filter((po) => ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'ORDERED'].includes(po.status))
 
   return (
     <div className="space-y-6">
@@ -160,10 +160,10 @@ export default function PurchaseOrdersPage() {
               >
                 <option value="all">All Status</option>
                 <option value="DRAFT">Draft</option>
-                <option value="SENT">Sent</option>
+                <option value="PENDING_APPROVAL">Pending Approval</option>
+                <option value="APPROVED">Approved</option>
+                <option value="ORDERED">Ordered</option>
                 <option value="RECEIVED">Received</option>
-                <option value="PARTIAL">Partial</option>
-                <option value="COMPLETED">Completed</option>
                 <option value="CANCELLED">Cancelled</option>
               </select>
             </div>
@@ -201,13 +201,13 @@ export default function PurchaseOrdersPage() {
                   <div className="flex-1">
                     <Link href={`/dashboard/purchase-orders/${po.id}`}>
                       <CardTitle className="text-lg hover:text-primary cursor-pointer">
-                        {po.poNumber} - {po.title}
+                        {po.poNumber}
                       </CardTitle>
                     </Link>
                     <CardDescription className="mt-1">
-                      Vendor: {po.vendor.name}
+                      Vendor: {po.vendorRef?.name || po.vendor}
                       {po.job && ` • Job ${po.job.jobNumber}`}
-                      {po.dueDate && ` • Due: ${formatDate(po.dueDate)}`}
+                      {po.expectedDate && ` • Expected: ${formatDate(po.expectedDate)}`}
                     </CardDescription>
                   </div>
                   <div className="flex items-center space-x-2">
@@ -220,12 +220,14 @@ export default function PurchaseOrdersPage() {
               <CardContent>
                 <div className="flex items-center justify-between">
                   <div className="text-sm text-gray-600">
-                    Created by {po.createdBy.firstName} {po.createdBy.lastName}
+                    {po.orderDate && `Order Date: ${formatDate(po.orderDate)}`}
                   </div>
                   <div className="text-right">
                     <div className="text-lg font-bold">{formatCurrency(po.total)}</div>
                     <div className="text-xs text-gray-500">
-                      Subtotal: {formatCurrency(po.subtotal)} + Tax: {formatCurrency(po.tax)}
+                      Subtotal: {formatCurrency(po.subtotal)}
+                      {po.tax && po.tax > 0 && ` + Tax: ${formatCurrency(po.tax)}`}
+                      {po.shipping && po.shipping > 0 && ` + Shipping: ${formatCurrency(po.shipping)}`}
                     </div>
                   </div>
                 </div>

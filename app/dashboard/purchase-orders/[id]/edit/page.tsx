@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,6 +14,10 @@ interface Vendor {
   name: string
   email: string | null
   phone: string | null
+  address: string | null
+  city: string | null
+  state: string | null
+  zipCode: string | null
   contactPerson: string | null
 }
 
@@ -24,16 +28,39 @@ interface Job {
 }
 
 interface LineItem {
+  id?: string
   description: string
   quantity: string
   unitPrice: string
 }
 
-export default function NewPurchaseOrderPage() {
+interface PurchaseOrderResponse {
+  purchaseOrder: {
+    id: string
+    poNumber: string
+    vendor: string
+    vendorId: string | null
+    vendorRef: Vendor | null
+    status: string
+    jobId: string | null
+    expectedDate: string | null
+    orderDate: string | null
+    lineItems: Array<{
+      id: string
+      description: string
+      quantity: number
+      unitPrice: number
+    }>
+  }
+}
+
+export default function EditPurchaseOrderPage() {
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const jobIdParam = searchParams.get('jobId')
-  const [loading, setLoading] = useState(false)
+  const params = useParams()
+  const poId = params?.id as string | undefined
+
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [jobs, setJobs] = useState<Job[]>([])
   const [lineItems, setLineItems] = useState<LineItem[]>([{ description: '', quantity: '1', unitPrice: '0' }])
@@ -41,9 +68,8 @@ export default function NewPurchaseOrderPage() {
   const [formData, setFormData] = useState({
     vendorId: '',
     vendor: '',
-    poNumber: '',
-    jobId: jobIdParam || '',
     status: 'DRAFT',
+    jobId: '',
     expectedDate: '',
     orderDate: '',
     tax: '0',
@@ -51,9 +77,12 @@ export default function NewPurchaseOrderPage() {
   })
 
   useEffect(() => {
-    fetchVendors()
-    fetchJobs()
-  }, [])
+    if (poId) {
+      fetchPurchaseOrder()
+      fetchVendors()
+      fetchJobs()
+    }
+  }, [poId])
 
   const fetchVendors = async () => {
     try {
@@ -85,47 +114,20 @@ export default function NewPurchaseOrderPage() {
     }
   }
 
-  const addLineItem = () => {
-    setLineItems([...lineItems, { description: '', quantity: '1', unitPrice: '0' }])
-  }
-
-  const removeLineItem = (index: number) => {
-    setLineItems(lineItems.filter((_, i) => i !== index))
-  }
-
-  const updateLineItem = (index: number, field: keyof LineItem, value: string) => {
-    const updated = [...lineItems]
-    updated[index] = { ...updated[index], [field]: value }
-    setLineItems(updated)
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
+  const fetchPurchaseOrder = async () => {
+    if (!poId) return
 
     try {
       const token = localStorage.getItem('accessToken')
-      const response = await fetch('/api/purchase-orders', {
-        method: 'POST',
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+
+      const response = await fetch(`/api/purchase-orders/${poId}`, {
         headers: {
-          'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          vendorId: formData.vendorId || null,
-          vendor: formData.vendor,
-          status: formData.status,
-          jobId: formData.jobId || null,
-          expectedDate: formData.expectedDate || null,
-          orderDate: formData.orderDate || new Date().toISOString().split('T')[0],
-          tax: parseFloat(formData.tax) || 0,
-          shipping: parseFloat(formData.shipping) || 0,
-          lineItems: lineItems.map(item => ({
-            description: item.description,
-            quantity: parseFloat(item.quantity) || 0,
-            unitPrice: parseFloat(item.unitPrice) || 0,
-          })),
-        }),
       })
 
       if (response.status === 401) {
@@ -135,15 +137,42 @@ export default function NewPurchaseOrderPage() {
 
       if (!response.ok) {
         const error = await response.json()
-        alert(error.error || 'Failed to create purchase order')
+        alert(error.error || 'Failed to load purchase order')
+        router.push('/dashboard/purchase-orders')
         return
       }
 
-      const data = await response.json()
-      router.push(`/dashboard/purchase-orders/${data.purchaseOrder.id}`)
+      const data: PurchaseOrderResponse = await response.json()
+      const po = data.purchaseOrder
+
+      setFormData({
+        vendorId: po.vendorId || '',
+        vendor: po.vendor,
+        status: po.status,
+        jobId: po.jobId || '',
+        expectedDate: po.expectedDate ? new Date(po.expectedDate).toISOString().split('T')[0] : '',
+        orderDate: po.orderDate ? new Date(po.orderDate).toISOString().split('T')[0] : '',
+        tax: '0',
+        shipping: '0',
+      })
+
+      if (po.vendorRef) {
+        setSelectedVendor(po.vendorRef)
+      }
+
+      if (po.lineItems && po.lineItems.length > 0) {
+        setLineItems(
+          po.lineItems.map((item) => ({
+            id: item.id,
+            description: item.description,
+            quantity: item.quantity.toString(),
+            unitPrice: item.unitPrice.toString(),
+          }))
+        )
+      }
     } catch (error) {
-      console.error('Error creating purchase order:', error)
-      alert('Failed to create purchase order')
+      console.error('Error fetching purchase order:', error)
+      alert('Failed to load purchase order')
     } finally {
       setLoading(false)
     }
@@ -159,11 +188,25 @@ export default function NewPurchaseOrderPage() {
     })
   }
 
+  const addLineItem = () => {
+    setLineItems([...lineItems, { description: '', quantity: '1', unitPrice: '0' }])
+  }
+
+  const removeLineItem = (index: number) => {
+    setLineItems(lineItems.filter((_, i) => i !== index))
+  }
+
+  const updateLineItem = (index: number, field: keyof LineItem, value: string) => {
+    const updated = [...lineItems]
+    updated[index] = { ...updated[index], [field]: value }
+    setLineItems(updated)
+  }
+
   const calculateSubtotal = () => {
     return lineItems.reduce((sum, item) => {
       const qty = parseFloat(item.quantity) || 0
       const price = parseFloat(item.unitPrice) || 0
-      return sum + (qty * price)
+      return sum + qty * price
     }, 0)
   }
 
@@ -174,18 +217,80 @@ export default function NewPurchaseOrderPage() {
     return subtotal + tax + shipping
   }
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch(`/api/purchase-orders/${poId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          vendorId: formData.vendorId || null,
+          vendor: formData.vendor,
+          status: formData.status,
+          jobId: formData.jobId || null,
+          expectedDate: formData.expectedDate || null,
+          orderDate: formData.orderDate || null,
+          tax: parseFloat(formData.tax) || 0,
+          shipping: parseFloat(formData.shipping) || 0,
+          lineItems: lineItems.map((item) => ({
+            id: item.id,
+            description: item.description,
+            quantity: parseFloat(item.quantity) || 0,
+            unitPrice: parseFloat(item.unitPrice) || 0,
+          })),
+        }),
+      })
+
+      if (response.status === 401) {
+        router.push('/auth/login')
+        return
+      }
+
+      if (!response.ok) {
+        const error = await response.json()
+        alert(error.error || 'Failed to update purchase order')
+        return
+      }
+
+      const data = await response.json()
+      router.push(`/dashboard/purchase-orders/${data.purchaseOrder.id}`)
+    } catch (error) {
+      console.error('Error updating purchase order:', error)
+      alert('Failed to update purchase order')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent"></div>
+          <p className="mt-4 text-gray-600">Loading purchase order...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center space-x-4">
-        <Link href="/dashboard/purchase-orders">
+        <Link href={`/dashboard/purchase-orders/${poId}`}>
           <Button variant="ghost" size="sm">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back
           </Button>
         </Link>
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">New Purchase Order</h1>
-          <p className="mt-2 text-gray-600">Create a new purchase order</p>
+          <h1 className="text-3xl font-bold text-gray-900">Edit Purchase Order</h1>
+          <p className="mt-2 text-gray-600">Update purchase order details</p>
         </div>
       </div>
 
@@ -224,15 +329,6 @@ export default function NewPurchaseOrderPage() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="poNumber">PO Number</Label>
-                    <Input
-                      id="poNumber"
-                      value={formData.poNumber}
-                      onChange={(e) => setFormData({ ...formData, poNumber: e.target.value })}
-                      placeholder="Auto-generated if empty"
-                    />
-                  </div>
-                  <div>
                     <Label htmlFor="status">Status</Label>
                     <select
                       id="status"
@@ -246,6 +342,22 @@ export default function NewPurchaseOrderPage() {
                       <option value="ORDERED">Ordered</option>
                       <option value="RECEIVED">Received</option>
                       <option value="CANCELLED">Cancelled</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label htmlFor="jobId">Job</Label>
+                    <select
+                      id="jobId"
+                      value={formData.jobId}
+                      onChange={(e) => setFormData({ ...formData, jobId: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Select a job</option>
+                      {jobs.map((job) => (
+                        <option key={job.id} value={job.id}>
+                          {job.jobNumber} - {job.title}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>
@@ -272,23 +384,6 @@ export default function NewPurchaseOrderPage() {
                 </div>
 
                 <div>
-                  <Label htmlFor="jobId">Job</Label>
-                  <select
-                    id="jobId"
-                    value={formData.jobId}
-                    onChange={(e) => setFormData({ ...formData, jobId: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Select a job</option>
-                    {jobs.map((job) => (
-                      <option key={job.id} value={job.id}>
-                        {job.jobNumber} - {job.title}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
                   <Label>Line Items *</Label>
                   <div className="space-y-2">
                     {lineItems.map((item, index) => (
@@ -304,6 +399,7 @@ export default function NewPurchaseOrderPage() {
                         <div className="w-24">
                           <Input
                             type="number"
+                            step="0.01"
                             placeholder="Qty"
                             value={item.quantity}
                             onChange={(e) => updateLineItem(index, 'quantity', e.target.value)}
@@ -380,11 +476,16 @@ export default function NewPurchaseOrderPage() {
             </Card>
 
             <div className="flex flex-col space-y-2">
-              <Button type="submit" disabled={loading} className="w-full">
+              <Button type="submit" disabled={saving} className="w-full">
                 <Save className="mr-2 h-4 w-4" />
-                {loading ? 'Creating...' : 'Create Purchase Order'}
+                {saving ? 'Saving...' : 'Save Changes'}
               </Button>
-              <Button type="button" variant="outline" onClick={() => router.back()} className="w-full">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => router.back()}
+                className="w-full"
+              >
                 Cancel
               </Button>
             </div>
