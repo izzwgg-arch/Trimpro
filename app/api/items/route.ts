@@ -132,24 +132,32 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Validate and convert data
+    const itemData: any = {
+      tenantId: user.tenantId,
+      name: name.trim(),
+      sku: sku && sku.trim() ? sku.trim() : null,
+      type: type || 'PRODUCT',
+      description: description && description.trim() ? description.trim() : null,
+      unit: unit || 'ea',
+      defaultUnitCost: defaultUnitCost && defaultUnitCost !== '' ? parseFloat(String(defaultUnitCost)) : null,
+      defaultUnitPrice: defaultUnitPrice && defaultUnitPrice !== '' ? parseFloat(String(defaultUnitPrice)) : 0,
+      taxable: taxable !== undefined ? Boolean(taxable) : true,
+      taxRate: taxRate && taxRate !== '' ? parseFloat(String(taxRate)) : null,
+      isActive: isActive !== undefined ? Boolean(isActive) : true,
+      vendorId: vendorId && vendorId !== '' ? vendorId : null,
+      categoryId: categoryId && categoryId !== '' ? categoryId : null,
+      tags: tags && Array.isArray(tags) ? tags.filter(t => t && t.trim()) : [],
+      notes: notes && notes.trim() ? notes.trim() : null,
+    }
+
+    // Ensure defaultUnitPrice is not null or 0 if not provided
+    if (!itemData.defaultUnitPrice || itemData.defaultUnitPrice === 0) {
+      itemData.defaultUnitPrice = 0
+    }
+
     const item = await prisma.item.create({
-      data: {
-        tenantId: user.tenantId,
-        name,
-        sku: sku || null,
-        type: type || 'PRODUCT',
-        description: description || null,
-        unit: unit || 'ea',
-        defaultUnitCost: defaultUnitCost ? parseFloat(defaultUnitCost) : null,
-        defaultUnitPrice: parseFloat(defaultUnitPrice) || 0,
-        taxable: taxable !== undefined ? taxable : true,
-        taxRate: taxRate ? parseFloat(taxRate) : null,
-        isActive: isActive !== undefined ? isActive : true,
-        vendorId: vendorId || null,
-        categoryId: categoryId || null,
-        tags: tags && Array.isArray(tags) ? tags : [],
-        notes: notes || null,
-      },
+      data: itemData,
       include: {
         vendor: {
           select: {
@@ -184,10 +192,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ item }, { status: 201 })
   } catch (error: any) {
     console.error('Create item error:', error)
+    console.error('Error details:', JSON.stringify(error, null, 2))
     // Return more detailed error message
     const errorMessage = error?.message || 'Internal server error'
+    // Check for Prisma errors
+    if (error?.code === 'P2002') {
+      return NextResponse.json({ error: 'A record with this SKU already exists' }, { status: 400 })
+    }
+    if (error?.code === 'P2003') {
+      return NextResponse.json({ error: 'Invalid vendor or category reference' }, { status: 400 })
+    }
     return NextResponse.json({ 
       error: errorMessage,
+      code: error?.code,
       details: process.env.NODE_ENV === 'development' ? error?.stack : undefined
     }, { status: 500 })
   }
