@@ -288,13 +288,28 @@ export async function DELETE(
       )
     }
 
-    // Update status to cancelled instead of deleting
-    await prisma.invoice.update({
-      where: { id: params.id },
-      data: { status: 'CANCELLED' },
+    // Delete invoice line items first (cascade should handle this, but being explicit)
+    await prisma.invoiceLineItem.deleteMany({
+      where: { invoiceId: params.id },
     })
 
-    return NextResponse.json({ message: 'Invoice cancelled successfully' })
+    // Actually delete the invoice
+    await prisma.invoice.delete({
+      where: { id: params.id },
+    })
+
+    // Create audit log
+    await prisma.auditLog.create({
+      data: {
+        tenantId: user.tenantId,
+        userId: user.id,
+        action: 'DELETE',
+        entityType: 'Invoice',
+        entityId: invoice.id,
+      },
+    })
+
+    return NextResponse.json({ message: 'Invoice deleted successfully' })
   } catch (error) {
     console.error('Delete invoice error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

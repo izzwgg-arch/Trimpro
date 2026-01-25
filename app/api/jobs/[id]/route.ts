@@ -299,7 +299,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Job not found' }, { status: 404 })
     }
 
-    // Don't delete if job has invoices or other linked data
+    // Don't delete if job has invoices
     const hasInvoices = await prisma.invoice.count({
       where: { jobId: params.id },
     })
@@ -311,10 +311,18 @@ export async function DELETE(
       )
     }
 
-    // Update status to cancelled instead of deleting
-    await prisma.job.update({
+    // Delete related data first (cascade should handle most, but being explicit for safety)
+    await prisma.jobAssignment.deleteMany({
+      where: { jobId: params.id },
+    })
+
+    await prisma.address.deleteMany({
+      where: { jobId: params.id },
+    })
+
+    // Actually delete the job
+    await prisma.job.delete({
       where: { id: params.id },
-      data: { status: 'CANCELLED' },
     })
 
     // Create audit log
@@ -328,7 +336,7 @@ export async function DELETE(
       },
     })
 
-    return NextResponse.json({ message: 'Job cancelled successfully' })
+    return NextResponse.json({ message: 'Job deleted successfully' })
   } catch (error) {
     console.error('Delete job error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
