@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { Plus, Search, Filter, DollarSign, Calendar, AlertCircle } from 'lucide-react'
+import { Plus, Search, Filter, DollarSign, Calendar, AlertCircle, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 
 interface Invoice {
@@ -53,6 +53,7 @@ export default function InvoicesPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   useEffect(() => {
     fetchInvoices()
@@ -85,6 +86,51 @@ export default function InvoicesPage() {
       console.error('Failed to fetch invoices:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleDelete = async (invoiceId: string, invoiceTitle: string) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to delete invoice "${invoiceTitle}"?\n\n` +
+      'If the invoice has payments, it cannot be deleted and will be cancelled instead. This action cannot be undone.'
+    )
+
+    if (!confirmed) return
+
+    setDeletingId(invoiceId)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+
+      const response = await fetch(`/api/invoices/${invoiceId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      if (response.status === 401) {
+        router.push('/auth/login')
+        return
+      }
+
+      if (!response.ok) {
+        const error = await response.json()
+        alert(error.error || 'Failed to delete invoice')
+        setDeletingId(null)
+        return
+      }
+
+      // Refresh the invoices list
+      fetchInvoices()
+    } catch (error) {
+      console.error('Error deleting invoice:', error)
+      alert('Failed to delete invoice')
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -280,6 +326,26 @@ export default function InvoicesPage() {
                         </p>
                       </div>
                     )}
+
+                    <div className="flex items-center justify-between pt-2 border-t">
+                      <div className="flex items-center space-x-3 text-xs text-gray-500">
+                        {invoice._count.lineItems > 0 && (
+                          <span>{invoice._count.lineItems} line item{invoice._count.lineItems !== 1 ? 's' : ''}</span>
+                        )}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleDelete(invoice.id, invoice.title)
+                        }}
+                        disabled={deletingId === invoice.id}
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50 h-7 px-2"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
