@@ -70,12 +70,12 @@ export function Sidebar() {
   }
 
   return (
-    <div className="flex h-screen w-64 flex-col bg-gray-900 text-white">
-      <div className="flex h-16 items-center justify-between px-4 border-b border-gray-800">
+    <div className="flex h-full w-64 flex-col bg-gray-900 text-white">
+      <div className="flex h-16 flex-shrink-0 items-center justify-between px-4 border-b border-gray-800">
         <h1 className="text-xl font-bold">Trim Pro</h1>
         <NotificationBell />
       </div>
-      <nav className="flex-1 space-y-1 px-2 py-4">
+      <nav className="flex-1 overflow-y-auto space-y-1 px-2 py-4 min-h-0">
         {navigation.map((item) => {
           const isActive = pathname === item.href || pathname?.startsWith(item.href + '/')
           const navItem = (
@@ -107,7 +107,7 @@ export function Sidebar() {
           return navItem
         })}
       </nav>
-      <div className="border-t border-gray-800 p-4">
+      <div className="flex-shrink-0 border-t border-gray-800 p-4">
         <button
           onClick={handleLogout}
           className="flex w-full items-center rounded-md px-3 py-2 text-sm font-medium text-gray-300 hover:bg-gray-800 hover:text-white"
