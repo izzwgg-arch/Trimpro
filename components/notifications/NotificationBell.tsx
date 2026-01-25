@@ -1,0 +1,401 @@
+'use client'
+
+import { useState, useEffect, useRef } from 'react'
+import { Bell } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { formatDistanceToNow } from 'date-fns'
+
+interface Notification {
+  id: string
+  type: string
+  title: string
+  message: string | null
+  linkUrl: string | null
+  linkType: string | null
+  linkId: string | null
+  status: string
+  createdAt: string
+  readAt: string | null
+}
+
+export function NotificationBell() {
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [isOpen, setIsOpen] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+  const streamAbortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    fetchNotifications()
+    // Refresh every 30 seconds
+    const interval = setInterval(fetchNotifications, 30000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const refreshToken = async (): Promise<boolean> => {
+    const refreshToken = localStorage.getItem('refreshToken')
+    if (!refreshToken) return false
+
+    try {
+      const response = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      })
+
+      if (!response.ok) return false
+      const data = await response.json()
+      localStorage.setItem('accessToken', data.accessToken)
+      localStorage.setItem('refreshToken', data.refreshToken)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [isOpen])
+
+  useEffect(() => {
+    // Real-time stream: start once, keep pushing updates into state.
+    // Uses fetch streaming so we can include Authorization header (EventSource can't).
+    const startStream = async () => {
+      const token = localStorage.getItem('accessToken')
+      if (!token) return
+
+      // Avoid duplicate streams
+      if (streamAbortRef.current) return
+
+      const abort = new AbortController()
+      streamAbortRef.current = abort
+
+      const since = notifications.length > 0 ? notifications[0]?.createdAt : null
+      const url = since ? `/api/notifications/stream?since=${encodeURIComponent(since)}` : '/api/notifications/stream'
+
+      try {
+        const res = await fetch(url, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: abort.signal,
+        })
+
+        if (res.status === 401) {
+          const refreshed = await refreshToken()
+          if (!refreshed) throw new Error('unauthorized')
+          streamAbortRef.current = null
+          return startStream()
+        }
+
+        if (!res.ok || !res.body) {
+          throw new Error(`stream_failed_${res.status}`)
+        }
+
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+
+        while (true) {
+          const { value, done } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+
+          // Parse SSE frames separated by blank lines
+          const parts = buffer.split('\n\n')
+          buffer = parts.pop() || ''
+
+          for (const part of parts) {
+            const lines = part.split('\n')
+            const dataLine = lines.find((l) => l.startsWith('data: '))
+            const eventLine = lines.find((l) => l.startsWith('event: '))
+            const evt = eventLine ? eventLine.replace('event: ', '').trim() : ''
+            if (!dataLine) continue
+            const payloadStr = dataLine.replace('data: ', '')
+            let payload: any = null
+            try {
+              payload = JSON.parse(payloadStr)
+            } catch {
+              continue
+            }
+
+            if (evt === 'notifications' && payload?.notifications) {
+              const incoming: Notification[] = payload.notifications
+              setNotifications((prev) => {
+                // merge unique by id, newest first
+                const map = new Map<string, Notification>()
+                ;[...incoming, ...prev].forEach((n) => map.set(n.id, n))
+                const merged = Array.from(map.values()).sort(
+                  (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+                )
+                setUnreadCount(merged.filter((n) => n.status === 'UNREAD').length)
+                return merged
+              })
+            }
+          }
+        }
+      } catch {
+        // Stream failure: fallback to polling; try again later.
+        streamAbortRef.current = null
+      }
+    }
+
+    startStream()
+
+    return () => {
+      streamAbortRef.current?.abort()
+      streamAbortRef.current = null
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const fetchNotifications = async () => {
+    try {
+      let token = localStorage.getItem('accessToken')
+      if (!token) {
+        const refreshed = await refreshToken()
+        if (!refreshed) return
+        token = localStorage.getItem('accessToken')
+      }
+
+      let response = await fetch('/api/notifications?limit=50', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+
+      if (response.status === 401) {
+        const refreshed = await refreshToken()
+        if (!refreshed) return
+        token = localStorage.getItem('accessToken')
+        response = await fetch('/api/notifications?limit=50', {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      }
+
+      if (response.ok) {
+        const data = await response.json()
+        const notifs = data.notifications || []
+        setNotifications(notifs)
+        setUnreadCount(notifs.filter((n: Notification) => n.status === 'UNREAD').length)
+      }
+    } catch (error) {
+      console.error('Failed to fetch notifications:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const markAsRead = async (notificationId: string) => {
+    try {
+      let token = localStorage.getItem('accessToken')
+      if (!token) {
+        const refreshed = await refreshToken()
+        if (!refreshed) return
+        token = localStorage.getItem('accessToken')
+      }
+
+      let response = await fetch(`/api/notifications/${notificationId}/read`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (response.status === 401) {
+        const refreshed = await refreshToken()
+        if (!refreshed) return
+        token = localStorage.getItem('accessToken')
+        response = await fetch(`/api/notifications/${notificationId}/read`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        })
+      }
+
+      if (response.ok) {
+        setNotifications((prev) =>
+          prev.map((n) => (n.id === notificationId ? { ...n, status: 'READ', readAt: new Date().toISOString() } : n))
+        )
+        setUnreadCount((prev) => Math.max(0, prev - 1))
+      }
+    } catch (error) {
+      console.error('Failed to mark notification as read:', error)
+    }
+  }
+
+  const markAllAsRead = async () => {
+    try {
+      let token = localStorage.getItem('accessToken')
+      if (!token) {
+        const refreshed = await refreshToken()
+        if (!refreshed) return
+        token = localStorage.getItem('accessToken')
+      }
+
+      let response = await fetch('/api/notifications/read-all', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (response.status === 401) {
+        const refreshed = await refreshToken()
+        if (!refreshed) return
+        token = localStorage.getItem('accessToken')
+        response = await fetch('/api/notifications/read-all', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        })
+      }
+
+      if (response.ok) {
+        setNotifications((prev) =>
+          prev.map((n) => ({ ...n, status: 'READ', readAt: n.readAt || new Date().toISOString() }))
+        )
+        setUnreadCount(0)
+      }
+    } catch (error) {
+      console.error('Failed to mark all as read:', error)
+    }
+  }
+
+  const handleNotificationClick = (notification: Notification) => {
+    markAsRead(notification.id)
+    if (notification.linkUrl) {
+      window.location.href = notification.linkUrl
+    }
+    setIsOpen(false)
+  }
+
+  const unreadNotifications = notifications.filter((n) => n.status === 'UNREAD')
+  const readNotifications = notifications.filter((n) => n.status === 'READ')
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="relative text-white hover:bg-gray-800"
+        onClick={() => setIsOpen(!isOpen)}
+      >
+        <Bell className="h-5 w-5" />
+        {unreadCount > 0 && (
+          <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </span>
+        )}
+      </Button>
+
+      {isOpen && (
+        <div className="absolute right-0 top-full mt-2 w-80 rounded-md border border-gray-200 bg-white shadow-lg z-50">
+          <div className="p-4 border-b border-gray-200">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">Notifications</h3>
+              {unreadCount > 0 && (
+                <button
+                  onClick={markAllAsRead}
+                  className="text-sm text-blue-600 hover:text-blue-800"
+                >
+                  Mark all as read
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="max-h-96 overflow-y-auto">
+            {loading ? (
+              <div className="p-4 text-center text-gray-500">Loading...</div>
+            ) : notifications.length === 0 ? (
+              <div className="p-8 text-center text-gray-500">
+                <Bell className="h-12 w-12 mx-auto mb-2 text-gray-400" />
+                <p>No notifications</p>
+              </div>
+            ) : (
+              <>
+                {unreadNotifications.length > 0 && (
+                  <div className="p-2">
+                    <div className="text-xs font-semibold text-gray-500 uppercase px-2 py-1">Unread</div>
+                    {unreadNotifications.map((notification) => (
+                      <div
+                        key={notification.id}
+                        className="p-3 hover:bg-gray-50 cursor-pointer border-l-2 border-blue-500"
+                        onClick={() => handleNotificationClick(notification)}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-gray-900">{notification.title}</p>
+                            {notification.message && (
+                              <p className="text-xs text-gray-600 mt-1 line-clamp-2">{notification.message}</p>
+                            )}
+                            <p className="text-xs text-gray-400 mt-1">
+                              {formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true })}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {readNotifications.length > 0 && (
+                  <div className="p-2 border-t border-gray-200">
+                    <div className="text-xs font-semibold text-gray-500 uppercase px-2 py-1">Read</div>
+                    {readNotifications.slice(0, 10).map((notification) => (
+                      <div
+                        key={notification.id}
+                        className="p-3 hover:bg-gray-50 cursor-pointer opacity-75"
+                        onClick={() => handleNotificationClick(notification)}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-gray-700">{notification.title}</p>
+                            {notification.message && (
+                              <p className="text-xs text-gray-500 mt-1 line-clamp-2">{notification.message}</p>
+                            )}
+                            <p className="text-xs text-gray-400 mt-1">
+                              {formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true })}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {notifications.length > 0 && (
+            <div className="p-2 border-t border-gray-200 text-center">
+              <a
+                href="/dashboard/notifications"
+                className="text-sm text-blue-600 hover:text-blue-800"
+                onClick={() => setIsOpen(false)}
+              >
+                View all notifications
+              </a>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
