@@ -67,8 +67,19 @@ export default function NewJobPage() {
       const token = localStorage.getItem('accessToken')
       
       // Convert datetime-local to ISO string
-      const scheduledStart = formData.scheduledStart ? new Date(formData.scheduledStart).toISOString() : null
-      const scheduledEnd = formData.scheduledEnd ? new Date(formData.scheduledEnd).toISOString() : null
+      // datetime-local format is "YYYY-MM-DDTHH:mm", we need to convert to ISO 8601
+      const scheduledStart = formData.scheduledStart && formData.scheduledStart.trim()
+        ? (() => {
+            const date = new Date(formData.scheduledStart)
+            return isNaN(date.getTime()) ? null : date.toISOString()
+          })()
+        : null
+      const scheduledEnd = formData.scheduledEnd && formData.scheduledEnd.trim()
+        ? (() => {
+            const date = new Date(formData.scheduledEnd)
+            return isNaN(date.getTime()) ? null : date.toISOString()
+          })()
+        : null
       
       const response = await fetch('/api/jobs', {
         method: 'POST',
