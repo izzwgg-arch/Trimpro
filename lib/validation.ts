@@ -89,7 +89,15 @@ export const createJobSchema = z.object({
   title: z.string().min(1).max(255),
   description: z.string().max(5000).optional().nullable(),
   status: z.enum(['QUOTE', 'SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'ON_HOLD']).optional(),
-  priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional(),
+  priority: z.union([
+    z.number().int().min(1).max(5),
+    z.string().transform((val) => {
+      // Try to parse as number
+      const num = parseInt(val)
+      if (!isNaN(num) && num >= 1 && num <= 5) return num
+      return 3 // default
+    })
+  ]).optional(),
   scheduledStart: z.string().datetime().optional().nullable(),
   scheduledEnd: z.string().datetime().optional().nullable(),
   estimateAmount: z.string().or(z.number()).optional().nullable(),

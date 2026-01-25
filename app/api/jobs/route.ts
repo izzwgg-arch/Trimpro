@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
         title,
         description: description || null,
         status: status || 'QUOTE',
-        priority: priority || 3,
+        priority: typeof priority === 'number' ? priority : (priority ? parseInt(String(priority)) : 3),
         scheduledStart: scheduledStart ? new Date(scheduledStart) : null,
         scheduledEnd: scheduledEnd ? new Date(scheduledEnd) : null,
         estimateAmount: estimateAmount ? (typeof estimateAmount === 'string' ? parseFloat(estimateAmount) : estimateAmount) : null,

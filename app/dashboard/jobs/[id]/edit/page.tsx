@@ -183,6 +183,13 @@ export default function EditJobPage() {
 
     try {
       const token = localStorage.getItem('accessToken')
+      
+      // Convert datetime-local to ISO string
+      const scheduledStart = formData.scheduledStart ? new Date(formData.scheduledStart).toISOString() : null
+      const scheduledEnd = formData.scheduledEnd ? new Date(formData.scheduledEnd).toISOString() : null
+      const actualStart = formData.actualStart ? new Date(formData.actualStart).toISOString() : null
+      const actualEnd = formData.actualEnd ? new Date(formData.actualEnd).toISOString() : null
+      
       const response = await fetch(`/api/jobs/${jobId}`, {
         method: 'PUT',
         headers: {
@@ -194,10 +201,10 @@ export default function EditJobPage() {
           description: formData.description,
           status: formData.status,
           priority: parseInt(formData.priority),
-          scheduledStart: formData.scheduledStart || null,
-          scheduledEnd: formData.scheduledEnd || null,
-          actualStart: formData.actualStart || null,
-          actualEnd: formData.actualEnd || null,
+          scheduledStart: scheduledStart,
+          scheduledEnd: scheduledEnd,
+          actualStart: actualStart,
+          actualEnd: actualEnd,
           estimateAmount: formData.estimateAmount ? parseFloat(formData.estimateAmount) : null,
           actualAmount: formData.actualAmount ? parseFloat(formData.actualAmount) : null,
           laborCost: formData.laborCost ? parseFloat(formData.laborCost) : null,

@@ -65,6 +65,11 @@ export default function NewJobPage() {
 
     try {
       const token = localStorage.getItem('accessToken')
+      
+      // Convert datetime-local to ISO string
+      const scheduledStart = formData.scheduledStart ? new Date(formData.scheduledStart).toISOString() : null
+      const scheduledEnd = formData.scheduledEnd ? new Date(formData.scheduledEnd).toISOString() : null
+      
       const response = await fetch('/api/jobs', {
         method: 'POST',
         headers: {
@@ -77,8 +82,8 @@ export default function NewJobPage() {
           description: formData.description,
           status: formData.status,
           priority: parseInt(formData.priority),
-          scheduledStart: formData.scheduledStart || null,
-          scheduledEnd: formData.scheduledEnd || null,
+          scheduledStart: scheduledStart,
+          scheduledEnd: scheduledEnd,
           estimateAmount: formData.estimateAmount ? parseFloat(formData.estimateAmount) : null,
           jobSite: formData.jobSite.street ? formData.jobSite : null,
         }),
