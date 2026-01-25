@@ -4,8 +4,7 @@ module.exports = {
       name: 'trimpro',
       script: 'npm',
       args: 'start',
-      cwd: '/root/apps/trimpro',
-      env_file: '.env',
+      cwd: process.cwd(),
       env: {
         NODE_ENV: 'production',
         PORT: 3000,
