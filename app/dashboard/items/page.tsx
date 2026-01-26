@@ -216,7 +216,7 @@ export default function ItemsPage() {
   }
 
   const handleDelete = async (itemId: string, itemName: string) => {
-    if (!window.confirm(`Are you sure you want to archive "${itemName}"?`)) {
+    if (!window.confirm(`Are you sure you want to delete "${itemName}"? This action cannot be undone.`)) {
       return
     }
 
@@ -230,11 +230,12 @@ export default function ItemsPage() {
       if (response.ok) {
         fetchItems()
       } else {
-        alert('Failed to archive item')
+        const error = await response.json()
+        alert(error.error || 'Failed to delete item')
       }
     } catch (error) {
       console.error('Delete error:', error)
-      alert('Failed to archive item')
+      alert('Failed to delete item')
     }
   }
 
