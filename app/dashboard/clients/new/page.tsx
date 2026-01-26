@@ -73,8 +73,13 @@ export default function NewClientPage() {
         return
       }
 
-      const client = await response.json()
-      router.push(`/dashboard/clients/${client.id}`)
+      const data = await response.json()
+      if (!data.client || !data.client.id) {
+        console.error('Invalid response data:', data)
+        alert('Client created but invalid response received')
+        return
+      }
+      router.push(`/dashboard/clients/${data.client.id}`)
     } catch (error) {
       console.error('Error creating client:', error)
       alert('Failed to create client')
