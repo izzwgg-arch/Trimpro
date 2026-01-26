@@ -32,6 +32,7 @@ model Tenant {
   invoices         Invoice[]
   purchaseOrders   PurchaseOrder[]
   vendors          Vendor[]
+  vendorContacts   VendorContact[]
   tasks            Task[]
   issues           Issue[]
   priceBook        PriceBookItem[]
@@ -655,33 +656,102 @@ enum PurchaseOrderStatus {
 // VENDORS
 // ============================================
 
+enum VendorStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum PaymentTerms {
+  NET_15
+  NET_30
+  NET_45
+  DUE_ON_RECEIPT
+  CUSTOM
+}
+
 model Vendor {
-  id            String  @id @default(cuid())
+  id            String       @id @default(cuid())
   tenantId      String
   name          String
+  vendorCode    String?      @unique
+  status        VendorStatus @default(ACTIVE)
   email         String?
   phone         String?
-  address       String?
-  city          String?
-  state         String?
-  zipCode       String?
-  country       String?
   website       String?
-  contactPerson String?
-  notes         String? @db.Text
-  isActive      Boolean @default(true)
+  notes         String?      @db.Text
+  
+  // Billing Address
+  billingStreet  String?
+  billingCity    String?
+  billingState   String?
+  billingZip     String?
+  billingCountry String?     @default("USA")
+  
+  // Shipping Address (optional, can be same as billing)
+  shippingStreet  String?
+  shippingCity    String?
+  shippingState   String?
+  shippingZip     String?
+  shippingCountry String?
+  
+  // Payment Terms
+  paymentTerms     PaymentTerms @default(NET_30)
+  customTermsText  String?      @db.Text
+  
+  // Tax Info
+  taxId            String?      // EIN/Tax ID (will be masked in UI)
+  
+  // Currency
+  defaultCurrency  String?      @default("USD")
+  
+  // Legacy fields (for backward compatibility)
+  address          String?
+  city             String?
+  state            String?
+  zipCode          String?
+  country          String?
+  contactPerson    String?
+  isActive         Boolean      @default(true) // Deprecated, use status
 
   // Relationships
   tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   purchaseOrders PurchaseOrder[]
   items          Item[]
+  contacts       VendorContact[]
+  attachments    Attachment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([tenantId])
+  @@index([tenantId, status])
   @@index([tenantId, isActive])
+  @@index([vendorCode])
   @@map("vendors")
+}
+
+model VendorContact {
+  id          String   @id @default(cuid())
+  vendorId   String
+  tenantId   String
+  name       String
+  title      String?   // Role/title
+  email      String?
+  phone      String?
+  isPrimary  Boolean   @default(false)
+  notes      String?   @db.Text
+
+  // Relationships
+  vendor    Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([vendorId])
+  @@index([tenantId])
+  @@index([vendorId, isPrimary])
+  @@map("vendor_contacts")
 }
 
 model PurchaseOrder {
@@ -1374,6 +1444,8 @@ model Attachment {
   issue           Issue?         @relation(fields: [issueId], references: [id], onDelete: Cascade)
   emailId         String?
   email           Email?         @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  vendorId        String?
+  vendor          Vendor?        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
 
   uploadedById String?
 

@@ -27,6 +27,7 @@ import {
   Map,
   Mail,
   Package,
+  Building2,
 } from 'lucide-react'
 
 const navigation = [
@@ -39,6 +40,7 @@ const navigation = [
   { name: 'Invoices', href: '/dashboard/invoices', icon: DollarSign, permission: 'invoices.view' },
   { name: 'Purchase Orders', href: '/dashboard/purchase-orders', icon: ShoppingCart },
   { name: 'Items', href: '/dashboard/items', icon: Package },
+  { name: 'Vendors', href: '/dashboard/vendors', icon: Building2 },
   { name: 'Tasks', href: '/dashboard/tasks', icon: CheckSquare, permission: 'tasks.view' },
   { name: 'Issues', href: '/dashboard/issues', icon: AlertCircle, permission: 'issues.view' },
   { name: 'Teams', href: '/dashboard/teams', icon: Users, permission: 'teams.view' },

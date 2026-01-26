@@ -9,6 +9,8 @@ export async function GET(request: NextRequest) {
   const user = getAuthUser(request)
   const searchParams = request.nextUrl.searchParams
   const search = searchParams.get('search') || ''
+  const status = searchParams.get('status') || 'all'
+  const paymentTerms = searchParams.get('paymentTerms') || ''
   const page = parseInt(searchParams.get('page') || '1')
   const limit = parseInt(searchParams.get('limit') || '50')
   const skip = (page - 1) * limit
@@ -16,7 +18,22 @@ export async function GET(request: NextRequest) {
   try {
     const where: any = {
       tenantId: user.tenantId,
-      isActive: true,
+    }
+
+    // Status filter
+    if (status === 'active') {
+      where.status = 'ACTIVE'
+      where.isActive = true // Also check legacy field
+    } else if (status === 'inactive') {
+      where.status = 'INACTIVE'
+      where.isActive = false
+    } else if (status === 'all') {
+      // Show all
+    }
+
+    // Payment terms filter
+    if (paymentTerms) {
+      where.paymentTerms = paymentTerms
     }
 
     if (search) {
@@ -24,6 +41,7 @@ export async function GET(request: NextRequest) {
         { name: { contains: search, mode: 'insensitive' } },
         { email: { contains: search, mode: 'insensitive' } },
         { phone: { contains: search, mode: 'insensitive' } },
+        { vendorCode: { contains: search, mode: 'insensitive' } },
       ]
     }
 
@@ -31,9 +49,14 @@ export async function GET(request: NextRequest) {
       prisma.vendor.findMany({
         where,
         include: {
+          contacts: {
+            where: { isPrimary: true },
+            take: 1,
+          },
           _count: {
             select: {
               purchaseOrders: true,
+              items: true,
             },
           },
         },
@@ -71,38 +94,118 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const {
       name,
+      vendorCode,
+      status,
       email,
       phone,
+      website,
+      notes,
+      billingStreet,
+      billingCity,
+      billingState,
+      billingZip,
+      billingCountry,
+      shippingStreet,
+      shippingCity,
+      shippingState,
+      shippingZip,
+      shippingCountry,
+      paymentTerms,
+      customTermsText,
+      taxId,
+      defaultCurrency,
+      contacts,
+      // Legacy fields for backward compatibility
       address,
       city,
       state,
       zipCode,
       country,
       contactPerson,
-      notes,
     } = body
 
-    if (!name) {
+    if (!name || !name.trim()) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 })
+    }
+
+    // Check for duplicate vendorCode if provided
+    if (vendorCode && vendorCode.trim()) {
+      const existing = await prisma.vendor.findFirst({
+        where: {
+          vendorCode: vendorCode.trim(),
+          tenantId: user.tenantId,
+        },
+      })
+      if (existing) {
+        return NextResponse.json({ error: 'Vendor code already exists' }, { status: 400 })
+      }
     }
 
     // Create vendor
     const vendor = await prisma.vendor.create({
       data: {
         tenantId: user.tenantId,
-        name,
-        email: email || null,
-        phone: phone || null,
-        address: address || null,
-        city: city || null,
-        state: state || null,
-        zipCode: zipCode || null,
-        country: country || 'USA',
-        contactPerson: contactPerson || null,
-        notes: notes || null,
-        isActive: true,
+        name: name.trim(),
+        vendorCode: vendorCode && vendorCode.trim() ? vendorCode.trim() : null,
+        status: status || 'ACTIVE',
+        email: email && email.trim() ? email.trim() : null,
+        phone: phone && phone.trim() ? phone.trim() : null,
+        website: website && website.trim() ? website.trim() : null,
+        notes: notes && notes.trim() ? notes.trim() : null,
+        billingStreet: billingStreet && billingStreet.trim() ? billingStreet.trim() : (address && address.trim() ? address.trim() : null),
+        billingCity: billingCity && billingCity.trim() ? billingCity.trim() : (city && city.trim() ? city.trim() : null),
+        billingState: billingState && billingState.trim() ? billingState.trim() : (state && state.trim() ? state.trim() : null),
+        billingZip: billingZip && billingZip.trim() ? billingZip.trim() : (zipCode && zipCode.trim() ? zipCode.trim() : null),
+        billingCountry: billingCountry && billingCountry.trim() ? billingCountry.trim() : (country && country.trim() ? country.trim() : 'USA'),
+        shippingStreet: shippingStreet && shippingStreet.trim() ? shippingStreet.trim() : null,
+        shippingCity: shippingCity && shippingCity.trim() ? shippingCity.trim() : null,
+        shippingState: shippingState && shippingState.trim() ? shippingState.trim() : null,
+        shippingZip: shippingZip && shippingZip.trim() ? shippingZip.trim() : null,
+        shippingCountry: shippingCountry && shippingCountry.trim() ? shippingCountry.trim() : null,
+        paymentTerms: paymentTerms || 'NET_30',
+        customTermsText: customTermsText && customTermsText.trim() ? customTermsText.trim() : null,
+        taxId: taxId && taxId.trim() ? taxId.trim() : null,
+        defaultCurrency: defaultCurrency && defaultCurrency.trim() ? defaultCurrency.trim() : 'USD',
+        isActive: status !== 'INACTIVE',
+        // Legacy fields
+        address: address && address.trim() ? address.trim() : null,
+        city: city && city.trim() ? city.trim() : null,
+        state: state && state.trim() ? state.trim() : null,
+        zipCode: zipCode && zipCode.trim() ? zipCode.trim() : null,
+        country: country && country.trim() ? country.trim() : 'USA',
+        contactPerson: contactPerson && contactPerson.trim() ? contactPerson.trim() : null,
       },
     })
+
+    // Create contacts if provided
+    if (contacts && Array.isArray(contacts)) {
+      for (const contact of contacts) {
+        if (contact.name && contact.name.trim()) {
+          await prisma.vendorContact.create({
+            data: {
+              vendorId: vendor.id,
+              tenantId: user.tenantId,
+              name: contact.name.trim(),
+              title: contact.title && contact.title.trim() ? contact.title.trim() : null,
+              email: contact.email && contact.email.trim() ? contact.email.trim() : null,
+              phone: contact.phone && contact.phone.trim() ? contact.phone.trim() : null,
+              isPrimary: contact.isPrimary === true,
+              notes: contact.notes && contact.notes.trim() ? contact.notes.trim() : null,
+            },
+          })
+        }
+      }
+    } else if (contactPerson && contactPerson.trim()) {
+      // Legacy: create a contact from contactPerson
+      await prisma.vendorContact.create({
+        data: {
+          vendorId: vendor.id,
+          tenantId: user.tenantId,
+          name: contactPerson.trim(),
+          isPrimary: true,
+        },
+      })
+    }
 
     // Create activity
     await prisma.activity.create({
