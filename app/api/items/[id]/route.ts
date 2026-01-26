@@ -183,31 +183,60 @@ export async function DELETE(
         id: params.id,
         tenantId: user.tenantId,
       },
+      include: {
+        _count: {
+          select: {
+            sourceLineItems: true,
+            sourceInvoiceLineItems: true,
+            bundleComponents: true,
+          },
+        },
+      },
     })
 
     if (!item) {
       return NextResponse.json({ error: 'Item not found' }, { status: 404 })
     }
 
-    // Soft delete by setting isActive to false
-    await prisma.item.update({
+    // Prevent deletion if item is used in estimates, invoices, or bundles
+    if (item._count.sourceLineItems > 0 || item._count.sourceInvoiceLineItems > 0 || item._count.bundleComponents > 0) {
+      return NextResponse.json(
+        { error: 'Cannot delete item that is used in estimates, invoices, or bundles. Please remove it from all documents first.' },
+        { status: 400 }
+      )
+    }
+
+    // Delete bundle definition if this is a bundle item
+    if (item.kind === 'BUNDLE') {
+      await prisma.bundleDefinition.deleteMany({
+        where: { itemId: params.id },
+      })
+    }
+
+    // Delete item
+    await prisma.item.delete({
       where: { id: params.id },
-      data: { isActive: false },
     })
 
     // Create activity
-    await prisma.activity.create({
+    void prisma.activity.create({
       data: {
         tenantId: user.tenantId,
         userId: user.id,
         type: 'OTHER',
-        description: `Item "${item.name}" archived`,
+        description: `Item "${item.name}" deleted`,
       },
     })
 
-    return NextResponse.json({ message: 'Item archived successfully' })
-  } catch (error) {
+    return NextResponse.json({ message: 'Item deleted successfully' })
+  } catch (error: any) {
     console.error('Delete item error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json(
+      {
+        error: error?.message || 'Internal server error',
+        details: process.env.NODE_ENV === 'development' ? error?.stack : undefined,
+      },
+      { status: 500 }
+    )
   }
 }

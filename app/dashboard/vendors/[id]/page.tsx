@@ -8,7 +8,6 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import {
   ArrowLeft,
   Edit,
-  Archive,
   Plus,
   ShoppingCart,
   Package,
@@ -168,35 +167,31 @@ export default function VendorDetailPage() {
     }
   }
 
-  const handleArchive = async () => {
+  const handleDelete = async () => {
     if (!vendor) return
 
-    const action = vendor.status === 'ACTIVE' ? 'archive' : 'activate'
-    if (!confirm(`Are you sure you want to ${action} this vendor?`)) {
+    if (!confirm(`Are you sure you want to delete "${vendor.name}"? This action cannot be undone.`)) {
       return
     }
 
     try {
       const token = localStorage.getItem('accessToken')
-      const newStatus = vendor.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE'
-      const response = await fetch(`/api/vendors/${vendorId}/status`, {
-        method: 'PATCH',
+      const response = await fetch(`/api/vendors/${vendorId}`, {
+        method: 'DELETE',
         headers: {
-          'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ status: newStatus }),
       })
 
       if (response.ok) {
-        fetchVendor()
+        router.push('/dashboard/vendors')
       } else {
         const error = await response.json()
-        alert(error.error || 'Failed to update vendor status')
+        alert(error.error || 'Failed to delete vendor')
       }
     } catch (error) {
-      console.error('Error updating vendor status:', error)
-      alert('Failed to update vendor status')
+      console.error('Error deleting vendor:', error)
+      alert('Failed to delete vendor')
     }
   }
 
@@ -254,9 +249,9 @@ export default function VendorDetailPage() {
               Edit
             </Button>
           </Link>
-          <Button variant="outline" onClick={handleArchive}>
-            <Archive className="mr-2 h-4 w-4" />
-            {vendor.status === 'ACTIVE' ? 'Archive' : 'Activate'}
+          <Button variant="outline" onClick={handleDelete} className="text-red-600 hover:text-red-700">
+            <Trash2 className="mr-2 h-4 w-4" />
+            Delete
           </Button>
           <Link href={`/dashboard/purchase-orders/new?vendorId=${vendorId}`}>
             <Button>

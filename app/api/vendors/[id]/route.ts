@@ -248,3 +248,73 @@ export async function PATCH(
     )
   }
 }
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const authError = await authenticateRequest(request)
+  if (authError) return authError
+
+  const user = getAuthUser(request)
+
+  try {
+    const vendor = await prisma.vendor.findFirst({
+      where: {
+        id: params.id,
+        tenantId: user.tenantId,
+      },
+      include: {
+        _count: {
+          select: {
+            purchaseOrders: true,
+            items: true,
+          },
+        },
+      },
+    })
+
+    if (!vendor) {
+      return NextResponse.json({ error: 'Vendor not found' }, { status: 404 })
+    }
+
+    // Prevent deletion if vendor has purchase orders
+    if (vendor._count.purchaseOrders > 0) {
+      return NextResponse.json(
+        { error: 'Cannot delete vendor with existing purchase orders. Please delete or reassign purchase orders first.' },
+        { status: 400 }
+      )
+    }
+
+    // Delete vendor contacts first (cascade should handle this, but being explicit)
+    await prisma.vendorContact.deleteMany({
+      where: { vendorId: params.id },
+    })
+
+    // Delete vendor
+    await prisma.vendor.delete({
+      where: { id: params.id },
+    })
+
+    // Create activity
+    void prisma.activity.create({
+      data: {
+        tenantId: user.tenantId,
+        userId: user.id,
+        type: 'OTHER',
+        description: `Vendor "${vendor.name}" deleted`,
+      },
+    })
+
+    return NextResponse.json({ message: 'Vendor deleted successfully' })
+  } catch (error: any) {
+    console.error('Delete vendor error:', error)
+    return NextResponse.json(
+      {
+        error: error?.message || 'Internal server error',
+        details: process.env.NODE_ENV === 'development' ? error?.stack : undefined,
+      },
+      { status: 500 }
+    )
+  }
+}
