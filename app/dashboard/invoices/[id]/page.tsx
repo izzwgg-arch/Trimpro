@@ -165,6 +165,136 @@ export default function InvoiceDetailPage() {
     }
   }
 
+  const handleUngroup = async (groupId: string) => {
+    if (!confirm('Are you sure you want to ungroup these items? They will become regular line items.')) {
+      return
+    }
+
+    setProcessingGroup(groupId)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch(`/api/invoices/${invoiceId}/groups/${groupId}/ungroup`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        alert(error.error || 'Failed to ungroup items')
+        return
+      }
+
+      // Refresh invoice
+      fetchInvoice()
+    } catch (error) {
+      console.error('Error ungrouping:', error)
+      alert('Failed to ungroup items')
+    } finally {
+      setProcessingGroup(null)
+    }
+  }
+
+  const handleUpdateFromTemplate = async (groupId: string) => {
+    if (!confirm('This will replace all items in this bundle group with the current template. Local edits will be lost. Continue?')) {
+      return
+    }
+
+    setProcessingGroup(groupId)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch(`/api/invoices/${invoiceId}/groups/${groupId}/update-from-template`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        alert(error.error || 'Failed to update from template')
+        return
+      }
+
+      // Refresh invoice
+      fetchInvoice()
+    } catch (error) {
+      console.error('Error updating from template:', error)
+      alert('Failed to update from template')
+    } finally {
+      setProcessingGroup(null)
+    }
+  }
+
+  const handleDeleteGroup = async (groupId: string) => {
+    if (!confirm('Are you sure you want to delete this bundle group and all its items?')) {
+      return
+    }
+
+    setProcessingGroup(groupId)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch(`/api/invoices/${invoiceId}/groups/${groupId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        alert(error.error || 'Failed to delete group')
+        return
+      }
+
+      // Refresh invoice
+      fetchInvoice()
+    } catch (error) {
+      console.error('Error deleting group:', error)
+      alert('Failed to delete group')
+    } finally {
+      setProcessingGroup(null)
+    }
+  }
+
+  const handleAddItemToGroup = (groupId: string) => {
+    setItemPickerGroupId(groupId)
+    setShowItemPicker(true)
+  }
+
+  const handleItemSelectForGroup = async (item: any) => {
+    if (!itemPickerGroupId) return
+
+    setAddingToGroup(itemPickerGroupId)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch(`/api/invoices/${invoiceId}/groups/${itemPickerGroupId}/items`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          description: item.name + (item.description ? ` - ${item.description}` : ''),
+          quantity: 1,
+          unitPrice: item.defaultUnitPrice,
+          sourceItemId: item.id,
+        }),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        alert(error.error || 'Failed to add item to group')
+        return
+      }
+
+      // Refresh invoice
+      fetchInvoice()
+      setShowItemPicker(false)
+      setItemPickerGroupId(null)
+    } catch (error) {
+      console.error('Error adding item to group:', error)
+      alert('Failed to add item to group')
+    } finally {
+      setAddingToGroup(null)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
