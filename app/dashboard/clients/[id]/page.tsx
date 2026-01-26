@@ -175,7 +175,8 @@ export default function ClientDetailPage() {
       }
 
       const data = await response.json()
-      // API returns client directly, not wrapped in { client: ... }
+      console.log('Client API response:', data) // Debug log
+      // API returns client wrapped in { client: ... }
       const clientData = data.client || data
       if (!clientData || !clientData.id) {
         console.error('Invalid client data:', data)
@@ -183,6 +184,7 @@ export default function ClientDetailPage() {
         setLoading(false)
         return
       }
+      console.log('Client data extracted:', clientData.id) // Debug log
 
       // Normalize client data - ensure all arrays exist
       const normalizedClient = {
