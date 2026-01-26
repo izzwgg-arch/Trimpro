@@ -85,19 +85,40 @@
 - ✅ Created `POST /api/invoices/[id]/bundles` endpoint
 - ✅ Invoice API includes groups in line items response
 
-## 🚧 Optional Enhancements (Future)
+## ✅ Completed (Final Phase)
 
 ### 1. Document Line Group Management APIs
-- [ ] `POST /api/estimates/[id]/groups/[groupId]/items` - Add item to group
-- [ ] `DELETE /api/estimates/[id]/groups/[groupId]` - Remove group
-- [ ] `POST /api/estimates/[id]/groups/[groupId]/ungroup` - Ungroup items
-- [ ] Same for invoices
+- ✅ `POST /api/estimates/[id]/groups/[groupId]/items` - Add item to group
+- ✅ `DELETE /api/estimates/[id]/groups/[groupId]` - Remove group
+- ✅ `POST /api/estimates/[id]/groups/[groupId]/ungroup` - Ungroup items
+- ✅ `POST /api/estimates/[id]/groups/[groupId]/update-from-template` - Update from template
+- ✅ Same APIs for invoices
 
-### 2. Additional Features
-- [ ] "Update from template" functionality
-- [ ] Bundle version snapshot tracking (already stored, just need UI)
-- [ ] Bundle duplication from Items page
-- [ ] Edit line items within bundle groups in estimate/invoice edit pages
+### 2. UI for Group Management
+- ✅ Ungroup button in estimate/invoice detail pages
+- ✅ Update from template button (with confirmation)
+- ✅ Delete group button (with confirmation)
+- ✅ Processing states and error handling
+
+### 3. Bundle Version Tracking
+- ✅ Bundle version snapshot stored (sourceBundleId, sourceBundleName, sourceBundleUpdatedAt)
+- ✅ Available in API responses for future UI enhancements
+
+## 🎯 Implementation Complete!
+
+All core bundle functionality has been implemented:
+- ✅ Bundle creation and editing
+- ✅ Nested bundle support with cycle detection
+- ✅ Bundle expansion in estimates/invoices
+- ✅ Per-document bundle groups
+- ✅ Group management (ungroup, delete, update from template)
+- ✅ Collapsible group UI with actions
+
+### Optional Future Enhancements
+- [ ] Edit line items within bundle groups in estimate/invoice edit pages (requires edit page implementation)
+- [ ] Bundle duplication from Items detail page
+- [ ] Visual diff when updating from template
+- [ ] Bundle usage analytics
 
 ## 📝 Next Steps
 
