@@ -352,6 +352,23 @@ export default function InvoiceDetailPage() {
                               </tr>
                             )
                           })
+                          // Add "Add Item" row
+                          rows.push(
+                            <tr key={`add-item-${groupId}`} className="border-b bg-gray-50/50">
+                              <td colSpan={4} className="py-2 px-4 pl-8">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleAddItemToGroup(groupId)}
+                                  disabled={addingToGroup === groupId}
+                                  className="text-xs"
+                                >
+                                  <Plus className="h-3 w-3 mr-1" />
+                                  {addingToGroup === groupId ? 'Adding...' : 'Add Item to Bundle'}
+                                </Button>
+                              </td>
+                            </tr>
+                          )
                         }
                       }
 
