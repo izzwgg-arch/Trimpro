@@ -323,7 +323,7 @@ export default function EditClientPage() {
             </div>
 
             <div>
-              <Label htmlFor="website">Website</Label>
+              <Label htmlFor="website">Website (Optional)</Label>
               <Input
                 id="website"
                 type="url"

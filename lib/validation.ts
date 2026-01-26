@@ -64,7 +64,10 @@ export const createClientSchema = z.object({
   companyName: z.string().max(255).optional().nullable(),
   email: z.string().email().optional().nullable(),
   phone: z.string().max(50).optional().nullable(),
-  website: z.string().url().optional().nullable(),
+  website: z.preprocess(
+    (val) => (val === '' || val === null || val === undefined ? null : val),
+    z.string().url().nullable().optional()
+  ),
   notes: z.string().max(5000).optional().nullable(),
   tags: z.array(z.string()).optional().default([]),
   billingAddress: z.object({
