@@ -175,35 +175,40 @@ export default function ClientDetailPage() {
       }
 
       const data = await response.json()
-      if (data.client) {
-        // Normalize client data - ensure all arrays exist
-        const normalizedClient = {
-          ...data.client,
-          contacts: Array.isArray(data.client.contacts) ? data.client.contacts : [],
-          addresses: Array.isArray(data.client.addresses) ? data.client.addresses : [],
-          jobs: Array.isArray(data.client.jobs) ? data.client.jobs : [],
-          invoices: Array.isArray(data.client.invoices) ? data.client.invoices : [],
-          calls: Array.isArray(data.client.calls) ? data.client.calls : [],
-          smsMessages: Array.isArray(data.client.smsMessages) ? data.client.smsMessages : [],
-          emails: Array.isArray(data.client.emails) ? data.client.emails : [],
-          notes: Array.isArray(data.client.notes) ? data.client.notes : (Array.isArray(data.client.notes_history) ? data.client.notes_history : []),
-          tasks: Array.isArray(data.client.tasks) ? data.client.tasks : [],
-          issues: Array.isArray(data.client.issues) ? data.client.issues : [],
-          tags: Array.isArray(data.client.tags) ? data.client.tags : [],
-          _count: data.client._count || {
-            jobs: 0,
-            invoices: 0,
-            estimates: 0,
-            calls: 0,
-            smsMessages: 0,
-            emails: 0,
-          },
-        }
-        setClient(normalizedClient)
-        setError(null)
-      } else {
-        setError('Client data is invalid')
+      // API returns client directly, not wrapped in { client: ... }
+      const clientData = data.client || data
+      if (!clientData || !clientData.id) {
+        console.error('Invalid client data:', data)
+        setError('Client not found')
+        setLoading(false)
+        return
       }
+
+      // Normalize client data - ensure all arrays exist
+      const normalizedClient = {
+        ...clientData,
+        contacts: Array.isArray(clientData.contacts) ? clientData.contacts : [],
+        addresses: Array.isArray(clientData.addresses) ? clientData.addresses : [],
+        jobs: Array.isArray(clientData.jobs) ? clientData.jobs : [],
+        invoices: Array.isArray(clientData.invoices) ? clientData.invoices : [],
+        calls: Array.isArray(clientData.calls) ? clientData.calls : [],
+        smsMessages: Array.isArray(clientData.smsMessages) ? clientData.smsMessages : [],
+        emails: Array.isArray(clientData.emails) ? clientData.emails : [],
+        notes: Array.isArray(clientData.notes) ? clientData.notes : (Array.isArray(clientData.notes_history) ? clientData.notes_history : []),
+        tasks: Array.isArray(clientData.tasks) ? clientData.tasks : [],
+        issues: Array.isArray(clientData.issues) ? clientData.issues : [],
+        tags: Array.isArray(clientData.tags) ? clientData.tags : [],
+        _count: clientData._count || {
+          jobs: 0,
+          invoices: 0,
+          estimates: 0,
+          calls: 0,
+          smsMessages: 0,
+          emails: 0,
+        },
+      }
+      setClient(normalizedClient)
+      setError(null)
     } catch (error) {
       console.error('Failed to fetch client:', error)
       setError('Failed to load client. Please try again.')
