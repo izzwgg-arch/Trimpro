@@ -186,8 +186,8 @@ export async function DELETE(
       include: {
         _count: {
           select: {
-            sourceLineItems: true,
-            sourceInvoiceLineItems: true,
+            estimateLineItems: true,
+            invoiceLineItems: true,
             bundleComponents: true,
           },
         },
@@ -199,7 +199,7 @@ export async function DELETE(
     }
 
     // Prevent deletion if item is used in estimates, invoices, or bundles
-    if (item._count.sourceLineItems > 0 || item._count.sourceInvoiceLineItems > 0 || item._count.bundleComponents > 0) {
+    if (item._count.estimateLineItems > 0 || item._count.invoiceLineItems > 0 || item._count.bundleComponents > 0) {
       return NextResponse.json(
         { error: 'Cannot delete item that is used in estimates, invoices, or bundles. Please remove it from all documents first.' },
         { status: 400 }
