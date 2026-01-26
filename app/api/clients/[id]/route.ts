@@ -160,7 +160,7 @@ export async function GET(
       },
     }
 
-    return NextResponse.json({ client: safeClient })
+    return NextResponse.json(safeClient)
   } catch (error) {
     console.error('Get client error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
