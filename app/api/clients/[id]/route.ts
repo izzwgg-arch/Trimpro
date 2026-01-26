@@ -89,7 +89,7 @@ export async function GET(
             },
           },
         },
-        notes: {
+        notes_history: {
           orderBy: { createdAt: 'desc' },
           take: 50,
         },
@@ -147,7 +147,7 @@ export async function GET(
       calls: client.calls || [],
       smsMessages: client.smsMessages || [],
       emails: client.emails || [],
-      notes: client.notes || [],
+      notes: client.notes_history || [],
       tasks: client.tasks || [],
       issues: client.issues || [],
       _count: client._count || {
