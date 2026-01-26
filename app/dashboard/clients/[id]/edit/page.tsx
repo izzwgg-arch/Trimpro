@@ -174,11 +174,11 @@ export default function EditClientPage() {
 
       const payload = {
         name: formData.name,
-        companyName: formData.companyName,
-        email: formData.email,
-        phone: formData.phone,
-        website: formData.website,
-        notes: formData.notes,
+        companyName: formData.companyName || null,
+        email: formData.email || null,
+        phone: formData.phone || null,
+        website: formData.website && formData.website.trim() ? formData.website.trim() : null,
+        notes: formData.notes || null,
         tags: formData.tags
           ? formData.tags
               .split(',')
