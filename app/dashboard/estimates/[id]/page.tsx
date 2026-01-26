@@ -526,6 +526,17 @@ export default function EstimateDetailPage() {
           </Card>
         </div>
       </div>
+
+      {/* Item Picker for adding items to groups */}
+      {showItemPicker && (
+        <ItemPicker
+          onSelect={handleItemSelectForGroup}
+          onClose={() => {
+            setShowItemPicker(false)
+            setItemPickerGroupId(null)
+          }}
+        />
+      )}
     </div>
   )
 }
