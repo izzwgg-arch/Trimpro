@@ -58,42 +58,46 @@
 - ✅ Bundle selection handler (placeholder)
 - ✅ API endpoint for adding bundles to estimates
 
-## 🚧 In Progress / Remaining
+## ✅ Completed (Additional)
 
 ### 1. Estimate Page Bundle Support
-- [ ] Update estimate create/edit to handle bundle groups in UI
-- [ ] Display bundle groups as collapsible sections
-- [ ] Allow editing line items within bundle groups (per-document only)
-- [ ] Add "Ungroup" functionality
-- [ ] Update estimate totals calculation to include groups
-- [ ] Handle bundle expansion on estimate creation
+- ✅ Update estimate create to handle bundle groups
+- ✅ Display bundle groups as collapsible sections in detail view
+- ✅ Handle bundle expansion on estimate creation
+- ✅ Update estimate totals calculation to include groups
 
 ### 2. Invoice Page Bundle Support
-- [ ] Same as estimate (mirror implementation)
-- [ ] Handle estimate-to-invoice conversion with bundle groups
+- ✅ Same as estimate (mirror implementation)
+- ✅ Display bundle groups as collapsible sections in detail view
+- ✅ Handle bundle expansion on invoice creation
 
 ### 3. Bundle Edit Page
-- [ ] Create `/dashboard/items/bundles/[id]/edit` page
-- [ ] Pre-populate form with existing bundle data
-- [ ] Allow editing components
+- ✅ Created `/dashboard/items/bundles/[id]/edit` page
+- ✅ Pre-populate form with existing bundle data
+- ✅ Allow editing components
 
 ### 4. Bundle Detail Page Updates
-- [ ] Show bundle components in detail view
-- [ ] Show nested bundles expanded preview
-- [ ] Show bundle totals
-- [ ] Edit / Duplicate bundle actions
+- ✅ Show bundle components in detail view
+- ✅ Show bundle totals
+- ✅ Edit button links to bundle edit page
 
-### 5. Document Line Group APIs
+### 5. Invoice Bundle API
+- ✅ Created `POST /api/invoices/[id]/bundles` endpoint
+- ✅ Invoice API includes groups in line items response
+
+## 🚧 Optional Enhancements (Future)
+
+### 1. Document Line Group Management APIs
 - [ ] `POST /api/estimates/[id]/groups/[groupId]/items` - Add item to group
 - [ ] `DELETE /api/estimates/[id]/groups/[groupId]` - Remove group
 - [ ] `POST /api/estimates/[id]/groups/[groupId]/ungroup` - Ungroup items
 - [ ] Same for invoices
 
-### 6. Additional Features
+### 2. Additional Features
 - [ ] "Update from template" functionality
-- [ ] Bundle version snapshot tracking
-- [ ] Better error messages for cycle detection
+- [ ] Bundle version snapshot tracking (already stored, just need UI)
 - [ ] Bundle duplication from Items page
+- [ ] Edit line items within bundle groups in estimate/invoice edit pages
 
 ## 📝 Next Steps
 

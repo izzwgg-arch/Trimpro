@@ -15,6 +15,13 @@ import {
   Send,
   Download,
   Edit,
+  ChevronDown,
+  ChevronRight,
+  Package,
+  Trash2,
+  RefreshCw,
+  Unlink,
+  Plus,
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -95,6 +102,7 @@ export default function EstimateDetailPage() {
   const [estimate, setEstimate] = useState<EstimateDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+  const [processingGroup, setProcessingGroup] = useState<string | null>(null)
 
   useEffect(() => {
     fetchEstimate()
@@ -244,28 +252,61 @@ export default function EstimateDetailPage() {
                         rows.push(
                           <tr key={`group-${groupId}`} className="border-b bg-gray-50">
                             <td className="py-3 px-4">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const newExpanded = new Set(expandedGroups)
-                                  if (isExpanded) {
-                                    newExpanded.delete(groupId)
-                                  } else {
-                                    newExpanded.add(groupId)
-                                  }
-                                  setExpandedGroups(newExpanded)
-                                }}
-                                className="flex items-center space-x-2 hover:text-primary"
-                              >
-                                {isExpanded ? (
-                                  <ChevronDown className="h-4 w-4" />
-                                ) : (
-                                  <ChevronRight className="h-4 w-4" />
-                                )}
-                                <Package className="h-4 w-4" />
-                                <span className="font-semibold">{group.name}</span>
-                                <span className="text-xs text-gray-500">(Bundle)</span>
-                              </button>
+                              <div className="flex items-center justify-between">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const newExpanded = new Set(expandedGroups)
+                                    if (isExpanded) {
+                                      newExpanded.delete(groupId)
+                                    } else {
+                                      newExpanded.add(groupId)
+                                    }
+                                    setExpandedGroups(newExpanded)
+                                  }}
+                                  className="flex items-center space-x-2 hover:text-primary"
+                                >
+                                  {isExpanded ? (
+                                    <ChevronDown className="h-4 w-4" />
+                                  ) : (
+                                    <ChevronRight className="h-4 w-4" />
+                                  )}
+                                  <Package className="h-4 w-4" />
+                                  <span className="font-semibold">{group.name}</span>
+                                  <span className="text-xs text-gray-500">(Bundle)</span>
+                                </button>
+                                <div className="flex items-center space-x-1">
+                                  {group.sourceBundleId && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleUpdateFromTemplate(groupId)}
+                                      disabled={processingGroup === groupId}
+                                      title="Update from template"
+                                    >
+                                      <RefreshCw className={`h-3 w-3 ${processingGroup === groupId ? 'animate-spin' : ''}`} />
+                                    </Button>
+                                  )}
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleUngroup(groupId)}
+                                    disabled={processingGroup === groupId}
+                                    title="Ungroup items"
+                                  >
+                                    <Unlink className="h-3 w-3" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleDeleteGroup(groupId)}
+                                    disabled={processingGroup === groupId}
+                                    title="Delete group"
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              </div>
                             </td>
                             <td className="py-3 px-4 text-right"></td>
                             <td className="py-3 px-4 text-right"></td>
