@@ -209,6 +209,7 @@ export default function ClientDetailPage() {
       }
       setClient(normalizedClient)
       setError(null)
+      setLoading(false)
     } catch (error) {
       console.error('Failed to fetch client:', error)
       setError('Failed to load client. Please try again.')
