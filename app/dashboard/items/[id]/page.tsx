@@ -13,6 +13,7 @@ interface Item {
   name: string
   sku: string | null
   type: string
+  kind: string
   description: string | null
   unit: string
   defaultUnitCost: number | null
@@ -34,6 +35,11 @@ interface Item {
   notes: string | null
   createdAt: string
   updatedAt: string
+  bundleDefinition?: {
+    id: string
+    name: string
+    pricingStrategy: string
+  } | null
   usageCounts: {
     estimates: number
     invoices: number
@@ -61,6 +67,7 @@ export default function ItemDetailPage() {
   const itemId = params?.id as string | undefined
 
   const [item, setItem] = useState<Item | null>(null)
+  const [bundleComponents, setBundleComponents] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -92,6 +99,17 @@ export default function ItemDetailPage() {
 
       const data = await response.json()
       setItem(data.item)
+
+      // If it's a bundle, fetch bundle components
+      if (data.item.kind === 'BUNDLE' && data.item.bundleDefinition?.id) {
+        const bundleResponse = await fetch(`/api/items/bundles/${data.item.bundleDefinition.id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (bundleResponse.ok) {
+          const bundleData = await bundleResponse.json()
+          setBundleComponents(bundleData.bundle?.components || [])
+        }
+      }
     } catch (error) {
       console.error('Error fetching item:', error)
       alert('Failed to load item')
@@ -219,12 +237,21 @@ export default function ItemDetailPage() {
           </div>
         </div>
         <div className="flex items-center space-x-2">
-          <Link href={`/dashboard/items/${item.id}/edit`}>
-            <Button variant="outline">
-              <Edit className="mr-2 h-4 w-4" />
-              Edit
-            </Button>
-          </Link>
+          {item.kind === 'BUNDLE' ? (
+            <Link href={`/dashboard/items/bundles/${item.bundleDefinition?.id}/edit`}>
+              <Button variant="outline">
+                <Edit className="mr-2 h-4 w-4" />
+                Edit
+              </Button>
+            </Link>
+          ) : (
+            <Link href={`/dashboard/items/${item.id}/edit`}>
+              <Button variant="outline">
+                <Edit className="mr-2 h-4 w-4" />
+                Edit
+              </Button>
+            </Link>
+          )}
           <Button variant="outline" onClick={handleDuplicate}>
             <Copy className="mr-2 h-4 w-4" />
             Duplicate

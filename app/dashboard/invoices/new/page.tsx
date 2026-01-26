@@ -16,9 +16,14 @@ interface Client {
 }
 
 interface LineItem {
+  id?: string
   description: string
   quantity: string
   unitPrice: string
+  groupId?: string
+  groupName?: string
+  isGroupHeader?: boolean
+  sourceItemId?: string
 }
 
 export default function NewInvoicePage() {
@@ -96,17 +101,38 @@ export default function NewInvoicePage() {
     setLineItems(updated)
   }
 
-  const handleItemSelect = (item: any) => {
-    const index = itemPickerIndex ?? lineItems.length - 1
-    const updated = [...lineItems]
-    updated[index] = {
-      description: item.name + (item.description ? ` - ${item.description}` : ''),
-      quantity: '1',
-      unitPrice: item.defaultUnitPrice.toString(),
+  const handleItemSelect = async (item: any) => {
+    if (item.kind === 'BUNDLE') {
+      // Handle bundle - this will be expanded when invoice is created
+      const groupId = `group-${Date.now()}`
+      const updated = [...lineItems]
+      updated.push({
+        description: item.name,
+        quantity: '1',
+        unitPrice: item.defaultUnitPrice.toString(),
+        groupId,
+        groupName: item.name,
+        isGroupHeader: true,
+        sourceItemId: item.id,
+      })
+      setLineItems(updated)
+      setShowItemPicker(false)
+      setItemPickerIndex(null)
+      alert('Bundle selected. Bundle will be expanded when invoice is saved.')
+    } else {
+      // Handle single item
+      const index = itemPickerIndex ?? lineItems.length - 1
+      const updated = [...lineItems]
+      updated[index] = {
+        description: item.name + (item.description ? ` - ${item.description}` : ''),
+        quantity: '1',
+        unitPrice: item.defaultUnitPrice.toString(),
+        sourceItemId: item.id,
+      }
+      setLineItems(updated)
+      setShowItemPicker(false)
+      setItemPickerIndex(null)
     }
-    setLineItems(updated)
-    setShowItemPicker(false)
-    setItemPickerIndex(null)
   }
 
   const openItemPicker = (index?: number) => {
@@ -150,12 +176,45 @@ export default function NewInvoicePage() {
       }
 
       const data = await response.json()
-      if (data.invoice && data.invoice.id) {
-        router.push(`/dashboard/invoices/${data.invoice.id}`)
-      } else {
-        alert('Invoice created but unable to redirect. Please refresh the page.')
-        router.push('/dashboard/invoices')
+      if (!data.invoice || !data.invoice.id) {
+        alert('Invoice created but invalid response received')
+        setLoading(false)
+        return
       }
+
+      // Add bundles to the invoice
+      const bundleItems = lineItems.filter(item => item.isGroupHeader && item.sourceItemId)
+      for (const bundleItem of bundleItems) {
+        if (bundleItem.sourceItemId) {
+          // Get the bundle definition ID from the item
+          const itemResponse = await fetch(`/api/items/${bundleItem.sourceItemId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+          
+          if (itemResponse.ok) {
+            const itemData = await itemResponse.json()
+            if (itemData.item.kind === 'BUNDLE' && itemData.item.bundleDefinition?.id) {
+              // Add bundle to invoice
+              const bundleResponse = await fetch(`/api/invoices/${data.invoice.id}/bundles`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                  bundleId: itemData.item.bundleDefinition.id,
+                }),
+              })
+              
+              if (!bundleResponse.ok) {
+                console.error('Failed to add bundle to invoice:', await bundleResponse.json())
+              }
+            }
+          }
+        }
+      }
+
+      router.push(`/dashboard/invoices/${data.invoice.id}`)
     } catch (error) {
       console.error('Error creating estimate:', error)
       alert('Failed to create estimate')

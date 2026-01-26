@@ -62,6 +62,19 @@ interface EstimateDetail {
     unitPrice: string
     total: string
     sortOrder: number
+    groupId: string | null
+    group: {
+      id: string
+      name: string
+      sourceBundleId: string | null
+      sourceBundleName: string | null
+    } | null
+    sourceItemId: string | null
+    sourceItem: {
+      id: string
+      name: string
+      kind: string
+    } | null
   }>
 }
 
@@ -81,6 +94,7 @@ export default function EstimateDetailPage() {
   const estimateId = params.id as string
   const [estimate, setEstimate] = useState<EstimateDetail | null>(null)
   const [loading, setLoading] = useState(true)
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     fetchEstimate()
@@ -203,16 +217,96 @@ export default function EstimateDetailPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {estimate.lineItems.map((item) => (
-                      <tr key={item.id} className="border-b">
-                        <td className="py-3 px-4">{item.description}</td>
-                        <td className="py-3 px-4 text-right">{item.quantity}</td>
-                        <td className="py-3 px-4 text-right">{formatCurrency(parseFloat(item.unitPrice))}</td>
-                        <td className="py-3 px-4 text-right font-semibold">
-                          {formatCurrency(parseFloat(item.total))}
-                        </td>
-                      </tr>
-                    ))}
+                    {(() => {
+                      // Group line items by groupId
+                      const groupedItems = new Map<string, typeof estimate.lineItems>()
+                      const ungroupedItems: typeof estimate.lineItems = []
+
+                      for (const item of estimate.lineItems) {
+                        if (item.groupId && item.group) {
+                          if (!groupedItems.has(item.groupId)) {
+                            groupedItems.set(item.groupId, [])
+                          }
+                          groupedItems.get(item.groupId)!.push(item)
+                        } else {
+                          ungroupedItems.push(item)
+                        }
+                      }
+
+                      const rows: JSX.Element[] = []
+
+                      // Render grouped items
+                      for (const [groupId, items] of groupedItems.entries()) {
+                        const group = items[0].group!
+                        const groupTotal = items.reduce((sum, item) => sum + parseFloat(item.total), 0)
+                        const isExpanded = expandedGroups.has(groupId)
+
+                        rows.push(
+                          <tr key={`group-${groupId}`} className="border-b bg-gray-50">
+                            <td className="py-3 px-4">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newExpanded = new Set(expandedGroups)
+                                  if (isExpanded) {
+                                    newExpanded.delete(groupId)
+                                  } else {
+                                    newExpanded.add(groupId)
+                                  }
+                                  setExpandedGroups(newExpanded)
+                                }}
+                                className="flex items-center space-x-2 hover:text-primary"
+                              >
+                                {isExpanded ? (
+                                  <ChevronDown className="h-4 w-4" />
+                                ) : (
+                                  <ChevronRight className="h-4 w-4" />
+                                )}
+                                <Package className="h-4 w-4" />
+                                <span className="font-semibold">{group.name}</span>
+                                <span className="text-xs text-gray-500">(Bundle)</span>
+                              </button>
+                            </td>
+                            <td className="py-3 px-4 text-right"></td>
+                            <td className="py-3 px-4 text-right"></td>
+                            <td className="py-3 px-4 text-right font-semibold">
+                              {formatCurrency(groupTotal)}
+                            </td>
+                          </tr>
+                        )
+
+                        if (isExpanded) {
+                          items.forEach((item) => {
+                            rows.push(
+                              <tr key={item.id} className="border-b bg-gray-50/50">
+                                <td className="py-3 px-4 pl-8">{item.description}</td>
+                                <td className="py-3 px-4 text-right">{item.quantity}</td>
+                                <td className="py-3 px-4 text-right">{formatCurrency(parseFloat(item.unitPrice))}</td>
+                                <td className="py-3 px-4 text-right">
+                                  {formatCurrency(parseFloat(item.total))}
+                                </td>
+                              </tr>
+                            )
+                          })
+                        }
+                      }
+
+                      // Render ungrouped items
+                      ungroupedItems.forEach((item) => {
+                        rows.push(
+                          <tr key={item.id} className="border-b">
+                            <td className="py-3 px-4">{item.description}</td>
+                            <td className="py-3 px-4 text-right">{item.quantity}</td>
+                            <td className="py-3 px-4 text-right">{formatCurrency(parseFloat(item.unitPrice))}</td>
+                            <td className="py-3 px-4 text-right font-semibold">
+                              {formatCurrency(parseFloat(item.total))}
+                            </td>
+                          </tr>
+                        )
+                      })
+
+                      return rows
+                    })()}
                   </tbody>
                 </table>
               </div>

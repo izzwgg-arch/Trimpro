@@ -64,6 +64,19 @@ export async function GET(
         quantity: item.quantity.toString(),
         unitPrice: item.unitPrice.toString(),
         total: item.total.toString(),
+        groupId: item.groupId || null,
+        group: item.group ? {
+          id: item.group.id,
+          name: item.group.name,
+          sourceBundleId: item.group.sourceBundleId,
+          sourceBundleName: item.group.sourceBundleName,
+        } : null,
+        sourceItemId: item.sourceItemId || null,
+        sourceItem: item.sourceItem ? {
+          id: item.sourceItem.id,
+          name: item.sourceItem.name,
+          kind: item.sourceItem.kind,
+        } : null,
       })),
     }
 
