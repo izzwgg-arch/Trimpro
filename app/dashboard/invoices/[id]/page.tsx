@@ -24,8 +24,10 @@ import {
   Trash2,
   RefreshCw,
   Unlink,
+  Plus,
 } from 'lucide-react'
 import Link from 'next/link'
+import { ItemPicker } from '@/components/items/ItemPicker'
 
 interface InvoiceDetail {
   id: string
@@ -114,6 +116,9 @@ export default function InvoiceDetailPage() {
   const [loading, setLoading] = useState(true)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [processingGroup, setProcessingGroup] = useState<string | null>(null)
+  const [addingToGroup, setAddingToGroup] = useState<string | null>(null)
+  const [showItemPicker, setShowItemPicker] = useState(false)
+  const [itemPickerGroupId, setItemPickerGroupId] = useState<string | null>(null)
 
   useEffect(() => {
     fetchInvoice()

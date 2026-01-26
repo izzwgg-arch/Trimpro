@@ -103,6 +103,9 @@ export default function EstimateDetailPage() {
   const [loading, setLoading] = useState(true)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [processingGroup, setProcessingGroup] = useState<string | null>(null)
+  const [addingToGroup, setAddingToGroup] = useState<string | null>(null)
+  const [showItemPicker, setShowItemPicker] = useState(false)
+  const [itemPickerGroupId, setItemPickerGroupId] = useState<string | null>(null)
 
   useEffect(() => {
     fetchEstimate()
