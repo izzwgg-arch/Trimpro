@@ -32,6 +32,12 @@ export async function GET(
             name: true,
           },
         },
+        bundleDefinition: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
       },
     })
 

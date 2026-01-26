@@ -124,6 +124,12 @@ export default function NewEstimatePage() {
 
     try {
       const token = localStorage.getItem('accessToken')
+      
+      // Separate bundle items from regular items
+      const regularItems = lineItems.filter(item => !item.isGroupHeader)
+      const bundleItems = lineItems.filter(item => item.isGroupHeader && item.sourceItemId)
+
+      // Create estimate with regular line items first
       const response = await fetch('/api/estimates', {
         method: 'POST',
         headers: {
@@ -132,7 +138,7 @@ export default function NewEstimatePage() {
         },
         body: JSON.stringify({
           ...formData,
-          lineItems: lineItems.map(item => ({
+          lineItems: regularItems.map(item => ({
             description: item.description,
             quantity: parseFloat(item.quantity) || 0,
             unitPrice: parseFloat(item.unitPrice) || 0,
@@ -150,19 +156,52 @@ export default function NewEstimatePage() {
       if (!response.ok) {
         const error = await response.json()
         alert(error.error || 'Failed to create estimate')
+        setLoading(false)
         return
       }
 
       const data = await response.json()
-      if (data.estimate && data.estimate.id) {
-        router.push(`/dashboard/estimates/${data.estimate.id}`)
-      } else {
-        alert('Estimate created but unable to redirect. Please refresh the page.')
-        router.push('/dashboard/estimates')
+      if (!data.estimate || !data.estimate.id) {
+        alert('Estimate created but invalid response received')
+        setLoading(false)
+        return
       }
+
+      // Add bundles to the estimate
+      for (const bundleItem of bundleItems) {
+        if (bundleItem.sourceItemId) {
+          // Get the bundle definition ID from the item
+          const itemResponse = await fetch(`/api/items/${bundleItem.sourceItemId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+          
+          if (itemResponse.ok) {
+            const itemData = await itemResponse.json()
+            if (itemData.item.kind === 'BUNDLE' && itemData.item.bundleDefinition?.id) {
+              // Add bundle to estimate
+              const bundleResponse = await fetch(`/api/estimates/${data.estimate.id}/bundles`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                  bundleId: itemData.item.bundleDefinition.id,
+                }),
+              })
+              
+              if (!bundleResponse.ok) {
+                console.error('Failed to add bundle to estimate:', await bundleResponse.json())
+              }
+            }
+          }
+        }
+      }
+
+      router.push(`/dashboard/estimates/${data.estimate.id}`)
     } catch (error) {
       console.error('Error creating estimate:', error)
-      alert('Failed to create estimate')
+      alert('Failed to create estimate. Check console for details.')
     } finally {
       setLoading(false)
     }
