@@ -23,6 +23,8 @@ export function NotificationBell() {
   const [unreadCount, setUnreadCount] = useState(0)
   const [isOpen, setIsOpen] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, right: 0 })
+  const buttonRef = useRef<HTMLButtonElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const streamAbortRef = useRef<AbortController | null>(null)
 
@@ -55,18 +57,54 @@ export function NotificationBell() {
   }
 
   useEffect(() => {
+    const updatePosition = () => {
+      if (buttonRef.current && isOpen) {
+        const rect = buttonRef.current.getBoundingClientRect()
+        const dropdownWidth = 320 // w-80 = 320px
+        const dropdownHeight = 384 // max-h-96 = 384px
+        const margin = 8
+        
+        let top = rect.bottom + margin
+        let right = window.innerWidth - rect.right
+        
+        // Ensure dropdown doesn't go off bottom of screen
+        if (top + dropdownHeight > window.innerHeight) {
+          top = Math.max(margin, window.innerHeight - dropdownHeight - margin)
+        }
+        
+        // Ensure dropdown doesn't go off right side of screen
+        if (right + dropdownWidth > window.innerWidth) {
+          right = Math.max(margin, window.innerWidth - dropdownWidth - margin)
+        }
+        
+        setDropdownPosition({ top, right })
+      }
+    }
+
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node) &&
+        buttonRef.current &&
+        !buttonRef.current.contains(event.target as Node)
+      ) {
         setIsOpen(false)
       }
     }
 
     if (isOpen) {
       document.addEventListener('mousedown', handleClickOutside)
+      updatePosition()
+      
+      // Update position on scroll and resize
+      window.addEventListener('scroll', updatePosition, true)
+      window.addEventListener('resize', updatePosition)
     }
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
+      window.removeEventListener('scroll', updatePosition, true)
+      window.removeEventListener('resize', updatePosition)
     }
   }, [isOpen])
 
@@ -289,23 +327,33 @@ export function NotificationBell() {
   const readNotifications = notifications.filter((n) => n.status === 'READ')
 
   return (
-    <div className="relative" ref={dropdownRef}>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="relative text-white hover:bg-gray-800"
-        onClick={() => setIsOpen(!isOpen)}
-      >
-        <Bell className="h-5 w-5" />
-        {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">
-            {unreadCount > 9 ? '9+' : unreadCount}
-          </span>
-        )}
-      </Button>
+    <>
+      <div className="relative">
+        <Button
+          ref={buttonRef}
+          variant="ghost"
+          size="sm"
+          className="relative text-white hover:bg-gray-800"
+          onClick={() => setIsOpen(!isOpen)}
+        >
+          <Bell className="h-5 w-5" />
+          {unreadCount > 0 && (
+            <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          )}
+        </Button>
+      </div>
 
       {isOpen && (
-        <div className="absolute right-0 top-full mt-2 w-80 rounded-md border border-gray-200 bg-white shadow-lg z-50">
+        <div
+          ref={dropdownRef}
+          className="fixed w-80 rounded-md border border-gray-200 bg-white shadow-lg z-[100]"
+          style={{
+            top: `${dropdownPosition.top}px`,
+            right: `${dropdownPosition.right}px`,
+          }}
+        >
           <div className="p-4 border-b border-gray-200">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-900">Notifications</h3>
