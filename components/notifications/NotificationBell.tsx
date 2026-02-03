@@ -444,6 +444,6 @@ export function NotificationBell() {
           )}
         </div>
       )}
-    </div>
+    </>
   )
 }
