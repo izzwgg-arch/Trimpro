@@ -6,13 +6,32 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ArrowLeft, Save, Plus, Trash2, Package } from 'lucide-react'
+import { ArrowLeft, Save, Plus, Trash2, Package, Eye, EyeOff } from 'lucide-react'
 import Link from 'next/link'
-import { ItemPicker } from '@/components/items/ItemPicker'
+import { RapidFireItemPicker } from '@/components/items/RapidFireItemPicker'
 
 interface Client {
   id: string
   name: string
+}
+
+interface Item {
+  id: string
+  name: string
+  sku: string | null
+  kind: string
+  defaultUnitPrice: number
+  defaultUnitCost: number | null
+  unit: string
+}
+
+interface Bundle {
+  id: string
+  name: string
+  item: {
+    id: string
+    name: string
+  }
 }
 
 interface LineItem {
@@ -20,6 +39,8 @@ interface LineItem {
   description: string
   quantity: string
   unitPrice: string
+  unitCost?: string // Vendor cost (internal)
+  isVisibleToClient?: boolean // Visibility toggle
   groupId?: string
   groupName?: string
   isGroupHeader?: boolean
@@ -32,9 +53,12 @@ export default function NewEstimatePage() {
   const clientIdParam = searchParams.get('clientId')
   const [loading, setLoading] = useState(false)
   const [clients, setClients] = useState<Client[]>([])
-  const [lineItems, setLineItems] = useState<LineItem[]>([{ description: '', quantity: '1', unitPrice: '0' }])
+  const [items, setItems] = useState<Item[]>([])
+  const [bundles, setBundles] = useState<Bundle[]>([])
+  const [lineItems, setLineItems] = useState<LineItem[]>([{ description: '', quantity: '1', unitPrice: '0', isVisibleToClient: true }])
   const [showItemPicker, setShowItemPicker] = useState(false)
   const [itemPickerIndex, setItemPickerIndex] = useState<number | null>(null)
+  const [isNotesVisibleToClient, setIsNotesVisibleToClient] = useState(true)
   const [formData, setFormData] = useState({
     clientId: clientIdParam || '',
     title: '',
@@ -47,6 +71,8 @@ export default function NewEstimatePage() {
 
   useEffect(() => {
     fetchClients()
+    fetchItems()
+    fetchBundles()
   }, [])
 
   const fetchClients = async () => {
@@ -64,8 +90,44 @@ export default function NewEstimatePage() {
     }
   }
 
+  const fetchItems = async () => {
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch('/api/items?kind=SINGLE&limit=1000', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setItems(data.items || [])
+      }
+    } catch (error) {
+      console.error('Error fetching items:', error)
+    }
+  }
+
+  const fetchBundles = async () => {
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch('/api/items/bundles?limit=1000', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setBundles(data.bundles || [])
+      }
+    } catch (error) {
+      console.error('Error fetching bundles:', error)
+    }
+  }
+
   const addLineItem = () => {
-    setLineItems([...lineItems, { description: '', quantity: '1', unitPrice: '0' }])
+    const newItem: LineItem = { description: '', quantity: '1', unitPrice: '0', isVisibleToClient: true }
+    setLineItems([...lineItems, newItem])
+    // Auto-open picker for the new line item
+    setTimeout(() => {
+      setItemPickerIndex(lineItems.length)
+      setShowItemPicker(true)
+    }, 100)
   }
 
   const removeLineItem = (index: number) => {
@@ -78,44 +140,67 @@ export default function NewEstimatePage() {
     setLineItems(updated)
   }
 
-  const handleItemSelect = async (item: any) => {
-    if (item.kind === 'BUNDLE') {
+  const handleItemSelect = async (selected: Item | Bundle, isBundle: boolean) => {
+    const index = itemPickerIndex ?? lineItems.length - 1
+    const updated = [...lineItems]
+
+    if (isBundle) {
       // Handle bundle - this will be expanded when estimate is created
-      // For now, add as a group header placeholder
       const groupId = `group-${Date.now()}`
-      const updated = [...lineItems]
-      updated.push({
+      updated[index] = {
+        description: selected.name,
+        quantity: '1',
+        unitPrice: '0', // Will be calculated from bundle components
+        isVisibleToClient: true,
+        groupId,
+        groupName: selected.name,
+        isGroupHeader: true,
+        sourceItemId: (selected as Bundle).item.id,
+      }
+    } else {
+      // Handle single item
+      const item = selected as Item
+      updated[index] = {
+        ...updated[index],
         description: item.name,
         quantity: '1',
         unitPrice: item.defaultUnitPrice.toString(),
-        groupId,
-        groupName: item.name,
-        isGroupHeader: true,
-        sourceItemId: item.id,
-      })
-      setLineItems(updated)
-      setShowItemPicker(false)
-      setItemPickerIndex(null)
-      alert('Bundle selected. Bundle will be expanded when estimate is saved.')
-    } else {
-      // Handle single item
-      const index = itemPickerIndex ?? lineItems.length - 1
-      const updated = [...lineItems]
-      updated[index] = {
-        description: item.name + (item.description ? ` - ${item.description}` : ''),
-        quantity: '1',
-        unitPrice: item.defaultUnitPrice.toString(),
+        unitCost: item.defaultUnitCost?.toString() || '0',
+        isVisibleToClient: updated[index].isVisibleToClient ?? true,
         sourceItemId: item.id,
       }
-      setLineItems(updated)
-      setShowItemPicker(false)
-      setItemPickerIndex(null)
+    }
+
+    setLineItems(updated)
+    setShowItemPicker(false)
+    setItemPickerIndex(null)
+  }
+
+  const handleNextLine = () => {
+    // Move to next line and auto-open picker
+    const nextIndex = (itemPickerIndex ?? lineItems.length - 1) + 1
+    if (nextIndex >= lineItems.length) {
+      addLineItem()
+    } else {
+      setItemPickerIndex(nextIndex)
+      setTimeout(() => {
+        setShowItemPicker(true)
+      }, 50)
     }
   }
 
   const openItemPicker = (index?: number) => {
     setItemPickerIndex(index ?? null)
     setShowItemPicker(true)
+  }
+
+  const toggleVisibility = (index: number) => {
+    const updated = [...lineItems]
+    updated[index] = {
+      ...updated[index],
+      isVisibleToClient: !(updated[index].isVisibleToClient ?? true),
+    }
+    setLineItems(updated)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -142,9 +227,13 @@ export default function NewEstimatePage() {
             description: item.description,
             quantity: parseFloat(item.quantity) || 0,
             unitPrice: parseFloat(item.unitPrice) || 0,
+            unitCost: item.unitCost ? parseFloat(item.unitCost) : null,
+            isVisibleToClient: item.isVisibleToClient ?? true,
+            sourceItemId: item.sourceItemId || null,
           })),
           taxRate: formData.taxRate ? parseFloat(formData.taxRate) / 100 : 0,
           discount: formData.discount ? parseFloat(formData.discount) : 0,
+          isNotesVisibleToClient,
         }),
       })
 
@@ -282,74 +371,120 @@ export default function NewEstimatePage() {
                     </Button>
                   </div>
                   <div className="space-y-2">
-                    {lineItems.map((item, index) => (
-                      <div key={index} className="flex gap-2 items-end">
-                        <div className="flex-1">
-                          <div className="flex gap-2">
-                            <Input
-                              placeholder="Description"
-                              value={item.description}
-                              onChange={(e) => updateLineItem(index, 'description', e.target.value)}
-                              required
-                              className="flex-1"
-                            />
+                    {lineItems.map((item, index) => {
+                      const isVisible = item.isVisibleToClient ?? true
+                      return (
+                        <div
+                          key={index}
+                          className={`flex gap-2 items-end p-2 rounded border ${
+                            !isVisible ? 'bg-gray-50 border-gray-200' : 'border-gray-300'
+                          }`}
+                        >
+                          <div className="flex items-center">
                             <Button
                               type="button"
-                              variant="outline"
+                              variant="ghost"
                               size="sm"
-                              onClick={() => openItemPicker(index)}
-                              title="Select from items"
+                              onClick={() => toggleVisibility(index)}
+                              title={isVisible ? 'Hide from client' : 'Show to client'}
+                              className="p-1"
                             >
-                              <Package className="h-4 w-4" />
+                              {isVisible ? (
+                                <Eye className="h-4 w-4 text-gray-600" />
+                              ) : (
+                                <EyeOff className="h-4 w-4 text-gray-400" />
+                              )}
                             </Button>
                           </div>
+                          <div className="flex-1">
+                            <div className="flex gap-2">
+                              <Input
+                                placeholder="Description"
+                                value={item.description}
+                                onChange={(e) => updateLineItem(index, 'description', e.target.value)}
+                                required
+                                className="flex-1"
+                              />
+                              <div className="relative">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => openItemPicker(index)}
+                                  title="Select from items (or use keyboard)"
+                                  className="relative"
+                                >
+                                  <Package className="h-4 w-4" />
+                                </Button>
+                                {showItemPicker && itemPickerIndex === index && (
+                                  <div className="absolute top-full left-0 z-50 mt-1">
+                                    <RapidFireItemPicker
+                                      isOpen={true}
+                                      onClose={() => {
+                                        setShowItemPicker(false)
+                                        setItemPickerIndex(null)
+                                      }}
+                                      onSelect={handleItemSelect}
+                                      onNextLine={handleNextLine}
+                                      items={items}
+                                      bundles={bundles}
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="w-20">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder="Qty"
+                              value={item.quantity}
+                              onChange={(e) => updateLineItem(index, 'quantity', e.target.value)}
+                              required
+                            />
+                          </div>
+                          <div className="w-28">
+                            <Label className="text-xs text-gray-500">Customer Price</Label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder="Price"
+                              value={item.unitPrice}
+                              onChange={(e) => updateLineItem(index, 'unitPrice', e.target.value)}
+                              required
+                            />
+                          </div>
+                          <div className="w-28">
+                            <Label className="text-xs text-gray-500">Vendor Cost</Label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder="Cost"
+                              value={item.unitCost || ''}
+                              onChange={(e) => updateLineItem(index, 'unitCost', e.target.value)}
+                              className="bg-gray-50"
+                            />
+                          </div>
+                          {lineItems.length > 1 && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeLineItem(index)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
                         </div>
-                        <div className="w-24">
-                          <Input
-                            type="number"
-                            placeholder="Qty"
-                            value={item.quantity}
-                            onChange={(e) => updateLineItem(index, 'quantity', e.target.value)}
-                            required
-                          />
-                        </div>
-                        <div className="w-32">
-                          <Input
-                            type="number"
-                            step="0.01"
-                            placeholder="Price"
-                            value={item.unitPrice}
-                            onChange={(e) => updateLineItem(index, 'unitPrice', e.target.value)}
-                            required
-                          />
-                        </div>
-                        {lineItems.length > 1 && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removeLineItem(index)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        )}
-                      </div>
-                    ))}
+                      )
+                    })}
                     <Button type="button" variant="outline" onClick={addLineItem}>
                       <Plus className="mr-2 h-4 w-4" />
                       Add Line Item
                     </Button>
                   </div>
                 </div>
-                {showItemPicker && (
-                  <ItemPicker
-                    onSelect={handleItemSelect}
-                    onClose={() => {
-                      setShowItemPicker(false)
-                      setItemPickerIndex(null)
-                    }}
-                  />
-                )}
               </CardContent>
             </Card>
 
@@ -359,13 +494,31 @@ export default function NewEstimatePage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <Label htmlFor="notes">Notes</Label>
+                  <div className="flex items-center justify-between mb-2">
+                    <Label htmlFor="notes">Notes</Label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setIsNotesVisibleToClient(!isNotesVisibleToClient)}
+                      title={isNotesVisibleToClient ? 'Hide from client' : 'Show to client'}
+                      className="p-1"
+                    >
+                      {isNotesVisibleToClient ? (
+                        <Eye className="h-4 w-4 text-gray-600" />
+                      ) : (
+                        <EyeOff className="h-4 w-4 text-gray-400" />
+                      )}
+                    </Button>
+                  </div>
                   <textarea
                     id="notes"
                     rows={4}
                     value={formData.notes}
                     onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                      !isNotesVisibleToClient ? 'bg-gray-50 border-gray-200' : 'border-gray-300'
+                    }`}
                   />
                 </div>
                 <div>

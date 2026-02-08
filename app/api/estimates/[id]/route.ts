@@ -63,7 +63,9 @@ export async function GET(
         ...item,
         quantity: item.quantity.toString(),
         unitPrice: item.unitPrice.toString(),
+        unitCost: item.unitCost ? item.unitCost.toString() : null,
         total: item.total.toString(),
+        isVisibleToClient: item.isVisibleToClient,
         groupId: item.groupId || null,
         group: item.group ? {
           id: item.group.id,
@@ -106,6 +108,7 @@ export async function PUT(
       status,
       validUntil,
       notes,
+      isNotesVisibleToClient,
       terms,
     } = body
 
@@ -153,8 +156,11 @@ export async function PUT(
             description: item.description,
             quantity: qty,
             unitPrice: price,
+            unitCost: item.unitCost ? parseFloat(item.unitCost) : null,
             total: itemTotal,
             sortOrder: i,
+            isVisibleToClient: item.isVisibleToClient !== undefined ? Boolean(item.isVisibleToClient) : true,
+            sourceItemId: item.sourceItemId || null,
           },
         })
       }
@@ -185,6 +191,8 @@ export async function PUT(
         status: status !== undefined ? status : existing.status,
         validUntil: validUntil !== undefined ? (validUntil ? new Date(validUntil) : null) : existing.validUntil,
         notes: notes !== undefined ? notes : existing.notes,
+        isNotesVisibleToClient:
+          isNotesVisibleToClient !== undefined ? Boolean(isNotesVisibleToClient) : existing.isNotesVisibleToClient,
         terms: terms !== undefined ? terms : existing.terms,
       },
       include: {

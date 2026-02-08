@@ -107,6 +107,7 @@ export async function POST(request: NextRequest) {
       discount,
       validUntil,
       notes,
+      isNotesVisibleToClient,
       terms,
     } = body
 
@@ -149,6 +150,7 @@ export async function POST(request: NextRequest) {
         total: total,
         validUntil: validUntil ? new Date(validUntil) : null,
         notes: notes || null,
+        isNotesVisibleToClient: isNotesVisibleToClient !== undefined ? Boolean(isNotesVisibleToClient) : true,
         terms: terms || null,
         createdById: user.id,
       },
@@ -171,8 +173,11 @@ export async function POST(request: NextRequest) {
           description: item.description,
           quantity: qty,
           unitPrice: price,
+          unitCost: item.unitCost ? parseFloat(item.unitCost) : null,
           total: itemTotal,
           sortOrder: i,
+          isVisibleToClient: item.isVisibleToClient !== undefined ? Boolean(item.isVisibleToClient) : true,
+          sourceItemId: item.sourceItemId || null,
         },
       })
     }
