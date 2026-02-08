@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
@@ -347,10 +347,16 @@ export default function EditBundlePage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center space-x-4">
-        <Button variant="ghost" size="sm" onClick={() => router.back()}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back
-        </Button>
+        <Link href={`/dashboard/items/${bundleId ? (() => {
+          // We need to get the item ID from the bundle
+          // For now, just go back to items list
+          return ''
+        })() : ''}`}>
+          <Button variant="ghost" size="sm" onClick={() => router.back()}>
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back
+          </Button>
+        </Link>
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Edit Bundle</h1>
           <p className="mt-2 text-gray-600">Update bundle details</p>
@@ -521,6 +527,7 @@ export default function EditBundlePage() {
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
+                          <div className="grid grid-cols-3 gap-2">
                           <div className="space-y-3">
                             <div className="grid grid-cols-2 gap-2">
                               <div>
