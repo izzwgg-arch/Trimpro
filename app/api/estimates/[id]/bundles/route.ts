@@ -172,8 +172,10 @@ export async function POST(
           description: item.description || item.name,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
+          unitCost: item.unitCost,
           total,
           sortOrder: currentSort,
+          isVisibleToClient: true,
         },
       })
       lineItems.push(lineItem)

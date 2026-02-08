@@ -38,6 +38,7 @@ interface EstimateDetail {
   validUntil: string | null
   notes: string | null
   terms: string | null
+  isNotesVisibleToClient?: boolean
   createdAt: string
   updatedAt: string
   client: {
@@ -67,8 +68,10 @@ interface EstimateDetail {
     description: string
     quantity: string
     unitPrice: string
+    unitCost?: string | null
     total: string
     sortOrder: number
+    isVisibleToClient?: boolean
     groupId: string | null
     group: {
       id: string
@@ -224,6 +227,8 @@ export default function EstimateDetailPage() {
                       <th className="text-left py-2 px-4 font-semibold">Description</th>
                       <th className="text-right py-2 px-4 font-semibold">Quantity</th>
                       <th className="text-right py-2 px-4 font-semibold">Unit Price</th>
+                      <th className="text-right py-2 px-4 font-semibold">Vendor Cost</th>
+                      <th className="text-right py-2 px-4 font-semibold">Margin</th>
                       <th className="text-right py-2 px-4 font-semibold">Total</th>
                     </tr>
                   </thead>
@@ -313,6 +318,8 @@ export default function EstimateDetailPage() {
                             </td>
                             <td className="py-3 px-4 text-right"></td>
                             <td className="py-3 px-4 text-right"></td>
+                            <td className="py-3 px-4 text-right"></td>
+                            <td className="py-3 px-4 text-right"></td>
                             <td className="py-3 px-4 text-right font-semibold">
                               {formatCurrency(groupTotal)}
                             </td>
@@ -321,11 +328,26 @@ export default function EstimateDetailPage() {
 
                         if (isExpanded) {
                           items.forEach((item) => {
+                            const unitCost = item.unitCost ? parseFloat(item.unitCost) : 0
+                            const unitPrice = parseFloat(item.unitPrice)
+                            const qty = parseFloat(item.quantity)
+                            const marginTotal = (unitPrice - unitCost) * qty
+                            const isVisibleToClient = item.isVisibleToClient ?? true
                             rows.push(
-                              <tr key={item.id} className="border-b bg-gray-50/50">
-                                <td className="py-3 px-4 pl-8">{item.description}</td>
+                              <tr
+                                key={item.id}
+                                className={`border-b bg-gray-50/50 ${!isVisibleToClient ? 'opacity-70' : ''}`}
+                              >
+                                <td className="py-3 px-4 pl-8">
+                                  {item.description}
+                                  {!isVisibleToClient && (
+                                    <span className="ml-2 text-xs text-gray-500">(Hidden from client)</span>
+                                  )}
+                                </td>
                                 <td className="py-3 px-4 text-right">{item.quantity}</td>
-                                <td className="py-3 px-4 text-right">{formatCurrency(parseFloat(item.unitPrice))}</td>
+                                <td className="py-3 px-4 text-right">{formatCurrency(unitPrice)}</td>
+                                <td className="py-3 px-4 text-right">{formatCurrency(unitCost)}</td>
+                                <td className="py-3 px-4 text-right">{formatCurrency(marginTotal)}</td>
                                 <td className="py-3 px-4 text-right">
                                   {formatCurrency(parseFloat(item.total))}
                                 </td>
@@ -335,7 +357,7 @@ export default function EstimateDetailPage() {
                           // Add "Add Item" row
                           rows.push(
                             <tr key={`add-item-${groupId}`} className="border-b bg-gray-50/50">
-                              <td colSpan={4} className="py-2 px-4 pl-8">
+                              <td colSpan={6} className="py-2 px-4 pl-8">
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -354,11 +376,23 @@ export default function EstimateDetailPage() {
 
                       // Render ungrouped items
                       ungroupedItems.forEach((item) => {
+                        const unitCost = item.unitCost ? parseFloat(item.unitCost) : 0
+                        const unitPrice = parseFloat(item.unitPrice)
+                        const qty = parseFloat(item.quantity)
+                        const marginTotal = (unitPrice - unitCost) * qty
+                        const isVisibleToClient = item.isVisibleToClient ?? true
                         rows.push(
-                          <tr key={item.id} className="border-b">
-                            <td className="py-3 px-4">{item.description}</td>
+                          <tr key={item.id} className={`border-b ${!isVisibleToClient ? 'bg-gray-50' : ''}`}>
+                            <td className="py-3 px-4">
+                              {item.description}
+                              {!isVisibleToClient && (
+                                <span className="ml-2 text-xs text-gray-500">(Hidden from client)</span>
+                              )}
+                            </td>
                             <td className="py-3 px-4 text-right">{item.quantity}</td>
-                            <td className="py-3 px-4 text-right">{formatCurrency(parseFloat(item.unitPrice))}</td>
+                            <td className="py-3 px-4 text-right">{formatCurrency(unitPrice)}</td>
+                            <td className="py-3 px-4 text-right">{formatCurrency(unitCost)}</td>
+                            <td className="py-3 px-4 text-right">{formatCurrency(marginTotal)}</td>
                             <td className="py-3 px-4 text-right font-semibold">
                               {formatCurrency(parseFloat(item.total))}
                             </td>
@@ -380,7 +414,12 @@ export default function EstimateDetailPage() {
               {estimate.notes && (
                 <Card>
                   <CardHeader>
-                    <CardTitle>Notes</CardTitle>
+                    <CardTitle>
+                      Notes
+                      {estimate.isNotesVisibleToClient === false && (
+                        <span className="ml-2 text-xs text-gray-500">(Hidden from client)</span>
+                      )}
+                    </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <p className="text-gray-700 whitespace-pre-wrap">{estimate.notes}</p>

@@ -443,6 +443,7 @@ model Estimate {
 
   // Notes
   notes String? @db.Text
+  isNotesVisibleToClient Boolean @default(true) // Toggle for notes visibility
   terms String? @db.Text
 
   // Relationships
@@ -476,8 +477,10 @@ model EstimateLineItem {
   description     String
   quantity        Decimal @db.Decimal(10, 2)
   unitPrice       Decimal @db.Decimal(10, 2)
+  unitCost        Decimal? @db.Decimal(10, 2) // Internal vendor cost
   total           Decimal @db.Decimal(10, 2)
   sortOrder       Int     @default(0)
+  isVisibleToClient Boolean @default(true) // Toggle for customer visibility
 
   estimate Estimate            @relation(fields: [estimateId], references: [id], onDelete: Cascade)
   group    DocumentLineGroup?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
@@ -719,6 +722,7 @@ model Vendor {
   items          Item[]
   contacts       VendorContact[]
   attachments    Attachment[]
+  bundleComponents BundleComponent[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -945,8 +949,9 @@ model BundleComponent {
   componentBundleId       String?  // FK to BundleDefinition (if componentType = "BUNDLE")
   quantity                Decimal  @db.Decimal(10, 2)
   sortOrder               Int      @default(0)
-  defaultUnitPriceOverride Decimal? @db.Decimal(10, 2)
-  defaultUnitCostOverride  Decimal? @db.Decimal(10, 2)
+  defaultUnitPriceOverride Decimal? @db.Decimal(10, 2) // Customer Price
+  defaultUnitCostOverride  Decimal? @db.Decimal(10, 2) // Vendor/Unit Cost
+  vendorId                 String?  // FK to Vendor (specific vendor for this component)
   notes                   String?  @db.Text
   
   // Relationships
@@ -954,6 +959,7 @@ model BundleComponent {
   tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   componentItem   Item?            @relation(fields: [componentItemId], references: [id], onDelete: SetNull)
   componentBundle BundleDefinition? @relation("BundleNested", fields: [componentBundleId], references: [id], onDelete: SetNull)
+  vendor          Vendor?          @relation(fields: [vendorId], references: [id], onDelete: SetNull)
   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -962,6 +968,7 @@ model BundleComponent {
   @@index([tenantId])
   @@index([componentItemId])
   @@index([componentBundleId])
+  @@index([vendorId])
   @@map("bundle_components")
 }
 

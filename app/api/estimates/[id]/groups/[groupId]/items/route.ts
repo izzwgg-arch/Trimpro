@@ -14,7 +14,7 @@ export async function POST(
 
   try {
     const body = await request.json()
-    const { description, quantity, unitPrice, sourceItemId } = body
+    const { description, quantity, unitPrice, sourceItemId, unitCost, isVisibleToClient } = body
 
     if (!description || !quantity || unitPrice === undefined) {
       return NextResponse.json(
@@ -70,8 +70,10 @@ export async function POST(
         description: description.trim(),
         quantity: qty,
         unitPrice: price,
+        unitCost: unitCost !== undefined && unitCost !== null ? parseFloat(unitCost) : null,
         total,
         sortOrder,
+        isVisibleToClient: isVisibleToClient !== undefined ? Boolean(isVisibleToClient) : true,
       },
     })
 

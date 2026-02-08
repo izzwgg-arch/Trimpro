@@ -169,6 +169,7 @@ export async function PUT(
             defaultUnitCostOverride: comp.defaultUnitCostOverride
               ? parseFloat(comp.defaultUnitCostOverride)
               : null,
+            vendorId: comp.vendorId && comp.vendorId !== '' ? comp.vendorId : null,
             notes: comp.notes && comp.notes.trim() ? comp.notes.trim() : null,
           },
         })

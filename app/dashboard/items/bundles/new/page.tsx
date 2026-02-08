@@ -43,8 +43,9 @@ interface BundleComponent {
   componentItemId?: string
   componentBundleId?: string
   quantity: string
-  defaultUnitPriceOverride?: string
-  defaultUnitCostOverride?: string
+  defaultUnitPriceOverride?: string // Customer Price
+  defaultUnitCostOverride?: string // Vendor/Unit Cost
+  vendorId?: string // Vendor Assignment
   notes?: string
 }
 
@@ -235,6 +236,7 @@ export default function NewBundlePage() {
             quantity: parseFloat(comp.quantity) || 1,
             defaultUnitPriceOverride: comp.defaultUnitPriceOverride || null,
             defaultUnitCostOverride: comp.defaultUnitCostOverride || null,
+            vendorId: comp.vendorId || null,
             notes: comp.notes || null,
           })),
         }),
@@ -447,36 +449,55 @@ export default function NewBundlePage() {
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
-                          <div className="grid grid-cols-3 gap-2">
-                            <div>
-                              <Label className="text-xs">Quantity</Label>
-                              <Input
-                                type="number"
-                                step="0.01"
-                                value={comp.quantity}
-                                onChange={(e) => updateComponent(index, 'quantity', e.target.value)}
-                                required
-                              />
+                          <div className="space-y-3">
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <Label className="text-xs">Quantity</Label>
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  value={comp.quantity}
+                                  onChange={(e) => updateComponent(index, 'quantity', e.target.value)}
+                                  required
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs">Vendor Assignment</Label>
+                                <select
+                                  value={comp.vendorId || ''}
+                                  onChange={(e) => updateComponent(index, 'vendorId', e.target.value)}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary text-sm"
+                                >
+                                  <option value="">Select vendor</option>
+                                  {vendors.map((vendor) => (
+                                    <option key={vendor.id} value={vendor.id}>
+                                      {vendor.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
                             </div>
-                            <div>
-                              <Label className="text-xs">Price Override</Label>
-                              <Input
-                                type="number"
-                                step="0.01"
-                                value={comp.defaultUnitPriceOverride || ''}
-                                onChange={(e) => updateComponent(index, 'defaultUnitPriceOverride', e.target.value)}
-                                placeholder="Auto"
-                              />
-                            </div>
-                            <div>
-                              <Label className="text-xs">Cost Override</Label>
-                              <Input
-                                type="number"
-                                step="0.01"
-                                value={comp.defaultUnitCostOverride || ''}
-                                onChange={(e) => updateComponent(index, 'defaultUnitCostOverride', e.target.value)}
-                                placeholder="Auto"
-                              />
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <Label className="text-xs">Vendor/Unit Cost</Label>
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  value={comp.defaultUnitCostOverride || ''}
+                                  onChange={(e) => updateComponent(index, 'defaultUnitCostOverride', e.target.value)}
+                                  placeholder={comp.componentType === 'ITEM' && item ? `$${item.defaultUnitCost?.toFixed(2) || '0.00'}` : 'Auto'}
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs">Customer Price</Label>
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  value={comp.defaultUnitPriceOverride || ''}
+                                  onChange={(e) => updateComponent(index, 'defaultUnitPriceOverride', e.target.value)}
+                                  placeholder={comp.componentType === 'ITEM' && item ? `$${item.defaultUnitPrice.toFixed(2)}` : 'Auto'}
+                                />
+                              </div>
                             </div>
                           </div>
                         </div>
