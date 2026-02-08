@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
@@ -521,7 +521,6 @@ export default function EditBundlePage() {
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
-                          <div className="grid grid-cols-3 gap-2">
                           <div className="space-y-3">
                             <div className="grid grid-cols-2 gap-2">
                               <div>
