@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ArrowLeft, Save, Plus, Trash2, Package } from 'lucide-react'
 import Link from 'next/link'
-import { ItemPicker } from '@/components/items/ItemPicker'
+import { RapidFireItemPicker } from '@/components/items/ItemPicker'
 
 interface Client {
   id: string
@@ -358,7 +358,7 @@ export default function NewInvoicePage() {
                   </div>
                 </div>
                 {showItemPicker && (
-                  <ItemPicker
+                  <RapidFireItemPicker
                     onSelect={handleItemSelect}
                     onClose={() => {
                       setShowItemPicker(false)
