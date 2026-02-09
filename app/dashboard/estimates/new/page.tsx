@@ -10,6 +10,11 @@ import { ArrowLeft, Save, Plus, Trash2, Package, Eye, EyeOff } from 'lucide-reac
 import Link from 'next/link'
 import { RapidFireItemPicker } from '@/components/items/RapidFireItemPicker'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
+const BUILD_TAG = 'estimates-new-2026-02-09-05'
+
 interface Client {
   id: string
   name: string
