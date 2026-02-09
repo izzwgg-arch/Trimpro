@@ -145,17 +145,91 @@ export default function NewEstimatePage() {
     const updated = [...lineItems]
 
     if (isBundle) {
-      // Handle bundle - this will be expanded when estimate is created
-      const groupId = `group-${Date.now()}`
-      updated[index] = {
-        description: selected.name,
-        quantity: '1',
-        unitPrice: '0', // Will be calculated from bundle components
-        isVisibleToClient: true,
-        groupId,
-        groupName: selected.name,
-        isGroupHeader: true,
-        sourceItemId: (selected as Bundle).item.id,
+      // Handle bundle - fetch and expand immediately in UI
+      try {
+        const token = localStorage.getItem('accessToken')
+        const bundle = selected as Bundle
+        
+        // Get bundle definition with components
+        const bundleResponse = await fetch(`/api/items/bundles/${bundle.id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        
+        if (bundleResponse.ok) {
+          const bundleData = await bundleResponse.json()
+          const bundleDef = bundleData.bundle
+          
+          // Create temporary group ID for UI
+          const groupId = `temp-group-${Date.now()}`
+          
+          // Replace current line with bundle header
+          updated[index] = {
+            description: bundleDef.name || selected.name,
+            quantity: '1',
+            unitPrice: '0', // Will be calculated from components
+            isVisibleToClient: true,
+            groupId,
+            groupName: bundleDef.name || selected.name,
+            isGroupHeader: true,
+            sourceItemId: bundle.item.id,
+            sourceBundleId: bundle.id,
+          }
+          
+          // Add bundle components as editable child items
+          if (bundleDef.components && bundleDef.components.length > 0) {
+            let sortOrder = 0
+            for (const comp of bundleDef.components) {
+              const compItem = comp.componentItem || comp.componentBundle?.item
+              if (compItem) {
+                const qty = parseFloat(comp.quantity) || 1
+                const unitPrice = comp.defaultUnitPriceOverride ?? compItem.defaultUnitPrice ?? 0
+                const unitCost = comp.defaultUnitCostOverride ?? compItem.defaultUnitCost ?? null
+                
+                updated.push({
+                  description: compItem.name,
+                  quantity: qty.toString(),
+                  unitPrice: unitPrice.toString(),
+                  unitCost: unitCost?.toString() || '0',
+                  isVisibleToClient: true,
+                  groupId,
+                  isGroupHeader: false,
+                  sourceItemId: compItem.id,
+                  sourceBundleId: bundle.id,
+                  sortOrder: sortOrder++,
+                })
+              }
+            }
+          }
+        } else {
+          // Fallback if fetch fails
+          const groupId = `temp-group-${Date.now()}`
+          updated[index] = {
+            description: selected.name,
+            quantity: '1',
+            unitPrice: '0',
+            isVisibleToClient: true,
+            groupId,
+            groupName: selected.name,
+            isGroupHeader: true,
+            sourceItemId: bundle.item.id,
+            sourceBundleId: bundle.id,
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching bundle details:', error)
+        // Fallback
+        const groupId = `temp-group-${Date.now()}`
+        updated[index] = {
+          description: selected.name,
+          quantity: '1',
+          unitPrice: '0',
+          isVisibleToClient: true,
+          groupId,
+          groupName: selected.name,
+          isGroupHeader: true,
+          sourceItemId: (selected as Bundle).item.id,
+          sourceBundleId: (selected as Bundle).id,
+        }
       }
     } else {
       // Handle single item
@@ -174,6 +248,26 @@ export default function NewEstimatePage() {
     setLineItems(updated)
     setShowItemPicker(false)
     setItemPickerIndex(null)
+    
+    // Auto-focus next line item row after selection
+    setTimeout(() => {
+      const nextIndex = index + (isBundle ? updated.length - index : 1)
+      if (nextIndex >= updated.length) {
+        // Add new line item and auto-open picker
+        const newItem: LineItem = { description: '', quantity: '1', unitPrice: '0', isVisibleToClient: true }
+        setLineItems([...updated, newItem])
+        setTimeout(() => {
+          setItemPickerIndex(updated.length)
+          setShowItemPicker(true)
+        }, 100)
+      } else {
+        // Focus existing next line and auto-open picker
+        setItemPickerIndex(nextIndex)
+        setTimeout(() => {
+          setShowItemPicker(true)
+        }, 100)
+      }
+    }, 150)
   }
 
   const handleNextLine = () => {
@@ -604,3 +698,5 @@ export default function NewEstimatePage() {
     </div>
   )
 }
+
+
