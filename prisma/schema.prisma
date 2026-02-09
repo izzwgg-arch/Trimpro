@@ -481,14 +481,19 @@ model EstimateLineItem {
   total           Decimal @db.Decimal(10, 2)
   sortOrder       Int     @default(0)
   isVisibleToClient Boolean @default(true) // Toggle for customer visibility
+  vendorId        String? // Vendor for this specific line item
+  taxable         Boolean @default(true)
+  taxRate         Decimal? @db.Decimal(5, 4)
 
   estimate Estimate            @relation(fields: [estimateId], references: [id], onDelete: Cascade)
   group    DocumentLineGroup?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
   sourceItem Item?             @relation("EstimateLineItemSource", fields: [sourceItemId], references: [id], onDelete: SetNull)
+  vendor   Vendor?             @relation("EstimateLineItemVendor", fields: [vendorId], references: [id], onDelete: SetNull)
 
   @@index([estimateId])
   @@index([groupId])
   @@index([sourceItemId])
+  @@index([vendorId])
   @@map("estimate_line_items")
 }
 
@@ -572,16 +577,23 @@ model InvoiceLineItem {
   description     String
   quantity        Decimal @db.Decimal(10, 2)
   unitPrice       Decimal @db.Decimal(10, 2)
+  unitCost        Decimal? @db.Decimal(10, 2) // Internal vendor cost
   total           Decimal @db.Decimal(10, 2)
   sortOrder       Int     @default(0)
+  isVisibleToClient Boolean @default(true) // Toggle for customer visibility
+  vendorId        String? // Vendor for this specific line item
+  taxable         Boolean @default(true)
+  taxRate         Decimal? @db.Decimal(5, 4)
 
   invoice Invoice           @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   group   DocumentLineGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
   sourceItem Item?          @relation("InvoiceLineItemSource", fields: [sourceItemId], references: [id], onDelete: SetNull)
+  vendor   Vendor?          @relation("InvoiceLineItemVendor", fields: [vendorId], references: [id], onDelete: SetNull)
 
   @@index([invoiceId])
   @@index([groupId])
   @@index([sourceItemId])
+  @@index([vendorId])
   @@map("invoice_line_items")
 }
 
@@ -723,6 +735,8 @@ model Vendor {
   contacts       VendorContact[]
   attachments    Attachment[]
   bundleComponents BundleComponent[]
+  estimateLineItems EstimateLineItem[] @relation("EstimateLineItemVendor")
+  invoiceLineItems InvoiceLineItem[] @relation("InvoiceLineItemVendor")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

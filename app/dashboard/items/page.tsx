@@ -67,6 +67,14 @@ export default function ItemsPage() {
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importing, setImporting] = useState(false)
 
+  // Check for bundle parameter in URL
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search)
+    if (urlParams.get('kind') === 'bundle') {
+      setKindFilter('BUNDLE')
+    }
+  }, [])
+
   useEffect(() => {
     fetchItems()
     fetchCategories()
@@ -418,11 +426,16 @@ export default function ItemsPage() {
                             {item.name}
                           </Link>
                           {item.kind === 'BUNDLE' && (
-                            <span className="px-2 py-0.5 text-xs rounded-full bg-purple-100 text-purple-800">
+                            <span className="px-2 py-0.5 text-xs rounded-full bg-purple-100 text-purple-800 font-medium">
                               Bundle
                             </span>
                           )}
                         </div>
+                        {item.kind === 'BUNDLE' && (
+                          <div className="text-xs text-gray-500 mt-1">
+                            Contains multiple items
+                          </div>
+                        )}
                       </td>
                       <td className="py-3 px-4 text-gray-600">{item.sku || '-'}</td>
                       <td className="py-3 px-4">

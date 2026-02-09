@@ -50,6 +50,10 @@ interface LineItem {
   groupName?: string
   isGroupHeader?: boolean
   sourceItemId?: string
+  isTaxable?: boolean
+  taxRate?: string
+  vendorId?: string
+  notes?: string
 }
 
 export default function NewEstimatePage() {
@@ -60,7 +64,14 @@ export default function NewEstimatePage() {
   const [clients, setClients] = useState<Client[]>([])
   const [items, setItems] = useState<Item[]>([])
   const [bundles, setBundles] = useState<Bundle[]>([])
-  const [lineItems, setLineItems] = useState<LineItem[]>([{ description: '', quantity: '1', unitPrice: '0', isVisibleToClient: true }])
+  const [lineItems, setLineItems] = useState<LineItem[]>([{ 
+    description: '', 
+    quantity: '1', 
+    unitPrice: '0', 
+    isVisibleToClient: true,
+    isTaxable: true,
+    taxRate: ''
+  }])
   const [showItemPicker, setShowItemPicker] = useState(false)
   const [itemPickerIndex, setItemPickerIndex] = useState<number | null>(null)
   const [isNotesVisibleToClient, setIsNotesVisibleToClient] = useState(true)
@@ -126,9 +137,24 @@ export default function NewEstimatePage() {
   }
 
   const addLineItem = () => {
-    const newItem: LineItem = { description: '', quantity: '1', unitPrice: '0', isVisibleToClient: true }
+    const newItem: LineItem = { 
+      description: '', 
+      quantity: '1', 
+      unitPrice: '0', 
+      isVisibleToClient: true,
+      isTaxable: true,
+      taxRate: '',
+      id: '',
+      groupId: '',
+      groupName: '',
+      isGroupHeader: false,
+      sourceItemId: '',
+      unitCost: '',
+      vendorId: '',
+      notes: ''
+    }
     setLineItems([...lineItems, newItem])
-    // Auto-open picker for the new line item
+    // Auto-open picker for new line item
     setTimeout(() => {
       setItemPickerIndex(lineItems.length)
       setShowItemPicker(true)
@@ -612,6 +638,27 @@ export default function NewEstimatePage() {
           </div>
         </div>
       </form>
+
+      {/* Rapid Fire Item Picker */}
+      {showItemPicker && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="w-full max-w-2xl mx-4">
+            <div className="relative">
+              <RapidFireItemPicker
+                isOpen={showItemPicker}
+                onClose={() => {
+                  setShowItemPicker(false)
+                  setItemPickerIndex(null)
+                }}
+                onSelect={handleItemSelect}
+                onNextLine={handleNextLine}
+                items={items}
+                bundles={bundles}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
