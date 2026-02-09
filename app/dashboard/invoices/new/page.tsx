@@ -6,9 +6,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ArrowLeft, Save, Plus, Trash2, Package, Eye, EyeOff } from 'lucide-react'
+import { ArrowLeft, Save, Plus, Trash2, Package } from 'lucide-react'
 import Link from 'next/link'
-import { RapidFireItemPicker } from '@/components/items/RapidFireItemPicker'
+import { ItemPicker } from '@/components/items/ItemPicker'
 
 interface Client {
   id: string
@@ -358,7 +358,7 @@ export default function NewInvoicePage() {
                   </div>
                 </div>
                 {showItemPicker && (
-                  <RapidFireItemPicker
+                  <ItemPicker
                     onSelect={handleItemSelect}
                     onClose={() => {
                       setShowItemPicker(false)
