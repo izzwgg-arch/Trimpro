@@ -416,73 +416,27 @@ export default function NewEstimatePage() {
                                 >
                                   <Package className="h-4 w-4" />
                                 </Button>
-                                {showItemPicker && itemPickerIndex === index && (
-                                  <div className="absolute top-full left-0 z-50 mt-1">
-                                    <RapidFireItemPicker
-                                      isOpen={true}
-                                      onClose={() => {
-                                        setShowItemPicker(false)
-                                        setItemPickerIndex(null)
-                                      }}
-                                      onSelect={handleItemSelect}
-                                      onNextLine={handleNextLine}
-                                      items={items}
-                                      bundles={bundles}
-                                    />
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                          <div className="w-20">
-                            <Input
-                              type="number"
-                              step="0.01"
-                              placeholder="Qty"
-                              value={item.quantity}
-                              onChange={(e) => updateLineItem(index, 'quantity', e.target.value)}
-                              required
-                            />
-                          </div>
-                          <div className="w-28">
-                            <Label className="text-xs text-gray-500">Customer Price</Label>
-                            <Input
-                              type="number"
-                              step="0.01"
-                              placeholder="Price"
-                              value={item.unitPrice}
-                              onChange={(e) => updateLineItem(index, 'unitPrice', e.target.value)}
-                              required
-                            />
-                          </div>
-                          <div className="w-28">
-                            <Label className="text-xs text-gray-500">Vendor Cost</Label>
-                            <Input
-                              type="number"
-                              step="0.01"
-                              placeholder="Cost"
-                              value={item.unitCost || ''}
-                              onChange={(e) => updateLineItem(index, 'unitCost', e.target.value)}
-                              className="bg-gray-50"
-                            />
-                          </div>
-                          {lineItems.length > 1 && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => removeLineItem(index)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </div>
-                      )
-                    })}
+                                }
                     <Button type="button" variant="outline" onClick={addLineItem}>
                       <Plus className="mr-2 h-4 w-4" />
                       Add Line Item
-                    </Button>
+                    </Button>{showItemPicker && (
+  <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-24 bg-black/20">
+    <div className="bg-white shadow-lg rounded-md w-[400px]">
+      <RapidFireItemPicker
+        isOpen={true}
+        onClose={() => {
+          setShowItemPicker(false)
+          setItemPickerIndex(null)
+        }}
+        onSelect={handleItemSelect}
+        onNextLine={handleNextLine}
+        items={items}
+        bundles={bundles}
+      />
+    </div>
+  </div>
+)}
                   </div>
                 </div>
               </CardContent>
