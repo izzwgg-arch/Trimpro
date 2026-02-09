@@ -130,9 +130,29 @@ export default function NewInvoicePage() {
         sourceItemId: item.id,
       }
       setLineItems(updated)
-      setShowItemPicker(false)
-      setItemPickerIndex(null)
-    }
+    setShowItemPicker(false)
+    setItemPickerIndex(null)
+    
+    // Auto-focus next line item row after selection
+    setTimeout(() => {
+      const nextIndex = index + (isBundle ? updated.length - index : 1)
+      if (nextIndex >= updated.length) {
+        // Add new line item and auto-open picker
+        const newItem: LineItem = { description: '', quantity: '1', unitPrice: '0', isVisibleToClient: true }
+        setLineItems([...updated, newItem])
+        setTimeout(() => {
+          setItemPickerIndex(updated.length)
+          setShowItemPicker(true)
+        }, 100)
+      } else {
+        // Focus existing next line and auto-open picker
+        setItemPickerIndex(nextIndex)
+        setTimeout(() => {
+          setShowItemPicker(true)
+        }, 100)
+      }
+    }, 150)
+  }
   }
 
   const openItemPicker = (index?: number) => {
@@ -505,3 +525,5 @@ export default function NewInvoicePage() {
     </div>
   )
 }
+
+
