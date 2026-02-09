@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
@@ -507,21 +507,7 @@ export default function EditEstimatePage() {
                                 >
                                   <Package className="h-4 w-4" />
                                 </Button>
-                                {showItemPicker && itemPickerIndex === index && (
-                                  <div className="absolute top-full right-0 z-50 mt-1" style={{ width: '320px' }}>
-                                    <RapidFireItemPicker
-                                      isOpen={true}
-                                      onClose={() => {
-                                        setShowItemPicker(false)
-                                        setItemPickerIndex(null)
-                                      }}
-                                      onSelect={handleItemSelect}
-                                      onNextLine={handleNextLine}
-                                      items={items}
-                                      bundles={bundles}
-                                    />
-                                  </div>
-                                )}
+                                
                               </div>
                             </div>
                           </div>
@@ -576,7 +562,23 @@ export default function EditEstimatePage() {
                     <Button type="button" variant="outline" onClick={addLineItem}>
                       <Plus className="mr-2 h-4 w-4" />
                       Add Line Item
-                    </Button>
+                    </Button>{showItemPicker && (
+  <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-24 bg-black/20">
+    <div className="bg-white shadow-lg rounded-md w-[400px]">
+      <RapidFireItemPicker
+        isOpen={true}
+        onClose={() => {
+          setShowItemPicker(false)
+          setItemPickerIndex(null)
+        }}
+        onSelect={handleItemSelect}
+        onNextLine={handleNextLine}
+        items={items}
+        bundles={bundles}
+      />
+    </div>
+  </div>
+)}
                   </div>
                 </div>
               </CardContent>
