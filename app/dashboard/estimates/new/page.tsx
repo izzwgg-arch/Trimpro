@@ -494,23 +494,6 @@ export default function NewEstimatePage() {
                       <Plus className="mr-2 h-4 w-4" />
                       Add Line Item
                     </Button>
-                    {showItemPicker && (
-                      <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-24 bg-black/20">
-                        <div className="bg-white shadow-lg rounded-md w-[400px]">
-                          <RapidFireItemPicker
-                            isOpen={true}
-                            onClose={() => {
-                              setShowItemPicker(false)
-                              setItemPickerIndex(null)
-                            }}
-                            onSelect={handleItemSelect}
-                            onNextLine={handleNextLine}
-                            items={items}
-                            bundles={bundles}
-                          />
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
               </CardContent>
