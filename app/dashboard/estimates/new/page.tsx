@@ -121,13 +121,25 @@ export default function NewEstimatePage() {
   }
 
   const addLineItem = () => {
-    const newItem: LineItem = { description: '', quantity: '1', unitPrice: '0', isVisibleToClient: true }
-    setLineItems([...lineItems, newItem])
-    // Auto-open picker for the new line item
-    setTimeout(() => {
-      setItemPickerIndex(lineItems.length)
-      setShowItemPicker(true)
-    }, 100)
+    const newItem: LineItem = {
+      description: '',
+      quantity: '1',
+      unitPrice: '0',
+      isVisibleToClient: true,
+      isTaxable: true,
+    }
+    const newIndex = lineItems.length
+    console.log('ðŸ”µ addLineItem: Current items:', lineItems.length, 'New index will be:', newIndex)
+    setLineItems((prev) => {
+      const updated = [...prev, newItem]
+      // Open picker after state update
+      setTimeout(() => {
+        console.log('ðŸ”µ Opening picker for index:', newIndex, 'Total items now:', updated.length)
+        setItemPickerIndex(newIndex)
+        setShowItemPicker(true)
+      }, 50)
+      return updated
+    })
   }
 
   const removeLineItem = (index: number) => {
@@ -145,17 +157,92 @@ export default function NewEstimatePage() {
     const updated = [...lineItems]
 
     if (isBundle) {
-      // Handle bundle - this will be expanded when estimate is created
-      const groupId = `group-${Date.now()}`
-      updated[index] = {
-        description: selected.name,
-        quantity: '1',
-        unitPrice: '0', // Will be calculated from bundle components
-        isVisibleToClient: true,
-        groupId,
-        groupName: selected.name,
-        isGroupHeader: true,
-        sourceItemId: (selected as Bundle).item.id,
+      // Handle bundle - fetch and expand immediately in UI
+      console.log('ðŸ”µ Expanding bundle:', selected.name)
+      try {
+        const token = localStorage.getItem('accessToken')
+        const bundle = selected as Bundle
+        
+        // Get bundle definition with components
+        const bundleResponse = await fetch(`/api/items/bundles/${bundle.id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        
+        if (bundleResponse.ok) {
+          const bundleData = await bundleResponse.json()
+          const bundleDef = bundleData.bundle
+          
+          // Create temporary group ID for UI
+          const groupId = `temp-group-${Date.now()}`
+          
+          // Replace current line with bundle header
+          updated[index] = {
+            description: bundleDef.name || selected.name,
+            quantity: '1',
+            unitPrice: '0', // Will be calculated from components
+            isVisibleToClient: true,
+            groupId,
+            groupName: bundleDef.name || selected.name,
+            isGroupHeader: true,
+            sourceItemId: bundle.item.id,
+            sourceBundleId: bundle.id,
+          }
+          
+          // Add bundle components as editable child items
+          if (bundleDef.components && bundleDef.components.length > 0) {
+            let sortOrder = 0
+            for (const comp of bundleDef.components) {
+              const compItem = comp.componentItem || comp.componentBundle?.item
+              if (compItem) {
+                const qty = parseFloat(comp.quantity) || 1
+                const unitPrice = comp.defaultUnitPriceOverride ?? compItem.defaultUnitPrice ?? 0
+                const unitCost = comp.defaultUnitCostOverride ?? compItem.defaultUnitCost ?? null
+                
+                updated.push({
+                  description: compItem.name,
+                  quantity: qty.toString(),
+                  unitPrice: unitPrice.toString(),
+                  unitCost: unitCost?.toString() || '0',
+                  isVisibleToClient: true,
+                  groupId,
+                  isGroupHeader: false,
+                  sourceItemId: compItem.id,
+                  sourceBundleId: bundle.id,
+                  sortOrder: sortOrder++,
+                })
+              }
+            }
+          }
+        } else {
+          // Fallback if fetch fails
+          const groupId = `temp-group-${Date.now()}`
+          updated[index] = {
+            description: selected.name,
+            quantity: '1',
+            unitPrice: '0',
+            isVisibleToClient: true,
+            groupId,
+            groupName: selected.name,
+            isGroupHeader: true,
+            sourceItemId: bundle.item.id,
+            sourceBundleId: bundle.id,
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching bundle details:', error)
+        // Fallback
+        const groupId = `temp-group-${Date.now()}`
+        updated[index] = {
+          description: selected.name,
+          quantity: '1',
+          unitPrice: '0',
+          isVisibleToClient: true,
+          groupId,
+          groupName: selected.name,
+          isGroupHeader: true,
+          sourceItemId: (selected as Bundle).item.id,
+          sourceBundleId: (selected as Bundle).id,
+        }
       }
     } else {
       // Handle single item
@@ -174,6 +261,26 @@ export default function NewEstimatePage() {
     setLineItems(updated)
     setShowItemPicker(false)
     setItemPickerIndex(null)
+    
+    // Auto-focus next line item row after selection
+    setTimeout(() => {
+      const nextIndex = index + (isBundle ? updated.length - index : 1)
+      if (nextIndex >= updated.length) {
+        // Add new line item and auto-open picker
+        const newItem: LineItem = { description: '', quantity: '1', unitPrice: '0', isVisibleToClient: true }
+        setLineItems([...updated, newItem])
+        setTimeout(() => {
+          setItemPickerIndex(updated.length)
+          setShowItemPicker(true)
+        }, 100)
+      } else {
+        // Focus existing next line and auto-open picker
+        setItemPickerIndex(nextIndex)
+        setTimeout(() => {
+          setShowItemPicker(true)
+        }, 100)
+      }
+    }, 150)
   }
 
   const handleNextLine = () => {
@@ -416,7 +523,55 @@ export default function NewEstimatePage() {
                                 >
                                   <Package className="h-4 w-4" />
                                 </Button>
-                                }
+                                
+                              </div>
+                            </div>
+                          </div>
+                          <div className="w-20">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder="Qty"
+                              value={item.quantity}
+                              onChange={(e) => updateLineItem(index, 'quantity', e.target.value)}
+                              required
+                            />
+                          </div>
+                          <div className="w-28">
+                            <Label className="text-xs text-gray-500">Customer Price</Label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder="Price"
+                              value={item.unitPrice}
+                              onChange={(e) => updateLineItem(index, 'unitPrice', e.target.value)}
+                              required
+                            />
+                          </div>
+                          <div className="w-28">
+                            <Label className="text-xs text-gray-500">Vendor Cost</Label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder="Cost"
+                              value={item.unitCost || ''}
+                              onChange={(e) => updateLineItem(index, 'unitCost', e.target.value)}
+                              className="bg-gray-50"
+                            />
+                          </div>
+                          {lineItems.length > 1 && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeLineItem(index)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      )
+                    })}
                     <Button type="button" variant="outline" onClick={addLineItem}>
                       <Plus className="mr-2 h-4 w-4" />
                       Add Line Item
