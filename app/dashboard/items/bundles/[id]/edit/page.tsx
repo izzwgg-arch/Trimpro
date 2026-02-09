@@ -347,16 +347,10 @@ export default function EditBundlePage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center space-x-4">
-        <Link href={`/dashboard/items/${bundleId ? (() => {
-          // We need to get the item ID from the bundle
-          // For now, just go back to items list
-          return ''
-        })() : ''}`}>
-          <Button variant="ghost" size="sm" onClick={() => router.back()}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back
-          </Button>
-        </Link>
+        <Button variant="ghost" size="sm" onClick={() => router.back()}>
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Back
+        </Button>
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Edit Bundle</h1>
           <p className="mt-2 text-gray-600">Update bundle details</p>
