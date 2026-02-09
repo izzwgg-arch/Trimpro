@@ -421,21 +421,7 @@ export default function NewEstimatePage() {
                                 >
                                   <Package className="h-4 w-4" />
                                 </Button>
-                                {showItemPicker && itemPickerIndex === index && (
-                                  <div className="absolute top-full left-0 z-50 mt-1">
-                                    <RapidFireItemPicker
-                                      isOpen={true}
-                                      onClose={() => {
-                                        setShowItemPicker(false)
-                                        setItemPickerIndex(null)
-                                      }}
-                                      onSelect={handleItemSelect}
-                                      onNextLine={handleNextLine}
-                                      items={items}
-                                      bundles={bundles}
-                                    />
-                                  </div>
-                                )}
+                                
                               </div>
                             </div>
                           </div>
@@ -470,6 +456,26 @@ export default function NewEstimatePage() {
                               onChange={(e) => updateLineItem(index, 'unitCost', e.target.value)}
                               className="bg-gray-50"
                             />
+                          </div>
+                          <div className="w-28">
+                            <Label className="text-xs text-gray-500">Tax</Label>
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="checkbox"
+                                checked={item.isTaxable ?? true}
+                                onChange={(e) => updateLineItem(index, 'isTaxable', e.target.checked)}
+                                className="h-4 w-4"
+                                title="Taxable"
+                              />
+                              <Input
+                                type="number"
+                                step="0.01"
+                                placeholder="%"
+                                value={item.taxRate || ''}
+                                onChange={(e) => updateLineItem(index, 'taxRate', e.target.value)}
+                                className="text-xs"
+                              />
+                            </div>
                           </div>
                           {lineItems.length > 1 && (
                             <Button
