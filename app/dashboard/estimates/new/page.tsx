@@ -328,7 +328,6 @@ export default function NewEstimatePage() {
         <div>
           <h1 className="text-3xl font-bold text-gray-900">New Estimate</h1>
           <p className="mt-2 text-gray-600">Create a new estimate</p>
-          <p className="mt-1 text-xs text-gray-400">Build: {BUILD_TAG}</p>
         </div>
       </div>
 
