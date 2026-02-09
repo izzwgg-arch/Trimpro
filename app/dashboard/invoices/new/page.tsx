@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ArrowLeft, Save, Plus, Trash2, Package } from 'lucide-react'
 import Link from 'next/link'
-import { ItemPicker } from '@/components/items/ItemPicker'
 
 interface Client {
   id: string
@@ -101,38 +100,122 @@ export default function NewInvoicePage() {
     setLineItems(updated)
   }
 
-  const handleItemSelect = async (item: any) => {
-    if (item.kind === 'BUNDLE') {
-      // Handle bundle - this will be expanded when invoice is created
-      const groupId = `group-${Date.now()}`
-      const updated = [...lineItems]
-      updated.push({
+  const handleItemSelect = async (selected: Item | Bundle, isBundle: boolean) => {
+    const index = itemPickerIndex ?? lineItems.length - 1
+    const updated = [...lineItems]
+
+    if (isBundle) {
+      // Handle bundle - fetch and expand immediately in UI
+      try {
+        const token = localStorage.getItem('accessToken')
+        const bundle = selected as Bundle
+
+        // Get bundle definition with components
+        const bundleResponse = await fetch(`/api/items/bundles/${bundle.id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+
+        if (bundleResponse.ok) {
+          const bundleData = await bundleResponse.json()
+          const bundleDef = bundleData.bundle
+
+          // Create temporary group ID for UI
+          const groupId = `temp-group-${Date.now()}`
+
+          // Replace current line with bundle header
+          updated[index] = {
+            description: bundleDef.name || selected.name,
+            quantity: '1',
+            unitPrice: '0', // Will be calculated from components
+            isVisibleToClient: true,
+            isTaxable: true,
+            groupId,
+            groupName: bundleDef.name || selected.name,
+            isGroupHeader: true,
+            sourceItemId: bundle.item.id,
+            sourceBundleId: bundle.id,
+          }
+
+          // Add bundle components as editable child items
+          if (bundleDef.components && bundleDef.components.length > 0) {
+            let sortOrder = 0
+            for (const comp of bundleDef.components) {
+              const compItem = comp.componentItem || comp.componentBundle?.item
+              if (compItem) {
+                const qty = parseFloat(comp.quantity) || 1
+                const unitPrice = comp.defaultUnitPriceOverride ?? compItem.defaultUnitPrice ?? 0
+                const unitCost = comp.defaultUnitCostOverride ?? compItem.defaultUnitCost ?? null
+
+                updated.push({
+                  description: compItem.name,
+                  quantity: qty.toString(),
+                  unitPrice: unitPrice.toString(),
+                  unitCost: unitCost?.toString() || '0',
+                  isVisibleToClient: true,
+                  isTaxable: compItem.taxable ?? true,
+                  taxRate: compItem.taxRate ? (Number(compItem.taxRate) * 100).toString() : '',
+                  groupId,
+                  isGroupHeader: false,
+                  sourceItemId: compItem.id,
+                  sourceBundleId: bundle.id,
+                  sortOrder: sortOrder++,
+                })
+              }
+            }
+          }
+        } else {
+          // Fallback if fetch fails
+          const groupId = `temp-group-${Date.now()}`
+          updated[index] = {
+            description: selected.name,
+            quantity: '1',
+            unitPrice: '0',
+            isVisibleToClient: true,
+            isTaxable: true,
+            groupId,
+            groupName: selected.name,
+            isGroupHeader: true,
+            sourceItemId: bundle.item.id,
+            sourceBundleId: bundle.id,
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching bundle details:', error)
+        // Fallback
+        const groupId = `temp-group-${Date.now()}`
+        updated[index] = {
+          description: selected.name,
+          quantity: '1',
+          unitPrice: '0',
+          isVisibleToClient: true,
+          isTaxable: true,
+          groupId,
+          groupName: selected.name,
+          isGroupHeader: true,
+          sourceItemId: (selected as Bundle).item.id,
+          sourceBundleId: (selected as Bundle).id,
+        }
+      }
+    } else {
+      // Handle single item
+      const item = selected as Item
+      updated[index] = {
+        ...updated[index],
         description: item.name,
         quantity: '1',
         unitPrice: item.defaultUnitPrice.toString(),
-        groupId,
-        groupName: item.name,
-        isGroupHeader: true,
-        sourceItemId: item.id,
-      })
-      setLineItems(updated)
-      setShowItemPicker(false)
-      setItemPickerIndex(null)
-      alert('Bundle selected. Bundle will be expanded when invoice is saved.')
-    } else {
-      // Handle single item
-      const index = itemPickerIndex ?? lineItems.length - 1
-      const updated = [...lineItems]
-      updated[index] = {
-        description: item.name + (item.description ? ` - ${item.description}` : ''),
-        quantity: '1',
-        unitPrice: item.defaultUnitPrice.toString(),
+        unitCost: item.defaultUnitCost?.toString() || '0',
+        isVisibleToClient: updated[index].isVisibleToClient ?? true,
+        isTaxable: item.taxable ?? true,
+        taxRate: item.taxRate ? (Number(item.taxRate) * 100).toString() : '',
         sourceItemId: item.id,
       }
-      setLineItems(updated)
+    }
+
+    setLineItems(updated)
     setShowItemPicker(false)
     setItemPickerIndex(null)
-    
+
     // Auto-focus next line item row after selection
     setTimeout(() => {
       const nextIndex = index + (isBundle ? updated.length - index : 1)
@@ -153,6 +236,17 @@ export default function NewInvoicePage() {
       }
     }, 150)
   }
+
+  const handleNextLine = () => {
+    const nextIndex = (itemPickerIndex ?? lineItems.length - 1) + 1
+    if (nextIndex >= lineItems.length) {
+      addLineItem()
+    } else {
+      setItemPickerIndex(nextIndex)
+      setTimeout(() => {
+        setShowItemPicker(true)
+      }, 50)
+    }
   }
 
   const openItemPicker = (index?: number) => {
@@ -375,15 +469,26 @@ export default function NewInvoicePage() {
                       <Plus className="mr-2 h-4 w-4" />
                       Add Line Item
                     </Button>
+                    {showItemPicker && (
+  <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-24 bg-black/20">
+    <div className="bg-white shadow-lg rounded-md w-[400px]">
+      <RapidFireItemPicker
+        isOpen={true}
+        onClose={() => {
+          setShowItemPicker(false)
+          setItemPickerIndex(null)
+        }}
+        onSelect={handleItemSelect}
+        onNextLine={handleNextLine}
+        items={items}
+        bundles={bundles}
+      />
+    </div>
+  </div>
+)}
                   </div>
                 </div>
-                {showItemPicker && (
-                  <ItemPicker
-                    onSelect={handleItemSelect}
-                    onClose={() => {
-                      setShowItemPicker(false)
-                      setItemPickerIndex(null)
-                    }}
+                }
                   />
                 )}
               </CardContent>

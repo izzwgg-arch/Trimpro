@@ -562,7 +562,8 @@ export default function EditEstimatePage() {
                     <Button type="button" variant="outline" onClick={addLineItem}>
                       <Plus className="mr-2 h-4 w-4" />
                       Add Line Item
-                    </Button>{showItemPicker && (
+                    </Button>
+                    {showItemPicker && (
   <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-24 bg-black/20">
     <div className="bg-white shadow-lg rounded-md w-[400px]">
       <RapidFireItemPicker
