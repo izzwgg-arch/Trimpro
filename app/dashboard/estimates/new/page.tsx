@@ -74,6 +74,7 @@ export default function NewEstimatePage() {
   })
 
   const lineItemRefs = useRef<(HTMLDivElement | null)[]>([])
+  const pickerInputRefs = useRef<(HTMLInputElement | null)[]>([])
 
   useEffect(() => {
     fetchClients()
@@ -275,10 +276,22 @@ export default function NewEstimatePage() {
     if (nextIndex >= lineItems.length) {
       addLineItem()
     }
-    // Focus will be handled by FastPicker's onNextLine callback
+    // Focus the next line's picker input
     setTimeout(() => {
-      const nextInput = lineItemRefs.current[nextIndex]?.querySelector<HTMLInputElement>('[data-picker-input="true"]')
-      nextInput?.focus()
+      const nextInput = pickerInputRefs.current[nextIndex]
+      if (nextInput) {
+        nextInput.focus()
+        // Trigger focus event to open dropdown
+        nextInput.dispatchEvent(new Event('focus', { bubbles: true }))
+      } else {
+        // Fallback: try to find via querySelector
+        const nextContainer = lineItemRefs.current[nextIndex]
+        const fallbackInput = nextContainer?.querySelector<HTMLInputElement>('[data-picker-input="true"]')
+        if (fallbackInput) {
+          fallbackInput.focus()
+          fallbackInput.dispatchEvent(new Event('focus', { bubbles: true }))
+        }
+      }
     }, 100)
   }
 
@@ -542,6 +555,9 @@ export default function NewEstimatePage() {
                               bundles={pickerBundles}
                               placeholder="Type to search items..."
                               className="w-full"
+                              inputRef={(el) => {
+                                pickerInputRefs.current[index] = el
+                              }}
                             />
                           )}
                         </div>

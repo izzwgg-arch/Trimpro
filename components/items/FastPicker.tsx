@@ -33,6 +33,7 @@ interface FastPickerProps {
   placeholder?: string
   disabled?: boolean
   className?: string
+  inputRef?: (el: HTMLInputElement | null) => void // Callback to expose input ref
 }
 
 const ITEM_HEIGHT = 48 // Height of each item in pixels
@@ -48,6 +49,7 @@ export function FastPicker({
   placeholder = 'Type to search items...',
   disabled = false,
   className = '',
+  inputRef: inputRefCallback,
 }: FastPickerProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -57,6 +59,19 @@ export function FastPicker({
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const itemRefs = useRef<(HTMLDivElement | null)[]>([])
+  const isSelectingRef = useRef(false) // Prevent race conditions
+
+  // Expose input ref to parent
+  useEffect(() => {
+    if (inputRefCallback && inputRef.current) {
+      inputRefCallback(inputRef.current)
+    }
+    return () => {
+      if (inputRefCallback) {
+        inputRefCallback(null)
+      }
+    }
+  }, [inputRefCallback])
 
   // Combine items and bundles
   const allItems = useRef<FastPickerItem[]>([])
@@ -66,12 +81,16 @@ export function FastPicker({
       ...items.map(item => ({ ...item, kind: 'SINGLE' as const })),
       ...bundles.map(bundle => ({ ...bundle, kind: 'BUNDLE' as const })),
     ]
+    // Always update filtered items when items/bundles change
+    setFilteredItems(allItems.current)
+    setSelectedIndex(0)
   }, [items, bundles])
 
   // Debounced search filter
   const debouncedFilter = useDebouncedCallback((query: string) => {
     if (!query.trim()) {
       setFilteredItems(allItems.current)
+      setSelectedIndex(0)
       return
     }
 
@@ -90,24 +109,6 @@ export function FastPicker({
     debouncedFilter(searchQuery)
   }, [searchQuery, debouncedFilter])
 
-  // Initialize filtered items
-  useEffect(() => {
-    if (allItems.current.length > 0 && filteredItems.length === 0) {
-      setFilteredItems(allItems.current)
-    }
-  }, [filteredItems.length])
-
-  // Focus management
-  useEffect(() => {
-    if (isOpen && inputRef.current) {
-      // Small delay to ensure popover is rendered
-      setTimeout(() => {
-        inputRef.current?.focus()
-        setSearchQuery('')
-        setSelectedIndex(0)
-      }, 10)
-    }
-  }, [isOpen])
 
   // Scroll selected item into view
   useEffect(() => {
@@ -122,6 +123,35 @@ export function FastPicker({
     }
   }, [selectedIndex, isOpen])
 
+  const handleSelect = useCallback((item: FastPickerItem) => {
+    if (isSelectingRef.current) return // Prevent duplicate selections
+    isSelectingRef.current = true
+
+    // Update the input value
+    onChange(item.name)
+    
+    // Call onSelect to populate line item data
+    onSelect(item)
+    
+    // Close popover and reset
+    setIsOpen(false)
+    setSearchQuery('')
+    setSelectedIndex(0)
+    
+    // Auto-advance to next line
+    if (onNextLine) {
+      // Use requestAnimationFrame to ensure state updates complete
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          onNextLine()
+          isSelectingRef.current = false
+        }, 50)
+      })
+    } else {
+      isSelectingRef.current = false
+    }
+  }, [onChange, onSelect, onNextLine])
+
   // Handle keyboard navigation
   const handleKeyDown = useCallback((e: KeyboardEvent<HTMLInputElement>) => {
     if (disabled) return
@@ -129,8 +159,10 @@ export function FastPicker({
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault()
+        e.stopPropagation()
         if (!isOpen) {
           setIsOpen(true)
+          setSelectedIndex(0)
         } else {
           setSelectedIndex(prev => 
             prev < filteredItems.length - 1 ? prev + 1 : prev
@@ -140,6 +172,7 @@ export function FastPicker({
 
       case 'ArrowUp':
         e.preventDefault()
+        e.stopPropagation()
         if (isOpen) {
           setSelectedIndex(prev => (prev > 0 ? prev - 1 : 0))
         }
@@ -147,6 +180,7 @@ export function FastPicker({
 
       case 'Enter':
         e.preventDefault()
+        e.stopPropagation()
         if (isOpen && filteredItems.length > 0 && filteredItems[selectedIndex]) {
           const selected = filteredItems[selectedIndex]
           handleSelect(selected)
@@ -157,6 +191,7 @@ export function FastPicker({
 
       case 'Escape':
         e.preventDefault()
+        e.stopPropagation()
         setIsOpen(false)
         setSearchQuery('')
         setSelectedIndex(0)
@@ -174,34 +209,39 @@ export function FastPicker({
 
       default:
         // Any other key opens the picker if it's closed
-        if (!isOpen && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (!isOpen && !e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1) {
           setIsOpen(true)
         }
         break
     }
-  }, [isOpen, filteredItems, selectedIndex, disabled])
+  }, [isOpen, filteredItems, selectedIndex, disabled, handleSelect])
 
-  const handleSelect = useCallback((item: FastPickerItem) => {
-    onChange(item.name)
-    onSelect(item)
-    setIsOpen(false)
-    setSearchQuery('')
-    setSelectedIndex(0)
-    
-    // Auto-advance to next line
-    if (onNextLine) {
-      // Small delay to ensure state updates complete
-      setTimeout(() => {
-        onNextLine()
-      }, 50)
-    }
-  }, [onChange, onSelect, onNextLine])
-
+  // Handle input focus - opens dropdown immediately
   const handleInputFocus = useCallback(() => {
-    if (!disabled) {
+    if (!disabled && !isOpen) {
       setIsOpen(true)
+      // Reset search when opening
+      setSearchQuery('')
+      setSelectedIndex(0)
     }
-  }, [disabled])
+  }, [disabled, isOpen])
+
+  // Handle pointer down - prevents blur race condition
+  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLInputElement>) => {
+    if (!disabled) {
+      e.preventDefault()
+      // Focus the input if not already focused
+      if (document.activeElement !== inputRef.current) {
+        inputRef.current?.focus()
+      }
+      // Open dropdown
+      if (!isOpen) {
+        setIsOpen(true)
+        setSearchQuery('')
+        setSelectedIndex(0)
+      }
+    }
+  }, [disabled, isOpen])
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value
@@ -212,25 +252,34 @@ export function FastPicker({
     }
   }, [onChange, isOpen])
 
-  // Prevent duplicate selections
-  const lastSelectedRef = useRef<string | null>(null)
+  // Handle item click
   const handleItemClick = useCallback((item: FastPickerItem) => {
-    const itemKey = `${item.id}-${Date.now()}`
-    if (lastSelectedRef.current === itemKey) {
-      return // Prevent duplicate
-    }
-    lastSelectedRef.current = itemKey
     handleSelect(item)
   }, [handleSelect])
 
+  // Handle mouse enter on item (update selected index)
+  const handleItemMouseEnter = useCallback((index: number) => {
+    setSelectedIndex(index)
+  }, [])
+
   return (
-    <Popover.Root open={isOpen} onOpenChange={setIsOpen}>
+    <Popover.Root open={isOpen} onOpenChange={(open) => {
+      // Only allow closing if not in the middle of a selection
+      if (!open && !isSelectingRef.current) {
+        setIsOpen(false)
+        setSearchQuery('')
+        setSelectedIndex(0)
+      } else if (open) {
+        setIsOpen(true)
+      }
+    }}>
       <Popover.Trigger asChild>
         <Input
           ref={inputRef}
           value={value}
           onChange={handleInputChange}
           onFocus={handleInputFocus}
+          onPointerDown={handlePointerDown}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           disabled={disabled}
@@ -246,23 +295,22 @@ export function FastPicker({
           sideOffset={4}
           align="start"
           onOpenAutoFocus={(e) => e.preventDefault()}
+          onCloseAutoFocus={(e) => {
+            e.preventDefault()
+            // Keep focus on input
+            inputRef.current?.focus()
+          }}
+          onEscapeKeyDown={(e) => {
+            setIsOpen(false)
+            setSearchQuery('')
+            setSelectedIndex(0)
+            inputRef.current?.blur()
+          }}
         >
-          {/* Search input inside popover */}
-          <div className="p-2 border-b border-gray-200">
-            <Input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search items..."
-              className="w-full"
-              autoComplete="off"
-              onKeyDown={handleKeyDown}
-            />
-          </div>
-
-          {/* Items list */}
+          {/* Items list - no separate search input, use main input */}
           <div
             ref={listRef}
-            className="overflow-y-auto max-h-[320px]"
+            className="overflow-y-auto max-h-[400px]"
             style={{ maxHeight: `${VISIBLE_ITEMS * ITEM_HEIGHT}px` }}
           >
             {filteredItems.length === 0 ? (
@@ -276,7 +324,7 @@ export function FastPicker({
 
                 return (
                   <div
-                    key={`${item.id}-${item.kind}`}
+                    key={`${item.id}-${item.kind}-${index}`}
                     ref={(el) => {
                       itemRefs.current[index] = el
                     }}
@@ -285,8 +333,12 @@ export function FastPicker({
                         ? 'bg-blue-100 border-l-2 border-blue-500'
                         : 'hover:bg-gray-50'
                     }`}
-                    onClick={() => handleItemClick(item)}
-                    onMouseEnter={() => setSelectedIndex(index)}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      handleItemClick(item)
+                    }}
+                    onMouseEnter={() => handleItemMouseEnter(index)}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-2 flex-1 min-w-0">

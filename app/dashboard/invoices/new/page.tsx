@@ -86,6 +86,7 @@ export default function NewInvoicePage() {
   })
 
   const lineItemRefs = useRef<(HTMLDivElement | null)[]>([])
+  const pickerInputRefs = useRef<(HTMLInputElement | null)[]>([])
 
   useEffect(() => {
     fetchClients()
@@ -384,8 +385,18 @@ export default function NewInvoicePage() {
       addLineItem()
     }
     setTimeout(() => {
-      const nextInput = lineItemRefs.current[nextIndex]?.querySelector<HTMLInputElement>('[data-picker-input="true"]')
-      nextInput?.focus()
+      const nextInput = pickerInputRefs.current[nextIndex]
+      if (nextInput) {
+        nextInput.focus()
+        nextInput.dispatchEvent(new Event('focus', { bubbles: true }))
+      } else {
+        const nextContainer = lineItemRefs.current[nextIndex]
+        const fallbackInput = nextContainer?.querySelector<HTMLInputElement>('[data-picker-input="true"]')
+        if (fallbackInput) {
+          fallbackInput.focus()
+          fallbackInput.dispatchEvent(new Event('focus', { bubbles: true }))
+        }
+      }
     }, 100)
   }
 
@@ -690,6 +701,9 @@ export default function NewInvoicePage() {
                               bundles={pickerBundles}
                               placeholder="Type to search items..."
                               className="w-full"
+                              inputRef={(el) => {
+                                pickerInputRefs.current[index] = el
+                              }}
                             />
                           )}
                         </div>
