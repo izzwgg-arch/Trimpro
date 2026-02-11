@@ -148,26 +148,62 @@ export function FastPicker({
     onChange(item.name)
     
     // Call onSelect to populate line item data
-    onSelect(item)
-    
-    // Close dropdown and reset
+    // Use setTimeout to ensure onChange completes first
+    setTimeout(() => {
+      onSelect(item)
+      
+      // Close dropdown and reset
+      setIsOpen(false)
+      setSearchQuery('')
+      setSelectedIndex(0)
+      
+      // Auto-advance to next line
+      if (onNextLine) {
+        // Use requestAnimationFrame to ensure state updates complete
+        requestAnimationFrame(() => {
+          setTimeout(() => {
+            onNextLine()
+            isSelectingRef.current = false
+          }, 50)
+        })
+      } else {
+        isSelectingRef.current = false
+      }
+    }, 0)
+  }, [onChange, onSelect, onNextLine])
+
+  // Handle committing current text as custom entry (no item selected)
+  const handleCommitCustom = useCallback(() => {
+    if (isSelectingRef.current) return
+    isSelectingRef.current = true
+
+    // Ensure the current value is committed via onChange (in case it wasn't already)
+    // The value prop should already be set, but we ensure it's committed
+    const currentValue = inputRef.current?.value || value
+    if (currentValue && currentValue !== value) {
+      onChange(currentValue)
+    }
+
+    // Close dropdown
     setIsOpen(false)
     setSearchQuery('')
     setSelectedIndex(0)
     
-    // Auto-advance to next line
+    // Auto-advance to next line after ensuring state is committed
     if (onNextLine) {
-      // Use requestAnimationFrame to ensure state updates complete
-      requestAnimationFrame(() => {
-        setTimeout(() => {
-          onNextLine()
-          isSelectingRef.current = false
-        }, 50)
-      })
+      // Use setTimeout to ensure onChange state update completes
+      setTimeout(() => {
+        requestAnimationFrame(() => {
+          setTimeout(() => {
+            onNextLine()
+            isSelectingRef.current = false
+          }, 50)
+        })
+      }, 10)
     } else {
       isSelectingRef.current = false
     }
-  }, [onChange, onSelect, onNextLine])
+  }, [onNextLine, onChange, value])
 
   // Handle keyboard navigation
   const handleKeyDown = useCallback((e: KeyboardEvent<HTMLInputElement>) => {
@@ -198,11 +234,28 @@ export function FastPicker({
       case 'Enter':
         e.preventDefault()
         e.stopPropagation()
-        if (isOpen && filteredItems.length > 0 && filteredItems[selectedIndex]) {
-          const selected = filteredItems[selectedIndex]
-          handleSelect(selected)
-        } else if (!isOpen) {
+        if (isOpen) {
+          // Dropdown is open
+          if (filteredItems.length > 0) {
+            // There are filtered items - select the highlighted one (or first if index is invalid)
+            const indexToSelect = (selectedIndex >= 0 && selectedIndex < filteredItems.length) 
+              ? selectedIndex 
+              : 0
+            const selected = filteredItems[indexToSelect]
+            if (selected) {
+              handleSelect(selected)
+            } else {
+              // Fallback: select first item
+              handleSelect(filteredItems[0])
+            }
+          } else {
+            // No items found, commit current text as custom entry
+            handleCommitCustom()
+          }
+        } else {
+          // Dropdown is closed - open it first
           setIsOpen(true)
+          setSelectedIndex(0)
         }
         break
 
