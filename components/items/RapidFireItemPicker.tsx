@@ -210,8 +210,8 @@ export function RapidFireItemPicker({
                     )}
                   </div>
                   <div className="text-sm text-gray-600">
-                    {!isBundle && 'defaultUnitPrice' in item && (
-                      <span>${item.defaultUnitPrice.toFixed(2)}</span>
+                    {!isBundle && 'defaultUnitPrice' in item && item.defaultUnitPrice != null && (
+                      <span>${Number(item.defaultUnitPrice).toFixed(2)}</span>
                     )}
                   </div>
                 </div>
