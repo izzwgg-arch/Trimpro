@@ -103,6 +103,7 @@ export async function POST(request: NextRequest) {
       jobId,
       title,
       lineItems,
+      groups, // Array of { groupId, name, sourceBundleId }
       taxRate,
       discount,
       validUntil,
@@ -160,6 +161,24 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    // Create document line groups first (for bundles)
+    const groupMap = new Map<string, string>() // groupId -> database group ID
+    if (groups && Array.isArray(groups)) {
+      for (const group of groups) {
+        const dbGroup = await prisma.documentLineGroup.create({
+          data: {
+            tenantId: user.tenantId,
+            documentType: 'ESTIMATE',
+            documentId: estimate.id,
+            name: group.name || 'Bundle',
+            sourceBundleId: group.sourceBundleId || null,
+            sourceBundleName: group.name || null,
+          },
+        })
+        groupMap.set(group.groupId, dbGroup.id)
+      }
+    }
+
     // Create line items
     for (let i = 0; i < lineItems.length; i++) {
       const item = lineItems[i]
@@ -167,9 +186,13 @@ export async function POST(request: NextRequest) {
       const price = parseFloat(item.unitPrice || 0)
       const itemTotal = qty * price
 
+      // Get groupId from map if item has a groupId
+      const dbGroupId = item.groupId ? groupMap.get(item.groupId) || null : null
+
       await prisma.estimateLineItem.create({
         data: {
           estimateId: estimate.id,
+          groupId: dbGroupId,
           description: item.description,
           quantity: qty,
           unitPrice: price,
@@ -177,7 +200,18 @@ export async function POST(request: NextRequest) {
           total: itemTotal,
           sortOrder: i,
           isVisibleToClient: item.isVisibleToClient !== undefined ? Boolean(item.isVisibleToClient) : true,
+          // New per-field visibility flags
+          showCostToCustomer: item.showCostToCustomer !== undefined ? Boolean(item.showCostToCustomer) : false,
+          showPriceToCustomer: item.showPriceToCustomer !== undefined ? Boolean(item.showPriceToCustomer) : true,
+          showTaxToCustomer: item.showTaxToCustomer !== undefined ? Boolean(item.showTaxToCustomer) : true,
+          showNotesToCustomer: item.showNotesToCustomer !== undefined ? Boolean(item.showNotesToCustomer) : false,
+          // Additional fields
+          vendorId: item.vendorId || null,
+          taxable: item.taxable !== undefined ? Boolean(item.taxable) : true,
+          taxRate: item.taxRate ? parseFloat(item.taxRate) : null,
+          notes: item.notes || null,
           sourceItemId: item.sourceItemId || null,
+          sourceBundleId: item.sourceBundleId || null,
         },
       })
     }

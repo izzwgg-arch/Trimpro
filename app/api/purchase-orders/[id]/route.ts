@@ -42,6 +42,22 @@ export async function GET(
           },
         },
         lineItems: {
+          include: {
+            group: true,
+            sourceItem: {
+              select: {
+                id: true,
+                name: true,
+                kind: true,
+              },
+            },
+            vendor: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
           orderBy: {
             sortOrder: 'asc',
           },
@@ -110,6 +126,7 @@ export async function PUT(
       expectedDate,
       orderDate,
       lineItems,
+      groups, // Array of { groupId, name, sourceBundleId }
       tax,
       shipping,
     } = body
@@ -195,6 +212,22 @@ export async function PUT(
           },
         },
         lineItems: {
+          include: {
+            group: true,
+            sourceItem: {
+              select: {
+                id: true,
+                name: true,
+                kind: true,
+              },
+            },
+            vendor: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
           orderBy: {
             sortOrder: 'asc',
           },
@@ -208,21 +241,60 @@ export async function PUT(
 
     // Update line items if provided
     if (lineItems && Array.isArray(lineItems)) {
-      // Delete existing line items
+      // Delete existing groups and line items
+      await prisma.documentLineGroup.deleteMany({
+        where: {
+          tenantId: user.tenantId,
+          documentType: 'PURCHASE_ORDER',
+          documentId: params.id,
+        },
+      })
       await prisma.purchaseOrderLineItem.deleteMany({
         where: { poId: params.id },
       })
 
+      // Create new groups
+      const groupMap = new Map<string, string>() // groupId -> database group ID
+      if (groups && Array.isArray(groups)) {
+        for (const group of groups) {
+          const dbGroup = await prisma.documentLineGroup.create({
+            data: {
+              tenantId: user.tenantId,
+              documentType: 'PURCHASE_ORDER',
+              documentId: params.id,
+              name: group.name || 'Bundle',
+              sourceBundleId: group.sourceBundleId || null,
+              sourceBundleName: group.name || null,
+            },
+          })
+          groupMap.set(group.groupId, dbGroup.id)
+        }
+      }
+
       // Create new line items
-      for (const item of lineItems) {
+      for (let i = 0; i < lineItems.length; i++) {
+        const item = lineItems[i]
+        const qty = parseFloat(item.quantity || 0)
+        const price = parseFloat(item.unitPrice || 0) // PO uses unitPrice for cost
+        const itemTotal = qty * price
+
+        // Get groupId from map if item has a groupId
+        const dbGroupId = item.groupId ? groupMap.get(item.groupId) || null : null
+
         await prisma.purchaseOrderLineItem.create({
           data: {
             poId: params.id,
+            groupId: dbGroupId,
             description: item.description || '',
-            quantity: parseFloat(item.quantity) || 1,
-            unitPrice: parseFloat(item.unitPrice) || 0,
-            total: parseFloat(item.quantity) * parseFloat(item.unitPrice),
-            sortOrder: item.sortOrder || 0,
+            quantity: qty || 1,
+            unitPrice: price || 0,
+            unitCost: item.unitCost ? parseFloat(item.unitCost) : null,
+            total: itemTotal,
+            sortOrder: i,
+            vendorId: item.vendorId || null,
+            notes: item.notes || null,
+            sourceItemId: item.sourceItemId || null,
+            sourceBundleId: item.sourceBundleId || null,
           },
         })
       }

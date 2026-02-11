@@ -90,21 +90,24 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: validation.error }, { status: validation.status })
   }
 
+  const body = await request.json()
   const {
     clientId,
     jobId,
     estimateId,
     title,
     lineItems: lineItemsFromData,
+    groups, // Array of { groupId, name, sourceBundleId }
     items,
     taxRate,
     discount,
     invoiceDate,
     dueDate,
     notes,
+    isNotesVisibleToClient,
     terms,
     memo,
-  } = validation.data
+  } = body
 
   const lineItems = lineItemsFromData || items || []
 
@@ -160,6 +163,7 @@ export async function POST(request: NextRequest) {
         invoiceDate: invoiceDate ? new Date(invoiceDate) : new Date(),
         dueDate: dueDate ? new Date(dueDate) : null,
         notes: notes || null,
+        isNotesVisibleToClient: isNotesVisibleToClient !== undefined ? Boolean(isNotesVisibleToClient) : true,
         terms: terms || null,
         memo: memo || null,
       },
@@ -180,19 +184,57 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    // Create document line groups first (for bundles)
+    const groupMap = new Map<string, string>() // groupId -> database group ID
+    if (groups && Array.isArray(groups)) {
+      for (const group of groups) {
+        const dbGroup = await prisma.documentLineGroup.create({
+          data: {
+            tenantId: user.tenantId,
+            documentType: 'INVOICE',
+            documentId: invoice.id,
+            name: group.name || 'Bundle',
+            sourceBundleId: group.sourceBundleId || null,
+            sourceBundleName: group.name || null,
+          },
+        })
+        groupMap.set(group.groupId, dbGroup.id)
+      }
+    }
+
     // Create line items
     for (let i = 0; i < lineItems.length; i++) {
       const item = lineItems[i]
       const qty = typeof item.quantity === 'number' ? item.quantity : parseFloat(item.quantity || 0)
       const price = typeof item.unitPrice === 'number' ? item.unitPrice : parseFloat(item.unitPrice || 0)
+      const itemTotal = qty * price
+
+      // Get groupId from map if item has a groupId
+      const dbGroupId = item.groupId ? groupMap.get(item.groupId) || null : null
+
       await prisma.invoiceLineItem.create({
         data: {
           invoiceId: invoice.id,
+          groupId: dbGroupId,
           description: item.description,
           quantity: qty,
           unitPrice: price,
-          total: qty * price,
+          unitCost: item.unitCost ? (typeof item.unitCost === 'number' ? item.unitCost : parseFloat(item.unitCost)) : null,
+          total: itemTotal,
           sortOrder: i,
+          isVisibleToClient: item.isVisibleToClient !== undefined ? Boolean(item.isVisibleToClient) : true,
+          // New per-field visibility flags
+          showCostToCustomer: item.showCostToCustomer !== undefined ? Boolean(item.showCostToCustomer) : false,
+          showPriceToCustomer: item.showPriceToCustomer !== undefined ? Boolean(item.showPriceToCustomer) : true,
+          showTaxToCustomer: item.showTaxToCustomer !== undefined ? Boolean(item.showTaxToCustomer) : true,
+          showNotesToCustomer: item.showNotesToCustomer !== undefined ? Boolean(item.showNotesToCustomer) : false,
+          // Additional fields
+          vendorId: item.vendorId || null,
+          taxable: item.taxable !== undefined ? Boolean(item.taxable) : true,
+          taxRate: item.taxRate ? (typeof item.taxRate === 'number' ? item.taxRate : parseFloat(item.taxRate)) : null,
+          notes: item.notes || null,
+          sourceItemId: item.sourceItemId || null,
+          sourceBundleId: item.sourceBundleId || null,
         },
       })
     }

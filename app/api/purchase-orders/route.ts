@@ -125,6 +125,7 @@ export async function POST(request: NextRequest) {
       expectedDate,
       orderDate,
       lineItems,
+      groups, // Array of { groupId, name, sourceBundleId }
       tax,
       shipping,
     } = body
@@ -216,17 +217,49 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    // Create document line groups first (for bundles)
+    const groupMap = new Map<string, string>() // groupId -> database group ID
+    if (groups && Array.isArray(groups)) {
+      for (const group of groups) {
+        const dbGroup = await prisma.documentLineGroup.create({
+          data: {
+            tenantId: user.tenantId,
+            documentType: 'PURCHASE_ORDER',
+            documentId: purchaseOrder.id,
+            name: group.name || 'Bundle',
+            sourceBundleId: group.sourceBundleId || null,
+            sourceBundleName: group.name || null,
+          },
+        })
+        groupMap.set(group.groupId, dbGroup.id)
+      }
+    }
+
     // Create line items
     if (lineItems && Array.isArray(lineItems)) {
-      for (const item of lineItems) {
+      for (let i = 0; i < lineItems.length; i++) {
+        const item = lineItems[i]
+        const qty = parseFloat(item.quantity || 0)
+        const price = parseFloat(item.unitPrice || 0) // PO uses unitPrice for cost
+        const itemTotal = qty * price
+
+        // Get groupId from map if item has a groupId
+        const dbGroupId = item.groupId ? groupMap.get(item.groupId) || null : null
+
         await prisma.purchaseOrderLineItem.create({
           data: {
             poId: purchaseOrder.id,
+            groupId: dbGroupId,
             description: item.description || '',
-            quantity: parseFloat(item.quantity) || 1,
-            unitPrice: parseFloat(item.unitPrice) || 0,
-            total: parseFloat(item.quantity || 0) * parseFloat(item.unitPrice || 0),
-            sortOrder: item.sortOrder || 0,
+            quantity: qty || 1,
+            unitPrice: price || 0,
+            unitCost: item.unitCost ? parseFloat(item.unitCost) : null,
+            total: itemTotal,
+            sortOrder: i,
+            vendorId: item.vendorId || null,
+            notes: item.notes || null,
+            sourceItemId: item.sourceItemId || null,
+            sourceBundleId: item.sourceBundleId || null,
           },
         })
       }

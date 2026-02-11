@@ -1,37 +1,18 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ArrowLeft, Save, Plus, Trash2, Package, Eye, EyeOff } from 'lucide-react'
+import { ArrowLeft, Save, Plus, Trash2, Eye, EyeOff } from 'lucide-react'
 import Link from 'next/link'
-import { RapidFireItemPicker } from '@/components/items/RapidFireItemPicker'
+import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
 
 interface Client {
   id: string
   name: string
-}
-
-interface Item {
-  id: string
-  name: string
-  sku: string | null
-  kind: string
-  defaultUnitPrice: number
-  defaultUnitCost: number | null
-  unit: string
-}
-
-interface Bundle {
-  id: string
-  name: string
-  item: {
-    id: string
-    name: string
-  }
 }
 
 interface LineItem {
@@ -40,11 +21,22 @@ interface LineItem {
   quantity: string
   unitPrice: string
   unitCost?: string
-  isVisibleToClient?: boolean
+  notes?: string
+  vendorId?: string
+  vendorName?: string
+  taxable: boolean
+  taxRate?: string
+  // Per-field visibility
+  showCostToCustomer: boolean
+  showPriceToCustomer: boolean
+  showTaxToCustomer: boolean
+  showNotesToCustomer: boolean
+  // Bundle support
   groupId?: string
   groupName?: string
   isGroupHeader?: boolean
   sourceItemId?: string
+  sourceBundleId?: string
 }
 
 export default function EditEstimatePage() {
@@ -55,13 +47,12 @@ export default function EditEstimatePage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [clients, setClients] = useState<Client[]>([])
-  const [items, setItems] = useState<Item[]>([])
-  const [bundles, setBundles] = useState<Bundle[]>([])
+  const [pickerItems, setPickerItems] = useState<FastPickerItem[]>([])
+  const [pickerBundles, setPickerBundles] = useState<FastPickerItem[]>([])
   const [lineItems, setLineItems] = useState<LineItem[]>([])
-  const [showItemPicker, setShowItemPicker] = useState(false)
-  const [itemPickerIndex, setItemPickerIndex] = useState<number | null>(null)
   const [isNotesVisibleToClient, setIsNotesVisibleToClient] = useState(true)
   const [estimateNumber, setEstimateNumber] = useState('')
+  
   const [formData, setFormData] = useState({
     clientId: '',
     title: '',
@@ -73,12 +64,44 @@ export default function EditEstimatePage() {
     status: 'DRAFT',
   })
 
+  const lineItemRefs = useRef<(HTMLDivElement | null)[]>([])
+
   useEffect(() => {
     fetchClients()
-    fetchItems()
-    fetchBundles()
+    fetchPickerData()
     fetchEstimate()
   }, [estimateId])
+
+  const fetchClients = async () => {
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch('/api/clients?limit=1000', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setClients(data.clients || [])
+      }
+    } catch (error) {
+      console.error('Error fetching clients:', error)
+    }
+  }
+
+  const fetchPickerData = async () => {
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch('/api/items/picker', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setPickerItems(data.items || [])
+        setPickerBundles(data.bundles || [])
+      }
+    } catch (error) {
+      console.error('Error fetching items for picker:', error)
+    }
+  }
 
   const fetchEstimate = async () => {
     try {
@@ -115,7 +138,7 @@ export default function EditEstimatePage() {
       setEstimateNumber(est.estimateNumber)
       setIsNotesVisibleToClient(est.isNotesVisibleToClient !== false)
 
-      const taxRatePercent = (parseFloat(est.taxRate) * 100).toString()
+      const taxRatePercent = est.taxRate ? (parseFloat(est.taxRate) * 100).toString() : '0'
 
       setFormData({
         clientId: est.client?.id || '',
@@ -128,19 +151,77 @@ export default function EditEstimatePage() {
         status: est.status || 'DRAFT',
       })
 
-      const mappedItems: LineItem[] = (est.lineItems || []).map((li: any) => ({
-        id: li.id,
-        description: li.description,
-        quantity: li.quantity,
-        unitPrice: li.unitPrice,
-        unitCost: li.unitCost || '',
-        isVisibleToClient: li.isVisibleToClient !== false,
-        groupId: li.groupId || undefined,
-        sourceItemId: li.sourceItemId || undefined,
-      }))
+      // Map line items, handling groups
+      const groupsMap = new Map<string, { name: string; sourceBundleId?: string }>()
+      const mappedItems: LineItem[] = []
+      
+      // First pass: identify groups
+      est.lineItems?.forEach((li: any) => {
+        if (li.group && !groupsMap.has(li.group.id)) {
+          groupsMap.set(li.group.id, {
+            name: li.group.name,
+            sourceBundleId: li.group.sourceBundleId || undefined,
+          })
+        }
+      })
+
+      // Second pass: create line items with group headers
+      const processedGroups = new Set<string>()
+      est.lineItems?.forEach((li: any) => {
+        const group = li.group
+        if (group && !processedGroups.has(group.id)) {
+          // Add group header
+          mappedItems.push({
+            id: `header-${group.id}`,
+            description: group.name,
+            quantity: '1',
+            unitPrice: '0',
+            taxable: true,
+            showCostToCustomer: false,
+            showPriceToCustomer: true,
+            showTaxToCustomer: true,
+            showNotesToCustomer: false,
+            groupId: group.id,
+            groupName: group.name,
+            isGroupHeader: true,
+            sourceBundleId: group.sourceBundleId || undefined,
+          })
+          processedGroups.add(group.id)
+        }
+
+        // Add the actual line item
+        mappedItems.push({
+          id: li.id,
+          description: li.description,
+          quantity: li.quantity.toString(),
+          unitPrice: li.unitPrice.toString(),
+          unitCost: li.unitCost ? li.unitCost.toString() : undefined,
+          notes: li.notes || undefined,
+          vendorId: li.vendorId || undefined,
+          vendorName: li.vendorName || undefined,
+          taxable: li.taxable ?? true,
+          taxRate: li.taxRate ? (parseFloat(li.taxRate) * 100).toString() : undefined,
+          showCostToCustomer: li.showCostToCustomer ?? false,
+          showPriceToCustomer: li.showPriceToCustomer ?? true,
+          showTaxToCustomer: li.showTaxToCustomer ?? true,
+          showNotesToCustomer: li.showNotesToCustomer ?? false,
+          groupId: li.groupId || undefined,
+          sourceItemId: li.sourceItemId || undefined,
+          sourceBundleId: li.sourceBundleId || undefined,
+        })
+      })
 
       if (mappedItems.length === 0) {
-        mappedItems.push({ description: '', quantity: '1', unitPrice: '0', isVisibleToClient: true })
+        mappedItems.push({
+          description: '',
+          quantity: '1',
+          unitPrice: '0',
+          taxable: true,
+          showCostToCustomer: false,
+          showPriceToCustomer: true,
+          showTaxToCustomer: true,
+          showNotesToCustomer: false,
+        })
       }
 
       setLineItems(mappedItems)
@@ -152,137 +233,248 @@ export default function EditEstimatePage() {
     }
   }
 
-  const fetchClients = async () => {
-    try {
-      const token = localStorage.getItem('accessToken')
-      const response = await fetch('/api/clients?limit=1000', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (response.ok) {
-        const data = await response.json()
-        setClients(data.clients || [])
-      }
-    } catch (error) {
-      console.error('Error fetching clients:', error)
-    }
-  }
-
-  const fetchItems = async () => {
-    try {
-      const token = localStorage.getItem('accessToken')
-      const response = await fetch('/api/items?kind=SINGLE&limit=1000', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (response.ok) {
-        const data = await response.json()
-        setItems(data.items || [])
-      }
-    } catch (error) {
-      console.error('Error fetching items:', error)
-    }
-  }
-
-  const fetchBundles = async () => {
-    try {
-      const token = localStorage.getItem('accessToken')
-      const response = await fetch('/api/items/bundles?limit=1000', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (response.ok) {
-        const data = await response.json()
-        setBundles(data.bundles || [])
-      }
-    } catch (error) {
-      console.error('Error fetching bundles:', error)
-    }
-  }
-
   const addLineItem = () => {
-    const newItem: LineItem = { description: '', quantity: '1', unitPrice: '0', isVisibleToClient: true }
-    setLineItems([...lineItems, newItem])
-    setTimeout(() => {
-      setItemPickerIndex(lineItems.length)
-      setShowItemPicker(true)
-    }, 100)
+    setLineItems([
+      ...lineItems,
+      {
+        description: '',
+        quantity: '1',
+        unitPrice: '0',
+        taxable: true,
+        showCostToCustomer: false,
+        showPriceToCustomer: true,
+        showTaxToCustomer: true,
+        showNotesToCustomer: false,
+      },
+    ])
   }
 
   const removeLineItem = (index: number) => {
-    if (lineItems.length <= 1) return
-    setLineItems(lineItems.filter((_, i) => i !== index))
+    if (lineItems.length > 1) {
+      const item = lineItems[index]
+      if (item.groupId && item.isGroupHeader) {
+        // Remove entire group
+        setLineItems(lineItems.filter((li, i) => li.groupId !== item.groupId || i === index))
+      } else {
+        setLineItems(lineItems.filter((_, i) => i !== index))
+      }
+    }
   }
 
-  const updateLineItem = (index: number, field: keyof LineItem, value: string) => {
+  const updateLineItem = (index: number, field: keyof LineItem, value: any) => {
     const updated = [...lineItems]
     updated[index] = { ...updated[index], [field]: value }
     setLineItems(updated)
   }
 
-  const handleItemSelect = async (selected: Item | Bundle, isBundle: boolean) => {
-    const index = itemPickerIndex ?? lineItems.length - 1
+  const handleItemSelect = async (item: FastPickerItem, lineIndex: number) => {
     const updated = [...lineItems]
 
-    if (isBundle) {
-      const groupId = `group-${Date.now()}`
-      updated[index] = {
-        description: selected.name,
-        quantity: '1',
-        unitPrice: '0',
-        isVisibleToClient: true,
-        groupId,
-        groupName: selected.name,
-        isGroupHeader: true,
-        sourceItemId: (selected as Bundle).item.id,
+    if (item.kind === 'BUNDLE') {
+      // Fetch bundle details and expand
+      try {
+        const token = localStorage.getItem('accessToken')
+        const bundleDefId = item.bundleId || item.id
+        
+        const response = await fetch(`/api/items/bundles/${bundleDefId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        
+        if (response.ok) {
+          const bundleData = await response.json()
+          const bundle = bundleData.bundle
+          const components = bundle?.components || []
+          
+          // Create group header
+          const groupId = `group-${Date.now()}`
+          updated[lineIndex] = {
+            ...updated[lineIndex],
+            description: bundle?.name || item.name,
+            quantity: '1',
+            unitPrice: '0',
+            taxable: item.taxable,
+            taxRate: item.taxRate?.toString() || '',
+            showCostToCustomer: false,
+            showPriceToCustomer: true,
+            showTaxToCustomer: true,
+            showNotesToCustomer: false,
+            groupId,
+            groupName: bundle?.name || item.name,
+            isGroupHeader: true,
+            sourceBundleId: bundleDefId,
+          }
+
+          // Add bundle components as child lines
+          const childLines: LineItem[] = components.map((comp: any) => {
+            const sourceItem = comp.componentItem
+            const sourceBundle = comp.componentBundle
+            const sourceName = sourceItem?.name || sourceBundle?.item?.name || 'Unknown'
+            const sourcePrice = sourceItem?.defaultUnitPrice 
+              ? Number(sourceItem.defaultUnitPrice)
+              : (sourceBundle ? Number(bundle?.item?.defaultUnitPrice || 0) : 0)
+            const sourceCost = sourceItem?.defaultUnitCost 
+              ? Number(sourceItem.defaultUnitCost)
+              : (sourceBundle ? Number(bundle?.item?.defaultUnitCost || 0) : null)
+            
+            const overridePrice = comp.defaultUnitPriceOverride
+              ? Number(comp.defaultUnitPriceOverride)
+              : sourcePrice
+            const overrideCost = comp.defaultUnitCostOverride
+              ? Number(comp.defaultUnitCostOverride)
+              : sourceCost
+
+            return {
+              description: sourceName,
+              quantity: comp.quantity.toString(),
+              unitPrice: overridePrice.toString(),
+              unitCost: overrideCost?.toString() || '0',
+              notes: comp.notes || '',
+              vendorId: comp.vendorId || null,
+              vendorName: comp.vendor?.name || null,
+              taxable: sourceItem?.taxable ?? true,
+              taxRate: sourceItem?.taxRate?.toString() || '',
+              showCostToCustomer: false,
+              showPriceToCustomer: true,
+              showTaxToCustomer: true,
+              showNotesToCustomer: false,
+              groupId,
+              sourceItemId: comp.componentItemId || null,
+              sourceBundleId: comp.componentBundleId || null,
+            }
+          })
+
+          updated.splice(lineIndex + 1, 0, ...childLines)
+        } else {
+          // Fallback
+          updated[lineIndex] = {
+            ...updated[lineIndex],
+            description: item.name,
+            quantity: '1',
+            unitPrice: item.defaultUnitPrice.toString(),
+            unitCost: item.defaultUnitCost?.toString() || '0',
+            taxable: item.taxable,
+            taxRate: item.taxRate?.toString() || '',
+            sourceBundleId: bundleDefId,
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching bundle details:', error)
+        updated[lineIndex] = {
+          ...updated[lineIndex],
+          description: item.name,
+          quantity: '1',
+          unitPrice: item.defaultUnitPrice.toString(),
+          unitCost: item.defaultUnitCost?.toString() || '0',
+          taxable: item.taxable,
+          taxRate: item.taxRate?.toString() || '',
+          sourceBundleId: item.bundleId || undefined,
+        }
       }
     } else {
-      const item = selected as Item
-      updated[index] = {
-        ...updated[index],
+      // Single item
+      updated[lineIndex] = {
+        ...updated[lineIndex],
         description: item.name,
         quantity: '1',
         unitPrice: item.defaultUnitPrice.toString(),
         unitCost: item.defaultUnitCost?.toString() || '0',
-        isVisibleToClient: updated[index].isVisibleToClient ?? true,
+        notes: item.notes || '',
+        vendorId: item.vendorId || null,
+        vendorName: item.vendorName || null,
+        taxable: item.taxable,
+        taxRate: item.taxRate?.toString() || '',
         sourceItemId: item.id,
       }
     }
 
     setLineItems(updated)
-    setShowItemPicker(false)
-    setItemPickerIndex(null)
   }
 
-  const handleNextLine = () => {
-    const nextIndex = (itemPickerIndex ?? lineItems.length - 1) + 1
+  const handleNextLine = (currentIndex: number) => {
+    const nextIndex = currentIndex + 1
     if (nextIndex >= lineItems.length) {
       addLineItem()
-    } else {
-      setItemPickerIndex(nextIndex)
-      setTimeout(() => {
-        setShowItemPicker(true)
-      }, 50)
     }
+    setTimeout(() => {
+      const nextInput = lineItemRefs.current[nextIndex]?.querySelector<HTMLInputElement>('[data-picker-input="true"]')
+      nextInput?.focus()
+    }, 100)
   }
 
-  const openItemPicker = (index?: number) => {
-    setItemPickerIndex(index ?? null)
-    setShowItemPicker(true)
-  }
-
-  const toggleVisibility = (index: number) => {
+  const toggleVisibility = (index: number, field: 'cost' | 'price' | 'tax' | 'notes') => {
     const updated = [...lineItems]
+    const fieldMap = {
+      cost: 'showCostToCustomer',
+      price: 'showPriceToCustomer',
+      tax: 'showTaxToCustomer',
+      notes: 'showNotesToCustomer',
+    } as const
+    
     updated[index] = {
       ...updated[index],
-      isVisibleToClient: !(updated[index].isVisibleToClient ?? true),
+      [fieldMap[field]]: !updated[index][fieldMap[field]],
     }
     setLineItems(updated)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setSaving(true)
+    if (!formData.title.trim()) {
+      alert('Please enter a title')
+      return
+    }
 
+    setSaving(true)
     try {
       const token = localStorage.getItem('accessToken')
+      
+      // Calculate totals
+      const subtotal = lineItems.reduce((sum, item) => {
+        if (item.isGroupHeader) return sum
+        return sum + parseFloat(item.quantity || '0') * parseFloat(item.unitPrice || '0')
+      }, 0)
+      
+      const discount = parseFloat(formData.discount || '0')
+      const subtotalAfterDiscount = Math.max(0, subtotal - discount)
+      const taxRate = parseFloat(formData.taxRate || '0') / 100
+      const tax = subtotalAfterDiscount * taxRate
+      const total = subtotalAfterDiscount + tax
+
+      // Prepare line items for API (exclude group headers)
+      const apiLineItems = lineItems
+        .filter(item => !item.isGroupHeader)
+        .map((item, index) => ({
+          id: item.id,
+          description: item.description,
+          quantity: parseFloat(item.quantity || '1'),
+          unitPrice: parseFloat(item.unitPrice || '0'),
+          unitCost: item.unitCost ? parseFloat(item.unitCost) : null,
+          total: parseFloat(item.quantity || '1') * parseFloat(item.unitPrice || '0'),
+          sortOrder: index,
+          isVisibleToClient: true,
+          showCostToCustomer: item.showCostToCustomer,
+          showPriceToCustomer: item.showPriceToCustomer,
+          showTaxToCustomer: item.showTaxToCustomer,
+          showNotesToCustomer: item.showNotesToCustomer,
+          vendorId: item.vendorId || null,
+          taxable: item.taxable,
+          taxRate: item.taxRate ? parseFloat(item.taxRate) / 100 : null,
+          notes: item.notes || null,
+          groupId: item.groupId || null,
+          sourceItemId: item.sourceItemId || null,
+          sourceBundleId: item.sourceBundleId || null,
+        }))
+
+      // Create groups for bundles
+      const groups = new Map<string, { name: string; sourceBundleId?: string }>()
+      lineItems.forEach(item => {
+        if (item.groupId && item.groupName && !groups.has(item.groupId)) {
+          groups.set(item.groupId, {
+            name: item.groupName,
+            sourceBundleId: item.sourceBundleId,
+          })
+        }
+      })
 
       const response = await fetch(`/api/estimates/${estimateId}`, {
         method: 'PUT',
@@ -292,21 +484,18 @@ export default function EditEstimatePage() {
         },
         body: JSON.stringify({
           title: formData.title,
-          lineItems: lineItems.map((item) => ({
-            description: item.description,
-            quantity: parseFloat(item.quantity) || 0,
-            unitPrice: parseFloat(item.unitPrice) || 0,
-            unitCost: item.unitCost ? parseFloat(item.unitCost) : null,
-            isVisibleToClient: item.isVisibleToClient ?? true,
-            sourceItemId: item.sourceItemId || null,
-          })),
-          taxRate: formData.taxRate ? parseFloat(formData.taxRate) / 100 : 0,
-          discount: formData.discount ? parseFloat(formData.discount) : 0,
+          taxRate: taxRate,
+          discount,
+          status: formData.status,
           validUntil: formData.validUntil || null,
           notes: formData.notes || null,
           isNotesVisibleToClient,
           terms: formData.terms || null,
-          status: formData.status,
+          lineItems: apiLineItems,
+          groups: Array.from(groups.entries()).map(([groupId, group]) => ({
+            groupId,
+            ...group,
+          })),
         }),
       })
 
@@ -316,36 +505,31 @@ export default function EditEstimatePage() {
       }
 
       if (!response.ok) {
-        const error = await response.json()
-        alert(error.error || 'Failed to update estimate')
-        setSaving(false)
+        const errorData = await response.json().catch(() => ({ error: 'Failed to update estimate' }))
+        alert(errorData.error || 'Failed to update estimate')
         return
       }
 
       router.push(`/dashboard/estimates/${estimateId}`)
     } catch (error) {
       console.error('Error updating estimate:', error)
-      alert('Failed to update estimate. Check console for details.')
+      alert('Failed to update estimate. Please try again.')
     } finally {
       setSaving(false)
     }
   }
 
-  const calculateSubtotal = () => {
-    return lineItems.reduce((sum, item) => {
-      const qty = parseFloat(item.quantity) || 0
-      const price = parseFloat(item.unitPrice) || 0
-      return sum + qty * price
-    }, 0)
-  }
-
-  const calculateTotalCost = () => {
-    return lineItems.reduce((sum, item) => {
-      const qty = parseFloat(item.quantity) || 0
-      const cost = parseFloat(item.unitCost || '0') || 0
-      return sum + qty * cost
-    }, 0)
-  }
+  // Calculate totals
+  const subtotal = lineItems.reduce((sum, item) => {
+    if (item.isGroupHeader) return sum
+    return sum + parseFloat(item.quantity || '0') * parseFloat(item.unitPrice || '0')
+  }, 0)
+  
+  const discount = parseFloat(formData.discount || '0')
+  const subtotalAfterDiscount = Math.max(0, subtotal - discount)
+  const taxRate = parseFloat(formData.taxRate || '0') / 100
+  const tax = subtotalAfterDiscount * taxRate
+  const total = subtotalAfterDiscount + tax
 
   if (loading) {
     return (
@@ -358,15 +542,6 @@ export default function EditEstimatePage() {
     )
   }
 
-  const subtotal = calculateSubtotal()
-  const totalCost = calculateTotalCost()
-  const margin = subtotal - totalCost
-  const discountVal = parseFloat(formData.discount) || 0
-  const taxRate = parseFloat(formData.taxRate) || 0
-  const subtotalAfterDiscount = subtotal - discountVal
-  const tax = subtotalAfterDiscount * (taxRate / 100)
-  const total = subtotalAfterDiscount + tax
-
   return (
     <div className="space-y-6">
       <div className="flex items-center space-x-4">
@@ -378,7 +553,7 @@ export default function EditEstimatePage() {
         </Link>
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Edit Estimate</h1>
-          <p className="mt-2 text-gray-600">{estimateNumber}</p>
+          <p className="mt-2 text-gray-600">Estimate #{estimateNumber}</p>
         </div>
       </div>
 
@@ -387,45 +562,27 @@ export default function EditEstimatePage() {
           <div className="md:col-span-2 space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Estimate Information</CardTitle>
+                <CardTitle>Estimate Details</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="clientId">Client</Label>
-                    <select
-                      id="clientId"
-                      value={formData.clientId}
-                      onChange={(e) => setFormData({ ...formData, clientId: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">Select a client</option>
-                      {clients.map((client) => (
-                        <option key={client.id} value={client.id}>
-                          {client.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <Label htmlFor="status">Status</Label>
-                    <select
-                      id="status"
-                      value={formData.status}
-                      onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="DRAFT">Draft</option>
-                      <option value="SENT">Sent</option>
-                      <option value="VIEWED">Viewed</option>
-                      <option value="ACCEPTED">Accepted</option>
-                      <option value="REJECTED">Rejected</option>
-                      <option value="EXPIRED">Expired</option>
-                      <option value="CANCELLED">Cancelled</option>
-                    </select>
-                  </div>
+                <div>
+                  <Label htmlFor="clientId">Client</Label>
+                  <select
+                    id="clientId"
+                    value={formData.clientId}
+                    onChange={(e) => setFormData({ ...formData, clientId: e.target.value })}
+                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    disabled
+                  >
+                    <option value="">Select a client...</option>
+                    {clients.map((client) => (
+                      <option key={client.id} value={client.id}>
+                        {client.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">Client cannot be changed after creation</p>
                 </div>
-
                 <div>
                   <Label htmlFor="title">Title *</Label>
                   <Input
@@ -433,155 +590,238 @@ export default function EditEstimatePage() {
                     required
                     value={formData.title}
                     onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                    placeholder="Kitchen Remodel Estimate"
+                    placeholder="e.g., Kitchen Remodel Estimate"
                   />
                 </div>
-
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <Label>Line Items *</Label>
-                    <Button type="button" variant="outline" size="sm" onClick={() => openItemPicker()}>
-                      <Package className="mr-2 h-4 w-4" />
-                      Add from Items
-                    </Button>
-                  </div>
+                  <Label htmlFor="status">Status</Label>
+                  <select
+                    id="status"
+                    value={formData.status}
+                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    <option value="DRAFT">Draft</option>
+                    <option value="SENT">Sent</option>
+                    <option value="VIEWED">Viewed</option>
+                    <option value="ACCEPTED">Accepted</option>
+                    <option value="REJECTED">Rejected</option>
+                    <option value="EXPIRED">Expired</option>
+                    <option value="CONVERTED">Converted</option>
+                  </select>
+                </div>
+              </CardContent>
+            </Card>
 
-                  <div className="flex gap-2 items-end px-2 mb-1 text-xs text-gray-500 font-medium">
-                    <div className="w-8"></div>
-                    <div className="flex-1">Description</div>
-                    <div className="w-20 text-center">Qty</div>
-                    <div className="w-28 text-center">Customer Price</div>
-                    <div className="w-28 text-center">Vendor Cost</div>
-                    <div className="w-20 text-right">Margin</div>
-                    <div className="w-8"></div>
-                  </div>
-
-                  <div className="space-y-2">
-                    {lineItems.map((item, index) => {
-                      const isVisible = item.isVisibleToClient ?? true
-                      const qty = parseFloat(item.quantity) || 0
-                      const price = parseFloat(item.unitPrice) || 0
-                      const cost = parseFloat(item.unitCost || '0') || 0
-                      const lineMargin = (price - cost) * qty
-
-                      return (
-                        <div
-                          key={index}
-                          className={`flex gap-2 items-end p-2 rounded border transition-colors ${
-                            !isVisible ? 'bg-gray-100 border-gray-200 border-dashed' : 'border-gray-300'
-                          }`}
-                        >
-                          <div className="flex items-center">
+            <Card>
+              <CardHeader>
+                <CardTitle>Line Items</CardTitle>
+                <CardDescription>Click in Description field to search and add items</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="space-y-2">
+                  {lineItems.map((item, index) => {
+                    const isGroupHeader = item.isGroupHeader
+                    const isInGroup = !!item.groupId && !isGroupHeader
+                    
+                    return (
+                      <div
+                        key={index}
+                        ref={(el) => {
+                          lineItemRefs.current[index] = el
+                        }}
+                        className={`flex gap-2 items-end p-2 rounded border ${
+                          isGroupHeader
+                            ? 'bg-purple-50 border-purple-200'
+                            : isInGroup
+                            ? 'bg-purple-25 border-purple-100 ml-4'
+                            : 'border-gray-300'
+                        }`}
+                      >
+                        {!isGroupHeader && (
+                          <div className="flex flex-col gap-1">
                             <Button
                               type="button"
                               variant="ghost"
                               size="sm"
-                              onClick={() => toggleVisibility(index)}
-                              title={isVisible ? 'Hide from client' : 'Show to client'}
-                              className="p-1"
+                              onClick={() => toggleVisibility(index, 'cost')}
+                              title={item.showCostToCustomer ? 'Hide cost from customer' : 'Show cost to customer'}
+                              className="p-1 h-6"
                             >
-                              {isVisible ? (
-                                <Eye className="h-4 w-4 text-gray-600" />
+                              {item.showCostToCustomer ? (
+                                <Eye className="h-3 w-3 text-gray-600" />
                               ) : (
-                                <EyeOff className="h-4 w-4 text-gray-400" />
+                                <EyeOff className="h-3 w-3 text-gray-400" />
                               )}
                             </Button>
                           </div>
-                          <div className="flex-1">
-                            <div className="flex gap-2">
+                        )}
+
+                        <div className="flex-1">
+                          {isGroupHeader ? (
+                            <div className="flex items-center gap-2">
                               <Input
-                                placeholder="Description"
                                 value={item.description}
                                 onChange={(e) => updateLineItem(index, 'description', e.target.value)}
-                                required
-                                className={`flex-1 ${!isVisible ? 'text-gray-400' : ''}`}
+                                placeholder="Bundle name"
+                                className="flex-1 font-semibold"
+                                readOnly
                               />
-                              <div className="relative">
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => openItemPicker(index)}
-                                  title="Select from items (â†‘â†“ navigate, Enter select, â† next line)"
-                                  className="relative"
-                                >
-                                  <Package className="h-4 w-4" />
-                                </Button>
-                                
-                              </div>
+                              <span className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded">
+                                Bundle
+                              </span>
                             </div>
-                          </div>
-                          <div className="w-20">
-                            <Input
-                              type="number"
-                              step="0.01"
-                              placeholder="Qty"
-                              value={item.quantity}
-                              onChange={(e) => updateLineItem(index, 'quantity', e.target.value)}
-                              required
+                          ) : (
+                            <FastPicker
+                              value={item.description}
+                              onChange={(value) => updateLineItem(index, 'description', value)}
+                              onSelect={(selectedItem) => handleItemSelect(selectedItem, index)}
+                              onNextLine={() => handleNextLine(index)}
+                              items={pickerItems}
+                              bundles={pickerBundles}
+                              placeholder="Type to search items..."
+                              className="w-full"
                             />
-                          </div>
-                          <div className="w-28">
-                            <Input
-                              type="number"
-                              step="0.01"
-                              placeholder="Price"
-                              value={item.unitPrice}
-                              onChange={(e) => updateLineItem(index, 'unitPrice', e.target.value)}
-                              required
-                            />
-                          </div>
-                          <div className="w-28">
-                            <Input
-                              type="number"
-                              step="0.01"
-                              placeholder="Cost"
-                              value={item.unitCost || ''}
-                              onChange={(e) => updateLineItem(index, 'unitCost', e.target.value)}
-                              className="bg-gray-50"
-                            />
-                          </div>
-                          <div className="w-20 text-right text-sm">
-                            <span className={lineMargin >= 0 ? 'text-green-600' : 'text-red-600'}>
-                              ${lineMargin.toFixed(2)}
-                            </span>
-                          </div>
-                          {lineItems.length > 1 && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => removeLineItem(index)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
                           )}
                         </div>
-                      )
-                    })}
-                    <Button type="button" variant="outline" onClick={addLineItem}>
-                      <Plus className="mr-2 h-4 w-4" />
-                      Add Line Item
-                    </Button>
-                    {showItemPicker && (
-  <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-24 bg-black/20">
-    <div className="bg-white shadow-lg rounded-md w-[400px]">
-      <RapidFireItemPicker
-        isOpen={true}
-        onClose={() => {
-          setShowItemPicker(false)
-          setItemPickerIndex(null)
-        }}
-        onSelect={handleItemSelect}
-        onNextLine={handleNextLine}
-        items={items}
-        bundles={bundles}
-      />
-    </div>
-  </div>
-)}
-                  </div>
+
+                        {!isGroupHeader && (
+                          <>
+                            <div className="w-20">
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                placeholder="Qty"
+                                value={item.quantity}
+                                onChange={(e) => updateLineItem(index, 'quantity', e.target.value)}
+                                required
+                              />
+                            </div>
+
+                            <div className="w-28 relative">
+                              <div className="flex items-center gap-1 mb-1">
+                                <Label className="text-xs text-gray-500">Price</Label>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => toggleVisibility(index, 'price')}
+                                  title={item.showPriceToCustomer ? 'Hide price from customer' : 'Show price to customer'}
+                                  className="p-0 h-3 w-3"
+                                >
+                                  {item.showPriceToCustomer ? (
+                                    <Eye className="h-3 w-3 text-gray-600" />
+                                  ) : (
+                                    <EyeOff className="h-3 w-3 text-gray-400" />
+                                  )}
+                                </Button>
+                              </div>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                placeholder="0.00"
+                                value={item.unitPrice}
+                                onChange={(e) => updateLineItem(index, 'unitPrice', e.target.value)}
+                                required
+                              />
+                            </div>
+
+                            <div className="w-28 relative">
+                              <div className="flex items-center gap-1 mb-1">
+                                <Label className="text-xs text-gray-500">Cost</Label>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => toggleVisibility(index, 'cost')}
+                                  title={item.showCostToCustomer ? 'Hide cost from customer' : 'Show cost to customer'}
+                                  className="p-0 h-3 w-3"
+                                >
+                                  {item.showCostToCustomer ? (
+                                    <Eye className="h-3 w-3 text-gray-600" />
+                                  ) : (
+                                    <EyeOff className="h-3 w-3 text-gray-400" />
+                                  )}
+                                </Button>
+                              </div>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                placeholder="0.00"
+                                value={item.unitCost || ''}
+                                onChange={(e) => updateLineItem(index, 'unitCost', e.target.value)}
+                                className="bg-gray-50"
+                              />
+                            </div>
+
+                            <div className="w-24 relative">
+                              <div className="flex items-center gap-1 mb-1">
+                                <Label className="text-xs text-gray-500">Tax</Label>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => toggleVisibility(index, 'tax')}
+                                  title={item.showTaxToCustomer ? 'Hide tax from customer' : 'Show tax to customer'}
+                                  className="p-0 h-3 w-3"
+                                >
+                                  {item.showTaxToCustomer ? (
+                                    <Eye className="h-3 w-3 text-gray-600" />
+                                  ) : (
+                                    <EyeOff className="h-3 w-3 text-gray-400" />
+                                  )}
+                                </Button>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="checkbox"
+                                  checked={item.taxable}
+                                  onChange={(e) => updateLineItem(index, 'taxable', e.target.checked)}
+                                  className="h-4 w-4"
+                                  title="Taxable"
+                                />
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  max="100"
+                                  placeholder="%"
+                                  value={item.taxRate || ''}
+                                  onChange={(e) => updateLineItem(index, 'taxRate', e.target.value)}
+                                  className="text-xs w-16"
+                                />
+                              </div>
+                            </div>
+                          </>
+                        )}
+
+                        {lineItems.length > 1 && !isGroupHeader && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              if (item.groupId) {
+                                setLineItems(lineItems.filter((li, i) => li.groupId !== item.groupId || i === index))
+                              } else {
+                                removeLineItem(index)
+                              }
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
+                <Button type="button" variant="outline" onClick={addLineItem}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Line Item
+                </Button>
               </CardContent>
             </Card>
 
@@ -598,7 +838,7 @@ export default function EditEstimatePage() {
                       variant="ghost"
                       size="sm"
                       onClick={() => setIsNotesVisibleToClient(!isNotesVisibleToClient)}
-                      title={isNotesVisibleToClient ? 'Hide notes from client' : 'Show notes to client'}
+                      title={isNotesVisibleToClient ? 'Hide from client' : 'Show to client'}
                       className="p-1"
                     >
                       {isNotesVisibleToClient ? (
@@ -614,13 +854,9 @@ export default function EditEstimatePage() {
                     value={formData.notes}
                     onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                     className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                      !isNotesVisibleToClient ? 'bg-gray-50 border-gray-200 border-dashed' : 'border-gray-300'
+                      !isNotesVisibleToClient ? 'bg-gray-50 border-gray-200' : 'border-gray-300'
                     }`}
-                    placeholder={isNotesVisibleToClient ? 'Notes visible to client...' : 'Internal notes only (hidden from client)'}
                   />
-                  {!isNotesVisibleToClient && (
-                    <p className="text-xs text-gray-500 mt-1">ðŸ‘ï¸ These notes will NOT appear on the PDF or client portal.</p>
-                  )}
                 </div>
                 <div>
                   <Label htmlFor="terms">Terms & Conditions</Label>
@@ -646,37 +882,6 @@ export default function EditEstimatePage() {
           </div>
 
           <div className="space-y-6">
-            <Card className="border-2 border-blue-200 bg-blue-50/30">
-              <CardHeader>
-                <CardTitle className="text-sm text-blue-800">ðŸ“Š Internal Profit Summary</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Total Revenue:</span>
-                  <span className="font-medium">${subtotal.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Total Cost:</span>
-                  <span className="font-medium text-red-600">-${totalCost.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between border-t pt-2">
-                  <span className="font-semibold">Gross Margin:</span>
-                  <span className={`font-bold ${margin >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    ${margin.toFixed(2)}
-                  </span>
-                </div>
-                {subtotal > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Margin %:</span>
-                    <span className={`font-medium ${margin >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {((margin / subtotal) * 100).toFixed(1)}%
-                    </span>
-                  </div>
-                )}
-                <p className="text-xs text-gray-500 mt-2">âš ï¸ Vendor costs are never shown to the client.</p>
-              </CardContent>
-            </Card>
-
             <Card>
               <CardHeader>
                 <CardTitle>Totals</CardTitle>
@@ -692,12 +897,13 @@ export default function EditEstimatePage() {
                     id="discount"
                     type="number"
                     step="0.01"
+                    min="0"
                     value={formData.discount}
                     onChange={(e) => setFormData({ ...formData, discount: e.target.value })}
                   />
                 </div>
                 <div className="flex justify-between">
-                  <span>After Discount:</span>
+                  <span>Subtotal after discount:</span>
                   <span>${subtotalAfterDiscount.toFixed(2)}</span>
                 </div>
                 <div>
@@ -706,6 +912,7 @@ export default function EditEstimatePage() {
                     id="taxRate"
                     type="number"
                     step="0.01"
+                    min="0"
                     value={formData.taxRate}
                     onChange={(e) => setFormData({ ...formData, taxRate: e.target.value })}
                   />
@@ -726,12 +933,7 @@ export default function EditEstimatePage() {
                 <Save className="mr-2 h-4 w-4" />
                 {saving ? 'Saving...' : 'Save Changes'}
               </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => router.push(`/dashboard/estimates/${estimateId}`)}
-                className="w-full"
-              >
+              <Button type="button" variant="outline" onClick={() => router.back()} className="w-full">
                 Cancel
               </Button>
             </div>

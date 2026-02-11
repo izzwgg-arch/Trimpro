@@ -91,7 +91,20 @@ export async function GET(
         ...item,
         quantity: item.quantity.toString(),
         unitPrice: item.unitPrice.toString(),
+        unitCost: item.unitCost ? item.unitCost.toString() : null,
         total: item.total.toString(),
+        isVisibleToClient: item.isVisibleToClient,
+        // New visibility fields
+        showCostToCustomer: item.showCostToCustomer ?? false,
+        showPriceToCustomer: item.showPriceToCustomer ?? true,
+        showTaxToCustomer: item.showTaxToCustomer ?? true,
+        showNotesToCustomer: item.showNotesToCustomer ?? false,
+        // Additional fields
+        vendorId: item.vendorId || null,
+        vendorName: item.vendor?.name || null,
+        taxable: item.taxable ?? true,
+        taxRate: item.taxRate ? item.taxRate.toString() : null,
+        notes: item.notes || null,
         groupId: item.groupId || null,
         group: item.group ? {
           id: item.group.id,
@@ -100,6 +113,7 @@ export async function GET(
           sourceBundleName: item.group.sourceBundleName,
         } : null,
         sourceItemId: item.sourceItemId || null,
+        sourceBundleId: item.sourceBundleId || null,
         sourceItem: item.sourceItem ? {
           id: item.sourceItem.id,
           name: item.sourceItem.name,
@@ -133,12 +147,14 @@ export async function PUT(
     const {
       title,
       lineItems,
+      groups, // Array of { groupId, name, sourceBundleId }
       taxRate,
       discount,
       status,
       invoiceDate,
       dueDate,
       notes,
+      isNotesVisibleToClient,
       terms,
       memo,
     } = body
@@ -176,25 +192,69 @@ export async function PUT(
         return sum + (qty * price)
       }, 0)
 
-      // Update line items
+      // Delete existing groups and line items
+      await prisma.documentLineGroup.deleteMany({
+        where: {
+          tenantId: user.tenantId,
+          documentType: 'INVOICE',
+          documentId: params.id,
+        },
+      })
       await prisma.invoiceLineItem.deleteMany({
         where: { invoiceId: params.id },
       })
 
+      // Create new groups
+      const groupMap = new Map<string, string>() // groupId -> database group ID
+      if (groups && Array.isArray(groups)) {
+        for (const group of groups) {
+          const dbGroup = await prisma.documentLineGroup.create({
+            data: {
+              tenantId: user.tenantId,
+              documentType: 'INVOICE',
+              documentId: params.id,
+              name: group.name || 'Bundle',
+              sourceBundleId: group.sourceBundleId || null,
+              sourceBundleName: group.name || null,
+            },
+          })
+          groupMap.set(group.groupId, dbGroup.id)
+        }
+      }
+
+      // Create new line items
       for (let i = 0; i < lineItems.length; i++) {
         const item = lineItems[i]
         const qty = parseFloat(item.quantity || 0)
         const price = parseFloat(item.unitPrice || 0)
         const itemTotal = qty * price
 
+        // Get groupId from map if item has a groupId
+        const dbGroupId = item.groupId ? groupMap.get(item.groupId) || null : null
+
         await prisma.invoiceLineItem.create({
           data: {
             invoiceId: params.id,
+            groupId: dbGroupId,
             description: item.description,
             quantity: qty,
             unitPrice: price,
+            unitCost: item.unitCost ? parseFloat(item.unitCost) : null,
             total: itemTotal,
             sortOrder: i,
+            isVisibleToClient: item.isVisibleToClient !== undefined ? Boolean(item.isVisibleToClient) : true,
+            // New per-field visibility flags
+            showCostToCustomer: item.showCostToCustomer !== undefined ? Boolean(item.showCostToCustomer) : false,
+            showPriceToCustomer: item.showPriceToCustomer !== undefined ? Boolean(item.showPriceToCustomer) : true,
+            showTaxToCustomer: item.showTaxToCustomer !== undefined ? Boolean(item.showTaxToCustomer) : true,
+            showNotesToCustomer: item.showNotesToCustomer !== undefined ? Boolean(item.showNotesToCustomer) : false,
+            // Additional fields
+            vendorId: item.vendorId || null,
+            taxable: item.taxable !== undefined ? Boolean(item.taxable) : true,
+            taxRate: item.taxRate ? parseFloat(item.taxRate) : null,
+            notes: item.notes || null,
+            sourceItemId: item.sourceItemId || null,
+            sourceBundleId: item.sourceBundleId || null,
           },
         })
       }
@@ -229,6 +289,8 @@ export async function PUT(
         invoiceDate: invoiceDate !== undefined ? (invoiceDate ? new Date(invoiceDate) : existing.invoiceDate) : existing.invoiceDate,
         dueDate: dueDate !== undefined ? (dueDate ? new Date(dueDate) : null) : existing.dueDate,
         notes: notes !== undefined ? notes : existing.notes,
+        isNotesVisibleToClient:
+          isNotesVisibleToClient !== undefined ? Boolean(isNotesVisibleToClient) : existing.isNotesVisibleToClient,
         terms: terms !== undefined ? terms : existing.terms,
         memo: memo !== undefined ? memo : existing.memo,
       },

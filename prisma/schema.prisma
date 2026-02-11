@@ -480,7 +480,13 @@ model EstimateLineItem {
   unitCost        Decimal? @db.Decimal(10, 2) // Internal vendor cost
   total           Decimal @db.Decimal(10, 2)
   sortOrder       Int     @default(0)
-  isVisibleToClient Boolean @default(true) // Toggle for customer visibility
+  isVisibleToClient Boolean @default(true) // Legacy - overall visibility
+  // Per-field visibility toggles
+  showCostToCustomer Boolean @default(false) // Show unit cost to customer
+  showPriceToCustomer Boolean @default(true) // Show unit price to customer
+  showTaxToCustomer Boolean @default(true) // Show tax line/rate to customer
+  showNotesToCustomer Boolean @default(false) // Show notes to customer
+  notes           String? @db.Text // Line item notes (internal or customer-facing)
   vendorId        String? // Vendor for this specific line item
   taxable         Boolean @default(true)
   taxRate         Decimal? @db.Decimal(5, 4)
@@ -580,7 +586,13 @@ model InvoiceLineItem {
   unitCost        Decimal? @db.Decimal(10, 2) // Internal vendor cost
   total           Decimal @db.Decimal(10, 2)
   sortOrder       Int     @default(0)
-  isVisibleToClient Boolean @default(true) // Toggle for customer visibility
+  isVisibleToClient Boolean @default(true) // Legacy - overall visibility
+  // Per-field visibility toggles
+  showCostToCustomer Boolean @default(false) // Show unit cost to customer
+  showPriceToCustomer Boolean @default(true) // Show unit price to customer
+  showTaxToCustomer Boolean @default(true) // Show tax line/rate to customer
+  showNotesToCustomer Boolean @default(false) // Show notes to customer
+  notes           String? @db.Text // Line item notes (internal or customer-facing)
   vendorId        String? // Vendor for this specific line item
   taxable         Boolean @default(true)
   taxRate         Decimal? @db.Decimal(5, 4)
@@ -737,6 +749,7 @@ model Vendor {
   bundleComponents BundleComponent[]
   estimateLineItems EstimateLineItem[] @relation("EstimateLineItemVendor")
   invoiceLineItems InvoiceLineItem[] @relation("InvoiceLineItemVendor")
+  purchaseOrderLineItems PurchaseOrderLineItem[] @relation("POLineItemVendor")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -810,17 +823,31 @@ model PurchaseOrder {
 }
 
 model PurchaseOrderLineItem {
-  id          String  @id @default(cuid())
-  poId        String
-  description String
-  quantity    Decimal @db.Decimal(10, 2)
-  unitPrice   Decimal @db.Decimal(10, 2)
-  total       Decimal @db.Decimal(10, 2)
-  sortOrder   Int     @default(0)
-
+  id              String  @id @default(cuid())
+  poId            String
+  groupId         String? // FK to DocumentLineGroup
+  sourceItemId    String? // FK to Item (template reference)
+  sourceBundleId  String? // FK to BundleDefinition (if derived from nested bundle)
+  description     String
+  quantity        Decimal @db.Decimal(10, 2)
+  unitPrice       Decimal @db.Decimal(10, 2)
+  unitCost        Decimal? @db.Decimal(10, 2) // Vendor cost (primary for PO)
+  total           Decimal @db.Decimal(10, 2)
+  sortOrder       Int     @default(0)
+  notes           String? @db.Text
+  vendorId        String? // Vendor for this specific line item
+  taxable         Boolean @default(false)
+  taxRate         Decimal? @db.Decimal(5, 4)
+  
   purchaseOrder PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  group         DocumentLineGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  sourceItem    Item? @relation("POLineItemSource", fields: [sourceItemId], references: [id], onDelete: SetNull)
+  vendor        Vendor? @relation("POLineItemVendor", fields: [vendorId], references: [id], onDelete: SetNull)
 
   @@index([poId])
+  @@index([groupId])
+  @@index([sourceItemId])
+  @@index([vendorId])
   @@map("purchase_order_line_items")
 }
 
@@ -913,6 +940,7 @@ model Item {
   bundleComponents BundleComponent[]
   estimateLineItems EstimateLineItem[] @relation("EstimateLineItemSource")
   invoiceLineItems InvoiceLineItem[] @relation("InvoiceLineItemSource")
+  purchaseOrderLineItems PurchaseOrderLineItem[] @relation("POLineItemSource")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -989,7 +1017,7 @@ model BundleComponent {
 model DocumentLineGroup {
   id              String   @id @default(cuid())
   tenantId        String
-  documentType    String   // "ESTIMATE" | "INVOICE"
+  documentType    String   // "ESTIMATE" | "INVOICE" | "PURCHASE_ORDER"
   documentId      String
   name            String
   sourceBundleId  String?  // FK to BundleDefinition (nullable for manual groups)
@@ -1001,6 +1029,7 @@ model DocumentLineGroup {
   sourceBundle    BundleDefinition? @relation(fields: [sourceBundleId], references: [id], onDelete: SetNull)
   estimateLineItems EstimateLineItem[]
   invoiceLineItems InvoiceLineItem[]
+  purchaseOrderLineItems PurchaseOrderLineItem[]
   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
