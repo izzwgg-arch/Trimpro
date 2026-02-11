@@ -149,11 +149,9 @@ export function FastPicker({
     setSearchQuery('')
     setSelectedIndex(0)
 
-    // Update the input value immediately so user sees the selection
-    onChange(item.name)
-    
-    // Call onSelect to populate all line item data
-    // onSelect may be async, so handle it properly
+    // Call onSelect to populate all line item data (including description)
+    // onSelect will update the entire line item atomically, including description
+    // The input value will update automatically via the controlled value prop
     const selectResult = onSelect(item)
     
     // Auto-advance to next line after ensuring state updates complete
@@ -161,30 +159,36 @@ export function FastPicker({
       // If onSelect returns a promise, wait for it
       if (selectResult && typeof selectResult.then === 'function') {
         selectResult.then(() => {
-          // Wait a bit more to ensure React has processed the state update
-          setTimeout(() => {
-            onNextLine()
-            isSelectingRef.current = false
-          }, 50)
+          // Wait for React to process all state updates and re-render
+          requestAnimationFrame(() => {
+            setTimeout(() => {
+              onNextLine()
+              isSelectingRef.current = false
+            }, 50)
+          })
         }).catch((err) => {
           console.error('Error in onSelect:', err)
-          // Even if there's an error, still move to next line
+          // Even if there's an error, still move to next line after a delay
+          requestAnimationFrame(() => {
+            setTimeout(() => {
+              onNextLine()
+              isSelectingRef.current = false
+            }, 50)
+          })
+        })
+      } else {
+        // onSelect is synchronous, use requestAnimationFrame to ensure React state updates
+        requestAnimationFrame(() => {
           setTimeout(() => {
             onNextLine()
             isSelectingRef.current = false
-          }, 50)
+          }, 100)
         })
-      } else {
-        // onSelect is synchronous, use a delay to ensure React state updates
-        setTimeout(() => {
-          onNextLine()
-          isSelectingRef.current = false
-        }, 150)
       }
     } else {
       isSelectingRef.current = false
     }
-  }, [onChange, onSelect, onNextLine])
+  }, [onSelect, onNextLine])
 
   // Handle committing current text as custom entry (no item selected)
   const handleCommitCustom = useCallback(() => {
@@ -206,11 +210,13 @@ export function FastPicker({
     
     // Auto-advance to next line after ensuring state is committed
     if (onNextLine) {
-      // Give time for the onChange state update to complete
-      setTimeout(() => {
-        onNextLine()
-        isSelectingRef.current = false
-      }, 100)
+      // Use requestAnimationFrame to ensure React has processed the onChange state update
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          onNextLine()
+          isSelectingRef.current = false
+        }, 50)
+      })
     } else {
       isSelectingRef.current = false
     }

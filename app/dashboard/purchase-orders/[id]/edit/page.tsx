@@ -357,11 +357,13 @@ export default function EditPurchaseOrderPage() {
     setLineItems(updated)
     
     // Return a promise that resolves after state update
+    // Use requestAnimationFrame to ensure React has processed the state update
     return new Promise<void>((resolve) => {
-      // Use setTimeout to ensure React state update completes
-      setTimeout(() => {
-        resolve()
-      }, 0)
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          resolve()
+        }, 0)
+      })
     })
   }
 
