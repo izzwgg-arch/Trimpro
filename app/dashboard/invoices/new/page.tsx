@@ -657,7 +657,16 @@ export default function NewInvoicePage() {
 
       {/* Rapid Fire Item Picker */}
       {showItemPicker && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={(e) => {
+            // Only close if clicking the overlay, not the modal content
+            if (e.target === e.currentTarget) {
+              setShowItemPicker(false)
+              setItemPickerIndex(null)
+            }
+          }}
+        >
           <div className="w-full max-w-2xl mx-4">
             <div className="relative">
               <RapidFireItemPicker
