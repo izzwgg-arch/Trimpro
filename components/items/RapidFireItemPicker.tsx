@@ -232,4 +232,5 @@ export function RapidFireItemPicker({
         </div>
       </div>
     </div>
+  )
 }
