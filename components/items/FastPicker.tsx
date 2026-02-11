@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback, KeyboardEvent } from 'react'
-import * as Popover from '@radix-ui/react-popover'
 import { Input } from '@/components/ui/input'
 import { Package } from 'lucide-react'
 import { useDebouncedCallback } from '@/lib/hooks/useDebouncedCallback'
@@ -57,6 +56,7 @@ export function FastPicker({
   const [filteredItems, setFilteredItems] = useState<FastPickerItem[]>([])
   
   const inputRef = useRef<HTMLInputElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const itemRefs = useRef<(HTMLDivElement | null)[]>([])
   const isSelectingRef = useRef(false) // Prevent race conditions
@@ -109,7 +109,6 @@ export function FastPicker({
     debouncedFilter(searchQuery)
   }, [searchQuery, debouncedFilter])
 
-
   // Scroll selected item into view
   useEffect(() => {
     if (isOpen && listRef.current && selectedIndex >= 0 && itemRefs.current[selectedIndex]) {
@@ -123,6 +122,24 @@ export function FastPicker({
     }
   }, [selectedIndex, isOpen])
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false)
+        setSearchQuery('')
+        setSelectedIndex(0)
+      }
+    }
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside)
+      }
+    }
+  }, [isOpen])
+
   const handleSelect = useCallback((item: FastPickerItem) => {
     if (isSelectingRef.current) return // Prevent duplicate selections
     isSelectingRef.current = true
@@ -133,7 +150,7 @@ export function FastPicker({
     // Call onSelect to populate line item data
     onSelect(item)
     
-    // Close popover and reset
+    // Close dropdown and reset
     setIsOpen(false)
     setSearchQuery('')
     setSelectedIndex(0)
@@ -218,28 +235,20 @@ export function FastPicker({
 
   // Handle input focus - opens dropdown immediately
   const handleInputFocus = useCallback(() => {
-    if (!disabled && !isOpen) {
+    if (!disabled) {
       setIsOpen(true)
       // Reset search when opening
       setSearchQuery('')
       setSelectedIndex(0)
     }
-  }, [disabled, isOpen])
+  }, [disabled])
 
-  // Handle pointer down - prevents blur race condition
-  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLInputElement>) => {
-    if (!disabled) {
-      e.preventDefault()
-      // Focus the input if not already focused
-      if (document.activeElement !== inputRef.current) {
-        inputRef.current?.focus()
-      }
-      // Open dropdown
-      if (!isOpen) {
-        setIsOpen(true)
-        setSearchQuery('')
-        setSelectedIndex(0)
-      }
+  // Handle input click - ensures dropdown opens
+  const handleInputClick = useCallback(() => {
+    if (!disabled && !isOpen) {
+      setIsOpen(true)
+      setSearchQuery('')
+      setSelectedIndex(0)
     }
   }, [disabled, isOpen])
 
@@ -263,111 +272,85 @@ export function FastPicker({
   }, [])
 
   return (
-    <Popover.Root open={isOpen} onOpenChange={(open) => {
-      // Only allow closing if not in the middle of a selection
-      if (!open && !isSelectingRef.current) {
-        setIsOpen(false)
-        setSearchQuery('')
-        setSelectedIndex(0)
-      } else if (open) {
-        setIsOpen(true)
-      }
-    }}>
-      <Popover.Trigger asChild>
-        <Input
-          ref={inputRef}
-          value={value}
-          onChange={handleInputChange}
-          onFocus={handleInputFocus}
-          onPointerDown={handlePointerDown}
-          onKeyDown={handleKeyDown}
-          placeholder={placeholder}
-          disabled={disabled}
-          className={className}
-          autoComplete="off"
-          data-picker-input="true"
-        />
-      </Popover.Trigger>
+    <div ref={containerRef} className="relative w-full">
+      <Input
+        ref={inputRef}
+        value={value}
+        onChange={handleInputChange}
+        onFocus={handleInputFocus}
+        onClick={handleInputClick}
+        onKeyDown={handleKeyDown}
+        placeholder={placeholder}
+        disabled={disabled}
+        className={className}
+        autoComplete="off"
+        data-picker-input="true"
+      />
       
-      <Popover.Portal>
-        <Popover.Content
-          className="z-[100] w-[var(--radix-popover-trigger-width)] bg-white border border-gray-200 rounded-md shadow-lg max-h-[400px] overflow-hidden"
-          sideOffset={4}
-          align="start"
-          onOpenAutoFocus={(e) => e.preventDefault()}
-          onCloseAutoFocus={(e) => {
-            e.preventDefault()
-            // Keep focus on input
-            inputRef.current?.focus()
-          }}
-          onEscapeKeyDown={(e) => {
-            setIsOpen(false)
-            setSearchQuery('')
-            setSelectedIndex(0)
-            inputRef.current?.blur()
-          }}
+      {/* Dropdown */}
+      {isOpen && filteredItems.length > 0 && (
+        <div
+          ref={listRef}
+          className="absolute z-[100] w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-[400px] overflow-y-auto mt-1"
+          style={{ maxHeight: `${VISIBLE_ITEMS * ITEM_HEIGHT}px` }}
         >
-          {/* Items list - no separate search input, use main input */}
-          <div
-            ref={listRef}
-            className="overflow-y-auto max-h-[400px]"
-            style={{ maxHeight: `${VISIBLE_ITEMS * ITEM_HEIGHT}px` }}
-          >
-            {filteredItems.length === 0 ? (
-              <div className="px-4 py-8 text-center text-gray-500">
-                No items found
-              </div>
-            ) : (
-              filteredItems.map((item, index) => {
-                const isSelected = index === selectedIndex
-                const isBundle = item.kind === 'BUNDLE'
+          {filteredItems.map((item, index) => {
+            const isSelected = index === selectedIndex
+            const isBundle = item.kind === 'BUNDLE'
 
-                return (
-                  <div
-                    key={`${item.id}-${item.kind}-${index}`}
-                    ref={(el) => {
-                      itemRefs.current[index] = el
-                    }}
-                    className={`px-4 py-2 cursor-pointer transition-colors ${
-                      isSelected
-                        ? 'bg-blue-100 border-l-2 border-blue-500'
-                        : 'hover:bg-gray-50'
-                    }`}
-                    onClick={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      handleItemClick(item)
-                    }}
-                    onMouseEnter={() => handleItemMouseEnter(index)}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2 flex-1 min-w-0">
-                        <Package className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                        <span className="font-medium truncate">{item.name}</span>
-                        {isBundle && (
-                          <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded flex-shrink-0">
-                            Bundle
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-sm text-gray-600 flex-shrink-0 ml-2">
-                        {!isBundle && item.defaultUnitPrice != null && (
-                          <span>${Number(item.defaultUnitPrice).toFixed(2)}</span>
-                        )}
-                      </div>
-                    </div>
-                    {item.sku && (
-                      <div className="text-xs text-gray-500 mt-1 ml-6">
-                        SKU: {item.sku}
-                      </div>
+            return (
+              <div
+                key={`${item.id}-${item.kind}-${index}`}
+                ref={(el) => {
+                  itemRefs.current[index] = el
+                }}
+                className={`px-4 py-2 cursor-pointer transition-colors ${
+                  isSelected
+                    ? 'bg-blue-100 border-l-2 border-blue-500'
+                    : 'hover:bg-gray-50'
+                }`}
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  handleItemClick(item)
+                }}
+                onMouseEnter={() => handleItemMouseEnter(index)}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2 flex-1 min-w-0">
+                    <Package className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                    <span className="font-medium truncate">{item.name}</span>
+                    {isBundle && (
+                      <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded flex-shrink-0">
+                        Bundle
+                      </span>
                     )}
                   </div>
-                )
-              })
-            )}
+                  <div className="text-sm text-gray-600 flex-shrink-0 ml-2">
+                    {!isBundle && item.defaultUnitPrice != null && (
+                      <span>${Number(item.defaultUnitPrice).toFixed(2)}</span>
+                    )}
+                  </div>
+                </div>
+                {item.sku && (
+                  <div className="text-xs text-gray-500 mt-1 ml-6">
+                    SKU: {item.sku}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+      
+      {/* No items found */}
+      {isOpen && filteredItems.length === 0 && (
+        <div className="absolute z-[100] w-full bg-white border border-gray-200 rounded-md shadow-lg mt-1">
+          <div className="px-4 py-8 text-center text-gray-500">
+            No items found
           </div>
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+        </div>
+      )}
+    </div>
   )
 }
