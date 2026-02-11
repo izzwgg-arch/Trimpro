@@ -48,11 +48,11 @@ export function RapidFireItemPicker({
   // Combine items and bundles for unified search
   const allItems = [
     ...items.map((item) => ({ ...item, isBundle: false, displayName: item.name })),
-    ...bundles.map((bundle) => ({ 
-      ...bundle, 
+    ...bundles.map((bundle) => ({
+      ...bundle,
       name: bundle.name || bundle.item?.name || 'Bundle',
       displayName: bundle.name || bundle.item?.name || 'Bundle',
-      isBundle: true, 
+      isBundle: true,
       id: bundle.id,
       sku: null,
     })),
