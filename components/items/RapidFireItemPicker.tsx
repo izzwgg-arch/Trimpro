@@ -144,7 +144,7 @@ export function RapidFireItemPicker({
   if (!isOpen) return null
 
   return (
-    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-80 overflow-hidden">
+    <div className="w-full bg-white border border-gray-300 rounded-md shadow-lg max-h-80 overflow-hidden">
       <div className="p-2 border-b border-gray-200">
         <Input
           ref={searchInputRef}
@@ -232,5 +232,4 @@ export function RapidFireItemPicker({
         </div>
       </div>
     </div>
-  )
 }
