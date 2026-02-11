@@ -232,8 +232,8 @@ export default function EditPurchaseOrderPage() {
   }
 
   const addLineItem = () => {
-    setLineItems([
-      ...lineItems,
+    setLineItems((prev) => [
+      ...prev,
       {
         description: '',
         quantity: '1',
@@ -243,20 +243,22 @@ export default function EditPurchaseOrderPage() {
   }
 
   const removeLineItem = (index: number) => {
-    if (lineItems.length > 1) {
-      const item = lineItems[index]
-      if (item.groupId && item.isGroupHeader) {
-        setLineItems(lineItems.filter((li, i) => li.groupId !== item.groupId || i === index))
-      } else {
-        setLineItems(lineItems.filter((_, i) => i !== index))
+    setLineItems((prev) => {
+      if (prev.length <= 1) return prev
+      const item = prev[index]
+      if (item?.groupId && item.isGroupHeader) {
+        return prev.filter((li, i) => li.groupId !== item.groupId || i === index)
       }
-    }
+      return prev.filter((_, i) => i !== index)
+    })
   }
 
   const updateLineItem = (index: number, field: keyof LineItem, value: any) => {
-    const updated = [...lineItems]
-    updated[index] = { ...updated[index], [field]: value }
-    setLineItems(updated)
+    setLineItems((prev) => {
+      const updated = [...prev]
+      updated[index] = { ...updated[index], [field]: value }
+      return updated
+    })
   }
 
   const handleItemSelect = async (item: FastPickerItem, lineIndex: number) => {
@@ -369,9 +371,17 @@ export default function EditPurchaseOrderPage() {
 
   const handleNextLine = (currentIndex: number) => {
     const nextIndex = currentIndex + 1
-    if (nextIndex >= lineItems.length) {
-      addLineItem()
-    }
+    setLineItems((prev) => {
+      if (nextIndex < prev.length) return prev
+      return [
+        ...prev,
+        {
+          description: '',
+          quantity: '1',
+          unitCost: '0',
+        },
+      ]
+    })
     setTimeout(() => {
       const nextInput = pickerInputRefs.current[nextIndex]
       if (nextInput) {

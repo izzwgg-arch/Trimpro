@@ -234,8 +234,8 @@ export default function NewInvoicePage() {
   }
 
   const addLineItem = () => {
-    setLineItems([
-      ...lineItems,
+    setLineItems((prev) => [
+      ...prev,
       {
         description: '',
         quantity: '1',
@@ -250,15 +250,15 @@ export default function NewInvoicePage() {
   }
 
   const removeLineItem = (index: number) => {
-    if (lineItems.length > 1) {
-      setLineItems(lineItems.filter((_, i) => i !== index))
-    }
+    setLineItems((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== index) : prev))
   }
 
   const updateLineItem = (index: number, field: keyof LineItem, value: any) => {
-    const updated = [...lineItems]
-    updated[index] = { ...updated[index], [field]: value }
-    setLineItems(updated)
+    setLineItems((prev) => {
+      const updated = [...prev]
+      updated[index] = { ...updated[index], [field]: value }
+      return updated
+    })
   }
 
   const handleItemSelect = async (item: FastPickerItem, lineIndex: number) => {
@@ -391,9 +391,22 @@ export default function NewInvoicePage() {
 
   const handleNextLine = (currentIndex: number) => {
     const nextIndex = currentIndex + 1
-    if (nextIndex >= lineItems.length) {
-      addLineItem()
-    }
+    setLineItems((prev) => {
+      if (nextIndex < prev.length) return prev
+      return [
+        ...prev,
+        {
+          description: '',
+          quantity: '1',
+          unitPrice: '0',
+          taxable: true,
+          showCostToCustomer: false,
+          showPriceToCustomer: true,
+          showTaxToCustomer: true,
+          showNotesToCustomer: false,
+        },
+      ]
+    })
     setTimeout(() => {
       const nextInput = pickerInputRefs.current[nextIndex]
       if (nextInput) {

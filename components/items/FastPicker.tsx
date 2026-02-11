@@ -143,6 +143,7 @@ export function FastPicker({
   const handleSelect = useCallback((item: FastPickerItem) => {
     if (isSelectingRef.current) return // Prevent duplicate selections
     isSelectingRef.current = true
+    console.log('SELECTED ITEM:', item)
 
     // Close dropdown first to prevent any visual glitches
     setIsOpen(false)
@@ -270,9 +271,8 @@ export function FastPicker({
             handleCommitCustom()
           }
         } else {
-          // Dropdown is closed - open it first
-          setIsOpen(true)
-          setSelectedIndex(0)
+          // Dropdown is closed: commit current text instead of moving focus away.
+          handleCommitCustom()
         }
         break
 
@@ -301,7 +301,7 @@ export function FastPicker({
         }
         break
     }
-  }, [isOpen, filteredItems, selectedIndex, disabled, handleSelect])
+  }, [isOpen, filteredItems, selectedIndex, disabled, handleSelect, handleCommitCustom])
 
   // Handle input focus - opens dropdown immediately
   const handleInputFocus = useCallback(() => {
@@ -335,11 +335,6 @@ export function FastPicker({
   const handleItemClick = useCallback((item: FastPickerItem) => {
     handleSelect(item)
   }, [handleSelect])
-
-  // Handle mouse enter on item (update selected index)
-  const handleItemMouseEnter = useCallback((index: number) => {
-    setSelectedIndex(index)
-  }, [])
 
   return (
     <div ref={containerRef} className="relative w-full">
@@ -384,7 +379,6 @@ export function FastPicker({
                   e.stopPropagation()
                   handleItemClick(item)
                 }}
-                onMouseEnter={() => handleItemMouseEnter(index)}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2 flex-1 min-w-0">
