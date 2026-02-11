@@ -355,6 +355,14 @@ export default function EditPurchaseOrderPage() {
     }
 
     setLineItems(updated)
+    
+    // Return a promise that resolves after state update
+    return new Promise<void>((resolve) => {
+      // Use setTimeout to ensure React state update completes
+      setTimeout(() => {
+        resolve()
+      }, 0)
+    })
   }
 
   const handleNextLine = (currentIndex: number) => {

@@ -144,32 +144,46 @@ export function FastPicker({
     if (isSelectingRef.current) return // Prevent duplicate selections
     isSelectingRef.current = true
 
-    // Update the input value
+    // Close dropdown first to prevent any visual glitches
+    setIsOpen(false)
+    setSearchQuery('')
+    setSelectedIndex(0)
+
+    // Update the input value immediately so user sees the selection
     onChange(item.name)
     
-    // Call onSelect to populate line item data
-    // Use setTimeout to ensure onChange completes first
-    setTimeout(() => {
-      onSelect(item)
-      
-      // Close dropdown and reset
-      setIsOpen(false)
-      setSearchQuery('')
-      setSelectedIndex(0)
-      
-      // Auto-advance to next line
-      if (onNextLine) {
-        // Use requestAnimationFrame to ensure state updates complete
-        requestAnimationFrame(() => {
+    // Call onSelect to populate all line item data
+    // onSelect may be async, so handle it properly
+    const selectResult = onSelect(item)
+    
+    // Auto-advance to next line after ensuring state updates complete
+    if (onNextLine) {
+      // If onSelect returns a promise, wait for it
+      if (selectResult && typeof selectResult.then === 'function') {
+        selectResult.then(() => {
+          // Wait a bit more to ensure React has processed the state update
+          setTimeout(() => {
+            onNextLine()
+            isSelectingRef.current = false
+          }, 50)
+        }).catch((err) => {
+          console.error('Error in onSelect:', err)
+          // Even if there's an error, still move to next line
           setTimeout(() => {
             onNextLine()
             isSelectingRef.current = false
           }, 50)
         })
       } else {
-        isSelectingRef.current = false
+        // onSelect is synchronous, use a delay to ensure React state updates
+        setTimeout(() => {
+          onNextLine()
+          isSelectingRef.current = false
+        }, 150)
       }
-    }, 0)
+    } else {
+      isSelectingRef.current = false
+    }
   }, [onChange, onSelect, onNextLine])
 
   // Handle committing current text as custom entry (no item selected)
@@ -177,11 +191,12 @@ export function FastPicker({
     if (isSelectingRef.current) return
     isSelectingRef.current = true
 
-    // Ensure the current value is committed via onChange (in case it wasn't already)
-    // The value prop should already be set, but we ensure it's committed
+    // Get the current input value
     const currentValue = inputRef.current?.value || value
-    if (currentValue && currentValue !== value) {
-      onChange(currentValue)
+    
+    // Ensure the current value is committed via onChange
+    if (currentValue.trim()) {
+      onChange(currentValue.trim())
     }
 
     // Close dropdown
@@ -191,15 +206,11 @@ export function FastPicker({
     
     // Auto-advance to next line after ensuring state is committed
     if (onNextLine) {
-      // Use setTimeout to ensure onChange state update completes
+      // Give time for the onChange state update to complete
       setTimeout(() => {
-        requestAnimationFrame(() => {
-          setTimeout(() => {
-            onNextLine()
-            isSelectingRef.current = false
-          }, 50)
-        })
-      }, 10)
+        onNextLine()
+        isSelectingRef.current = false
+      }, 100)
     } else {
       isSelectingRef.current = false
     }
