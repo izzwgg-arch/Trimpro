@@ -1,13 +1,14 @@
 ﻿'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ArrowLeft, Save, Plus, X, Trash2 } from 'lucide-react'
+import { ArrowLeft, Save, Trash2 } from 'lucide-react'
 import Link from 'next/link'
+import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
 
 interface Vendor {
   id: string
@@ -50,6 +51,11 @@ interface BundleComponent {
   notes?: string
 }
 
+const toNumber = (value: unknown, fallback = 0): number => {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : fallback
+}
+
 export default function EditBundlePage() {
   const router = useRouter()
   const params = useParams()
@@ -62,8 +68,7 @@ export default function EditBundlePage() {
   const [items, setItems] = useState<Item[]>([])
   const [bundles, setBundles] = useState<Bundle[]>([])
   const [components, setComponents] = useState<BundleComponent[]>([])
-  const [showItemPicker, setShowItemPicker] = useState(false)
-  const [showBundlePicker, setShowBundlePicker] = useState(false)
+  const [componentPickerValue, setComponentPickerValue] = useState('')
   const [pricingStrategy, setPricingStrategy] = useState('SUM_COMPONENTS')
   const [formData, setFormData] = useState({
     name: '',
@@ -204,28 +209,26 @@ export default function EditBundlePage() {
     }
   }
 
-  const addItemComponent = (item: Item) => {
-    setComponents([
-      ...components,
+  const addItemComponent = (itemId: string) => {
+    setComponents((prev) => [
+      ...prev,
       {
         componentType: 'ITEM',
-        componentItemId: item.id,
+        componentItemId: itemId,
         quantity: '1',
       },
     ])
-    setShowItemPicker(false)
   }
 
-  const addBundleComponent = (bundle: Bundle) => {
-    setComponents([
-      ...components,
+  const addBundleComponent = (bundleId: string) => {
+    setComponents((prev) => [
+      ...prev,
       {
         componentType: 'BUNDLE',
-        componentBundleId: bundle.id,
+        componentBundleId: bundleId,
         quantity: '1',
       },
     ])
-    setShowBundlePicker(false)
   }
 
   const removeComponent = (index: number) => {
@@ -249,10 +252,10 @@ export default function EditBundlePage() {
         if (item) {
           const price = comp.defaultUnitPriceOverride
             ? parseFloat(comp.defaultUnitPriceOverride)
-            : item.defaultUnitPrice
+            : toNumber(item.defaultUnitPrice)
           const cost = comp.defaultUnitCostOverride
             ? parseFloat(comp.defaultUnitCostOverride)
-            : item.defaultUnitCost || 0
+            : toNumber(item.defaultUnitCost)
           totalPrice += price * qty
           totalCost += cost * qty
         }
@@ -263,6 +266,54 @@ export default function EditBundlePage() {
   }
 
   const totals = calculateTotals()
+
+  const pickerItems = useMemo<FastPickerItem[]>(
+    () =>
+      items.map((item) => ({
+        id: item.id,
+        name: item.name,
+        sku: item.sku,
+        kind: 'SINGLE',
+        defaultUnitPrice: toNumber(item.defaultUnitPrice),
+        defaultUnitCost: item.defaultUnitCost != null ? toNumber(item.defaultUnitCost) : null,
+        unit: item.unit || 'ea',
+        vendorId: null,
+        vendorName: null,
+        taxable: true,
+        taxRate: null,
+        notes: null,
+      })),
+    [items]
+  )
+
+  const pickerBundles = useMemo<FastPickerItem[]>(
+    () =>
+      bundles.map((bundle) => ({
+        id: bundle.id,
+        name: bundle.name,
+        sku: null,
+        kind: 'BUNDLE',
+        defaultUnitPrice: 0,
+        defaultUnitCost: null,
+        unit: 'bundle',
+        vendorId: null,
+        vendorName: null,
+        taxable: false,
+        taxRate: null,
+        notes: null,
+        bundleId: bundle.id,
+      })),
+    [bundles]
+  )
+
+  const handlePickerSelect = (selected: FastPickerItem) => {
+    if (selected.kind === 'BUNDLE') {
+      addBundleComponent(selected.bundleId || selected.id)
+    } else {
+      addItemComponent(selected.id)
+    }
+    setComponentPickerValue('')
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -468,23 +519,17 @@ export default function EditBundlePage() {
                 <CardDescription>Add items or other bundles to this bundle</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex space-x-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setShowItemPicker(true)}
-                  >
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add Item
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setShowBundlePicker(true)}
-                  >
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add Bundle
-                  </Button>
+                <div>
+                  <Label className="text-sm">Add Component</Label>
+                  <FastPicker
+                    value={componentPickerValue}
+                    onChange={setComponentPickerValue}
+                    onSelect={handlePickerSelect}
+                    items={pickerItems}
+                    bundles={pickerBundles}
+                    placeholder="Type to search items/bundles and press Enter"
+                    className="mt-1"
+                  />
                 </div>
 
                 {components.length === 0 ? (
@@ -557,7 +602,7 @@ export default function EditBundlePage() {
                                   step="0.01"
                                   value={comp.defaultUnitCostOverride || ''}
                                   onChange={(e) => updateComponent(index, 'defaultUnitCostOverride', e.target.value)}
-                                  placeholder={comp.componentType === 'ITEM' && item ? `$${item.defaultUnitCost?.toFixed(2) || '0.00'}` : 'Auto'}
+                                  placeholder={comp.componentType === 'ITEM' && item ? `$${toNumber(item.defaultUnitCost).toFixed(2)}` : 'Auto'}
                                 />
                               </div>
                               <div>
@@ -567,7 +612,7 @@ export default function EditBundlePage() {
                                   step="0.01"
                                   value={comp.defaultUnitPriceOverride || ''}
                                   onChange={(e) => updateComponent(index, 'defaultUnitPriceOverride', e.target.value)}
-                                  placeholder={comp.componentType === 'ITEM' && item ? `$${item.defaultUnitPrice.toFixed(2)}` : 'Auto'}
+                                  placeholder={comp.componentType === 'ITEM' && item ? `$${toNumber(item.defaultUnitPrice).toFixed(2)}` : 'Auto'}
                                 />
                               </div>
                             </div>
@@ -655,66 +700,6 @@ export default function EditBundlePage() {
         </div>
       </form>
 
-      {/* Item Picker */}
-      {showItemPicker && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <Card className="w-full max-w-2xl max-h-[80vh] flex flex-col">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Select Item</CardTitle>
-                <Button variant="ghost" size="sm" onClick={() => setShowItemPicker(false)}>
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="flex-1 overflow-y-auto">
-              <div className="space-y-2">
-                {items.map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => addItemComponent(item)}
-                    className="w-full text-left p-3 border rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    <div className="font-medium">{item.name}</div>
-                    {item.sku && <div className="text-sm text-gray-500">SKU: {item.sku}</div>}
-                    <div className="text-sm text-gray-600">${item.defaultUnitPrice.toFixed(2)} / {item.unit}</div>
-                  </button>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Bundle Picker */}
-      {showBundlePicker && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <Card className="w-full max-w-2xl max-h-[80vh] flex flex-col">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Select Bundle</CardTitle>
-                <Button variant="ghost" size="sm" onClick={() => setShowBundlePicker(false)}>
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="flex-1 overflow-y-auto">
-              <div className="space-y-2">
-                {bundles.map((bundle) => (
-                  <button
-                    key={bundle.id}
-                    onClick={() => addBundleComponent(bundle)}
-                    className="w-full text-left p-3 border rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    <div className="font-medium">{bundle.name}</div>
-                    <div className="text-sm text-gray-500">Bundle</div>
-                  </button>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
     </div>
   )
 }
