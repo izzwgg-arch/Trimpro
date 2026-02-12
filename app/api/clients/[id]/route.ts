@@ -297,16 +297,34 @@ export async function DELETE(
         id: params.id,
         tenantId: user.tenantId,
       },
+      select: {
+        id: true,
+        name: true,
+        _count: {
+          select: {
+            jobs: true,
+            invoices: true,
+          },
+        },
+      },
     })
 
     if (!client) {
       return NextResponse.json({ error: 'Client not found' }, { status: 404 })
     }
 
-    // Soft delete by marking as inactive
-    await prisma.client.update({
+    // Hard delete is blocked by DB constraints when jobs/invoices exist (onDelete: Restrict).
+    if (client._count.jobs > 0 || client._count.invoices > 0) {
+      return NextResponse.json(
+        {
+          error: `Cannot delete client "${client.name}" because it has ${client._count.jobs} job(s) and ${client._count.invoices} invoice(s). Remove those records first.`,
+        },
+        { status: 400 }
+      )
+    }
+
+    await prisma.client.delete({
       where: { id: params.id },
-      data: { isActive: false },
     })
 
     // Create audit log
