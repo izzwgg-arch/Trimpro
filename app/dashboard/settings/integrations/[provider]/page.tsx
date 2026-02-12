@@ -429,13 +429,27 @@ export default function IntegrationProviderPage() {
   }
 
   const renderField = (field: any) => {
+    const selectedProvider = formData.provider
+
+    // Email provider-specific field visibility
+    if (provider === 'email') {
+      if (field.key === 'apiKey' && selectedProvider === 'google') {
+        return null
+      }
+      if (field.key.startsWith('mailgun') && selectedProvider !== 'mailgun') {
+        return null
+      }
+      if (field.key.startsWith('google') && selectedProvider !== 'google') {
+        return null
+      }
+    }
+
     // Check dependencies
     if (field.dependsOn) {
       const dependsValue = formData[field.dependsOn]
       if (dependsValue === 'none' || !dependsValue || dependsValue !== field.dependsOn) {
         // Check if this field should be shown based on dependency
         if (field.dependsOn === 'provider') {
-          const selectedProvider = formData.provider
           if (field.key.includes('twilio') && selectedProvider !== 'twilio') {
             return null
           }

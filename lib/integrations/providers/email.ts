@@ -1,6 +1,6 @@
 /**
  * Email Provider Integration
- * Supports SendGrid, Mailgun, Resend
+ * Supports SendGrid, Mailgun, Resend, Google (Gmail SMTP)
  */
 
 import { IntegrationTestResult } from '../types'
@@ -21,6 +21,9 @@ export async function testEmailProvider(
         break
       case 'mailgun':
         result = await testMailgun(secrets, to, subject, html)
+        break
+      case 'google':
+        result = await testGoogle(secrets, to, subject, html)
         break
       case 'resend':
       default:
@@ -192,6 +195,56 @@ async function testResend(
     return {
       success: false,
       message: 'Resend test failed',
+      error: error.message || 'Unknown error',
+    }
+  }
+}
+
+async function testGoogle(
+  secrets: Record<string, any>,
+  to: string,
+  subject: string,
+  html: string
+): Promise<IntegrationTestResult> {
+  const user = (secrets.googleEmail || secrets.fromEmail || '').trim()
+  const pass = (secrets.googleAppPassword || '').trim()
+
+  if (!user || !pass) {
+    return {
+      success: false,
+      message: 'Google email credentials not configured',
+      error: 'Missing googleEmail or googleAppPassword',
+    }
+  }
+
+  try {
+    const nodemailer = await import('nodemailer')
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
+      auth: {
+        user,
+        pass,
+      },
+    })
+
+    await transporter.sendMail({
+      from: secrets.fromEmail || user,
+      to,
+      subject,
+      html,
+      replyTo: secrets.replyTo || undefined,
+    })
+
+    return {
+      success: true,
+      message: `Test email sent successfully to ${to} via Google`,
+    }
+  } catch (error: any) {
+    return {
+      success: false,
+      message: 'Google email test failed',
       error: error.message || 'Unknown error',
     }
   }
