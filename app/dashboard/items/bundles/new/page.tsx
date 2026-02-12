@@ -49,6 +49,11 @@ interface BundleComponent {
   notes?: string
 }
 
+const toNumber = (value: unknown, fallback = 0): number => {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : fallback
+}
+
 export default function NewBundlePage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -184,10 +189,10 @@ export default function NewBundlePage() {
         if (item) {
           const price = comp.defaultUnitPriceOverride
             ? parseFloat(comp.defaultUnitPriceOverride)
-            : item.defaultUnitPrice
+            : toNumber(item.defaultUnitPrice)
           const cost = comp.defaultUnitCostOverride
             ? parseFloat(comp.defaultUnitCostOverride)
-            : item.defaultUnitCost || 0
+            : toNumber(item.defaultUnitCost)
           totalPrice += price * qty
           totalCost += cost * qty
         }
@@ -485,7 +490,7 @@ export default function NewBundlePage() {
                                   step="0.01"
                                   value={comp.defaultUnitCostOverride || ''}
                                   onChange={(e) => updateComponent(index, 'defaultUnitCostOverride', e.target.value)}
-                                  placeholder={comp.componentType === 'ITEM' && item ? `$${item.defaultUnitCost?.toFixed(2) || '0.00'}` : 'Auto'}
+                                  placeholder={comp.componentType === 'ITEM' && item ? `$${toNumber(item.defaultUnitCost).toFixed(2)}` : 'Auto'}
                                 />
                               </div>
                               <div>
@@ -495,7 +500,7 @@ export default function NewBundlePage() {
                                   step="0.01"
                                   value={comp.defaultUnitPriceOverride || ''}
                                   onChange={(e) => updateComponent(index, 'defaultUnitPriceOverride', e.target.value)}
-                                  placeholder={comp.componentType === 'ITEM' && item ? `$${item.defaultUnitPrice.toFixed(2)}` : 'Auto'}
+                                  placeholder={comp.componentType === 'ITEM' && item ? `$${toNumber(item.defaultUnitPrice).toFixed(2)}` : 'Auto'}
                                 />
                               </div>
                             </div>
@@ -605,7 +610,7 @@ export default function NewBundlePage() {
                   >
                     <div className="font-medium">{item.name}</div>
                     {item.sku && <div className="text-sm text-gray-500">SKU: {item.sku}</div>}
-                    <div className="text-sm text-gray-600">${item.defaultUnitPrice.toFixed(2)} / {item.unit}</div>
+                    <div className="text-sm text-gray-600">${toNumber(item.defaultUnitPrice).toFixed(2)} / {item.unit}</div>
                   </button>
                 ))}
               </div>
