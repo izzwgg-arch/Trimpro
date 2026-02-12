@@ -5,6 +5,8 @@ const SOLA_API_BASE =
   process.env.SOLA_API_BASE_URL ||
   process.env.CARDKNOX_API_BASE_URL ||
   'https://api.cardknox.com/v2'
+const CARDKNOX_HOSTED_FORM_URL =
+  process.env.CARDKNOX_HOSTED_FORM_URL || 'https://secure.cardknox.com/trimprony'
 const SOLA_API_KEY = process.env.SOLA_API_KEY
 const SOLA_API_SECRET = process.env.SOLA_API_SECRET
 
@@ -135,6 +137,19 @@ export class SolaService {
         }
       } catch (error: any) {
         lastError = error instanceof Error ? error : new Error(String(error))
+      }
+    }
+
+    // Fallback to merchant-hosted Cardknox payment page if API does not return a dynamic URL.
+    // This keeps the payment flow usable while preserving API diagnostics in logs.
+    if (CARDKNOX_HOSTED_FORM_URL) {
+      console.warn(
+        `Sola did not return a hosted payment URL. Falling back to CARDKNOX_HOSTED_FORM_URL. ${lastError ? `Last error: ${lastError.message}` : ''}`.trim()
+      )
+      return {
+        id: request.invoiceId,
+        url: CARDKNOX_HOSTED_FORM_URL,
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString(),
       }
     }
 
