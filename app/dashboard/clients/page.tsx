@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -11,6 +11,7 @@ import Link from 'next/link'
 
 interface Client {
   id: string
+  parentId?: string | null
   name: string
   companyName: string | null
   email: string | null
@@ -29,6 +30,10 @@ interface Client {
     jobs: number
     invoices: number
   }
+  parent?: {
+    id: string
+    name: string
+  } | null
 }
 
 export default function ClientsPage() {
@@ -74,7 +79,7 @@ export default function ClientsPage() {
   }
 
   const handleDelete = async (clientId: string, clientName: string) => {
-    if (!confirm(`Are you sure you want to delete the client "${clientName}"? This will mark the client as inactive. This action cannot be undone.`)) {
+    if (!confirm(`Are you sure you want to permanently delete the client "${clientName}"? This action cannot be undone.`)) {
       return
     }
 
@@ -124,6 +129,38 @@ export default function ClientsPage() {
       </div>
     )
   }
+
+  const flattenedClients = useMemo(() => {
+    const byParent = new Map<string, Client[]>()
+    const allIds = new Set(clients.map((c) => c.id))
+    const roots: Client[] = []
+
+    for (const client of clients) {
+      if (client.parentId && allIds.has(client.parentId)) {
+        const list = byParent.get(client.parentId) || []
+        list.push(client)
+        byParent.set(client.parentId, list)
+      } else {
+        roots.push(client)
+      }
+    }
+
+    const sortByName = (a: Client, b: Client) => a.name.localeCompare(b.name)
+    roots.sort(sortByName)
+    byParent.forEach((list) => list.sort(sortByName))
+
+    const output: Array<{ client: Client; isSubClient: boolean }> = []
+    const visit = (client: Client) => {
+      output.push({ client, isSubClient: false })
+      const children = byParent.get(client.id) || []
+      for (const child of children) {
+        output.push({ client: child, isSubClient: true })
+      }
+    }
+
+    for (const root of roots) visit(root)
+    return output
+  }, [clients])
 
   return (
     <div className="space-y-6">
@@ -184,10 +221,10 @@ export default function ClientsPage() {
             </div>
           </div>
         ) : (
-          clients.map((client) => {
+          flattenedClients.map(({ client, isSubClient }) => {
             const primaryContact = client.contacts.find((c) => c.isPrimary) || client.contacts[0]
             return (
-              <Card key={client.id} className="hover:shadow-lg transition-shadow">
+              <Card key={client.id} className={`hover:shadow-lg transition-shadow ${isSubClient ? 'ml-4 border-l-4 border-blue-300' : ''}`}>
                 <CardHeader>
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
@@ -196,6 +233,16 @@ export default function ClientsPage() {
                           {client.name}
                         </CardTitle>
                       </Link>
+                      {isSubClient && (
+                        <div className="mt-1">
+                          <span className="inline-flex items-center px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-800">
+                            Sub-client
+                          </span>
+                          {client.parent?.name && (
+                            <span className="ml-2 text-xs text-gray-500">Parent: {client.parent.name}</span>
+                          )}
+                        </div>
+                      )}
                       {client.companyName && (
                         <CardDescription className="mt-1">{client.companyName}</CardDescription>
                       )}

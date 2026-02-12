@@ -18,6 +18,26 @@ export async function GET(
         tenantId: user.tenantId,
       },
       include: {
+        parent: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+          },
+        },
+        subClients: {
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            name: true,
+            companyName: true,
+            email: true,
+            phone: true,
+            isActive: true,
+            createdAt: true,
+          },
+        },
         contacts: {
           orderBy: [
             { isPrimary: 'desc' },
@@ -150,6 +170,8 @@ export async function GET(
       notes: client.notes_history || [],
       tasks: client.tasks || [],
       issues: client.issues || [],
+      parent: client.parent || null,
+      subClients: client.subClients || [],
       _count: client._count || {
         jobs: 0,
         invoices: 0,

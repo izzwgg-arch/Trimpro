@@ -166,6 +166,7 @@ model RefreshToken {
 model Client {
   id          String   @id @default(cuid())
   tenantId    String
+  parentId    String?
   name        String
   companyName String?
   email       String?
@@ -179,6 +180,8 @@ model Client {
 
   // Relationships
   tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parent         Client?         @relation("ClientHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  subClients     Client[]        @relation("ClientHierarchy")
   contacts       Contact[]
   addresses      Address[]       @relation("ClientAddresses")
   jobs           Job[]
@@ -200,6 +203,7 @@ model Client {
   updatedAt DateTime @updatedAt
 
   @@index([tenantId])
+  @@index([tenantId, parentId])
   @@index([tenantId, name])
   @@index([tenantId, email])
   @@map("clients")

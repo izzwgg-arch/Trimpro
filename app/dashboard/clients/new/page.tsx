@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -12,7 +12,10 @@ import Link from 'next/link'
 export default function NewClientPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const parentId = searchParams.get('parentId')
+  const isSubClientMode = !!parentId
   const [loading, setLoading] = useState(false)
+  const [parentClientName, setParentClientName] = useState<string>('')
   const [formData, setFormData] = useState({
     name: '',
     companyName: '',
@@ -37,6 +40,46 @@ export default function NewClientPage() {
     },
   })
 
+  useEffect(() => {
+    if (!parentId) return
+
+    const fetchParentClient = async () => {
+      try {
+        const token = localStorage.getItem('accessToken')
+        if (!token) return
+
+        const response = await fetch(`/api/clients/${parentId}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        })
+
+        if (!response.ok) return
+        const data = await response.json()
+        const parent = data.client
+        setParentClientName(parent?.name || '')
+
+        const parentBilling = (parent?.addresses || []).find((addr: any) => addr.type === 'billing')
+        if (parentBilling) {
+          setFormData((prev) => ({
+            ...prev,
+            billingAddress: {
+              street: parentBilling.street || '',
+              city: parentBilling.city || '',
+              state: parentBilling.state || '',
+              zipCode: parentBilling.zipCode || '',
+              country: parentBilling.country || 'US',
+            },
+          }))
+        }
+      } catch (error) {
+        console.error('Error loading parent client for sub-client defaults:', error)
+      }
+    }
+
+    fetchParentClient()
+  }, [parentId])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -51,6 +94,7 @@ export default function NewClientPage() {
         },
         body: JSON.stringify({
           name: formData.name,
+          parentId: parentId || null,
           companyName: formData.companyName || null,
           email: formData.email || null,
           phone: formData.phone || null,
@@ -58,7 +102,7 @@ export default function NewClientPage() {
           notes: formData.notes || null,
           tags: formData.tags ? formData.tags.split(',').map(t => t.trim()).filter(t => t) : [],
           billingAddress: formData.billingAddress.street ? formData.billingAddress : null,
-          shippingAddress: formData.shippingAddress.street ? formData.shippingAddress : null,
+          shippingAddress: isSubClientMode ? null : (formData.shippingAddress.street ? formData.shippingAddress : null),
         }),
       })
 
@@ -98,8 +142,12 @@ export default function NewClientPage() {
           </Button>
         </Link>
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">New Client</h1>
-          <p className="mt-2 text-gray-600">Create a new client record</p>
+          <h1 className="text-3xl font-bold text-gray-900">{isSubClientMode ? 'New Sub-Client' : 'New Client'}</h1>
+          <p className="mt-2 text-gray-600">
+            {isSubClientMode
+              ? `Create a sub-client under ${parentClientName || 'the selected parent client'}.`
+              : 'Create a new client record'}
+          </p>
         </div>
       </div>
 
@@ -263,79 +311,80 @@ export default function NewClientPage() {
           </CardContent>
         </Card>
 
-        {/* Shipping Address */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Shipping Address (Optional)</CardTitle>
-            <CardDescription>Different address for shipping if needed</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label htmlFor="shippingStreet">Street Address</Label>
-              <Input
-                id="shippingStreet"
-                value={formData.shippingAddress.street}
-                onChange={(e) => setFormData({
-                  ...formData,
-                  shippingAddress: { ...formData.shippingAddress, street: e.target.value }
-                })}
-                placeholder="123 Main St"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
+        {!isSubClientMode && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Shipping Address (Optional)</CardTitle>
+              <CardDescription>Different address for shipping if needed</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
               <div>
-                <Label htmlFor="shippingCity">City</Label>
+                <Label htmlFor="shippingStreet">Street Address</Label>
                 <Input
-                  id="shippingCity"
-                  value={formData.shippingAddress.city}
+                  id="shippingStreet"
+                  value={formData.shippingAddress.street}
                   onChange={(e) => setFormData({
                     ...formData,
-                    shippingAddress: { ...formData.shippingAddress, city: e.target.value }
+                    shippingAddress: { ...formData.shippingAddress, street: e.target.value }
                   })}
-                  placeholder="City"
+                  placeholder="123 Main St"
                 />
               </div>
-              <div>
-                <Label htmlFor="shippingState">State</Label>
-                <Input
-                  id="shippingState"
-                  value={formData.shippingAddress.state}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    shippingAddress: { ...formData.shippingAddress, state: e.target.value }
-                  })}
-                  placeholder="State"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="shippingCity">City</Label>
+                  <Input
+                    id="shippingCity"
+                    value={formData.shippingAddress.city}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      shippingAddress: { ...formData.shippingAddress, city: e.target.value }
+                    })}
+                    placeholder="City"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="shippingState">State</Label>
+                  <Input
+                    id="shippingState"
+                    value={formData.shippingAddress.state}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      shippingAddress: { ...formData.shippingAddress, state: e.target.value }
+                    })}
+                    placeholder="State"
+                  />
+                </div>
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="shippingZip">Zip Code</Label>
-                <Input
-                  id="shippingZip"
-                  value={formData.shippingAddress.zipCode}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    shippingAddress: { ...formData.shippingAddress, zipCode: e.target.value }
-                  })}
-                  placeholder="12345"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="shippingZip">Zip Code</Label>
+                  <Input
+                    id="shippingZip"
+                    value={formData.shippingAddress.zipCode}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      shippingAddress: { ...formData.shippingAddress, zipCode: e.target.value }
+                    })}
+                    placeholder="12345"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="shippingCountry">Country</Label>
+                  <Input
+                    id="shippingCountry"
+                    value={formData.shippingAddress.country}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      shippingAddress: { ...formData.shippingAddress, country: e.target.value }
+                    })}
+                    placeholder="US"
+                  />
+                </div>
               </div>
-              <div>
-                <Label htmlFor="shippingCountry">Country</Label>
-                <Input
-                  id="shippingCountry"
-                  value={formData.shippingAddress.country}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    shippingAddress: { ...formData.shippingAddress, country: e.target.value }
-                  })}
-                  placeholder="US"
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="flex justify-end space-x-4">
           <Button type="button" variant="outline" onClick={() => router.back()}>

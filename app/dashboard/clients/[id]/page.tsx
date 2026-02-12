@@ -26,6 +26,7 @@ import { AddressMapSection } from './map-section'
 
 interface ClientDetail {
   id: string
+  parentId?: string | null
   name: string
   companyName: string | null
   email: string | null
@@ -116,6 +117,21 @@ interface ClientDetail {
     smsMessages: number
     emails: number
   }
+  parent?: {
+    id: string
+    name: string
+    email: string | null
+    phone: string | null
+  } | null
+  subClients?: Array<{
+    id: string
+    name: string
+    companyName: string | null
+    email: string | null
+    phone: string | null
+    isActive: boolean
+    createdAt: string
+  }>
 }
 
 export default function ClientDetailPage() {
@@ -309,6 +325,7 @@ export default function ClientDetailPage() {
     : ((client.notes_history && Array.isArray(client.notes_history)) ? client.notes_history : [])
   const tasks = (client.tasks && Array.isArray(client.tasks)) ? client.tasks : []
   const issues = (client.issues && Array.isArray(client.issues)) ? client.issues : []
+  const subClients = (client.subClients && Array.isArray(client.subClients)) ? client.subClients : []
 
   return (
     <div className="space-y-6">
@@ -321,6 +338,14 @@ export default function ClientDetailPage() {
             </Link>
           </div>
           <h1 className="text-3xl font-bold text-gray-900 mt-2">{client.name}</h1>
+          {client.parent && (
+            <p className="text-sm text-gray-500 mt-1">
+              Sub-client of{' '}
+              <Link href={`/dashboard/clients/${client.parent.id}`} className="text-primary hover:underline">
+                {client.parent.name}
+              </Link>
+            </p>
+          )}
           {client.companyName && (
             <p className="text-gray-600 mt-1">{client.companyName}</p>
           )}
@@ -423,6 +448,50 @@ export default function ClientDetailPage() {
                   </div>
                 )}
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Sub-Clients</CardTitle>
+                  <CardDescription>Child clients attached to this dominant client</CardDescription>
+                </div>
+                <Button variant="outline" onClick={() => router.push(`/dashboard/clients/new?parentId=${clientId}`)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Sub-Client
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {subClients.length === 0 ? (
+                <p className="text-sm text-gray-500">No sub-clients yet.</p>
+              ) : (
+                <div className="space-y-3">
+                  {subClients.map((subClient) => (
+                    <Link
+                      key={subClient.id}
+                      href={`/dashboard/clients/${subClient.id}`}
+                      className="block rounded-md border p-3 hover:bg-gray-50"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-medium">{subClient.name}</p>
+                          <div className="text-xs text-gray-600">
+                            {subClient.companyName || 'No company'} {subClient.email ? `• ${subClient.email}` : ''}
+                          </div>
+                        </div>
+                        <span className={`px-2 py-1 text-xs rounded-full ${
+                          subClient.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {subClient.isActive ? 'Active' : 'Inactive'}
+                        </span>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
 

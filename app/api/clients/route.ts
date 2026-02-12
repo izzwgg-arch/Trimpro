@@ -36,6 +36,12 @@ export async function GET(request: NextRequest) {
       prisma.client.findMany({
         where,
         include: {
+          parent: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
           contacts: {
             where: { isPrimary: true },
             take: 1,
@@ -78,14 +84,47 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: validation.error }, { status: validation.status })
   }
 
-  const { name, companyName, email, phone, website, notes, tags, billingAddress, shippingAddress } = validation.data
+  const { name, parentId, companyName, email, phone, website, notes, tags, billingAddress, shippingAddress } = validation.data
 
   try {
+
+    let resolvedParentId: string | null = null
+    let inheritedBillingAddress: typeof billingAddress = null
+    if (parentId) {
+      const parent = await prisma.client.findFirst({
+        where: {
+          id: parentId,
+          tenantId: user.tenantId,
+        },
+        include: {
+          addresses: {
+            where: { type: 'billing' },
+            take: 1,
+          },
+        },
+      })
+
+      if (!parent) {
+        return NextResponse.json({ error: 'Parent client not found' }, { status: 400 })
+      }
+
+      resolvedParentId = parent.id
+      if (!billingAddress && parent.addresses[0]) {
+        inheritedBillingAddress = {
+          street: parent.addresses[0].street,
+          city: parent.addresses[0].city,
+          state: parent.addresses[0].state,
+          zipCode: parent.addresses[0].zipCode,
+          country: parent.addresses[0].country || 'US',
+        }
+      }
+    }
 
     // Create client
     const client = await prisma.client.create({
       data: {
         tenantId: user.tenantId,
+        parentId: resolvedParentId,
         name,
         companyName: companyName || null,
         email: email || null,
@@ -101,24 +140,25 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // Create billing address if provided
-    if (billingAddress) {
+    // Create billing address if provided (or inherit from parent client)
+    const finalBillingAddress = billingAddress || inheritedBillingAddress
+    if (finalBillingAddress) {
       await prisma.address.create({
         data: {
           clientId: client.id,
           type: 'billing',
-          street: billingAddress.street,
-          city: billingAddress.city,
-          state: billingAddress.state,
-          zipCode: billingAddress.zipCode,
-          country: billingAddress.country || 'US',
+          street: finalBillingAddress.street,
+          city: finalBillingAddress.city,
+          state: finalBillingAddress.state,
+          zipCode: finalBillingAddress.zipCode,
+          country: finalBillingAddress.country || 'US',
           isDefault: true,
         },
       })
     }
 
-    // Create shipping address if provided
-    if (shippingAddress) {
+    // Sub-clients use billing address only; skip shipping address when parent is set.
+    if (!resolvedParentId && shippingAddress) {
       await prisma.address.create({
         data: {
           clientId: client.id,

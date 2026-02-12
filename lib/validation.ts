@@ -61,6 +61,7 @@ export const jobNoteSchema = z.object({
 // Client creation
 export const createClientSchema = z.object({
   name: z.string().min(1).max(255),
+  parentId: z.string().optional().nullable(),
   companyName: z.string().max(255).optional().nullable(),
   email: z.string().email().optional().nullable(),
   phone: z.string().max(50).optional().nullable(),
