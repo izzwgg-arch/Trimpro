@@ -22,6 +22,8 @@ import {
   Mail,
   Phone,
   Briefcase,
+  Printer,
+  Copy,
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -102,6 +104,7 @@ export default function PurchaseOrderDetailPage() {
   const [po, setPo] = useState<PurchaseOrderDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState(false)
+  const [duplicating, setDuplicating] = useState(false)
 
   useEffect(() => {
     fetchPurchaseOrder()
@@ -250,7 +253,39 @@ export default function PurchaseOrderDetailPage() {
   }
 
   const handleDownloadPDF = () => {
-    window.open(`/api/purchase-orders/${params.id}/pdf`, '_blank')
+    window.open(`/api/purchase-orders/${params.id}/pdf?download=1`, '_blank')
+  }
+
+  const handlePrint = () => {
+    window.open(`/api/purchase-orders/${params.id}/pdf?print=1`, '_blank')
+  }
+
+  const handleDuplicate = async () => {
+    setDuplicating(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch(`/api/purchase-orders/${params.id}/duplicate`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'Failed to duplicate purchase order')
+        return
+      }
+
+      if (data?.id) {
+        router.push(`/dashboard/purchase-orders/${data.id}`)
+      } else {
+        router.push('/dashboard/purchase-orders')
+      }
+    } catch (error) {
+      console.error('Error duplicating purchase order:', error)
+      alert('Failed to duplicate purchase order')
+    } finally {
+      setDuplicating(false)
+    }
   }
 
   if (loading) {
@@ -329,6 +364,14 @@ export default function PurchaseOrderDetailPage() {
           <Button onClick={handleDownloadPDF} variant="outline">
             <Download className="mr-2 h-4 w-4" />
             Download PDF
+          </Button>
+          <Button onClick={handlePrint} variant="outline">
+            <Printer className="mr-2 h-4 w-4" />
+            Print
+          </Button>
+          <Button onClick={handleDuplicate} variant="outline" disabled={duplicating}>
+            <Copy className="mr-2 h-4 w-4" />
+            {duplicating ? 'Duplicating...' : 'Duplicate'}
           </Button>
           {canCancel && (
             <Button onClick={handleDelete} variant="destructive" disabled={deleting}>

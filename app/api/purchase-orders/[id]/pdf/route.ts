@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -12,6 +21,9 @@ export async function GET(
   const user = getAuthUser(request)
 
   try {
+    const shouldPrint = request.nextUrl.searchParams.get('print') === '1'
+    const shouldDownload = request.nextUrl.searchParams.get('download') === '1'
+
     const purchaseOrder = await prisma.purchaseOrder.findFirst({
       where: {
         id: params.id,
@@ -61,8 +73,10 @@ export async function GET(
       return sum + (Number(item.quantity) * Number(item.unitPrice))
     }, 0)
     const total = Number(purchaseOrder.total)
+    const generatedAt = new Date().toLocaleString()
+    const orderDate = purchaseOrder.orderDate ? new Date(purchaseOrder.orderDate).toLocaleDateString() : new Date().toLocaleDateString()
+    const expectedDate = purchaseOrder.expectedDate ? new Date(purchaseOrder.expectedDate).toLocaleDateString() : 'N/A'
 
-    // Generate HTML for PDF
     const html = `
       <!DOCTYPE html>
       <html>
@@ -70,153 +84,211 @@ export async function GET(
           <meta charset="utf-8">
           <title>Purchase Order ${purchaseOrder.poNumber}</title>
           <style>
+            * { box-sizing: border-box; }
             body {
-              font-family: Arial, sans-serif;
-              margin: 40px;
-              color: #333;
+              margin: 0;
+              padding: 32px;
+              font-family: Inter, Helvetica, Arial, sans-serif;
+              color: #111827;
+              background: #f8fafc;
+            }
+            .page {
+              max-width: 980px;
+              margin: 0 auto;
+              background: #fff;
+              border: 1px solid #e5e7eb;
+              border-radius: 14px;
+              padding: 28px;
             }
             .header {
-              border-bottom: 2px solid #333;
-              padding-bottom: 20px;
-              margin-bottom: 30px;
+              display: grid;
+              grid-template-columns: 1fr auto;
+              gap: 20px;
+              align-items: start;
+              margin-bottom: 24px;
             }
-            .header h1 {
-              margin: 0;
-              font-size: 28px;
-            }
-            .info-section {
+            .logo {
+              width: 150px;
+              height: 42px;
+              border: 1px dashed #cbd5e1;
+              border-radius: 8px;
+              color: #64748b;
+              font-size: 12px;
               display: flex;
-              justify-content: space-between;
-              margin-bottom: 30px;
+              align-items: center;
+              justify-content: center;
             }
-            .info-box {
-              flex: 1;
-              margin-right: 20px;
+            .doc-title {
+              margin: 12px 0 0;
+              font-size: 30px;
+              font-weight: 700;
+              letter-spacing: -0.02em;
             }
-            .info-box:last-child {
-              margin-right: 0;
+            .meta {
+              text-align: right;
+              font-size: 13px;
+              color: #374151;
+              line-height: 1.7;
             }
-            .info-box h3 {
-              margin-top: 0;
-              border-bottom: 1px solid #ddd;
-              padding-bottom: 5px;
+            .muted { color: #6b7280; font-size: 12px; }
+            .grid {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 16px;
+              margin-bottom: 22px;
+            }
+            .panel {
+              border: 1px solid #e5e7eb;
+              border-radius: 10px;
+              padding: 14px;
+              background: #ffffff;
+            }
+            .panel h3 {
+              margin: 0 0 8px;
+              font-size: 12px;
+              letter-spacing: 0.06em;
+              text-transform: uppercase;
+              color: #6b7280;
             }
             table {
               width: 100%;
               border-collapse: collapse;
-              margin-bottom: 20px;
+              border: 1px solid #e5e7eb;
+              border-radius: 10px;
+              overflow: hidden;
             }
             th, td {
-              padding: 12px;
-              text-align: left;
-              border-bottom: 1px solid #ddd;
+              padding: 10px 12px;
+              border-bottom: 1px solid #e5e7eb;
             }
             th {
-              background-color: #f4f4f4;
-              font-weight: bold;
+              text-align: left;
+              font-size: 11px;
+              text-transform: uppercase;
+              letter-spacing: 0.06em;
+              color: #6b7280;
+              background: #f8fafc;
             }
+            tbody tr:nth-child(even) { background: #f9fafb; }
             .text-right {
               text-align: right;
             }
-            .totals {
+            .summary {
               margin-top: 20px;
               margin-left: auto;
-              width: 300px;
+              width: 320px;
+              background: #f3f4f6;
+              border: 1px solid #e5e7eb;
+              border-radius: 10px;
+              padding: 14px;
             }
-            .totals-row {
+            .summary h4 {
+              margin: 0 0 10px;
+              font-size: 12px;
+              letter-spacing: 0.06em;
+              text-transform: uppercase;
+              color: #6b7280;
+            }
+            .summary-row {
               display: flex;
               justify-content: space-between;
-              padding: 8px 0;
+              padding: 5px 0;
+              font-size: 14px;
             }
-            .totals-row.total {
-              border-top: 2px solid #333;
+            .summary-row.total {
+              margin-top: 6px;
+              padding-top: 8px;
+              border-top: 1px solid #cbd5e1;
               font-weight: bold;
               font-size: 18px;
-              margin-top: 10px;
-              padding-top: 10px;
             }
             .footer {
-              margin-top: 40px;
-              padding-top: 20px;
-              border-top: 1px solid #ddd;
+              margin-top: 22px;
+              padding-top: 12px;
+              border-top: 1px solid #e5e7eb;
               font-size: 12px;
-              color: #666;
+              color: #6b7280;
+            }
+            @media print {
+              body { background: #fff; padding: 0; }
+              .page { border: none; border-radius: 0; }
             }
           </style>
+          ${shouldPrint ? '<script>window.addEventListener("load", () => window.print());</script>' : ''}
         </head>
         <body>
-          <div class="header">
-            <h1>Purchase Order</h1>
-            <p><strong>PO Number:</strong> ${purchaseOrder.poNumber}</p>
-            <p><strong>Date:</strong> ${purchaseOrder.orderDate ? new Date(purchaseOrder.orderDate).toLocaleDateString() : new Date().toLocaleDateString()}</p>
-            ${purchaseOrder.expectedDate ? `<p><strong>Expected Delivery:</strong> ${new Date(purchaseOrder.expectedDate).toLocaleDateString()}</p>` : ''}
-          </div>
-
-          <div class="info-section">
-            <div class="info-box">
-              <h3>Vendor</h3>
-              <p><strong>${purchaseOrder.vendorRef?.name || purchaseOrder.vendor}</strong></p>
-              ${purchaseOrder.vendorRef?.contactPerson ? `<p>Contact: ${purchaseOrder.vendorRef.contactPerson}</p>` : ''}
-              ${purchaseOrder.vendorRef?.email ? `<p>Email: ${purchaseOrder.vendorRef.email}</p>` : ''}
-              ${purchaseOrder.vendorRef?.phone ? `<p>Phone: ${purchaseOrder.vendorRef.phone}</p>` : ''}
-              ${purchaseOrder.vendorRef?.address ? `<p>${purchaseOrder.vendorRef.address}</p>` : ''}
-              ${purchaseOrder.vendorRef?.city ? `<p>${[purchaseOrder.vendorRef.city, purchaseOrder.vendorRef.state, purchaseOrder.vendorRef.zipCode].filter(Boolean).join(', ')}</p>` : ''}
-            </div>
-            ${purchaseOrder.job ? `
-              <div class="info-box">
-                <h3>Job</h3>
-                <p><strong>${purchaseOrder.job.jobNumber}</strong></p>
-                <p>${purchaseOrder.job.title}</p>
-                <p>Client: ${purchaseOrder.job.client.name}</p>
+          <div class="page">
+            <div class="header">
+              <div>
+                <div class="logo">LOGO</div>
+                <h1 class="doc-title">Purchase Order</h1>
+                <div class="muted">Generated on ${generatedAt}</div>
               </div>
-            ` : ''}
-          </div>
+              <div class="meta">
+                <div><strong>No.</strong> ${escapeHtml(purchaseOrder.poNumber)}</div>
+                <div><strong>Order Date:</strong> ${escapeHtml(orderDate)}</div>
+                <div><strong>Expected:</strong> ${escapeHtml(expectedDate)}</div>
+              </div>
+            </div>
 
-          <table>
-            <thead>
-              <tr>
-                <th>Description</th>
-                <th class="text-right">Quantity</th>
-                <th class="text-right">Unit Price</th>
-                <th class="text-right">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${purchaseOrder.lineItems.map((item) => `
+            <div class="grid">
+              <div class="panel">
+                <h3>Vendor</h3>
+                <div><strong>${escapeHtml(purchaseOrder.vendorRef?.name || purchaseOrder.vendor || 'N/A')}</strong></div>
+                ${purchaseOrder.vendorRef?.contactPerson ? `<div class="muted">Contact: ${escapeHtml(purchaseOrder.vendorRef.contactPerson)}</div>` : ''}
+                ${purchaseOrder.vendorRef?.email ? `<div class="muted">${escapeHtml(purchaseOrder.vendorRef.email)}</div>` : ''}
+                ${purchaseOrder.vendorRef?.phone ? `<div class="muted">${escapeHtml(purchaseOrder.vendorRef.phone)}</div>` : ''}
+              </div>
+              <div class="panel">
+                <h3>Job</h3>
+                ${purchaseOrder.job ? `
+                  <div><strong>${escapeHtml(purchaseOrder.job.jobNumber)}</strong></div>
+                  <div>${escapeHtml(purchaseOrder.job.title)}</div>
+                  <div class="muted">Client: ${escapeHtml(purchaseOrder.job.client.name)}</div>
+                ` : '<div class="muted">No linked job</div>'}
+              </div>
+            </div>
+
+            <table>
+              <thead>
                 <tr>
-                  <td>${item.description}</td>
-                  <td class="text-right">${item.quantity}</td>
-                  <td class="text-right">$${Number(item.unitPrice).toFixed(2)}</td>
-                  <td class="text-right">$${Number(item.total).toFixed(2)}</td>
+                  <th>Description</th>
+                  <th class="text-right">Quantity</th>
+                  <th class="text-right">Unit Price</th>
+                  <th class="text-right">Total</th>
                 </tr>
-              `).join('')}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                ${purchaseOrder.lineItems.map((item) => `
+                  <tr>
+                    <td>${escapeHtml(item.description)}</td>
+                    <td class="text-right">${Number(item.quantity).toFixed(2)}</td>
+                    <td class="text-right">$${Number(item.unitPrice).toFixed(2)}</td>
+                    <td class="text-right">$${Number(item.total).toFixed(2)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
 
-          <div class="totals">
-            <div class="totals-row">
-              <span>Subtotal:</span>
-              <span>$${subtotal.toFixed(2)}</span>
+            <div class="summary">
+              <h4>Summary</h4>
+              <div class="summary-row"><span>Subtotal</span><span>$${subtotal.toFixed(2)}</span></div>
+              <div class="summary-row total"><span>Total</span><span>$${total.toFixed(2)}</span></div>
             </div>
-            <div class="totals-row total">
-              <span>Total:</span>
-              <span>$${total.toFixed(2)}</span>
-            </div>
-          </div>
 
-          <div class="footer">
-            <p>This is an official purchase order from Trim Pro.</p>
-            <p>Generated on ${new Date().toLocaleString()}</p>
+            <div class="footer">
+              <p>This is an official purchase order from Trim Pro.</p>
+              <p>Generated on ${generatedAt}</p>
+            </div>
           </div>
         </body>
       </html>
     `
 
-    // Return HTML (can be converted to PDF using a service like Puppeteer or a PDF library)
     return new NextResponse(html, {
       headers: {
         'Content-Type': 'text/html',
-        'Content-Disposition': `inline; filename="PO-${purchaseOrder.poNumber}.html"`,
+        'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="PO-${purchaseOrder.poNumber}.html"`,
       },
     })
   } catch (error) {

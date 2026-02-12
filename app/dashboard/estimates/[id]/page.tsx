@@ -22,6 +22,8 @@ import {
   RefreshCw,
   Unlink,
   Plus,
+  Printer,
+  Copy,
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -110,6 +112,7 @@ export default function EstimateDetailPage() {
   const [addingToGroup, setAddingToGroup] = useState<string | null>(null)
   const [showItemPicker, setShowItemPicker] = useState(false)
   const [itemPickerGroupId, setItemPickerGroupId] = useState<string | null>(null)
+  const [duplicating, setDuplicating] = useState(false)
 
   useEffect(() => {
     fetchEstimate()
@@ -153,6 +156,42 @@ export default function EstimateDetailPage() {
       setEstimate(null)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleDownloadPDF = () => {
+    window.open(`/api/estimates/${estimateId}/pdf?download=1`, '_blank')
+  }
+
+  const handlePrint = () => {
+    window.open(`/api/estimates/${estimateId}/pdf?print=1`, '_blank')
+  }
+
+  const handleDuplicate = async () => {
+    setDuplicating(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch(`/api/estimates/${estimateId}/duplicate`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'Failed to duplicate estimate')
+        return
+      }
+
+      if (data?.id) {
+        router.push(`/dashboard/estimates/${data.id}`)
+      } else {
+        router.push('/dashboard/estimates')
+      }
+    } catch (error) {
+      console.error('Duplicate estimate error:', error)
+      alert('Failed to duplicate estimate')
+    } finally {
+      setDuplicating(false)
     }
   }
 
@@ -202,6 +241,18 @@ export default function EstimateDetailPage() {
           <span className={`px-3 py-1 text-sm rounded-full ${statusColors[estimate.status] || 'bg-gray-100 text-gray-800'}`}>
             {estimate.status}
           </span>
+          <Button variant="outline" onClick={handleDownloadPDF}>
+            <Download className="mr-2 h-4 w-4" />
+            Download PDF
+          </Button>
+          <Button variant="outline" onClick={handlePrint}>
+            <Printer className="mr-2 h-4 w-4" />
+            Print
+          </Button>
+          <Button variant="outline" onClick={handleDuplicate} disabled={duplicating}>
+            <Copy className="mr-2 h-4 w-4" />
+            {duplicating ? 'Duplicating...' : 'Duplicate'}
+          </Button>
           <Link href={`/dashboard/estimates/${estimateId}/edit`}>
             <Button variant="outline">
               <Edit className="mr-2 h-4 w-4" />

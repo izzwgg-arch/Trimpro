@@ -21,6 +21,7 @@ import {
   Plus,
   Building2,
   Trash2,
+  Copy,
 } from 'lucide-react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
@@ -141,6 +142,7 @@ export default function JobDetailPage() {
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState(false)
   const [convertingToInvoice, setConvertingToInvoice] = useState(false)
+  const [duplicating, setDuplicating] = useState(false)
 
   useEffect(() => {
     fetchJob()
@@ -279,6 +281,39 @@ export default function JobDetailPage() {
     }
   }
 
+  const handleDuplicate = async () => {
+    setDuplicating(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+
+      const response = await fetch(`/api/jobs/${jobId}/duplicate`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'Failed to duplicate job')
+        return
+      }
+
+      if (data?.id) {
+        router.push(`/dashboard/jobs/${data.id}`)
+      } else {
+        router.push('/dashboard/jobs')
+      }
+    } catch (error) {
+      console.error('Duplicate job error:', error)
+      alert('Failed to duplicate job')
+    } finally {
+      setDuplicating(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -331,6 +366,10 @@ export default function JobDetailPage() {
           <Button onClick={handleConvertToInvoice} disabled={convertingToInvoice}>
             <DollarSign className="mr-2 h-4 w-4" />
             {convertingToInvoice ? 'Converting...' : 'Convert to Invoice'}
+          </Button>
+          <Button variant="outline" onClick={handleDuplicate} disabled={duplicating}>
+            <Copy className="mr-2 h-4 w-4" />
+            {duplicating ? 'Duplicating...' : 'Duplicate'}
           </Button>
           <Button variant="outline" onClick={() => router.push(`/dashboard/jobs/${jobId}/edit`)}>
             <Edit className="mr-2 h-4 w-4" />

@@ -48,6 +48,7 @@ export default function EditRequestPage() {
   const [users, setUsers] = useState<Array<{ id: string; firstName: string; lastName: string }>>([])
   const [clients, setClients] = useState<Client[]>([])
   const [clientMode, setClientMode] = useState<'new' | 'existing'>('new')
+  const [clientSearch, setClientSearch] = useState('')
 
   const [formData, setFormData] = useState({
     clientId: '',
@@ -159,6 +160,9 @@ export default function EditRequestPage() {
         assignedToId: request.assignedToId || '',
       })
       setClientMode(request.convertedToClientId ? 'existing' : 'new')
+      if (request.convertedToClientId) {
+        setClientSearch(`${request.firstName || ''} ${request.lastName || ''}`.trim())
+      }
       setError(null)
     } catch (e) {
       console.error('Error loading request:', e)
@@ -268,6 +272,15 @@ export default function EditRequestPage() {
     }
   }
 
+  const filteredClients = useMemo(() => {
+    const query = clientSearch.trim().toLowerCase()
+    if (!query) return clients
+    return clients.filter((client) => {
+      const haystack = `${client.name} ${client.companyName || ''} ${client.email || ''} ${client.phone || ''}`.toLowerCase()
+      return haystack.includes(query)
+    })
+  }, [clients, clientSearch])
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -336,6 +349,7 @@ export default function EditRequestPage() {
                     setClientMode(nextMode)
                     if (nextMode === 'new') {
                       setFormData((prev) => ({ ...prev, clientId: '' }))
+                      setClientSearch('')
                     }
                   }}
                   className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
@@ -347,41 +361,53 @@ export default function EditRequestPage() {
             </div>
 
             {clientMode === 'existing' && (
-              <div>
-                <Label htmlFor="clientId">Select Client *</Label>
-                <select
-                  id="clientId"
-                  value={formData.clientId}
-                  onChange={(e) => {
-                    const selected = clients.find((client) => client.id === e.target.value)
-                    if (!selected) {
-                      setFormData((prev) => ({ ...prev, clientId: '' }))
-                      return
-                    }
-                    const nameParts = selected.name.trim().split(/\s+/)
-                    setFormData((prev) => ({
-                      ...prev,
-                      clientId: selected.id,
-                      firstName: nameParts[0] || '',
-                      lastName: nameParts.slice(1).join(' '),
-                      email: selected.email || '',
-                      phone: selected.phone || '',
-                      company: selected.companyName || '',
-                    }))
-                  }}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  required={clientMode === 'existing'}
-                >
-                  <option value="">Select client...</option>
-                  {clients.map((client) => (
-                    <option key={client.id} value={client.id}>
-                      {client.name}
-                      {client.companyName ? ` — ${client.companyName}` : ''}
-                      {client.email ? ` — ${client.email}` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <>
+                <div>
+                  <Label htmlFor="clientSearch">Search Client</Label>
+                  <Input
+                    id="clientSearch"
+                    value={clientSearch}
+                    onChange={(e) => setClientSearch(e.target.value)}
+                    placeholder="Type name, company, email, or phone..."
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="clientId">Select Client *</Label>
+                  <select
+                    id="clientId"
+                    value={formData.clientId}
+                    onChange={(e) => {
+                      const selected = clients.find((client) => client.id === e.target.value)
+                      if (!selected) {
+                        setFormData((prev) => ({ ...prev, clientId: '' }))
+                        return
+                      }
+                      const nameParts = selected.name.trim().split(/\s+/)
+                      setFormData((prev) => ({
+                        ...prev,
+                        clientId: selected.id,
+                        firstName: nameParts[0] || '',
+                        lastName: nameParts.slice(1).join(' '),
+                        email: selected.email || '',
+                        phone: selected.phone || '',
+                        company: selected.companyName || '',
+                      }))
+                      setClientSearch(selected.name)
+                    }}
+                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    required={clientMode === 'existing'}
+                  >
+                    <option value="">Select client...</option>
+                    {filteredClients.map((client) => (
+                      <option key={client.id} value={client.id}>
+                        {client.name}
+                        {client.companyName ? ` — ${client.companyName}` : ''}
+                        {client.email ? ` — ${client.email}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
             )}
 
             <div className="grid grid-cols-2 gap-4">

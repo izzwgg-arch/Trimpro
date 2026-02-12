@@ -25,6 +25,9 @@ import {
   RefreshCw,
   Unlink,
   Plus,
+  Printer,
+  Copy,
+  CreditCard,
 } from 'lucide-react'
 import Link from 'next/link'
 import { ItemPicker } from '@/components/items/ItemPicker'
@@ -119,6 +122,8 @@ export default function InvoiceDetailPage() {
   const [addingToGroup, setAddingToGroup] = useState<string | null>(null)
   const [showItemPicker, setShowItemPicker] = useState(false)
   const [itemPickerGroupId, setItemPickerGroupId] = useState<string | null>(null)
+  const [duplicating, setDuplicating] = useState(false)
+  const [creatingPaymentLink, setCreatingPaymentLink] = useState(false)
 
   useEffect(() => {
     fetchInvoice()
@@ -295,6 +300,75 @@ export default function InvoiceDetailPage() {
     }
   }
 
+  const handleDownloadPDF = () => {
+    window.open(`/api/invoices/${invoiceId}/pdf?download=1`, '_blank')
+  }
+
+  const handlePrint = () => {
+    window.open(`/api/invoices/${invoiceId}/pdf?print=1`, '_blank')
+  }
+
+  const handleDuplicate = async () => {
+    setDuplicating(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch(`/api/invoices/${invoiceId}/duplicate`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'Failed to duplicate invoice')
+        return
+      }
+
+      if (data?.id) {
+        router.push(`/dashboard/invoices/${data.id}`)
+      } else {
+        router.push('/dashboard/invoices')
+      }
+    } catch (error) {
+      console.error('Duplicate invoice error:', error)
+      alert('Failed to duplicate invoice')
+    } finally {
+      setDuplicating(false)
+    }
+  }
+
+  const handlePayNow = async () => {
+    if (!invoice || parseFloat(invoice.balance) <= 0) return
+
+    setCreatingPaymentLink(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch('/api/payments/sola/link', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          invoiceId: invoice.id,
+          returnUrl: `${window.location.origin}/dashboard/invoices/${invoice.id}`,
+        }),
+      })
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok || !data?.paymentLink) {
+        alert(data.error || 'Unable to create payment link')
+        return
+      }
+
+      window.open(data.paymentLink, '_blank', 'noopener,noreferrer')
+    } catch (error) {
+      console.error('Create payment link error:', error)
+      alert('Failed to create payment link')
+    } finally {
+      setCreatingPaymentLink(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -348,6 +422,24 @@ export default function InvoiceDetailPage() {
           <span className={`px-3 py-1 text-sm rounded-full ${statusColors[invoice.status] || 'bg-gray-100 text-gray-800'}`}>
             {invoice.status}
           </span>
+          <Button variant="outline" onClick={handleDownloadPDF}>
+            <Download className="mr-2 h-4 w-4" />
+            Download PDF
+          </Button>
+          <Button variant="outline" onClick={handlePrint}>
+            <Printer className="mr-2 h-4 w-4" />
+            Print
+          </Button>
+          <Button variant="outline" onClick={handleDuplicate} disabled={duplicating}>
+            <Copy className="mr-2 h-4 w-4" />
+            {duplicating ? 'Duplicating...' : 'Duplicate'}
+          </Button>
+          {parseFloat(invoice.balance) > 0 && (
+            <Button onClick={handlePayNow} disabled={creatingPaymentLink}>
+              <CreditCard className="mr-2 h-4 w-4" />
+              {creatingPaymentLink ? 'Preparing...' : 'Pay Now'}
+            </Button>
+          )}
           <Button variant="outline">
             <Edit className="mr-2 h-4 w-4" />
             Edit

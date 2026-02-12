@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -29,6 +29,7 @@ export default function NewRequestPage() {
   const [users, setUsers] = useState<User[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [clientMode, setClientMode] = useState<'new' | 'existing'>('new')
+  const [clientSearch, setClientSearch] = useState('')
   const [formData, setFormData] = useState({
     clientId: '',
     firstName: '',
@@ -95,7 +96,17 @@ export default function NewRequestPage() {
       phone: selected.phone || '',
       company: selected.companyName || '',
     }))
+    setClientSearch(selected.name)
   }
+
+  const filteredClients = useMemo(() => {
+    const query = clientSearch.trim().toLowerCase()
+    if (!query) return clients
+    return clients.filter((client) => {
+      const haystack = `${client.name} ${client.companyName || ''} ${client.email || ''} ${client.phone || ''}`.toLowerCase()
+      return haystack.includes(query)
+    })
+  }, [clients, clientSearch])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -181,6 +192,7 @@ export default function NewRequestPage() {
                     setClientMode(nextMode)
                     if (nextMode === 'new') {
                       setFormData((prev) => ({ ...prev, clientId: '' }))
+                      setClientSearch('')
                     }
                   }}
                   className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
@@ -192,25 +204,36 @@ export default function NewRequestPage() {
             </div>
 
             {clientMode === 'existing' && (
-              <div>
-                <Label htmlFor="clientId">Select Client *</Label>
-                <select
-                  id="clientId"
-                  value={formData.clientId}
-                  onChange={(e) => handleExistingClientSelect(e.target.value)}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  required={clientMode === 'existing'}
-                >
-                  <option value="">Select client...</option>
-                  {clients.map((client) => (
-                    <option key={client.id} value={client.id}>
-                      {client.name}
-                      {client.companyName ? ` — ${client.companyName}` : ''}
-                      {client.email ? ` — ${client.email}` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <>
+                <div>
+                  <Label htmlFor="clientSearch">Search Client</Label>
+                  <Input
+                    id="clientSearch"
+                    value={clientSearch}
+                    onChange={(e) => setClientSearch(e.target.value)}
+                    placeholder="Type name, company, email, or phone..."
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="clientId">Select Client *</Label>
+                  <select
+                    id="clientId"
+                    value={formData.clientId}
+                    onChange={(e) => handleExistingClientSelect(e.target.value)}
+                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    required={clientMode === 'existing'}
+                  >
+                    <option value="">Select client...</option>
+                    {filteredClients.map((client) => (
+                      <option key={client.id} value={client.id}>
+                        {client.name}
+                        {client.companyName ? ` — ${client.companyName}` : ''}
+                        {client.email ? ` — ${client.email}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
             )}
 
             <div className="grid grid-cols-2 gap-4">
