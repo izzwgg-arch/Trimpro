@@ -1,9 +1,8 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback, KeyboardEvent } from 'react'
+import { useState, useEffect, useRef, useCallback, KeyboardEvent, useMemo } from 'react'
 import { Input } from '@/components/ui/input'
 import { Package } from 'lucide-react'
-import { useDebouncedCallback } from '@/lib/hooks/useDebouncedCallback'
 
 export interface FastPickerItem {
   id: string
@@ -86,28 +85,26 @@ export function FastPicker({
     setSelectedIndex(0)
   }, [items, bundles])
 
-  // Debounced search filter
-  const debouncedFilter = useDebouncedCallback((query: string) => {
+  // Query-driven filtering: only recalculates when query/items change,
+  // not on every arrow key navigation re-render.
+  const filteredByQuery = useMemo(() => {
+    const query = searchQuery.trim()
     if (!query.trim()) {
-      setFilteredItems(allItems.current)
-      setSelectedIndex(0)
-      return
+      return allItems.current
     }
 
     const lowerQuery = query.toLowerCase()
-    const filtered = allItems.current.filter(item => {
+    return allItems.current.filter(item => {
       const nameMatch = item.name.toLowerCase().includes(lowerQuery)
       const skuMatch = item.sku?.toLowerCase().includes(lowerQuery)
       return nameMatch || skuMatch
     })
-    
-    setFilteredItems(filtered)
-    setSelectedIndex(0) // Reset selection when filtering
-  }, 150)
+  }, [searchQuery, items, bundles])
 
   useEffect(() => {
-    debouncedFilter(searchQuery)
-  }, [searchQuery, debouncedFilter])
+    setFilteredItems(filteredByQuery)
+    setSelectedIndex(0)
+  }, [filteredByQuery])
 
   // Scroll selected item into view
   useEffect(() => {
@@ -116,7 +113,7 @@ export function FastPicker({
       if (selectedElement) {
         selectedElement.scrollIntoView({
           block: 'nearest',
-          behavior: 'smooth',
+          behavior: 'auto',
         })
       }
     }
@@ -305,20 +302,15 @@ export function FastPicker({
 
   // Handle input focus - opens dropdown immediately
   const handleInputFocus = useCallback(() => {
-    if (!disabled) {
+    if (!disabled && !isOpen) {
       setIsOpen(true)
-      // Reset search when opening
-      setSearchQuery('')
-      setSelectedIndex(0)
     }
-  }, [disabled])
+  }, [disabled, isOpen])
 
   // Handle input click - ensures dropdown opens
   const handleInputClick = useCallback(() => {
     if (!disabled && !isOpen) {
       setIsOpen(true)
-      setSearchQuery('')
-      setSelectedIndex(0)
     }
   }, [disabled, isOpen])
 
@@ -365,7 +357,7 @@ export function FastPicker({
 
             return (
               <div
-                key={`${item.id}-${item.kind}-${index}`}
+                key={`${item.kind}-${item.id}`}
                 ref={(el) => {
                   itemRefs.current[index] = el
                 }}
