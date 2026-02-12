@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -29,7 +29,7 @@ export default function NewRequestPage() {
   const [users, setUsers] = useState<User[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [clientMode, setClientMode] = useState<'new' | 'existing'>('new')
-  const [clientSearch, setClientSearch] = useState('')
+  const [clientQuery, setClientQuery] = useState('')
   const [formData, setFormData] = useState({
     clientId: '',
     firstName: '',
@@ -81,14 +81,10 @@ export default function NewRequestPage() {
     }
   }
 
-  const filteredClients = useMemo(() => {
-    const query = clientSearch.trim().toLowerCase()
-    if (!query) return clients
-    return clients.filter((client) => {
-      const haystack = `${client.name} ${client.companyName || ''} ${client.email || ''} ${client.phone || ''}`.toLowerCase()
-      return haystack.includes(query)
-    })
-  }, [clients, clientSearch])
+  const getClientOptionLabel = (client: Client) => {
+    const secondary = client.companyName || client.email || client.phone || ''
+    return secondary ? `${client.name} — ${secondary}` : client.name
+  }
 
   const handleExistingClientSelect = (clientId: string) => {
     const selected = clients.find((c) => c.id === clientId)
@@ -105,6 +101,7 @@ export default function NewRequestPage() {
       phone: selected.phone || '',
       company: selected.companyName || '',
     }))
+    setClientQuery(getClientOptionLabel(selected))
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -187,6 +184,7 @@ export default function NewRequestPage() {
                     setClientMode(nextMode)
                     if (nextMode === 'new') {
                       setFormData((prev) => ({ ...prev, clientId: '' }))
+                      setClientQuery('')
                     }
                   }}
                   className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
@@ -198,33 +196,31 @@ export default function NewRequestPage() {
             </div>
 
             {clientMode === 'existing' && (
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="clientSearch">Search Client</Label>
-                  <Input
-                    id="clientSearch"
-                    value={clientSearch}
-                    onChange={(e) => setClientSearch(e.target.value)}
-                    placeholder="Type name, email, phone..."
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="clientId">Select Client *</Label>
-                  <select
-                    id="clientId"
-                    value={formData.clientId}
-                    onChange={(e) => handleExistingClientSelect(e.target.value)}
-                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    required={clientMode === 'existing'}
-                  >
-                    <option value="">Choose client...</option>
-                    {filteredClients.map((client) => (
-                      <option key={client.id} value={client.id}>
-                        {client.name} {client.companyName ? `(${client.companyName})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <div>
+                <Label htmlFor="clientPicker">Select Client *</Label>
+                <Input
+                  id="clientPicker"
+                  list="request-client-options"
+                  value={clientQuery}
+                  onChange={(e) => {
+                    const value = e.target.value
+                    setClientQuery(value)
+                    const matchedClient = clients.find((client) => getClientOptionLabel(client) === value)
+                    if (matchedClient) {
+                      handleExistingClientSelect(matchedClient.id)
+                    } else {
+                      setFormData((prev) => ({ ...prev, clientId: '' }))
+                    }
+                  }}
+                  placeholder="Search and select client..."
+                  required={clientMode === 'existing'}
+                />
+                <datalist id="request-client-options">
+                  {clients.map((client) => (
+                    <option key={client.id} value={getClientOptionLabel(client)} />
+                  ))}
+                </datalist>
+                <input type="hidden" value={formData.clientId} readOnly />
               </div>
             )}
 

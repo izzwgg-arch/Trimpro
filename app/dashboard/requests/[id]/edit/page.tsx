@@ -47,7 +47,7 @@ export default function EditRequestPage() {
   const [users, setUsers] = useState<Array<{ id: string; firstName: string; lastName: string }>>([])
   const [clients, setClients] = useState<Client[]>([])
   const [clientMode, setClientMode] = useState<'new' | 'existing'>('new')
-  const [clientSearch, setClientSearch] = useState('')
+  const [clientQuery, setClientQuery] = useState('')
 
   const [formData, setFormData] = useState({
     clientId: '',
@@ -82,6 +82,14 @@ export default function EditRequestPage() {
     fetchRequest()
   }, [normalizedRequestId])
 
+  useEffect(() => {
+    if (clientMode !== 'existing' || !formData.clientId || clientQuery) return
+    const selectedClient = clients.find((client) => client.id === formData.clientId)
+    if (selectedClient) {
+      setClientQuery(getClientOptionLabel(selectedClient))
+    }
+  }, [clientMode, formData.clientId, clientQuery, clients])
+
   const fetchUsers = async () => {
     try {
       const token = localStorage.getItem('accessToken')
@@ -110,6 +118,11 @@ export default function EditRequestPage() {
     } catch (error) {
       console.error('Error fetching clients:', error)
     }
+  }
+
+  const getClientOptionLabel = (client: Client) => {
+    const secondary = client.companyName || client.email || client.phone || ''
+    return secondary ? `${client.name} — ${secondary}` : client.name
   }
 
   const fetchRequest = async () => {
@@ -159,6 +172,12 @@ export default function EditRequestPage() {
         assignedToId: request.assignedToId || '',
       })
       setClientMode(request.convertedToClientId ? 'existing' : 'new')
+      if (request.convertedToClientId) {
+        const selectedClient = clients.find((client) => client.id === request.convertedToClientId)
+        if (selectedClient) {
+          setClientQuery(getClientOptionLabel(selectedClient))
+        }
+      }
       setError(null)
     } catch (e) {
       console.error('Error loading request:', e)
@@ -299,6 +318,7 @@ export default function EditRequestPage() {
                     setClientMode(nextMode)
                     if (nextMode === 'new') {
                       setFormData((prev) => ({ ...prev, clientId: '' }))
+                      setClientQuery('')
                     }
                   }}
                   className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
@@ -310,53 +330,40 @@ export default function EditRequestPage() {
             </div>
 
             {clientMode === 'existing' && (
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="clientSearch">Search Client</Label>
-                  <Input
-                    id="clientSearch"
-                    value={clientSearch}
-                    onChange={(e) => setClientSearch(e.target.value)}
-                    placeholder="Type name, email, phone..."
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="clientId">Select Client *</Label>
-                  <select
-                    id="clientId"
-                    value={formData.clientId}
-                    onChange={(e) => {
-                      const selected = clients.find((c) => c.id === e.target.value)
-                      if (!selected) return
-                      const nameParts = selected.name.trim().split(/\s+/)
-                      setFormData((prev) => ({
-                        ...prev,
-                        clientId: selected.id,
-                        firstName: nameParts[0] || '',
-                        lastName: nameParts.slice(1).join(' '),
-                        email: selected.email || '',
-                        phone: selected.phone || '',
-                        company: selected.companyName || '',
-                      }))
-                    }}
-                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    required={clientMode === 'existing'}
-                  >
-                    <option value="">Choose client...</option>
-                    {clients
-                      .filter((client) => {
-                        const query = clientSearch.trim().toLowerCase()
-                        if (!query) return true
-                        const haystack = `${client.name} ${client.companyName || ''} ${client.email || ''} ${client.phone || ''}`.toLowerCase()
-                        return haystack.includes(query)
-                      })
-                      .map((client) => (
-                        <option key={client.id} value={client.id}>
-                          {client.name} {client.companyName ? `(${client.companyName})` : ''}
-                        </option>
-                      ))}
-                  </select>
-                </div>
+              <div>
+                <Label htmlFor="clientPicker">Select Client *</Label>
+                <Input
+                  id="clientPicker"
+                  list="request-edit-client-options"
+                  value={clientQuery}
+                  onChange={(e) => {
+                    const value = e.target.value
+                    setClientQuery(value)
+                    const selected = clients.find((client) => getClientOptionLabel(client) === value)
+                    if (!selected) {
+                      setFormData((prev) => ({ ...prev, clientId: '' }))
+                      return
+                    }
+                    const nameParts = selected.name.trim().split(/\s+/)
+                    setFormData((prev) => ({
+                      ...prev,
+                      clientId: selected.id,
+                      firstName: nameParts[0] || '',
+                      lastName: nameParts.slice(1).join(' '),
+                      email: selected.email || '',
+                      phone: selected.phone || '',
+                      company: selected.companyName || '',
+                    }))
+                  }}
+                  placeholder="Search and select client..."
+                  required={clientMode === 'existing'}
+                />
+                <datalist id="request-edit-client-options">
+                  {clients.map((client) => (
+                    <option key={client.id} value={getClientOptionLabel(client)} />
+                  ))}
+                </datalist>
+                <input type="hidden" value={formData.clientId} readOnly />
               </div>
             )}
 
