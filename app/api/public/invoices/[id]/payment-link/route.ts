@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { solaService } from '@/lib/services/sola'
+import { getIntegrationSecrets } from '@/lib/integrations/status'
 
 export async function POST(
   request: NextRequest,
@@ -38,6 +39,11 @@ export async function POST(
       return NextResponse.json({ error: 'Invoice already paid' }, { status: 400 })
     }
 
+    const solaSecrets = await getIntegrationSecrets(invoice.tenantId, 'sola')
+    if (!solaSecrets?.secretKey) {
+      return NextResponse.json({ error: 'Sola integration is not configured (missing secret key).' }, { status: 400 })
+    }
+
     const appUrl =
       process.env.NEXT_PUBLIC_APP_URL ||
       process.env.PUBLIC_APP_URL ||
@@ -52,6 +58,7 @@ export async function POST(
       clientName: invoice.client.name,
       returnUrl: `${appUrl}/portal/pay/${invoice.id}?token=${invoice.paymentToken || ''}`,
       webhookUrl: `${appUrl}/api/webhooks/sola-payment`,
+      apiKey: solaSecrets.secretKey,
     })
 
     await prisma.invoice.update({

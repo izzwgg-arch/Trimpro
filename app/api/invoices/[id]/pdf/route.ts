@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { solaService } from '@/lib/services/sola'
+import { getIntegrationSecrets } from '@/lib/integrations/status'
 
 function escapeHtml(value: string) {
   return value
@@ -74,6 +75,10 @@ export async function GET(
     let paymentLink = `${appUrl}/portal/pay/${invoice.id}?token=${invoice.paymentToken || ''}`
     if (balance > 0) {
       try {
+        const solaSecrets = await getIntegrationSecrets(user.tenantId, 'sola')
+        if (!solaSecrets?.secretKey) {
+          throw new Error('Sola integration is not configured (missing secret key).')
+        }
         const link = await solaService.createPaymentLink({
           invoiceId: invoice.id,
           amount: balance,
@@ -82,8 +87,9 @@ export async function GET(
           clientName: invoice.client?.name || undefined,
           returnUrl: `${appUrl}/portal/pay/${invoice.id}?token=${invoice.paymentToken || ''}`,
           webhookUrl: `${appUrl}/api/webhooks/sola-payment`,
+          apiKey: solaSecrets.secretKey,
         })
-        paymentLink = `${appUrl}/portal/pay/${invoice.id}?token=${invoice.paymentToken || ''}`
+        paymentLink = link.url || `${appUrl}/portal/pay/${invoice.id}?token=${invoice.paymentToken || ''}`
       } catch (error) {
         console.error('Invoice PDF payment link error:', error)
       }

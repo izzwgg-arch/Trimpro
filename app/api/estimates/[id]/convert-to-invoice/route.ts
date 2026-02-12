@@ -3,6 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { solaService } from '@/lib/services/sola'
 import crypto from 'crypto'
+import { getIntegrationSecrets } from '@/lib/integrations/status'
 
 type BillingMode = 'FULL' | 'PERCENTAGE' | 'MANUAL'
 
@@ -210,6 +211,10 @@ export async function POST(
 
     // Generate payment link immediately and store URL/transaction id
     try {
+      const solaSecrets = await getIntegrationSecrets(user.tenantId, 'sola')
+      if (!solaSecrets?.secretKey) {
+        throw new Error('Sola integration is not configured (missing secret key).')
+      }
       const appUrl =
         process.env.NEXT_PUBLIC_APP_URL ||
         process.env.PUBLIC_APP_URL ||
@@ -223,6 +228,7 @@ export async function POST(
         clientName: estimate.client.name,
         returnUrl: `${appUrl}/portal/pay/${result.id}?token=${result.paymentToken}`,
         webhookUrl: `${appUrl}/api/webhooks/sola-payment`,
+        apiKey: solaSecrets.secretKey,
       })
 
       await prisma.invoice.update({

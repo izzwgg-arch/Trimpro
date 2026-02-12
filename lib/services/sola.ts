@@ -16,6 +16,8 @@ interface SolaPaymentLinkRequest {
   clientName?: string
   returnUrl?: string
   webhookUrl?: string
+  apiKey?: string
+  apiSecret?: string
 }
 
 interface SolaPaymentLinkResponse {
@@ -36,13 +38,20 @@ interface SolaWebhookPayload {
 }
 
 export class SolaService {
-  private async makeRequest(endpoint: string, method: string, body?: any): Promise<any> {
+  private async makeRequest(
+    endpoint: string,
+    method: string,
+    body?: any,
+    credentials?: { apiKey?: string; apiSecret?: string }
+  ): Promise<any> {
     const url = `${SOLA_API_BASE}${endpoint}`
+    const apiKey = credentials?.apiKey || SOLA_API_KEY
+    const apiSecret = credentials?.apiSecret || SOLA_API_SECRET
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${SOLA_API_KEY}`,
-      'X-API-Key': SOLA_API_KEY || '',
-      'X-API-Secret': SOLA_API_SECRET || '',
+      'Authorization': apiKey ? `Bearer ${apiKey}` : '',
+      'X-API-Key': apiKey || '',
+      'X-API-Secret': apiSecret || '',
     }
 
     const response = await fetch(url, {
@@ -61,7 +70,7 @@ export class SolaService {
 
   async createPaymentLink(request: SolaPaymentLinkRequest): Promise<SolaPaymentLinkResponse> {
     const amountCents = Math.round((request.amount || 0) * 100)
-    const payload = {
+    const v2Payload = {
       xCommand: 'cc:sale',
       xInvoice: request.invoiceId,
       xAmount: (amountCents / 100).toFixed(2),
@@ -79,19 +88,59 @@ export class SolaService {
       returnUrl: request.returnUrl,
       webhookUrl: request.webhookUrl,
     }
-
-    const raw = await this.makeRequest('/payment-links', 'POST', payload)
-
-    // Normalize multiple possible provider response shapes.
-    return {
-      id: String(raw.id || raw.transactionId || raw.TransactionID || raw.refNum || request.invoiceId),
-      url: String(raw.url || raw.paymentUrl || raw.PaymentURL || ''),
-      expiresAt: String(
-        raw.expiresAt ||
-          raw.expiration ||
-          new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString()
-      ),
+    const v1Payload = {
+      amount: request.amount,
+      currency: 'USD',
+      description: request.description,
+      metadata: {
+        invoiceId: request.invoiceId,
+      },
+      customer: request.clientEmail
+        ? {
+            email: request.clientEmail,
+            name: request.clientName,
+          }
+        : undefined,
+      returnUrl: request.returnUrl,
+      webhookUrl: request.webhookUrl,
     }
+
+    const attempts: Array<{ endpoint: string; payload: any }> = [
+      { endpoint: '/payment-links', payload: v2Payload },
+      { endpoint: '/v1/payment-links', payload: v1Payload },
+      { endpoint: '/v2/payment-links', payload: v2Payload },
+    ]
+    let lastError: Error | null = null
+
+    for (const attempt of attempts) {
+      try {
+        const raw = await this.makeRequest(attempt.endpoint, 'POST', attempt.payload, {
+          apiKey: request.apiKey,
+          apiSecret: request.apiSecret,
+        })
+        const url = String(
+          raw?.url || raw?.paymentUrl || raw?.PaymentURL || raw?.link?.url || raw?.data?.url || ''
+        )
+        if (url) {
+          return {
+            id: String(raw.id || raw.transactionId || raw.TransactionID || raw.xRefnum || request.invoiceId),
+            url,
+            expiresAt: String(
+              raw.expiresAt ||
+                raw.expiration ||
+                raw.link?.expiresAt ||
+                new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString()
+            ),
+          }
+        }
+      } catch (error: any) {
+        lastError = error instanceof Error ? error : new Error(String(error))
+      }
+    }
+
+    throw new Error(
+      `Sola did not return a hosted payment URL. ${lastError ? `Last error: ${lastError.message}` : ''}`.trim()
+    )
   }
 
   async getPaymentStatus(paymentId: string): Promise<any> {

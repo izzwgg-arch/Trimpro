@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { solaService } from '@/lib/services/sola'
+import { getIntegrationSecrets } from '@/lib/integrations/status'
 
 function toCents(value: number) {
   return Math.round((Number.isFinite(value) ? value : 0) * 100)
@@ -54,6 +55,11 @@ export async function POST(request: NextRequest) {
 
     if (Number(invoice.balance) <= 0) {
       return NextResponse.json({ error: 'Invoice is already paid' }, { status: 400 })
+    }
+
+    const solaSecrets = await getIntegrationSecrets(user.tenantId, 'sola')
+    if (!solaSecrets?.secretKey) {
+      return NextResponse.json({ error: 'Sola integration is not configured (missing secret key).' }, { status: 400 })
     }
 
     let amountToBill = Number(invoice.balance)
@@ -140,6 +146,7 @@ export async function POST(request: NextRequest) {
       clientName: invoice.client.name,
       returnUrl: returnUrl || `${appUrl}/portal/pay/${invoice.id}?token=${invoice.paymentToken || ''}`,
       webhookUrl: webhookUrl || `${appUrl}/api/webhooks/sola-payment`,
+      apiKey: solaSecrets.secretKey,
     })
 
     await prisma.invoice.update({
