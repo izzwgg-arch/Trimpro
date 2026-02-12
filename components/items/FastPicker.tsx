@@ -274,6 +274,16 @@ export function FastPicker({
         }
         break
 
+      case 'ArrowRight':
+        e.preventDefault()
+        e.stopPropagation()
+        if (isOpen) {
+          commitHighlightedSelection()
+        } else {
+          handleCommitCustom()
+        }
+        break
+
       case 'Escape':
         e.preventDefault()
         e.stopPropagation()
