@@ -6,8 +6,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ArrowLeft, Save, ChevronDown } from 'lucide-react'
+import { ArrowLeft, Save } from 'lucide-react'
 import Link from 'next/link'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 
 interface User {
   id: string
@@ -29,7 +30,6 @@ export default function NewRequestPage() {
   const [users, setUsers] = useState<User[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [clientMode, setClientMode] = useState<'new' | 'existing'>('new')
-  const [clientQuery, setClientQuery] = useState('')
   const [formData, setFormData] = useState({
     clientId: '',
     firstName: '',
@@ -101,7 +101,6 @@ export default function NewRequestPage() {
       phone: selected.phone || '',
       company: selected.companyName || '',
     }))
-    setClientQuery(getClientOptionLabel(selected))
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -188,7 +187,6 @@ export default function NewRequestPage() {
                     setClientMode(nextMode)
                     if (nextMode === 'new') {
                       setFormData((prev) => ({ ...prev, clientId: '' }))
-                      setClientQuery('')
                     }
                   }}
                   className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
@@ -202,33 +200,16 @@ export default function NewRequestPage() {
             {clientMode === 'existing' && (
               <div>
                 <Label htmlFor="clientPicker">Select Client *</Label>
-                <div className="relative">
-                  <Input
-                    id="clientPicker"
-                    list="request-client-options"
-                    value={clientQuery}
-                    onChange={(e) => {
-                      const value = e.target.value
-                      setClientQuery(value)
-                      const matchedClient = clients.find((client) => getClientOptionLabel(client) === value)
-                      if (matchedClient) {
-                        handleExistingClientSelect(matchedClient.id)
-                      } else {
-                        setFormData((prev) => ({ ...prev, clientId: '' }))
-                      }
-                    }}
-                    placeholder="Search and select client..."
-                    required={clientMode === 'existing'}
-                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 pr-10 text-sm"
-                  />
-                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
-                </div>
-                <datalist id="request-client-options">
-                  {clients.map((client) => (
-                    <option key={client.id} value={getClientOptionLabel(client)} />
-                  ))}
-                </datalist>
-                <input type="hidden" value={formData.clientId} readOnly />
+                <SearchableSelect
+                  value={formData.clientId}
+                  options={clients.map((client) => ({
+                    value: client.id,
+                    label: getClientOptionLabel(client),
+                  }))}
+                  onChange={handleExistingClientSelect}
+                  placeholder="Search and select client..."
+                  emptyText="No clients found"
+                />
               </div>
             )}
 

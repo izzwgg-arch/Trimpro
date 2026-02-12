@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Save, AlertCircle, ChevronDown } from 'lucide-react'
+import { ArrowLeft, Save, AlertCircle } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 
 type RequestResponse = {
   lead: {
@@ -47,7 +48,6 @@ export default function EditRequestPage() {
   const [users, setUsers] = useState<Array<{ id: string; firstName: string; lastName: string }>>([])
   const [clients, setClients] = useState<Client[]>([])
   const [clientMode, setClientMode] = useState<'new' | 'existing'>('new')
-  const [clientQuery, setClientQuery] = useState('')
 
   const [formData, setFormData] = useState({
     clientId: '',
@@ -81,14 +81,6 @@ export default function EditRequestPage() {
     fetchClients()
     fetchRequest()
   }, [normalizedRequestId])
-
-  useEffect(() => {
-    if (clientMode !== 'existing' || !formData.clientId || clientQuery) return
-    const selectedClient = clients.find((client) => client.id === formData.clientId)
-    if (selectedClient) {
-      setClientQuery(getClientOptionLabel(selectedClient))
-    }
-  }, [clientMode, formData.clientId, clientQuery, clients])
 
   const fetchUsers = async () => {
     try {
@@ -172,12 +164,6 @@ export default function EditRequestPage() {
         assignedToId: request.assignedToId || '',
       })
       setClientMode(request.convertedToClientId ? 'existing' : 'new')
-      if (request.convertedToClientId) {
-        const selectedClient = clients.find((client) => client.id === request.convertedToClientId)
-        if (selectedClient) {
-          setClientQuery(getClientOptionLabel(selectedClient))
-        }
-      }
       setError(null)
     } catch (e) {
       console.error('Error loading request:', e)
@@ -322,7 +308,6 @@ export default function EditRequestPage() {
                     setClientMode(nextMode)
                     if (nextMode === 'new') {
                       setFormData((prev) => ({ ...prev, clientId: '' }))
-                      setClientQuery('')
                     }
                   }}
                   className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
@@ -336,42 +321,32 @@ export default function EditRequestPage() {
             {clientMode === 'existing' && (
               <div>
                 <Label htmlFor="clientPicker">Select Client *</Label>
-                <div className="relative">
-                  <Input
-                    id="clientPicker"
-                    list="request-edit-client-options"
-                    value={clientQuery}
-                    onChange={(e) => {
-                      const value = e.target.value
-                      setClientQuery(value)
-                      const selected = clients.find((client) => getClientOptionLabel(client) === value)
-                      if (!selected) {
-                        setFormData((prev) => ({ ...prev, clientId: '' }))
-                        return
-                      }
-                      const nameParts = selected.name.trim().split(/\s+/)
-                      setFormData((prev) => ({
-                        ...prev,
-                        clientId: selected.id,
-                        firstName: nameParts[0] || '',
-                        lastName: nameParts.slice(1).join(' '),
-                        email: selected.email || '',
-                        phone: selected.phone || '',
-                        company: selected.companyName || '',
-                      }))
-                    }}
-                    placeholder="Search and select client..."
-                    required={clientMode === 'existing'}
-                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 pr-10 text-sm"
-                  />
-                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
-                </div>
-                <datalist id="request-edit-client-options">
-                  {clients.map((client) => (
-                    <option key={client.id} value={getClientOptionLabel(client)} />
-                  ))}
-                </datalist>
-                <input type="hidden" value={formData.clientId} readOnly />
+                <SearchableSelect
+                  value={formData.clientId}
+                  options={clients.map((client) => ({
+                    value: client.id,
+                    label: getClientOptionLabel(client),
+                  }))}
+                  onChange={(clientId) => {
+                    const selected = clients.find((client) => client.id === clientId)
+                    if (!selected) {
+                      setFormData((prev) => ({ ...prev, clientId: '' }))
+                      return
+                    }
+                    const nameParts = selected.name.trim().split(/\s+/)
+                    setFormData((prev) => ({
+                      ...prev,
+                      clientId: selected.id,
+                      firstName: nameParts[0] || '',
+                      lastName: nameParts.slice(1).join(' '),
+                      email: selected.email || '',
+                      phone: selected.phone || '',
+                      company: selected.companyName || '',
+                    }))
+                  }}
+                  placeholder="Search and select client..."
+                  emptyText="No clients found"
+                />
               </div>
             )}
 
