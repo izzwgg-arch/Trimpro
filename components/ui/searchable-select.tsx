@@ -56,7 +56,7 @@ export function SearchableSelect({
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm"
+        className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
       >
         <span className={`truncate text-left ${selectedOption ? 'text-foreground' : 'text-muted-foreground'}`}>
           {selectedOption ? selectedOption.label : placeholder}
@@ -87,8 +87,8 @@ export function SearchableSelect({
                     setOpen(false)
                     setQuery('')
                   }}
-                  className={`block w-full px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground ${
-                    option.value === value ? 'bg-accent/60' : ''
+                  className={`block w-full px-3 py-2 text-left text-sm hover:bg-blue-50 hover:text-blue-700 ${
+                    option.value === value ? 'bg-blue-100 text-blue-700' : ''
                   }`}
                 >
                   {option.label}
