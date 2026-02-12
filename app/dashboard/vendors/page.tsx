@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Plus, Search, Filter, Download, Upload, Trash2, Edit, Eye, Building2 } from 'lucide-react'
 import Link from 'next/link'
@@ -51,6 +52,9 @@ export default function VendorsPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [paymentTermsFilter, setPaymentTermsFilter] = useState('all')
+  const [showImportDialog, setShowImportDialog] = useState(false)
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importing, setImporting] = useState(false)
 
   useEffect(() => {
     fetchVendors()
@@ -121,6 +125,78 @@ export default function VendorsPage() {
     }
   }
 
+  const handleExport = async () => {
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch('/api/vendors/export', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}))
+        alert(error.error || 'Failed to export vendors')
+        return
+      }
+
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `vendors-export-${new Date().toISOString().split('T')[0]}.csv`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    } catch (error) {
+      console.error('Export vendors error:', error)
+      alert('Failed to export vendors')
+    }
+  }
+
+  const handleImport = async () => {
+    if (!importFile) {
+      alert('Please select a file')
+      return
+    }
+
+    setImporting(true)
+    try {
+      const csvData = await importFile.text()
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch('/api/vendors/import', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ csvData }),
+      })
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'Failed to import vendors')
+        return
+      }
+
+      alert(`Import complete: ${data.imported} imported, ${data.skipped} skipped, ${data.errors} errors`)
+      fetchVendors()
+      setShowImportDialog(false)
+      setImportFile(null)
+    } catch (error) {
+      console.error('Import vendors error:', error)
+      alert('Failed to import vendors')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const handleImportDialogOpenChange = (open: boolean) => {
+    if (importing && !open) return
+    setShowImportDialog(open)
+    if (!open) {
+      setImportFile(null)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -144,11 +220,11 @@ export default function VendorsPage() {
           <p className="mt-2 text-gray-600">Manage your suppliers and vendors</p>
         </div>
         <div className="flex items-center space-x-2">
-          <Button onClick={() => {}} variant="outline">
+          <Button onClick={handleExport} variant="outline">
             <Download className="mr-2 h-4 w-4" />
             Export CSV
           </Button>
-          <Button onClick={() => {}} variant="outline">
+          <Button onClick={() => setShowImportDialog(true)} variant="outline">
             <Upload className="mr-2 h-4 w-4" />
             Import CSV
           </Button>
@@ -219,7 +295,7 @@ export default function VendorsPage() {
                   <Plus className="mr-2 h-4 w-4" />
                   New Vendor
                 </Button>
-                <Button variant="outline" onClick={() => {}}>
+                <Button variant="outline" onClick={() => setShowImportDialog(true)}>
                   <Upload className="mr-2 h-4 w-4" />
                   Import CSV
                 </Button>
@@ -313,6 +389,46 @@ export default function VendorsPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={showImportDialog} onOpenChange={handleImportDialogOpenChange}>
+        <DialogContent
+          onPointerDownOutside={(e) => {
+            if (importing) e.preventDefault()
+          }}
+          onEscapeKeyDown={(e) => {
+            if (importing) e.preventDefault()
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Import Vendors from CSV</DialogTitle>
+            <DialogDescription>
+              Upload a CSV file with vendor data.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">CSV File</label>
+              <Input
+                type="file"
+                accept=".csv"
+                onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+              />
+            </div>
+            <div className="flex justify-end space-x-2">
+              <Button
+                variant="outline"
+                onClick={() => handleImportDialogOpenChange(false)}
+                disabled={importing}
+              >
+                Cancel
+              </Button>
+              <Button onClick={handleImport} disabled={!importFile || importing}>
+                {importing ? 'Importing...' : 'Import'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
