@@ -9,46 +9,16 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Emergency fix: Remove any stuck dialog overlays
-    const removeStuckOverlays = () => {
-      // Remove all Radix Dialog overlays that might be stuck
-      const overlays = document.querySelectorAll('[data-radix-dialog-overlay]')
-      overlays.forEach((overlay) => {
-        const state = overlay.getAttribute('data-state')
-        if (state === 'closed' || !state) {
-          overlay.remove()
-        }
-      })
-      
-      // Remove any fixed overlay divs with black backgrounds
-      const fixedOverlays = document.querySelectorAll('div[class*="fixed"][class*="inset-0"][class*="bg-black"]')
-      fixedOverlays.forEach((overlay) => {
-        const computedStyle = window.getComputedStyle(overlay)
-        if (computedStyle.position === 'fixed' && computedStyle.zIndex === '50') {
-          const parent = overlay.closest('[data-radix-dialog-root]')
-          if (!parent || parent.getAttribute('data-state') === 'closed') {
-            overlay.remove()
-          }
-        }
-      })
-    }
-
-    // Run immediately and on interval
-    removeStuckOverlays()
-    const interval = setInterval(removeStuckOverlays, 1000)
-
     // Check if user is authenticated
     const accessToken = localStorage.getItem('accessToken')
     const user = localStorage.getItem('user')
 
     if (!accessToken || !user) {
       router.push('/auth/login')
-      return () => clearInterval(interval)
+      return
     }
 
     setLoading(false)
-
-    return () => clearInterval(interval)
   }, [router])
 
   if (loading) {
