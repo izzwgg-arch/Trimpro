@@ -159,12 +159,61 @@ export default function EstimateDetailPage() {
     }
   }
 
-  const handleDownloadPDF = () => {
-    window.open(`/api/estimates/${estimateId}/pdf?download=1`, '_blank')
+  const fetchPdfHtml = async (print = false) => {
+    const token = localStorage.getItem('accessToken')
+    if (!token) {
+      router.push('/auth/login')
+      throw new Error('Not authenticated')
+    }
+
+    const response = await fetch(`/api/estimates/${estimateId}/pdf${print ? '?print=1' : ''}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+
+    if (response.status === 401) {
+      router.push('/auth/login')
+      throw new Error('Unauthorized')
+    }
+    if (!response.ok) {
+      throw new Error('Failed to generate PDF')
+    }
+
+    return response.text()
   }
 
-  const handlePrint = () => {
-    window.open(`/api/estimates/${estimateId}/pdf?print=1`, '_blank')
+  const handleDownloadPDF = async () => {
+    try {
+      const html = await fetchPdfHtml(false)
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `Estimate-${estimate?.estimateNumber || estimateId}.html`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Download estimate PDF error:', error)
+      alert('Failed to download estimate PDF')
+    }
+  }
+
+  const handlePrint = async () => {
+    try {
+      const html = await fetchPdfHtml(true)
+      const printWindow = window.open('', '_blank')
+      if (!printWindow) {
+        alert('Popup blocked. Please allow popups to print.')
+        return
+      }
+      printWindow.document.open()
+      printWindow.document.write(html)
+      printWindow.document.close()
+    } catch (error) {
+      console.error('Print estimate PDF error:', error)
+      alert('Failed to print estimate')
+    }
   }
 
   const handleDuplicate = async () => {

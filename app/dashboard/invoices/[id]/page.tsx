@@ -300,12 +300,61 @@ export default function InvoiceDetailPage() {
     }
   }
 
-  const handleDownloadPDF = () => {
-    window.open(`/api/invoices/${invoiceId}/pdf?download=1`, '_blank')
+  const fetchPdfHtml = async (print = false) => {
+    const token = localStorage.getItem('accessToken')
+    if (!token) {
+      router.push('/auth/login')
+      throw new Error('Not authenticated')
+    }
+
+    const response = await fetch(`/api/invoices/${invoiceId}/pdf${print ? '?print=1' : ''}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+
+    if (response.status === 401) {
+      router.push('/auth/login')
+      throw new Error('Unauthorized')
+    }
+    if (!response.ok) {
+      throw new Error('Failed to generate PDF')
+    }
+
+    return response.text()
   }
 
-  const handlePrint = () => {
-    window.open(`/api/invoices/${invoiceId}/pdf?print=1`, '_blank')
+  const handleDownloadPDF = async () => {
+    try {
+      const html = await fetchPdfHtml(false)
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `Invoice-${invoice?.invoiceNumber || invoiceId}.html`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Download invoice PDF error:', error)
+      alert('Failed to download invoice PDF')
+    }
+  }
+
+  const handlePrint = async () => {
+    try {
+      const html = await fetchPdfHtml(true)
+      const printWindow = window.open('', '_blank')
+      if (!printWindow) {
+        alert('Popup blocked. Please allow popups to print.')
+        return
+      }
+      printWindow.document.open()
+      printWindow.document.write(html)
+      printWindow.document.close()
+    } catch (error) {
+      console.error('Print invoice PDF error:', error)
+      alert('Failed to print invoice')
+    }
   }
 
   const handleDuplicate = async () => {

@@ -252,12 +252,61 @@ export default function PurchaseOrderDetailPage() {
     }
   }
 
-  const handleDownloadPDF = () => {
-    window.open(`/api/purchase-orders/${params.id}/pdf?download=1`, '_blank')
+  const fetchPdfHtml = async (print = false) => {
+    const token = localStorage.getItem('accessToken')
+    if (!token) {
+      router.push('/auth/login')
+      throw new Error('Not authenticated')
+    }
+
+    const response = await fetch(`/api/purchase-orders/${params.id}/pdf${print ? '?print=1' : ''}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+
+    if (response.status === 401) {
+      router.push('/auth/login')
+      throw new Error('Unauthorized')
+    }
+    if (!response.ok) {
+      throw new Error('Failed to generate PDF')
+    }
+
+    return response.text()
   }
 
-  const handlePrint = () => {
-    window.open(`/api/purchase-orders/${params.id}/pdf?print=1`, '_blank')
+  const handleDownloadPDF = async () => {
+    try {
+      const html = await fetchPdfHtml(false)
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `PO-${po?.poNumber || params.id}.html`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Download purchase order PDF error:', error)
+      alert('Failed to download purchase order PDF')
+    }
+  }
+
+  const handlePrint = async () => {
+    try {
+      const html = await fetchPdfHtml(true)
+      const printWindow = window.open('', '_blank')
+      if (!printWindow) {
+        alert('Popup blocked. Please allow popups to print.')
+        return
+      }
+      printWindow.document.open()
+      printWindow.document.write(html)
+      printWindow.document.close()
+    } catch (error) {
+      console.error('Print purchase order PDF error:', error)
+      alert('Failed to print purchase order')
+    }
   }
 
   const handleDuplicate = async () => {
