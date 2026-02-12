@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ArrowLeft, Save, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, Save, Plus, Trash2, Copy } from 'lucide-react'
 import Link from 'next/link'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
 
@@ -48,6 +48,7 @@ export default function EditPurchaseOrderPage() {
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [duplicating, setDuplicating] = useState(false)
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [jobs, setJobs] = useState<Job[]>([])
   const [pickerItems, setPickerItems] = useState<FastPickerItem[]>([])
@@ -488,6 +489,33 @@ export default function EditPurchaseOrderPage() {
     }
   }
 
+  const handleDuplicate = async () => {
+    if (!poId) return
+    setDuplicating(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch(`/api/purchase-orders/${poId}/duplicate`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'Failed to duplicate purchase order')
+        return
+      }
+      if (data?.id) {
+        router.push(`/dashboard/purchase-orders/${data.id}/edit`)
+      } else {
+        router.push('/dashboard/purchase-orders')
+      }
+    } catch (error) {
+      console.error('Duplicate purchase order error:', error)
+      alert('Failed to duplicate purchase order')
+    } finally {
+      setDuplicating(false)
+    }
+  }
+
   const subtotal = lineItems.reduce((sum, item) => {
     if (item.isGroupHeader) return sum
     return sum + parseFloat(item.quantity || '0') * parseFloat(item.unitCost || '0')
@@ -521,6 +549,10 @@ export default function EditPurchaseOrderPage() {
           <h1 className="text-3xl font-bold text-gray-900">Edit Purchase Order</h1>
           <p className="mt-2 text-gray-600">PO #{poNumber}</p>
         </div>
+        <Button type="button" variant="outline" onClick={handleDuplicate} disabled={duplicating}>
+          <Copy className="mr-2 h-4 w-4" />
+          {duplicating ? 'Duplicating...' : 'Duplicate'}
+        </Button>
       </div>
 
       <form onSubmit={handleSubmit}>

@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ArrowLeft, Save } from 'lucide-react'
+import { ArrowLeft, Save, Copy } from 'lucide-react'
 import Link from 'next/link'
 
 interface Client {
@@ -53,6 +53,7 @@ export default function EditJobPage() {
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [duplicating, setDuplicating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [clients, setClients] = useState<Client[]>([])
 
@@ -258,6 +259,33 @@ export default function EditJobPage() {
     }
   }
 
+  const handleDuplicate = async () => {
+    if (!jobId) return
+    setDuplicating(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch(`/api/jobs/${jobId}/duplicate`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'Failed to duplicate job')
+        return
+      }
+      if (data?.id) {
+        router.push(`/dashboard/jobs/${data.id}/edit`)
+      } else {
+        router.push('/dashboard/jobs')
+      }
+    } catch (error) {
+      console.error('Duplicate job error:', error)
+      alert('Failed to duplicate job')
+    } finally {
+      setDuplicating(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -294,6 +322,10 @@ export default function EditJobPage() {
           <h1 className="text-3xl font-bold text-gray-900">Edit Job</h1>
           <p className="mt-2 text-gray-600">Update job information</p>
         </div>
+        <Button type="button" variant="outline" onClick={handleDuplicate} disabled={duplicating}>
+          <Copy className="mr-2 h-4 w-4" />
+          {duplicating ? 'Duplicating...' : 'Duplicate'}
+        </Button>
       </div>
 
       {error && (

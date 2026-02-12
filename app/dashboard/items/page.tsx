@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { Plus, Search, Filter, Package, Download, Upload, Trash2, Edit, Eye } from 'lucide-react'
+import { Plus, Search, Filter, Package, Download, Upload, Trash2, Edit, Eye, Copy } from 'lucide-react'
 import Link from 'next/link'
 
 interface Item {
@@ -66,6 +66,8 @@ export default function ItemsPage() {
   const [showImportDialog, setShowImportDialog] = useState(false)
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importing, setImporting] = useState(false)
+  const [duplicating, setDuplicating] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
 
   // Check for bundle parameter in URL
   useEffect(() => {
@@ -247,6 +249,34 @@ export default function ItemsPage() {
     }
   }
 
+  const handleDuplicateSelected = async () => {
+    if (selectedIds.length === 0) return
+    if (!window.confirm(`Duplicate ${selectedIds.length} selected item(s)?`)) return
+
+    setDuplicating(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      for (const itemId of selectedIds) {
+        const response = await fetch(`/api/items/${itemId}/duplicate`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}))
+          alert(data.error || 'Failed to duplicate one or more items')
+          break
+        }
+      }
+      setSelectedIds([])
+      fetchItems()
+    } catch (error) {
+      console.error('Duplicate error:', error)
+      alert('Failed to duplicate selected items')
+    } finally {
+      setDuplicating(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -279,6 +309,14 @@ export default function ItemsPage() {
           <Button onClick={() => setShowImportDialog(true)} variant="outline">
             <Upload className="mr-2 h-4 w-4" />
             Import CSV
+          </Button>
+          <Button
+            onClick={handleDuplicateSelected}
+            variant="outline"
+            disabled={selectedIds.length === 0 || duplicating}
+          >
+            <Copy className="mr-2 h-4 w-4" />
+            {duplicating ? 'Duplicating...' : `Duplicate${selectedIds.length ? ` (${selectedIds.length})` : ''}`}
           </Button>
           <Button onClick={() => router.push('/dashboard/items/new')} variant="outline">
             <Plus className="mr-2 h-4 w-4" />
@@ -410,6 +448,21 @@ export default function ItemsPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b bg-gray-50">
+                    <th className="text-center py-3 px-2 font-medium text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={items.length > 0 && selectedIds.length === items.length}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedIds(items.map((item) => item.id))
+                          } else {
+                            setSelectedIds([])
+                          }
+                        }}
+                        className="h-4 w-4"
+                        title="Select all"
+                      />
+                    </th>
                     <th className="text-left py-3 px-4 font-medium text-gray-700">Name</th>
                     <th className="text-left py-3 px-4 font-medium text-gray-700">SKU</th>
                     <th className="text-left py-3 px-4 font-medium text-gray-700">Type</th>
@@ -425,6 +478,21 @@ export default function ItemsPage() {
                 <tbody>
                   {items.map((item) => (
                     <tr key={item.id} className="border-b hover:bg-gray-50">
+                      <td className="py-3 px-2 text-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(item.id)}
+                          onChange={(e) =>
+                            setSelectedIds((prev) =>
+                              e.target.checked
+                                ? [...prev, item.id]
+                                : prev.filter((id) => id !== item.id)
+                            )
+                          }
+                          className="h-4 w-4"
+                          title="Select for duplicate"
+                        />
+                      </td>
                       <td className="py-3 px-4">
                         <div className="flex items-center space-x-2">
                           <Link href={`/dashboard/items/${item.id}`} className="text-primary hover:underline font-medium">

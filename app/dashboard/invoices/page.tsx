@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { Plus, Search, Filter, DollarSign, Calendar, AlertCircle, Trash2 } from 'lucide-react'
+import { Plus, Search, Filter, DollarSign, Calendar, AlertCircle, Trash2, Copy } from 'lucide-react'
 import Link from 'next/link'
 
 interface Invoice {
@@ -54,6 +54,8 @@ export default function InvoicesPage() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [duplicating, setDuplicating] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
 
   useEffect(() => {
     fetchInvoices()
@@ -134,6 +136,40 @@ export default function InvoicesPage() {
     }
   }
 
+  const handleDuplicateSelected = async () => {
+    if (selectedIds.length === 0) return
+    if (!confirm(`Duplicate ${selectedIds.length} selected invoice(s)?`)) return
+
+    setDuplicating(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+
+      for (const invoiceId of selectedIds) {
+        const response = await fetch(`/api/invoices/${invoiceId}/duplicate`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}))
+          alert(data.error || 'Failed to duplicate one or more invoices')
+          break
+        }
+      }
+
+      setSelectedIds([])
+      fetchInvoices()
+    } catch (error) {
+      console.error('Failed duplicating invoices:', error)
+      alert('Failed to duplicate selected invoices')
+    } finally {
+      setDuplicating(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -158,10 +194,20 @@ export default function InvoicesPage() {
           <h1 className="text-3xl font-bold text-gray-900">Invoices</h1>
           <p className="mt-2 text-gray-600">Manage invoices and payments</p>
         </div>
-        <Button onClick={() => router.push('/dashboard/invoices/new')}>
-          <Plus className="mr-2 h-4 w-4" />
-          New Invoice
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={() => router.push('/dashboard/invoices/new')}>
+            <Plus className="mr-2 h-4 w-4" />
+            New Invoice
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleDuplicateSelected}
+            disabled={selectedIds.length === 0 || duplicating}
+          >
+            <Copy className="mr-2 h-4 w-4" />
+            {duplicating ? 'Duplicating...' : `Duplicate${selectedIds.length ? ` (${selectedIds.length})` : ''}`}
+          </Button>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -268,6 +314,19 @@ export default function InvoicesPage() {
                       </CardDescription>
                     </div>
                     <div className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(invoice.id)}
+                        onChange={(e) =>
+                          setSelectedIds((prev) =>
+                            e.target.checked
+                              ? [...prev, invoice.id]
+                              : prev.filter((id) => id !== invoice.id)
+                          )
+                        }
+                        className="h-4 w-4"
+                        title="Select for duplicate"
+                      />
                       {isOverdue && (
                         <AlertCircle className="h-5 w-5 text-red-500" />
                       )}

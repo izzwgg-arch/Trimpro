@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ArrowLeft, Save, Plus, Trash2, Eye, EyeOff } from 'lucide-react'
+import { ArrowLeft, Save, Plus, Trash2, Eye, EyeOff, Copy } from 'lucide-react'
 import Link from 'next/link'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
 
@@ -52,6 +52,7 @@ export default function EditInvoicePage() {
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [duplicating, setDuplicating] = useState(false)
   const [clients, setClients] = useState<Client[]>([])
   const [jobs, setJobs] = useState<Job[]>([])
   const [pickerItems, setPickerItems] = useState<FastPickerItem[]>([])
@@ -576,6 +577,32 @@ export default function EditInvoicePage() {
     }
   }
 
+  const handleDuplicate = async () => {
+    setDuplicating(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch(`/api/invoices/${invoiceId}/duplicate`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'Failed to duplicate invoice')
+        return
+      }
+      if (data?.id) {
+        router.push(`/dashboard/invoices/${data.id}/edit`)
+      } else {
+        router.push('/dashboard/invoices')
+      }
+    } catch (error) {
+      console.error('Duplicate invoice error:', error)
+      alert('Failed to duplicate invoice')
+    } finally {
+      setDuplicating(false)
+    }
+  }
+
   const subtotal = lineItems.reduce((sum, item) => {
     if (item.isGroupHeader) return sum
     return sum + parseFloat(item.quantity || '0') * parseFloat(item.unitPrice || '0')
@@ -611,6 +638,10 @@ export default function EditInvoicePage() {
           <h1 className="text-3xl font-bold text-gray-900">Edit Invoice</h1>
           <p className="mt-2 text-gray-600">Invoice #{invoiceNumber}</p>
         </div>
+        <Button type="button" variant="outline" onClick={handleDuplicate} disabled={duplicating}>
+          <Copy className="mr-2 h-4 w-4" />
+          {duplicating ? 'Duplicating...' : 'Duplicate'}
+        </Button>
       </div>
 
       <form onSubmit={handleSubmit}>

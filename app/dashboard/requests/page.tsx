@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { Plus, Search, Filter, User, Phone, Mail, TrendingUp, CheckCircle, Trash2, FileText } from 'lucide-react'
+import { Plus, Search, Filter, User, Phone, Mail, CheckCircle, Trash2, FileText, Copy } from 'lucide-react'
 import Link from 'next/link'
 
 interface Request {
@@ -67,6 +67,8 @@ export default function RequestsPage() {
   const [source, setSource] = useState('all')
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [convertingId, setConvertingId] = useState<string | null>(null)
+  const [duplicating, setDuplicating] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
 
   useEffect(() => {
     fetchRequests()
@@ -188,6 +190,40 @@ export default function RequestsPage() {
     }
   }
 
+  const handleDuplicateSelected = async () => {
+    if (selectedIds.length === 0) return
+    if (!confirm(`Duplicate ${selectedIds.length} selected request(s)?`)) return
+
+    setDuplicating(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+
+      for (const requestId of selectedIds) {
+        const response = await fetch(`/api/leads/${requestId}/duplicate`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}))
+          alert(data.error || 'Failed to duplicate one or more requests')
+          break
+        }
+      }
+
+      setSelectedIds([])
+      fetchRequests()
+    } catch (error) {
+      console.error('Failed duplicating requests:', error)
+      alert('Failed to duplicate selected requests')
+    } finally {
+      setDuplicating(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -216,6 +252,14 @@ export default function RequestsPage() {
         <Button onClick={() => router.push('/dashboard/requests/new')}>
           <Plus className="mr-2 h-4 w-4" />
           New Request
+        </Button>
+        <Button
+          variant="outline"
+          onClick={handleDuplicateSelected}
+          disabled={selectedIds.length === 0 || duplicating}
+        >
+          <Copy className="mr-2 h-4 w-4" />
+          {duplicating ? 'Duplicating...' : `Duplicate${selectedIds.length ? ` (${selectedIds.length})` : ''}`}
         </Button>
       </div>
 
@@ -339,6 +383,19 @@ export default function RequestsPage() {
                       )}
                     </div>
                     <div className="flex flex-col items-end space-y-1">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(request.id)}
+                        onChange={(e) => {
+                          setSelectedIds((prev) =>
+                            e.target.checked
+                              ? [...prev, request.id]
+                              : prev.filter((id) => id !== request.id)
+                          )
+                        }}
+                        className="h-4 w-4"
+                        title="Select for duplicate"
+                      />
                       <span className={`px-2 py-1 text-xs rounded-full ${statusColors[request.status] || 'bg-gray-100 text-gray-800'}`}>
                         {request.status.replace('_', ' ')}
                       </span>

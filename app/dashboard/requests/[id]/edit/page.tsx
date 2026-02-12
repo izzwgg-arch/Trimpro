@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Save, AlertCircle } from 'lucide-react'
+import { ArrowLeft, Save, AlertCircle, Copy } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -43,6 +43,7 @@ export default function EditRequestPage() {
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [duplicating, setDuplicating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [users, setUsers] = useState<Array<{ id: string; firstName: string; lastName: string }>>([])
   const [clients, setClients] = useState<Client[]>([])
@@ -238,6 +239,35 @@ export default function EditRequestPage() {
     }
   }
 
+  const handleDuplicate = async () => {
+    if (!normalizedRequestId) return
+    setDuplicating(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch(`/api/leads/${normalizedRequestId}/duplicate`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'Failed to duplicate request')
+        return
+      }
+
+      if (data?.id) {
+        router.push(`/dashboard/requests/${data.id}/edit`)
+      } else {
+        router.push('/dashboard/requests')
+      }
+    } catch (error) {
+      console.error('Duplicate request error:', error)
+      alert('Failed to duplicate request')
+    } finally {
+      setDuplicating(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -282,6 +312,10 @@ export default function EditRequestPage() {
           <h1 className="text-3xl font-bold text-gray-900">Edit Request</h1>
           <p className="mt-2 text-gray-600">Update this request's information</p>
         </div>
+        <Button type="button" variant="outline" onClick={handleDuplicate} disabled={duplicating}>
+          <Copy className="mr-2 h-4 w-4" />
+          {duplicating ? 'Duplicating...' : 'Duplicate'}
+        </Button>
       </div>
 
       <form onSubmit={handleSubmit}>

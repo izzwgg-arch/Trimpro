@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { Plus, Search, Filter, FileText, Package, TrendingUp } from 'lucide-react'
+import { Plus, Search, Filter, Package, Copy } from 'lucide-react'
 import Link from 'next/link'
 
 interface PurchaseOrder {
@@ -48,6 +48,8 @@ export default function PurchaseOrdersPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
+  const [duplicating, setDuplicating] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
 
   useEffect(() => {
     fetchPurchaseOrders()
@@ -83,6 +85,40 @@ export default function PurchaseOrdersPage() {
     }
   }
 
+  const handleDuplicateSelected = async () => {
+    if (selectedIds.length === 0) return
+    if (!confirm(`Duplicate ${selectedIds.length} selected purchase order(s)?`)) return
+
+    setDuplicating(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+
+      for (const poId of selectedIds) {
+        const response = await fetch(`/api/purchase-orders/${poId}/duplicate`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}))
+          alert(data.error || 'Failed to duplicate one or more purchase orders')
+          break
+        }
+      }
+
+      setSelectedIds([])
+      fetchPurchaseOrders()
+    } catch (error) {
+      console.error('Failed duplicating purchase orders:', error)
+      alert('Failed to duplicate selected purchase orders')
+    } finally {
+      setDuplicating(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -104,10 +140,20 @@ export default function PurchaseOrdersPage() {
           <h1 className="text-3xl font-bold text-gray-900">Purchase Orders</h1>
           <p className="mt-2 text-gray-600">Manage vendor purchase orders and costs</p>
         </div>
-        <Button onClick={() => router.push('/dashboard/purchase-orders/new')}>
-          <Plus className="mr-2 h-4 w-4" />
-          New PO
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={() => router.push('/dashboard/purchase-orders/new')}>
+            <Plus className="mr-2 h-4 w-4" />
+            New PO
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleDuplicateSelected}
+            disabled={selectedIds.length === 0 || duplicating}
+          >
+            <Copy className="mr-2 h-4 w-4" />
+            {duplicating ? 'Duplicating...' : `Duplicate${selectedIds.length ? ` (${selectedIds.length})` : ''}`}
+          </Button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -211,6 +257,18 @@ export default function PurchaseOrdersPage() {
                     </CardDescription>
                   </div>
                   <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(po.id)}
+                      onChange={(e) =>
+                        setSelectedIds((prev) =>
+                          e.target.checked ? [...prev, po.id] : prev.filter((id) => id !== po.id)
+                        )
+                      }
+                      className="h-4 w-4"
+                      onClick={(e) => e.stopPropagation()}
+                      title="Select for duplicate"
+                    />
                     <span className={`px-2 py-1 text-xs rounded-full ${statusColors[po.status] || 'bg-gray-100 text-gray-800'}`}>
                       {po.status}
                     </span>

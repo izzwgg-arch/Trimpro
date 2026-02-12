@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { Plus, Search, Filter, Briefcase, Calendar, DollarSign, Trash2, FileText } from 'lucide-react'
+import { Plus, Search, Filter, Briefcase, Calendar, DollarSign, Trash2, FileText, Copy } from 'lucide-react'
 import Link from 'next/link'
 
 interface Job {
@@ -65,6 +65,8 @@ export default function JobsPage() {
   const [status, setStatus] = useState('all')
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [convertingId, setConvertingId] = useState<string | null>(null)
+  const [duplicating, setDuplicating] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
 
   useEffect(() => {
     fetchJobs()
@@ -187,6 +189,40 @@ export default function JobsPage() {
     }
   }
 
+  const handleDuplicateSelected = async () => {
+    if (selectedIds.length === 0) return
+    if (!confirm(`Duplicate ${selectedIds.length} selected job(s)?`)) return
+
+    setDuplicating(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+
+      for (const jobId of selectedIds) {
+        const response = await fetch(`/api/jobs/${jobId}/duplicate`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}))
+          alert(data.error || 'Failed to duplicate one or more jobs')
+          break
+        }
+      }
+
+      setSelectedIds([])
+      fetchJobs()
+    } catch (error) {
+      console.error('Failed duplicating jobs:', error)
+      alert('Failed to duplicate selected jobs')
+    } finally {
+      setDuplicating(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -205,10 +241,20 @@ export default function JobsPage() {
           <h1 className="text-3xl font-bold text-gray-900">Jobs</h1>
           <p className="mt-2 text-gray-600">Manage your jobs and projects</p>
         </div>
-        <Button onClick={() => router.push('/dashboard/jobs/new')}>
-          <Plus className="mr-2 h-4 w-4" />
-          New Job
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={() => router.push('/dashboard/jobs/new')}>
+            <Plus className="mr-2 h-4 w-4" />
+            New Job
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleDuplicateSelected}
+            disabled={selectedIds.length === 0 || duplicating}
+          >
+            <Copy className="mr-2 h-4 w-4" />
+            {duplicating ? 'Duplicating...' : `Duplicate${selectedIds.length ? ` (${selectedIds.length})` : ''}`}
+          </Button>
+        </div>
       </div>
 
       {/* Search and Filters */}
@@ -279,6 +325,19 @@ export default function JobsPage() {
                     </CardDescription>
                   </div>
                   <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(job.id)}
+                      onChange={(e) =>
+                        setSelectedIds((prev) =>
+                          e.target.checked
+                            ? [...prev, job.id]
+                            : prev.filter((id) => id !== job.id)
+                        )
+                      }
+                      className="h-4 w-4"
+                      title="Select for duplicate"
+                    />
                     <span className={`px-2 py-1 text-xs rounded-full ${statusColors[job.status] || 'bg-gray-100 text-gray-800'}`}>
                       {job.status.replace('_', ' ')}
                     </span>

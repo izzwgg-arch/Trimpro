@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { Plus, Search, Filter, FileText, Calendar, Trash2, Briefcase } from 'lucide-react'
+import { Plus, Search, Filter, FileText, Calendar, Trash2, Briefcase, Copy } from 'lucide-react'
 import Link from 'next/link'
 
 interface Estimate {
@@ -55,6 +55,8 @@ export default function EstimatesPage() {
   const [status, setStatus] = useState('all')
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [convertingId, setConvertingId] = useState<string | null>(null)
+  const [duplicating, setDuplicating] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
 
   useEffect(() => {
     fetchEstimates()
@@ -175,6 +177,40 @@ export default function EstimatesPage() {
     }
   }
 
+  const handleDuplicateSelected = async () => {
+    if (selectedIds.length === 0) return
+    if (!confirm(`Duplicate ${selectedIds.length} selected estimate(s)?`)) return
+
+    setDuplicating(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+
+      for (const estimateId of selectedIds) {
+        const response = await fetch(`/api/estimates/${estimateId}/duplicate`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}))
+          alert(data.error || 'Failed to duplicate one or more estimates')
+          break
+        }
+      }
+
+      setSelectedIds([])
+      fetchEstimates()
+    } catch (error) {
+      console.error('Failed duplicating estimates:', error)
+      alert('Failed to duplicate selected estimates')
+    } finally {
+      setDuplicating(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -193,10 +229,20 @@ export default function EstimatesPage() {
           <h1 className="text-3xl font-bold text-gray-900">Estimates</h1>
           <p className="mt-2 text-gray-600">Create and manage estimates</p>
         </div>
-        <Button onClick={() => router.push('/dashboard/estimates/new')}>
-          <Plus className="mr-2 h-4 w-4" />
-          New Estimate
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={() => router.push('/dashboard/estimates/new')}>
+            <Plus className="mr-2 h-4 w-4" />
+            New Estimate
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleDuplicateSelected}
+            disabled={selectedIds.length === 0 || duplicating}
+          >
+            <Copy className="mr-2 h-4 w-4" />
+            {duplicating ? 'Duplicating...' : `Duplicate${selectedIds.length ? ` (${selectedIds.length})` : ''}`}
+          </Button>
+        </div>
       </div>
 
       {/* Search and Filters */}
@@ -266,9 +312,24 @@ export default function EstimatesPage() {
                       {estimate.lead && ` • ${estimate.lead.firstName} ${estimate.lead.lastName}`}
                     </CardDescription>
                   </div>
-                  <span className={`px-2 py-1 text-xs rounded-full ${statusColors[estimate.status] || 'bg-gray-100 text-gray-800'}`}>
-                    {estimate.status}
-                  </span>
+                  <div className="flex flex-col items-end gap-1">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(estimate.id)}
+                      onChange={(e) =>
+                        setSelectedIds((prev) =>
+                          e.target.checked
+                            ? [...prev, estimate.id]
+                            : prev.filter((id) => id !== estimate.id)
+                        )
+                      }
+                      className="h-4 w-4"
+                      title="Select for duplicate"
+                    />
+                    <span className={`px-2 py-1 text-xs rounded-full ${statusColors[estimate.status] || 'bg-gray-100 text-gray-800'}`}>
+                      {estimate.status}
+                    </span>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
