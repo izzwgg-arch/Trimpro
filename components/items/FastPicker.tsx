@@ -245,24 +245,13 @@ export function FastPicker({
       case 'Enter':
         e.preventDefault()
         e.stopPropagation()
+        console.log('FAST_PICKER_ENTER', {
+          isOpen,
+          selectedIndex,
+          filteredCount: filteredItems.length,
+        })
         if (isOpen) {
-          // Dropdown is open
-          if (filteredItems.length > 0) {
-            // There are filtered items - select the highlighted one (or first if index is invalid)
-            const indexToSelect = (selectedIndex >= 0 && selectedIndex < filteredItems.length) 
-              ? selectedIndex 
-              : 0
-            const selected = filteredItems[indexToSelect]
-            if (selected) {
-              handleSelect(selected)
-            } else {
-              // Fallback: select first item
-              handleSelect(filteredItems[0])
-            }
-          } else {
-            // No items found, commit current text as custom entry
-            handleCommitCustom()
-          }
+          commitHighlightedSelection()
         } else {
           // Dropdown is closed: commit current text instead of moving focus away.
           handleCommitCustom()
@@ -294,7 +283,7 @@ export function FastPicker({
         }
         break
     }
-  }, [isOpen, filteredItems, selectedIndex, disabled, handleSelect, handleCommitCustom])
+  }, [isOpen, filteredItems.length, selectedIndex, disabled, handleCommitCustom, commitHighlightedSelection])
 
   // Handle input focus - opens dropdown immediately
   const handleInputFocus = useCallback(() => {
@@ -323,6 +312,23 @@ export function FastPicker({
   const handleItemClick = useCallback((item: FastPickerItem) => {
     handleSelect(item)
   }, [handleSelect])
+
+  const commitHighlightedSelection = useCallback(() => {
+    if (filteredItems.length === 0) {
+      handleCommitCustom()
+      return
+    }
+
+    const clampedIndex = Math.max(0, Math.min(selectedIndex, filteredItems.length - 1))
+    const selected = filteredItems[clampedIndex]
+    if (!selected) {
+      handleCommitCustom()
+      return
+    }
+
+    // Use the exact same path as mouse click.
+    handleItemClick(selected)
+  }, [filteredItems, selectedIndex, handleItemClick, handleCommitCustom])
 
   return (
     <div ref={containerRef} className="relative w-full">
