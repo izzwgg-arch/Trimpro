@@ -31,6 +31,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { ItemPicker } from '@/components/items/ItemPicker'
+import { Checkbox } from '@/components/ui/checkbox'
 
 interface InvoiceDetail {
   id: string
@@ -51,6 +52,9 @@ interface InvoiceDetail {
   notes: string | null
   terms: string | null
   memo: string | null
+  estimateId?: string | null
+  paymentToken?: string | null
+  isBillRest?: boolean
   createdAt: string
   updatedAt: string
   client: {
@@ -124,6 +128,7 @@ export default function InvoiceDetailPage() {
   const [itemPickerGroupId, setItemPickerGroupId] = useState<string | null>(null)
   const [duplicating, setDuplicating] = useState(false)
   const [creatingPaymentLink, setCreatingPaymentLink] = useState(false)
+  const [billRest, setBillRest] = useState(false)
 
   useEffect(() => {
     fetchInvoice()
@@ -159,6 +164,7 @@ export default function InvoiceDetailPage() {
       const data = await response.json()
       if (data.invoice) {
         setInvoice(data.invoice)
+        setBillRest(Boolean(data.invoice.isBillRest))
       } else {
         setInvoice(null)
       }
@@ -399,7 +405,8 @@ export default function InvoiceDetailPage() {
         },
         body: JSON.stringify({
           invoiceId: invoice.id,
-          returnUrl: `${window.location.origin}/dashboard/invoices/${invoice.id}`,
+          billRest,
+          returnUrl: `${window.location.origin}/portal/pay/${invoice.id}?token=${invoice.paymentToken || ''}`,
         }),
       })
 
@@ -410,6 +417,7 @@ export default function InvoiceDetailPage() {
       }
 
       window.open(data.paymentLink, '_blank', 'noopener,noreferrer')
+      await fetchInvoice()
     } catch (error) {
       console.error('Create payment link error:', error)
       alert('Failed to create payment link')
@@ -740,6 +748,12 @@ export default function InvoiceDetailPage() {
               <CardTitle>Summary</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
+              {invoice.estimateId && (
+                <div className="flex items-center justify-between rounded border p-2">
+                  <span className="text-sm font-medium">Bill the Rest</span>
+                  <Checkbox checked={billRest} onCheckedChange={(checked) => setBillRest(Boolean(checked))} />
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-gray-600">Subtotal:</span>
                 <span className="font-semibold">{formatCurrency(parseFloat(invoice.subtotal))}</span>
@@ -770,6 +784,16 @@ export default function InvoiceDetailPage() {
                 <span>Balance:</span>
                 <span>{formatCurrency(parseFloat(invoice.balance))}</span>
               </div>
+              {invoice.estimateId && (
+                <Button className="w-full" variant="outline" onClick={handlePayNow} disabled={creatingPaymentLink}>
+                  <CreditCard className="mr-2 h-4 w-4" />
+                  {creatingPaymentLink
+                    ? 'Updating...'
+                    : billRest
+                      ? 'Update Link for Remaining Balance'
+                      : 'Use Current Invoice Balance'}
+                </Button>
+              )}
             </CardContent>
           </Card>
 

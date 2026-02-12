@@ -38,6 +38,13 @@ export async function GET(
             title: true,
           },
         },
+        estimate: {
+          select: {
+            id: true,
+            estimateNumber: true,
+            total: true,
+          },
+        },
         lineItems: {
           orderBy: { sortOrder: 'asc' },
         },

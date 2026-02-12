@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
+import crypto from 'crypto'
 
 export async function POST(
   request: NextRequest,
@@ -67,6 +68,7 @@ export async function POST(
           tenantId: user.tenantId,
           clientId: job.clientId,
           jobId: job.id,
+          estimateId: job.estimate!.id,
           invoiceNumber,
           title: job.estimate!.title || `Invoice for ${job.title}`,
           status: 'DRAFT',
@@ -80,6 +82,7 @@ export async function POST(
           invoiceDate: new Date(),
           notes: job.estimate!.notes || null,
           terms: job.estimate!.terms || null,
+          paymentToken: crypto.randomBytes(20).toString('hex'),
         },
       })
 

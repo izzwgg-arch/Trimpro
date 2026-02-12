@@ -460,6 +460,7 @@ model Estimate {
   lineItems   EstimateLineItem[]
   attachments Attachment[]
   emails      Email[]
+  invoices    Invoice[]
   activities  Activity[]
 
   createdById String?
@@ -529,6 +530,7 @@ model Invoice {
   tenantId      String
   clientId      String
   jobId         String?
+  estimateId    String?
   invoiceNumber String        @unique
   title         String
   status        InvoiceStatus @default(DRAFT)
@@ -554,10 +556,19 @@ model Invoice {
   terms String? @db.Text
   memo  String? @db.Text
 
+  // Progress billing / hosted payment
+  progressBillingMode    String?
+  progressBillingPercent Decimal? @db.Decimal(5, 2)
+  isBillRest             Boolean   @default(false)
+  paymentToken           String?   @unique
+  solaPaymentUrl         String?   @db.Text
+  solaTransactionId      String?
+
   // Relationships
   tenant              Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   client              Client                @relation(fields: [clientId], references: [id], onDelete: Restrict)
   job                 Job?                  @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  estimate            Estimate?             @relation(fields: [estimateId], references: [id], onDelete: SetNull)
   lineItems           InvoiceLineItem[]
   payments            Payment[]
   paymentTransactions PaymentTransaction[]
@@ -576,6 +587,7 @@ model Invoice {
   @@index([tenantId])
   @@index([tenantId, clientId])
   @@index([tenantId, status])
+  @@index([estimateId])
   @@index([invoiceNumber])
   @@map("invoices")
 }

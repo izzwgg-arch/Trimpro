@@ -26,6 +26,10 @@ import {
   Copy,
 } from 'lucide-react'
 import Link from 'next/link'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
 
 interface EstimateDetail {
   id: string
@@ -113,6 +117,11 @@ export default function EstimateDetailPage() {
   const [showItemPicker, setShowItemPicker] = useState(false)
   const [itemPickerGroupId, setItemPickerGroupId] = useState<string | null>(null)
   const [duplicating, setDuplicating] = useState(false)
+  const [showBillingModal, setShowBillingModal] = useState(false)
+  const [convertingInvoice, setConvertingInvoice] = useState(false)
+  const [billingMode, setBillingMode] = useState<'FULL' | 'PERCENTAGE' | 'MANUAL'>('FULL')
+  const [billingPercent, setBillingPercent] = useState('50')
+  const [selectedLineItemIds, setSelectedLineItemIds] = useState<string[]>([])
 
   useEffect(() => {
     fetchEstimate()
@@ -244,6 +253,50 @@ export default function EstimateDetailPage() {
     }
   }
 
+  const handleOpenConvertToInvoice = () => {
+    if (!estimate) return
+    setBillingMode('FULL')
+    setBillingPercent('50')
+    setSelectedLineItemIds(estimate.lineItems.map((li) => li.id))
+    setShowBillingModal(true)
+  }
+
+  const handleConvertToInvoice = async () => {
+    if (!estimate) return
+    setConvertingInvoice(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch(`/api/estimates/${estimateId}/convert-to-invoice`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          billingMode,
+          percentage: Number(billingPercent || 0),
+          selectedLineItemIds,
+        }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'Failed to convert estimate to invoice')
+        return
+      }
+      setShowBillingModal(false)
+      if (data?.invoice?.id) {
+        router.push(`/dashboard/invoices/${data.invoice.id}`)
+      } else {
+        router.push('/dashboard/invoices')
+      }
+    } catch (error) {
+      console.error('Convert estimate to invoice error:', error)
+      alert('Failed to convert estimate to invoice')
+    } finally {
+      setConvertingInvoice(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -301,6 +354,10 @@ export default function EstimateDetailPage() {
           <Button variant="outline" onClick={handleDuplicate} disabled={duplicating}>
             <Copy className="mr-2 h-4 w-4" />
             {duplicating ? 'Duplicating...' : 'Duplicate'}
+          </Button>
+          <Button variant="outline" onClick={handleOpenConvertToInvoice}>
+            <DollarSign className="mr-2 h-4 w-4" />
+            Convert to Invoice
           </Button>
           <Link href={`/dashboard/estimates/${estimateId}/edit`}>
             <Button variant="outline">
@@ -697,6 +754,93 @@ export default function EstimateDetailPage() {
           }}
         />
       )}
+
+      <Dialog open={showBillingModal} onOpenChange={setShowBillingModal}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Create Invoice from Estimate</DialogTitle>
+            <DialogDescription>
+              Choose how much to bill now. All currency calculations are handled precisely.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <input
+                type="radio"
+                id="bill-full"
+                checked={billingMode === 'FULL'}
+                onChange={() => setBillingMode('FULL')}
+              />
+              <Label htmlFor="bill-full">Full Amount (100%)</Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="radio"
+                id="bill-percentage"
+                checked={billingMode === 'PERCENTAGE'}
+                onChange={() => setBillingMode('PERCENTAGE')}
+              />
+              <Label htmlFor="bill-percentage">Percentage</Label>
+              <Input
+                className="w-28"
+                type="number"
+                min={1}
+                max={100}
+                step={0.01}
+                value={billingPercent}
+                onChange={(e) => setBillingPercent(e.target.value)}
+                disabled={billingMode !== 'PERCENTAGE'}
+              />
+              <span className="text-sm text-gray-600">%</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="radio"
+                id="bill-manual"
+                checked={billingMode === 'MANUAL'}
+                onChange={() => setBillingMode('MANUAL')}
+              />
+              <Label htmlFor="bill-manual">Manual Selection (Line Items)</Label>
+            </div>
+
+            {billingMode === 'MANUAL' && (
+              <div className="max-h-64 space-y-2 overflow-auto rounded border p-3">
+                {estimate?.lineItems.map((li) => (
+                  <div key={li.id} className="flex items-center justify-between gap-3 rounded border p-2">
+                    <div className="text-sm">
+                      <div className="font-medium">{li.description}</div>
+                      <div className="text-gray-500">
+                        Qty {li.quantity} • ${Number(li.unitPrice).toFixed(2)}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold">${Number(li.total).toFixed(2)}</span>
+                      <Checkbox
+                        checked={selectedLineItemIds.includes(li.id)}
+                        onCheckedChange={(checked) => {
+                          setSelectedLineItemIds((prev) =>
+                            checked ? [...prev, li.id] : prev.filter((id) => id !== li.id)
+                          )
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBillingModal(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleConvertToInvoice} disabled={convertingInvoice}>
+              {convertingInvoice ? 'Creating...' : 'Create Invoice'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

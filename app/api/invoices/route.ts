@@ -3,6 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { getPaginationParams, createPaginationResponse } from '@/lib/pagination'
 import { validateRequest, createInvoiceSchema } from '@/lib/validation'
+import crypto from 'crypto'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -156,6 +157,7 @@ export async function POST(request: NextRequest) {
         tenantId: user.tenantId,
         clientId,
         jobId: jobId || null,
+        estimateId: estimateId || null,
         invoiceNumber,
         title,
         status: 'DRAFT',
@@ -172,6 +174,7 @@ export async function POST(request: NextRequest) {
         isNotesVisibleToClient: isNotesVisibleToClient !== undefined ? Boolean(isNotesVisibleToClient) : true,
         terms: terms || null,
         memo: memo || null,
+        paymentToken: crypto.randomBytes(20).toString('hex'),
       },
       include: {
         client: true,

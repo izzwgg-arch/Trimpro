@@ -71,7 +71,7 @@ export async function GET(
     const clientName = invoice.client?.companyName || invoice.client?.name || 'N/A'
     const primaryContact = invoice.client?.contacts?.[0] || null
 
-    let paymentLink = `${appUrl}/dashboard/invoices/${invoice.id}`
+    let paymentLink = `${appUrl}/portal/pay/${invoice.id}?token=${invoice.paymentToken || ''}`
     if (balance > 0) {
       try {
         const link = await solaService.createPaymentLink({
@@ -80,10 +80,10 @@ export async function GET(
           description: `Invoice ${invoice.invoiceNumber} - ${invoice.title}`,
           clientEmail: invoice.client?.email || primaryContact?.email || undefined,
           clientName: invoice.client?.name || undefined,
-          returnUrl: `${appUrl}/dashboard/invoices/${invoice.id}`,
-          webhookUrl: `${appUrl}/api/webhooks/sola`,
+          returnUrl: `${appUrl}/portal/pay/${invoice.id}?token=${invoice.paymentToken || ''}`,
+          webhookUrl: `${appUrl}/api/webhooks/sola-payment`,
         })
-        paymentLink = link.url
+        paymentLink = `${appUrl}/portal/pay/${invoice.id}?token=${invoice.paymentToken || ''}`
       } catch (error) {
         console.error('Invoice PDF payment link error:', error)
       }

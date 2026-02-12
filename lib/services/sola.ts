@@ -1,7 +1,10 @@
-// SOLA Payment API Integration
-// Documentation: https://sola.com/api/docs
+// SOLA/Cardknox Payment API Integration
 
-const SOLA_API_BASE = process.env.SOLA_API_URL || 'https://api.sola.com'
+const SOLA_API_BASE =
+  process.env.SOLA_API_URL ||
+  process.env.SOLA_API_BASE_URL ||
+  process.env.CARDKNOX_API_BASE_URL ||
+  'https://api.cardknox.com/v2'
 const SOLA_API_KEY = process.env.SOLA_API_KEY
 const SOLA_API_SECRET = process.env.SOLA_API_SECRET
 
@@ -57,20 +60,38 @@ export class SolaService {
   }
 
   async createPaymentLink(request: SolaPaymentLinkRequest): Promise<SolaPaymentLinkResponse> {
-    return this.makeRequest('/v1/payment-links', 'POST', {
-      amount: request.amount,
-      currency: 'USD',
+    const amountCents = Math.round((request.amount || 0) * 100)
+    const payload = {
+      xCommand: 'cc:sale',
+      xInvoice: request.invoiceId,
+      xAmount: (amountCents / 100).toFixed(2),
+      amountCents,
       description: request.description,
       metadata: {
         invoiceId: request.invoiceId,
       },
-      customer: request.clientEmail ? {
-        email: request.clientEmail,
-        name: request.clientName,
-      } : undefined,
+      customer: request.clientEmail
+        ? {
+            email: request.clientEmail,
+            name: request.clientName,
+          }
+        : undefined,
       returnUrl: request.returnUrl,
       webhookUrl: request.webhookUrl,
-    })
+    }
+
+    const raw = await this.makeRequest('/payment-links', 'POST', payload)
+
+    // Normalize multiple possible provider response shapes.
+    return {
+      id: String(raw.id || raw.transactionId || raw.TransactionID || raw.refNum || request.invoiceId),
+      url: String(raw.url || raw.paymentUrl || raw.PaymentURL || ''),
+      expiresAt: String(
+        raw.expiresAt ||
+          raw.expiration ||
+          new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString()
+      ),
+    }
   }
 
   async getPaymentStatus(paymentId: string): Promise<any> {
