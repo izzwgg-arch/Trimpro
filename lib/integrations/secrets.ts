@@ -5,14 +5,6 @@
 
 import crypto from 'crypto'
 
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || process.env.NEXTAUTH_SECRET
-
-if (!ENCRYPTION_KEY || ENCRYPTION_KEY.length < 32) {
-  console.warn(
-    'WARNING: ENCRYPTION_KEY not set or too short. Set a 32+ byte key in .env for production.'
-  )
-}
-
 const ALGORITHM = 'aes-256-gcm'
 const IV_LENGTH = 16 // 128 bits
 const SALT_LENGTH = 64
@@ -20,7 +12,19 @@ const TAG_LENGTH = 16
 const TAG_POSITION = SALT_LENGTH + IV_LENGTH
 const ENCRYPTED_POSITION = TAG_POSITION + TAG_LENGTH
 
+function getEncryptionKeySource(): string | undefined {
+  // Use bracket notation to avoid static env inlining issues in bundled server code.
+  const key = process.env['ENCRYPTION_KEY'] || process.env['NEXTAUTH_SECRET']
+  if (!key || key.length < 32) {
+    console.warn(
+      'WARNING: ENCRYPTION_KEY not set or too short. Set a 32+ byte key in .env for production.'
+    )
+  }
+  return key
+}
+
 function getKey(): Buffer {
+  const ENCRYPTION_KEY = getEncryptionKeySource()
   if (!ENCRYPTION_KEY) {
     throw new Error('ENCRYPTION_KEY not configured')
   }
@@ -34,6 +38,7 @@ function getKey(): Buffer {
  * Encrypt a secrets object into a string
  */
 export function encryptSecrets(secrets: Record<string, any>): string {
+  const ENCRYPTION_KEY = getEncryptionKeySource()
   if (!ENCRYPTION_KEY) {
     throw new Error('ENCRYPTION_KEY not configured. Cannot encrypt secrets.')
   }
@@ -58,6 +63,7 @@ export function encryptSecrets(secrets: Record<string, any>): string {
  * Decrypt a secrets string back into an object
  */
 export function decryptSecrets(encrypted: string): Record<string, any> {
+  const ENCRYPTION_KEY = getEncryptionKeySource()
   if (!ENCRYPTION_KEY) {
     throw new Error('ENCRYPTION_KEY not configured. Cannot decrypt secrets.')
   }
