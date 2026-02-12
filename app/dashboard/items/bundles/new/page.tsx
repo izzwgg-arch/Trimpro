@@ -473,11 +473,19 @@ export default function NewBundlePage() {
                 </div>
 
                 {components.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
+                  <div className="text-center py-6 text-sm text-gray-500">
                     No components added yet
                   </div>
                 ) : (
                   <div className="space-y-2">
+                    <div className="hidden md:grid md:grid-cols-12 gap-2 px-2 text-xs text-gray-500">
+                      <div className="md:col-span-3">Component</div>
+                      <div className="md:col-span-1">Qty</div>
+                      <div className="md:col-span-3">Vendor</div>
+                      <div className="md:col-span-2">Unit Cost</div>
+                      <div className="md:col-span-2">Custom Price</div>
+                      <div className="md:col-span-1 text-right">Action</div>
+                    </div>
                     {components.map((comp, index) => {
                       const item = comp.componentType === 'ITEM'
                         ? items.find((i) => i.id === comp.componentItemId)
@@ -487,74 +495,70 @@ export default function NewBundlePage() {
                         : null
 
                       return (
-                        <div key={index} className="border rounded-lg p-4">
-                          <div className="flex items-start justify-between mb-2">
-                            <div className="flex-1">
-                              <div className="font-medium">
+                        <div key={index} className="border rounded-md p-2">
+                          <div className="grid grid-cols-1 md:grid-cols-12 gap-2 items-end">
+                            <div className="md:col-span-3">
+                              <div className="text-sm font-medium truncate">
                                 {comp.componentType === 'ITEM' ? item?.name : bundle?.name}
-                                <span className="ml-2 text-xs text-gray-500">
-                                  ({comp.componentType === 'ITEM' ? 'Item' : 'Bundle'})
-                                </span>
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                {comp.componentType === 'ITEM' ? 'Item' : 'Bundle'}
                               </div>
                             </div>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => removeComponent(index)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                          <div className="space-y-3">
-                            <div className="grid grid-cols-2 gap-2">
-                              <div>
-                                <Label className="text-xs">Quantity</Label>
-                                <Input
-                                  type="number"
-                                  step="0.01"
-                                  value={comp.quantity}
-                                  onChange={(e) => updateComponent(index, 'quantity', e.target.value)}
-                                  required
-                                />
-                              </div>
-                              <div>
-                                <Label className="text-xs">Vendor Assignment</Label>
-                                <select
-                                  value={comp.vendorId || ''}
-                                  onChange={(e) => updateComponent(index, 'vendorId', e.target.value)}
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary text-sm"
-                                >
-                                  <option value="">Select vendor</option>
-                                  {vendors.map((vendor) => (
-                                    <option key={vendor.id} value={vendor.id}>
-                                      {vendor.name}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
+                            <div className="md:col-span-1">
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={comp.quantity}
+                                onChange={(e) => updateComponent(index, 'quantity', e.target.value)}
+                                required
+                                className="h-9 text-sm"
+                              />
                             </div>
-                            <div className="grid grid-cols-2 gap-2">
-                              <div>
-                                <Label className="text-xs">Vendor/Unit Cost</Label>
-                                <Input
-                                  type="number"
-                                  step="0.01"
-                                  value={comp.defaultUnitCostOverride || ''}
-                                  onChange={(e) => updateComponent(index, 'defaultUnitCostOverride', e.target.value)}
-                                  placeholder={comp.componentType === 'ITEM' && item ? `$${toNumber(item.defaultUnitCost).toFixed(2)}` : 'Auto'}
-                                />
-                              </div>
-                              <div>
-                                <Label className="text-xs">Customer Price</Label>
-                                <Input
-                                  type="number"
-                                  step="0.01"
-                                  value={comp.defaultUnitPriceOverride || ''}
-                                  onChange={(e) => updateComponent(index, 'defaultUnitPriceOverride', e.target.value)}
-                                  placeholder={comp.componentType === 'ITEM' && item ? `$${toNumber(item.defaultUnitPrice).toFixed(2)}` : 'Auto'}
-                                />
-                              </div>
+                            <div className="md:col-span-3">
+                              <select
+                                value={comp.vendorId || ''}
+                                onChange={(e) => updateComponent(index, 'vendorId', e.target.value)}
+                                className="w-full h-9 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary text-sm"
+                              >
+                                <option value="">Select vendor</option>
+                                {vendors.map((vendor) => (
+                                  <option key={vendor.id} value={vendor.id}>
+                                    {vendor.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="md:col-span-2">
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={comp.defaultUnitCostOverride || ''}
+                                onChange={(e) => updateComponent(index, 'defaultUnitCostOverride', e.target.value)}
+                                placeholder={comp.componentType === 'ITEM' && item ? `${toNumber(item.defaultUnitCost).toFixed(2)}` : 'Auto'}
+                                className="h-9 text-sm"
+                              />
+                            </div>
+                            <div className="md:col-span-2">
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={comp.defaultUnitPriceOverride || ''}
+                                onChange={(e) => updateComponent(index, 'defaultUnitPriceOverride', e.target.value)}
+                                placeholder={comp.componentType === 'ITEM' && item ? `${toNumber(item.defaultUnitPrice).toFixed(2)}` : 'Auto'}
+                                className="h-9 text-sm"
+                              />
+                            </div>
+                            <div className="md:col-span-1 flex md:justify-end">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => removeComponent(index)}
+                                className="h-9 w-9 p-0"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
                             </div>
                           </div>
                         </div>
