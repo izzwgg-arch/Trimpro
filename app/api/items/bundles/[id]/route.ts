@@ -2,6 +2,82 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 
+async function flattenBundle(
+  bundleId: string,
+  tenantId: string,
+  visited: Set<string> = new Set(),
+  multiplier: number = 1
+): Promise<Array<{ unitPrice: number; unitCost: number | null; quantity: number }>> {
+  if (visited.has(bundleId)) {
+    throw new Error('Circular bundle reference detected')
+  }
+  visited.add(bundleId)
+
+  const bundle = await prisma.bundleDefinition.findFirst({
+    where: { id: bundleId, tenantId },
+    include: {
+      components: {
+        include: {
+          componentItem: true,
+          componentBundle: true,
+        },
+      },
+    },
+  })
+
+  if (!bundle) return []
+
+  const flattened: Array<{ unitPrice: number; unitCost: number | null; quantity: number }> = []
+
+  for (const component of bundle.components) {
+    const qty = Number(component.quantity) * multiplier
+
+    if (component.componentType === 'ITEM' && component.componentItem) {
+      flattened.push({
+        quantity: qty,
+        unitPrice: component.defaultUnitPriceOverride != null
+          ? Number(component.defaultUnitPriceOverride)
+          : Number(component.componentItem.defaultUnitPrice),
+        unitCost: component.defaultUnitCostOverride != null
+          ? Number(component.defaultUnitCostOverride)
+          : (component.componentItem.defaultUnitCost != null ? Number(component.componentItem.defaultUnitCost) : null),
+      })
+      continue
+    }
+
+    if (component.componentType === 'BUNDLE' && component.componentBundle) {
+      const nested = await flattenBundle(
+        component.componentBundle.id,
+        tenantId,
+        new Set(visited),
+        qty
+      )
+      flattened.push(...nested)
+    }
+  }
+
+  return flattened
+}
+
+async function recalculateAndPersistBundleTotals(bundleId: string, tenantId: string, itemId: string) {
+  const flattened = await flattenBundle(bundleId, tenantId)
+  let totalCost = 0
+  let totalPrice = 0
+
+  for (const line of flattened) {
+    totalCost += (line.unitCost || 0) * line.quantity
+    totalPrice += line.unitPrice * line.quantity
+  }
+
+  await prisma.item.update({
+    where: { id: itemId },
+    data: {
+      defaultUnitCost: totalCost > 0 ? totalCost : null,
+      defaultUnitPrice: totalPrice > 0 ? totalPrice : 0,
+    },
+  })
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -175,6 +251,9 @@ export async function PUT(
         })
       }
     }
+
+    // Keep bundle item price/cost in sync after edits (including nested bundles).
+    await recalculateAndPersistBundleTotals(params.id, user.tenantId, existing.itemId)
 
     const bundle = await prisma.bundleDefinition.findFirst({
       where: { id: params.id },

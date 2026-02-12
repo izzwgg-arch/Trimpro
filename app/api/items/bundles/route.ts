@@ -89,6 +89,27 @@ async function flattenBundle(
   return flattened
 }
 
+async function recalculateAndPersistBundleTotals(bundleId: string, tenantId: string, itemId: string) {
+  const flattened = await flattenBundle(bundleId, tenantId)
+  let totalCost = 0
+  let totalPrice = 0
+
+  for (const line of flattened) {
+    totalCost += (line.unitCost || 0) * line.quantity
+    totalPrice += line.unitPrice * line.quantity
+  }
+
+  await prisma.item.update({
+    where: { id: itemId },
+    data: {
+      defaultUnitCost: totalCost > 0 ? totalCost : null,
+      defaultUnitPrice: totalPrice > 0 ? totalPrice : 0,
+    },
+  })
+
+  return { totalCost, totalPrice }
+}
+
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
@@ -204,7 +225,27 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({ bundles })
+    // Auto-heal stale stored bundle totals so UI reflects correct values immediately.
+    const normalizedBundles = await Promise.all(
+      bundles.map(async (bundle) => {
+        const { totalCost, totalPrice } = await recalculateAndPersistBundleTotals(
+          bundle.id,
+          user.tenantId,
+          bundle.itemId
+        )
+
+        return {
+          ...bundle,
+          item: {
+            ...bundle.item,
+            defaultUnitCost: totalCost > 0 ? totalCost : null,
+            defaultUnitPrice: totalPrice > 0 ? totalPrice : 0,
+          },
+        }
+      })
+    )
+
+    return NextResponse.json({ bundles: normalizedBundles })
   } catch (error) {
     console.error('List bundles error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

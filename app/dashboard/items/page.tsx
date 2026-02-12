@@ -259,7 +259,10 @@ export default function ItemsPage() {
   }
 
   const activeItems = items.filter((item) => item.isActive).length
-  const totalValue = items.reduce((sum, item) => sum + (item.defaultUnitPrice || 0), 0)
+  const totalValue = items.reduce((sum, item) => {
+    const price = Number(item.defaultUnitPrice)
+    return sum + (Number.isFinite(price) ? price : 0)
+  }, 0)
 
   return (
     <div className="space-y-6">
