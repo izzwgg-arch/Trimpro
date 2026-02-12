@@ -394,11 +394,25 @@ export default function JobDetailPage() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <Button variant="outline" onClick={() => router.push(`/dashboard/tasks/new?jobId=${jobId}`)}>
+            <Button
+              variant="outline"
+              onClick={() =>
+                router.push(
+                  `/dashboard/tasks/new?jobId=${jobId}&clientId=${job.client.id}&jobNumber=${encodeURIComponent(job.jobNumber)}&clientName=${encodeURIComponent(job.client.name)}&projectType=${encodeURIComponent(job.title)}`
+                )
+              }
+            >
               <CheckSquare className="mr-2 h-4 w-4" />
               New Task
             </Button>
-            <Button variant="outline" onClick={() => router.push(`/dashboard/issues/new?jobId=${jobId}`)}>
+            <Button
+              variant="outline"
+              onClick={() =>
+                router.push(
+                  `/dashboard/issues/new?jobId=${jobId}&clientId=${job.client.id}&jobNumber=${encodeURIComponent(job.jobNumber)}&clientName=${encodeURIComponent(job.client.name)}&projectType=${encodeURIComponent(job.title)}`
+                )
+              }
+            >
               <AlertCircle className="mr-2 h-4 w-4" />
               New Issue
             </Button>

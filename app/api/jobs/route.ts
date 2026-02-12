@@ -29,7 +29,11 @@ export async function GET(request: NextRequest) {
     }
 
     if (status !== 'all') {
-      where.status = status
+      if (status === 'ACTIVE') {
+        where.status = { in: ['SCHEDULED', 'IN_PROGRESS', 'ON_HOLD'] }
+      } else {
+        where.status = status
+      }
     }
 
     if (clientId) {

@@ -30,7 +30,11 @@ export async function GET(request: NextRequest) {
     }
 
     if (status !== 'all') {
-      where.status = status
+      if (status === 'PLANNING_PENDING') {
+        where.status = { in: ['TODO', 'IN_PROGRESS'] }
+      } else {
+        where.status = status
+      }
     }
 
     if (assigneeId) {
@@ -155,6 +159,44 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Title and assignee are required' }, { status: 400 })
     }
 
+    let resolvedClientId = clientId || null
+
+    // If a task is created from a job context, enforce relational linkage to that job/client.
+    if (jobId) {
+      const job = await prisma.job.findFirst({
+        where: {
+          id: jobId,
+          tenantId: user.tenantId,
+        },
+        select: {
+          id: true,
+          clientId: true,
+          jobNumber: true,
+          title: true,
+        },
+      })
+
+      if (!job) {
+        return NextResponse.json({ error: 'Job not found' }, { status: 404 })
+      }
+
+      resolvedClientId = job.clientId
+    }
+
+    if (resolvedClientId) {
+      const client = await prisma.client.findFirst({
+        where: {
+          id: resolvedClientId,
+          tenantId: user.tenantId,
+        },
+        select: { id: true },
+      })
+
+      if (!client) {
+        return NextResponse.json({ error: 'Client not found' }, { status: 404 })
+      }
+    }
+
     // Verify assignee belongs to tenant
     const assignee = await prisma.user.findFirst({
       where: {
@@ -178,7 +220,7 @@ export async function POST(request: NextRequest) {
         dueDate: dueDate ? new Date(dueDate) : null,
         assigneeId,
         createdById: user.id,
-        clientId: clientId || null,
+        clientId: resolvedClientId,
         leadId: leadId || null,
         jobId: jobId || null,
         invoiceId: invoiceId || null,
@@ -211,7 +253,7 @@ export async function POST(request: NextRequest) {
         type: 'TASK_CREATED',
         description: `Task "${title}" assigned to ${assignee.firstName} ${assignee.lastName}`,
         taskId: task.id,
-        clientId: clientId || undefined,
+        clientId: resolvedClientId || undefined,
         jobId: jobId || undefined,
         invoiceId: invoiceId || undefined,
         issueId: issueId || undefined,

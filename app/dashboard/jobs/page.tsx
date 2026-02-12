@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -59,6 +59,7 @@ const priorityLabels: Record<number, string> = {
 
 export default function JobsPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -67,6 +68,13 @@ export default function JobsPage() {
   const [convertingId, setConvertingId] = useState<string | null>(null)
   const [duplicating, setDuplicating] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+
+  useEffect(() => {
+    const statusParam = searchParams.get('status')
+    if (statusParam) {
+      setStatus(statusParam)
+    }
+  }, [searchParams])
 
   useEffect(() => {
     fetchJobs()
@@ -278,6 +286,7 @@ export default function JobsPage() {
                 className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               >
                 <option value="all">All Status</option>
+                <option value="ACTIVE">Active</option>
                 <option value="QUOTE">Quote</option>
                 <option value="SCHEDULED">Scheduled</option>
                 <option value="IN_PROGRESS">In Progress</option>

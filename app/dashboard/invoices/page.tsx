@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -49,6 +49,7 @@ const statusColors: Record<string, string> = {
 
 export default function InvoicesPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -56,6 +57,13 @@ export default function InvoicesPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [duplicating, setDuplicating] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+
+  useEffect(() => {
+    const statusParam = searchParams.get('status')
+    if (statusParam) {
+      setStatus(statusParam)
+    }
+  }, [searchParams])
 
   useEffect(() => {
     fetchInvoices()
@@ -264,6 +272,7 @@ export default function InvoicesPage() {
                 className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               >
                 <option value="all">All Status</option>
+                <option value="UNPAID_OVERDUE">Unpaid / Overdue</option>
                 <option value="DRAFT">Draft</option>
                 <option value="SENT">Sent</option>
                 <option value="VIEWED">Viewed</option>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -70,11 +70,19 @@ const priorityColors: Record<string, string> = {
 
 export default function TasksPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
   const [filter, setFilter] = useState('all') // all, my, assigned
+
+  useEffect(() => {
+    const statusParam = searchParams.get('status')
+    if (statusParam) {
+      setStatus(statusParam)
+    }
+  }, [searchParams])
 
   useEffect(() => {
     fetchTasks()
@@ -206,6 +214,7 @@ export default function TasksPage() {
                 className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               >
                 <option value="all">All Status</option>
+                <option value="PLANNING_PENDING">Planning / Pending</option>
                 <option value="TODO">To Do</option>
                 <option value="IN_PROGRESS">In Progress</option>
                 <option value="COMPLETED">Completed</option>

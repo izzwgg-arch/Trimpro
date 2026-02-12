@@ -24,6 +24,11 @@ interface Job {
   id: string
   jobNumber: string
   title: string
+  client: {
+    id: string
+    name: string
+    companyName: string | null
+  }
 }
 
 export default function NewTaskPage() {
@@ -31,10 +36,14 @@ export default function NewTaskPage() {
   const searchParams = useSearchParams()
   const clientIdParam = searchParams.get('clientId')
   const jobIdParam = searchParams.get('jobId')
+  const jobNumberParam = searchParams.get('jobNumber') || ''
+  const clientNameParam = searchParams.get('clientName') || ''
+  const projectTypeParam = searchParams.get('projectType') || ''
   const [loading, setLoading] = useState(false)
   const [users, setUsers] = useState<User[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [jobs, setJobs] = useState<Job[]>([])
+  const [jobContext, setJobContext] = useState<Job | null>(null)
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -49,10 +58,12 @@ export default function NewTaskPage() {
   useEffect(() => {
     fetchUsers()
     fetchClients()
-    if (formData.clientId) {
+    if (jobIdParam) {
+      fetchJobContext(jobIdParam)
+    } else if (formData.clientId) {
       fetchJobs()
     }
-  }, [formData.clientId])
+  }, [formData.clientId, jobIdParam])
 
   const fetchUsers = async () => {
     try {
@@ -99,6 +110,39 @@ export default function NewTaskPage() {
     }
   }
 
+  const fetchJobContext = async (jobId: string) => {
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch(`/api/jobs/${jobId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!response.ok) return
+
+      const data = await response.json()
+      const job = data?.job
+      if (!job?.id || !job?.client?.id) return
+
+      setJobContext({
+        id: job.id,
+        jobNumber: job.jobNumber,
+        title: job.title,
+        client: {
+          id: job.client.id,
+          name: job.client.name,
+          companyName: job.client.companyName || null,
+        },
+      })
+
+      setFormData((prev) => ({
+        ...prev,
+        jobId: job.id,
+        clientId: job.client.id,
+      }))
+    } catch (error) {
+      console.error('Error fetching job context:', error)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -130,8 +174,13 @@ export default function NewTaskPage() {
         return
       }
 
-      const task = await response.json()
-      router.push(`/dashboard/tasks/${task.id}`)
+      const data = await response.json()
+      const taskId = data?.task?.id || data?.id
+      if (taskId) {
+        router.push(`/dashboard/tasks/${taskId}`)
+      } else {
+        router.push('/dashboard/tasks')
+      }
     } catch (error) {
       console.error('Error creating task:', error)
       alert('Failed to create task')
@@ -162,6 +211,13 @@ export default function NewTaskPage() {
             <CardDescription>Enter the task details</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {jobIdParam && (
+              <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+                Linked to Job <strong>{jobContext?.jobNumber || jobNumberParam || 'Loading...'}</strong>
+                {` `}for Client <strong>{jobContext?.client.name || clientNameParam || 'Loading...'}</strong>
+                {` `}({jobContext?.title || projectTypeParam || 'Project'})
+              </div>
+            )}
             <div>
               <Label htmlFor="title">Title *</Label>
               <Input
@@ -253,6 +309,7 @@ export default function NewTaskPage() {
                   value={formData.clientId}
                   onChange={(e) => setFormData({ ...formData, clientId: e.target.value, jobId: '' })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={Boolean(jobIdParam)}
                 >
                   <option value="">Select a client</option>
                   {clients.map((client) => (
@@ -269,7 +326,7 @@ export default function NewTaskPage() {
                   value={formData.jobId}
                   onChange={(e) => setFormData({ ...formData, jobId: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  disabled={!formData.clientId}
+                  disabled={!formData.clientId || Boolean(jobIdParam)}
                 >
                   <option value="">Select a job</option>
                   {jobs.map((job) => (

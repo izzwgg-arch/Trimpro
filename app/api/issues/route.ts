@@ -155,6 +155,42 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Title is required' }, { status: 400 })
     }
 
+    let resolvedClientId = clientId || null
+
+    // If created from a job context, enforce issue -> job -> client relational mapping.
+    if (jobId) {
+      const job = await prisma.job.findFirst({
+        where: {
+          id: jobId,
+          tenantId: user.tenantId,
+        },
+        select: {
+          id: true,
+          clientId: true,
+        },
+      })
+
+      if (!job) {
+        return NextResponse.json({ error: 'Job not found' }, { status: 404 })
+      }
+
+      resolvedClientId = job.clientId
+    }
+
+    if (resolvedClientId) {
+      const client = await prisma.client.findFirst({
+        where: {
+          id: resolvedClientId,
+          tenantId: user.tenantId,
+        },
+        select: { id: true },
+      })
+
+      if (!client) {
+        return NextResponse.json({ error: 'Client not found' }, { status: 404 })
+      }
+    }
+
     // Create issue
     const issue = await prisma.issue.create({
       data: {
@@ -166,7 +202,7 @@ export async function POST(request: NextRequest) {
         priority: priority || 'MEDIUM',
         assigneeId: assigneeId || null,
         createdById: user.id,
-        clientId: clientId || null,
+        clientId: resolvedClientId,
         leadId: leadId || null,
         jobId: jobId || null,
         firstResponseAt: null,
@@ -209,7 +245,7 @@ export async function POST(request: NextRequest) {
         type: 'ISSUE_CREATED',
         description: `Issue "${title}" created`,
         issueId: issue.id,
-        clientId: clientId || undefined,
+        clientId: resolvedClientId || undefined,
         jobId: jobId || undefined,
       },
     })

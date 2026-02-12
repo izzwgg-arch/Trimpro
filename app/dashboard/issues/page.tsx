@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -77,12 +77,20 @@ const typeColors: Record<string, string> = {
 
 export default function IssuesPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [issues, setIssues] = useState<Issue[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
   const [type, setType] = useState('all')
   const [filter, setFilter] = useState('all') // all, my, assigned, watched
+
+  useEffect(() => {
+    const statusParam = searchParams.get('status')
+    if (statusParam) {
+      setStatus(statusParam)
+    }
+  }, [searchParams])
 
   useEffect(() => {
     fetchIssues()

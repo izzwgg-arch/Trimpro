@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatCurrency } from '@/lib/utils'
 import { formatDateTime } from '@/lib/utils'
@@ -221,38 +222,42 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Unpaid Invoices</CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {formatCurrency(stats.kpis.unpaidInvoicesTotal)}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {stats.kpis.unpaidInvoicesCount} invoices
-              {stats.kpis.overdueInvoices > 0 && (
-                <span className="text-red-600 ml-1">
-                  ({stats.kpis.overdueInvoices} overdue)
-                </span>
-              )}
-            </p>
-          </CardContent>
-        </Card>
+        <Link href="/dashboard/invoices?status=UNPAID_OVERDUE" className="block">
+          <Card className="hover:shadow-md transition-shadow cursor-pointer">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Unpaid Invoices</CardTitle>
+              <FileText className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {formatCurrency(stats.kpis.unpaidInvoicesTotal)}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {stats.kpis.unpaidInvoicesCount} invoices
+                {stats.kpis.overdueInvoices > 0 && (
+                  <span className="text-red-600 ml-1">
+                    ({stats.kpis.overdueInvoices} overdue)
+                  </span>
+                )}
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Jobs</CardTitle>
-            <Briefcase className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.kpis.activeJobs}</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {stats.kpis.todaysJobs} scheduled today
-            </p>
-          </CardContent>
-        </Card>
+        <Link href="/dashboard/jobs?status=ACTIVE" className="block">
+          <Card className="hover:shadow-md transition-shadow cursor-pointer">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Active Jobs</CardTitle>
+              <Briefcase className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.kpis.activeJobs}</div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {stats.kpis.todaysJobs} scheduled today
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       {/* Secondary KPIs */}
@@ -279,27 +284,31 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pending Tasks</CardTitle>
-            <CheckSquare className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.kpis.pendingTasks}</div>
-            <p className="text-xs text-muted-foreground mt-1">Assigned to you</p>
-          </CardContent>
-        </Card>
+        <Link href="/dashboard/tasks?status=PLANNING_PENDING" className="block">
+          <Card className="hover:shadow-md transition-shadow cursor-pointer">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Planning Tasks</CardTitle>
+              <CheckSquare className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.kpis.pendingTasks}</div>
+              <p className="text-xs text-muted-foreground mt-1">Planning / Pending</p>
+            </CardContent>
+          </Card>
+        </Link>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Open Issues</CardTitle>
-            <AlertCircle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.kpis.openIssues}</div>
-            <p className="text-xs text-muted-foreground mt-1">Requires attention</p>
-          </CardContent>
-        </Card>
+        <Link href="/dashboard/issues?status=OPEN" className="block">
+          <Card className="hover:shadow-md transition-shadow cursor-pointer">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Open Issues</CardTitle>
+              <AlertCircle className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.kpis.openIssues}</div>
+              <p className="text-xs text-muted-foreground mt-1">Requires attention</p>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       {/* Charts Section */}

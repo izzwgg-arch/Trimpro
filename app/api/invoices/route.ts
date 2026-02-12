@@ -28,7 +28,13 @@ export async function GET(request: NextRequest) {
     }
 
     if (status !== 'all') {
-      where.status = status
+      if (status === 'UNPAID_OVERDUE') {
+        where.status = {
+          in: ['DRAFT', 'SENT', 'VIEWED', 'PARTIAL', 'OVERDUE'],
+        }
+      } else {
+        where.status = status
+      }
     }
 
     if (clientId) {
