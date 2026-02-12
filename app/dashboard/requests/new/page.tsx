@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ArrowLeft, Save } from 'lucide-react'
 import Link from 'next/link'
-import { SearchableSelect } from '@/components/ui/searchable-select'
 
 interface User {
   id: string
@@ -79,11 +78,6 @@ export default function NewRequestPage() {
     } catch (error) {
       console.error('Error fetching clients:', error)
     }
-  }
-
-  const getClientOptionLabel = (client: Client) => {
-    const secondary = client.companyName || client.email || client.phone || ''
-    return secondary ? `${client.name} — ${secondary}` : client.name
   }
 
   const handleExistingClientSelect = (clientId: string) => {
@@ -199,17 +193,23 @@ export default function NewRequestPage() {
 
             {clientMode === 'existing' && (
               <div>
-                <Label htmlFor="clientPicker">Select Client *</Label>
-                <SearchableSelect
+                <Label htmlFor="clientId">Select Client *</Label>
+                <select
+                  id="clientId"
                   value={formData.clientId}
-                  options={clients.map((client) => ({
-                    value: client.id,
-                    label: getClientOptionLabel(client),
-                  }))}
-                  onChange={handleExistingClientSelect}
-                  placeholder="Search and select client..."
-                  emptyText="No clients found"
-                />
+                  onChange={(e) => handleExistingClientSelect(e.target.value)}
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  required={clientMode === 'existing'}
+                >
+                  <option value="">Select client...</option>
+                  {clients.map((client) => (
+                    <option key={client.id} value={client.id}>
+                      {client.name}
+                      {client.companyName ? ` — ${client.companyName}` : ''}
+                      {client.email ? ` — ${client.email}` : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
             )}
 

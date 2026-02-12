@@ -8,7 +8,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { SearchableSelect } from '@/components/ui/searchable-select'
 
 type RequestResponse = {
   lead: {
@@ -110,11 +109,6 @@ export default function EditRequestPage() {
     } catch (error) {
       console.error('Error fetching clients:', error)
     }
-  }
-
-  const getClientOptionLabel = (client: Client) => {
-    const secondary = client.companyName || client.email || client.phone || ''
-    return secondary ? `${client.name} — ${secondary}` : client.name
   }
 
   const fetchRequest = async () => {
@@ -320,15 +314,12 @@ export default function EditRequestPage() {
 
             {clientMode === 'existing' && (
               <div>
-                <Label htmlFor="clientPicker">Select Client *</Label>
-                <SearchableSelect
+                <Label htmlFor="clientId">Select Client *</Label>
+                <select
+                  id="clientId"
                   value={formData.clientId}
-                  options={clients.map((client) => ({
-                    value: client.id,
-                    label: getClientOptionLabel(client),
-                  }))}
-                  onChange={(clientId) => {
-                    const selected = clients.find((client) => client.id === clientId)
+                  onChange={(e) => {
+                    const selected = clients.find((client) => client.id === e.target.value)
                     if (!selected) {
                       setFormData((prev) => ({ ...prev, clientId: '' }))
                       return
@@ -344,9 +335,18 @@ export default function EditRequestPage() {
                       company: selected.companyName || '',
                     }))
                   }}
-                  placeholder="Search and select client..."
-                  emptyText="No clients found"
-                />
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  required={clientMode === 'existing'}
+                >
+                  <option value="">Select client...</option>
+                  {clients.map((client) => (
+                    <option key={client.id} value={client.id}>
+                      {client.name}
+                      {client.companyName ? ` — ${client.companyName}` : ''}
+                      {client.email ? ` — ${client.email}` : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
             )}
 
