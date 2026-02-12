@@ -129,6 +129,7 @@ export default function InvoiceDetailPage() {
   const [duplicating, setDuplicating] = useState(false)
   const [creatingPaymentLink, setCreatingPaymentLink] = useState(false)
   const [billRest, setBillRest] = useState(false)
+  const [sending, setSending] = useState(false)
 
   useEffect(() => {
     fetchInvoice()
@@ -426,6 +427,49 @@ export default function InvoiceDetailPage() {
     }
   }
 
+  const handleSendInvoice = async () => {
+    if (!invoice || sending) return
+    const defaultEmail = invoice.client?.email || invoice.client?.contacts?.[0]?.email || ''
+    const recipientEmail = window.prompt('Send invoice to email:', defaultEmail)?.trim()
+    if (!recipientEmail) return
+
+    setSending(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+
+      const response = await fetch(`/api/invoices/${invoiceId}/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          email: recipientEmail,
+          subject: `Invoice ${invoice.invoiceNumber}`,
+          message: `Please review and pay invoice ${invoice.invoiceNumber}.`,
+        }),
+      })
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'Failed to send invoice email')
+        return
+      }
+
+      alert('Invoice email sent successfully')
+      await fetchInvoice()
+    } catch (error) {
+      console.error('Send invoice error:', error)
+      alert('Failed to send invoice email')
+    } finally {
+      setSending(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -501,9 +545,9 @@ export default function InvoiceDetailPage() {
             <Edit className="mr-2 h-4 w-4" />
             Edit
           </Button>
-          <Button>
+          <Button onClick={handleSendInvoice} disabled={sending}>
             <Send className="mr-2 h-4 w-4" />
-            Send
+            {sending ? 'Sending...' : 'Send'}
           </Button>
         </div>
       </div>

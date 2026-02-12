@@ -9,6 +9,7 @@ import {
   ArrowLeft,
   Calendar,
   DollarSign,
+  Mail,
   User,
   Building2,
   FileText,
@@ -122,6 +123,7 @@ export default function EstimateDetailPage() {
   const [billingMode, setBillingMode] = useState<'FULL' | 'PERCENTAGE' | 'MANUAL'>('FULL')
   const [billingPercent, setBillingPercent] = useState('50')
   const [selectedLineItemIds, setSelectedLineItemIds] = useState<string[]>([])
+  const [sending, setSending] = useState(false)
 
   useEffect(() => {
     fetchEstimate()
@@ -297,6 +299,49 @@ export default function EstimateDetailPage() {
     }
   }
 
+  const handleSendEstimate = async () => {
+    if (!estimate || sending) return
+    const defaultEmail = estimate.client?.email || estimate.client?.contacts?.[0]?.email || ''
+    const recipientEmail = window.prompt('Send estimate to email:', defaultEmail)?.trim()
+    if (!recipientEmail) return
+
+    setSending(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+
+      const response = await fetch(`/api/estimates/${estimateId}/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          email: recipientEmail,
+          subject: `Estimate ${estimate.estimateNumber}`,
+          message: `Please review estimate ${estimate.estimateNumber}.`,
+        }),
+      })
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'Failed to send estimate email')
+        return
+      }
+
+      alert('Estimate email sent successfully')
+      await fetchEstimate()
+    } catch (error) {
+      console.error('Send estimate error:', error)
+      alert('Failed to send estimate email')
+    } finally {
+      setSending(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -365,9 +410,9 @@ export default function EstimateDetailPage() {
               Edit
             </Button>
           </Link>
-          <Button>
+          <Button onClick={handleSendEstimate} disabled={sending}>
             <Send className="mr-2 h-4 w-4" />
-            Send
+            {sending ? 'Sending...' : 'Send'}
           </Button>
         </div>
       </div>
