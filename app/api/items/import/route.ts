@@ -2,6 +2,52 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 
+function parseCsvLine(line: string): string[] {
+  const values: string[] = []
+  let current = ''
+  let inQuotes = false
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i]
+    const next = line[i + 1]
+
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        current += '"'
+        i++
+      } else {
+        inQuotes = !inQuotes
+      }
+      continue
+    }
+
+    if (char === ',' && !inQuotes) {
+      values.push(current.trim())
+      current = ''
+      continue
+    }
+
+    current += char
+  }
+
+  values.push(current.trim())
+  return values
+}
+
+function toHeaderMap(headers: string[]) {
+  const map = new Map<string, number>()
+  headers.forEach((header, index) => {
+    map.set(header.trim().toLowerCase(), index)
+  })
+  return map
+}
+
+function getByHeader(values: string[], headerMap: Map<string, number>, header: string): string {
+  const index = headerMap.get(header.toLowerCase())
+  if (index === undefined || index < 0 || index >= values.length) return ''
+  return values[index] || ''
+}
+
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
@@ -16,13 +62,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'CSV data is required' }, { status: 400 })
     }
 
-    // Parse CSV
-    const lines = csvData.split('\n').filter((line: string) => line.trim())
+    // Parse CSV (quote-safe and tolerant of CRLF/BOM)
+    const cleaned = csvData.replace(/^\uFEFF/, '')
+    const lines = cleaned
+      .split(/\r?\n/)
+      .map((line: string) => line.trim())
+      .filter((line: string) => line)
     if (lines.length < 2) {
       return NextResponse.json({ error: 'CSV must have at least a header and one data row' }, { status: 400 })
     }
 
-    const headers = lines[0].split(',').map((h: string) => h.trim().replace(/^"|"$/g, ''))
+    const headers = parseCsvLine(lines[0]).map((h: string) => h.trim().replace(/^"|"$/g, ''))
+    const headerMap = toHeaderMap(headers)
     const dataRows = lines.slice(1)
 
     const errors: Array<{ row: number; error: string }> = []
@@ -33,35 +84,57 @@ export async function POST(request: NextRequest) {
       const row = dataRows[i]
       if (!row.trim()) continue
 
-      const values = row.split(',').map((v: string) => v.trim().replace(/^"|"$/g, '').replace(/""/g, '"'))
+      const values = parseCsvLine(row).map((v: string) => v.replace(/^"|"$/g, '').replace(/""/g, '"'))
       
       try {
-        const nameIndex = headers.indexOf('Name')
-        if (nameIndex === -1 || !values[nameIndex]) {
+        const name = getByHeader(values, headerMap, 'name')
+        if (!name) {
           errors.push({ row: i + 2, error: 'Name is required' })
           continue
         }
 
-        const name = values[nameIndex]
-        const sku = values[headers.indexOf('SKU')] || null
-        const type = values[headers.indexOf('Type')] || 'PRODUCT'
-        const description = values[headers.indexOf('Description')] || null
-        const unit = values[headers.indexOf('Unit')] || 'ea'
-        const defaultUnitCost = values[headers.indexOf('Unit Cost')] ? parseFloat(values[headers.indexOf('Unit Cost')]) : null
-        const defaultUnitPrice = values[headers.indexOf('Unit Price')] ? parseFloat(values[headers.indexOf('Unit Price')]) : 0
-        const taxable = values[headers.indexOf('Taxable')]?.toLowerCase() === 'yes'
-        const taxRate = values[headers.indexOf('Tax Rate')] ? parseFloat(values[headers.indexOf('Tax Rate')]) : null
-        const isActive = values[headers.indexOf('Active')]?.toLowerCase() !== 'no'
-        const vendorName = values[headers.indexOf('Vendor')] || null
-        const categoryName = values[headers.indexOf('Category')] || null
-        const tagsStr = values[headers.indexOf('Tags')] || ''
+        const skuRaw = getByHeader(values, headerMap, 'sku')
+        const typeRaw = getByHeader(values, headerMap, 'type')
+        const descriptionRaw = getByHeader(values, headerMap, 'description')
+        const unitRaw = getByHeader(values, headerMap, 'unit')
+        const unitCostRaw = getByHeader(values, headerMap, 'unit cost')
+        const unitPriceRaw = getByHeader(values, headerMap, 'unit price')
+        const taxableRaw = getByHeader(values, headerMap, 'taxable')
+        const taxRateRaw = getByHeader(values, headerMap, 'tax rate')
+        const activeRaw = getByHeader(values, headerMap, 'active')
+        const vendorRaw = getByHeader(values, headerMap, 'vendor')
+        const categoryRaw = getByHeader(values, headerMap, 'category')
+        const tagsStr = getByHeader(values, headerMap, 'tags')
+        const notesRaw = getByHeader(values, headerMap, 'notes')
+
+        const sku = skuRaw || null
+        const type = (typeRaw || 'PRODUCT').toUpperCase()
+        const description = descriptionRaw || null
+        const unit = unitRaw || 'ea'
+        const defaultUnitCost = unitCostRaw ? parseFloat(unitCostRaw) : null
+        const defaultUnitPrice = unitPriceRaw ? parseFloat(unitPriceRaw) : 0
+        const taxable = taxableRaw ? ['yes', 'true', '1'].includes(taxableRaw.toLowerCase()) : true
+        const taxRate = taxRateRaw ? parseFloat(taxRateRaw) : null
+        const isActive = activeRaw ? !['no', 'false', '0'].includes(activeRaw.toLowerCase()) : true
+        const vendorName = vendorRaw || null
+        const categoryName = categoryRaw || null
         const tags = tagsStr ? tagsStr.split(';').map((t: string) => t.trim()).filter(Boolean) : []
-        const notes = values[headers.indexOf('Notes')] || null
+        const notes = notesRaw || null
 
         // Validate type
         const validTypes = ['PRODUCT', 'SERVICE', 'MATERIAL', 'FEE']
-        if (!validTypes.includes(type.toUpperCase())) {
+        if (!validTypes.includes(type)) {
           errors.push({ row: i + 2, error: `Invalid type: ${type}. Must be one of: ${validTypes.join(', ')}` })
+          continue
+        }
+
+        if (unitCostRaw && Number.isNaN(defaultUnitCost)) {
+          errors.push({ row: i + 2, error: `Invalid Unit Cost: ${unitCostRaw}` })
+          continue
+        }
+
+        if (unitPriceRaw && Number.isNaN(defaultUnitPrice)) {
+          errors.push({ row: i + 2, error: `Invalid Unit Price: ${unitPriceRaw}` })
           continue
         }
 
@@ -117,7 +190,7 @@ export async function POST(request: NextRequest) {
             tenantId: user.tenantId,
             name,
             sku,
-            type: type.toUpperCase() as any,
+            type: type as any,
             description,
             unit,
             defaultUnitCost,

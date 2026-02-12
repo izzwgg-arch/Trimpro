@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Plus, Search, Filter, Package, Download, Upload, Trash2, Edit, Eye, Copy } from 'lucide-react'
 import Link from 'next/link'
@@ -199,6 +200,15 @@ export default function ItemsPage() {
       alert('Failed to import items')
     } finally {
       setImporting(false)
+    }
+  }
+
+  const handleImportDialogOpenChange = (open: boolean) => {
+    // Keep dialog stable while importing; close only when user cancels or import completes.
+    if (importing && !open) return
+    setShowImportDialog(open)
+    if (!open) {
+      setImportFile(null)
     }
   }
 
@@ -568,36 +578,45 @@ export default function ItemsPage() {
       )}
 
       {/* Import Dialog */}
-      {showImportDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <Card className="w-full max-w-md">
-            <CardHeader>
-              <CardTitle>Import Items from CSV</CardTitle>
-              <CardDescription>
-                Upload a CSV file with item data. Download the template for the correct format.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">CSV File</label>
-                <Input
-                  type="file"
-                  accept=".csv"
-                  onChange={(e) => setImportFile(e.target.files?.[0] || null)}
-                />
-              </div>
-              <div className="flex justify-end space-x-2">
-                <Button variant="outline" onClick={() => { setShowImportDialog(false); setImportFile(null) }}>
-                  Cancel
-                </Button>
-                <Button onClick={handleImport} disabled={!importFile || importing}>
-                  {importing ? 'Importing...' : 'Import'}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      <Dialog open={showImportDialog} onOpenChange={handleImportDialogOpenChange}>
+        <DialogContent
+          onPointerDownOutside={(e) => {
+            if (importing) e.preventDefault()
+          }}
+          onEscapeKeyDown={(e) => {
+            if (importing) e.preventDefault()
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Import Items from CSV</DialogTitle>
+            <DialogDescription>
+              Upload a CSV file with item data. Download the template for the correct format.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">CSV File</label>
+              <Input
+                type="file"
+                accept=".csv"
+                onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+              />
+            </div>
+            <div className="flex justify-end space-x-2">
+              <Button
+                variant="outline"
+                onClick={() => handleImportDialogOpenChange(false)}
+                disabled={importing}
+              >
+                Cancel
+              </Button>
+              <Button onClick={handleImport} disabled={!importFile || importing}>
+                {importing ? 'Importing...' : 'Import'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
