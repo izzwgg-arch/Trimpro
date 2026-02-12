@@ -32,42 +32,6 @@ const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
 >(({ className, children, ...props }, ref) => {
-  // Cleanup orphaned overlays on mount/unmount (safely)
-  React.useEffect(() => {
-    const cleanup = () => {
-      try {
-        // Only clean up orphaned overlays, not ones managed by this dialog
-        const overlays = document.querySelectorAll('[data-radix-dialog-overlay]')
-        overlays.forEach((overlay) => {
-          const state = overlay.getAttribute('data-state')
-          const root = overlay.closest('[data-radix-dialog-root]')
-          // Only remove if closed and has no active dialog root
-          if (state === 'closed' && (!root || root.getAttribute('data-state') === 'closed')) {
-            const parent = overlay.parentNode
-            if (parent && parent.contains(overlay)) {
-              try {
-                parent.removeChild(overlay)
-              } catch (e) {
-                // Ignore if already removed - this prevents removeChild errors
-              }
-            }
-          }
-        })
-      } catch (e) {
-        // Ignore cleanup errors
-      }
-    }
-
-    // Clean up on mount and periodically
-    cleanup()
-    const interval = setInterval(cleanup, 1000)
-    
-    return () => {
-      clearInterval(interval)
-      cleanup()
-    }
-  }, [])
-
   return (
     <DialogPortal>
       <DialogOverlay />
@@ -80,7 +44,10 @@ const DialogContent = React.forwardRef<
         {...props}
       >
         {children}
-        <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-white transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-gray-950 focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-gray-100 data-[state=open]:text-gray-500">
+        <DialogPrimitive.Close
+          type="button"
+          className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-white transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-gray-950 focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-gray-100 data-[state=open]:text-gray-500"
+        >
           <X className="h-4 w-4" />
           <span className="sr-only">Close</span>
         </DialogPrimitive.Close>
