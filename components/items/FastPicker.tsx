@@ -72,34 +72,30 @@ export function FastPicker({
     }
   }, [inputRefCallback])
 
-  // Combine items and bundles
-  const allItems = useRef<FastPickerItem[]>([])
-  
-  useEffect(() => {
-    allItems.current = [
+  // Combine items and bundles from props (stable, render-driven source of truth)
+  const allItems = useMemo(
+    () => [
       ...items.map(item => ({ ...item, kind: 'SINGLE' as const })),
       ...bundles.map(bundle => ({ ...bundle, kind: 'BUNDLE' as const })),
-    ]
-    // Always update filtered items when items/bundles change
-    setFilteredItems(allItems.current)
-    setSelectedIndex(0)
-  }, [items, bundles])
+    ],
+    [items, bundles]
+  )
 
   // Query-driven filtering: only recalculates when query/items change,
   // not on every arrow key navigation re-render.
   const filteredByQuery = useMemo(() => {
     const query = searchQuery.trim()
     if (!query.trim()) {
-      return allItems.current
+      return allItems
     }
 
     const lowerQuery = query.toLowerCase()
-    return allItems.current.filter(item => {
+    return allItems.filter(item => {
       const nameMatch = item.name.toLowerCase().includes(lowerQuery)
       const skuMatch = item.sku?.toLowerCase().includes(lowerQuery)
       return nameMatch || skuMatch
     })
-  }, [searchQuery, items, bundles])
+  }, [searchQuery, allItems])
 
   useEffect(() => {
     setFilteredItems(filteredByQuery)
