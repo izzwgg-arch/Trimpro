@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -58,6 +58,7 @@ const toNumber = (value: unknown, fallback = 0): number => {
 export default function NewBundlePage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
+  const componentPickerInputRef = useRef<HTMLInputElement | null>(null)
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [categories, setCategories] = useState<ItemCategory[]>([])
   const [items, setItems] = useState<Item[]>([])
@@ -249,6 +250,15 @@ export default function NewBundlePage() {
       addItemComponent(selected.id)
     }
     setComponentPickerValue('')
+
+    // Keep rapid-entry flow: after selecting one item, focus picker and reopen for next.
+    setTimeout(() => {
+      const input = componentPickerInputRef.current
+      if (input) {
+        input.focus()
+        input.dispatchEvent(new Event('focus', { bubbles: true }))
+      }
+    }, 50)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -456,6 +466,9 @@ export default function NewBundlePage() {
                     bundles={pickerBundles}
                     placeholder="Type to search items/bundles and press Enter"
                     className="mt-1"
+                    inputRef={(el) => {
+                      componentPickerInputRef.current = el
+                    }}
                   />
                 </div>
 
