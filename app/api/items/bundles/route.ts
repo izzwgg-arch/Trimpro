@@ -194,6 +194,8 @@ export async function GET(request: NextRequest) {
             name: true,
             sku: true,
             description: true,
+            defaultUnitPrice: true,
+            defaultUnitCost: true,
           },
         },
       },

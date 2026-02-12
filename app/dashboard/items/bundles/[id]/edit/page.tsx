@@ -36,6 +36,8 @@ interface Bundle {
   item: {
     id: string
     name: string
+    defaultUnitPrice?: number | string | null
+    defaultUnitCost?: number | string | null
   }
 }
 
@@ -256,6 +258,20 @@ export default function EditBundlePage() {
           const cost = comp.defaultUnitCostOverride
             ? parseFloat(comp.defaultUnitCostOverride)
             : toNumber(item.defaultUnitCost)
+          totalPrice += price * qty
+          totalCost += cost * qty
+        }
+      } else if (comp.componentType === 'BUNDLE') {
+        const bundle = bundles.find((b) => b.id === comp.componentBundleId)
+        if (bundle) {
+          const basePrice = toNumber(bundle.item?.defaultUnitPrice)
+          const baseCost = toNumber(bundle.item?.defaultUnitCost)
+          const price = comp.defaultUnitPriceOverride
+            ? parseFloat(comp.defaultUnitPriceOverride)
+            : basePrice
+          const cost = comp.defaultUnitCostOverride
+            ? parseFloat(comp.defaultUnitCostOverride)
+            : baseCost
           totalPrice += price * qty
           totalCost += cost * qty
         }
