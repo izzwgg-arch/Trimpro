@@ -26,7 +26,10 @@ function parseJobSiteAddress(address: string | null | undefined) {
   }
 }
 
-async function ensureJobFromEstimate(tenantId: string, estimateId: string) {
+async function ensureJobFromEstimate(tenantId: string, estimateId: string): Promise<{
+  job: { id: string; jobNumber: string; title: string } | null
+  created: boolean
+}> {
   const estimate = await prisma.estimate.findFirst({
     where: { id: estimateId, tenantId },
     include: {
@@ -37,8 +40,8 @@ async function ensureJobFromEstimate(tenantId: string, estimateId: string) {
     },
   })
 
-  if (!estimate) return null
-  if (estimate.jobId && estimate.job) return estimate.job
+  if (!estimate) return { job: null, created: false }
+  if (estimate.jobId && estimate.job) return { job: estimate.job, created: false }
 
   let clientId = estimate.clientId || null
   if (!clientId && estimate.lead?.convertedToClientId) {
@@ -88,9 +91,9 @@ async function ensureJobFromEstimate(tenantId: string, estimateId: string) {
     }
   }
 
-  if (!clientId) return null
+  if (!clientId) return { job: null, created: false }
 
-  return prisma.$transaction(async (tx) => {
+  const createdJob = await prisma.$transaction(async (tx) => {
     const jobCount = await tx.job.count({ where: { tenantId } })
     const jobNumber = `JOB-${String(jobCount + 1).padStart(6, '0')}`
     const createdJob = await tx.job.create({
@@ -144,6 +147,7 @@ async function ensureJobFromEstimate(tenantId: string, estimateId: string) {
 
     return createdJob
   })
+  return { job: createdJob, created: true }
 }
 
 export async function POST(request: NextRequest) {
@@ -185,6 +189,9 @@ export async function POST(request: NextRequest) {
         })
       : null
 
+    let newPaidAmount = Number(invoice.paidAmount)
+    let newBalance = Number(invoice.balance)
+
     if (!existingPayment) {
       await prisma.payment.create({
         data: {
@@ -198,32 +205,37 @@ export async function POST(request: NextRequest) {
           processedAt: new Date(),
         },
       })
+      newPaidAmount = Number(invoice.paidAmount) + amount
+      newBalance = Math.max(0, Number(invoice.total) - newPaidAmount)
+
+      await prisma.invoice.update({
+        where: { id: invoice.id },
+        data: {
+          paidAmount: newPaidAmount,
+          balance: newBalance,
+          status: newBalance <= 0 ? 'PAID' : newPaidAmount > 0 ? 'PARTIAL' : invoice.status,
+          paidAt: newBalance <= 0 ? new Date() : invoice.paidAt,
+          solaTransactionId: transactionId || invoice.solaTransactionId,
+        },
+      })
     }
 
-    const newPaidAmount = Number(invoice.paidAmount) + amount
-    const newBalance = Math.max(0, Number(invoice.total) - newPaidAmount)
+    if (!existingPayment) {
+      await notifyInvoicePaid(
+        invoice.tenantId,
+        invoice.id,
+        invoice.invoiceNumber,
+        amount,
+        invoice.client.name
+      )
+    }
 
-    await prisma.invoice.update({
-      where: { id: invoice.id },
-      data: {
-        paidAmount: newPaidAmount,
-        balance: newBalance,
-        status: newBalance <= 0 ? 'PAID' : newPaidAmount > 0 ? 'PARTIAL' : invoice.status,
-        paidAt: newBalance <= 0 ? new Date() : invoice.paidAt,
-        solaTransactionId: transactionId || invoice.solaTransactionId,
-      },
-    })
-
-    await notifyInvoicePaid(
-      invoice.tenantId,
-      invoice.id,
-      invoice.invoiceNumber,
-      amount,
-      invoice.client.name
-    )
-
-    if (invoice.estimateId && newBalance <= 0) {
-      const job = await ensureJobFromEstimate(invoice.tenantId, invoice.estimateId)
+    // Auto-create/link job as soon as any payment succeeds for an estimate-linked invoice.
+    if (invoice.estimateId && newPaidAmount > 0) {
+      const { job, created } = await ensureJobFromEstimate(invoice.tenantId, invoice.estimateId)
+      if (!created) {
+        return NextResponse.json({ ok: true })
+      }
       const users = await prisma.user.findMany({
         where: {
           tenantId: invoice.tenantId,
