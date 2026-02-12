@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { Plus, Search, Filter, Briefcase, Calendar, DollarSign, Trash2 } from 'lucide-react'
+import { Plus, Search, Filter, Briefcase, Calendar, DollarSign, Trash2, FileText } from 'lucide-react'
 import Link from 'next/link'
 
 interface Job {
@@ -64,6 +64,7 @@ export default function JobsPage() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [convertingId, setConvertingId] = useState<string | null>(null)
 
   useEffect(() => {
     fetchJobs()
@@ -141,6 +142,48 @@ export default function JobsPage() {
       alert('Failed to delete job')
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  const handleConvertToInvoice = async (jobId: string, jobTitle: string) => {
+    if (!confirm(`Convert job "${jobTitle}" to invoice?`)) return
+    setConvertingId(jobId)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+
+      const response = await fetch(`/api/jobs/${jobId}/convert-to-invoice`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      if (response.status === 401) {
+        router.push('/auth/login')
+        return
+      }
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'Failed to convert job to invoice')
+        return
+      }
+
+      const invoiceId = data?.invoice?.id
+      if (invoiceId) {
+        router.push(`/dashboard/invoices/${invoiceId}`)
+      } else {
+        fetchJobs()
+      }
+    } catch (error) {
+      console.error('Error converting job to invoice:', error)
+      alert('Failed to convert job to invoice')
+    } finally {
+      setConvertingId(null)
     }
   }
 
@@ -300,18 +343,33 @@ export default function JobsPage() {
                         <span>{job._count.issues} issues</span>
                       )}
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleDelete(job.id, job.title)
-                      }}
-                      disabled={deletingId === job.id}
-                      className="text-red-600 hover:text-red-700 hover:bg-red-50 h-7 px-2"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleConvertToInvoice(job.id, job.title)
+                        }}
+                        disabled={convertingId === job.id}
+                        className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 h-7 px-2"
+                        title="Convert to Invoice"
+                      >
+                        <FileText className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleDelete(job.id, job.title)
+                        }}
+                        disabled={deletingId === job.id}
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50 h-7 px-2"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </CardContent>

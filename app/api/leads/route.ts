@@ -108,6 +108,8 @@ export async function POST(request: NextRequest) {
       email,
       phone,
       company,
+      clientId,
+      jobSiteAddress,
       source,
       status,
       value,
@@ -134,6 +136,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    if (clientId) {
+      const client = await prisma.client.findFirst({
+        where: {
+          id: clientId,
+          tenantId: user.tenantId,
+        },
+      })
+      if (!client) {
+        return NextResponse.json({ error: 'Client not found' }, { status: 404 })
+      }
+    }
+
     // Create lead
     const lead = await prisma.lead.create({
       data: {
@@ -143,6 +157,8 @@ export async function POST(request: NextRequest) {
         email: email || null,
         phone: phone || null,
         company: company || null,
+        convertedToClientId: clientId || null,
+        jobSiteAddress: jobSiteAddress || null,
         source: source || 'OTHER',
         status: status || 'NEW',
         value: value ? parseFloat(value) : null,

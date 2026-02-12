@@ -37,6 +37,7 @@ interface RequestDetail {
   value: string | null
   probability: number
   notes: string | null
+  jobSiteAddress: string | null
   convertedToClientId: string | null
   convertedAt: string | null
   assignedTo: {
@@ -395,6 +396,24 @@ export default function RequestDetailPage() {
               </div>
             </CardContent>
           </Card>
+
+          {request.jobSiteAddress && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Job Site</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-gray-700">{request.jobSiteAddress}</p>
+                <iframe
+                  title="Job Site Map"
+                  className="mt-3 h-56 w-full rounded-md border"
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                  src={`https://maps.google.com/maps?q=${encodeURIComponent(request.jobSiteAddress)}&output=embed`}
+                />
+              </CardContent>
+            </Card>
+          )}
 
           {/* Financial Information */}
           {(request.value || request.probability) && (

@@ -293,6 +293,7 @@ model Lead {
   value       Decimal?   @db.Decimal(10, 2)
   probability Int?       @default(50) // 0-100
   notes       String?    @db.Text
+  jobSiteAddress String? @db.Text
 
   // Conversion
   convertedToClientId String?
@@ -430,6 +431,7 @@ model Estimate {
   jobId          String?        @unique
   estimateNumber String         @unique
   title          String
+  jobSiteAddress String?        @db.Text
   status         EstimateStatus @default(DRAFT)
 
   // Financials

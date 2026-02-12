@@ -114,6 +114,7 @@ export async function PUT(
     const body = await request.json()
     const {
       title,
+      jobSiteAddress,
       lineItems,
       groups, // Array of { groupId, name, sourceBundleId }
       taxRate,
@@ -237,6 +238,10 @@ export async function PUT(
       where: { id: params.id },
       data: {
         title: title !== undefined ? title : existing.title,
+        jobSiteAddress:
+          jobSiteAddress !== undefined
+            ? (jobSiteAddress || null)
+            : existing.jobSiteAddress,
         subtotal: subtotal,
         taxRate: taxRateNum,
         taxAmount: tax,

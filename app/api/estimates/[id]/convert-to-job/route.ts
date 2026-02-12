@@ -2,6 +2,30 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 
+function normalizePhone(value: string | null | undefined) {
+  return (value || '').replace(/\D/g, '')
+}
+
+function parseJobSiteAddress(address: string | null | undefined) {
+  if (!address) return null
+  const trimmed = address.trim()
+  if (!trimmed) return null
+  const parts = trimmed.split(',').map((p) => p.trim()).filter(Boolean)
+  const street = parts[0] || trimmed
+  const city = parts[1] || ''
+  const stateZip = parts[2] || ''
+  const stateZipMatch = stateZip.match(/^([A-Za-z]{2})\s+(.+)$/)
+  const state = stateZipMatch ? stateZipMatch[1] : stateZip
+  const zipCode = stateZipMatch ? stateZipMatch[2] : ''
+  return {
+    street,
+    city,
+    state,
+    zipCode,
+    country: 'US',
+  }
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -39,23 +63,51 @@ export async function POST(
     }
 
     if (!clientId && estimate.lead) {
-      const createdClient = await prisma.client.create({
-        data: {
+      const fullName = `${estimate.lead.firstName} ${estimate.lead.lastName}`.trim()
+      const normalizedEmail = (estimate.lead.email || '').trim().toLowerCase()
+      const normalizedPhone = normalizePhone(estimate.lead.phone)
+      const existingClient = await prisma.client.findFirst({
+        where: {
           tenantId: user.tenantId,
-          name: `${estimate.lead.firstName} ${estimate.lead.lastName}`.trim(),
-          companyName: estimate.lead.company || null,
-          email: estimate.lead.email || null,
-          phone: estimate.lead.phone || null,
-          notes: estimate.lead.notes || null,
-          isActive: true,
+          OR: [
+            ...(normalizedEmail
+              ? [{ email: { equals: normalizedEmail, mode: 'insensitive' as const } }]
+              : []),
+            ...(normalizedPhone ? [{ phone: { contains: normalizedPhone } }] : []),
+            {
+              AND: [
+                { name: { equals: fullName, mode: 'insensitive' } },
+                ...(estimate.lead.company
+                  ? [{ companyName: { equals: estimate.lead.company, mode: 'insensitive' } }]
+                  : []),
+              ],
+            },
+          ],
         },
+        orderBy: { updatedAt: 'desc' },
       })
-      clientId = createdClient.id
+
+      if (existingClient) {
+        clientId = existingClient.id
+      } else {
+        const createdClient = await prisma.client.create({
+          data: {
+            tenantId: user.tenantId,
+            name: fullName,
+            companyName: estimate.lead.company || null,
+            email: estimate.lead.email || null,
+            phone: estimate.lead.phone || null,
+            notes: estimate.lead.notes || null,
+            isActive: true,
+          },
+        })
+        clientId = createdClient.id
+      }
 
       await prisma.lead.update({
         where: { id: estimate.lead.id },
         data: {
-          convertedToClientId: createdClient.id,
+          convertedToClientId: clientId,
           convertedAt: estimate.lead.convertedAt || new Date(),
           status: 'CONVERTED',
         },
@@ -87,6 +139,21 @@ export async function POST(
           estimateAmount: estimate.total,
         },
       })
+
+      const parsedAddress = parseJobSiteAddress(estimate.jobSiteAddress)
+      if (parsedAddress) {
+        await tx.address.create({
+          data: {
+            jobId: createdJob.id,
+            type: 'job_site',
+            street: parsedAddress.street,
+            city: parsedAddress.city,
+            state: parsedAddress.state,
+            zipCode: parsedAddress.zipCode,
+            country: parsedAddress.country,
+          },
+        })
+      }
 
       await tx.estimate.update({
         where: { id: estimate.id },

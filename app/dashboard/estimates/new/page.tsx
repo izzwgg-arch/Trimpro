@@ -43,6 +43,7 @@ export default function NewEstimatePage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const clientIdParam = searchParams.get('clientId')
+  const requestIdParam = searchParams.get('requestId')
   
   const [loading, setLoading] = useState(false)
   const [clients, setClients] = useState<Client[]>([])
@@ -65,7 +66,9 @@ export default function NewEstimatePage() {
   
   const [formData, setFormData] = useState({
     clientId: clientIdParam || '',
+    leadId: requestIdParam || '',
     title: '',
+    jobSiteAddress: '',
     taxRate: '0',
     discount: '0',
     validUntil: '',
@@ -80,6 +83,32 @@ export default function NewEstimatePage() {
     fetchClients()
     fetchPickerData()
   }, [])
+
+  useEffect(() => {
+    if (!requestIdParam) return
+    const fetchRequestContext = async () => {
+      try {
+        const token = localStorage.getItem('accessToken')
+        const response = await fetch(`/api/leads/${requestIdParam}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (!response.ok) return
+        const data = await response.json()
+        const lead = data.lead
+        setFormData((prev) => ({
+          ...prev,
+          leadId: lead.id,
+          clientId: lead.convertedToClientId || prev.clientId,
+          title: prev.title || `Estimate for ${lead.firstName} ${lead.lastName}`.trim(),
+          jobSiteAddress: lead.jobSiteAddress || prev.jobSiteAddress,
+          notes: prev.notes || lead.notes || '',
+        }))
+      } catch (error) {
+        console.error('Error loading request context:', error)
+      }
+    }
+    fetchRequestContext()
+  }, [requestIdParam])
 
   const fetchClients = async () => {
     try {
@@ -404,7 +433,9 @@ export default function NewEstimatePage() {
         },
         body: JSON.stringify({
           clientId: formData.clientId,
+          leadId: formData.leadId || null,
           title: formData.title,
+          jobSiteAddress: formData.jobSiteAddress || null,
           subtotal,
           taxRate: taxRate,
           taxAmount: tax,
@@ -504,6 +535,24 @@ export default function NewEstimatePage() {
                     onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                     placeholder="e.g., Kitchen Remodel Estimate"
                   />
+                </div>
+                <div>
+                  <Label htmlFor="jobSiteAddress">Job Site Address</Label>
+                  <Input
+                    id="jobSiteAddress"
+                    value={formData.jobSiteAddress}
+                    onChange={(e) => setFormData({ ...formData, jobSiteAddress: e.target.value })}
+                    placeholder="123 Main St, Austin, TX 78701"
+                  />
+                  {formData.jobSiteAddress.trim() && (
+                    <iframe
+                      title="Estimate Job Site Map"
+                      className="mt-3 h-56 w-full rounded-md border"
+                      loading="lazy"
+                      referrerPolicy="no-referrer-when-downgrade"
+                      src={`https://maps.google.com/maps?q=${encodeURIComponent(formData.jobSiteAddress)}&output=embed`}
+                    />
+                  )}
                 </div>
               </CardContent>
             </Card>

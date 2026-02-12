@@ -18,6 +18,11 @@ export async function POST(
         tenantId: user.tenantId,
       },
       include: {
+        invoices: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { id: true },
+        },
         estimate: {
           include: {
             lineItems: {
@@ -30,6 +35,10 @@ export async function POST(
 
     if (!job) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 })
+    }
+
+    if (job.invoices.length > 0) {
+      return NextResponse.json({ invoice: { id: job.invoices[0].id } }, { status: 200 })
     }
 
     if (!job.estimate || job.estimate.lineItems.length === 0) {

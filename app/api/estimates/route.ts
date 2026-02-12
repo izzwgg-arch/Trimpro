@@ -102,6 +102,7 @@ export async function POST(request: NextRequest) {
       leadId,
       jobId,
       title,
+      jobSiteAddress,
       lineItems,
       groups, // Array of { groupId, name, sourceBundleId }
       taxRate,
@@ -143,6 +144,7 @@ export async function POST(request: NextRequest) {
         jobId: jobId || null,
         estimateNumber,
         title,
+        jobSiteAddress: jobSiteAddress || null,
         status: 'DRAFT',
         subtotal: subtotal,
         taxRate: taxRate ? parseFloat(taxRate) : 0,

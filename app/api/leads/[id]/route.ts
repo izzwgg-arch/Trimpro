@@ -122,6 +122,8 @@ export async function PUT(
       email,
       phone,
       company,
+      clientId,
+      jobSiteAddress,
       source,
       status,
       value,
@@ -156,6 +158,18 @@ export async function PUT(
       }
     }
 
+    if (clientId) {
+      const linkedClient = await prisma.client.findFirst({
+        where: {
+          id: clientId,
+          tenantId: user.tenantId,
+        },
+      })
+      if (!linkedClient) {
+        return NextResponse.json({ error: 'Client not found' }, { status: 404 })
+      }
+    }
+
     // Track status change
     const statusChanged = status && status !== existing.status
     const convertedToClient = status === 'CONVERTED' && existing.status !== 'CONVERTED'
@@ -169,6 +183,14 @@ export async function PUT(
         email: email !== undefined ? email : existing.email,
         phone: phone !== undefined ? phone : existing.phone,
         company: company !== undefined ? company : existing.company,
+        convertedToClientId:
+          clientId !== undefined
+            ? (clientId || null)
+            : existing.convertedToClientId,
+        jobSiteAddress:
+          jobSiteAddress !== undefined
+            ? (jobSiteAddress || null)
+            : existing.jobSiteAddress,
         source: source !== undefined ? source : existing.source,
         status: status !== undefined ? status : existing.status,
         value: value !== undefined ? parseFloat(value) : existing.value,

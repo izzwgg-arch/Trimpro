@@ -22,8 +22,18 @@ type RequestResponse = {
     value: string | null
     probability: number
     notes: string | null
+    jobSiteAddress: string | null
+    convertedToClientId: string | null
     assignedToId: string | null
   }
+}
+
+interface Client {
+  id: string
+  name: string
+  companyName: string | null
+  email: string | null
+  phone: string | null
 }
 
 export default function EditRequestPage() {
@@ -35,8 +45,12 @@ export default function EditRequestPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [users, setUsers] = useState<Array<{ id: string; firstName: string; lastName: string }>>([])
+  const [clients, setClients] = useState<Client[]>([])
+  const [clientMode, setClientMode] = useState<'new' | 'existing'>('new')
+  const [clientSearch, setClientSearch] = useState('')
 
   const [formData, setFormData] = useState({
+    clientId: '',
     firstName: '',
     lastName: '',
     email: '',
@@ -47,6 +61,7 @@ export default function EditRequestPage() {
     value: '',
     probability: '50',
     notes: '',
+    jobSiteAddress: '',
     assignedToId: '',
   })
 
@@ -63,6 +78,7 @@ export default function EditRequestPage() {
     }
 
     fetchUsers()
+    fetchClients()
     fetchRequest()
   }, [normalizedRequestId])
 
@@ -78,6 +94,21 @@ export default function EditRequestPage() {
       }
     } catch (error) {
       console.error('Error fetching users:', error)
+    }
+  }
+
+  const fetchClients = async () => {
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch('/api/clients?limit=1000', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setClients(data.clients || [])
+      }
+    } catch (error) {
+      console.error('Error fetching clients:', error)
     }
   }
 
@@ -113,6 +144,7 @@ export default function EditRequestPage() {
       const request = data.lead
 
       setFormData({
+        clientId: request.convertedToClientId || '',
         firstName: request.firstName || '',
         lastName: request.lastName || '',
         email: request.email || '',
@@ -123,8 +155,10 @@ export default function EditRequestPage() {
         value: request.value ? parseFloat(request.value).toString() : '',
         probability: request.probability?.toString() || '50',
         notes: request.notes || '',
+        jobSiteAddress: request.jobSiteAddress || '',
         assignedToId: request.assignedToId || '',
       })
+      setClientMode(request.convertedToClientId ? 'existing' : 'new')
       setError(null)
     } catch (e) {
       console.error('Error loading request:', e)
@@ -151,6 +185,7 @@ export default function EditRequestPage() {
       }
 
       const payload = {
+        clientId: clientMode === 'existing' ? formData.clientId || null : null,
         firstName: formData.firstName,
         lastName: formData.lastName,
         email: formData.email,
@@ -161,6 +196,7 @@ export default function EditRequestPage() {
         value: formData.value ? parseFloat(formData.value) : null,
         probability: parseInt(formData.probability),
         notes: formData.notes,
+        jobSiteAddress: formData.jobSiteAddress,
         assignedToId: formData.assignedToId || null,
       }
 
@@ -254,6 +290,78 @@ export default function EditRequestPage() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
+                <Label htmlFor="clientMode">Client Type</Label>
+                <select
+                  id="clientMode"
+                  value={clientMode}
+                  onChange={(e) => {
+                    const nextMode = e.target.value as 'new' | 'existing'
+                    setClientMode(nextMode)
+                    if (nextMode === 'new') {
+                      setFormData((prev) => ({ ...prev, clientId: '' }))
+                    }
+                  }}
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="new">New Client</option>
+                  <option value="existing">Existing Client</option>
+                </select>
+              </div>
+            </div>
+
+            {clientMode === 'existing' && (
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="clientSearch">Search Client</Label>
+                  <Input
+                    id="clientSearch"
+                    value={clientSearch}
+                    onChange={(e) => setClientSearch(e.target.value)}
+                    placeholder="Type name, email, phone..."
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="clientId">Select Client *</Label>
+                  <select
+                    id="clientId"
+                    value={formData.clientId}
+                    onChange={(e) => {
+                      const selected = clients.find((c) => c.id === e.target.value)
+                      if (!selected) return
+                      const nameParts = selected.name.trim().split(/\s+/)
+                      setFormData((prev) => ({
+                        ...prev,
+                        clientId: selected.id,
+                        firstName: nameParts[0] || '',
+                        lastName: nameParts.slice(1).join(' '),
+                        email: selected.email || '',
+                        phone: selected.phone || '',
+                        company: selected.companyName || '',
+                      }))
+                    }}
+                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    required={clientMode === 'existing'}
+                  >
+                    <option value="">Choose client...</option>
+                    {clients
+                      .filter((client) => {
+                        const query = clientSearch.trim().toLowerCase()
+                        if (!query) return true
+                        const haystack = `${client.name} ${client.companyName || ''} ${client.email || ''} ${client.phone || ''}`.toLowerCase()
+                        return haystack.includes(query)
+                      })
+                      .map((client) => (
+                        <option key={client.id} value={client.id}>
+                          {client.name} {client.companyName ? `(${client.companyName})` : ''}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
                 <Label htmlFor="firstName">First Name *</Label>
                 <Input
                   id="firstName"
@@ -306,6 +414,25 @@ export default function EditRequestPage() {
                 onChange={(e) => setFormData({ ...formData, company: e.target.value })}
                 placeholder="Company name"
               />
+            </div>
+
+            <div>
+              <Label htmlFor="jobSiteAddress">Job Site Address</Label>
+              <Input
+                id="jobSiteAddress"
+                value={formData.jobSiteAddress}
+                onChange={(e) => setFormData({ ...formData, jobSiteAddress: e.target.value })}
+                placeholder="123 Main St, Austin, TX 78701"
+              />
+              {formData.jobSiteAddress.trim() && (
+                <iframe
+                  title="Job Site Map"
+                  className="mt-3 h-56 w-full rounded-md border"
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                  src={`https://maps.google.com/maps?q=${encodeURIComponent(formData.jobSiteAddress)}&output=embed`}
+                />
+              )}
             </div>
 
             <div className="grid grid-cols-3 gap-4">

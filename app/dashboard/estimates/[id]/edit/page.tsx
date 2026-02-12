@@ -56,6 +56,7 @@ export default function EditEstimatePage() {
   const [formData, setFormData] = useState({
     clientId: '',
     title: '',
+    jobSiteAddress: '',
     taxRate: '0',
     discount: '0',
     validUntil: '',
@@ -144,6 +145,7 @@ export default function EditEstimatePage() {
       setFormData({
         clientId: est.client?.id || '',
         title: est.title || '',
+        jobSiteAddress: est.jobSiteAddress || '',
         taxRate: taxRatePercent,
         discount: est.discount || '0',
         validUntil: est.validUntil ? new Date(est.validUntil).toISOString().split('T')[0] : '',
@@ -520,6 +522,7 @@ export default function EditEstimatePage() {
         },
         body: JSON.stringify({
           title: formData.title,
+          jobSiteAddress: formData.jobSiteAddress || null,
           taxRate: taxRate,
           discount,
           status: formData.status,
@@ -628,6 +631,24 @@ export default function EditEstimatePage() {
                     onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                     placeholder="e.g., Kitchen Remodel Estimate"
                   />
+                </div>
+                <div>
+                  <Label htmlFor="jobSiteAddress">Job Site Address</Label>
+                  <Input
+                    id="jobSiteAddress"
+                    value={formData.jobSiteAddress}
+                    onChange={(e) => setFormData({ ...formData, jobSiteAddress: e.target.value })}
+                    placeholder="123 Main St, Austin, TX 78701"
+                  />
+                  {formData.jobSiteAddress.trim() && (
+                    <iframe
+                      title="Estimate Job Site Map"
+                      className="mt-3 h-56 w-full rounded-md border"
+                      loading="lazy"
+                      referrerPolicy="no-referrer-when-downgrade"
+                      src={`https://maps.google.com/maps?q=${encodeURIComponent(formData.jobSiteAddress)}&output=embed`}
+                    />
+                  )}
                 </div>
                 <div>
                   <Label htmlFor="status">Status</Label>

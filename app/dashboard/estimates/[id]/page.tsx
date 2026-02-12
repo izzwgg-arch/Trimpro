@@ -29,6 +29,7 @@ interface EstimateDetail {
   id: string
   estimateNumber: string
   title: string
+  jobSiteAddress: string | null
   status: string
   subtotal: string
   taxRate: string
@@ -565,6 +566,24 @@ export default function EstimateDetailPage() {
               )}
             </CardContent>
           </Card>
+
+          {estimate.jobSiteAddress && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Job Site</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-gray-700">{estimate.jobSiteAddress}</p>
+                <iframe
+                  title="Estimate Job Site Map"
+                  className="mt-3 h-48 w-full rounded-md border"
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                  src={`https://maps.google.com/maps?q=${encodeURIComponent(estimate.jobSiteAddress)}&output=embed`}
+                />
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
 
