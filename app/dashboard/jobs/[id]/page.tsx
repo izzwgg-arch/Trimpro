@@ -140,6 +140,7 @@ export default function JobDetailPage() {
   const [job, setJob] = useState<JobDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState(false)
+  const [convertingToInvoice, setConvertingToInvoice] = useState(false)
 
   useEffect(() => {
     fetchJob()
@@ -234,6 +235,50 @@ export default function JobDetailPage() {
     }
   }
 
+  const handleConvertToInvoice = async () => {
+    if (!job) return
+    if (!confirm(`Convert job "${job.jobNumber}" to an invoice?`)) return
+
+    setConvertingToInvoice(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+
+      const response = await fetch(`/api/jobs/${jobId}/convert-to-invoice`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      if (response.status === 401) {
+        router.push('/auth/login')
+        return
+      }
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'Failed to convert job to invoice')
+        return
+      }
+
+      const invoiceId = data?.invoice?.id
+      if (invoiceId) {
+        router.push(`/dashboard/invoices/${invoiceId}`)
+      } else {
+        fetchJob()
+      }
+    } catch (error) {
+      console.error('Error converting job to invoice:', error)
+      alert('Failed to convert job to invoice')
+    } finally {
+      setConvertingToInvoice(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -283,6 +328,10 @@ export default function JobDetailPage() {
           </p>
         </div>
         <div className="flex items-center space-x-2">
+          <Button onClick={handleConvertToInvoice} disabled={convertingToInvoice}>
+            <DollarSign className="mr-2 h-4 w-4" />
+            {convertingToInvoice ? 'Converting...' : 'Convert to Invoice'}
+          </Button>
           <Button variant="outline" onClick={() => router.push(`/dashboard/jobs/${jobId}/edit`)}>
             <Edit className="mr-2 h-4 w-4" />
             Edit

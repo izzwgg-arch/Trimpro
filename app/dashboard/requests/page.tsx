@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { Plus, Search, Filter, User, Phone, Mail, TrendingUp, CheckCircle, Trash2 } from 'lucide-react'
+import { Plus, Search, Filter, User, Phone, Mail, TrendingUp, CheckCircle, Trash2, FileText } from 'lucide-react'
 import Link from 'next/link'
 
 interface Request {
@@ -66,6 +66,7 @@ export default function RequestsPage() {
   const [status, setStatus] = useState('all')
   const [source, setSource] = useState('all')
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [convertingId, setConvertingId] = useState<string | null>(null)
 
   useEffect(() => {
     fetchRequests()
@@ -140,6 +141,50 @@ export default function RequestsPage() {
       alert('Failed to delete request. Please try again.')
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  const handleConvertToEstimate = async (request: Request) => {
+    const requestName = `${request.firstName} ${request.lastName}`.trim()
+    if (!confirm(`Convert request "${requestName}" into an estimate?`)) return
+
+    setConvertingId(request.id)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+
+      const response = await fetch(`/api/leads/${request.id}/convert-to-estimate`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      if (response.status === 401) {
+        router.push('/auth/login')
+        return
+      }
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'Failed to convert request to estimate')
+        return
+      }
+
+      const estimateId = data?.estimate?.id
+      if (estimateId) {
+        router.push(`/dashboard/estimates/${estimateId}`)
+      } else {
+        fetchRequests()
+      }
+    } catch (error) {
+      console.error('Failed to convert request:', error)
+      alert('Failed to convert request to estimate. Please try again.')
+    } finally {
+      setConvertingId(null)
     }
   }
 
@@ -365,20 +410,36 @@ export default function RequestsPage() {
                         {request._count.estimates > 0 && <span>{request._count.estimates} estimates</span>}
                         {request._count.calls > 0 && <span>{request._count.calls} calls</span>}
                       </div>
-                      {!request.convertedToClientId && (
+                      <div className="flex items-center gap-1">
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={(e) => {
                             e.stopPropagation()
-                            handleDelete(request.id, `${request.firstName} ${request.lastName}`)
+                            handleConvertToEstimate(request)
                           }}
-                          disabled={deletingId === request.id}
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50 h-7 px-2"
+                          disabled={convertingId === request.id}
+                          className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 h-7 px-2"
+                          title="Convert to Estimate"
                         >
-                          <Trash2 className="h-3 w-3" />
+                          <FileText className="h-3 w-3" />
                         </Button>
-                      )}
+                        {!request.convertedToClientId && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleDelete(request.id, `${request.firstName} ${request.lastName}`)
+                            }}
+                            disabled={deletingId === request.id}
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50 h-7 px-2"
+                            title="Delete Request"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </CardContent>

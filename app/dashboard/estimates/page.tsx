@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { Plus, Search, Filter, FileText, Calendar, DollarSign } from 'lucide-react'
+import { Plus, Search, Filter, FileText, Calendar, Trash2, Briefcase } from 'lucide-react'
 import Link from 'next/link'
 
 interface Estimate {
@@ -53,6 +53,8 @@ export default function EstimatesPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [convertingId, setConvertingId] = useState<string | null>(null)
 
   useEffect(() => {
     fetchEstimates()
@@ -85,6 +87,91 @@ export default function EstimatesPage() {
       console.error('Failed to fetch estimates:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleDelete = async (estimate: Estimate) => {
+    if (!confirm(`Delete estimate "${estimate.estimateNumber}"?`)) return
+
+    setDeletingId(estimate.id)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+
+      const response = await fetch(`/api/estimates/${estimate.id}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      if (response.status === 401) {
+        router.push('/auth/login')
+        return
+      }
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'Failed to delete estimate')
+        return
+      }
+
+      fetchEstimates()
+    } catch (error) {
+      console.error('Failed to delete estimate:', error)
+      alert('Failed to delete estimate')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  const handleConvertToJob = async (estimate: Estimate) => {
+    if (estimate.job) {
+      router.push(`/dashboard/jobs/${estimate.job.id}`)
+      return
+    }
+    if (!confirm(`Convert estimate "${estimate.estimateNumber}" into a job?`)) return
+
+    setConvertingId(estimate.id)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+
+      const response = await fetch(`/api/estimates/${estimate.id}/convert-to-job`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      if (response.status === 401) {
+        router.push('/auth/login')
+        return
+      }
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'Failed to convert estimate to job')
+        return
+      }
+
+      const jobId = data?.job?.id
+      if (jobId) {
+        router.push(`/dashboard/jobs/${jobId}`)
+      } else {
+        fetchEstimates()
+      }
+    } catch (error) {
+      console.error('Failed to convert estimate:', error)
+      alert('Failed to convert estimate to job')
+    } finally {
+      setConvertingId(null)
     }
   }
 
@@ -216,6 +303,34 @@ export default function EstimatesPage() {
                       </Link>
                     </div>
                   )}
+                  <div className="flex items-center justify-end gap-1 pt-2 border-t">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleConvertToJob(estimate)
+                      }}
+                      disabled={convertingId === estimate.id}
+                      className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 h-7 px-2"
+                      title={estimate.job ? 'Open Job' : 'Convert to Job'}
+                    >
+                      <Briefcase className="h-3 w-3" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleDelete(estimate)
+                      }}
+                      disabled={deletingId === estimate.id}
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50 h-7 px-2"
+                      title="Delete Estimate"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
