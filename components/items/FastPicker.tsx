@@ -216,6 +216,22 @@ export function FastPicker({
     }
   }, [onNextLine, onChange, value])
 
+  const commitHighlightedSelection = useCallback(() => {
+    if (filteredItems.length === 0) {
+      handleCommitCustom()
+      return
+    }
+
+    const clampedIndex = Math.max(0, Math.min(selectedIndex, filteredItems.length - 1))
+    const selected = filteredItems[clampedIndex]
+    if (!selected) {
+      handleCommitCustom()
+      return
+    }
+
+    handleSelect(selected)
+  }, [filteredItems, selectedIndex, handleSelect, handleCommitCustom])
+
   // Handle keyboard navigation
   const handleKeyDown = useCallback((e: KeyboardEvent<HTMLInputElement>) => {
     if (disabled) return
@@ -312,23 +328,6 @@ export function FastPicker({
   const handleItemClick = useCallback((item: FastPickerItem) => {
     handleSelect(item)
   }, [handleSelect])
-
-  const commitHighlightedSelection = useCallback(() => {
-    if (filteredItems.length === 0) {
-      handleCommitCustom()
-      return
-    }
-
-    const clampedIndex = Math.max(0, Math.min(selectedIndex, filteredItems.length - 1))
-    const selected = filteredItems[clampedIndex]
-    if (!selected) {
-      handleCommitCustom()
-      return
-    }
-
-    // Use the exact same path as mouse click.
-    handleItemClick(selected)
-  }, [filteredItems, selectedIndex, handleItemClick, handleCommitCustom])
 
   return (
     <div ref={containerRef} className="relative w-full">
