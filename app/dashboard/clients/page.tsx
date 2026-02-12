@@ -119,17 +119,6 @@ export default function ClientsPage() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent"></div>
-          <p className="mt-4 text-gray-600">Loading clients...</p>
-        </div>
-      </div>
-    )
-  }
-
   const flattenedClients = useMemo(() => {
     const byParent = new Map<string, Client[]>()
     const allIds = new Set(clients.map((c) => c.id))
@@ -161,6 +150,17 @@ export default function ClientsPage() {
     for (const root of roots) visit(root)
     return output
   }, [clients])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent"></div>
+          <p className="mt-4 text-gray-600">Loading clients...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
