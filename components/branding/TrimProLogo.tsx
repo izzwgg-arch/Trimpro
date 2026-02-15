@@ -8,15 +8,15 @@ interface TrimProMarkProps {
 
 export function TrimProMark({ size = 30, className, color = 'currentColor' }: TrimProMarkProps) {
   // Geometry constants - single source of truth
+  // Using integer coordinates to prevent subpixel blur
   const CAP_X = 10
   const CAP_Y = 14
   const CAP_W = 100
   const CAP_H = 16
   
-  const BAR_TOP_Y = 52        // Top Y of vertical bars
+  const BAR_TOP_Y = 52        // Top Y of vertical bars (integer)
   const BAR_W = 10            // Bar width (both bars use this - identical thickness)
   const BAR_H = 54            // Bar height (both bars use this)
-  const BAR_GAP = 4           // Gap between bars (62 - (48 + 10) = 4)
   
   const LEFT_BAR_X = 48
   const RIGHT_BAR_X = 62
@@ -28,10 +28,12 @@ export function TrimProMark({ size = 30, className, color = 'currentColor' }: Tr
   const DOT_SIZE = 6          // Dot size (square)
   
   // Dots flush with bar tops: dot bottom = BAR_TOP_Y
-  // For rect: y + height = BAR_TOP_Y, so y = BAR_TOP_Y - height
-  const DOT_Y = BAR_TOP_Y - DOT_SIZE  // 52 - 6 = 46 (dot bottom will be at 52)
+  // For rect: bottom = y + height, so y = BAR_TOP_Y - height
+  // This ensures dot bottom edge exactly touches bar top edge
+  const DOT_Y = BAR_TOP_Y - DOT_SIZE  // 52 - 6 = 46 (dot bottom = 46 + 6 = 52 = BAR_TOP_Y)
   
   // Dot X positions: centered above bars
+  // leftDotX = barCenterX - dotSize/2 (so dot is centered on bar)
   const LEFT_DOT_X = LEFT_BAR_CENTER_X - DOT_SIZE / 2   // 53 - 3 = 50
   const RIGHT_DOT_X = RIGHT_BAR_CENTER_X - DOT_SIZE / 2  // 67 - 3 = 64
   
@@ -46,14 +48,17 @@ export function TrimProMark({ size = 30, className, color = 'currentColor' }: Tr
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden="true"
+      style={{ display: 'block' }}
     >
       {/* Top horizontal cap */}
       <rect x={CAP_X} y={CAP_Y} width={CAP_W} height={CAP_H} rx="0" fill={color} />
       
       {/* Left dot - square, centered above left bar, flush with bar top */}
+      {/* DOT_Y = BAR_TOP_Y - DOT_SIZE ensures dot bottom = bar top */}
       <rect x={LEFT_DOT_X} y={DOT_Y} width={DOT_SIZE} height={DOT_SIZE} rx="0" fill={color} />
       
       {/* Right dot - square, centered above right bar, flush with bar top */}
+      {/* Both dots use same DOT_Y for identical height */}
       <rect x={RIGHT_DOT_X} y={DOT_Y} width={DOT_SIZE} height={DOT_SIZE} rx="0" fill={color} />
       
       {/* Left vertical bar - uses BAR_W constant */}
