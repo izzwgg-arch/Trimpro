@@ -7,54 +7,69 @@ interface TrimProMarkProps {
 }
 
 export function TrimProMark({ size = 30, className, color = 'currentColor' }: TrimProMarkProps) {
-  // Parameterized geometry to ensure consistency
-  const colW = 12              // Column width (both columns use this)
-  const gap = 6                // Gap between columns
-  const centerX = 60           // Center of 120 viewBox
-  const colTopY = 58           // Top Y of columns
-  const colH = 52              // Column height
-  const dotCXOffset = 28       // Horizontal offset from center for dot centers
+  // Single source of truth for thickness
+  const stroke = 3
   
-  // Calculate column positions (symmetric around center)
-  const leftX = centerX - gap/2 - colW
-  const rightX = centerX + gap/2
-  
-  // Calculate dot positions (flush with column tops)
-  const dotSize = colW         // Dot size matches column width
-  const dotY = colTopY - dotSize  // Dot bottom touches column top
-  const leftDotX = centerX - dotCXOffset - dotSize/2
-  const rightDotX = centerX + dotCXOffset - dotSize/2
-  
-  // Top bar (keep current visual weight)
-  const topBarH = 16
-  const topBarY = 14
+  // Geometry is based on a 24x24 viewBox; scaling is handled by width/height.
+  // IMPORTANT ALIGNMENT RULE:
+  // - The dots' CENTER y equals the UNDERSIDE y of the top cap.
+  // - Underside y = capTopY + capStroke/2 (cap uses same stroke)
+  //
+  // With stroke applied, visual underside is exactly at y = capY (because the line is centered).
+  // So we define capY and dotCenterY to be identical.
+  const capY = 5         // y of the top horizontal stroke centerline
+  const dotY = capY      // MUST MATCH capY to be flush
+  const leftDotX = 8
+  const rightDotX = 16
   
   return (
     <svg
       width={size}
       height={size}
-      viewBox="0 0 120 120"
-      preserveAspectRatio="xMidYMid meet"
-      className={className}
-      style={{ shapeRendering: 'crispEdges' }}
+      viewBox="0 0 24 24"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
+      className={className}
       aria-hidden="true"
     >
-      {/* Top horizontal bar */}
-      <rect x="10" y={topBarY} width="100" height={topBarH} rx="0" fill={color} />
-      
-      {/* Left dot - flush with column top */}
-      <rect x={leftDotX} y={dotY} width={dotSize} height={dotSize} rx="2" fill={color} />
-      
-      {/* Right dot - flush with column top */}
-      <rect x={rightDotX} y={dotY} width={dotSize} height={dotSize} rx="2" fill={color} />
-      
-      {/* Left vertical column */}
-      <rect x={leftX} y={colTopY} width={colW} height={colH} rx="0" fill={color} />
-      
-      {/* Right vertical column - identical width */}
-      <rect x={rightX} y={colTopY} width={colW} height={colH} rx="0" fill={color} />
+      {/* Top cap */}
+      <path
+        d="M4 5 H20"
+        stroke={color}
+        strokeWidth={stroke}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+
+      {/* Dots (must be flush with cap) */}
+      <circle
+        cx={leftDotX}
+        cy={dotY}
+        r={stroke * 0.55}
+        fill={color}
+      />
+      <circle
+        cx={rightDotX}
+        cy={dotY}
+        r={stroke * 0.55}
+        fill={color}
+      />
+
+      {/* Two vertical bars */}
+      <path
+        d="M10.5 8 V20"
+        stroke={color}
+        strokeWidth={stroke}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M13.5 8 V20"
+        stroke={color}
+        strokeWidth={stroke}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   )
 }
