@@ -7,11 +7,6 @@ interface TrimProMarkProps {
 }
 
 export function TrimProMark({ size = 28, className, color = '#FFFFFF' }: TrimProMarkProps) {
-  // ViewBox is 24. Shapes are drawn with fills (rect/circle) so thickness is exact.
-  // Top cap thickness = 3
-  // Vertical bars thickness = 3
-  // Dot size = 3x3 (circle r=1.5)
-  // Dots sit immediately under the cap (touching it): dotTopY = capBottomY
   return (
     <svg
       width={size}
@@ -20,21 +15,20 @@ export function TrimProMark({ size = 28, className, color = '#FFFFFF' }: TrimPro
       xmlns="http://www.w3.org/2000/svg"
       className={className}
       aria-hidden="true"
+      shapeRendering="crispEdges"
       style={{ display: 'block' }}
     >
-      {/* TOP CAP: centered, flat ends like the logo */}
-      {/* cap: x=4, y=4, w=16, h=3 */}
-      <rect x="4" y="4" width="16" height="3" rx="0" fill={color} />
+      {/* CAP */}
+      <rect x="4" y="4" width="16" height="3" fill={color} />
 
-      {/* DOTS: same thickness as bars; flush under cap */}
-      {/* cap bottom is y=7, so dots start at y=7 */}
-      <circle cx="8" cy="8.5" r="1.5" fill={color} />
-      <circle cx="16" cy="8.5" r="1.5" fill={color} />
+      {/* DOTS (SQUARES). FLUSH means: dot TOP touches cap bottom (cap bottom = y=7) */}
+      {/* so dots y=7. */}
+      <rect x="7" y="7" width="3" height="3" fill={color} />
+      <rect x="14" y="7" width="3" height="3" fill={color} />
 
-      {/* VERTICAL BARS: equal thickness + equal height */}
-      {/* bars: thickness=3; x positions match logo spacing */}
-      <rect x="10" y="10" width="3" height="12" rx="0" fill={color} />
-      <rect x="14" y="10" width="3" height="12" rx="0" fill={color} />
+      {/* TWO VERTICAL BARS (same thickness, same height) */}
+      <rect x="10" y="10" width="3" height="12" fill={color} />
+      <rect x="14" y="10" width="3" height="12" fill={color} />
     </svg>
   )
 }
@@ -75,8 +69,19 @@ export function TrimProLogo({ variant = 'light', size = 'md', className }: TrimP
         trimpro
       </span>
       
-      {/* Icon on the right */}
-      <TrimProMark size={iconSize} color={iconColor} />
+      {/* Icon on the right - fixed wrapper to prevent scaling */}
+      <div
+        style={{
+          width: iconSize,
+          height: iconSize,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flex: '0 0 auto',
+        }}
+      >
+        <TrimProMark size={iconSize} color={iconColor} />
+      </div>
     </div>
   )
 }
