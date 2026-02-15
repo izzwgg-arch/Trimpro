@@ -6,60 +6,30 @@ interface TrimProMarkProps {
   color?: string
 }
 
-export function TrimProMark({ size = 30, className, color = 'currentColor' }: TrimProMarkProps) {
-  // Geometry constants - single source of truth
-  // Using integer coordinates to prevent subpixel blur
-  const CAP_X = 10
-  const CAP_Y = 14
-  const CAP_W = 100
-  const CAP_H = 16
-  
-  const BAR_TOP_Y = 52        // Top Y of vertical bars (integer)
-  const BAR_W = 10            // Bar width (both bars use this - identical thickness)
-  const BAR_H = 54            // Bar height (both bars use this)
-  
-  const LEFT_BAR_X = 48
-  const RIGHT_BAR_X = 62
-  
-  // Calculate bar centers for dot alignment
-  const LEFT_BAR_CENTER_X = LEFT_BAR_X + BAR_W / 2   // 48 + 5 = 53
-  const RIGHT_BAR_CENTER_X = RIGHT_BAR_X + BAR_W / 2  // 62 + 5 = 67
-  
-  const DOT_R = 3             // Dot radius (circles)
-
-  // Dots flush with bar tops: dot bottom = BAR_TOP_Y
-  // For circle: cy + r = BAR_TOP_Y => cy = BAR_TOP_Y - r
-  const DOT_CY = BAR_TOP_Y - DOT_R
-  
+export function TrimProIcon({ className, size = 28 }: { className?: string; size?: number }) {
   return (
     <svg
       width={size}
       height={size}
-      viewBox="0 0 120 120"
+      viewBox="0 0 64 64"
       preserveAspectRatio="xMidYMid meet"
       className={className}
-      shapeRendering="crispEdges"
-      fill="none"
+      shapeRendering="geometricPrecision"
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden="true"
-      style={{ display: 'block' }}
+      style={{ width: size, height: size, display: 'block' }}
     >
-      {/* Top horizontal cap */}
-      <rect x={CAP_X} y={CAP_Y} width={CAP_W} height={CAP_H} rx="0" fill={color} />
-      
-      {/* Left dot - centered above left bar, flush with bar top */}
-      <circle cx={LEFT_BAR_CENTER_X} cy={DOT_CY} r={DOT_R} fill={color} />
-      
-      {/* Right dot - same CY as left dot */}
-      <circle cx={RIGHT_BAR_CENTER_X} cy={DOT_CY} r={DOT_R} fill={color} />
-      
-      {/* Left vertical bar - uses BAR_W constant */}
-      <rect x={LEFT_BAR_X} y={BAR_TOP_Y} width={BAR_W} height={BAR_H} rx="0" fill={color} />
-      
-      {/* Right vertical bar - uses BAR_W constant (identical thickness) */}
-      <rect x={RIGHT_BAR_X} y={BAR_TOP_Y} width={BAR_W} height={BAR_H} rx="0" fill={color} />
+      <rect x="10" y="6" width="44" height="10" rx="1.5" fill="#ffffff" />
+      <rect x="22" y="28" width="6" height="30" rx="1" fill="#ffffff" />
+      <rect x="36" y="28" width="6" height="30" rx="1" fill="#ffffff" />
+      <circle cx="25" cy="25" r="3" fill="#ffffff" />
+      <circle cx="39" cy="25" r="3" fill="#ffffff" />
     </svg>
   )
+}
+
+export function TrimProMark({ size = 30, className }: TrimProMarkProps) {
+  return <TrimProIcon className={className} size={size} />
 }
 
 interface TrimProLogoProps {
@@ -99,7 +69,7 @@ export function TrimProLogo({ variant = 'light', size = 'md', className }: TrimP
       </span>
       
       {/* Icon on the right */}
-      <TrimProMark size={iconSize} color={iconColor} />
+      <TrimProIcon size={iconSize} />
     </div>
   )
 }
