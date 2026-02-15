@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { TrimProMark } from '@/components/branding/TrimProMark'
+import { TrimProLogo } from '@/components/branding/TrimProLogo'
 import { PermissionGuard } from '@/components/permissions/PermissionGuard'
 import { NotificationBell } from '@/components/notifications/NotificationBell'
 import {
@@ -80,9 +80,9 @@ export function Sidebar() {
         <Link
           href="/dashboard"
           aria-label="Go to dashboard"
-          className="inline-flex min-h-[22px] min-w-[22px] items-center"
+          className="inline-flex items-center"
         >
-          <TrimProMark className="text-[#E6C98B]" size={26} />
+          <TrimProLogo variant="sidebar" size="md" />
         </Link>
         <NotificationBell />
       </div>

@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { TrimProMark } from '@/components/branding/TrimProMark'
+import { TrimProLogo } from '@/components/branding/TrimProLogo'
 
 export default function ForgotPasswordPage() {
   const router = useRouter()
@@ -49,7 +49,7 @@ export default function ForgotPasswordPage() {
         <Card className="w-full max-w-md">
           <CardHeader>
             <div className="mb-2 flex justify-center">
-              <TrimProMark className="text-[#2E4A59]" size={26} />
+              <TrimProLogo variant="light" size="lg" />
             </div>
             <CardTitle className="text-2xl font-bold text-center">Check Your Email</CardTitle>
             <CardDescription className="text-center">

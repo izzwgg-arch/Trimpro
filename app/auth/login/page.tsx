@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { TrimProMark } from '@/components/branding/TrimProMark'
+import { TrimProLogo } from '@/components/branding/TrimProLogo'
 
 function LoginForm() {
   const router = useRouter()
@@ -59,7 +59,7 @@ function LoginForm() {
         <CardHeader className="pt-10 pb-3 space-y-2">
           <CardTitle className="text-center">
             <div className="flex justify-center">
-              <TrimProMark className="text-[#2E4A59]" size={26} />
+              <TrimProLogo variant="light" size="lg" />
             </div>
           </CardTitle>
           <CardDescription className="text-center">
