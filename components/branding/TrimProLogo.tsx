@@ -8,24 +8,29 @@ interface TrimProMarkProps {
 
 export function TrimProMark({ size = 30, className, color = 'currentColor' }: TrimProMarkProps) {
   // Geometry constants - single source of truth
+  const CAP_X = 10
+  const CAP_Y = 14
+  const CAP_W = 100
+  const CAP_H = 16
+  
   const BAR_TOP_Y = 52        // Top Y of vertical bars
-  const BAR_W = 10            // Bar width (both bars use this)
+  const BAR_W = 10            // Bar width (both bars use this - identical thickness)
   const BAR_H = 54            // Bar height (both bars use this)
-  const DOT_R = 7             // Dot radius
-  const DOT_SIZE = DOT_R * 2  // Dot diameter (14)
+  const BAR_GAP = 4           // Gap between bars (62 - (48 + 10) = 4)
   
-  // Dots flush with bar tops: DOT_Y + DOT_SIZE == BAR_TOP_Y
-  // So: DOT_Y = BAR_TOP_Y - DOT_SIZE = 52 - 14 = 38
-  const DOT_Y = BAR_TOP_Y - DOT_SIZE  // Top of dot
-  const DOT_CY = DOT_Y + DOT_R        // Center Y of dot (38 + 7 = 45)
-  
-  // Bar positions (symmetric around center)
   const LEFT_BAR_X = 48
   const RIGHT_BAR_X = 62
   
-  // Dot positions (symmetric around center)
-  const LEFT_DOT_CX = 30
-  const RIGHT_DOT_CX = 90
+  // Calculate bar centers for dot alignment
+  const LEFT_BAR_CENTER_X = LEFT_BAR_X + BAR_W / 2   // 48 + 5 = 53
+  const RIGHT_BAR_CENTER_X = RIGHT_BAR_X + BAR_W / 2  // 62 + 5 = 67
+  
+  const DOT_R = 7             // Dot radius
+  const DOT_SIZE = DOT_R * 2  // Dot diameter (14)
+  
+  // Dots flush with bar tops: dot bottom = BAR_TOP_Y
+  // For circle: cy + r = BAR_TOP_Y, so cy = BAR_TOP_Y - r
+  const DOT_CY = BAR_TOP_Y - DOT_R  // 52 - 7 = 45 (dot bottom will be at 52)
   
   return (
     <svg
@@ -34,24 +39,24 @@ export function TrimProMark({ size = 30, className, color = 'currentColor' }: Tr
       viewBox="0 0 120 120"
       preserveAspectRatio="xMidYMid meet"
       className={className}
-      style={{ shapeRendering: 'crispEdges' }}
+      shapeRendering="crispEdges"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden="true"
     >
-      {/* Top horizontal bar */}
-      <rect x="10" y="14" width="100" height="16" rx="0" fill={color} />
+      {/* Top horizontal cap */}
+      <rect x={CAP_X} y={CAP_Y} width={CAP_W} height={CAP_H} rx="0" fill={color} />
       
-      {/* Left dot - flush with bar tops */}
-      <circle cx={LEFT_DOT_CX} cy={DOT_CY} r={DOT_R} fill={color} />
+      {/* Left dot - centered above left bar, flush with bar top */}
+      <circle cx={LEFT_BAR_CENTER_X} cy={DOT_CY} r={DOT_R} fill={color} />
       
-      {/* Right dot - flush with bar tops */}
-      <circle cx={RIGHT_DOT_CX} cy={DOT_CY} r={DOT_R} fill={color} />
+      {/* Right dot - centered above right bar, flush with bar top */}
+      <circle cx={RIGHT_BAR_CENTER_X} cy={DOT_CY} r={DOT_R} fill={color} />
       
-      {/* Left vertical column - uses BAR_W constant */}
+      {/* Left vertical bar - uses BAR_W constant */}
       <rect x={LEFT_BAR_X} y={BAR_TOP_Y} width={BAR_W} height={BAR_H} rx="0" fill={color} />
       
-      {/* Right vertical column - uses BAR_W constant (identical thickness) */}
+      {/* Right vertical bar - uses BAR_W constant (identical thickness) */}
       <rect x={RIGHT_BAR_X} y={BAR_TOP_Y} width={BAR_W} height={BAR_H} rx="0" fill={color} />
     </svg>
   )
