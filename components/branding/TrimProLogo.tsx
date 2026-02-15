@@ -25,12 +25,15 @@ export function TrimProMark({ size = 30, className, color = 'currentColor' }: Tr
   const LEFT_BAR_CENTER_X = LEFT_BAR_X + BAR_W / 2   // 48 + 5 = 53
   const RIGHT_BAR_CENTER_X = RIGHT_BAR_X + BAR_W / 2  // 62 + 5 = 67
   
-  const DOT_R = 7             // Dot radius
-  const DOT_SIZE = DOT_R * 2  // Dot diameter (14)
+  const DOT_SIZE = 6          // Dot size (square)
   
   // Dots flush with bar tops: dot bottom = BAR_TOP_Y
-  // For circle: cy + r = BAR_TOP_Y, so cy = BAR_TOP_Y - r
-  const DOT_CY = BAR_TOP_Y - DOT_R  // 52 - 7 = 45 (dot bottom will be at 52)
+  // For rect: y + height = BAR_TOP_Y, so y = BAR_TOP_Y - height
+  const DOT_Y = BAR_TOP_Y - DOT_SIZE  // 52 - 6 = 46 (dot bottom will be at 52)
+  
+  // Dot X positions: centered above bars
+  const LEFT_DOT_X = LEFT_BAR_CENTER_X - DOT_SIZE / 2   // 53 - 3 = 50
+  const RIGHT_DOT_X = RIGHT_BAR_CENTER_X - DOT_SIZE / 2  // 67 - 3 = 64
   
   return (
     <svg
@@ -47,11 +50,11 @@ export function TrimProMark({ size = 30, className, color = 'currentColor' }: Tr
       {/* Top horizontal cap */}
       <rect x={CAP_X} y={CAP_Y} width={CAP_W} height={CAP_H} rx="0" fill={color} />
       
-      {/* Left dot - centered above left bar, flush with bar top */}
-      <circle cx={LEFT_BAR_CENTER_X} cy={DOT_CY} r={DOT_R} fill={color} />
+      {/* Left dot - square, centered above left bar, flush with bar top */}
+      <rect x={LEFT_DOT_X} y={DOT_Y} width={DOT_SIZE} height={DOT_SIZE} rx="0" fill={color} />
       
-      {/* Right dot - centered above right bar, flush with bar top */}
-      <circle cx={RIGHT_BAR_CENTER_X} cy={DOT_CY} r={DOT_R} fill={color} />
+      {/* Right dot - square, centered above right bar, flush with bar top */}
+      <rect x={RIGHT_DOT_X} y={DOT_Y} width={DOT_SIZE} height={DOT_SIZE} rx="0" fill={color} />
       
       {/* Left vertical bar - uses BAR_W constant */}
       <rect x={LEFT_BAR_X} y={BAR_TOP_Y} width={BAR_W} height={BAR_H} rx="0" fill={color} />
