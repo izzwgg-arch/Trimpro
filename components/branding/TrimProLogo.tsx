@@ -6,70 +6,35 @@ interface TrimProMarkProps {
   color?: string
 }
 
-export function TrimProMark({ size = 30, className, color = 'currentColor' }: TrimProMarkProps) {
-  // Single source of truth for thickness
-  const stroke = 3
-  
-  // Geometry is based on a 24x24 viewBox; scaling is handled by width/height.
-  // IMPORTANT ALIGNMENT RULE:
-  // - The dots' CENTER y equals the UNDERSIDE y of the top cap.
-  // - Underside y = capTopY + capStroke/2 (cap uses same stroke)
-  //
-  // With stroke applied, visual underside is exactly at y = capY (because the line is centered).
-  // So we define capY and dotCenterY to be identical.
-  const capY = 5         // y of the top horizontal stroke centerline
-  const dotY = capY      // MUST MATCH capY to be flush
-  const leftDotX = 8
-  const rightDotX = 16
-  
+export function TrimProMark({ size = 28, className, color = '#FFFFFF' }: TrimProMarkProps) {
+  // ViewBox is 24. Shapes are drawn with fills (rect/circle) so thickness is exact.
+  // Top cap thickness = 3
+  // Vertical bars thickness = 3
+  // Dot size = 3x3 (circle r=1.5)
+  // Dots sit immediately under the cap (touching it): dotTopY = capBottomY
   return (
     <svg
       width={size}
       height={size}
       viewBox="0 0 24 24"
-      fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={className}
       aria-hidden="true"
+      style={{ display: 'block' }}
     >
-      {/* Top cap */}
-      <path
-        d="M4 5 H20"
-        stroke={color}
-        strokeWidth={stroke}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      {/* TOP CAP: centered, flat ends like the logo */}
+      {/* cap: x=4, y=4, w=16, h=3 */}
+      <rect x="4" y="4" width="16" height="3" rx="0" fill={color} />
 
-      {/* Dots (must be flush with cap) */}
-      <circle
-        cx={leftDotX}
-        cy={dotY}
-        r={stroke * 0.55}
-        fill={color}
-      />
-      <circle
-        cx={rightDotX}
-        cy={dotY}
-        r={stroke * 0.55}
-        fill={color}
-      />
+      {/* DOTS: same thickness as bars; flush under cap */}
+      {/* cap bottom is y=7, so dots start at y=7 */}
+      <circle cx="8" cy="8.5" r="1.5" fill={color} />
+      <circle cx="16" cy="8.5" r="1.5" fill={color} />
 
-      {/* Two vertical bars */}
-      <path
-        d="M10.5 8 V20"
-        stroke={color}
-        strokeWidth={stroke}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M13.5 8 V20"
-        stroke={color}
-        strokeWidth={stroke}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      {/* VERTICAL BARS: equal thickness + equal height */}
+      {/* bars: thickness=3; x positions match logo spacing */}
+      <rect x="10" y="10" width="3" height="12" rx="0" fill={color} />
+      <rect x="14" y="10" width="3" height="12" rx="0" fill={color} />
     </svg>
   )
 }
@@ -82,7 +47,7 @@ interface TrimProLogoProps {
 
 const sizeMap = {
   sm: 24,
-  md: 30,
+  md: 28,  // Even integer to avoid subpixel blur
   lg: 40,
 }
 
