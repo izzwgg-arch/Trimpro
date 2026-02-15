@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
+import { TrimproLogo } from '@/components/brand/trimpro-logo'
 import { PermissionGuard } from '@/components/permissions/PermissionGuard'
 import { NotificationBell } from '@/components/notifications/NotificationBell'
 import {
@@ -74,9 +75,11 @@ export function Sidebar() {
   }
 
   return (
-    <div className="flex h-full w-64 flex-col bg-gray-900 text-white">
-      <div className="flex h-16 flex-shrink-0 items-center justify-between px-4 border-b border-gray-800">
-        <h1 className="text-xl font-bold">Trim Pro</h1>
+    <div className="flex h-full w-64 flex-col bg-[#2E4A59] text-white">
+      <div className="flex h-16 flex-shrink-0 items-center justify-between px-4 border-b border-[#3A5C70]">
+        <Link href="/dashboard" aria-label="Go to dashboard">
+          <TrimproLogo variant="full" className="h-8 w-auto" />
+        </Link>
         <NotificationBell />
       </div>
       <nav className="flex-1 overflow-y-auto space-y-1 px-2 py-4 min-h-0">
@@ -89,8 +92,8 @@ export function Sidebar() {
               className={cn(
                 'group flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors',
                 isActive
-                  ? 'bg-gray-800 text-white'
-                  : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                  ? 'bg-[#E6C98B] text-[#2E4A59]'
+                  : 'text-[#D8DDE1] hover:bg-[#E6C98B] hover:text-[#2E4A59]'
               )}
             >
               <item.icon className="mr-3 h-5 w-5 flex-shrink-0" />
@@ -111,10 +114,10 @@ export function Sidebar() {
           return navItem
         })}
       </nav>
-      <div className="flex-shrink-0 border-t border-gray-800 p-4">
+      <div className="flex-shrink-0 border-t border-[#3A5C70] p-4">
         <button
           onClick={handleLogout}
-          className="flex w-full items-center rounded-md px-3 py-2 text-sm font-medium text-gray-300 hover:bg-gray-800 hover:text-white"
+          className="flex w-full items-center rounded-md px-3 py-2 text-sm font-medium text-[#D8DDE1] hover:bg-[#E6C98B] hover:text-[#2E4A59]"
         >
           <LogOut className="mr-3 h-5 w-5" />
           Logout
