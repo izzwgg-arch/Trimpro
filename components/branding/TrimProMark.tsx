@@ -9,11 +9,11 @@ interface TrimProMarkProps {
 export function TrimProMark({ className, size = 22, showWordmark = true }: TrimProMarkProps) {
   return (
     <div className={cn('inline-flex items-center gap-2 leading-none', className)}>
-      <span className="inline-flex h-[22px] w-[22px] items-center justify-center overflow-visible">
+      <span className="inline-flex min-h-[22px] min-w-[22px] items-center justify-center" style={{ overflow: 'visible' }}>
         <svg
           width={size}
           height={size}
-          viewBox="0 0 24 24"
+          viewBox="0 0 220 224"
           preserveAspectRatio="xMidYMid meet"
           style={{ overflow: 'visible' }}
           fill="none"
@@ -23,12 +23,17 @@ export function TrimProMark({ className, size = 22, showWordmark = true }: TrimP
           strokeLinejoin="round"
           aria-hidden="true"
         >
-          <line x1="2.5" y1="12" x2="9" y2="12" />
-          <line x1="15" y1="12" x2="21.5" y2="12" />
-          <circle cx="10.7" cy="12" r="0.9" fill="currentColor" />
-          <circle cx="13.3" cy="12" r="0.9" fill="currentColor" />
-          <circle cx="12" cy="6.7" r="0.9" fill="currentColor" />
-          <circle cx="12" cy="17.3" r="0.9" fill="currentColor" />
+          {/* Top horizontal line */}
+          <line x1="8" y1="112" x2="86" y2="112" />
+          {/* Bottom horizontal line */}
+          <line x1="134" y1="112" x2="212" y2="112" />
+          {/* Two middle dots aligned with horizontal lines */}
+          <circle cx="104" cy="112" r="4.75" fill="currentColor" />
+          <circle cx="116" cy="112" r="4.75" fill="currentColor" />
+          {/* Top dot */}
+          <circle cx="110" cy="86" r="4.75" fill="currentColor" />
+          {/* Bottom dot */}
+          <circle cx="110" cy="140" r="4.75" fill="currentColor" />
         </svg>
       </span>
       {showWordmark && (
