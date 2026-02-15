@@ -25,17 +25,11 @@ export function TrimProMark({ size = 30, className, color = 'currentColor' }: Tr
   const LEFT_BAR_CENTER_X = LEFT_BAR_X + BAR_W / 2   // 48 + 5 = 53
   const RIGHT_BAR_CENTER_X = RIGHT_BAR_X + BAR_W / 2  // 62 + 5 = 67
   
-  const DOT_SIZE = 6          // Dot size (square)
-  
+  const DOT_R = 3             // Dot radius (circles)
+
   // Dots flush with bar tops: dot bottom = BAR_TOP_Y
-  // For rect: bottom = y + height, so y = BAR_TOP_Y - height
-  // This ensures dot bottom edge exactly touches bar top edge
-  const DOT_Y = BAR_TOP_Y - DOT_SIZE  // 52 - 6 = 46 (dot bottom = 46 + 6 = 52 = BAR_TOP_Y)
-  
-  // Dot X positions: centered above bars
-  // leftDotX = barCenterX - dotSize/2 (so dot is centered on bar)
-  const LEFT_DOT_X = LEFT_BAR_CENTER_X - DOT_SIZE / 2   // 53 - 3 = 50
-  const RIGHT_DOT_X = RIGHT_BAR_CENTER_X - DOT_SIZE / 2  // 67 - 3 = 64
+  // For circle: cy + r = BAR_TOP_Y => cy = BAR_TOP_Y - r
+  const DOT_CY = BAR_TOP_Y - DOT_R
   
   return (
     <svg
@@ -53,13 +47,11 @@ export function TrimProMark({ size = 30, className, color = 'currentColor' }: Tr
       {/* Top horizontal cap */}
       <rect x={CAP_X} y={CAP_Y} width={CAP_W} height={CAP_H} rx="0" fill={color} />
       
-      {/* Left dot - square, centered above left bar, flush with bar top */}
-      {/* DOT_Y = BAR_TOP_Y - DOT_SIZE ensures dot bottom = bar top */}
-      <rect x={LEFT_DOT_X} y={DOT_Y} width={DOT_SIZE} height={DOT_SIZE} rx="0" fill={color} />
+      {/* Left dot - centered above left bar, flush with bar top */}
+      <circle cx={LEFT_BAR_CENTER_X} cy={DOT_CY} r={DOT_R} fill={color} />
       
-      {/* Right dot - square, centered above right bar, flush with bar top */}
-      {/* Both dots use same DOT_Y for identical height */}
-      <rect x={RIGHT_DOT_X} y={DOT_Y} width={DOT_SIZE} height={DOT_SIZE} rx="0" fill={color} />
+      {/* Right dot - same CY as left dot */}
+      <circle cx={RIGHT_BAR_CENTER_X} cy={DOT_CY} r={DOT_R} fill={color} />
       
       {/* Left vertical bar - uses BAR_W constant */}
       <rect x={LEFT_BAR_X} y={BAR_TOP_Y} width={BAR_W} height={BAR_H} rx="0" fill={color} />
