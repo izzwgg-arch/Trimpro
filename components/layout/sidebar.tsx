@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { TrimproLogo } from '@/components/brand/trimpro-logo'
+import { TrimProMark } from '@/components/branding/TrimProMark'
 import { PermissionGuard } from '@/components/permissions/PermissionGuard'
 import { NotificationBell } from '@/components/notifications/NotificationBell'
 import {
@@ -77,8 +77,12 @@ export function Sidebar() {
   return (
     <div className="flex h-full w-64 flex-col bg-[#2E4A59] text-white">
       <div className="flex h-16 flex-shrink-0 items-center justify-between px-4 border-b border-[#3A5C70]">
-        <Link href="/dashboard" aria-label="Go to dashboard">
-          <TrimproLogo variant="full" className="h-8 w-auto" />
+        <Link
+          href="/dashboard"
+          aria-label="Go to dashboard"
+          className="inline-flex min-h-[22px] min-w-[22px] items-center"
+        >
+          <TrimProMark className="text-[#E6C98B]" size={26} />
         </Link>
         <NotificationBell />
       </div>

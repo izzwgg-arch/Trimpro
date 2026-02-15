@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { TrimProMark } from '@/components/branding/TrimProMark'
 
 function LoginForm() {
   const router = useRouter()
@@ -55,13 +56,17 @@ function LoginForm() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle className="text-2xl font-bold text-center">Trim Pro</CardTitle>
+        <CardHeader className="pt-10 pb-3 space-y-2">
+          <CardTitle className="text-center">
+            <div className="flex justify-center">
+              <TrimProMark className="text-[#2E4A59]" size={26} />
+            </div>
+          </CardTitle>
           <CardDescription className="text-center">
             Sign in to your account
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-1">
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded">
@@ -90,13 +95,17 @@ function LoginForm() {
                 autoComplete="current-password"
               />
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button
+              type="submit"
+              className="w-full bg-[#2E4A59] text-[#E6C98B] hover:bg-[#243b47]"
+              disabled={loading}
+            >
               {loading ? 'Signing in...' : 'Sign in'}
             </Button>
             <div className="text-center">
               <a
                 href="/auth/forgot-password"
-                className="text-sm text-primary hover:underline"
+                className="text-sm text-[#2E4A59] hover:underline"
               >
                 Forgot password?
               </a>

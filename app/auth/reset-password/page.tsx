@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { TrimProMark } from '@/components/branding/TrimProMark'
 
 export default function ResetPasswordPage() {
   const router = useRouter()
@@ -74,6 +75,9 @@ export default function ResetPasswordPage() {
       <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
         <Card className="w-full max-w-md">
           <CardHeader>
+            <div className="mb-2 flex justify-center">
+              <TrimProMark className="text-[#2E4A59]" size={26} />
+            </div>
             <CardTitle className="text-2xl font-bold text-center">Password Reset</CardTitle>
             <CardDescription className="text-center">
               Your password has been reset successfully. You can now log in with your new password.
@@ -93,6 +97,9 @@ export default function ResetPasswordPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <Card className="w-full max-w-md">
         <CardHeader>
+          <div className="mb-2 flex justify-center">
+            <TrimProMark className="text-[#2E4A59]" size={26} />
+          </div>
           <CardTitle className="text-2xl font-bold text-center">Reset Password</CardTitle>
           <CardDescription className="text-center">
             Enter your new password below.

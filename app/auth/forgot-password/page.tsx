@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { TrimProMark } from '@/components/branding/TrimProMark'
 
 export default function ForgotPasswordPage() {
   const router = useRouter()
@@ -47,6 +48,9 @@ export default function ForgotPasswordPage() {
       <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
         <Card className="w-full max-w-md">
           <CardHeader>
+            <div className="mb-2 flex justify-center">
+              <TrimProMark className="text-[#2E4A59]" size={26} />
+            </div>
             <CardTitle className="text-2xl font-bold text-center">Check Your Email</CardTitle>
             <CardDescription className="text-center">
               If an account exists with that email, a password reset link has been sent.
@@ -66,6 +70,9 @@ export default function ForgotPasswordPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <Card className="w-full max-w-md">
         <CardHeader>
+          <div className="mb-2 flex justify-center">
+            <TrimProMark className="text-[#2E4A59]" size={26} />
+          </div>
           <CardTitle className="text-2xl font-bold text-center">Forgot Password</CardTitle>
           <CardDescription className="text-center">
             Enter your email address and we'll send you a link to reset your password.
