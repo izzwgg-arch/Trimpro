@@ -48,7 +48,6 @@ export function TrimProLogo({ variant = 'light', size = 'md', className }: TrimP
   const iconSize = sizeMap[size]
   const wordHeight = iconSize * 0.85 // Wordmark slightly smaller than icon
   
-  const iconColor = variant === 'sidebar' ? '#FFFFFF' : '#0B1F2A'
   const wordColor = '#e6c98b'  // Exact color for wordmark
   
   return (
