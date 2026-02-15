@@ -6,29 +6,53 @@ interface TrimProMarkProps {
   color?: string
 }
 
-export function TrimProMark({ size = 28, className, color = '#FFFFFF' }: TrimProMarkProps) {
+export function TrimProMark({ size = 30, className, color = 'currentColor' }: TrimProMarkProps) {
+  // Geometry constants - single source of truth
+  const BAR_TOP_Y = 52        // Top Y of vertical bars
+  const BAR_W = 10            // Bar width (both bars use this)
+  const BAR_H = 54            // Bar height (both bars use this)
+  const DOT_R = 7             // Dot radius
+  const DOT_SIZE = DOT_R * 2  // Dot diameter (14)
+  
+  // Dots flush with bar tops: DOT_Y + DOT_SIZE == BAR_TOP_Y
+  // So: DOT_Y = BAR_TOP_Y - DOT_SIZE = 52 - 14 = 38
+  const DOT_Y = BAR_TOP_Y - DOT_SIZE  // Top of dot
+  const DOT_CY = DOT_Y + DOT_R        // Center Y of dot (38 + 7 = 45)
+  
+  // Bar positions (symmetric around center)
+  const LEFT_BAR_X = 48
+  const RIGHT_BAR_X = 62
+  
+  // Dot positions (symmetric around center)
+  const LEFT_DOT_CX = 30
+  const RIGHT_DOT_CX = 90
+  
   return (
     <svg
       width={size}
       height={size}
-      viewBox="0 0 24 24"
-      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 120 120"
+      preserveAspectRatio="xMidYMid meet"
       className={className}
+      style={{ shapeRendering: 'crispEdges' }}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
       aria-hidden="true"
-      shapeRendering="crispEdges"
-      style={{ display: 'block' }}
     >
-      {/* CAP */}
-      <rect x="4" y="4" width="16" height="3" fill={color} />
-
-      {/* DOTS (SQUARES). FLUSH means: dot TOP touches cap bottom (cap bottom = y=7) */}
-      {/* so dots y=7. */}
-      <rect x="7" y="7" width="3" height="3" fill={color} />
-      <rect x="14" y="7" width="3" height="3" fill={color} />
-
-      {/* TWO VERTICAL BARS (same thickness, same height) */}
-      <rect x="10" y="10" width="3" height="12" fill={color} />
-      <rect x="14" y="10" width="3" height="12" fill={color} />
+      {/* Top horizontal bar */}
+      <rect x="10" y="14" width="100" height="16" rx="0" fill={color} />
+      
+      {/* Left dot - flush with bar tops */}
+      <circle cx={LEFT_DOT_CX} cy={DOT_CY} r={DOT_R} fill={color} />
+      
+      {/* Right dot - flush with bar tops */}
+      <circle cx={RIGHT_DOT_CX} cy={DOT_CY} r={DOT_R} fill={color} />
+      
+      {/* Left vertical column - uses BAR_W constant */}
+      <rect x={LEFT_BAR_X} y={BAR_TOP_Y} width={BAR_W} height={BAR_H} rx="0" fill={color} />
+      
+      {/* Right vertical column - uses BAR_W constant (identical thickness) */}
+      <rect x={RIGHT_BAR_X} y={BAR_TOP_Y} width={BAR_W} height={BAR_H} rx="0" fill={color} />
     </svg>
   )
 }
@@ -41,7 +65,7 @@ interface TrimProLogoProps {
 
 const sizeMap = {
   sm: 24,
-  md: 28,  // Even integer to avoid subpixel blur
+  md: 30,
   lg: 40,
 }
 
@@ -69,19 +93,8 @@ export function TrimProLogo({ variant = 'light', size = 'md', className }: TrimP
         trimpro
       </span>
       
-      {/* Icon on the right - fixed wrapper to prevent scaling */}
-      <div
-        style={{
-          width: iconSize,
-          height: iconSize,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flex: '0 0 auto',
-        }}
-      >
-        <TrimProMark size={iconSize} color={iconColor} />
-      </div>
+      {/* Icon on the right */}
+      <TrimProMark size={iconSize} color={iconColor} />
     </div>
   )
 }
