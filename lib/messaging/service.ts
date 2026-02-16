@@ -96,6 +96,37 @@ export class MessagingService {
       // Get provider
       const providerInfo = await this.getProvider(tenantId, params.channel)
       if (!providerInfo) {
+        // Provide a more actionable error when an integration exists but secrets can't be decrypted.
+        // This commonly happens when ENCRYPTION_KEY/NEXTAUTH_SECRET was rotated after initial setup.
+        try {
+          const [voipms, webwhatis] = await Promise.all([
+            prisma.integrationConnection.findUnique({
+              where: { tenantId_provider: { tenantId, provider: 'voipms_sms' as any } },
+              select: { status: true, encryptedSecrets: true },
+            }),
+            prisma.integrationConnection.findUnique({
+              where: { tenantId_provider: { tenantId, provider: 'webwhatis' as any } },
+              select: { status: true, encryptedSecrets: true },
+            }),
+          ])
+
+          if (voipms?.status === 'CONNECTED' && voipms.encryptedSecrets) {
+            return {
+              success: false,
+              error:
+                'VoIP.ms is marked CONNECTED, but its saved credentials cannot be read by the server (encryption key changed). Re-save VoIP.ms credentials in Settings → Integrations → VoIP.ms SMS & MMS.',
+            }
+          }
+          if (webwhatis?.status === 'CONNECTED' && webwhatis.encryptedSecrets) {
+            return {
+              success: false,
+              error:
+                'Web.whatis is marked CONNECTED, but its saved credentials cannot be read by the server (encryption key changed). Re-save Web.whatis credentials in Settings → Integrations → Web.whatis.',
+            }
+          }
+        } catch {
+          // Ignore and fall back to generic message below.
+        }
         return {
           success: false,
           error: `No messaging provider configured for ${params.channel}`,
