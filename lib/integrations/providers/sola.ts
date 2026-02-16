@@ -7,7 +7,8 @@ import { IntegrationTestResult } from '../types'
 export async function testSola(secrets: Record<string, any>): Promise<IntegrationTestResult> {
   try {
     const secretKey = secrets.secretKey
-    const mode = secrets.mode || 'sandbox'
+    const apiSecret = secrets.secret || secrets.apiSecret || undefined
+    const mode = secrets.mode || 'production'
 
     if (!secretKey) {
       return {
@@ -17,59 +18,40 @@ export async function testSola(secrets: Record<string, any>): Promise<Integratio
       }
     }
 
-    // Try to fetch account/merchant info if API supports it
-    // For now, just validate the key format and return success
-    // In production, you'd call a Sola API endpoint to verify credentials
-
+    // TrimPro uses Cardknox endpoints for SOLA. There's no guaranteed "ping" endpoint,
+    // so we validate credentials by calling an authenticated endpoint with an
+    // intentionally invalid payload and checking we do NOT get 401/403.
     const apiBase =
-      mode === 'production'
-        ? process.env.SOLA_API_URL || 'https://api.sola.com'
-        : process.env.SOLA_SANDBOX_API_URL || 'https://sandbox-api.sola.com'
+      process.env.SOLA_API_URL ||
+      process.env.SOLA_API_BASE_URL ||
+      process.env.CARDKNOX_API_BASE_URL ||
+      'https://api.cardknox.com/v2'
 
-    try {
-      // Attempt to call a test endpoint (adjust based on Sola API)
-      const response = await fetch(`${apiBase}/v1/account`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${secretKey}`,
-          'Content-Type': 'application/json',
-        },
-      })
+    const url = `${String(apiBase).replace(/\/+$/, '')}/payment-links`
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${secretKey}`,
+        'X-API-Key': secretKey,
+        'X-API-Secret': apiSecret || '',
+      },
+      body: JSON.stringify({}),
+    })
 
-      if (response.ok) {
-        const data = await response.json()
-        return {
-          success: true,
-          message: `Connected to Sola (${mode === 'production' ? 'Production' : 'Sandbox'})`,
-        }
-      } else if (response.status === 401) {
-        return {
-          success: false,
-          message: 'Sola authentication failed',
-          error: 'Invalid secret key',
-        }
-      } else {
-        // If endpoint doesn't exist or returns different status, just validate key format
-        return {
-          success: true,
-          message: `Sola credentials configured (${mode === 'production' ? 'Production' : 'Sandbox'})`,
-        }
+    if (response.status === 401 || response.status === 403) {
+      return {
+        success: false,
+        message: 'Sola authentication failed',
+        error: 'Invalid SOLA secret key',
       }
-    } catch (fetchError: any) {
-      // If API call fails, still consider it configured if key exists
-      // This allows for offline validation
-      if (secretKey.length > 10) {
-        return {
-          success: true,
-          message: `Sola credentials configured (${mode === 'production' ? 'Production' : 'Sandbox'})`,
-        }
-      } else {
-        return {
-          success: false,
-          message: 'Sola credentials validation failed',
-          error: 'Invalid secret key format',
-        }
-      }
+    }
+
+    // Any other status means we could reach the API and credentials were accepted,
+    // even if payload is rejected (400/422).
+    return {
+      success: true,
+      message: `Sola reachable (${mode}). API responded: ${response.status}`,
     }
   } catch (error: any) {
     return {

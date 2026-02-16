@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { randomUUID } from 'crypto'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { solaService } from '@/lib/services/sola'
@@ -85,6 +86,17 @@ export async function POST(request: NextRequest) {
 
     if (Number(invoice.balance) <= 0) {
       return NextResponse.json({ error: 'Invoice is already paid' }, { status: 400 })
+    }
+
+    // Ensure a stable tokenized portal URL exists (used in hosted return URLs and in emailed links).
+    const token = invoice.paymentToken || randomUUID()
+    if (!invoice.paymentToken) {
+      await prisma.invoice.update({
+        where: { id: invoice.id },
+        data: { paymentToken: token },
+      })
+      // Keep local value consistent for subsequent URL building.
+      ;(invoice as any).paymentToken = token
     }
 
     const solaSecrets = await getIntegrationSecrets(user.tenantId, 'sola')
@@ -185,7 +197,7 @@ export async function POST(request: NextRequest) {
       billingState: billingAddress?.state || jobAddress?.state || estimateAddress.state || undefined,
       billingZip: billingAddress?.zipCode || jobAddress?.zipCode || estimateAddress?.zipCode || undefined,
       billingCountry: billingAddress?.country || jobAddress?.country || 'US',
-      returnUrl: returnUrl || `${appUrl}/portal/pay/${invoice.id}?token=${invoice.paymentToken || ''}`,
+      returnUrl: returnUrl || `${appUrl}/portal/pay/${invoice.id}?token=${encodeURIComponent(token)}`,
       webhookUrl: webhookUrl || `${appUrl}/api/webhooks/sola-payment`,
       apiKey: solaSecrets.secretKey,
     })
@@ -198,7 +210,7 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    const hostedUrl = `${appUrl}/portal/pay/${invoice.id}?token=${invoice.paymentToken || ''}`
+    const hostedUrl = `${appUrl}/portal/pay/${invoice.id}?token=${encodeURIComponent(token)}`
 
     return NextResponse.json({
       paymentLink: hostedUrl,
