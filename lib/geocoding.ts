@@ -178,8 +178,37 @@ export async function geocodeAddressPartsFromString(addressText: string): Promis
       get('administrative_area_level_2')
 
     const state = get('administrative_area_level_1', 'short_name') || get('administrative_area_level_1')
-    const zipCode = get('postal_code')
+    let zipCode = get('postal_code')
     const country = get('country', 'short_name') || undefined
+
+    // Sometimes forward geocode returns a partial match without postal_code. If we have a point,
+    // reverse geocode it to find the best postal code for that location.
+    if (!zipCode) {
+      const loc = result?.geometry?.location
+      const lat = typeof loc?.lat === 'number' ? loc.lat : null
+      const lng = typeof loc?.lng === 'number' ? loc.lng : null
+      if (lat !== null && lng !== null) {
+        const reverseRes = await fetch(
+          `https://maps.googleapis.com/maps/api/geocode/json?latlng=${encodeURIComponent(
+            `${lat},${lng}`
+          )}&key=${apiKey}`
+        )
+        if (reverseRes.ok) {
+          const reverseData: any = await reverseRes.json().catch(() => null)
+          const reverseResults: any[] = reverseData?.results || []
+          // Find the first result that contains a postal_code component.
+          for (const rr of reverseResults) {
+            const rrComponents: Array<{ long_name: string; short_name: string; types: string[] }> =
+              rr?.address_components || []
+            const postal = rrComponents.find((c) => Array.isArray(c.types) && c.types.includes('postal_code'))
+            if (postal?.long_name) {
+              zipCode = String(postal.long_name).trim()
+              break
+            }
+          }
+        }
+      }
+    }
 
     if (!city && !state && !zipCode) return null
 
