@@ -3,6 +3,7 @@
 import { Sidebar } from './sidebar'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -36,7 +37,23 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     <div className="flex h-full min-h-screen bg-gray-100">
       <Sidebar />
       <main className="flex-1 overflow-y-auto bg-gray-100 min-h-0">
-        <div className="p-6 bg-gray-100">{children}</div>
+        <div className="p-6 bg-gray-100 min-h-full flex flex-col">
+          <div className="flex-1">{children}</div>
+          <footer className="mt-10 border-t border-gray-200 pt-4 text-xs text-muted-foreground flex flex-wrap items-center justify-between gap-3">
+            <div>© {new Date().getFullYear()} Trimpro</div>
+            <div className="flex items-center gap-4">
+              <Link href="/privacy" className="hover:underline">
+                Privacy Policy
+              </Link>
+              <Link href="/terms" className="hover:underline">
+                Terms
+              </Link>
+              <a className="hover:underline" href="mailto:support@trimprony.com">
+                support@trimprony.com
+              </a>
+            </div>
+          </footer>
+        </div>
       </main>
     </div>
   )

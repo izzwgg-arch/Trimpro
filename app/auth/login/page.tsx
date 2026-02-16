@@ -2,6 +2,7 @@
 
 import { useState, Suspense } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -113,6 +114,17 @@ function LoginForm() {
               </a>
             </div>
           </form>
+          <div className="mt-6 border-t pt-4 text-center text-xs text-muted-foreground">
+            <span>By signing in, you agree to our </span>
+            <Link href="/terms" className="text-[#2E4A59] hover:underline">
+              Terms
+            </Link>
+            <span> and </span>
+            <Link href="/privacy" className="text-[#2E4A59] hover:underline">
+              Privacy Policy
+            </Link>
+            <span>.</span>
+          </div>
         </CardContent>
       </Card>
     </div>
