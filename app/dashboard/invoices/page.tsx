@@ -215,10 +215,6 @@ export default function InvoicesPage() {
         </div>
         <div className="flex items-center gap-2">
           <ViewModeSelector value={viewMode} onChange={setViewMode} />
-          <Button onClick={() => router.push('/dashboard/invoices/new')}>
-            <Plus className="mr-2 h-4 w-4" />
-            New Invoice
-          </Button>
           <Button
             variant="outline"
             onClick={handleDuplicateSelected}
@@ -226,6 +222,10 @@ export default function InvoicesPage() {
           >
             <Copy className="mr-2 h-4 w-4" />
             {duplicating ? 'Duplicating...' : `Duplicate${selectedIds.length ? ` (${selectedIds.length})` : ''}`}
+          </Button>
+          <Button onClick={() => router.push('/dashboard/invoices/new')}>
+            <Plus className="mr-2 h-4 w-4" />
+            New Invoice
           </Button>
         </div>
       </div>
