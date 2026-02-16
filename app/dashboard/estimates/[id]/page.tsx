@@ -422,6 +422,10 @@ export default function EstimateDetailPage() {
           <span className={`px-3 py-1 text-sm rounded-full ${statusColors[estimate.status] || 'bg-gray-100 text-gray-800'}`}>
             {estimate.status}
           </span>
+          <Button variant="outline" onClick={() => router.push('/dashboard/estimates/new')}>
+            <Plus className="mr-2 h-4 w-4" />
+            New Estimate
+          </Button>
           <Button variant="outline" onClick={handleDownloadPDF}>
             <Download className="mr-2 h-4 w-4" />
             Download PDF

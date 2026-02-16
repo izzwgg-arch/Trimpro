@@ -622,6 +622,10 @@ export default function EditEstimatePage() {
           <h1 className="text-3xl font-bold text-gray-900">Edit Estimate</h1>
           <p className="mt-2 text-gray-600">Estimate #{estimateNumber}</p>
         </div>
+        <Button type="button" variant="outline" onClick={() => router.push('/dashboard/estimates/new')}>
+          <Plus className="mr-2 h-4 w-4" />
+          New Estimate
+        </Button>
         <Button type="button" variant="outline" onClick={handleDuplicate} disabled={duplicating}>
           <Copy className="mr-2 h-4 w-4" />
           {duplicating ? 'Duplicating...' : 'Duplicate'}
