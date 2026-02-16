@@ -65,6 +65,10 @@ export default function EstimatesPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [viewMode, setViewMode] = useViewMode('estimates', 'grid')
 
+  const toggleSelected = (id: string, checked: boolean) => {
+    setSelectedIds((prev) => (checked ? (prev.includes(id) ? prev : [...prev, id]) : prev.filter((x) => x !== id)))
+  }
+
   useEffect(() => {
     fetchEstimates()
   }, [search, status])
@@ -414,6 +418,19 @@ export default function EstimatesPage() {
             <RowCompactItem
               key={estimate.id}
               href={`/dashboard/estimates/${estimate.id}`}
+              leading={
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(estimate.id)}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                  }}
+                  onChange={(e) => toggleSelected(estimate.id, e.target.checked)}
+                  className="h-4 w-4"
+                  title="Select for duplicate"
+                />
+              }
               primary={`${estimate.estimateNumber} • ${estimate.title}`}
               secondary={estimate.client?.name || (estimate.lead ? `${estimate.lead.firstName} ${estimate.lead.lastName}` : 'No client')}
               status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[estimate.status] || 'bg-gray-100 text-gray-800'}`}>{estimate.status}</span>}
@@ -428,6 +445,19 @@ export default function EstimatesPage() {
             <RowDetailedItem
               key={estimate.id}
               href={`/dashboard/estimates/${estimate.id}`}
+              leading={
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(estimate.id)}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                  }}
+                  onChange={(e) => toggleSelected(estimate.id, e.target.checked)}
+                  className="h-4 w-4"
+                  title="Select for duplicate"
+                />
+              }
               primary={`${estimate.estimateNumber} • ${estimate.title}`}
               status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[estimate.status] || 'bg-gray-100 text-gray-800'}`}>{estimate.status}</span>}
               line2={`${estimate.client?.name || (estimate.lead ? `${estimate.lead.firstName} ${estimate.lead.lastName}` : 'No client')} • ${estimate._count.lineItems} line items`}
@@ -442,6 +472,22 @@ export default function EstimatesPage() {
           rowKey={(estimate) => estimate.id}
           onRowClick={(estimate) => router.push(`/dashboard/estimates/${estimate.id}`)}
           columns={[
+            {
+              key: 'select',
+              header: '',
+              render: (estimate) => (
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(estimate.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => toggleSelected(estimate.id, e.target.checked)}
+                  className="h-4 w-4"
+                  title="Select for duplicate"
+                />
+              ),
+              className: 'w-10',
+              headerClassName: 'w-10',
+            },
             {
               key: 'estimate',
               header: 'Estimate',

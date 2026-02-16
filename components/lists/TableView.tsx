@@ -10,6 +10,7 @@ export interface TableColumn<T> {
   render: (item: T) => ReactNode
   sortValue?: (item: T) => string | number
   className?: string
+  headerClassName?: string
 }
 
 interface TableViewProps<T> {
@@ -59,7 +60,10 @@ export function TableView<T>({ data, columns, rowKey, onRowClick }: TableViewPro
         <thead className="sticky top-0 z-10 bg-muted/60">
           <tr>
             {columns.map((column) => (
-              <th key={column.key} className={cn('px-3 py-2 text-left font-medium', column.className)}>
+              <th
+                key={column.key}
+                className={cn('px-3 py-2 text-left font-medium', column.headerClassName, column.className)}
+              >
                 {column.sortValue ? (
                   <button
                     type="button"

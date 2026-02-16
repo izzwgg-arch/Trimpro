@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 interface RowCompactItemProps {
   href?: string
   onClick?: () => void
+  leading?: ReactNode
   primary: ReactNode
   secondary?: ReactNode
   status?: ReactNode
@@ -19,6 +20,7 @@ interface RowCompactItemProps {
 export function RowCompactItem({
   href,
   onClick,
+  leading,
   primary,
   secondary,
   status,
@@ -34,6 +36,7 @@ export function RowCompactItem({
         className
       )}
     >
+      {leading && <div className="shrink-0">{leading}</div>}
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium">{primary}</div>
         {secondary && <div className="truncate text-xs text-muted-foreground">{secondary}</div>}

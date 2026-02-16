@@ -58,6 +58,10 @@ export default function PurchaseOrdersPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [viewMode, setViewMode] = useViewMode('purchaseOrders', 'grid')
 
+  const toggleSelected = (id: string, checked: boolean) => {
+    setSelectedIds((prev) => (checked ? (prev.includes(id) ? prev : [...prev, id]) : prev.filter((x) => x !== id)))
+  }
+
   useEffect(() => {
     fetchPurchaseOrders()
   }, [search, status])
@@ -310,6 +314,19 @@ export default function PurchaseOrdersPage() {
             <RowCompactItem
               key={po.id}
               href={`/dashboard/purchase-orders/${po.id}`}
+              leading={
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(po.id)}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                  }}
+                  onChange={(e) => toggleSelected(po.id, e.target.checked)}
+                  className="h-4 w-4"
+                  title="Select for duplicate"
+                />
+              }
               primary={po.poNumber}
               secondary={po.vendorRef?.name || po.vendor}
               status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[po.status] || 'bg-gray-100 text-gray-800'}`}>{po.status}</span>}
@@ -324,6 +341,19 @@ export default function PurchaseOrdersPage() {
             <RowDetailedItem
               key={po.id}
               href={`/dashboard/purchase-orders/${po.id}`}
+              leading={
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(po.id)}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                  }}
+                  onChange={(e) => toggleSelected(po.id, e.target.checked)}
+                  className="h-4 w-4"
+                  title="Select for duplicate"
+                />
+              }
               primary={po.poNumber}
               status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[po.status] || 'bg-gray-100 text-gray-800'}`}>{po.status}</span>}
               line2={`${po.vendorRef?.name || po.vendor}${po.job ? ` • Job ${po.job.jobNumber}` : ''}`}
@@ -338,6 +368,22 @@ export default function PurchaseOrdersPage() {
           rowKey={(po) => po.id}
           onRowClick={(po) => router.push(`/dashboard/purchase-orders/${po.id}`)}
           columns={[
+            {
+              key: 'select',
+              header: '',
+              render: (po) => (
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(po.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => toggleSelected(po.id, e.target.checked)}
+                  className="h-4 w-4"
+                  title="Select for duplicate"
+                />
+              ),
+              className: 'w-10',
+              headerClassName: 'w-10',
+            },
             {
               key: 'po',
               header: 'PO',

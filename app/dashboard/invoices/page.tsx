@@ -65,6 +65,10 @@ export default function InvoicesPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [viewMode, setViewMode] = useViewMode('invoices', 'grid')
 
+  const toggleSelected = (id: string, checked: boolean) => {
+    setSelectedIds((prev) => (checked ? (prev.includes(id) ? prev : [...prev, id]) : prev.filter((x) => x !== id)))
+  }
+
   useEffect(() => {
     const statusParam = searchParams.get('status')
     if (statusParam) {
@@ -437,6 +441,19 @@ export default function InvoicesPage() {
             <RowCompactItem
               key={invoice.id}
               href={`/dashboard/invoices/${invoice.id}`}
+              leading={
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(invoice.id)}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                  }}
+                  onChange={(e) => toggleSelected(invoice.id, e.target.checked)}
+                  className="h-4 w-4"
+                  title="Select for duplicate"
+                />
+              }
               primary={`${invoice.invoiceNumber} • ${invoice.title}`}
               secondary={invoice.client.name}
               status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[invoice.status] || 'bg-gray-100 text-gray-800'}`}>{invoice.status}</span>}
@@ -451,6 +468,19 @@ export default function InvoicesPage() {
             <RowDetailedItem
               key={invoice.id}
               href={`/dashboard/invoices/${invoice.id}`}
+              leading={
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(invoice.id)}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                  }}
+                  onChange={(e) => toggleSelected(invoice.id, e.target.checked)}
+                  className="h-4 w-4"
+                  title="Select for duplicate"
+                />
+              }
               primary={`${invoice.invoiceNumber} • ${invoice.title}`}
               status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[invoice.status] || 'bg-gray-100 text-gray-800'}`}>{invoice.status}</span>}
               line2={`${invoice.client.name} • Balance ${formatCurrency(parseFloat(invoice.balance))}`}
@@ -465,6 +495,22 @@ export default function InvoicesPage() {
           rowKey={(invoice) => invoice.id}
           onRowClick={(invoice) => router.push(`/dashboard/invoices/${invoice.id}`)}
           columns={[
+            {
+              key: 'select',
+              header: '',
+              render: (invoice) => (
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(invoice.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => toggleSelected(invoice.id, e.target.checked)}
+                  className="h-4 w-4"
+                  title="Select for duplicate"
+                />
+              ),
+              className: 'w-10',
+              headerClassName: 'w-10',
+            },
             {
               key: 'invoice',
               header: 'Invoice',

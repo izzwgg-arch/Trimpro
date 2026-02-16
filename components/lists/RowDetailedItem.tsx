@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 interface RowDetailedItemProps {
   href?: string
   onClick?: () => void
+  leading?: ReactNode
   primary: ReactNode
   status?: ReactNode
   line2?: ReactNode
@@ -19,6 +20,7 @@ interface RowDetailedItemProps {
 export function RowDetailedItem({
   href,
   onClick,
+  leading,
   primary,
   status,
   line2,
@@ -35,6 +37,7 @@ export function RowDetailedItem({
       )}
     >
       <div className="flex items-start justify-between gap-3">
+        {leading && <div className="mt-0.5 shrink-0">{leading}</div>}
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <div className="truncate text-sm font-medium">{primary}</div>
