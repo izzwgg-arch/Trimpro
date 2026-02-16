@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { formatAddressParts, parseAddressParts } from '@/lib/address/parse'
+import { geocodeAddressPartsFromString } from '@/lib/geocoding'
 
 export async function GET(
   request: NextRequest,
@@ -131,6 +132,18 @@ export async function GET(
     const jobSite = addresses.find(addr => addr.type === 'job_site') || null
     const jobSiteAddress = formatAddressParts(jobSite)
     const parsedJobSite = parseAddressParts(jobSiteAddress)
+    const missingJobSiteParts =
+      !!jobSiteAddress &&
+      (!parsedJobSite || !parsedJobSite.city || !parsedJobSite.state || !parsedJobSite.zipCode)
+    const geo = missingJobSiteParts ? await geocodeAddressPartsFromString(jobSiteAddress!) : null
+
+    const derivedJobSite = {
+      city: (jobSite?.city || geo?.city || '').trim() || null,
+      state: (jobSite?.state || geo?.state || '').trim() || null,
+      zipCode: (jobSite?.zipCode || geo?.zipCode || '').trim() || null,
+      street: (jobSite?.street || geo?.street || '').trim() || null,
+      country: (jobSite?.country || geo?.country || '').trim() || null,
+    }
 
     // Ensure arrays are initialized
     const safeJob = {
@@ -152,16 +165,16 @@ export async function GET(
     const jobResponse = {
       ...safeJob,
       jobSiteAddress,
-      jobSiteCity: parsedJobSite?.city || null,
-      jobSiteState: parsedJobSite?.state || null,
-      jobSiteZipCode: parsedJobSite?.zipCode || null,
+      jobSiteCity: (parsedJobSite?.city || derivedJobSite.city || '').trim() || null,
+      jobSiteState: (parsedJobSite?.state || derivedJobSite.state || '').trim() || null,
+      jobSiteZipCode: (parsedJobSite?.zipCode || derivedJobSite.zipCode || '').trim() || null,
       jobSite: jobSite ? {
         id: jobSite.id,
-        street: jobSite.street,
-        city: jobSite.city,
-        state: jobSite.state,
-        zipCode: jobSite.zipCode,
-        country: jobSite.country,
+        street: derivedJobSite.street || jobSite.street,
+        city: derivedJobSite.city || jobSite.city,
+        state: derivedJobSite.state || jobSite.state,
+        zipCode: derivedJobSite.zipCode || jobSite.zipCode,
+        country: derivedJobSite.country || jobSite.country,
       } : null,
       estimateAmount: job.estimateAmount ? job.estimateAmount.toString() : null,
       actualAmount: job.actualAmount ? job.actualAmount.toString() : null,
