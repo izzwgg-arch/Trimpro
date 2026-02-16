@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useLayoutEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import styles from './messages.module.css'
 import {
   Search,
   MessageSquare,
@@ -103,8 +104,30 @@ export default function MessagesPage() {
   const [newConversationChannel, setNewConversationChannel] = useState<'SMS' | 'MMS'>('SMS')
   const [newConversationClientId, setNewConversationClientId] = useState<string>('none')
   const [clients, setClients] = useState<Array<{ id: string; name: string; phone: string | null }>>([])
-  const messagesEndRef = useRef<HTMLDivElement>(null)
   const emojiRef = useRef<HTMLDivElement>(null)
+
+  // Chat scroll behavior
+  const threadScrollRef = useRef<HTMLDivElement>(null)
+  const userNearBottomRef = useRef(true)
+  const pendingScrollToBottomRef = useRef(false)
+  const prevScrollHeightRef = useRef(0)
+  const prevScrollTopRef = useRef(0)
+  const lastMessageIdRef = useRef<string | null>(null)
+
+  const isNearBottom = (el: HTMLDivElement) => {
+    const distanceFromBottom = el.scrollHeight - (el.scrollTop + el.clientHeight)
+    return distanceFromBottom < 80
+  }
+
+  const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
+    const el = threadScrollRef.current
+    if (!el) return
+    try {
+      el.scrollTo({ top: el.scrollHeight, behavior })
+    } catch {
+      el.scrollTop = el.scrollHeight
+    }
+  }
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
@@ -138,10 +161,41 @@ export default function MessagesPage() {
     }
   }, [selectedConversation?.id])
 
-  useEffect(() => {
-    // Auto-scroll to bottom when new messages arrive
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [selectedConversation?.messages])
+  useLayoutEffect(() => {
+    const el = threadScrollRef.current
+    if (!el || !selectedConversation) return
+
+    const msgs = selectedConversation.messages || []
+    const lastId = msgs.length > 0 ? msgs[msgs.length - 1].id : null
+    const newMessageArrived = !!lastId && lastId !== lastMessageIdRef.current
+
+    // First render after selecting a conversation: snap to bottom once.
+    if (!lastMessageIdRef.current && lastId) {
+      pendingScrollToBottomRef.current = true
+    }
+
+    if (!newMessageArrived) {
+      lastMessageIdRef.current = lastId
+      return
+    }
+
+    const shouldSnap =
+      pendingScrollToBottomRef.current || userNearBottomRef.current
+
+    if (shouldSnap) {
+      // Defer so images/media layout changes are accounted for.
+      requestAnimationFrame(() => scrollToBottom('auto'))
+    } else {
+      // Scroll anchoring: keep the viewport steady while new messages append below.
+      const delta = el.scrollHeight - prevScrollHeightRef.current
+      if (delta !== 0) {
+        el.scrollTop = prevScrollTopRef.current + delta
+      }
+    }
+
+    pendingScrollToBottomRef.current = false
+    lastMessageIdRef.current = lastId
+  }, [selectedConversation?.id, selectedConversation?.messages?.length])
 
   const refreshToken = async (): Promise<boolean> => {
     const refreshToken = localStorage.getItem('refreshToken')
@@ -248,6 +302,12 @@ export default function MessagesPage() {
             }))
           }))
         })
+        // Capture scroll position BEFORE we update state, so we can anchor properly afterward.
+        const el = threadScrollRef.current
+        if (el) {
+          prevScrollHeightRef.current = el.scrollHeight
+          prevScrollTopRef.current = el.scrollTop
+        }
         setSelectedConversation(data.conversation)
       }
     } catch (error) {
@@ -293,6 +353,7 @@ export default function MessagesPage() {
     }
 
     setSending(true)
+    pendingScrollToBottomRef.current = true
     try {
       let token = localStorage.getItem('accessToken')
       if (!token) {
@@ -514,7 +575,8 @@ export default function MessagesPage() {
       case 'MMS':
         return <Phone className="h-4 w-4" />
       case 'WHATSAPP':
-        return <MessageSquare className="h-4 w-4" />
+        // Legacy/mis-labeled conversations may still exist; display as phone to match SMS provider setup.
+        return <Phone className="h-4 w-4" />
       case 'EMAIL':
         return <Mail className="h-4 w-4" />
       default:
@@ -525,7 +587,7 @@ export default function MessagesPage() {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'DELIVERED':
-        return <CheckCheck className="h-3 w-3 text-blue-500" />
+        return <CheckCheck className="h-3 w-3 text-[#333333]" />
       case 'READ':
         return <CheckCheck className="h-3 w-3 text-green-500" />
       case 'SENT':
@@ -554,7 +616,11 @@ export default function MessagesPage() {
         <div className="p-4 border-b bg-white">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold">Messages</h2>
-            <Button size="sm" onClick={() => setShowNewConversation(true)}>
+            <Button
+              size="sm"
+              onClick={() => setShowNewConversation(true)}
+              className="bg-[#333333] hover:bg-[#3b3b3b] text-white"
+            >
               <Plus className="h-4 w-4 mr-1" />
               New
             </Button>
@@ -599,7 +665,7 @@ export default function MessagesPage() {
         </div>
 
         {/* Conversation List */}
-        <div className="flex-1 overflow-y-auto">
+        <div className={`flex-1 overflow-y-auto ${styles.scrollbar}`}>
           {loading ? (
             <div className="p-4 text-center text-gray-500">Loading...</div>
           ) : conversations.length === 0 ? (
@@ -619,9 +685,13 @@ export default function MessagesPage() {
             conversations.map((conv) => (
               <div
                 key={conv.id}
-                onClick={() => setSelectedConversation(conv as ConversationDetail)}
+                onClick={() => {
+                  pendingScrollToBottomRef.current = true
+                  lastMessageIdRef.current = null
+                  setSelectedConversation(conv as ConversationDetail)
+                }}
                 className={`p-4 border-b cursor-pointer hover:bg-white transition-colors ${
-                  selectedConversation?.id === conv.id ? 'bg-white border-l-4 border-l-blue-500' : ''
+                  selectedConversation?.id === conv.id ? 'bg-white border-l-4 border-l-[#333333]' : ''
                 }`}
               >
                 <div className="flex items-start justify-between">
@@ -632,7 +702,7 @@ export default function MessagesPage() {
                         {conv.client?.name || conv.participants[0] || 'Unknown'}
                       </span>
                       {conv.unreadCount > 0 && (
-                        <span className="ml-auto bg-blue-500 text-white text-xs rounded-full px-2 py-0.5">
+                        <span className="ml-auto bg-[#333333] text-white text-xs rounded-full px-2 py-0.5">
                           {conv.unreadCount}
                         </span>
                       )}
@@ -688,7 +758,17 @@ export default function MessagesPage() {
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div
+              ref={threadScrollRef}
+              onScroll={() => {
+                const el = threadScrollRef.current
+                if (!el) return
+                userNearBottomRef.current = isNearBottom(el)
+                prevScrollHeightRef.current = el.scrollHeight
+                prevScrollTopRef.current = el.scrollTop
+              }}
+              className={`flex-1 overflow-y-auto p-4 space-y-4 ${styles.scrollbar}`}
+            >
               {selectedConversation.messages?.map((message) => (
                 <div
                   key={message.id}
@@ -697,7 +777,7 @@ export default function MessagesPage() {
                   <div
                     className={`max-w-[70%] rounded-lg p-3 ${
                       message.direction === 'OUTBOUND'
-                        ? 'bg-blue-500 text-white'
+                        ? 'bg-[#333333] text-white'
                         : 'bg-gray-200 text-gray-900'
                     }`}
                   >
@@ -779,7 +859,6 @@ export default function MessagesPage() {
                   </div>
                 </div>
               ))}
-              <div ref={messagesEndRef} />
             </div>
 
             {/* Compose Box */}
@@ -877,6 +956,7 @@ export default function MessagesPage() {
                   onClick={handleSendMessage}
                   disabled={((!messageText.trim() && attachments.length === 0) || sending || uploading)}
                   title={uploading ? 'Uploading...' : 'Send'}
+                  className="bg-[#333333] hover:bg-[#3b3b3b] text-white"
                 >
                   <Send className="h-4 w-4" />
                 </Button>
