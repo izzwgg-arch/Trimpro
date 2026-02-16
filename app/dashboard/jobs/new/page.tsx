@@ -9,6 +9,8 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ArrowLeft, Save } from 'lucide-react'
 import Link from 'next/link'
+import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
+import { PlaceAutocompleteInput } from '@/components/maps/PlaceAutocompleteInput'
 
 interface Client {
   id: string
@@ -22,6 +24,7 @@ export default function NewJobPage() {
   const clientIdParam = searchParams.get('clientId')
   const [loading, setLoading] = useState(false)
   const [clients, setClients] = useState<Client[]>([])
+  const [jobSitePlaceId, setJobSitePlaceId] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     clientId: clientIdParam || '',
     title: '',
@@ -62,6 +65,10 @@ export default function NewJobPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (formData.jobSite.street.trim() && !jobSitePlaceId) {
+      alert('Please select a real job site address from the suggestions.')
+      return
+    }
     setLoading(true)
 
     try {
@@ -267,15 +274,40 @@ export default function NewJobPage() {
           <CardContent className="space-y-4">
             <div>
               <Label htmlFor="jobSiteStreet">Street Address</Label>
-              <Input
-                id="jobSiteStreet"
-                value={formData.jobSite.street}
-                onChange={(e) => setFormData({
-                  ...formData,
-                  jobSite: { ...formData.jobSite, street: e.target.value }
-                })}
-                placeholder="123 Main St"
-              />
+              <GoogleMapsLoader>
+                <PlaceAutocompleteInput
+                  inputId="jobSiteStreet"
+                  value={formData.jobSite.street}
+                  onChangeText={(text) => {
+                    setJobSitePlaceId(null)
+                    setFormData((prev) => ({
+                      ...prev,
+                      jobSite: {
+                        ...prev.jobSite,
+                        street: text,
+                        city: '',
+                        state: '',
+                        zipCode: '',
+                      },
+                    }))
+                  }}
+                  onAddressSelected={({ placeId, address }) => {
+                    setJobSitePlaceId(placeId)
+                    setFormData((prev) => ({
+                      ...prev,
+                      jobSite: {
+                        ...prev.jobSite,
+                        street: address.street || prev.jobSite.street,
+                        city: address.city || '',
+                        state: address.state || '',
+                        zipCode: address.zipCode || '',
+                        country: 'US',
+                      },
+                    }))
+                  }}
+                  placeholder="Start typing an address (required to select from list)"
+                />
+              </GoogleMapsLoader>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -283,10 +315,8 @@ export default function NewJobPage() {
                 <Input
                   id="jobSiteCity"
                   value={formData.jobSite.city}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    jobSite: { ...formData.jobSite, city: e.target.value }
-                  })}
+                  readOnly
+                  disabled
                   placeholder="City"
                 />
               </div>
@@ -295,10 +325,8 @@ export default function NewJobPage() {
                 <Input
                   id="jobSiteState"
                   value={formData.jobSite.state}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    jobSite: { ...formData.jobSite, state: e.target.value }
-                  })}
+                  readOnly
+                  disabled
                   placeholder="State"
                 />
               </div>
@@ -309,10 +337,8 @@ export default function NewJobPage() {
                 <Input
                   id="jobSiteZip"
                   value={formData.jobSite.zipCode}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    jobSite: { ...formData.jobSite, zipCode: e.target.value }
-                  })}
+                  readOnly
+                  disabled
                   placeholder="12345"
                 />
               </div>

@@ -220,6 +220,7 @@ export async function PUT(
       actualAmount,
       laborCost,
       materialCost,
+      jobSite,
     } = body
 
     // Get existing job
@@ -255,6 +256,41 @@ export async function PUT(
         materialCost: materialCost !== undefined ? parseFloat(materialCost) : existing.materialCost,
       },
     })
+
+    // Upsert job site address (type: job_site) when provided.
+    // - jobSite: null => delete existing job_site address
+    // - jobSite: { street... } => upsert
+    if (jobSite === null) {
+      await prisma.address.deleteMany({
+        where: { jobId: job.id, type: 'job_site' },
+      })
+    } else if (jobSite && typeof jobSite === 'object' && String(jobSite.street || '').trim()) {
+      const existingJobSite = await prisma.address.findFirst({
+        where: { jobId: job.id, type: 'job_site' },
+      })
+      const data = {
+        street: String(jobSite.street || '').trim(),
+        city: String(jobSite.city || '').trim(),
+        state: String(jobSite.state || '').trim(),
+        zipCode: String(jobSite.zipCode || '').trim(),
+        country: String(jobSite.country || 'US').trim() || 'US',
+        notes: jobSite.notes ? String(jobSite.notes) : null,
+      }
+      if (existingJobSite) {
+        await prisma.address.update({
+          where: { id: existingJobSite.id },
+          data,
+        })
+      } else {
+        await prisma.address.create({
+          data: {
+            jobId: job.id,
+            type: 'job_site',
+            ...data,
+          },
+        })
+      }
+    }
 
     // Create activity if status changed
     if (statusChanged) {

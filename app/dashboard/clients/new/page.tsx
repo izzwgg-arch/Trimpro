@@ -8,6 +8,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ArrowLeft, Save } from 'lucide-react'
 import Link from 'next/link'
+import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
+import { PlaceAutocompleteInput } from '@/components/maps/PlaceAutocompleteInput'
 
 export default function NewClientPage() {
   const router = useRouter()
@@ -16,6 +18,8 @@ export default function NewClientPage() {
   const isSubClientMode = !!parentId
   const [loading, setLoading] = useState(false)
   const [parentClientName, setParentClientName] = useState<string>('')
+  const [billingPlaceId, setBillingPlaceId] = useState<string | null>(null)
+  const [shippingPlaceId, setShippingPlaceId] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     name: '',
     companyName: '',
@@ -71,6 +75,7 @@ export default function NewClientPage() {
               country: parentBilling.country || 'US',
             },
           }))
+          setBillingPlaceId(parentBilling.street ? 'existing' : null)
         }
       } catch (error) {
         console.error('Error loading parent client for sub-client defaults:', error)
@@ -82,6 +87,14 @@ export default function NewClientPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (formData.billingAddress.street.trim() && !billingPlaceId) {
+      alert('Please select a real billing address from the suggestions.')
+      return
+    }
+    if (!isSubClientMode && formData.shippingAddress.street.trim() && !shippingPlaceId) {
+      alert('Please select a real shipping address from the suggestions.')
+      return
+    }
     setLoading(true)
 
     try {
@@ -246,15 +259,34 @@ export default function NewClientPage() {
           <CardContent className="space-y-4">
             <div>
               <Label htmlFor="billingStreet">Street Address</Label>
-              <Input
-                id="billingStreet"
-                value={formData.billingAddress.street}
-                onChange={(e) => setFormData({
-                  ...formData,
-                  billingAddress: { ...formData.billingAddress, street: e.target.value }
-                })}
-                placeholder="123 Main St"
-              />
+              <GoogleMapsLoader>
+                <PlaceAutocompleteInput
+                  inputId="billingStreet"
+                  value={formData.billingAddress.street}
+                  onChangeText={(text) => {
+                    setBillingPlaceId(null)
+                    setFormData((prev) => ({
+                      ...prev,
+                      billingAddress: { ...prev.billingAddress, street: text, city: '', state: '', zipCode: '' },
+                    }))
+                  }}
+                  onAddressSelected={({ placeId, address }) => {
+                    setBillingPlaceId(placeId)
+                    setFormData((prev) => ({
+                      ...prev,
+                      billingAddress: {
+                        ...prev.billingAddress,
+                        street: address.street || prev.billingAddress.street,
+                        city: address.city || '',
+                        state: address.state || '',
+                        zipCode: address.zipCode || '',
+                        country: 'US',
+                      },
+                    }))
+                  }}
+                  placeholder="Start typing an address (required to select from list)"
+                />
+              </GoogleMapsLoader>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -262,10 +294,8 @@ export default function NewClientPage() {
                 <Input
                   id="billingCity"
                   value={formData.billingAddress.city}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    billingAddress: { ...formData.billingAddress, city: e.target.value }
-                  })}
+                  readOnly
+                  disabled
                   placeholder="City"
                 />
               </div>
@@ -274,10 +304,8 @@ export default function NewClientPage() {
                 <Input
                   id="billingState"
                   value={formData.billingAddress.state}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    billingAddress: { ...formData.billingAddress, state: e.target.value }
-                  })}
+                  readOnly
+                  disabled
                   placeholder="State"
                 />
               </div>
@@ -288,10 +316,8 @@ export default function NewClientPage() {
                 <Input
                   id="billingZip"
                   value={formData.billingAddress.zipCode}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    billingAddress: { ...formData.billingAddress, zipCode: e.target.value }
-                  })}
+                  readOnly
+                  disabled
                   placeholder="12345"
                 />
               </div>
@@ -320,15 +346,34 @@ export default function NewClientPage() {
             <CardContent className="space-y-4">
               <div>
                 <Label htmlFor="shippingStreet">Street Address</Label>
-                <Input
-                  id="shippingStreet"
-                  value={formData.shippingAddress.street}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    shippingAddress: { ...formData.shippingAddress, street: e.target.value }
-                  })}
-                  placeholder="123 Main St"
-                />
+                <GoogleMapsLoader>
+                  <PlaceAutocompleteInput
+                    inputId="shippingStreet"
+                    value={formData.shippingAddress.street}
+                    onChangeText={(text) => {
+                      setShippingPlaceId(null)
+                      setFormData((prev) => ({
+                        ...prev,
+                        shippingAddress: { ...prev.shippingAddress, street: text, city: '', state: '', zipCode: '' },
+                      }))
+                    }}
+                    onAddressSelected={({ placeId, address }) => {
+                      setShippingPlaceId(placeId)
+                      setFormData((prev) => ({
+                        ...prev,
+                        shippingAddress: {
+                          ...prev.shippingAddress,
+                          street: address.street || prev.shippingAddress.street,
+                          city: address.city || '',
+                          state: address.state || '',
+                          zipCode: address.zipCode || '',
+                          country: 'US',
+                        },
+                      }))
+                    }}
+                    placeholder="Start typing an address (required to select from list)"
+                  />
+                </GoogleMapsLoader>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -336,10 +381,8 @@ export default function NewClientPage() {
                   <Input
                     id="shippingCity"
                     value={formData.shippingAddress.city}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      shippingAddress: { ...formData.shippingAddress, city: e.target.value }
-                    })}
+                    readOnly
+                    disabled
                     placeholder="City"
                   />
                 </div>
@@ -348,10 +391,8 @@ export default function NewClientPage() {
                   <Input
                     id="shippingState"
                     value={formData.shippingAddress.state}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      shippingAddress: { ...formData.shippingAddress, state: e.target.value }
-                    })}
+                    readOnly
+                    disabled
                     placeholder="State"
                   />
                 </div>
@@ -362,10 +403,8 @@ export default function NewClientPage() {
                   <Input
                     id="shippingZip"
                     value={formData.shippingAddress.zipCode}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      shippingAddress: { ...formData.shippingAddress, zipCode: e.target.value }
-                    })}
+                    readOnly
+                    disabled
                     placeholder="12345"
                   />
                 </div>

@@ -9,6 +9,8 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ArrowLeft, Save, Copy } from 'lucide-react'
 import Link from 'next/link'
+import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
+import { PlaceAutocompleteInput } from '@/components/maps/PlaceAutocompleteInput'
 
 interface Client {
   id: string
@@ -57,6 +59,7 @@ export default function EditJobPage() {
   const [duplicating, setDuplicating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [clients, setClients] = useState<Client[]>([])
+  const [jobSitePlaceId, setJobSitePlaceId] = useState<string | null>(null)
 
   const [formData, setFormData] = useState({
     clientId: '',
@@ -167,6 +170,7 @@ export default function EditJobPage() {
             notes: jobSite.notes || '',
           },
         })
+        setJobSitePlaceId(jobSite.street ? 'existing' : null)
       }
     } catch (error) {
       console.error('Error fetching job:', error)
@@ -179,6 +183,10 @@ export default function EditJobPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!jobId) return
+    if (formData.jobSite.street.trim() && !jobSitePlaceId) {
+      setError('Please select a real job site address from the suggestions.')
+      return
+    }
 
     setSaving(true)
     setError(null)
@@ -232,6 +240,7 @@ export default function EditJobPage() {
           actualAmount: formData.actualAmount ? parseFloat(formData.actualAmount) : null,
           laborCost: formData.laborCost ? parseFloat(formData.laborCost) : null,
           materialCost: formData.materialCost ? parseFloat(formData.materialCost) : null,
+          jobSite: formData.jobSite.street ? formData.jobSite : null,
         }),
       })
 
@@ -509,6 +518,102 @@ export default function EditJobPage() {
                   placeholder="0.00"
                 />
               </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Job Site Address */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Job Site Address</CardTitle>
+            <CardDescription>Location where the work will be performed</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <Label htmlFor="jobSiteStreet">Street Address</Label>
+              <GoogleMapsLoader>
+                <PlaceAutocompleteInput
+                  inputId="jobSiteStreet"
+                  value={formData.jobSite.street}
+                  onChangeText={(text) => {
+                    setJobSitePlaceId(null)
+                    setFormData((prev) => ({
+                      ...prev,
+                      jobSite: {
+                        ...prev.jobSite,
+                        street: text,
+                        city: '',
+                        state: '',
+                        zipCode: '',
+                      },
+                    }))
+                  }}
+                  onAddressSelected={({ placeId, address }) => {
+                    setJobSitePlaceId(placeId)
+                    setFormData((prev) => ({
+                      ...prev,
+                      jobSite: {
+                        ...prev.jobSite,
+                        street: address.street || prev.jobSite.street,
+                        city: address.city || '',
+                        state: address.state || '',
+                        zipCode: address.zipCode || '',
+                        country: 'US',
+                      },
+                    }))
+                  }}
+                  placeholder="Start typing an address (required to select from list)"
+                />
+              </GoogleMapsLoader>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="jobSiteCity">City</Label>
+                <Input id="jobSiteCity" value={formData.jobSite.city} readOnly disabled placeholder="City" />
+              </div>
+              <div>
+                <Label htmlFor="jobSiteState">State</Label>
+                <Input id="jobSiteState" value={formData.jobSite.state} readOnly disabled placeholder="State" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="jobSiteZip">Zip Code</Label>
+                <Input id="jobSiteZip" value={formData.jobSite.zipCode} readOnly disabled placeholder="12345" />
+              </div>
+              <div>
+                <Label htmlFor="jobSiteCountry">Country</Label>
+                <Input
+                  id="jobSiteCountry"
+                  value={formData.jobSite.country}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      jobSite: { ...prev.jobSite, country: e.target.value },
+                    }))
+                  }
+                  placeholder="US"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="jobSiteNotes">Location Notes</Label>
+              <textarea
+                id="jobSiteNotes"
+                rows={2}
+                value={formData.jobSite.notes}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    jobSite: { ...prev.jobSite, notes: e.target.value },
+                  }))
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Special instructions or landmarks..."
+              />
             </div>
           </CardContent>
         </Card>
