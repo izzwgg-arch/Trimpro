@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { parseAddressParts } from '@/lib/address/parse'
+import { geocodeAddressPartsFromString } from '@/lib/geocoding'
 
 export async function GET(
   request: NextRequest,
@@ -53,12 +54,27 @@ export async function GET(
     }
 
     // Convert Decimal fields to strings for frontend
-    const parsed = parseAddressParts(estimate.jobSiteAddress)
+    const jobSiteAddress = estimate.jobSiteAddress ? String(estimate.jobSiteAddress) : null
+    const parsed = parseAddressParts(jobSiteAddress)
+    const missingParts = Boolean(
+      jobSiteAddress && (!parsed?.city || !parsed?.state || !parsed?.zipCode)
+    )
+    const geo = missingParts ? await geocodeAddressPartsFromString(jobSiteAddress!) : null
+    const derived = geo || { street: '', city: '', state: '', zipCode: '' }
+
+    // If we only have a freeform street text, enrich the response with a resolved
+    // "street, city, state zip" string so UI components/maps have a complete address.
+    const resolvedJobSiteAddress =
+      jobSiteAddress && geo
+        ? `${derived.street || jobSiteAddress}, ${derived.city}, ${derived.state} ${derived.zipCode}`.trim()
+        : jobSiteAddress
+
     const estimateResponse = {
       ...estimate,
-      jobSiteCity: parsed?.city || null,
-      jobSiteState: parsed?.state || null,
-      jobSiteZipCode: parsed?.zipCode || null,
+      jobSiteAddress: resolvedJobSiteAddress,
+      jobSiteCity: (parsed?.city || derived.city || '').trim() || null,
+      jobSiteState: (parsed?.state || derived.state || '').trim() || null,
+      jobSiteZipCode: (parsed?.zipCode || derived.zipCode || '').trim() || null,
       subtotal: estimate.subtotal.toString(),
       taxRate: estimate.taxRate.toString(),
       taxAmount: estimate.taxAmount.toString(),

@@ -3,6 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { notifyInvoiceOverdue } from '@/lib/notifications'
 import { formatAddressParts, parseAddressParts } from '@/lib/address/parse'
+import { geocodeAddressPartsFromString } from '@/lib/geocoding'
 
 export async function GET(
   request: NextRequest,
@@ -91,17 +92,26 @@ export async function GET(
     }
 
     // Convert Decimal fields to strings for frontend
-    const jobSiteAddress =
+    const jobSiteAddressRaw =
       formatAddressParts(invoice.job?.addresses?.[0]) ||
       (invoice.estimate?.jobSiteAddress ? String(invoice.estimate.jobSiteAddress) : null)
-    const parsed = parseAddressParts(jobSiteAddress)
+    const parsed = parseAddressParts(jobSiteAddressRaw)
+    const missingJobSiteParts = Boolean(
+      jobSiteAddressRaw && (!parsed?.city || !parsed?.state || !parsed?.zipCode)
+    )
+    const geo = missingJobSiteParts ? await geocodeAddressPartsFromString(jobSiteAddressRaw!) : null
+    const derived = geo || { street: '', city: '', state: '', zipCode: '' }
+    const jobSiteAddress =
+      jobSiteAddressRaw && geo
+        ? `${derived.street || jobSiteAddressRaw}, ${derived.city}, ${derived.state} ${derived.zipCode}`.trim()
+        : jobSiteAddressRaw
 
     const invoiceResponse = {
       ...invoice,
       jobSiteAddress,
-      jobSiteCity: parsed?.city || null,
-      jobSiteState: parsed?.state || null,
-      jobSiteZipCode: parsed?.zipCode || null,
+      jobSiteCity: (parsed?.city || derived.city || '').trim() || null,
+      jobSiteState: (parsed?.state || derived.state || '').trim() || null,
+      jobSiteZipCode: (parsed?.zipCode || derived.zipCode || '').trim() || null,
       subtotal: invoice.subtotal.toString(),
       taxRate: invoice.taxRate.toString(),
       taxAmount: invoice.taxAmount.toString(),
