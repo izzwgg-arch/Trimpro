@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import type { ParsedAddressParts } from '@/lib/address/parse'
 
 interface GeocodeResult {
   latitude: number
@@ -135,4 +136,62 @@ export async function batchGeocodeAddresses(addressIds: string[], delayMs = 200)
   }
 
   return successCount
+}
+
+/**
+ * Geocode a freeform address string and extract structured parts for UI display.
+ * Used for Leads/Requests where we only store a single jobSiteAddress text field.
+ */
+export async function geocodeAddressPartsFromString(addressText: string): Promise<ParsedAddressParts | null> {
+  const raw = String(addressText || '').trim()
+  if (!raw) return null
+
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || process.env.GOOGLE_MAPS_API_KEY
+  if (!apiKey) return null
+
+  try {
+    const response = await fetch(
+      `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(raw)}&key=${apiKey}`
+    )
+
+    if (!response.ok) return null
+
+    const data: any = await response.json()
+    if (data.status !== 'OK' || !Array.isArray(data.results) || data.results.length === 0) return null
+
+    const result = data.results[0]
+    const components: Array<{ long_name: string; short_name: string; types: string[] }> = result.address_components || []
+
+    const get = (type: string, which: 'short_name' | 'long_name' = 'long_name') => {
+      const comp = components.find((c) => Array.isArray(c.types) && c.types.includes(type))
+      return comp ? String(comp[which] || '').trim() : ''
+    }
+
+    const streetNumber = get('street_number')
+    const route = get('route')
+    const street = [streetNumber, route].filter(Boolean).join(' ').trim() || raw
+
+    const city =
+      get('locality') ||
+      get('postal_town') ||
+      get('sublocality') ||
+      get('administrative_area_level_2')
+
+    const state = get('administrative_area_level_1', 'short_name') || get('administrative_area_level_1')
+    const zipCode = get('postal_code')
+    const country = get('country', 'short_name') || undefined
+
+    if (!city && !state && !zipCode) return null
+
+    return {
+      street,
+      city,
+      state,
+      zipCode,
+      country,
+    }
+  } catch (error) {
+    console.error('geocodeAddressPartsFromString error:', error)
+    return null
+  }
 }

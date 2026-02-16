@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { parseAddressParts } from '@/lib/address/parse'
+import { geocodeAddressPartsFromString } from '@/lib/geocoding'
 import { syncClientToQuickBooks } from '@/lib/services/qbo-sync'
 
 export async function GET(
@@ -101,12 +102,23 @@ export async function GET(
     }
 
     const parsed = parseAddressParts(lead.jobSiteAddress)
+    const missingParts =
+      !!lead.jobSiteAddress &&
+      (!parsed || !parsed.city || !parsed.state || !parsed.zipCode)
+
+    // Leads only store a single jobSiteAddress string; attempt a best-effort geocode
+    // to populate city/state/zip for display when the string is incomplete.
+    const geo = missingParts ? await geocodeAddressPartsFromString(lead.jobSiteAddress!) : null
+
+    const derived = {
+      jobSiteCity: (parsed?.city || geo?.city || '').trim() || null,
+      jobSiteState: (parsed?.state || geo?.state || '').trim() || null,
+      jobSiteZipCode: (parsed?.zipCode || geo?.zipCode || '').trim() || null,
+    }
     return NextResponse.json({
       lead: {
         ...lead,
-        jobSiteCity: parsed?.city || null,
-        jobSiteState: parsed?.state || null,
-        jobSiteZipCode: parsed?.zipCode || null,
+        ...derived,
       },
     })
   } catch (error) {
