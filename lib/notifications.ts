@@ -133,11 +133,11 @@ export async function notifyInvoicePaid(
   amount: number,
   clientName: string
 ) {
-  // Notify accounting users and admins
+  // Notify office/admin/accounting users (anyone watching payments in the web app).
   const accountingUsers = await prisma.user.findMany({
     where: {
       tenantId,
-      role: { in: ['ADMIN', 'ACCOUNTING'] },
+      role: { in: ['ADMIN', 'ACCOUNTING', 'OFFICE'] },
       status: 'ACTIVE',
     },
     select: { id: true },
@@ -170,7 +170,7 @@ export async function notifyInvoiceOverdue(
   const accountingUsers = await prisma.user.findMany({
     where: {
       tenantId,
-      role: { in: ['ADMIN', 'ACCOUNTING'] },
+      role: { in: ['ADMIN', 'ACCOUNTING', 'OFFICE'] },
       status: 'ACTIVE',
     },
     select: { id: true },
