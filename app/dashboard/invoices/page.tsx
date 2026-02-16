@@ -214,7 +214,6 @@ export default function InvoicesPage() {
           <p className="mt-2 text-gray-600">Manage invoices and payments</p>
         </div>
         <div className="flex items-center gap-2">
-          <ViewModeSelector value={viewMode} onChange={setViewMode} />
           <Button onClick={() => router.push('/dashboard/invoices/new')}>
             <Plus className="mr-2 h-4 w-4" />
             New Invoice
@@ -227,6 +226,7 @@ export default function InvoicesPage() {
             <Copy className="mr-2 h-4 w-4" />
             {duplicating ? 'Duplicating...' : `Duplicate${selectedIds.length ? ` (${selectedIds.length})` : ''}`}
           </Button>
+          <ViewModeSelector value={viewMode} onChange={setViewMode} />
         </div>
       </div>
 
