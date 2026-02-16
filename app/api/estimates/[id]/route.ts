@@ -54,7 +54,11 @@ export async function GET(
     }
 
     // Convert Decimal fields to strings for frontend
-    const jobSiteAddress = estimate.jobSiteAddress ? String(estimate.jobSiteAddress) : null
+    const jobSiteAddress = estimate.jobSiteAddress
+      ? String(estimate.jobSiteAddress)
+      : estimate.lead?.jobSiteAddress
+        ? String(estimate.lead.jobSiteAddress)
+        : null
     const parsed = parseAddressParts(jobSiteAddress)
     const missingParts = Boolean(
       jobSiteAddress && (!parsed?.city || !parsed?.state || !parsed?.zipCode)
