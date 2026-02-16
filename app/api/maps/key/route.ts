@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest } from '@/lib/middleware'
-import { requireAnyPermission } from '@/lib/authorization'
 
 /**
  * Returns the Google Maps browser API key for authenticated users.
@@ -11,10 +10,6 @@ import { requireAnyPermission } from '@/lib/authorization'
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
-
-  // Maps is a dispatch/admin feature; require a reasonable permission.
-  const permError = await requireAnyPermission(request, ['dispatch.view', 'users.view'])
-  if (permError) return permError
 
   const apiKey = (process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || process.env.GOOGLE_MAPS_API_KEY || '').trim()
   if (!apiKey) {
