@@ -799,7 +799,11 @@ export default function MessagesPage() {
                 key={conv.id}
                 onClick={() => {
                   pendingScrollToBottomRef.current = true
-                  lastMessageIdRef.current = null
+                  // Reset message tracking so the newly selected conversation can snap to bottom once.
+                  prevMessageCountRef.current = 0
+                  prevLastMessageIdRef.current = null
+                  setHasNewMessages(false)
+                  setIsAtBottom(true)
                   setSelectedConversation(conv as ConversationDetail)
                 }}
                 className={`p-4 border-b cursor-pointer hover:bg-white transition-colors ${
