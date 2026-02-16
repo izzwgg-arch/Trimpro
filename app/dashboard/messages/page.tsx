@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useLayoutEffect, useState, useRef } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -108,26 +108,37 @@ export default function MessagesPage() {
 
   // Chat scroll behavior
   const threadScrollRef = useRef<HTMLDivElement>(null)
-  const userNearBottomRef = useRef(true)
-  const pendingScrollToBottomRef = useRef(false)
-  const prevScrollHeightRef = useRef(0)
-  const prevScrollTopRef = useRef(0)
-  const lastMessageIdRef = useRef<string | null>(null)
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const pendingScrollToBottomRef = useRef(false) // set true when user sends, so we snap even if they aren't at bottom
+  const prevMessageCountRef = useRef(0)
+  const prevLastMessageIdRef = useRef<string | null>(null)
+  const [isAtBottom, setIsAtBottom] = useState(true)
+  const [hasNewMessages, setHasNewMessages] = useState(false)
 
-  const isNearBottom = (el: HTMLDivElement) => {
+  const isNearBottom = useCallback((el: HTMLDivElement) => {
     const distanceFromBottom = el.scrollHeight - (el.scrollTop + el.clientHeight)
     return distanceFromBottom < 80
-  }
+  }, [])
 
-  const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
+    // Prefer bottomRef for accurate "end" even when images load later.
+    const b = bottomRef.current
+    if (b) {
+      b.scrollIntoView({ behavior, block: 'end' })
+      return
+    }
     const el = threadScrollRef.current
     if (!el) return
-    try {
-      el.scrollTo({ top: el.scrollHeight, behavior })
-    } catch {
-      el.scrollTop = el.scrollHeight
-    }
-  }
+    el.scrollTo({ top: el.scrollHeight, behavior })
+  }, [])
+
+  const onThreadScroll = useCallback(() => {
+    const el = threadScrollRef.current
+    if (!el) return
+    const atBottom = isNearBottom(el)
+    setIsAtBottom(atBottom)
+    if (atBottom) setHasNewMessages(false)
+  }, [isNearBottom])
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
@@ -161,41 +172,44 @@ export default function MessagesPage() {
     }
   }, [selectedConversation?.id])
 
-  useLayoutEffect(() => {
-    const el = threadScrollRef.current
-    if (!el || !selectedConversation) return
+  // Initial thread open: snap to bottom once (no repeated scroll calls).
+  useEffect(() => {
+    if (!selectedConversation?.id) return
+    setHasNewMessages(false)
+    setIsAtBottom(true)
+    prevMessageCountRef.current = selectedConversation.messages?.length || 0
+    prevLastMessageIdRef.current =
+      selectedConversation.messages && selectedConversation.messages.length > 0
+        ? selectedConversation.messages[selectedConversation.messages.length - 1].id
+        : null
 
+    // Defer to allow layout to settle.
+    requestAnimationFrame(() => scrollToBottom('auto'))
+  }, [selectedConversation?.id, scrollToBottom])
+
+  // When messages change: only snap if user is at bottom OR user just sent a message.
+  useEffect(() => {
+    if (!selectedConversation) return
     const msgs = selectedConversation.messages || []
-    const lastId = msgs.length > 0 ? msgs[msgs.length - 1].id : null
-    const newMessageArrived = !!lastId && lastId !== lastMessageIdRef.current
+    const count = msgs.length
+    const lastId = count > 0 ? msgs[count - 1].id : null
 
-    // First render after selecting a conversation: snap to bottom once.
-    if (!lastMessageIdRef.current && lastId) {
-      pendingScrollToBottomRef.current = true
-    }
+    const isIncrease = count > prevMessageCountRef.current
+    const isNewLast = !!lastId && lastId !== prevLastMessageIdRef.current
 
-    if (!newMessageArrived) {
-      lastMessageIdRef.current = lastId
-      return
-    }
-
-    const shouldSnap =
-      pendingScrollToBottomRef.current || userNearBottomRef.current
-
-    if (shouldSnap) {
-      // Defer so images/media layout changes are accounted for.
-      requestAnimationFrame(() => scrollToBottom('auto'))
-    } else {
-      // Scroll anchoring: keep the viewport steady while new messages append below.
-      const delta = el.scrollHeight - prevScrollHeightRef.current
-      if (delta !== 0) {
-        el.scrollTop = prevScrollTopRef.current + delta
+    if (isIncrease || isNewLast) {
+      if (pendingScrollToBottomRef.current || isAtBottom) {
+        pendingScrollToBottomRef.current = false
+        setHasNewMessages(false)
+        requestAnimationFrame(() => scrollToBottom('auto'))
+      } else {
+        setHasNewMessages(true)
       }
     }
 
-    pendingScrollToBottomRef.current = false
-    lastMessageIdRef.current = lastId
-  }, [selectedConversation?.id, selectedConversation?.messages?.length])
+    prevMessageCountRef.current = count
+    prevLastMessageIdRef.current = lastId
+  }, [selectedConversation?.messages, isAtBottom, scrollToBottom, selectedConversation])
 
   const refreshToken = async (): Promise<boolean> => {
     const refreshToken = localStorage.getItem('refreshToken')
@@ -288,27 +302,26 @@ export default function MessagesPage() {
 
       if (response.ok) {
         const data = await response.json()
-        console.log('Fetched conversation:', {
-          messageCount: data.conversation?.messages?.length,
-          messagesWithMedia: data.conversation?.messages?.filter((m: any) => m.media && m.media.length > 0).map((m: any) => ({
-            id: m.id,
-            body: m.body,
-            mediaCount: m.media.length,
-            media: m.media.map((med: any) => ({ 
-              id: med.id,
-              type: med.type, 
-              url: med.url,
-              filename: med.filename 
-            }))
-          }))
+        const incoming: ConversationDetail = data.conversation
+
+        // Avoid unnecessary rerenders: if nothing meaningful changed, keep existing state.
+        setSelectedConversation((prev) => {
+          if (!prev || prev.id !== incoming.id) return incoming
+
+          const prevMsgs = prev.messages || []
+          const incMsgs = incoming.messages || []
+          const prevLastId = prevMsgs.length > 0 ? prevMsgs[prevMsgs.length - 1].id : null
+          const incLastId = incMsgs.length > 0 ? incMsgs[incMsgs.length - 1].id : null
+
+          const same =
+            prevMsgs.length === incMsgs.length &&
+            prevLastId === incLastId &&
+            prev.unreadCount === incoming.unreadCount &&
+            prev.lastMessageAt === incoming.lastMessageAt &&
+            prev.status === incoming.status
+
+          return same ? prev : incoming
         })
-        // Capture scroll position BEFORE we update state, so we can anchor properly afterward.
-        const el = threadScrollRef.current
-        if (el) {
-          prevScrollHeightRef.current = el.scrollHeight
-          prevScrollTopRef.current = el.scrollTop
-        }
-        setSelectedConversation(data.conversation)
       }
     } catch (error) {
       console.error('Failed to fetch conversation:', error)
@@ -608,6 +621,105 @@ export default function MessagesPage() {
     }
   }
 
+  const sortedMessages = useMemo(() => {
+    const msgs = selectedConversation?.messages || []
+    if (msgs.length <= 1) return msgs
+    // Defensive stable ordering; backend already returns ASC but we avoid inline sorting in render.
+    return [...msgs].sort((a, b) => {
+      const at = new Date(a.createdAt).getTime()
+      const bt = new Date(b.createdAt).getTime()
+      if (at === bt) return a.id.localeCompare(b.id)
+      return at - bt
+    })
+  }, [selectedConversation?.messages])
+
+  const MessageBubble = useMemo(() => {
+    return React.memo(function MessageBubbleInner(props: {
+      message: Message
+      tenantId?: string | null
+      getStatusIcon: (status: string) => React.ReactNode
+      formatTime: (s: string | null) => string
+    }) {
+      const { message, tenantId, getStatusIcon, formatTime } = props
+
+      return (
+        <div className={`flex ${message.direction === 'OUTBOUND' ? 'justify-end' : 'justify-start'}`}>
+          <div
+            className={`max-w-[70%] rounded-lg p-3 ${
+              message.direction === 'OUTBOUND'
+                ? 'bg-[#333333] text-white'
+                : 'bg-gray-200 text-gray-900'
+            }`}
+          >
+            {message.body && <p className="text-sm whitespace-pre-wrap">{message.body}</p>}
+
+            {/* Media */}
+            {message.media && message.media.length > 0 ? (
+              <div className="mt-2 space-y-2">
+                {message.media.map((media) => (
+                  <div key={media.id}>
+                    {media.type === 'image' ? (
+                      <img
+                        src={media.url}
+                        alt={media.filename || 'Image'}
+                        className="max-w-full rounded"
+                        style={{ maxHeight: '200px' }}
+                        onError={(e) => {
+                          // Try relative URL if absolute fails (supports local/dev & reverse proxies).
+                          if (media.url && media.url.startsWith('https://')) {
+                            const relativeUrl = media.url.replace(/^https?:\/\/[^\/]+/, '')
+                            ;(e.target as HTMLImageElement).src = relativeUrl
+                          } else {
+                            e.currentTarget.style.display = 'none'
+                          }
+                        }}
+                      />
+                    ) : (
+                      <a
+                        href={media.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 text-sm underline"
+                      >
+                        <Paperclip className="h-4 w-4" />
+                        {media.filename || 'Attachment'}
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : message.body && message.body.match(/\.(jpg|jpeg|png|gif)$/i) ? (
+              // Fallback: if body looks like a filename, try to load it as an image
+              <div className="mt-2">
+                <img
+                  src={`/uploads/${tenantId || ''}/${message.body}`}
+                  alt={message.body}
+                  className="max-w-full rounded"
+                  style={{ maxHeight: '200px' }}
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none'
+                  }}
+                />
+              </div>
+            ) : null}
+
+            {/* Status and Time */}
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-xs opacity-70">{formatTime(message.createdAt)}</span>
+              {message.direction === 'OUTBOUND' && (
+                <span className="ml-auto">{getStatusIcon(message.status)}</span>
+              )}
+            </div>
+
+            {message.errorMessage && (
+              <p className="text-xs text-red-200 mt-1">{message.errorMessage}</p>
+            )}
+          </div>
+        </div>
+      )
+    })
+  }, [])
+
   return (
     <div className="flex h-[calc(100vh-4rem)]">
       {/* Left Panel - Conversation List */}
@@ -758,107 +870,40 @@ export default function MessagesPage() {
             </div>
 
             {/* Messages */}
-            <div
-              ref={threadScrollRef}
-              onScroll={() => {
-                const el = threadScrollRef.current
-                if (!el) return
-                userNearBottomRef.current = isNearBottom(el)
-                prevScrollHeightRef.current = el.scrollHeight
-                prevScrollTopRef.current = el.scrollTop
-              }}
-              className={`flex-1 overflow-y-auto p-4 space-y-4 ${styles.scrollbar}`}
-            >
-              {selectedConversation.messages?.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex ${message.direction === 'OUTBOUND' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div
-                    className={`max-w-[70%] rounded-lg p-3 ${
-                      message.direction === 'OUTBOUND'
-                        ? 'bg-[#333333] text-white'
-                        : 'bg-gray-200 text-gray-900'
-                    }`}
+            <div className="relative flex-1">
+              <div
+                ref={threadScrollRef}
+                onScroll={onThreadScroll}
+                className={`h-full overflow-y-auto p-4 space-y-4 ${styles.scrollbar}`}
+              >
+                {sortedMessages.map((message) => (
+                  <MessageBubble
+                    key={message.id}
+                    message={message}
+                    tenantId={selectedConversation.tenantId}
+                    getStatusIcon={getStatusIcon}
+                    formatTime={formatTime}
+                  />
+                ))}
+                <div ref={bottomRef} />
+              </div>
+
+              {!isAtBottom && hasNewMessages && (
+                <div className="absolute bottom-4 right-4">
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      pendingScrollToBottomRef.current = false
+                      setHasNewMessages(false)
+                      scrollToBottom('smooth')
+                    }}
+                    className="bg-[#333333] hover:bg-[#3b3b3b] text-white shadow-lg"
+                    size="sm"
                   >
-                    {message.body && <p className="text-sm whitespace-pre-wrap">{message.body}</p>}
-                    
-                    {/* Media */}
-                    {message.media && message.media.length > 0 ? (
-                      <div className="mt-2 space-y-2">
-                        {message.media.map((media) => (
-                          <div key={media.id}>
-                            {media.type === 'image' ? (
-                              <img
-                                src={media.url}
-                                alt={media.filename || 'Image'}
-                                className="max-w-full rounded"
-                                style={{ maxHeight: '200px' }}
-                                onLoad={() => console.log('Image loaded successfully:', media.url)}
-                                onError={(e) => {
-                                  console.error('Image load error for URL:', media.url)
-                                  console.error('Image load error details:', {
-                                    url: media.url,
-                                    filename: media.filename,
-                                    type: media.type,
-                                    error: e,
-                                    targetSrc: (e.target as HTMLImageElement).src,
-                                  })
-                                  // Try to load using relative URL if absolute fails
-                                  if (media.url && media.url.startsWith('https://')) {
-                                    const relativeUrl = media.url.replace(/^https?:\/\/[^\/]+/, '')
-                                    console.log('Trying relative URL:', relativeUrl)
-                                    ;(e.target as HTMLImageElement).src = relativeUrl
-                                  } else {
-                                    e.currentTarget.style.display = 'none'
-                                  }
-                                }}
-                              />
-                            ) : (
-                              <a
-                                href={media.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-2 text-sm underline"
-                              >
-                                <Paperclip className="h-4 w-4" />
-                                {media.filename || 'Attachment'}
-                              </a>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    ) : message.body && message.body.match(/\.(jpg|jpeg|png|gif)$/i) ? (
-                      // Fallback: if body looks like a filename, try to load it as an image
-                      <div className="mt-2">
-                        <img
-                          src={`/uploads/${selectedConversation.tenantId || ''}/${message.body}`}
-                          alt={message.body}
-                          className="max-w-full rounded"
-                          style={{ maxHeight: '200px' }}
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none'
-                          }}
-                        />
-                      </div>
-                    ) : null}
-
-                    {/* Status and Time */}
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-xs opacity-70">
-                        {formatTime(message.createdAt)}
-                      </span>
-                      {message.direction === 'OUTBOUND' && (
-                        <span className="ml-auto">{getStatusIcon(message.status)}</span>
-                      )}
-                    </div>
-
-                    {message.errorMessage && (
-                      <p className="text-xs text-red-200 mt-1">{message.errorMessage}</p>
-                    )}
-                  </div>
+                    New messages ↓
+                  </Button>
                 </div>
-              ))}
+              )}
             </div>
 
             {/* Compose Box */}
