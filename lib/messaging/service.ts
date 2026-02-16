@@ -60,8 +60,10 @@ export class MessagingService {
       }
     }
 
-    // Fallback to VoIP.ms for SMS/MMS only
-    if (channel === MessagingChannel.SMS || channel === MessagingChannel.MMS) {
+    // Fallback to VoIP.ms for SMS/MMS.
+    // If a conversation is mistakenly labeled WHATSAPP but the tenant only has VoIP.ms configured,
+    // we still want outbound messaging to work (treat it as SMS/MMS).
+    if (channel === MessagingChannel.SMS || channel === MessagingChannel.MMS || channel === MessagingChannel.WHATSAPP) {
       try {
         const secrets = await getIntegrationSecrets(tenantId, 'voipms_sms' as any)
         if (secrets?.username && secrets?.apiPassword) {
@@ -84,6 +86,13 @@ export class MessagingService {
     conversationId?: string
   ): Promise<SendMessageResult & { messageId?: string }> {
     try {
+      // If a conversation is stored as WHATSAPP but the tenant uses VoIP.ms, we treat this as SMS/MMS.
+      // This avoids breaking outbound messaging when channels were mis-labeled historically.
+      const effectiveChannel: MessagingChannel =
+        params.channel === MessagingChannel.WHATSAPP
+          ? (params.media && params.media.length > 0 ? MessagingChannel.MMS : MessagingChannel.SMS)
+          : params.channel
+
       // Get provider
       const providerInfo = await this.getProvider(tenantId, params.channel)
       if (!providerInfo) {
@@ -110,7 +119,7 @@ export class MessagingService {
         }
 
         if (
-          (params.channel === MessagingChannel.MMS || (params.media && params.media.length > 0)) &&
+          (effectiveChannel === MessagingChannel.MMS || (params.media && params.media.length > 0)) &&
           params.media &&
           params.media.length > 0
         ) {
@@ -153,6 +162,23 @@ export class MessagingService {
         ? await prisma.conversation.findUnique({ where: { id: conversationId } })
         : null
 
+      // If this is an existing conversation saved as WHATSAPP, normalize it to SMS/MMS after a successful send.
+      if (
+        conversation &&
+        (conversation as any).channel === MessagingChannel.WHATSAPP &&
+        effectiveChannel !== MessagingChannel.WHATSAPP
+      ) {
+        try {
+          await prisma.conversation.update({
+            where: { id: conversation.id },
+            data: { channel: effectiveChannel as any },
+          })
+          conversation = await prisma.conversation.findUnique({ where: { id: conversation.id } })
+        } catch {
+          // Non-fatal; keep sending even if we can't update the channel.
+        }
+      }
+
       if (!conversation) {
         // Normalize phone number for matching - merge conversations with same number in different formats
         function normalizeNanpDigits(input: string): string {
@@ -167,7 +193,7 @@ export class MessagingService {
         const allConversations = await prisma.conversation.findMany({
           where: {
             tenantId,
-            channel: params.channel as any,
+            channel: effectiveChannel as any,
           },
           select: {
             id: true,
@@ -216,7 +242,7 @@ export class MessagingService {
           conversation = await prisma.conversation.create({
             data: {
               tenantId,
-              channel: params.channel as any,
+              channel: effectiveChannel as any,
               clientId: client?.id || null,
               participants: [params.to],
               status: 'ACTIVE',
@@ -235,7 +261,7 @@ export class MessagingService {
           conversationId: conversation.id,
           tenantId,
           direction: 'OUTBOUND',
-          channel: params.channel as any,
+          channel: effectiveChannel as any,
           body: messageBody,
           fromNumber: params.from || null,
           toNumber: params.to,

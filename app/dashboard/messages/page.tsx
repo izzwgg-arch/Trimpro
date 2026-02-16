@@ -98,7 +98,9 @@ export default function MessagesPage() {
   const [filterChannel, setFilterChannel] = useState<string>('all')
   const [showNewConversation, setShowNewConversation] = useState(false)
   const [newConversationTo, setNewConversationTo] = useState('')
-  const [newConversationChannel, setNewConversationChannel] = useState<'SMS' | 'MMS' | 'WHATSAPP'>('SMS')
+  // TrimPro currently supports phone messaging via SMS/MMS providers (VoIP.ms / WebWhatis).
+  // WhatsApp is intentionally not exposed in the web UI to avoid misconfigured sends.
+  const [newConversationChannel, setNewConversationChannel] = useState<'SMS' | 'MMS'>('SMS')
   const [newConversationClientId, setNewConversationClientId] = useState<string>('none')
   const [clients, setClients] = useState<Array<{ id: string; name: string; phone: string | null }>>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -579,7 +581,6 @@ export default function MessagesPage() {
                 <SelectItem value="all">All Channels</SelectItem>
                 <SelectItem value="SMS">SMS</SelectItem>
                 <SelectItem value="MMS">MMS</SelectItem>
-                <SelectItem value="WHATSAPP">WhatsApp</SelectItem>
                 <SelectItem value="EMAIL">Email</SelectItem>
               </SelectContent>
             </Select>
@@ -913,7 +914,6 @@ export default function MessagesPage() {
                 <SelectContent>
                   <SelectItem value="SMS">SMS</SelectItem>
                   <SelectItem value="MMS">MMS</SelectItem>
-                  <SelectItem value="WHATSAPP">WhatsApp</SelectItem>
                 </SelectContent>
               </Select>
             </div>
