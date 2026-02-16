@@ -5,6 +5,19 @@
 
 import { IntegrationTestResult } from '../types'
 
+function getFromName(secrets: Record<string, any>) {
+  return String(secrets.fromName || secrets.senderName || secrets.brandName || 'Trimpro').trim() || 'Trimpro'
+}
+
+function getFromEmail(secrets: Record<string, any>, fallback: string) {
+  return String(secrets.fromEmail || secrets.emailFrom || secrets.senderEmail || fallback).trim() || fallback
+}
+
+function formatFromHeader(name: string, email: string) {
+  // RFC 5322 friendly display-name format used by most providers.
+  return `${name} <${email}>`
+}
+
 export async function testEmailProvider(
   secrets: Record<string, any>,
   to: string,
@@ -53,6 +66,8 @@ async function testSendGrid(
   }
 
   try {
+    const fromName = getFromName(secrets)
+    const fromEmail = getFromEmail(secrets, 'noreply@trimpro.com')
     const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
       method: 'POST',
       headers: {
@@ -61,7 +76,7 @@ async function testSendGrid(
       },
       body: JSON.stringify({
         personalizations: [{ to: [{ email: to }] }],
-        from: { email: secrets.fromEmail || 'noreply@trimpro.com' },
+        from: { email: fromEmail, name: fromName },
         subject,
         content: [{ type: 'text/html', value: html }],
         reply_to: secrets.replyTo ? { email: secrets.replyTo } : undefined,
@@ -110,8 +125,10 @@ async function testMailgun(
   const apiBase = region === 'eu' ? 'https://api.eu.mailgun.net' : 'https://api.mailgun.net'
 
   try {
+    const fromName = getFromName(secrets)
+    const fromEmail = getFromEmail(secrets, `noreply@${domain}`)
     const formData = new URLSearchParams()
-    formData.append('from', secrets.fromEmail || `noreply@${domain}`)
+    formData.append('from', formatFromHeader(fromName, fromEmail))
     formData.append('to', to)
     formData.append('subject', subject)
     formData.append('html', html)
@@ -162,6 +179,8 @@ async function testResend(
   }
 
   try {
+    const fromName = getFromName(secrets)
+    const fromEmail = getFromEmail(secrets, 'noreply@trimpro.com')
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -169,7 +188,7 @@ async function testResend(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: secrets.fromEmail || 'noreply@trimpro.com',
+        from: formatFromHeader(fromName, fromEmail),
         to: [to],
         subject,
         html,
@@ -219,6 +238,8 @@ async function testGoogle(
 
   try {
     const nodemailer = await import('nodemailer')
+    const fromName = getFromName(secrets)
+    const fromEmail = getFromEmail(secrets, user)
     const transporter = nodemailer.createTransport({
       host: 'smtp.gmail.com',
       port: 465,
@@ -230,7 +251,7 @@ async function testGoogle(
     })
 
     await transporter.sendMail({
-      from: secrets.fromEmail || user,
+      from: formatFromHeader(fromName, fromEmail),
       to,
       subject,
       html,
