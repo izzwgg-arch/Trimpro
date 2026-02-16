@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
+import { syncPurchaseOrderToQuickBooks } from '@/lib/services/qbo-sync'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -279,6 +280,12 @@ export async function POST(request: NextRequest) {
     const responseSubtotal = purchaseOrder.lineItems.reduce((sum, item) => {
       return sum + (Number(item.quantity) * Number(item.unitPrice))
     }, 0)
+
+    try {
+      await syncPurchaseOrderToQuickBooks(user.tenantId, purchaseOrder.id)
+    } catch (error) {
+      console.error('QuickBooks purchase order sync trigger error:', error)
+    }
 
     return NextResponse.json({
       purchaseOrder: {

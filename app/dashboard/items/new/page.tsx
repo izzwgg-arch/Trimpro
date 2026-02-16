@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ArrowLeft, Save, Plus, X } from 'lucide-react'
 import Link from 'next/link'
 
@@ -228,18 +229,17 @@ export default function NewItemPage() {
                   </div>
                   <div>
                     <Label htmlFor="type">Type *</Label>
-                    <select
-                      id="type"
-                      required
-                      value={formData.type}
-                      onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-                    >
-                      <option value="PRODUCT">Product</option>
-                      <option value="SERVICE">Service</option>
-                      <option value="MATERIAL">Material</option>
-                      <option value="FEE">Fee</option>
-                    </select>
+                    <Select value={formData.type} onValueChange={(value) => setFormData({ ...formData, type: value })}>
+                      <SelectTrigger id="type">
+                        <SelectValue placeholder="Select type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="PRODUCT">Product</SelectItem>
+                        <SelectItem value="SERVICE">Service</SelectItem>
+                        <SelectItem value="MATERIAL">Material</SelectItem>
+                        <SelectItem value="FEE">Fee</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
 
@@ -258,19 +258,24 @@ export default function NewItemPage() {
                   <div>
                     <Label htmlFor="categoryId">Category</Label>
                     <div className="flex space-x-2">
-                      <select
-                        id="categoryId"
-                        value={formData.categoryId}
-                        onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-                      >
-                        <option value="">Select category</option>
-                        {categories.map((cat) => (
-                          <option key={cat.id} value={cat.id}>
-                            {cat.name}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="flex-1">
+                        <Select
+                          value={formData.categoryId || '__none__'}
+                          onValueChange={(value) => setFormData({ ...formData, categoryId: value === '__none__' ? '' : value })}
+                        >
+                          <SelectTrigger id="categoryId">
+                            <SelectValue placeholder="Select category" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">Select category</SelectItem>
+                            {categories.map((cat) => (
+                              <SelectItem key={cat.id} value={cat.id}>
+                                {cat.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                       {!showNewCategory && (
                         <Button type="button" variant="outline" onClick={() => setShowNewCategory(true)}>
                           <Plus className="h-4 w-4" />
@@ -296,19 +301,22 @@ export default function NewItemPage() {
                   </div>
                   <div>
                     <Label htmlFor="vendorId">Default Vendor</Label>
-                    <select
-                      id="vendorId"
-                      value={formData.vendorId}
-                      onChange={(e) => setFormData({ ...formData, vendorId: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                    <Select
+                      value={formData.vendorId || '__none__'}
+                      onValueChange={(value) => setFormData({ ...formData, vendorId: value === '__none__' ? '' : value })}
                     >
-                      <option value="">Select vendor</option>
-                      {vendors.map((vendor) => (
-                        <option key={vendor.id} value={vendor.id}>
-                          {vendor.name}
-                        </option>
-                      ))}
-                    </select>
+                      <SelectTrigger id="vendorId">
+                        <SelectValue placeholder="Select vendor" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">Select vendor</SelectItem>
+                        {vendors.map((vendor) => (
+                          <SelectItem key={vendor.id} value={vendor.id}>
+                            {vendor.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
 
@@ -354,20 +362,20 @@ export default function NewItemPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="unit">Unit</Label>
-                    <select
-                      id="unit"
-                      value={formData.unit}
-                      onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-                    >
-                      <option value="ea">Each (ea)</option>
-                      <option value="hr">Hour (hr)</option>
-                      <option value="sqft">Square Foot (sqft)</option>
-                      <option value="lnft">Linear Foot (lnft)</option>
-                      <option value="lb">Pound (lb)</option>
-                      <option value="gal">Gallon (gal)</option>
-                      <option value="custom">Custom</option>
-                    </select>
+                    <Select value={formData.unit} onValueChange={(value) => setFormData({ ...formData, unit: value })}>
+                      <SelectTrigger id="unit">
+                        <SelectValue placeholder="Select unit" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ea">Each (ea)</SelectItem>
+                        <SelectItem value="hr">Hour (hr)</SelectItem>
+                        <SelectItem value="sqft">Square Foot (sqft)</SelectItem>
+                        <SelectItem value="lnft">Linear Foot (lnft)</SelectItem>
+                        <SelectItem value="lb">Pound (lb)</SelectItem>
+                        <SelectItem value="gal">Gallon (gal)</SelectItem>
+                        <SelectItem value="custom">Custom</SelectItem>
+                      </SelectContent>
+                    </Select>
                     {formData.unit === 'custom' && (
                       <Input
                         className="mt-2"

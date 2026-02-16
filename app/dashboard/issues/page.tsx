@@ -5,6 +5,12 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ViewModeSelector } from '@/components/ui/ViewModeSelector'
+import { useViewMode } from '@/hooks/useViewMode'
+import { RowCompactItem } from '@/components/lists/RowCompactItem'
+import { RowDetailedItem } from '@/components/lists/RowDetailedItem'
+import { TableView } from '@/components/lists/TableView'
 import { formatDate } from '@/lib/utils'
 import { Plus, Search, Filter, AlertCircle, User, Clock, CheckCircle } from 'lucide-react'
 import Link from 'next/link'
@@ -84,6 +90,7 @@ export default function IssuesPage() {
   const [status, setStatus] = useState('all')
   const [type, setType] = useState('all')
   const [filter, setFilter] = useState('all') // all, my, assigned, watched
+  const [viewMode, setViewMode] = useViewMode('issues', 'grid')
 
   useEffect(() => {
     const statusParam = searchParams.get('status')
@@ -144,15 +151,18 @@ export default function IssuesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Issues & Tickets</h1>
           <p className="mt-2 text-gray-600">Track and resolve issues</p>
         </div>
-        <Button onClick={() => router.push('/dashboard/issues/new')}>
-          <Plus className="mr-2 h-4 w-4" />
-          New Issue
-        </Button>
+        <div className="flex items-center gap-2">
+          <ViewModeSelector value={viewMode} onChange={setViewMode} />
+          <Button onClick={() => router.push('/dashboard/issues/new')}>
+            <Plus className="mr-2 h-4 w-4" />
+            New Issue
+          </Button>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -204,47 +214,51 @@ export default function IssuesPage() {
             </div>
             <div className="flex items-center space-x-2">
               <Filter className="h-4 w-4 text-gray-400" />
-              <select
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                <option value="all">All Issues</option>
-                <option value="my">My Issues</option>
-                <option value="assigned">Assigned to Me</option>
-                <option value="watched">Watched</option>
-              </select>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                <option value="all">All Status</option>
-                <option value="OPEN">Open</option>
-                <option value="IN_PROGRESS">In Progress</option>
-                <option value="RESOLVED">Resolved</option>
-                <option value="CLOSED">Closed</option>
-                <option value="CANCELLED">Cancelled</option>
-              </select>
-              <select
-                value={type}
-                onChange={(e) => setType(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                <option value="all">All Types</option>
-                <option value="BILLING">Billing</option>
-                <option value="SCHEDULING">Scheduling</option>
-                <option value="WARRANTY">Warranty</option>
-                <option value="QUALITY">Quality</option>
-                <option value="SAFETY">Safety</option>
-                <option value="OTHER">Other</option>
-              </select>
+              <Select value={filter} onValueChange={setFilter}>
+                <SelectTrigger className="w-[120px]">
+                  <SelectValue placeholder="All Issues" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Issues</SelectItem>
+                  <SelectItem value="my">My Issues</SelectItem>
+                  <SelectItem value="assigned">Assigned to Me</SelectItem>
+                  <SelectItem value="watched">Watched</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger className="w-[120px]">
+                  <SelectValue placeholder="All Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="OPEN">Open</SelectItem>
+                  <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
+                  <SelectItem value="RESOLVED">Resolved</SelectItem>
+                  <SelectItem value="CLOSED">Closed</SelectItem>
+                  <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={type} onValueChange={setType}>
+                <SelectTrigger className="w-[120px]">
+                  <SelectValue placeholder="All Types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value="BILLING">Billing</SelectItem>
+                  <SelectItem value="SCHEDULING">Scheduling</SelectItem>
+                  <SelectItem value="WARRANTY">Warranty</SelectItem>
+                  <SelectItem value="QUALITY">Quality</SelectItem>
+                  <SelectItem value="SAFETY">Safety</SelectItem>
+                  <SelectItem value="OTHER">Other</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </CardContent>
       </Card>
 
       {/* Issues List */}
+      {viewMode === 'grid' ? (
       <div className="space-y-4">
         {issues.length === 0 ? (
           <Card>
@@ -346,6 +360,73 @@ export default function IssuesPage() {
           ))
         )}
       </div>
+      ) : viewMode === 'rowCompact' ? (
+        <div className="space-y-2">
+          {issues.map((issue) => (
+            <RowCompactItem
+              key={issue.id}
+              href={`/dashboard/issues/${issue.id}`}
+              primary={issue.title}
+              secondary={issue.client?.name || issue.job?.jobNumber || 'No link'}
+              status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[issue.status] || 'bg-gray-100 text-gray-800'}`}>{issue.status.replace('_', ' ')}</span>}
+              amount={issue.priority}
+              date={issue.resolvedAt ? formatDate(issue.resolvedAt) : '-'}
+            />
+          ))}
+        </div>
+      ) : viewMode === 'rowDetailed' ? (
+        <div className="space-y-2">
+          {issues.map((issue) => (
+            <RowDetailedItem
+              key={issue.id}
+              href={`/dashboard/issues/${issue.id}`}
+              primary={issue.title}
+              status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[issue.status] || 'bg-gray-100 text-gray-800'}`}>{issue.status.replace('_', ' ')}</span>}
+              line2={`${issue.type} • ${issue.assignee ? `${issue.assignee.firstName} ${issue.assignee.lastName}` : 'Unassigned'} • ${issue._count.notes} notes`}
+              rightTop={issue.priority}
+              rightBottom={issue.firstResponseAt ? formatDate(issue.firstResponseAt) : 'No response'}
+            />
+          ))}
+        </div>
+      ) : (
+        <TableView
+          data={issues}
+          rowKey={(issue) => issue.id}
+          onRowClick={(issue) => router.push(`/dashboard/issues/${issue.id}`)}
+          columns={[
+            {
+              key: 'title',
+              header: 'Issue',
+              sortValue: (issue) => issue.title,
+              render: (issue) => <span className="font-medium">{issue.title}</span>,
+            },
+            {
+              key: 'status',
+              header: 'Status',
+              sortValue: (issue) => issue.status,
+              render: (issue) => <span className={`px-2 py-1 text-xs rounded-full ${statusColors[issue.status] || 'bg-gray-100 text-gray-800'}`}>{issue.status.replace('_', ' ')}</span>,
+            },
+            {
+              key: 'type',
+              header: 'Type',
+              sortValue: (issue) => issue.type,
+              render: (issue) => issue.type,
+            },
+            {
+              key: 'priority',
+              header: 'Priority',
+              sortValue: (issue) => issue.priority,
+              render: (issue) => issue.priority,
+            },
+            {
+              key: 'assignee',
+              header: 'Assignee',
+              sortValue: (issue) => issue.assignee ? `${issue.assignee.firstName} ${issue.assignee.lastName}` : '',
+              render: (issue) => issue.assignee ? `${issue.assignee.firstName} ${issue.assignee.lastName}` : '-',
+            },
+          ]}
+        />
+      )}
     </div>
   )
 }

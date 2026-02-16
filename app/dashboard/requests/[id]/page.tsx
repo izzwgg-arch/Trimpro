@@ -24,6 +24,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import Link from 'next/link'
+import { parseAddressParts } from '@/lib/address/parse'
 
 interface RequestDetail {
   id: string
@@ -38,6 +39,9 @@ interface RequestDetail {
   probability: number
   notes: string | null
   jobSiteAddress: string | null
+  jobSiteCity?: string | null
+  jobSiteState?: string | null
+  jobSiteZipCode?: string | null
   convertedToClientId: string | null
   convertedAt: string | null
   assignedTo: {
@@ -208,12 +212,6 @@ export default function RequestDetailPage() {
   const handleDelete = async () => {
     if (!request) return
     
-    // Don't allow deleting converted requests
-    if (request.convertedToClientId) {
-      alert('Cannot delete a request that has been converted to a client.')
-      return
-    }
-
     if (!confirm(`Are you sure you want to delete the request for ${request.firstName} ${request.lastName}? This action cannot be undone.`)) {
       return
     }
@@ -285,6 +283,10 @@ export default function RequestDetailPage() {
   const expectedValue = request.value && request.probability
     ? parseFloat(request.value) * (request.probability / 100)
     : null
+  const parsedJobSite = parseAddressParts(request.jobSiteAddress)
+  const jobSiteCity = request.jobSiteCity || parsedJobSite?.city || ''
+  const jobSiteState = request.jobSiteState || parsedJobSite?.state || ''
+  const jobSiteZipCode = request.jobSiteZipCode || parsedJobSite?.zipCode || ''
 
   return (
     <div className="space-y-6">
@@ -316,17 +318,16 @@ export default function RequestDetailPage() {
             <Edit className="mr-2 h-4 w-4" />
             Edit
           </Button>
-          {!request.convertedToClientId && (
-            <Button 
-              variant="outline" 
-              onClick={handleDelete}
-              disabled={deleting}
-              className="text-red-600 hover:text-red-700 hover:bg-red-50"
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              {deleting ? 'Deleting...' : 'Delete'}
-            </Button>
-          )}
+          <Button
+            variant="outline"
+            onClick={handleDelete}
+            disabled={deleting}
+            title="Delete request"
+            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            {deleting ? 'Deleting...' : 'Delete'}
+          </Button>
         </div>
       </div>
 
@@ -404,6 +405,20 @@ export default function RequestDetailPage() {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-gray-700">{request.jobSiteAddress}</p>
+                <div className="mt-3 grid grid-cols-3 gap-3">
+                  <div className="rounded border p-2">
+                    <p className="text-xs text-gray-500">City</p>
+                    <p className="text-sm font-medium">{jobSiteCity || '-'}</p>
+                  </div>
+                  <div className="rounded border p-2">
+                    <p className="text-xs text-gray-500">State</p>
+                    <p className="text-sm font-medium">{jobSiteState || '-'}</p>
+                  </div>
+                  <div className="rounded border p-2">
+                    <p className="text-xs text-gray-500">Zip Code</p>
+                    <p className="text-sm font-medium">{jobSiteZipCode || '-'}</p>
+                  </div>
+                </div>
                 <iframe
                   title="Job Site Map"
                   className="mt-3 h-56 w-full rounded-md border"
@@ -572,7 +587,7 @@ export default function RequestDetailPage() {
                       <div className="flex-1">
                         <p className="text-sm text-gray-700">{activity.description}</p>
                         <p className="text-xs text-gray-400 mt-1">
-                          {activity.user.firstName} {activity.user.lastName} • {formatDate(activity.createdAt)}
+                          {activity.user ? `${activity.user.firstName} ${activity.user.lastName}` : 'System'} • {formatDate(activity.createdAt)}
                         </p>
                       </div>
                     </div>

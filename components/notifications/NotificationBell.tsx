@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Bell } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { formatDistanceToNow } from 'date-fns'
+import { cn } from '@/lib/utils'
 
 interface Notification {
   id: string
@@ -23,16 +24,36 @@ export function NotificationBell() {
   const [unreadCount, setUnreadCount] = useState(0)
   const [isOpen, setIsOpen] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [toastNotification, setToastNotification] = useState<Notification | null>(null)
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, right: 0 })
   const buttonRef = useRef<HTMLButtonElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const streamAbortRef = useRef<AbortController | null>(null)
+  const toastTimerRef = useRef<number | null>(null)
+  const shownToastIdsRef = useRef<Set<string>>(new Set())
+
+  const showTransientToast = (notification: Notification) => {
+    if (shownToastIdsRef.current.has(notification.id)) return
+    shownToastIdsRef.current.add(notification.id)
+    setToastNotification(notification)
+    if (toastTimerRef.current) {
+      window.clearTimeout(toastTimerRef.current)
+    }
+    toastTimerRef.current = window.setTimeout(() => {
+      setToastNotification(null)
+    }, 5000)
+  }
 
   useEffect(() => {
     fetchNotifications()
     // Refresh every 30 seconds
     const interval = setInterval(fetchNotifications, 30000)
-    return () => clearInterval(interval)
+    return () => {
+      clearInterval(interval)
+      if (toastTimerRef.current) {
+        window.clearTimeout(toastTimerRef.current)
+      }
+    }
   }, [])
 
   const refreshToken = async (): Promise<boolean> => {
@@ -170,6 +191,14 @@ export function NotificationBell() {
 
             if (evt === 'notifications' && payload?.notifications) {
               const incoming: Notification[] = payload.notifications
+              const paymentToast = incoming.find(
+                (n) =>
+                  n.status === 'UNREAD' &&
+                  (n.type === 'PAYMENT_RECEIVED' || /payment received|invoice paid/i.test(`${n.title} ${n.message || ''}`))
+              )
+              if (paymentToast) {
+                showTransientToast(paymentToast)
+              }
               setNotifications((prev) => {
                 // merge unique by id, newest first
                 const map = new Map<string, Notification>()
@@ -328,15 +357,39 @@ export function NotificationBell() {
 
   return (
     <>
+      {toastNotification && (
+        <div className="fixed right-4 top-4 z-[120] w-96 rounded-md border border-green-200 bg-green-50 p-3 shadow-lg">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-green-900">{toastNotification.title}</p>
+              {toastNotification.message && (
+                <p className="mt-1 text-xs text-green-800">{toastNotification.message}</p>
+              )}
+            </div>
+            <button
+              type="button"
+              className="text-green-800 hover:text-green-900 text-xs"
+              onClick={() => setToastNotification(null)}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
       <div className="relative">
         <Button
           ref={buttonRef}
           variant="ghost"
           size="sm"
-          className="relative text-white hover:bg-gray-800"
+          className="group relative !bg-transparent hover:!bg-transparent active:!bg-transparent focus:!bg-transparent focus-visible:!bg-transparent focus-visible:!ring-0 focus-visible:!ring-offset-0"
           onClick={() => setIsOpen(!isOpen)}
         >
-          <Bell className="h-5 w-5" />
+          <Bell
+            className={cn(
+              'h-5 w-5 transition-colors duration-200 ease-in-out',
+              isOpen ? 'text-[#E6C98B]' : 'text-[#FFFFFF] group-hover:text-[#E6C98B]'
+            )}
+          />
           {unreadCount > 0 && (
             <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">
               {unreadCount > 9 ? '9+' : unreadCount}

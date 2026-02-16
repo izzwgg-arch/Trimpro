@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
-// import { sendEstimateEmail } from '@/lib/email' // TODO: Implement
+import { getIntegrationSecrets } from '@/lib/integrations/status'
+import { testEmailProvider } from '@/lib/integrations/providers/email'
 
 export async function POST(
   request: NextRequest,
@@ -48,15 +49,50 @@ export async function POST(
       return NextResponse.json({ error: 'No email address found for client' }, { status: 400 })
     }
 
-    // TODO: Generate PDF (implement PDF generation)
-    const pdfUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/estimates/${params.id}/pdf`
+    // Force public base URL in recipient emails to avoid internal/private links.
+    const appUrl = 'https://app.trimprony.com'
+
+    const sentEpoch = Date.now()
+    const sentIso = new Date(sentEpoch).toISOString()
+    // TODO: add public estimate route for unauthenticated recipients.
+    const pdfUrl = `${appUrl}/api/estimates/${params.id}/pdf?sent=${sentEpoch}`
+    const effectiveSubject = `${subject || `Estimate ${estimate.estimateNumber}`} • ${sentIso}`
     
-    try {
-      const { sendEstimateEmail } = await import('@/lib/services/email')
-      await sendEstimateEmail(recipientEmail, estimate, pdfUrl, message || undefined)
-    } catch (error) {
-      console.error('Failed to send estimate email:', error)
-      // Continue anyway
+    const emailSecrets = await getIntegrationSecrets(user.tenantId, 'email')
+    if (!emailSecrets) {
+      return NextResponse.json(
+        { error: 'Email integration is not configured. Please configure Email Provider first.' },
+        { status: 400 }
+      )
+    }
+
+    const html = `
+      <html>
+        <body>
+          <h2>Estimate ${estimate.estimateNumber}</h2>
+          ${message ? `<p>${message}</p>` : ''}
+          <p>Please review estimate ${estimate.estimateNumber}.</p>
+          <p><strong>Total: ${estimate.total}</strong></p>
+          ${estimate.validUntil ? `<p>Valid until: ${new Date(estimate.validUntil).toLocaleDateString()}</p>` : ''}
+          <p><a href="${pdfUrl}">Download Estimate PDF</a></p>
+          <p style="color:#6b7280;font-size:12px">Sent: ${sentIso}</p>
+        </body>
+      </html>
+    `
+
+    const sendResult = await testEmailProvider(
+      emailSecrets,
+      recipientEmail,
+      effectiveSubject,
+      html
+    )
+
+    if (!sendResult.success) {
+      console.error('Failed to send estimate email:', sendResult.error || sendResult.message)
+      return NextResponse.json(
+        { error: sendResult.error || sendResult.message || 'Failed to send estimate email' },
+        { status: 502 }
+      )
     }
 
     // Update estimate status
@@ -75,7 +111,7 @@ export async function POST(
         userId: user.id,
         direction: 'OUTBOUND',
         status: 'SENT',
-        subject: subject || `Estimate ${estimate.estimateNumber}`,
+        subject: effectiveSubject,
         body: message || `Please find attached estimate ${estimate.estimateNumber}.`,
         fromEmail: user.email,
         toEmails: [recipientEmail],

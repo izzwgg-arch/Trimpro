@@ -24,7 +24,11 @@ export async function GET(
       where: {
         id: jobId,
         tenantId: user.tenantId,
-        assignedToId: user.id, // Only jobs assigned to this user
+        assignments: {
+          some: {
+            userId: user.id,
+          },
+        }, // Only jobs assigned to this user
       },
       include: {
         client: {

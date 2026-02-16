@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ArrowLeft, Save, Plus, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -283,15 +284,15 @@ export default function EditVendorPage() {
                   </div>
                   <div>
                     <Label htmlFor="status">Status</Label>
-                    <select
-                      id="status"
-                      value={formData.status}
-                      onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-                    >
-                      <option value="ACTIVE">Active</option>
-                      <option value="INACTIVE">Inactive</option>
-                    </select>
+                    <Select value={formData.status} onValueChange={(value) => setFormData({ ...formData, status: value })}>
+                      <SelectTrigger id="status">
+                        <SelectValue placeholder="Select status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ACTIVE">Active</SelectItem>
+                        <SelectItem value="INACTIVE">Inactive</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
               </CardContent>
@@ -479,18 +480,18 @@ export default function EditVendorPage() {
               <CardContent className="space-y-4">
                 <div>
                   <Label htmlFor="paymentTerms">Payment Terms</Label>
-                  <select
-                    id="paymentTerms"
-                    value={formData.paymentTerms}
-                    onChange={(e) => setFormData({ ...formData, paymentTerms: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    <option value="NET_15">Net 15</option>
-                    <option value="NET_30">Net 30</option>
-                    <option value="NET_45">Net 45</option>
-                    <option value="DUE_ON_RECEIPT">Due on Receipt</option>
-                    <option value="CUSTOM">Custom</option>
-                  </select>
+                  <Select value={formData.paymentTerms} onValueChange={(value) => setFormData({ ...formData, paymentTerms: value })}>
+                    <SelectTrigger id="paymentTerms">
+                      <SelectValue placeholder="Select terms" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="NET_15">Net 15</SelectItem>
+                      <SelectItem value="NET_30">Net 30</SelectItem>
+                      <SelectItem value="NET_45">Net 45</SelectItem>
+                      <SelectItem value="DUE_ON_RECEIPT">Due on Receipt</SelectItem>
+                      <SelectItem value="CUSTOM">Custom</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 {formData.paymentTerms === 'CUSTOM' && (
                   <div>

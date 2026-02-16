@@ -28,7 +28,16 @@ export const jobAssignmentSchema = z.object({
 
 // Job status update
 export const jobStatusSchema = z.object({
-  status: z.enum(['SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'ON_HOLD']),
+  status: z.enum([
+    'SCHEDULED',
+    'IN_PROGRESS',
+    'MEASURED',
+    'INSTALLATION_COMPLETE',
+    'FINISHING_COMPLETE',
+    'COMPLETED',
+    'CANCELLED',
+    'ON_HOLD',
+  ]),
   notes: z.string().optional().nullable(),
 })
 
@@ -92,7 +101,17 @@ export const createJobSchema = z.object({
   clientId: z.string().min(1),
   title: z.string().min(1).max(255),
   description: z.string().max(5000).optional().nullable(),
-  status: z.enum(['QUOTE', 'SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'ON_HOLD']).optional(),
+  status: z.enum([
+    'QUOTE',
+    'SCHEDULED',
+    'IN_PROGRESS',
+    'MEASURED',
+    'INSTALLATION_COMPLETE',
+    'FINISHING_COMPLETE',
+    'COMPLETED',
+    'CANCELLED',
+    'ON_HOLD',
+  ]).optional(),
   priority: z.union([
     z.number().int().min(1).max(5),
     z.string().transform((val) => {
@@ -132,6 +151,14 @@ export const createJobSchema = z.object({
 })
 
 // Invoice creation
+const dateOrDateTime = z.string().refine((val) => {
+  if (!val) return false
+  // Accept both date-only (YYYY-MM-DD) and ISO datetime strings.
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(val)
+  if (dateOnly) return true
+  return !Number.isNaN(Date.parse(val))
+}, 'Invalid datetime')
+
 export const createInvoiceSchema = z.object({
   clientId: z.string().min(1),
   jobId: z.string().optional().nullable(),
@@ -149,8 +176,8 @@ export const createInvoiceSchema = z.object({
   })).min(1).optional(),
   taxRate: z.union([z.string(), z.number()]).optional().nullable(),
   discount: z.union([z.string(), z.number()]).optional().nullable(),
-  invoiceDate: z.string().datetime().optional().nullable(),
-  dueDate: z.string().datetime().optional().nullable(),
+  invoiceDate: dateOrDateTime.optional().nullable(),
+  dueDate: dateOrDateTime.optional().nullable(),
   notes: z.string().max(5000).optional().nullable(),
   terms: z.string().max(1000).optional().nullable(),
   memo: z.string().max(1000).optional().nullable(),

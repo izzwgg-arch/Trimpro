@@ -21,7 +21,6 @@ import {
   Settings,
   HelpCircle,
   LogOut,
-  ChevronRight,
   BarChart3,
   FileBarChart,
   Radio,
@@ -88,21 +87,21 @@ export function Sidebar() {
       </div>
       <nav className="flex-1 overflow-y-auto space-y-1 px-2 py-4 min-h-0">
         {navigation.map((item) => {
-          const isActive = pathname === item.href || pathname?.startsWith(item.href + '/')
+          const isActive =
+            item.href === '/dashboard'
+              ? pathname === '/dashboard'
+              : pathname === item.href || pathname?.startsWith(item.href + '/')
           const navItem = (
             <Link
               key={item.name}
               href={item.href}
               className={cn(
-                'group flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-[#E6C98B] text-[#2E4A59]'
-                  : 'text-[#D8DDE1] hover:bg-[#E6C98B] hover:text-[#2E4A59]'
+                'group flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors duration-200 ease-in-out !bg-transparent hover:!bg-transparent active:!bg-transparent focus:!bg-transparent',
+                isActive ? 'text-[#E6C98B]' : 'text-[#FFFFFF] hover:text-[#E6C98B]'
               )}
             >
               <item.icon className="mr-3 h-5 w-5 flex-shrink-0" />
               {item.name}
-              {isActive && <ChevronRight className="ml-auto h-4 w-4" />}
             </Link>
           )
 
@@ -121,7 +120,7 @@ export function Sidebar() {
       <div className="flex-shrink-0 border-t border-[#3A5C70] p-4">
         <button
           onClick={handleLogout}
-          className="flex w-full items-center rounded-md px-3 py-2 text-sm font-medium text-[#D8DDE1] hover:bg-[#E6C98B] hover:text-[#2E4A59]"
+          className="flex w-full items-center rounded-md px-3 py-2 text-sm font-medium text-[#FFFFFF] transition-colors duration-200 ease-in-out !bg-transparent hover:!bg-transparent hover:text-[#E6C98B]"
         >
           <LogOut className="mr-3 h-5 w-5" />
           Logout

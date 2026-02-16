@@ -10,7 +10,7 @@
     --card-foreground: 222.2 84% 4.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
+    --primary: 201 32% 27%;
     --primary-foreground: 210 40% 98%;
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
@@ -22,7 +22,7 @@
     --destructive-foreground: 210 40% 98%;
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
+    --ring: 201 32% 27%;
     --radius: 0.5rem;
   }
 
@@ -33,7 +33,7 @@
     --card-foreground: 210 40% 98%;
     --popover: 222.2 84% 4.9%;
     --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
+    --primary: 201 32% 27%;
     --primary-foreground: 222.2 47.4% 11.2%;
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
@@ -45,13 +45,19 @@
     --destructive-foreground: 210 40% 98%;
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+    --ring: 201 32% 27%;
   }
 }
 
 @layer base {
   * {
     @apply border-border;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    color: #2e4a59;
   }
   html {
     height: 100%;
@@ -85,5 +91,41 @@
   /* Force remove any fixed overlay that shouldn't be visible */
   body:not([data-dialog-open]) [data-radix-dialog-overlay] {
     animation: fade-out 0.2s ease-in-out;
+  }
+}
+
+/* Global blue-button override requested by design */
+@layer components {
+  button[class*="bg-blue-"],
+  a[class*="bg-blue-"],
+  [role="button"][class*="bg-blue-"] {
+    background-color: #2e4a59 !important;
+    border-color: #2e4a59 !important;
+  }
+
+  button[class*="bg-blue-"]:hover,
+  a[class*="bg-blue-"]:hover,
+  [role="button"][class*="bg-blue-"]:hover {
+    background-color: #243b47 !important;
+    border-color: #243b47 !important;
+  }
+
+  /* Global dropdown/select interaction color system */
+  select:focus,
+  select:focus-visible,
+  select[class*='focus:ring-blue-500']:focus,
+  select[class*='focus:ring-primary']:focus {
+    border-color: #2e4a59 !important;
+    outline: none !important;
+    --tw-ring-color: #2e4a59 !important;
+  }
+
+  /* Native option highlight (best-effort across browsers/OS) */
+  select option:hover,
+  select option:focus,
+  select option:checked,
+  select option:active {
+    background: #2e4a59 !important;
+    color: #ffffff !important;
   }
 }

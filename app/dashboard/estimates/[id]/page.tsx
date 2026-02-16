@@ -31,6 +31,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
+import { DocumentAttachments } from '@/components/common/document-attachments'
 
 interface EstimateDetail {
   id: string
@@ -404,12 +405,10 @@ export default function EstimateDetailPage() {
             <DollarSign className="mr-2 h-4 w-4" />
             Convert to Invoice
           </Button>
-          <Link href={`/dashboard/estimates/${estimateId}/edit`}>
-            <Button variant="outline">
-              <Edit className="mr-2 h-4 w-4" />
-              Edit
-            </Button>
-          </Link>
+          <Button variant="outline" onClick={() => router.push(`/dashboard/estimates/${estimateId}/edit`)}>
+            <Edit className="mr-2 h-4 w-4" />
+            Edit
+          </Button>
           <Button onClick={handleSendEstimate} disabled={sending}>
             <Send className="mr-2 h-4 w-4" />
             {sending ? 'Sending...' : 'Send'}
@@ -766,6 +765,15 @@ export default function EstimateDetailPage() {
                   </span>
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Files</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <DocumentAttachments entityType="estimate" entityId={estimateId} />
             </CardContent>
           </Card>
 

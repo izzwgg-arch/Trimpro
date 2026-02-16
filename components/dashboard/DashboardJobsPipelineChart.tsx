@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts'
 import { EmptyState } from '@/components/charts/EmptyState'
 
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8']
+const COLORS = ['#2E4A59', '#00C49F', '#FFBB28', '#FF8042', '#2E4A59']
 
 export function DashboardJobsPipelineChart() {
   const [data, setData] = useState<Array<{ name: string; value: number }>>([])

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   BarChart,
@@ -24,7 +25,7 @@ import { formatCurrency } from '@/lib/utils'
 import { EmptyState } from '@/components/charts/EmptyState'
 import { WaterfallChart } from '@/components/charts/WaterfallChart'
 
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8']
+const COLORS = ['#2E4A59', '#00C49F', '#FFBB28', '#FF8042', '#2E4A59']
 
 interface AnalyticsData {
   kpis: {
@@ -226,16 +227,17 @@ export default function AnalyticsPage() {
           <p className="mt-2 text-gray-600">Business insights and performance metrics</p>
         </div>
         <div className="flex items-center space-x-2">
-          <select
-            value={dateRange}
-            onChange={(e) => setDateRange(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="7d">Last 7 days</option>
-            <option value="30d">Last 30 days</option>
-            <option value="90d">Last 90 days</option>
-            <option value="ytd">Year to date</option>
-          </select>
+          <Select value={dateRange} onValueChange={setDateRange}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="7d">Last 7 days</SelectItem>
+              <SelectItem value="30d">Last 30 days</SelectItem>
+              <SelectItem value="90d">Last 90 days</SelectItem>
+              <SelectItem value="ytd">Year to date</SelectItem>
+            </SelectContent>
+          </Select>
           <Button variant="outline" onClick={handleExport}>
             <Download className="mr-2 h-4 w-4" />
             Export CSV
@@ -307,7 +309,7 @@ export default function AnalyticsPage() {
                     <YAxis />
                     <Tooltip formatter={(value: number) => formatCurrency(value)} />
                     <Legend />
-                    <Line type="monotone" dataKey="revenue" stroke="#8884d8" name="Revenue" />
+                    <Line type="monotone" dataKey="revenue" stroke="#2E4A59" name="Revenue" />
                   </LineChart>
                 </ResponsiveContainer>
               ) : (
@@ -331,7 +333,7 @@ export default function AnalyticsPage() {
                     <YAxis />
                     <Tooltip />
                     <Legend />
-                    <Bar dataKey="jobsCreated" fill="#0088FE" name="Created" />
+                    <Bar dataKey="jobsCreated" fill="#2E4A59" name="Created" />
                     <Bar dataKey="jobsCompleted" fill="#00C49F" name="Completed" />
                   </BarChart>
                 </ResponsiveContainer>
@@ -351,7 +353,7 @@ export default function AnalyticsPage() {
               {funnel.totalLeads > 0 || funnel.jobsCreated > 0 || funnel.invoicesCreated > 0 ? (
                 <div className="space-y-4">
                   <div className="grid grid-cols-4 gap-4">
-                    <div className="text-center p-4 bg-blue-50 rounded-lg">
+                    <div className="text-center p-4 bg-[#2E4A59]/10 rounded-lg">
                       <div className="text-2xl font-bold">{funnel.totalLeads}</div>
                       <div className="text-sm text-gray-600">Requests</div>
                     </div>
@@ -457,7 +459,7 @@ export default function AnalyticsPage() {
                     <YAxis />
                     <Tooltip />
                     <Legend />
-                    <Line type="monotone" dataKey="jobsCreated" stroke="#0088FE" name="Created" />
+                    <Line type="monotone" dataKey="jobsCreated" stroke="#2E4A59" name="Created" />
                     <Line type="monotone" dataKey="jobsCompleted" stroke="#00C49F" name="Completed" />
                   </LineChart>
                 </ResponsiveContainer>
@@ -522,7 +524,7 @@ export default function AnalyticsPage() {
                     <YAxis />
                     <Tooltip formatter={(value: number) => formatCurrency(value)} />
                     <Legend />
-                    <Line type="monotone" dataKey="revenue" stroke="#8884d8" name="Revenue" />
+                    <Line type="monotone" dataKey="revenue" stroke="#2E4A59" name="Revenue" />
                   </LineChart>
                 </ResponsiveContainer>
               ) : (
@@ -552,7 +554,7 @@ export default function AnalyticsPage() {
                       <XAxis dataKey="name" />
                       <YAxis />
                       <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                      <Bar dataKey="value" fill="#8884d8" />
+                      <Bar dataKey="value" fill="#2E4A59" />
                     </BarChart>
                   </ResponsiveContainer>
                 ) : (
@@ -572,7 +574,7 @@ export default function AnalyticsPage() {
               {funnel.totalLeads > 0 ? (
                 <div className="space-y-4">
                   <div className="grid grid-cols-4 gap-4">
-                    <div className="text-center p-4 bg-blue-50 rounded-lg">
+                    <div className="text-center p-4 bg-[#2E4A59]/10 rounded-lg">
                       <div className="text-2xl font-bold">{funnel.totalLeads}</div>
                       <div className="text-sm text-gray-600">Requests</div>
                     </div>
@@ -609,7 +611,7 @@ export default function AnalyticsPage() {
                     <YAxis />
                     <Tooltip />
                     <Legend />
-                    <Line type="monotone" dataKey="leadsCreated" stroke="#0088FE" name="Created" />
+                    <Line type="monotone" dataKey="leadsCreated" stroke="#2E4A59" name="Created" />
                     <Line type="monotone" dataKey="leadsConverted" stroke="#00C49F" name="Converted" />
                   </LineChart>
                 </ResponsiveContainer>

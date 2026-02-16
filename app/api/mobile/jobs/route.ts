@@ -23,7 +23,11 @@ export async function GET(request: NextRequest) {
   try {
     const where: any = {
       tenantId: user.tenantId,
-      assignedToId: user.id,
+      assignments: {
+        some: {
+          userId: user.id,
+        },
+      },
     }
 
     if (status) {

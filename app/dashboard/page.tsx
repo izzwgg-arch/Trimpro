@@ -52,10 +52,30 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [dismissedPayments, setDismissedPayments] = useState<Set<string>>(new Set())
+  const DISMISSED_KEY = 'dashboard.dismissedPayments'
 
   useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DISMISSED_KEY)
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (Array.isArray(parsed)) {
+          setDismissedPayments(new Set(parsed.filter((v) => typeof v === 'string')))
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to restore dismissed payments:', error)
+    }
     fetchStats()
   }, [])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(DISMISSED_KEY, JSON.stringify(Array.from(dismissedPayments)))
+    } catch (error) {
+      console.warn('Failed to persist dismissed payments:', error)
+    }
+  }, [dismissedPayments])
 
   const fetchStats = async () => {
     try {

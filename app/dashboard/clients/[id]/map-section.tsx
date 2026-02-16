@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 const AddressMap = dynamic(() => import('@/components/maps/AddressMap').then(mod => ({ default: mod.AddressMap })), {
   ssr: false,
@@ -44,20 +45,24 @@ export function AddressMapSection({ addresses }: AddressMapSectionProps) {
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Select Address
             </label>
-            <select
+            <Select
               value={selectedAddress?.id || ''}
-              onChange={(e) => {
-                const addr = safeAddresses.find(a => a.id === e.target.value)
+              onValueChange={(value) => {
+                const addr = safeAddresses.find((a) => a.id === value)
                 setSelectedAddress(addr || null)
               }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              {safeAddresses.map((addr) => (
-                <option key={addr.id} value={addr.id}>
-                  {addr.type} - {addr.street}, {addr.city}, {addr.state}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger>
+                <SelectValue placeholder="Select address" />
+              </SelectTrigger>
+              <SelectContent>
+                {safeAddresses.map((addr) => (
+                  <SelectItem key={addr.id} value={addr.id}>
+                    {addr.type} - {addr.street}, {addr.city}, {addr.state}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         )}
         {selectedAddress && <AddressMap address={selectedAddress} />}

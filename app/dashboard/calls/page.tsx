@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { formatDate, formatPhoneNumber } from '@/lib/utils'
 import { Search, Filter, Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Clock } from 'lucide-react'
 import Link from 'next/link'
@@ -278,27 +279,29 @@ export default function CallsPage() {
             </div>
             <div className="flex items-center space-x-2">
               <Filter className="h-4 w-4 text-gray-400" />
-              <select
-                value={direction}
-                onChange={(e) => setDirection(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                <option value="all">All Directions</option>
-                <option value="INBOUND">Inbound</option>
-                <option value="OUTBOUND">Outbound</option>
-              </select>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                <option value="all">All Status</option>
-                <option value="ANSWERED">Answered</option>
-                <option value="MISSED">Missed</option>
-                <option value="VOICEMAIL">Voicemail</option>
-                <option value="FAILED">Failed</option>
-                <option value="BUSY">Busy</option>
-              </select>
+              <Select value={direction} onValueChange={setDirection}>
+                <SelectTrigger className="w-[160px]">
+                  <SelectValue placeholder="All Directions" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Directions</SelectItem>
+                  <SelectItem value="INBOUND">Inbound</SelectItem>
+                  <SelectItem value="OUTBOUND">Outbound</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue placeholder="All Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="ANSWERED">Answered</SelectItem>
+                  <SelectItem value="MISSED">Missed</SelectItem>
+                  <SelectItem value="VOICEMAIL">Voicemail</SelectItem>
+                  <SelectItem value="FAILED">Failed</SelectItem>
+                  <SelectItem value="BUSY">Busy</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </CardContent>

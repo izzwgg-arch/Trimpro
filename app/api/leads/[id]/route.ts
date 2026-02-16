@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
+import { parseAddressParts } from '@/lib/address/parse'
+import { syncClientToQuickBooks } from '@/lib/services/qbo-sync'
 
 export async function GET(
   request: NextRequest,
@@ -98,7 +100,15 @@ export async function GET(
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ lead })
+    const parsed = parseAddressParts(lead.jobSiteAddress)
+    return NextResponse.json({
+      lead: {
+        ...lead,
+        jobSiteCity: parsed?.city || null,
+        jobSiteState: parsed?.state || null,
+        jobSiteZipCode: parsed?.zipCode || null,
+      },
+    })
   } catch (error) {
     console.error('Get lead error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -218,6 +228,12 @@ export async function PUT(
         },
       })
 
+      try {
+        await syncClientToQuickBooks(user.tenantId, client.id)
+      } catch (error) {
+        console.error('QuickBooks client sync trigger error (lead convert):', error)
+      }
+
       // Update lead with client ID
       await prisma.lead.update({
         where: { id: params.id },
@@ -282,14 +298,6 @@ export async function DELETE(
 
     if (!lead) {
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
-    }
-
-    // Don't delete converted leads
-    if (lead.convertedToClientId) {
-      return NextResponse.json(
-        { error: 'Cannot delete converted lead. It is linked to a client.' },
-        { status: 400 }
-      )
     }
 
     await prisma.lead.delete({

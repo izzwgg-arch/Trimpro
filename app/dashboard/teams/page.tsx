@@ -5,6 +5,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ViewModeSelector } from '@/components/ui/ViewModeSelector'
+import { useViewMode } from '@/hooks/useViewMode'
+import { RowCompactItem } from '@/components/lists/RowCompactItem'
+import { RowDetailedItem } from '@/components/lists/RowDetailedItem'
+import { TableView } from '@/components/lists/TableView'
 import { Users, Plus, Search, Mail, Phone, Briefcase, X } from 'lucide-react'
 
 interface TeamMember {
@@ -28,6 +34,7 @@ export default function TeamsPage() {
   const [inviteLoading, setInviteLoading] = useState(false)
   const [inviteError, setInviteError] = useState('')
   const [inviteSuccess, setInviteSuccess] = useState(false)
+  const [viewMode, setViewMode] = useViewMode('team', 'grid')
   const [inviteForm, setInviteForm] = useState({
     email: '',
     firstName: '',
@@ -149,15 +156,18 @@ export default function TeamsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Team Management</h1>
           <p className="mt-2 text-gray-600">View and manage your team members</p>
         </div>
-        <Button onClick={() => setShowInviteModal(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Invite User
-        </Button>
+        <div className="flex items-center gap-2">
+          <ViewModeSelector value={viewMode} onChange={setViewMode} />
+          <Button onClick={() => setShowInviteModal(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Invite User
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -176,45 +186,106 @@ export default function TeamsPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {filteredMembers.map((member) => (
-          <Card key={member.id}>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">
-                  {member.firstName} {member.lastName}
-                </CardTitle>
-                <span className={`px-2 py-1 text-xs font-semibold rounded-full ${roleColors[member.role] || 'bg-gray-100 text-gray-800'}`}>
-                  {member.role}
-                </span>
-              </div>
-              <CardDescription>
-                {member.status === 'ACTIVE' ? (
-                  <span className="text-green-600">Active</span>
-                ) : (
-                  <span className="text-gray-500">{member.status}</span>
-                )}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex items-center text-sm text-gray-600">
-                <Mail className="mr-2 h-4 w-4" />
-                {member.email}
-              </div>
-              {member.phone && (
-                <div className="flex items-center text-sm text-gray-600">
-                  <Phone className="mr-2 h-4 w-4" />
-                  {member.phone}
+      {viewMode === 'grid' ? (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {filteredMembers.map((member) => (
+            <Card key={member.id}>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg">
+                    {member.firstName} {member.lastName}
+                  </CardTitle>
+                  <span className={`px-2 py-1 text-xs font-semibold rounded-full ${roleColors[member.role] || 'bg-gray-100 text-gray-800'}`}>
+                    {member.role}
+                  </span>
                 </div>
-              )}
-              <div className="flex items-center text-sm text-gray-600">
-                <Briefcase className="mr-2 h-4 w-4" />
-                {member._count.schedules} scheduled items
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+                <CardDescription>
+                  {member.status === 'ACTIVE' ? <span className="text-green-600">Active</span> : <span className="text-gray-500">{member.status}</span>}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-center text-sm text-gray-600">
+                  <Mail className="mr-2 h-4 w-4" />
+                  {member.email}
+                </div>
+                {member.phone && (
+                  <div className="flex items-center text-sm text-gray-600">
+                    <Phone className="mr-2 h-4 w-4" />
+                    {member.phone}
+                  </div>
+                )}
+                <div className="flex items-center text-sm text-gray-600">
+                  <Briefcase className="mr-2 h-4 w-4" />
+                  {member._count.schedules} scheduled items
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : viewMode === 'rowCompact' ? (
+        <div className="space-y-2">
+          {filteredMembers.map((member) => (
+            <RowCompactItem
+              key={member.id}
+              primary={`${member.firstName} ${member.lastName}`}
+              secondary={member.email}
+              status={<span className={`px-2 py-1 text-xs rounded-full ${roleColors[member.role] || 'bg-gray-100 text-gray-800'}`}>{member.role}</span>}
+              amount={member.status}
+              date={`${member._count.schedules} schedules`}
+            />
+          ))}
+        </div>
+      ) : viewMode === 'rowDetailed' ? (
+        <div className="space-y-2">
+          {filteredMembers.map((member) => (
+            <RowDetailedItem
+              key={member.id}
+              primary={`${member.firstName} ${member.lastName}`}
+              status={<span className={`px-2 py-1 text-xs rounded-full ${roleColors[member.role] || 'bg-gray-100 text-gray-800'}`}>{member.role}</span>}
+              line2={`${member.email}${member.phone ? ` • ${member.phone}` : ''}`}
+              rightTop={member.status}
+              rightBottom={`${member._count.schedules} schedules`}
+            />
+          ))}
+        </div>
+      ) : (
+        <TableView
+          data={filteredMembers}
+          rowKey={(member) => member.id}
+          columns={[
+            {
+              key: 'name',
+              header: 'Name',
+              sortValue: (member) => `${member.firstName} ${member.lastName}`,
+              render: (member) => <span className="font-medium">{member.firstName} {member.lastName}</span>,
+            },
+            {
+              key: 'role',
+              header: 'Role',
+              sortValue: (member) => member.role,
+              render: (member) => <span className={`px-2 py-1 text-xs rounded-full ${roleColors[member.role] || 'bg-gray-100 text-gray-800'}`}>{member.role}</span>,
+            },
+            {
+              key: 'email',
+              header: 'Email',
+              sortValue: (member) => member.email,
+              render: (member) => member.email,
+            },
+            {
+              key: 'status',
+              header: 'Status',
+              sortValue: (member) => member.status,
+              render: (member) => member.status,
+            },
+            {
+              key: 'schedules',
+              header: 'Schedules',
+              sortValue: (member) => member._count.schedules,
+              render: (member) => member._count.schedules,
+            },
+          ]}
+        />
+      )}
 
       {filteredMembers.length === 0 && (
         <Card>
@@ -309,19 +380,21 @@ export default function TeamsPage() {
                 </div>
                 <div>
                   <Label htmlFor="role">Role *</Label>
-                  <select
-                    id="role"
+                  <Select
                     value={inviteForm.role}
-                    onChange={(e) => setInviteForm({ ...inviteForm, role: e.target.value as any })}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                    required
+                    onValueChange={(value) => setInviteForm({ ...inviteForm, role: value as any })}
                   >
-                    <option value="FIELD">Field Worker</option>
-                    <option value="OFFICE">Office Staff</option>
-                    <option value="SALES">Sales</option>
-                    <option value="ACCOUNTING">Accounting</option>
-                    <option value="ADMIN">Admin</option>
-                  </select>
+                    <SelectTrigger id="role">
+                      <SelectValue placeholder="Select role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="FIELD">Field Worker</SelectItem>
+                      <SelectItem value="OFFICE">Office Staff</SelectItem>
+                      <SelectItem value="SALES">Sales</SelectItem>
+                      <SelectItem value="ACCOUNTING">Accounting</SelectItem>
+                      <SelectItem value="ADMIN">Admin</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="flex space-x-2">
                   <Button

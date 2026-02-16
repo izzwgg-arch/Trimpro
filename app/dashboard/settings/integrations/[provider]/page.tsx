@@ -691,6 +691,30 @@ export default function IntegrationProviderPage() {
             <p className="text-gray-600">No configuration required.</p>
           )}
 
+          {provider === 'quickbooks' && (
+            <div className="flex space-x-2 pt-2">
+              <Button onClick={handleSave} disabled={saving}>
+                <Save className="mr-2 h-4 w-4" />
+                {saving ? 'Saving...' : 'Save Credentials'}
+              </Button>
+              <Button onClick={handleConnectQuickBooks} variant="outline">
+                Connect QuickBooks
+              </Button>
+              {status === 'CONNECTED' && (
+                <>
+                  <Button onClick={handleTest} disabled={testing} variant="outline">
+                    <TestTube className="mr-2 h-4 w-4" />
+                    {testing ? 'Testing...' : 'Test Connection'}
+                  </Button>
+                  <Button variant="destructive" onClick={handleDisconnect}>
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Disconnect
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
+
           {provider !== 'quickbooks' && (
             <div className="flex space-x-2 pt-4">
               <Button onClick={handleSave} disabled={saving}>

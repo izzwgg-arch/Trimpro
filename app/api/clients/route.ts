@@ -3,6 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { getPaginationParams, createPaginationResponse } from '@/lib/pagination'
 import { validateRequest, createClientSchema } from '@/lib/validation'
+import { syncClientToQuickBooks } from '@/lib/services/qbo-sync'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -198,6 +199,12 @@ export async function POST(request: NextRequest) {
         },
       },
     })
+
+    try {
+      await syncClientToQuickBooks(user.tenantId, client.id)
+    } catch (error) {
+      console.error('QuickBooks client sync trigger error:', error)
+    }
 
     return NextResponse.json({ client }, { status: 201 })
   } catch (error) {

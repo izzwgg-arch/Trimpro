@@ -11,6 +11,12 @@ function escapeHtml(value: string) {
     .replace(/'/g, '&#39;')
 }
 
+function defaultLogoDataUri() {
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360"><rect width="1200" height="360" fill="#12344d"/><g fill="#f5e7b8" font-family="Inter,Arial,Helvetica,sans-serif"><text x="78" y="238" font-size="182" font-weight="700" letter-spacing="1">trimpro</text></g><g fill="#ffffff" transform="translate(900,78)"><rect x="0" y="0" width="220" height="24" rx="4"/><rect x="42" y="54" width="36" height="170" rx="3"/><rect x="102" y="54" width="36" height="170" rx="3"/><circle cx="20" cy="84" r="22"/><circle cx="200" cy="84" r="22"/></g></svg>'
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -23,6 +29,7 @@ export async function GET(
   try {
     const shouldPrint = request.nextUrl.searchParams.get('print') === '1'
     const shouldDownload = request.nextUrl.searchParams.get('download') === '1'
+    const logoUrl = process.env.PDF_LOGO_URL || process.env.NEXT_PUBLIC_PDF_LOGO_URL || defaultLogoDataUri()
 
     const estimate = await prisma.estimate.findFirst({
       where: {
@@ -95,16 +102,27 @@ export async function GET(
               align-items: start;
               margin-bottom: 24px;
             }
-            .logo {
-              width: 150px;
-              height: 42px;
-              border: 1px dashed #cbd5e1;
-              border-radius: 8px;
-              color: #64748b;
-              font-size: 12px;
+            .brand { display: flex; align-items: center; gap: 12px; }
+            .logo-image {
+              height: 56px;
+              width: auto;
+              max-width: 300px;
+              object-fit: contain;
+              display: block;
+            }
+            .logo-fallback {
+              height: 56px;
+              min-width: 160px;
+              border-radius: 10px;
+              background: #12344d;
+              color: #f5e7b8;
               display: flex;
               align-items: center;
               justify-content: center;
+              font-size: 28px;
+              font-weight: 700;
+              letter-spacing: 0.02em;
+              padding: 0 18px;
             }
             .doc-title {
               margin: 12px 0 0;
@@ -206,7 +224,13 @@ export async function GET(
           <div class="page">
             <div class="header">
               <div>
-                <div class="logo">LOGO</div>
+                <div class="brand">
+                  ${
+                    logoUrl
+                      ? `<img class="logo-image" src="${escapeHtml(logoUrl)}" alt="Trim Pro Logo" />`
+                      : `<div class="logo-fallback">trimpro</div>`
+                  }
+                </div>
                 <h1 class="doc-title">Estimate</h1>
                 <div class="muted">Generated on ${generatedAt}</div>
               </div>

@@ -5,6 +5,12 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ViewModeSelector } from '@/components/ui/ViewModeSelector'
+import { useViewMode } from '@/hooks/useViewMode'
+import { RowCompactItem } from '@/components/lists/RowCompactItem'
+import { RowDetailedItem } from '@/components/lists/RowDetailedItem'
+import { TableView } from '@/components/lists/TableView'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Plus, Search, Filter, DollarSign, Calendar, AlertCircle, Trash2, Copy } from 'lucide-react'
 import Link from 'next/link'
@@ -57,6 +63,7 @@ export default function InvoicesPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [duplicating, setDuplicating] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [viewMode, setViewMode] = useViewMode('invoices', 'grid')
 
   useEffect(() => {
     const statusParam = searchParams.get('status')
@@ -197,12 +204,13 @@ export default function InvoicesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Invoices</h1>
           <p className="mt-2 text-gray-600">Manage invoices and payments</p>
         </div>
         <div className="flex items-center gap-2">
+          <ViewModeSelector value={viewMode} onChange={setViewMode} />
           <Button onClick={() => router.push('/dashboard/invoices/new')}>
             <Plus className="mr-2 h-4 w-4" />
             New Invoice
@@ -266,27 +274,29 @@ export default function InvoicesPage() {
             </div>
             <div className="flex items-center space-x-2">
               <Filter className="h-4 w-4 text-gray-400" />
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                <option value="all">All Status</option>
-                <option value="UNPAID_OVERDUE">Unpaid / Overdue</option>
-                <option value="DRAFT">Draft</option>
-                <option value="SENT">Sent</option>
-                <option value="VIEWED">Viewed</option>
-                <option value="PARTIAL">Partial</option>
-                <option value="PAID">Paid</option>
-                <option value="OVERDUE">Overdue</option>
-                <option value="CANCELLED">Cancelled</option>
-              </select>
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger className="w-[160px]">
+                  <SelectValue placeholder="All Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="UNPAID_OVERDUE">Unpaid / Overdue</SelectItem>
+                  <SelectItem value="DRAFT">Draft</SelectItem>
+                  <SelectItem value="SENT">Sent</SelectItem>
+                  <SelectItem value="VIEWED">Viewed</SelectItem>
+                  <SelectItem value="PARTIAL">Partial</SelectItem>
+                  <SelectItem value="PAID">Paid</SelectItem>
+                  <SelectItem value="OVERDUE">Overdue</SelectItem>
+                  <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </CardContent>
       </Card>
 
       {/* Invoices List */}
+      {viewMode === 'grid' ? (
       <div className="space-y-4">
         {invoices.length === 0 ? (
           <Card>
@@ -421,6 +431,85 @@ export default function InvoicesPage() {
           })
         )}
       </div>
+      ) : viewMode === 'rowCompact' ? (
+        <div className="space-y-2">
+          {invoices.map((invoice) => (
+            <RowCompactItem
+              key={invoice.id}
+              href={`/dashboard/invoices/${invoice.id}`}
+              primary={`${invoice.invoiceNumber} • ${invoice.title}`}
+              secondary={invoice.client.name}
+              status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[invoice.status] || 'bg-gray-100 text-gray-800'}`}>{invoice.status}</span>}
+              amount={formatCurrency(parseFloat(invoice.total))}
+              date={formatDate(invoice.invoiceDate)}
+            />
+          ))}
+        </div>
+      ) : viewMode === 'rowDetailed' ? (
+        <div className="space-y-2">
+          {invoices.map((invoice) => (
+            <RowDetailedItem
+              key={invoice.id}
+              href={`/dashboard/invoices/${invoice.id}`}
+              primary={`${invoice.invoiceNumber} • ${invoice.title}`}
+              status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[invoice.status] || 'bg-gray-100 text-gray-800'}`}>{invoice.status}</span>}
+              line2={`${invoice.client.name} • Balance ${formatCurrency(parseFloat(invoice.balance))}`}
+              rightTop={formatCurrency(parseFloat(invoice.total))}
+              rightBottom={formatDate(invoice.invoiceDate)}
+            />
+          ))}
+        </div>
+      ) : (
+        <TableView
+          data={invoices}
+          rowKey={(invoice) => invoice.id}
+          onRowClick={(invoice) => router.push(`/dashboard/invoices/${invoice.id}`)}
+          columns={[
+            {
+              key: 'invoice',
+              header: 'Invoice',
+              sortValue: (invoice) => `${invoice.invoiceNumber} ${invoice.title}`,
+              render: (invoice) => <span className="font-medium">{invoice.invoiceNumber} • {invoice.title}</span>,
+            },
+            {
+              key: 'status',
+              header: 'Status',
+              sortValue: (invoice) => invoice.status,
+              render: (invoice) => <span className={`px-2 py-1 text-xs rounded-full ${statusColors[invoice.status] || 'bg-gray-100 text-gray-800'}`}>{invoice.status}</span>,
+            },
+            {
+              key: 'client',
+              header: 'Client',
+              sortValue: (invoice) => invoice.client.name,
+              render: (invoice) => invoice.client.name,
+            },
+            {
+              key: 'total',
+              header: 'Total',
+              sortValue: (invoice) => Number(invoice.total),
+              render: (invoice) => formatCurrency(parseFloat(invoice.total)),
+            },
+            {
+              key: 'actions',
+              header: 'Actions',
+              render: (invoice) => (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleDelete(invoice.id, invoice.title)
+                  }}
+                  disabled={deletingId === invoice.id}
+                  className="text-red-600 hover:text-red-700 hover:bg-red-50 h-7 px-2"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              ),
+            },
+          ]}
+        />
+      )}
     </div>
   )
 }

@@ -5,6 +5,12 @@ import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ViewModeSelector } from '@/components/ui/ViewModeSelector'
+import { useViewMode } from '@/hooks/useViewMode'
+import { RowCompactItem } from '@/components/lists/RowCompactItem'
+import { RowDetailedItem } from '@/components/lists/RowDetailedItem'
+import { TableView } from '@/components/lists/TableView'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Plus, Search, Filter, FileText, Calendar, Trash2, Briefcase, Copy } from 'lucide-react'
 import Link from 'next/link'
@@ -57,6 +63,7 @@ export default function EstimatesPage() {
   const [convertingId, setConvertingId] = useState<string | null>(null)
   const [duplicating, setDuplicating] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [viewMode, setViewMode] = useViewMode('estimates', 'grid')
 
   useEffect(() => {
     fetchEstimates()
@@ -224,12 +231,13 @@ export default function EstimatesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Estimates</h1>
           <p className="mt-2 text-gray-600">Create and manage estimates</p>
         </div>
         <div className="flex items-center gap-2">
+          <ViewModeSelector value={viewMode} onChange={setViewMode} />
           <Button onClick={() => router.push('/dashboard/estimates/new')}>
             <Plus className="mr-2 h-4 w-4" />
             New Estimate
@@ -260,26 +268,28 @@ export default function EstimatesPage() {
             </div>
             <div className="flex items-center space-x-2">
               <Filter className="h-4 w-4 text-gray-400" />
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                <option value="all">All Status</option>
-                <option value="DRAFT">Draft</option>
-                <option value="SENT">Sent</option>
-                <option value="VIEWED">Viewed</option>
-                <option value="ACCEPTED">Accepted</option>
-                <option value="REJECTED">Rejected</option>
-                <option value="EXPIRED">Expired</option>
-                <option value="CONVERTED">Converted</option>
-              </select>
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue placeholder="All Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="DRAFT">Draft</SelectItem>
+                  <SelectItem value="SENT">Sent</SelectItem>
+                  <SelectItem value="VIEWED">Viewed</SelectItem>
+                  <SelectItem value="ACCEPTED">Accepted</SelectItem>
+                  <SelectItem value="REJECTED">Rejected</SelectItem>
+                  <SelectItem value="EXPIRED">Expired</SelectItem>
+                  <SelectItem value="CONVERTED">Converted</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </CardContent>
       </Card>
 
       {/* Estimates List */}
+      {viewMode === 'grid' ? (
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {estimates.length === 0 ? (
           <div className="col-span-full text-center py-12">
@@ -373,7 +383,7 @@ export default function EstimatesPage() {
                         handleConvertToJob(estimate)
                       }}
                       disabled={convertingId === estimate.id}
-                      className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 h-7 px-2"
+                      className="h-7 px-2 bg-transparent hover:bg-transparent text-[#2E4A59] hover:text-[#2E4A59] border border-[#2E4A59]/30 hover:border-[#2E4A59]"
                       title={estimate.job ? 'Open Job' : 'Convert to Job'}
                     >
                       <Briefcase className="h-3 w-3" />
@@ -398,6 +408,99 @@ export default function EstimatesPage() {
           ))
         )}
       </div>
+      ) : viewMode === 'rowCompact' ? (
+        <div className="space-y-2">
+          {estimates.map((estimate) => (
+            <RowCompactItem
+              key={estimate.id}
+              href={`/dashboard/estimates/${estimate.id}`}
+              primary={`${estimate.estimateNumber} • ${estimate.title}`}
+              secondary={estimate.client?.name || (estimate.lead ? `${estimate.lead.firstName} ${estimate.lead.lastName}` : 'No client')}
+              status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[estimate.status] || 'bg-gray-100 text-gray-800'}`}>{estimate.status}</span>}
+              amount={formatCurrency(parseFloat(estimate.total))}
+              date={estimate.validUntil ? formatDate(estimate.validUntil) : '-'}
+            />
+          ))}
+        </div>
+      ) : viewMode === 'rowDetailed' ? (
+        <div className="space-y-2">
+          {estimates.map((estimate) => (
+            <RowDetailedItem
+              key={estimate.id}
+              href={`/dashboard/estimates/${estimate.id}`}
+              primary={`${estimate.estimateNumber} • ${estimate.title}`}
+              status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[estimate.status] || 'bg-gray-100 text-gray-800'}`}>{estimate.status}</span>}
+              line2={`${estimate.client?.name || (estimate.lead ? `${estimate.lead.firstName} ${estimate.lead.lastName}` : 'No client')} • ${estimate._count.lineItems} line items`}
+              rightTop={formatCurrency(parseFloat(estimate.total))}
+              rightBottom={estimate.validUntil ? formatDate(estimate.validUntil) : 'No expiry'}
+            />
+          ))}
+        </div>
+      ) : (
+        <TableView
+          data={estimates}
+          rowKey={(estimate) => estimate.id}
+          onRowClick={(estimate) => router.push(`/dashboard/estimates/${estimate.id}`)}
+          columns={[
+            {
+              key: 'estimate',
+              header: 'Estimate',
+              sortValue: (estimate) => `${estimate.estimateNumber} ${estimate.title}`,
+              render: (estimate) => <span className="font-medium">{estimate.estimateNumber} • {estimate.title}</span>,
+            },
+            {
+              key: 'status',
+              header: 'Status',
+              sortValue: (estimate) => estimate.status,
+              render: (estimate) => <span className={`px-2 py-1 text-xs rounded-full ${statusColors[estimate.status] || 'bg-gray-100 text-gray-800'}`}>{estimate.status}</span>,
+            },
+            {
+              key: 'client',
+              header: 'Client',
+              sortValue: (estimate) => estimate.client?.name || '',
+              render: (estimate) => estimate.client?.name || '-',
+            },
+            {
+              key: 'total',
+              header: 'Total',
+              sortValue: (estimate) => Number(estimate.total),
+              render: (estimate) => formatCurrency(parseFloat(estimate.total)),
+            },
+            {
+              key: 'actions',
+              header: 'Actions',
+              render: (estimate) => (
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleConvertToJob(estimate)
+                    }}
+                    disabled={convertingId === estimate.id}
+                    className="h-7 px-2 bg-transparent hover:bg-transparent text-[#2E4A59] hover:text-[#2E4A59] border border-[#2E4A59]/30 hover:border-[#2E4A59]"
+                  >
+                    <Briefcase className="h-3 w-3" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleDelete(estimate)
+                    }}
+                    disabled={deletingId === estimate.id}
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50 h-7 px-2"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              ),
+            },
+          ]}
+        />
+      )}
     </div>
   )
 }

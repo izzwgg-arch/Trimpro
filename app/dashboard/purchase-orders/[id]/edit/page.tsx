@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ArrowLeft, Save, Plus, Trash2, Copy } from 'lucide-react'
 import Link from 'next/link'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
@@ -565,36 +566,40 @@ export default function EditPurchaseOrderPage() {
               <CardContent className="space-y-4">
                 <div>
                   <Label htmlFor="vendorId">Vendor *</Label>
-                  <select
-                    id="vendorId"
-                    required
+                  <Select
                     value={formData.vendorId}
-                    onChange={(e) => setFormData({ ...formData, vendorId: e.target.value })}
-                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    onValueChange={(value) => setFormData({ ...formData, vendorId: value })}
                   >
-                    <option value="">Select a vendor...</option>
-                    {vendors.map((vendor) => (
-                      <option key={vendor.id} value={vendor.id}>
-                        {vendor.name}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger id="vendorId">
+                      <SelectValue placeholder="Select a vendor..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {vendors.map((vendor) => (
+                        <SelectItem key={vendor.id} value={vendor.id}>
+                          {vendor.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
                   <Label htmlFor="jobId">Job (Optional)</Label>
-                  <select
-                    id="jobId"
-                    value={formData.jobId}
-                    onChange={(e) => setFormData({ ...formData, jobId: e.target.value })}
-                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  <Select
+                    value={formData.jobId || '__none__'}
+                    onValueChange={(value) => setFormData({ ...formData, jobId: value === '__none__' ? '' : value })}
                   >
-                    <option value="">No job</option>
-                    {jobs.map((job) => (
-                      <option key={job.id} value={job.id}>
-                        {job.jobNumber} - {job.title}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger id="jobId">
+                      <SelectValue placeholder="No job" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">No job</SelectItem>
+                      {jobs.map((job) => (
+                        <SelectItem key={job.id} value={job.id}>
+                          {job.jobNumber} - {job.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -619,19 +624,22 @@ export default function EditPurchaseOrderPage() {
                 </div>
                 <div>
                   <Label htmlFor="status">Status</Label>
-                  <select
-                    id="status"
+                  <Select
                     value={formData.status}
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    onValueChange={(value) => setFormData({ ...formData, status: value })}
                   >
-                    <option value="DRAFT">Draft</option>
-                    <option value="PENDING_APPROVAL">Pending Approval</option>
-                    <option value="APPROVED">Approved</option>
-                    <option value="ORDERED">Ordered</option>
-                    <option value="RECEIVED">Received</option>
-                    <option value="CANCELLED">Cancelled</option>
-                  </select>
+                    <SelectTrigger id="status">
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="DRAFT">Draft</SelectItem>
+                      <SelectItem value="PENDING_APPROVAL">Pending Approval</SelectItem>
+                      <SelectItem value="APPROVED">Approved</SelectItem>
+                      <SelectItem value="ORDERED">Ordered</SelectItem>
+                      <SelectItem value="RECEIVED">Received</SelectItem>
+                      <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </CardContent>
             </Card>

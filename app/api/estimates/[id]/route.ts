@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
+import { parseAddressParts } from '@/lib/address/parse'
 
 export async function GET(
   request: NextRequest,
@@ -52,8 +53,12 @@ export async function GET(
     }
 
     // Convert Decimal fields to strings for frontend
+    const parsed = parseAddressParts(estimate.jobSiteAddress)
     const estimateResponse = {
       ...estimate,
+      jobSiteCity: parsed?.city || null,
+      jobSiteState: parsed?.state || null,
+      jobSiteZipCode: parsed?.zipCode || null,
       subtotal: estimate.subtotal.toString(),
       taxRate: estimate.taxRate.toString(),
       taxAmount: estimate.taxAmount.toString(),

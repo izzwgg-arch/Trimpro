@@ -26,6 +26,7 @@ import {
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
+import { DocumentAttachments } from '@/components/common/document-attachments'
 
 const JobSiteMap = dynamic(() => import('@/components/maps/JobSiteMap').then(mod => ({ default: mod.JobSiteMap })), {
   ssr: false,
@@ -128,6 +129,9 @@ const statusColors: Record<string, string> = {
   QUOTE: 'bg-gray-100 text-gray-800',
   SCHEDULED: 'bg-blue-100 text-blue-800',
   IN_PROGRESS: 'bg-yellow-100 text-yellow-800',
+  MEASURED: 'bg-indigo-100 text-indigo-800',
+  INSTALLATION_COMPLETE: 'bg-cyan-100 text-cyan-800',
+  FINISHING_COMPLETE: 'bg-teal-100 text-teal-800',
   ON_HOLD: 'bg-orange-100 text-orange-800',
   COMPLETED: 'bg-green-100 text-green-800',
   CANCELLED: 'bg-red-100 text-red-800',
@@ -393,35 +397,58 @@ export default function JobDetailPage() {
           <CardTitle>Quick Actions</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
             <Button
               variant="outline"
+              size="sm"
+              className="h-8 text-xs px-2"
               onClick={() =>
                 router.push(
                   `/dashboard/tasks/new?jobId=${jobId}&clientId=${job.client.id}&jobNumber=${encodeURIComponent(job.jobNumber)}&clientName=${encodeURIComponent(job.client.name)}&projectType=${encodeURIComponent(job.title)}`
                 )
               }
             >
-              <CheckSquare className="mr-2 h-4 w-4" />
+              <CheckSquare className="mr-1.5 h-3.5 w-3.5" />
               New Task
             </Button>
             <Button
               variant="outline"
+              size="sm"
+              className="h-8 text-xs px-2"
               onClick={() =>
                 router.push(
                   `/dashboard/issues/new?jobId=${jobId}&clientId=${job.client.id}&jobNumber=${encodeURIComponent(job.jobNumber)}&clientName=${encodeURIComponent(job.client.name)}&projectType=${encodeURIComponent(job.title)}`
                 )
               }
             >
-              <AlertCircle className="mr-2 h-4 w-4" />
+              <AlertCircle className="mr-1.5 h-3.5 w-3.5" />
               New Issue
             </Button>
-            <Button variant="outline" onClick={() => router.push(`/dashboard/invoices/new?jobId=${jobId}`)}>
-              <DollarSign className="mr-2 h-4 w-4" />
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs px-2"
+              onClick={() => router.push(`/dashboard/estimates/new?jobId=${jobId}&clientId=${job.client.id}`)}
+            >
+              <FileText className="mr-1.5 h-3.5 w-3.5" />
+              New Estimate
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs px-2"
+              onClick={() => router.push(`/dashboard/invoices/new?jobId=${jobId}`)}
+            >
+              <DollarSign className="mr-1.5 h-3.5 w-3.5" />
               New Invoice
             </Button>
-            <Button variant="outline" onClick={() => router.push(`/dashboard/schedule/new?jobId=${jobId}`)}>
-              <Calendar className="mr-2 h-4 w-4" />
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs px-2"
+              onClick={() => router.push(`/dashboard/schedule/new?jobId=${jobId}`)}
+            >
+              <Calendar className="mr-1.5 h-3.5 w-3.5" />
               Schedule
             </Button>
           </div>
@@ -769,6 +796,15 @@ export default function JobDetailPage() {
               </CardContent>
             </Card>
           )}
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Files</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <DocumentAttachments entityType="job" entityId={jobId} />
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>

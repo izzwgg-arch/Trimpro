@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
+import { syncEstimateToQuickBooks } from '@/lib/services/qbo-sync'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -129,39 +130,57 @@ export async function POST(request: NextRequest) {
     const tax = taxRate ? (subtotalAfterDiscount * parseFloat(taxRate)) : 0
     const total = subtotalAfterDiscount + tax
 
-    // Generate estimate number
-    const estimateCount = await prisma.estimate.count({
-      where: { tenantId: user.tenantId },
-    })
-    const estimateNumber = `EST-${String(estimateCount + 1).padStart(6, '0')}`
+    // Generate estimate number with global collision-safe retry.
+    let estimate: any = null
+    for (let attempt = 0; attempt < 300; attempt++) {
+      const latestEstimate = await prisma.estimate.findFirst({
+        where: { estimateNumber: { startsWith: 'EST-' } },
+        orderBy: { estimateNumber: 'desc' },
+        select: { estimateNumber: true },
+      })
+      const latestNumMatch = latestEstimate?.estimateNumber?.match(/^EST-(\d+)/)
+      const latestNum = latestNumMatch ? parseInt(latestNumMatch[1], 10) : 0
+      const baseNum = Number.isFinite(latestNum) ? latestNum : 0
+      const estimateNumber = `EST-${String(baseNum + 1 + attempt).padStart(6, '0')}`
 
-    // Create estimate
-    const estimate = await prisma.estimate.create({
-      data: {
-        tenantId: user.tenantId,
-        clientId: clientId || null,
-        leadId: leadId || null,
-        jobId: jobId || null,
-        estimateNumber,
-        title,
-        jobSiteAddress: jobSiteAddress || null,
-        status: 'DRAFT',
-        subtotal: subtotal,
-        taxRate: taxRate ? parseFloat(taxRate) : 0,
-        taxAmount: tax,
-        discount: discountAmount,
-        total: total,
-        validUntil: validUntil ? new Date(validUntil) : null,
-        notes: notes || null,
-        isNotesVisibleToClient: isNotesVisibleToClient !== undefined ? Boolean(isNotesVisibleToClient) : true,
-        terms: terms || null,
-        createdById: user.id,
-      },
-      include: {
-        client: true,
-        lead: true,
-      },
-    })
+      try {
+        estimate = await prisma.estimate.create({
+          data: {
+            tenantId: user.tenantId,
+            clientId: clientId || null,
+            leadId: leadId || null,
+            jobId: jobId || null,
+            estimateNumber,
+            title,
+            jobSiteAddress: jobSiteAddress || null,
+            status: 'DRAFT',
+            subtotal: subtotal,
+            taxRate: taxRate ? parseFloat(taxRate) : 0,
+            taxAmount: tax,
+            discount: discountAmount,
+            total: total,
+            validUntil: validUntil ? new Date(validUntil) : null,
+            notes: notes || null,
+            isNotesVisibleToClient: isNotesVisibleToClient !== undefined ? Boolean(isNotesVisibleToClient) : true,
+            terms: terms || null,
+            createdById: user.id,
+          },
+          include: {
+            client: true,
+            lead: true,
+          },
+        })
+        break
+      } catch (err: any) {
+        if (err?.code === 'P2002' && err?.meta?.target?.includes?.('estimateNumber')) {
+          continue
+        }
+        throw err
+      }
+    }
+    if (!estimate) {
+      return NextResponse.json({ error: 'Unable to allocate a new estimate number. Please retry.' }, { status: 409 })
+    }
 
     // Create document line groups first (for bundles)
     const groupMap = new Map<string, string>() // groupId -> database group ID
@@ -230,6 +249,12 @@ export async function POST(request: NextRequest) {
         leadId: estimate.leadId || undefined,
       },
     })
+
+    try {
+      await syncEstimateToQuickBooks(user.tenantId, estimate.id)
+    } catch (error) {
+      console.error('QuickBooks estimate sync trigger error:', error)
+    }
 
     return NextResponse.json({ estimate }, { status: 201 })
   } catch (error) {

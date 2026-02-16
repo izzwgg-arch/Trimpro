@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { solaService } from '@/lib/services/sola'
 import crypto from 'crypto'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
+import { syncInvoiceToQuickBooks } from '@/lib/services/qbo-sync'
 
 type BillingMode = 'FULL' | 'PERCENTAGE' | 'MANUAL'
 
@@ -155,59 +156,78 @@ export async function POST(
     const total = fromCents(subtotalCents + toCents(taxAmount))
     const paymentToken = crypto.randomBytes(20).toString('hex')
 
-    const result = await prisma.$transaction(async (tx) => {
-      const invoiceCount = await tx.invoice.count({
-        where: { tenantId: user.tenantId },
-      })
-      const invoiceNumber = `INV-${String(invoiceCount + 1).padStart(6, '0')}`
+    let result: any = null
+    for (let attempt = 0; attempt < 300; attempt++) {
+      try {
+        result = await prisma.$transaction(async (tx) => {
+          const latestInvoice = await tx.invoice.findFirst({
+            where: { invoiceNumber: { startsWith: 'INV-' } },
+            orderBy: { invoiceNumber: 'desc' },
+            select: { invoiceNumber: true },
+          })
+          const latestNumMatch = latestInvoice?.invoiceNumber?.match(/^INV-(\d+)/)
+          const latestNum = latestNumMatch ? parseInt(latestNumMatch[1], 10) : 0
+          const baseNum = Number.isFinite(latestNum) ? latestNum : 0
+          const invoiceNumber = `INV-${String(baseNum + 1 + attempt).padStart(6, '0')}`
 
-      const invoice = await tx.invoice.create({
-        data: {
-          tenantId: user.tenantId,
-          clientId: estimate.clientId!,
-          estimateId: estimate.id,
-          invoiceNumber,
-          title: `${estimate.title} - ${billingMode === 'FULL' ? 'Full Billing' : billingMode === 'PERCENTAGE' ? `${percentage.toFixed(2)}% Billing` : 'Partial Billing'}`,
-          status: 'DRAFT',
-          subtotal,
-          taxRate,
-          taxAmount,
-          discount,
-          total,
-          paidAmount: 0,
-          balance: total,
-          progressBillingMode: billingMode,
-          progressBillingPercent: progressPercent || null,
-          paymentToken,
-          invoiceDate: new Date(),
-          notes: estimate.notes || null,
-          terms: estimate.terms || null,
-        },
-      })
+          const invoice = await tx.invoice.create({
+            data: {
+              tenantId: user.tenantId,
+              clientId: estimate.clientId!,
+              estimateId: estimate.id,
+              invoiceNumber,
+              title: `${estimate.title} - ${billingMode === 'FULL' ? 'Full Billing' : billingMode === 'PERCENTAGE' ? `${percentage.toFixed(2)}% Billing` : 'Partial Billing'}`,
+              status: 'DRAFT',
+              subtotal,
+              taxRate,
+              taxAmount,
+              discount,
+              total,
+              paidAmount: 0,
+              balance: total,
+              progressBillingMode: billingMode,
+              progressBillingPercent: progressPercent || null,
+              paymentToken,
+              invoiceDate: new Date(),
+              notes: estimate.notes || null,
+              terms: estimate.terms || null,
+            },
+          })
 
-      for (const line of invoiceLineItems) {
-        await tx.invoiceLineItem.create({
-          data: {
-            invoiceId: invoice.id,
-            ...line,
-          },
+          for (const line of invoiceLineItems) {
+            await tx.invoiceLineItem.create({
+              data: {
+                invoiceId: invoice.id,
+                ...line,
+              },
+            })
+          }
+
+          await tx.activity.create({
+            data: {
+              tenantId: user.tenantId,
+              userId: user.id,
+              type: 'INVOICE_CREATED',
+              description: `Estimate "${estimate.estimateNumber}" converted to invoice ${invoiceNumber} (${billingMode})`,
+              clientId: estimate.clientId!,
+              estimateId: estimate.id,
+              invoiceId: invoice.id,
+            },
+          })
+
+          return invoice
         })
+        break
+      } catch (err: any) {
+        if (err?.code === 'P2002' && err?.meta?.target?.includes?.('invoiceNumber')) {
+          continue
+        }
+        throw err
       }
-
-      await tx.activity.create({
-        data: {
-          tenantId: user.tenantId,
-          userId: user.id,
-          type: 'INVOICE_CREATED',
-          description: `Estimate "${estimate.estimateNumber}" converted to invoice ${invoiceNumber} (${billingMode})`,
-          clientId: estimate.clientId!,
-          estimateId: estimate.id,
-          invoiceId: invoice.id,
-        },
-      })
-
-      return invoice
-    })
+    }
+    if (!result) {
+      return NextResponse.json({ error: 'Unable to allocate a new invoice number. Please retry.' }, { status: 409 })
+    }
 
     // Generate payment link immediately and store URL/transaction id
     try {
@@ -240,6 +260,12 @@ export async function POST(
       })
     } catch (error) {
       console.error('Failed to pre-generate SOLA payment link for converted invoice:', error)
+    }
+
+    try {
+      await syncInvoiceToQuickBooks(user.tenantId, result.id)
+    } catch (error) {
+      console.error('QuickBooks invoice sync trigger error (estimate convert):', error)
     }
 
     return NextResponse.json({ invoice: result }, { status: 201 })

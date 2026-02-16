@@ -3,6 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { getPaginationParams, createPaginationResponse } from '@/lib/pagination'
 import { validateRequest, createJobSchema } from '@/lib/validation'
+import { syncJobToQuickBooksProject } from '@/lib/services/qbo-sync'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -30,7 +31,16 @@ export async function GET(request: NextRequest) {
 
     if (status !== 'all') {
       if (status === 'ACTIVE') {
-        where.status = { in: ['SCHEDULED', 'IN_PROGRESS', 'ON_HOLD'] }
+        where.status = {
+          in: [
+            'SCHEDULED',
+            'IN_PROGRESS',
+            'MEASURED',
+            'INSTALLATION_COMPLETE',
+            'FINISHING_COMPLETE',
+            'ON_HOLD',
+          ],
+        }
       } else {
         where.status = status
       }
@@ -194,6 +204,12 @@ export async function POST(request: NextRequest) {
         },
       },
     })
+
+    try {
+      await syncJobToQuickBooksProject(user.tenantId, job.id)
+    } catch (error) {
+      console.error('QuickBooks job/project sync trigger error:', error)
+    }
 
     return NextResponse.json({ job }, { status: 201 })
   } catch (error) {

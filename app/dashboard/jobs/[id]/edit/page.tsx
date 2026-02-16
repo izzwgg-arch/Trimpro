@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ArrowLeft, Save, Copy } from 'lucide-react'
 import Link from 'next/link'
 
@@ -343,21 +344,18 @@ export default function EditJobPage() {
           <CardContent className="space-y-4">
             <div>
               <Label htmlFor="clientId">Client *</Label>
-              <select
-                id="clientId"
-                required
-                value={formData.clientId}
-                onChange={(e) => setFormData({ ...formData, clientId: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                disabled
-              >
-                <option value="">Select a client</option>
-                {clients.map((client) => (
-                  <option key={client.id} value={client.id}>
-                    {client.name} {client.companyName ? `(${client.companyName})` : ''}
-                  </option>
-                ))}
-              </select>
+              <Select value={formData.clientId} onValueChange={(value) => setFormData({ ...formData, clientId: value })} disabled>
+                <SelectTrigger id="clientId">
+                  <SelectValue placeholder="Select a client" />
+                </SelectTrigger>
+                <SelectContent>
+                  {clients.map((client) => (
+                    <SelectItem key={client.id} value={client.id}>
+                      {client.name} {client.companyName ? `(${client.companyName})` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <p className="text-sm text-gray-500 mt-1">Client cannot be changed after job creation</p>
             </div>
 
@@ -387,20 +385,26 @@ export default function EditJobPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="status">Status</Label>
-                <select
-                  id="status"
+                <Select
                   value={formData.status}
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onValueChange={(value) => setFormData({ ...formData, status: value })}
                 >
-                  <option value="QUOTE">Quote</option>
-                  <option value="SCHEDULED">Scheduled</option>
-                  <option value="IN_PROGRESS">In Progress</option>
-                  <option value="ON_HOLD">On Hold</option>
-                  <option value="COMPLETED">Completed</option>
-                  <option value="CANCELLED">Cancelled</option>
-                  <option value="INVOICED">Invoiced</option>
-                </select>
+                  <SelectTrigger id="status" className="w-full">
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="QUOTE">Quote</SelectItem>
+                    <SelectItem value="SCHEDULED">Scheduled</SelectItem>
+                    <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
+                    <SelectItem value="MEASURED">Measured</SelectItem>
+                    <SelectItem value="INSTALLATION_COMPLETE">Installation complete</SelectItem>
+                    <SelectItem value="FINISHING_COMPLETE">Finishing complete</SelectItem>
+                    <SelectItem value="ON_HOLD">On Hold</SelectItem>
+                    <SelectItem value="COMPLETED">Completed</SelectItem>
+                    <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                    <SelectItem value="INVOICED">Invoiced</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label htmlFor="priority">Priority (1-5)</Label>

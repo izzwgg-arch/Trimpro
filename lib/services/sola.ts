@@ -12,10 +12,17 @@ const SOLA_API_SECRET = process.env.SOLA_API_SECRET
 
 interface SolaPaymentLinkRequest {
   invoiceId: string
+  invoiceNumber?: string
   amount: number
   description: string
   clientEmail?: string
   clientName?: string
+  clientPhone?: string
+  billingStreet?: string
+  billingCity?: string
+  billingState?: string
+  billingZip?: string
+  billingCountry?: string
   returnUrl?: string
   webhookUrl?: string
   apiKey?: string
@@ -40,6 +47,65 @@ interface SolaWebhookPayload {
 }
 
 export class SolaService {
+  private buildCardknoxFallbackUrl(request: SolaPaymentLinkRequest): string {
+    const url = new URL(CARDKNOX_HOSTED_FORM_URL)
+    const amountStr = Number(request.amount || 0).toFixed(2)
+    const invoiceRef = request.invoiceNumber || request.invoiceId
+
+    // Send both Cardknox-style and generic keys to maximize merchant-form compatibility.
+    const params: Record<string, string> = {
+      xInvoice: invoiceRef,
+      xAmount: amountStr,
+      xDescription: request.description || '',
+      xName: request.clientName || '',
+      xEmail: request.clientEmail || '',
+      xPhone: request.clientPhone || '',
+      xAddress: request.billingStreet || '',
+      xStreet: request.billingStreet || '',
+      xJobAddress: request.billingStreet || '',
+      xCity: request.billingCity || '',
+      xJobCity: request.billingCity || '',
+      xState: request.billingState || '',
+      xJobState: request.billingState || '',
+      xZip: request.billingZip || '',
+      xPostalCode: request.billingZip || '',
+      xJobZip: request.billingZip || '',
+      xCountry: request.billingCountry || 'US',
+      invoice: invoiceRef,
+      estimate_invoice: invoiceRef,
+      amount: amountStr,
+      customer_name: request.clientName || '',
+      customer_email: request.clientEmail || '',
+      customer_phone: request.clientPhone || '',
+      address: request.billingStreet || '',
+      city: request.billingCity || '',
+      state: request.billingState || '',
+      zip: request.billingZip || '',
+      country: request.billingCountry || 'US',
+    }
+
+    for (const [key, value] of Object.entries(params)) {
+      if (value) url.searchParams.set(key, value)
+    }
+    if (request.returnUrl) {
+      url.searchParams.set('xReturnURL', request.returnUrl)
+      // Cardknox merchant templates sometimes use different return key names.
+      url.searchParams.set('xRedirectURL', request.returnUrl)
+      url.searchParams.set('xRedirect', request.returnUrl)
+      url.searchParams.set('ReturnURL', request.returnUrl)
+      url.searchParams.set('returnUrl', request.returnUrl)
+      url.searchParams.set('return_url', request.returnUrl)
+    }
+    if (request.webhookUrl) {
+      // Add multiple aliases so hosted forms that support server callbacks can post back.
+      url.searchParams.set('xWebhookURL', request.webhookUrl)
+      url.searchParams.set('WebhookURL', request.webhookUrl)
+      url.searchParams.set('webhookUrl', request.webhookUrl)
+      url.searchParams.set('postbackUrl', request.webhookUrl)
+    }
+    return url.toString()
+  }
+
   private async makeRequest(
     endpoint: string,
     method: string,
@@ -74,17 +140,35 @@ export class SolaService {
     const amountCents = Math.round((request.amount || 0) * 100)
     const v2Payload = {
       xCommand: 'cc:sale',
-      xInvoice: request.invoiceId,
+      xInvoice: request.invoiceNumber || request.invoiceId,
       xAmount: (amountCents / 100).toFixed(2),
       amountCents,
       description: request.description,
+      xName: request.clientName,
+      xEmail: request.clientEmail,
+      xPhone: request.clientPhone,
+      xAddress: request.billingStreet,
+      xCity: request.billingCity,
+      xState: request.billingState,
+      xZip: request.billingZip,
       metadata: {
         invoiceId: request.invoiceId,
+        invoiceNumber: request.invoiceNumber,
       },
       customer: request.clientEmail
         ? {
             email: request.clientEmail,
             name: request.clientName,
+            phone: request.clientPhone,
+            address: request.billingStreet
+              ? {
+                  line1: request.billingStreet,
+                  city: request.billingCity,
+                  state: request.billingState,
+                  postalCode: request.billingZip,
+                  country: request.billingCountry || 'US',
+                }
+              : undefined,
           }
         : undefined,
       returnUrl: request.returnUrl,
@@ -96,11 +180,13 @@ export class SolaService {
       description: request.description,
       metadata: {
         invoiceId: request.invoiceId,
+        invoiceNumber: request.invoiceNumber,
       },
       customer: request.clientEmail
         ? {
             email: request.clientEmail,
             name: request.clientName,
+          phone: request.clientPhone,
           }
         : undefined,
       returnUrl: request.returnUrl,
@@ -146,9 +232,10 @@ export class SolaService {
       console.warn(
         `Sola did not return a hosted payment URL. Falling back to CARDKNOX_HOSTED_FORM_URL. ${lastError ? `Last error: ${lastError.message}` : ''}`.trim()
       )
+      const fallbackUrl = this.buildCardknoxFallbackUrl(request)
       return {
         id: request.invoiceId,
-        url: CARDKNOX_HOSTED_FORM_URL,
+        url: fallbackUrl,
         expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString(),
       }
     }

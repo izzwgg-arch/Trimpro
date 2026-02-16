@@ -7,6 +7,11 @@ const inter = Inter({ subsets: ['latin'] })
 export const metadata: Metadata = {
   title: 'Trim Pro - Field Service Management',
   description: 'Production-ready FSM platform for millwork/trim/molding companies',
+  icons: {
+    icon: '/favicon-tp.svg',
+    shortcut: '/favicon-tp.svg',
+    apple: '/favicon-tp.svg',
+  },
 }
 
 export default function RootLayout({

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
+import { syncVendorToQuickBooks } from '@/lib/services/qbo-sync'
 
 export async function GET(
   request: NextRequest,
@@ -235,6 +236,12 @@ export async function PATCH(
         },
       },
     })
+
+    try {
+      await syncVendorToQuickBooks(user.tenantId, params.id)
+    } catch (error) {
+      console.error('QuickBooks vendor sync trigger error (update):', error)
+    }
 
     return NextResponse.json({ vendor: updated })
   } catch (error: any) {

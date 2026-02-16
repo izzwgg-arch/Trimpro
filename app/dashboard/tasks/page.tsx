@@ -5,6 +5,12 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ViewModeSelector } from '@/components/ui/ViewModeSelector'
+import { useViewMode } from '@/hooks/useViewMode'
+import { RowCompactItem } from '@/components/lists/RowCompactItem'
+import { RowDetailedItem } from '@/components/lists/RowDetailedItem'
+import { TableView } from '@/components/lists/TableView'
 import { formatDate } from '@/lib/utils'
 import { Plus, Search, Filter, CheckSquare, Calendar, User, AlertCircle } from 'lucide-react'
 import Link from 'next/link'
@@ -76,6 +82,7 @@ export default function TasksPage() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
   const [filter, setFilter] = useState('all') // all, my, assigned
+  const [viewMode, setViewMode] = useViewMode('tasks', 'grid')
 
   useEffect(() => {
     const statusParam = searchParams.get('status')
@@ -139,15 +146,18 @@ export default function TasksPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Tasks</h1>
           <p className="mt-2 text-gray-600">Manage your tasks and to-dos</p>
         </div>
-        <Button onClick={() => router.push('/dashboard/tasks/new')}>
-          <Plus className="mr-2 h-4 w-4" />
-          New Task
-        </Button>
+        <div className="flex items-center gap-2">
+          <ViewModeSelector value={viewMode} onChange={setViewMode} />
+          <Button onClick={() => router.push('/dashboard/tasks/new')}>
+            <Plus className="mr-2 h-4 w-4" />
+            New Task
+          </Button>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -199,33 +209,36 @@ export default function TasksPage() {
             </div>
             <div className="flex items-center space-x-2">
               <Filter className="h-4 w-4 text-gray-400" />
-              <select
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                <option value="all">All Tasks</option>
-                <option value="my">My Tasks</option>
-                <option value="assigned">Assigned to Me</option>
-              </select>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                <option value="all">All Status</option>
-                <option value="PLANNING_PENDING">Planning / Pending</option>
-                <option value="TODO">To Do</option>
-                <option value="IN_PROGRESS">In Progress</option>
-                <option value="COMPLETED">Completed</option>
-                <option value="CANCELLED">Cancelled</option>
-              </select>
+              <Select value={filter} onValueChange={setFilter}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue placeholder="All Tasks" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Tasks</SelectItem>
+                  <SelectItem value="my">My Tasks</SelectItem>
+                  <SelectItem value="assigned">Assigned to Me</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger className="w-[170px]">
+                  <SelectValue placeholder="All Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="PLANNING_PENDING">Planning / Pending</SelectItem>
+                  <SelectItem value="TODO">To Do</SelectItem>
+                  <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
+                  <SelectItem value="COMPLETED">Completed</SelectItem>
+                  <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </CardContent>
       </Card>
 
       {/* Tasks List */}
+      {viewMode === 'grid' ? (
       <div className="space-y-4">
         {tasks.length === 0 ? (
           <Card>
@@ -345,6 +358,73 @@ export default function TasksPage() {
           })
         )}
       </div>
+      ) : viewMode === 'rowCompact' ? (
+        <div className="space-y-2">
+          {tasks.map((task) => (
+            <RowCompactItem
+              key={task.id}
+              href={`/dashboard/tasks/${task.id}`}
+              primary={task.title}
+              secondary={task.assignee ? `${task.assignee.firstName} ${task.assignee.lastName}` : 'Unassigned'}
+              status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[task.status] || 'bg-gray-100 text-gray-800'}`}>{task.status.replace('_', ' ')}</span>}
+              amount={task.priority}
+              date={task.dueDate ? formatDate(task.dueDate) : '-'}
+            />
+          ))}
+        </div>
+      ) : viewMode === 'rowDetailed' ? (
+        <div className="space-y-2">
+          {tasks.map((task) => (
+            <RowDetailedItem
+              key={task.id}
+              href={`/dashboard/tasks/${task.id}`}
+              primary={task.title}
+              status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[task.status] || 'bg-gray-100 text-gray-800'}`}>{task.status.replace('_', ' ')}</span>}
+              line2={`${task.assignee ? `${task.assignee.firstName} ${task.assignee.lastName}` : 'Unassigned'}${task.client ? ` • ${task.client.name}` : ''}`}
+              rightTop={task.priority}
+              rightBottom={task.dueDate ? formatDate(task.dueDate) : 'No due date'}
+            />
+          ))}
+        </div>
+      ) : (
+        <TableView
+          data={tasks}
+          rowKey={(task) => task.id}
+          onRowClick={(task) => router.push(`/dashboard/tasks/${task.id}`)}
+          columns={[
+            {
+              key: 'title',
+              header: 'Task',
+              sortValue: (task) => task.title,
+              render: (task) => <span className="font-medium">{task.title}</span>,
+            },
+            {
+              key: 'status',
+              header: 'Status',
+              sortValue: (task) => task.status,
+              render: (task) => <span className={`px-2 py-1 text-xs rounded-full ${statusColors[task.status] || 'bg-gray-100 text-gray-800'}`}>{task.status.replace('_', ' ')}</span>,
+            },
+            {
+              key: 'assignee',
+              header: 'Assignee',
+              sortValue: (task) => `${task.assignee.firstName} ${task.assignee.lastName}`,
+              render: (task) => `${task.assignee.firstName} ${task.assignee.lastName}`,
+            },
+            {
+              key: 'priority',
+              header: 'Priority',
+              sortValue: (task) => task.priority,
+              render: (task) => task.priority,
+            },
+            {
+              key: 'dueDate',
+              header: 'Due',
+              sortValue: (task) => task.dueDate || '',
+              render: (task) => (task.dueDate ? formatDate(task.dueDate) : '-'),
+            },
+          ]}
+        />
+      )}
     </div>
   )
 }

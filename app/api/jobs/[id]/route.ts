@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
+import { formatAddressParts, parseAddressParts } from '@/lib/address/parse'
 
 export async function GET(
   request: NextRequest,
@@ -128,6 +129,8 @@ export async function GET(
     // Find job site address
     const addresses = job.addresses || []
     const jobSite = addresses.find(addr => addr.type === 'job_site') || null
+    const jobSiteAddress = formatAddressParts(jobSite)
+    const parsedJobSite = parseAddressParts(jobSiteAddress)
 
     // Ensure arrays are initialized
     const safeJob = {
@@ -148,6 +151,10 @@ export async function GET(
     // Transform job to match frontend expectations
     const jobResponse = {
       ...safeJob,
+      jobSiteAddress,
+      jobSiteCity: parsedJobSite?.city || null,
+      jobSiteState: parsedJobSite?.state || null,
+      jobSiteZipCode: parsedJobSite?.zipCode || null,
       jobSite: jobSite ? {
         id: jobSite.id,
         street: jobSite.street,

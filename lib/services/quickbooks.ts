@@ -5,7 +5,10 @@ const QBO_CLIENT_ID = process.env.QBO_CLIENT_ID
 const QBO_CLIENT_SECRET = process.env.QBO_CLIENT_SECRET
 const QBO_REDIRECT_URI = process.env.QBO_REDIRECT_URI || 'http://localhost:3000/api/qbo/callback'
 const QBO_BASE_URL = 'https://appcenter.intuit.com/connect/oauth2'
-const QBO_API_BASE = 'https://sandbox-quickbooks.api.intuit.com' // Use production URL in production
+const QBO_API_BASE =
+  process.env.QBO_ENV === 'production'
+    ? 'https://quickbooks.api.intuit.com'
+    : 'https://sandbox-quickbooks.api.intuit.com'
 
 interface QBOAccessTokenResponse {
   access_token: string
@@ -114,7 +117,7 @@ export class QuickBooksService {
   }
 
   async getCompanyInfo(accessToken: string, realmId: string): Promise<QBOCompanyInfo> {
-    const response = await this.makeAPIRequest(accessToken, realmId, '/companyinfo/${realmId}')
+    const response = await this.makeAPIRequest(accessToken, realmId, `/companyinfo/${realmId}`)
     return response.QueryResponse?.CompanyInfo?.[0] || response.CompanyInfo
   }
 

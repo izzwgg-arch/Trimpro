@@ -5,6 +5,12 @@ import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ViewModeSelector } from '@/components/ui/ViewModeSelector'
+import { useViewMode } from '@/hooks/useViewMode'
+import { RowCompactItem } from '@/components/lists/RowCompactItem'
+import { RowDetailedItem } from '@/components/lists/RowDetailedItem'
+import { TableView } from '@/components/lists/TableView'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Plus, Search, Filter, Package, Copy } from 'lucide-react'
 import Link from 'next/link'
@@ -50,6 +56,7 @@ export default function PurchaseOrdersPage() {
   const [status, setStatus] = useState('all')
   const [duplicating, setDuplicating] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [viewMode, setViewMode] = useViewMode('purchaseOrders', 'grid')
 
   useEffect(() => {
     fetchPurchaseOrders()
@@ -135,12 +142,13 @@ export default function PurchaseOrdersPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Purchase Orders</h1>
           <p className="mt-2 text-gray-600">Manage vendor purchase orders and costs</p>
         </div>
         <div className="flex items-center gap-2">
+          <ViewModeSelector value={viewMode} onChange={setViewMode} />
           <Button onClick={() => router.push('/dashboard/purchase-orders/new')}>
             <Plus className="mr-2 h-4 w-4" />
             New PO
@@ -199,25 +207,27 @@ export default function PurchaseOrdersPage() {
             </div>
             <div className="flex items-center space-x-2">
               <Filter className="h-4 w-4 text-gray-400" />
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                <option value="all">All Status</option>
-                <option value="DRAFT">Draft</option>
-                <option value="PENDING_APPROVAL">Pending Approval</option>
-                <option value="APPROVED">Approved</option>
-                <option value="ORDERED">Ordered</option>
-                <option value="RECEIVED">Received</option>
-                <option value="CANCELLED">Cancelled</option>
-              </select>
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger className="w-[170px]">
+                  <SelectValue placeholder="All Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="DRAFT">Draft</SelectItem>
+                  <SelectItem value="PENDING_APPROVAL">Pending Approval</SelectItem>
+                  <SelectItem value="APPROVED">Approved</SelectItem>
+                  <SelectItem value="ORDERED">Ordered</SelectItem>
+                  <SelectItem value="RECEIVED">Received</SelectItem>
+                  <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </CardContent>
       </Card>
 
       {/* Purchase Orders List */}
+      {viewMode === 'grid' ? (
       <div className="space-y-4">
         {purchaseOrders.length === 0 ? (
           <Card>
@@ -294,6 +304,67 @@ export default function PurchaseOrdersPage() {
           ))
         )}
       </div>
+      ) : viewMode === 'rowCompact' ? (
+        <div className="space-y-2">
+          {purchaseOrders.map((po) => (
+            <RowCompactItem
+              key={po.id}
+              href={`/dashboard/purchase-orders/${po.id}`}
+              primary={po.poNumber}
+              secondary={po.vendorRef?.name || po.vendor}
+              status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[po.status] || 'bg-gray-100 text-gray-800'}`}>{po.status}</span>}
+              amount={formatCurrency(po.total)}
+              date={po.orderDate ? formatDate(po.orderDate) : '-'}
+            />
+          ))}
+        </div>
+      ) : viewMode === 'rowDetailed' ? (
+        <div className="space-y-2">
+          {purchaseOrders.map((po) => (
+            <RowDetailedItem
+              key={po.id}
+              href={`/dashboard/purchase-orders/${po.id}`}
+              primary={po.poNumber}
+              status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[po.status] || 'bg-gray-100 text-gray-800'}`}>{po.status}</span>}
+              line2={`${po.vendorRef?.name || po.vendor}${po.job ? ` • Job ${po.job.jobNumber}` : ''}`}
+              rightTop={formatCurrency(po.total)}
+              rightBottom={po.orderDate ? formatDate(po.orderDate) : 'No order date'}
+            />
+          ))}
+        </div>
+      ) : (
+        <TableView
+          data={purchaseOrders}
+          rowKey={(po) => po.id}
+          onRowClick={(po) => router.push(`/dashboard/purchase-orders/${po.id}`)}
+          columns={[
+            {
+              key: 'po',
+              header: 'PO',
+              sortValue: (po) => po.poNumber,
+              render: (po) => <span className="font-medium">{po.poNumber}</span>,
+            },
+            {
+              key: 'vendor',
+              header: 'Vendor',
+              sortValue: (po) => po.vendorRef?.name || po.vendor,
+              render: (po) => po.vendorRef?.name || po.vendor,
+            },
+            {
+              key: 'status',
+              header: 'Status',
+              sortValue: (po) => po.status,
+              render: (po) => <span className={`px-2 py-1 text-xs rounded-full ${statusColors[po.status] || 'bg-gray-100 text-gray-800'}`}>{po.status}</span>,
+            },
+            {
+              key: 'total',
+              header: 'Total',
+              sortValue: (po) => po.total,
+              render: (po) => formatCurrency(po.total),
+            },
+          ]}
+        />
+      )}
     </div>
   )
 }

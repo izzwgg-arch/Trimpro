@@ -334,7 +334,39 @@ export const INTEGRATIONS: Record<IntegrationProvider, IntegrationDefinition> = 
     category: 'accounting',
     requiresOAuth: true,
     requiresWebhook: false,
-    configFields: [],
+    configFields: [
+      {
+        key: 'clientId',
+        label: 'QuickBooks Client ID',
+        type: 'text',
+        required: true,
+        placeholder: 'Enter Intuit Client ID',
+      },
+      {
+        key: 'clientSecret',
+        label: 'QuickBooks Client Secret',
+        type: 'password',
+        required: true,
+        placeholder: 'Enter Intuit Client Secret',
+      },
+      {
+        key: 'redirectUri',
+        label: 'OAuth Redirect URI',
+        type: 'url',
+        required: false,
+        placeholder: 'https://app.trimprony.com/api/integrations/quickbooks/callback',
+      },
+      {
+        key: 'environment',
+        label: 'QuickBooks Environment',
+        type: 'select',
+        required: true,
+        options: [
+          { label: 'Production', value: 'production' },
+          { label: 'Sandbox', value: 'sandbox' },
+        ],
+      },
+    ],
   },
   sola: {
     provider: 'sola',

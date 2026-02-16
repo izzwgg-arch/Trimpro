@@ -58,7 +58,7 @@ export function DashboardJobsChart() {
         <YAxis tick={{ fontSize: 12 }} />
         <Tooltip />
         <Legend />
-        <Bar dataKey="jobsCreated" fill="#0088FE" name="Created" />
+        <Bar dataKey="jobsCreated" fill="#2E4A59" name="Created" />
         <Bar dataKey="jobsCompleted" fill="#00C49F" name="Completed" />
       </BarChart>
     </ResponsiveContainer>

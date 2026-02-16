@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { getPaginationParams, createPaginationResponse } from '@/lib/pagination'
 import { validateRequest, createInvoiceSchema } from '@/lib/validation'
 import crypto from 'crypto'
+import { syncInvoiceToQuickBooks } from '@/lib/services/qbo-sync'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -97,7 +98,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: validation.error }, { status: validation.status })
   }
 
-  const body = await request.json()
+  const body = validation.data as any
   const {
     clientId,
     jobId,
@@ -111,7 +112,6 @@ export async function POST(request: NextRequest) {
     invoiceDate,
     dueDate,
     notes,
-    isNotesVisibleToClient,
     terms,
     memo,
   } = body
@@ -145,42 +145,91 @@ export async function POST(request: NextRequest) {
     const tax = subtotalAfterDiscount * taxRateValue
     const total = subtotalAfterDiscount + tax
 
-    // Generate invoice number
-    const invoiceCount = await prisma.invoice.count({
-      where: { tenantId: user.tenantId },
+    // Generate invoice number with global collision-safe retry.
+    // invoiceNumber is globally unique in schema, so tenant-local counters can collide.
+    const latestInvoice = await prisma.invoice.findFirst({
+      where: { invoiceNumber: { startsWith: 'INV-' } },
+      orderBy: { invoiceNumber: 'desc' },
+      select: { invoiceNumber: true },
     })
-    const invoiceNumber = `INV-${String(invoiceCount + 1).padStart(6, '0')}`
-
-    // Create invoice
-    const invoice = await prisma.invoice.create({
-      data: {
-        tenantId: user.tenantId,
-        clientId,
-        jobId: jobId || null,
-        estimateId: estimateId || null,
-        invoiceNumber,
-        title,
-        status: 'DRAFT',
-        subtotal: subtotal,
-        taxRate: taxRateValue,
-        taxAmount: tax,
-        discount: discountAmount,
-        total: total,
-        balance: total,
-        paidAmount: 0,
-        invoiceDate: invoiceDate ? new Date(invoiceDate) : new Date(),
-        dueDate: dueDate ? new Date(dueDate) : null,
-        notes: notes || null,
-        isNotesVisibleToClient: isNotesVisibleToClient !== undefined ? Boolean(isNotesVisibleToClient) : true,
-        terms: terms || null,
-        memo: memo || null,
-        paymentToken: crypto.randomBytes(20).toString('hex'),
-      },
-      include: {
-        client: true,
-        job: true,
-      },
-    })
+    const latestNum = latestInvoice?.invoiceNumber
+      ? parseInt(latestInvoice.invoiceNumber.replace(/^INV-/, ''), 10)
+      : 0
+    const startNum = Number.isFinite(latestNum) ? latestNum : 0
+    let invoiceNumber = ''
+    let invoice: any = null
+    for (let attempt = 0; attempt < 300; attempt++) {
+      invoiceNumber = `INV-${String(startNum + 1 + attempt).padStart(6, '0')}`
+      try {
+        invoice = await prisma.invoice.create({
+          data: {
+            tenantId: user.tenantId,
+            clientId,
+            jobId: jobId || null,
+            estimateId: estimateId || null,
+            invoiceNumber,
+            title,
+            status: 'DRAFT',
+            subtotal: subtotal,
+            taxRate: taxRateValue,
+            taxAmount: tax,
+            discount: discountAmount,
+            total: total,
+            balance: total,
+            paidAmount: 0,
+            invoiceDate: invoiceDate ? new Date(invoiceDate) : new Date(),
+            dueDate: dueDate ? new Date(dueDate) : null,
+            notes: notes || null,
+            terms: terms || null,
+            memo: memo || null,
+            paymentToken: crypto.randomBytes(20).toString('hex'),
+          },
+          include: {
+            client: true,
+            job: true,
+          },
+        })
+        break
+      } catch (err: any) {
+        if (err?.code === 'P2002' && err?.meta?.target?.includes?.('invoiceNumber')) {
+          continue
+        }
+        throw err
+      }
+    }
+    if (!invoice) {
+      // Last-resort unique fallback to guarantee create path never deadlocks on numbering.
+      const suffix = crypto.randomBytes(3).toString('hex').toUpperCase()
+      invoiceNumber = `INV-${String(startNum + 1).padStart(6, '0')}-${suffix}`
+      invoice = await prisma.invoice.create({
+        data: {
+          tenantId: user.tenantId,
+          clientId,
+          jobId: jobId || null,
+          estimateId: estimateId || null,
+          invoiceNumber,
+          title,
+          status: 'DRAFT',
+          subtotal: subtotal,
+          taxRate: taxRateValue,
+          taxAmount: tax,
+          discount: discountAmount,
+          total: total,
+          balance: total,
+          paidAmount: 0,
+          invoiceDate: invoiceDate ? new Date(invoiceDate) : new Date(),
+          dueDate: dueDate ? new Date(dueDate) : null,
+          notes: notes || null,
+          terms: terms || null,
+          memo: memo || null,
+          paymentToken: crypto.randomBytes(20).toString('hex'),
+        },
+        include: {
+          client: true,
+          job: true,
+        },
+      })
+    }
 
     // Link estimate if provided
     if (estimateId) {
@@ -277,6 +326,12 @@ export async function POST(request: NextRequest) {
         },
       },
     })
+
+    try {
+      await syncInvoiceToQuickBooks(user.tenantId, invoice.id)
+    } catch (error) {
+      console.error('QuickBooks invoice sync trigger error:', error)
+    }
 
     return NextResponse.json({ invoice }, { status: 201 })
   } catch (error) {

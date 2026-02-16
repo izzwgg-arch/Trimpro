@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { randomUUID } from 'crypto'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
-// import { sendInvoiceEmail } from '@/lib/email' // TODO: Implement
+import { getIntegrationSecrets } from '@/lib/integrations/status'
+import { testEmailProvider } from '@/lib/integrations/providers/email'
 
 export async function POST(
   request: NextRequest,
@@ -48,36 +50,69 @@ export async function POST(
       return NextResponse.json({ error: 'No email address found for client' }, { status: 400 })
     }
 
-    // TODO: Generate PDF (implement PDF generation)
-    const pdfUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/invoices/${params.id}/pdf`
-    
-    // Get payment link if invoice has balance
-    let paymentLink: string | undefined
-    if (invoice.balance.toNumber() > 0) {
-      try {
-        const paymentResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/payments/sola/link`, {
-          method: 'POST',
-          headers: {
-            'Authorization': request.headers.get('authorization') || '',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ invoiceId: invoice.id }),
-        })
-        if (paymentResponse.ok) {
-          const paymentData = await paymentResponse.json()
-          paymentLink = paymentData.paymentLink
-        }
-      } catch (error) {
-        console.error('Failed to generate payment link:', error)
-      }
+    // Force public base URL in recipient emails to avoid internal/private links.
+    const appUrl = 'https://app.trimprony.com'
+
+    const token = invoice.paymentToken || randomUUID()
+    const sentEpoch = Date.now()
+    const sentIso = new Date(sentEpoch).toISOString()
+    if (!invoice.paymentToken) {
+      await prisma.invoice.update({
+        where: { id: invoice.id },
+        data: { paymentToken: token },
+      })
     }
+
+    // Public, tokenized links so recipients do not need dashboard auth.
+    const pdfUrl = `${appUrl}/api/public/invoices/${invoice.id}/pdf?token=${encodeURIComponent(token)}&sent=${sentEpoch}`
+    const paymentLink =
+      invoice.balance.toNumber() > 0
+        ? `${appUrl}/portal/pay/${invoice.id}?token=${encodeURIComponent(token)}&sent=${sentEpoch}`
+        : ''
+    const effectiveSubject = `${subject || `Invoice ${invoice.invoiceNumber}`} • ${sentIso}`
+    console.log('Invoice email links:', {
+      invoiceId: invoice.id,
+      appUrl,
+      pdfUrl,
+      paymentLink,
+    })
     
-    try {
-      const { sendInvoiceEmail } = await import('@/lib/services/email')
-      await sendInvoiceEmail(recipientEmail, invoice, pdfUrl, paymentLink || '', message || undefined)
-    } catch (error) {
-      console.error('Failed to send invoice email:', error)
-      // Continue anyway
+    const emailSecrets = await getIntegrationSecrets(user.tenantId, 'email')
+    if (!emailSecrets) {
+      return NextResponse.json(
+        { error: 'Email integration is not configured. Please configure Email Provider first.' },
+        { status: 400 }
+      )
+    }
+
+    const html = `
+      <html>
+        <body>
+          <h2>Invoice ${invoice.invoiceNumber}</h2>
+          ${message ? `<p>${message}</p>` : ''}
+          <p>Please review invoice ${invoice.invoiceNumber}.</p>
+          <p><strong>Total: $${Number(invoice.total).toFixed(2)}</strong></p>
+          ${invoice.dueDate ? `<p>Due date: ${new Date(invoice.dueDate).toLocaleDateString()}</p>` : ''}
+          <p><a href="${pdfUrl}">Download Invoice PDF</a></p>
+          ${paymentLink ? `<p><a href="${paymentLink}">Pay Online</a></p>` : ''}
+          <p style="color:#6b7280;font-size:12px">Sent: ${sentIso}</p>
+        </body>
+      </html>
+    `
+
+    const sendResult = await testEmailProvider(
+      emailSecrets,
+      recipientEmail,
+      effectiveSubject,
+      html
+    )
+
+    if (!sendResult.success) {
+      console.error('Failed to send invoice email:', sendResult.error || sendResult.message)
+      return NextResponse.json(
+        { error: sendResult.error || sendResult.message || 'Failed to send invoice email' },
+        { status: 502 }
+      )
     }
 
     // Update invoice status
@@ -96,7 +131,7 @@ export async function POST(
         userId: user.id,
         direction: 'OUTBOUND',
         status: 'SENT',
-        subject: subject || `Invoice ${invoice.invoiceNumber}`,
+        subject: effectiveSubject,
         body: message || `Please find attached invoice ${invoice.invoiceNumber}.`,
         fromEmail: user.email,
         toEmails: [recipientEmail],

@@ -5,6 +5,12 @@ import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ViewModeSelector } from '@/components/ui/ViewModeSelector'
+import { useViewMode } from '@/hooks/useViewMode'
+import { RowCompactItem } from '@/components/lists/RowCompactItem'
+import { RowDetailedItem } from '@/components/lists/RowDetailedItem'
+import { TableView } from '@/components/lists/TableView'
 import { formatCurrency } from '@/lib/utils'
 import { Plus, Search, Phone, Mail, Building2, Filter, Trash2 } from 'lucide-react'
 import Link from 'next/link'
@@ -43,6 +49,7 @@ export default function ClientsPage() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useViewMode('clients', 'grid')
 
   useEffect(() => {
     fetchClients()
@@ -164,15 +171,18 @@ export default function ClientsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Clients</h1>
           <p className="mt-2 text-gray-600">Manage your clients and contacts</p>
         </div>
-        <Button onClick={() => router.push('/dashboard/clients/new')}>
-          <Plus className="mr-2 h-4 w-4" />
-          New Client
-        </Button>
+        <div className="flex items-center gap-2">
+          <ViewModeSelector value={viewMode} onChange={setViewMode} />
+          <Button onClick={() => router.push('/dashboard/clients/new')}>
+            <Plus className="mr-2 h-4 w-4" />
+            New Client
+          </Button>
+        </div>
       </div>
 
       {/* Search and Filters */}
@@ -190,38 +200,37 @@ export default function ClientsPage() {
             </div>
             <div className="flex items-center space-x-2">
               <Filter className="h-4 w-4 text-gray-400" />
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                <option value="all">All Clients</option>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-              </select>
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue placeholder="All Clients" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Clients</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </CardContent>
       </Card>
 
       {/* Clients List */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {clients.length === 0 ? (
-          <div className="col-span-full text-center py-12">
-            <Building2 className="mx-auto h-12 w-12 text-gray-400" />
-            <h3 className="mt-2 text-sm font-medium text-gray-900">No clients</h3>
-            <p className="mt-1 text-sm text-gray-500">
-              Get started by creating a new client.
-            </p>
-            <div className="mt-6">
-              <Button onClick={() => router.push('/dashboard/clients/new')}>
-                <Plus className="mr-2 h-4 w-4" />
-                New Client
-              </Button>
-            </div>
+      {clients.length === 0 ? (
+        <div className="text-center py-12">
+          <Building2 className="mx-auto h-12 w-12 text-gray-400" />
+          <h3 className="mt-2 text-sm font-medium text-gray-900">No clients</h3>
+          <p className="mt-1 text-sm text-gray-500">Get started by creating a new client.</p>
+          <div className="mt-6">
+            <Button onClick={() => router.push('/dashboard/clients/new')}>
+              <Plus className="mr-2 h-4 w-4" />
+              New Client
+            </Button>
           </div>
-        ) : (
-          flattenedClients.map(({ client, isSubClient }) => {
+        </div>
+      ) : viewMode === 'grid' ? (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {flattenedClients.map(({ client, isSubClient }) => {
             const primaryContact = client.contacts.find((c) => c.isPrimary) || client.contacts[0]
             return (
               <Card key={client.id} className={`hover:shadow-lg transition-shadow ${isSubClient ? 'ml-4 border-l-4 border-blue-300' : ''}`}>
@@ -229,31 +238,17 @@ export default function ClientsPage() {
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <Link href={`/dashboard/clients/${client.id}`}>
-                        <CardTitle className="text-lg hover:text-primary cursor-pointer">
-                          {client.name}
-                        </CardTitle>
+                        <CardTitle className="text-lg hover:text-primary cursor-pointer">{client.name}</CardTitle>
                       </Link>
                       {isSubClient && (
                         <div className="mt-1">
-                          <span className="inline-flex items-center px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-800">
-                            Sub-client
-                          </span>
-                          {client.parent?.name && (
-                            <span className="ml-2 text-xs text-gray-500">Parent: {client.parent.name}</span>
-                          )}
+                          <span className="inline-flex items-center px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-800">Sub-client</span>
+                          {client.parent?.name && <span className="ml-2 text-xs text-gray-500">Parent: {client.parent.name}</span>}
                         </div>
                       )}
-                      {client.companyName && (
-                        <CardDescription className="mt-1">{client.companyName}</CardDescription>
-                      )}
+                      {client.companyName && <CardDescription className="mt-1">{client.companyName}</CardDescription>}
                     </div>
-                    <span
-                      className={`px-2 py-1 text-xs rounded-full ${
-                        client.isActive
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-gray-100 text-gray-800'
-                      }`}
-                    >
+                    <span className={`px-2 py-1 text-xs rounded-full ${client.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
                       {client.isActive ? 'Active' : 'Inactive'}
                     </span>
                   </div>
@@ -265,9 +260,7 @@ export default function ClientsPage() {
                         <p className="font-medium">
                           {primaryContact.firstName} {primaryContact.lastName}
                         </p>
-                        {primaryContact.title && (
-                          <p className="text-xs text-gray-500">{primaryContact.title}</p>
-                        )}
+                        {primaryContact.title && <p className="text-xs text-gray-500">{primaryContact.title}</p>}
                       </div>
                     )}
                     <div className="space-y-1">
@@ -293,7 +286,7 @@ export default function ClientsPage() {
                         variant="ghost"
                         size="sm"
                         onClick={(e) => {
-                          e.stopPropagation()
+                          e.preventDefault()
                           handleDelete(client.id, client.name)
                         }}
                         disabled={deletingId === client.id}
@@ -306,9 +299,133 @@ export default function ClientsPage() {
                 </CardContent>
               </Card>
             )
-          })
-        )}
-      </div>
+          })}
+        </div>
+      ) : viewMode === 'rowCompact' ? (
+        <div className="space-y-2">
+          {flattenedClients.map(({ client }) => (
+            <RowCompactItem
+              key={client.id}
+              href={`/dashboard/clients/${client.id}`}
+              primary={client.name}
+              secondary={client.companyName || client.email || client.phone || 'No contact info'}
+              status={
+                <span className={`px-2 py-1 text-xs rounded-full ${client.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                  {client.isActive ? 'Active' : 'Inactive'}
+                </span>
+              }
+              amount={<span>{client._count.jobs} jobs</span>}
+              date={<span>{client._count.invoices} invoices</span>}
+              actions={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    handleDelete(client.id, client.name)
+                  }}
+                  disabled={deletingId === client.id}
+                  className="text-red-600 hover:text-red-700 hover:bg-red-50 h-7 px-2"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              }
+            />
+          ))}
+        </div>
+      ) : viewMode === 'rowDetailed' ? (
+        <div className="space-y-2">
+          {flattenedClients.map(({ client }) => (
+            <RowDetailedItem
+              key={client.id}
+              href={`/dashboard/clients/${client.id}`}
+              primary={client.name}
+              status={
+                <span className={`px-2 py-1 text-xs rounded-full ${client.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                  {client.isActive ? 'Active' : 'Inactive'}
+                </span>
+              }
+              line2={`${client.companyName || 'No company'} • ${client.email || 'No email'} • ${client.phone || 'No phone'}`}
+              rightTop={<span>{client._count.jobs} jobs</span>}
+              rightBottom={<span>{client._count.invoices} invoices</span>}
+              actions={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    handleDelete(client.id, client.name)
+                  }}
+                  disabled={deletingId === client.id}
+                  className="text-red-600 hover:text-red-700 hover:bg-red-50 h-7 px-2"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              }
+            />
+          ))}
+        </div>
+      ) : (
+        <TableView
+          data={flattenedClients.map((x) => x.client)}
+          rowKey={(client) => client.id}
+          onRowClick={(client) => router.push(`/dashboard/clients/${client.id}`)}
+          columns={[
+            {
+              key: 'name',
+              header: 'Client',
+              sortValue: (client) => client.name,
+              render: (client) => <span className="font-medium">{client.name}</span>,
+            },
+            {
+              key: 'status',
+              header: 'Status',
+              sortValue: (client) => (client.isActive ? 1 : 0),
+              render: (client) => (
+                <span className={`px-2 py-1 text-xs rounded-full ${client.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                  {client.isActive ? 'Active' : 'Inactive'}
+                </span>
+              ),
+            },
+            {
+              key: 'company',
+              header: 'Company',
+              sortValue: (client) => client.companyName || '',
+              render: (client) => client.companyName || '-',
+            },
+            {
+              key: 'jobs',
+              header: 'Jobs',
+              sortValue: (client) => client._count.jobs,
+              render: (client) => client._count.jobs,
+            },
+            {
+              key: 'invoices',
+              header: 'Invoices',
+              sortValue: (client) => client._count.invoices,
+              render: (client) => client._count.invoices,
+            },
+            {
+              key: 'actions',
+              header: 'Actions',
+              render: (client) => (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleDelete(client.id, client.name)
+                  }}
+                  disabled={deletingId === client.id}
+                  className="text-red-600 hover:text-red-700 hover:bg-red-50 h-7 px-2"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              ),
+            },
+          ]}
+        />
+      )}
     </div>
   )
 }

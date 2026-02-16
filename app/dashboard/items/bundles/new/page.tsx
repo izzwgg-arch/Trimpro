@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ArrowLeft, Save, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
@@ -391,18 +392,20 @@ export default function NewBundlePage() {
                   </div>
                   <div>
                     <Label htmlFor="type">Type *</Label>
-                    <select
-                      id="type"
-                      required
+                    <Select
                       value={formData.type}
-                      onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                      onValueChange={(value) => setFormData({ ...formData, type: value })}
                     >
-                      <option value="PRODUCT">Product</option>
-                      <option value="SERVICE">Service</option>
-                      <option value="MATERIAL">Material</option>
-                      <option value="FEE">Fee</option>
-                    </select>
+                      <SelectTrigger id="type">
+                        <SelectValue placeholder="Select type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="PRODUCT">Product</SelectItem>
+                        <SelectItem value="SERVICE">Service</SelectItem>
+                        <SelectItem value="MATERIAL">Material</SelectItem>
+                        <SelectItem value="FEE">Fee</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
 
@@ -420,35 +423,39 @@ export default function NewBundlePage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="categoryId">Category</Label>
-                    <select
-                      id="categoryId"
+                    <Select
                       value={formData.categoryId}
-                      onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                      onValueChange={(value) => setFormData({ ...formData, categoryId: value })}
                     >
-                      <option value="">Select category</option>
-                      {categories.map((cat) => (
-                        <option key={cat.id} value={cat.id}>
-                          {cat.name}
-                        </option>
-                      ))}
-                    </select>
+                      <SelectTrigger id="categoryId">
+                        <SelectValue placeholder="Select category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories.map((cat) => (
+                          <SelectItem key={cat.id} value={cat.id}>
+                            {cat.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div>
                     <Label htmlFor="vendorId">Default Vendor</Label>
-                    <select
-                      id="vendorId"
+                    <Select
                       value={formData.vendorId}
-                      onChange={(e) => setFormData({ ...formData, vendorId: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                      onValueChange={(value) => setFormData({ ...formData, vendorId: value })}
                     >
-                      <option value="">Select vendor</option>
-                      {vendors.map((vendor) => (
-                        <option key={vendor.id} value={vendor.id}>
-                          {vendor.name}
-                        </option>
-                      ))}
-                    </select>
+                      <SelectTrigger id="vendorId">
+                        <SelectValue placeholder="Select vendor" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {vendors.map((vendor) => (
+                          <SelectItem key={vendor.id} value={vendor.id}>
+                            {vendor.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
 
@@ -530,18 +537,21 @@ export default function NewBundlePage() {
                               />
                             </div>
                             <div className="md:col-span-3">
-                              <select
+                              <Select
                                 value={comp.vendorId || ''}
-                                onChange={(e) => updateComponent(index, 'vendorId', e.target.value)}
-                                className="w-full h-9 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary text-sm"
+                                onValueChange={(value) => updateComponent(index, 'vendorId', value)}
                               >
-                                <option value="">Select vendor</option>
-                                {vendors.map((vendor) => (
-                                  <option key={vendor.id} value={vendor.id}>
-                                    {vendor.name}
-                                  </option>
-                                ))}
-                              </select>
+                                <SelectTrigger className="h-9 text-sm">
+                                  <SelectValue placeholder="Select vendor" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {vendors.map((vendor) => (
+                                    <SelectItem key={vendor.id} value={vendor.id}>
+                                      {vendor.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
                             </div>
                             <div className="md:col-span-2">
                               <Input
@@ -608,15 +618,15 @@ export default function NewBundlePage() {
               <CardContent>
                 <div>
                   <Label htmlFor="pricingStrategy">Pricing Method</Label>
-                  <select
-                    id="pricingStrategy"
-                    value={pricingStrategy}
-                    onChange={(e) => setPricingStrategy(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    <option value="SUM_COMPONENTS">Sum of Components (Default)</option>
-                    <option value="OVERRIDE_PRICE">Override Bundle Price</option>
-                  </select>
+                  <Select value={pricingStrategy} onValueChange={setPricingStrategy}>
+                    <SelectTrigger id="pricingStrategy">
+                      <SelectValue placeholder="Select pricing method" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="SUM_COMPONENTS">Sum of Components (Default)</SelectItem>
+                      <SelectItem value="OVERRIDE_PRICE">Override Bundle Price</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <p className="mt-2 text-sm text-gray-600">
                     {pricingStrategy === 'SUM_COMPONENTS'
                       ? 'Bundle price will be calculated from component prices'

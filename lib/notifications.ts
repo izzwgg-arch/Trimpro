@@ -5,6 +5,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { NotificationType } from '@prisma/client'
+import { sendPushToUser, sendPushToUsers } from '@/lib/services/mobile-push'
 
 interface CreateNotificationParams {
   tenantId: string
@@ -16,6 +17,15 @@ interface CreateNotificationParams {
   linkType?: string | null
   linkId?: string | null
   requiresAck?: boolean
+}
+
+function buildMobileDeepLink(linkType?: string | null, linkId?: string | null): string | undefined {
+  if (!linkType || !linkId) return undefined
+  if (linkType === 'job') return `trimprofield://jobs/${linkId}`
+  if (linkType === 'task') return `trimprofield://tasks/${linkId}`
+  if (linkType === 'issue') return `trimprofield://issues/${linkId}`
+  if (linkType === 'message' || linkType === 'conversation') return `trimprofield://messages/${linkId}`
+  return undefined
 }
 
 /**
@@ -35,6 +45,16 @@ export async function createNotification(params: CreateNotificationParams) {
         linkId: params.linkId || null,
         requiresAck: params.requiresAck || false,
         status: 'UNREAD',
+      },
+    })
+
+    await sendPushToUser(params.userId, {
+      title: params.title,
+      body: params.message || undefined,
+      data: {
+        linkType: params.linkType || undefined,
+        linkId: params.linkId || undefined,
+        url: buildMobileDeepLink(params.linkType, params.linkId),
       },
     })
   } catch (error) {
@@ -65,6 +85,16 @@ export async function createNotificationsForUsers(
         requiresAck: params.requiresAck || false,
         status: 'UNREAD',
       })),
+    })
+
+    await sendPushToUsers(userIds, {
+      title: params.title,
+      body: params.message || undefined,
+      data: {
+        linkType: params.linkType || undefined,
+        linkId: params.linkId || undefined,
+        url: buildMobileDeepLink(params.linkType, params.linkId),
+      },
     })
   } catch (error) {
     console.error('Failed to create notifications:', error)

@@ -3,11 +3,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Save, AlertCircle, Copy } from 'lucide-react'
+import { ArrowLeft, Save, AlertCircle, Copy, Trash2 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { parseAddressParts } from '@/lib/address/parse'
+import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
 
 type RequestResponse = {
   lead: {
@@ -23,6 +26,9 @@ type RequestResponse = {
     probability: number
     notes: string | null
     jobSiteAddress: string | null
+    jobSiteCity?: string | null
+    jobSiteState?: string | null
+    jobSiteZipCode?: string | null
     convertedToClientId: string | null
     assignedToId: string | null
   }
@@ -44,11 +50,11 @@ export default function EditRequestPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [duplicating, setDuplicating] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [users, setUsers] = useState<Array<{ id: string; firstName: string; lastName: string }>>([])
   const [clients, setClients] = useState<Client[]>([])
   const [clientMode, setClientMode] = useState<'new' | 'existing'>('new')
-  const [clientSearch, setClientSearch] = useState('')
 
   const [formData, setFormData] = useState({
     clientId: '',
@@ -63,6 +69,9 @@ export default function EditRequestPage() {
     probability: '50',
     notes: '',
     jobSiteAddress: '',
+    jobSiteCity: '',
+    jobSiteState: '',
+    jobSiteZipCode: '',
     assignedToId: '',
   })
 
@@ -157,12 +166,12 @@ export default function EditRequestPage() {
         probability: request.probability?.toString() || '50',
         notes: request.notes || '',
         jobSiteAddress: request.jobSiteAddress || '',
+        jobSiteCity: request.jobSiteCity || parseAddressParts(request.jobSiteAddress)?.city || '',
+        jobSiteState: request.jobSiteState || parseAddressParts(request.jobSiteAddress)?.state || '',
+        jobSiteZipCode: request.jobSiteZipCode || parseAddressParts(request.jobSiteAddress)?.zipCode || '',
         assignedToId: request.assignedToId || '',
       })
       setClientMode(request.convertedToClientId ? 'existing' : 'new')
-      if (request.convertedToClientId) {
-        setClientSearch(`${request.firstName || ''} ${request.lastName || ''}`.trim())
-      }
       setError(null)
     } catch (e) {
       console.error('Error loading request:', e)
@@ -272,14 +281,61 @@ export default function EditRequestPage() {
     }
   }
 
-  const filteredClients = useMemo(() => {
-    const query = clientSearch.trim().toLowerCase()
-    if (!query) return clients
-    return clients.filter((client) => {
-      const haystack = `${client.name} ${client.companyName || ''} ${client.email || ''} ${client.phone || ''}`.toLowerCase()
-      return haystack.includes(query)
-    })
-  }, [clients, clientSearch])
+  const handleDelete = async () => {
+    if (!normalizedRequestId) return
+    if (!confirm(`Are you sure you want to delete request "${formData.firstName} ${formData.lastName}"?`)) {
+      return
+    }
+
+    setDeleting(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch(`/api/leads/${normalizedRequestId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'Failed to delete request')
+        return
+      }
+      router.push('/dashboard/requests')
+    } catch (error) {
+      console.error('Delete request error:', error)
+      alert('Failed to delete request')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const handleExistingClientSelect = (clientId: string) => {
+    const selected = clients.find((client) => client.id === clientId)
+    if (!selected) {
+      setFormData((prev) => ({ ...prev, clientId: '' }))
+      return
+    }
+    const nameParts = selected.name.trim().split(/\s+/)
+    setFormData((prev) => ({
+      ...prev,
+      clientId: selected.id,
+      firstName: nameParts[0] || '',
+      lastName: nameParts.slice(1).join(' '),
+      email: selected.email || '',
+      phone: selected.phone || '',
+      company: selected.companyName || '',
+    }))
+  }
+
+  const syncAddressParts = (address: string) => {
+    const parsed = parseAddressParts(address)
+    setFormData((prev) => ({
+      ...prev,
+      jobSiteAddress: address,
+      jobSiteCity: parsed?.city || '',
+      jobSiteState: parsed?.state || '',
+      jobSiteZipCode: parsed?.zipCode || '',
+    }))
+  }
 
   if (loading) {
     return (
@@ -329,6 +385,17 @@ export default function EditRequestPage() {
           <Copy className="mr-2 h-4 w-4" />
           {duplicating ? 'Duplicating...' : 'Duplicate'}
         </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={handleDelete}
+          disabled={deleting}
+          title="Delete request"
+          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+        >
+          <Trash2 className="mr-2 h-4 w-4" />
+          {deleting ? 'Deleting...' : 'Delete'}
+        </Button>
       </div>
 
       <form onSubmit={handleSubmit}>
@@ -341,71 +408,37 @@ export default function EditRequestPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="clientMode">Client Type</Label>
-                <select
-                  id="clientMode"
+                <Select
                   value={clientMode}
-                  onChange={(e) => {
-                    const nextMode = e.target.value as 'new' | 'existing'
+                  onValueChange={(value) => {
+                    const nextMode = value as 'new' | 'existing'
                     setClientMode(nextMode)
                     if (nextMode === 'new') {
                       setFormData((prev) => ({ ...prev, clientId: '' }))
-                      setClientSearch('')
                     }
                   }}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
                 >
-                  <option value="new">New Client</option>
-                  <option value="existing">Existing Client</option>
-                </select>
+                  <SelectTrigger id="clientMode" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="new">New Client</SelectItem>
+                    <SelectItem value="existing">Existing Client</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
             {clientMode === 'existing' && (
               <>
                 <div>
-                  <Label htmlFor="clientSearch">Search Client</Label>
-                  <Input
-                    id="clientSearch"
-                    value={clientSearch}
-                    onChange={(e) => setClientSearch(e.target.value)}
-                    placeholder="Type name, company, email, or phone..."
-                  />
-                </div>
-                <div>
                   <Label htmlFor="clientId">Select Client *</Label>
-                  <select
-                    id="clientId"
+                  <SearchableClientSelect
+                    clients={clients}
                     value={formData.clientId}
-                    onChange={(e) => {
-                      const selected = clients.find((client) => client.id === e.target.value)
-                      if (!selected) {
-                        setFormData((prev) => ({ ...prev, clientId: '' }))
-                        return
-                      }
-                      const nameParts = selected.name.trim().split(/\s+/)
-                      setFormData((prev) => ({
-                        ...prev,
-                        clientId: selected.id,
-                        firstName: nameParts[0] || '',
-                        lastName: nameParts.slice(1).join(' '),
-                        email: selected.email || '',
-                        phone: selected.phone || '',
-                        company: selected.companyName || '',
-                      }))
-                      setClientSearch(selected.name)
-                    }}
-                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    required={clientMode === 'existing'}
-                  >
-                    <option value="">Select client...</option>
-                    {filteredClients.map((client) => (
-                      <option key={client.id} value={client.id}>
-                        {client.name}
-                        {client.companyName ? ` — ${client.companyName}` : ''}
-                        {client.email ? ` — ${client.email}` : ''}
-                      </option>
-                    ))}
-                  </select>
+                    onSelect={handleExistingClientSelect}
+                    placeholder="Select client..."
+                  />
                 </div>
               </>
             )}
@@ -471,9 +504,38 @@ export default function EditRequestPage() {
               <Input
                 id="jobSiteAddress"
                 value={formData.jobSiteAddress}
-                onChange={(e) => setFormData({ ...formData, jobSiteAddress: e.target.value })}
+                onChange={(e) => syncAddressParts(e.target.value)}
                 placeholder="123 Main St, Austin, TX 78701"
               />
+              <div className="mt-3 grid grid-cols-3 gap-3">
+                <div>
+                  <Label htmlFor="jobSiteCity">City</Label>
+                  <Input
+                    id="jobSiteCity"
+                    value={formData.jobSiteCity}
+                    onChange={(e) => setFormData({ ...formData, jobSiteCity: e.target.value })}
+                    placeholder="City"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="jobSiteState">State</Label>
+                  <Input
+                    id="jobSiteState"
+                    value={formData.jobSiteState}
+                    onChange={(e) => setFormData({ ...formData, jobSiteState: e.target.value })}
+                    placeholder="State"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="jobSiteZipCode">Zip Code</Label>
+                  <Input
+                    id="jobSiteZipCode"
+                    value={formData.jobSiteZipCode}
+                    onChange={(e) => setFormData({ ...formData, jobSiteZipCode: e.target.value })}
+                    placeholder="Zip"
+                  />
+                </div>
+              </div>
               {formData.jobSiteAddress.trim() && (
                 <iframe
                   title="Job Site Map"
@@ -488,52 +550,55 @@ export default function EditRequestPage() {
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <Label htmlFor="source">Source</Label>
-                <select
-                  id="source"
-                  value={formData.source}
-                  onChange={(e) => setFormData({ ...formData, source: e.target.value })}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                >
-                  <option value="OTHER">Other</option>
-                  <option value="WEBSITE">Website</option>
-                  <option value="REFERRAL">Referral</option>
-                  <option value="SOCIAL_MEDIA">Social Media</option>
-                  <option value="ADVERTISING">Advertising</option>
-                  <option value="TRADE_SHOW">Trade Show</option>
-                </select>
+                <Select value={formData.source} onValueChange={(value) => setFormData({ ...formData, source: value })}>
+                  <SelectTrigger id="source" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="OTHER">Other</SelectItem>
+                    <SelectItem value="WEBSITE">Website</SelectItem>
+                    <SelectItem value="REFERRAL">Referral</SelectItem>
+                    <SelectItem value="SOCIAL_MEDIA">Social Media</SelectItem>
+                    <SelectItem value="ADVERTISING">Advertising</SelectItem>
+                    <SelectItem value="TRADE_SHOW">Trade Show</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label htmlFor="status">Status</Label>
-                <select
-                  id="status"
-                  value={formData.status}
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                >
-                  <option value="NEW">New</option>
-                  <option value="CONTACTED">Contacted</option>
-                  <option value="QUALIFIED">Qualified</option>
-                  <option value="ESTIMATE_SENT">Estimate Sent</option>
-                  <option value="FOLLOW_UP">Follow Up</option>
-                  <option value="CONVERTED">Converted</option>
-                  <option value="LOST">Lost</option>
-                </select>
+                <Select value={formData.status} onValueChange={(value) => setFormData({ ...formData, status: value })}>
+                  <SelectTrigger id="status" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NEW">New</SelectItem>
+                    <SelectItem value="CONTACTED">Contacted</SelectItem>
+                    <SelectItem value="QUALIFIED">Qualified</SelectItem>
+                    <SelectItem value="ESTIMATE_SENT">Estimate Sent</SelectItem>
+                    <SelectItem value="FOLLOW_UP">Follow Up</SelectItem>
+                    <SelectItem value="CONVERTED">Converted</SelectItem>
+                    <SelectItem value="LOST">Lost</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label htmlFor="assignedToId">Assigned To</Label>
-                <select
-                  id="assignedToId"
-                  value={formData.assignedToId}
-                  onChange={(e) => setFormData({ ...formData, assignedToId: e.target.value })}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                <Select
+                  value={formData.assignedToId || '__none__'}
+                  onValueChange={(value) => setFormData({ ...formData, assignedToId: value === '__none__' ? '' : value })}
                 >
-                  <option value="">Unassigned</option>
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.firstName} {user.lastName}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger id="assignedToId" className="w-full">
+                    <SelectValue placeholder="Unassigned" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Unassigned</SelectItem>
+                    {users.map((user) => (
+                      <SelectItem key={user.id} value={user.id}>
+                        {user.firstName} {user.lastName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 

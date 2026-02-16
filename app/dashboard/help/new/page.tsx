@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ArrowLeft, Save } from 'lucide-react'
 import Link from 'next/link'
 
@@ -109,39 +110,38 @@ export default function NewHelpArticlePage() {
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <Label htmlFor="module">Module *</Label>
-                <select
-                  id="module"
-                  required
-                  value={formData.module}
-                  onChange={(e) => setFormData({ ...formData, module: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="GENERAL">General</option>
-                  <option value="CRM">CRM</option>
-                  <option value="JOBS">Jobs</option>
-                  <option value="ESTIMATES">Estimates</option>
-                  <option value="INVOICES">Invoices</option>
-                  <option value="SCHEDULING">Scheduling</option>
-                  <option value="TASKS">Tasks</option>
-                  <option value="ISSUES">Issues</option>
-                  <option value="PAYMENTS">Payments</option>
-                  <option value="REPORTS">Reports</option>
-                </select>
+                <Select value={formData.module} onValueChange={(value) => setFormData({ ...formData, module: value })}>
+                  <SelectTrigger id="module">
+                    <SelectValue placeholder="Select module" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="GENERAL">General</SelectItem>
+                    <SelectItem value="CRM">CRM</SelectItem>
+                    <SelectItem value="JOBS">Jobs</SelectItem>
+                    <SelectItem value="ESTIMATES">Estimates</SelectItem>
+                    <SelectItem value="INVOICES">Invoices</SelectItem>
+                    <SelectItem value="SCHEDULING">Scheduling</SelectItem>
+                    <SelectItem value="TASKS">Tasks</SelectItem>
+                    <SelectItem value="ISSUES">Issues</SelectItem>
+                    <SelectItem value="PAYMENTS">Payments</SelectItem>
+                    <SelectItem value="REPORTS">Reports</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label htmlFor="category">Category</Label>
-                <select
-                  id="category"
-                  value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="GENERAL">General</option>
-                  <option value="GETTING_STARTED">Getting Started</option>
-                  <option value="HOW_TO">How To</option>
-                  <option value="TROUBLESHOOTING">Troubleshooting</option>
-                  <option value="BEST_PRACTICES">Best Practices</option>
-                </select>
+                <Select value={formData.category} onValueChange={(value) => setFormData({ ...formData, category: value })}>
+                  <SelectTrigger id="category">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="GENERAL">General</SelectItem>
+                    <SelectItem value="GETTING_STARTED">Getting Started</SelectItem>
+                    <SelectItem value="HOW_TO">How To</SelectItem>
+                    <SelectItem value="TROUBLESHOOTING">Troubleshooting</SelectItem>
+                    <SelectItem value="BEST_PRACTICES">Best Practices</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label htmlFor="sortOrder">Sort Order</Label>

@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ArrowLeft, Save } from 'lucide-react'
 import Link from 'next/link'
 
@@ -165,35 +166,33 @@ export default function NewSchedulePage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="type">Type</Label>
-                <select
-                  id="type"
-                  value={formData.type}
-                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="OTHER">Other</option>
-                  <option value="JOB">Job</option>
-                  <option value="MEETING">Meeting</option>
-                  <option value="APPOINTMENT">Appointment</option>
-                  <option value="BREAK">Break</option>
-                </select>
+                <Select value={formData.type} onValueChange={(value) => setFormData({ ...formData, type: value })}>
+                  <SelectTrigger id="type" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="OTHER">Other</SelectItem>
+                    <SelectItem value="JOB">Job</SelectItem>
+                    <SelectItem value="MEETING">Meeting</SelectItem>
+                    <SelectItem value="APPOINTMENT">Appointment</SelectItem>
+                    <SelectItem value="BREAK">Break</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label htmlFor="userId">Assigned To *</Label>
-                <select
-                  id="userId"
-                  required
-                  value={formData.userId}
-                  onChange={(e) => setFormData({ ...formData, userId: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select user</option>
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.firstName} {user.lastName}
-                    </option>
-                  ))}
-                </select>
+                <Select value={formData.userId} onValueChange={(value) => setFormData({ ...formData, userId: value })}>
+                  <SelectTrigger id="userId" className="w-full">
+                    <SelectValue placeholder="Select user" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {users.map((user) => (
+                      <SelectItem key={user.id} value={user.id}>
+                        {user.firstName} {user.lastName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
@@ -222,19 +221,19 @@ export default function NewSchedulePage() {
 
             <div>
               <Label htmlFor="jobId">Job (Optional)</Label>
-              <select
-                id="jobId"
-                value={formData.jobId}
-                onChange={(e) => setFormData({ ...formData, jobId: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Select a job</option>
-                {jobs.map((job) => (
-                  <option key={job.id} value={job.id}>
-                    {job.jobNumber} - {job.title}
-                  </option>
-                ))}
-              </select>
+              <Select value={formData.jobId || '__none__'} onValueChange={(value) => setFormData({ ...formData, jobId: value === '__none__' ? '' : value })}>
+                <SelectTrigger id="jobId" className="w-full">
+                  <SelectValue placeholder="Select a job" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Select a job</SelectItem>
+                  {jobs.map((job) => (
+                    <SelectItem key={job.id} value={job.id}>
+                      {job.jobNumber} - {job.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="flex items-center">

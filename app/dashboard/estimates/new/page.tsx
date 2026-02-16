@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ArrowLeft, Save, Plus, Trash2, Eye, EyeOff } from 'lucide-react'
 import Link from 'next/link'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
@@ -44,6 +45,7 @@ export default function NewEstimatePage() {
   const searchParams = useSearchParams()
   const clientIdParam = searchParams.get('clientId')
   const requestIdParam = searchParams.get('requestId')
+  const jobIdParam = searchParams.get('jobId')
   
   const [loading, setLoading] = useState(false)
   const [clients, setClients] = useState<Client[]>([])
@@ -67,6 +69,7 @@ export default function NewEstimatePage() {
   const [formData, setFormData] = useState({
     clientId: clientIdParam || '',
     leadId: requestIdParam || '',
+    jobId: jobIdParam || '',
     title: '',
     jobSiteAddress: '',
     taxRate: '0',
@@ -109,6 +112,37 @@ export default function NewEstimatePage() {
     }
     fetchRequestContext()
   }, [requestIdParam])
+
+  useEffect(() => {
+    if (!jobIdParam) return
+    const fetchJobContext = async () => {
+      try {
+        const token = localStorage.getItem('accessToken')
+        const response = await fetch(`/api/jobs/${jobIdParam}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (!response.ok) return
+        const data = await response.json()
+        const job = data?.job
+        if (!job?.id) return
+
+        const siteAddress = job.jobSite
+          ? `${job.jobSite.street}, ${job.jobSite.city}, ${job.jobSite.state} ${job.jobSite.zipCode}`.replace(/\s+,/g, ',')
+          : ''
+
+        setFormData((prev) => ({
+          ...prev,
+          jobId: job.id,
+          clientId: job.client?.id || prev.clientId,
+          title: prev.title || `Estimate for ${job.title}`,
+          jobSiteAddress: prev.jobSiteAddress || siteAddress,
+        }))
+      } catch (error) {
+        console.error('Error loading job context:', error)
+      }
+    }
+    fetchJobContext()
+  }, [jobIdParam])
 
   const fetchClients = async () => {
     try {
@@ -434,6 +468,7 @@ export default function NewEstimatePage() {
         body: JSON.stringify({
           clientId: formData.clientId,
           leadId: formData.leadId || null,
+          jobId: formData.jobId || null,
           title: formData.title,
           jobSiteAddress: formData.jobSiteAddress || null,
           subtotal,
@@ -511,20 +546,25 @@ export default function NewEstimatePage() {
               <CardContent className="space-y-4">
                 <div>
                   <Label htmlFor="clientId">Client *</Label>
-                  <select
-                    id="clientId"
-                    required
+                  <Select
                     value={formData.clientId}
-                    onChange={(e) => setFormData({ ...formData, clientId: e.target.value })}
-                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    onValueChange={(value) => setFormData({ ...formData, clientId: value })}
+                    disabled={Boolean(jobIdParam)}
                   >
-                    <option value="">Select a client...</option>
-                    {clients.map((client) => (
-                      <option key={client.id} value={client.id}>
-                        {client.name}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger id="clientId">
+                      <SelectValue placeholder="Select a client..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {clients.map((client) => (
+                        <SelectItem key={client.id} value={client.id}>
+                          {client.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {jobIdParam && (
+                    <p className="mt-1 text-xs text-gray-500">Client is locked because this estimate is being created from a job.</p>
+                  )}
                 </div>
                 <div>
                   <Label htmlFor="title">Title *</Label>

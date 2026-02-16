@@ -32,7 +32,11 @@ export async function POST(
       where: {
         id: jobId,
         tenantId: user.tenantId,
-        assignedToId: user.id,
+        assignments: {
+          some: {
+            userId: user.id,
+          },
+        },
       },
     })
 

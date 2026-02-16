@@ -1,12 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { encryptSecrets } from '@/lib/integrations/secrets'
+import { decryptSecrets, encryptSecrets } from '@/lib/integrations/secrets'
 import { updateIntegrationStatus } from '@/lib/integrations/status'
 
-const QBO_CLIENT_ID = process.env.QBO_CLIENT_ID
-const QBO_CLIENT_SECRET = process.env.QBO_CLIENT_SECRET
-const QBO_REDIRECT_URI =
-  process.env.QBO_REDIRECT_URI || `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/integrations/quickbooks/callback`
+async function getQuickBooksConfig(tenantId: string) {
+  const connection = await prisma.integrationConnection.findUnique({
+    where: {
+      tenantId_provider: {
+        tenantId,
+        provider: 'quickbooks',
+      },
+    },
+  })
+
+  let saved: Record<string, any> = {}
+  if (connection?.encryptedSecrets) {
+    try {
+      saved = decryptSecrets(connection.encryptedSecrets)
+    } catch (error) {
+      console.error('Failed to decrypt saved QuickBooks secrets')
+    }
+  }
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.PUBLIC_APP_URL || process.env.APP_URL || 'http://localhost:3000'
+  const clientId = saved.clientId || process.env.QBO_CLIENT_ID || ''
+  const clientSecret = saved.clientSecret || process.env.QBO_CLIENT_SECRET || ''
+  const redirectUri = saved.redirectUri || process.env.QBO_REDIRECT_URI || `${appUrl}/api/integrations/quickbooks/callback`
+  const environment = saved.environment || process.env.QBO_ENV || 'production'
+
+  return { clientId, clientSecret, redirectUri, environment, connection, saved }
+}
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
@@ -34,18 +57,23 @@ export async function GET(request: NextRequest) {
       throw new Error('Invalid state token')
     }
 
+    const cfg = await getQuickBooksConfig(tenantId)
+    if (!cfg.clientId || !cfg.clientSecret) {
+      throw new Error('QuickBooks credentials missing. Save Client ID and Client Secret first.')
+    }
+
     // Exchange authorization code for tokens
     const tokenResponse = await fetch('https://appcenter.intuit.com/connect/oauth2/v1/tokens/bearer', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Accept': 'application/json',
-        'Authorization': `Basic ${Buffer.from(`${QBO_CLIENT_ID}:${QBO_CLIENT_SECRET}`).toString('base64')}`,
+        'Authorization': `Basic ${Buffer.from(`${cfg.clientId}:${cfg.clientSecret}`).toString('base64')}`,
       },
       body: new URLSearchParams({
         grant_type: 'authorization_code',
         code,
-        redirect_uri: QBO_REDIRECT_URI,
+        redirect_uri: cfg.redirectUri,
       }),
     })
 
@@ -59,6 +87,11 @@ export async function GET(request: NextRequest) {
 
     // Encrypt and store tokens
     const secrets = {
+      ...cfg.saved,
+      clientId: cfg.clientId,
+      clientSecret: cfg.clientSecret,
+      redirectUri: cfg.redirectUri,
+      environment: cfg.environment,
       refreshToken: refresh_token,
       realmId,
       accessToken: access_token,
@@ -98,21 +131,21 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    // Also update QuickBooksIntegration table for backwards compatibility
+    // Also update QuickBooksIntegration table for backwards compatibility (store plaintext tokens)
     await prisma.quickBooksIntegration.upsert({
       where: { tenantId },
       create: {
         tenantId,
         isConnected: true,
-        refreshToken: encryptSecrets({ refreshToken: refresh_token }),
-        accessToken: encryptSecrets({ accessToken: access_token }),
+        refreshToken: refresh_token,
+        accessToken: access_token,
         tokenExpiresAt: expires_in ? new Date(Date.now() + expires_in * 1000) : null,
         realmId,
       },
       update: {
         isConnected: true,
-        refreshToken: encryptSecrets({ refreshToken: refresh_token }),
-        accessToken: encryptSecrets({ accessToken: access_token }),
+        refreshToken: refresh_token,
+        accessToken: access_token,
         tokenExpiresAt: expires_in ? new Date(Date.now() + expires_in * 1000) : null,
         realmId,
       },

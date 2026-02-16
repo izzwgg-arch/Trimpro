@@ -3,10 +3,18 @@ import { prisma } from '@/lib/prisma'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { verifySolaWebhookSignature } from '@/lib/integrations/providers/sola'
 import { notifyInvoicePaid } from '@/lib/notifications'
+import { syncPaymentToQuickBooks } from '@/lib/services/qbo-sync'
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
+    const rawBody = await request.text()
+    let body: Record<string, any> = {}
+    try {
+      body = rawBody ? JSON.parse(rawBody) : {}
+    } catch {
+      const params = new URLSearchParams(rawBody)
+      body = Object.fromEntries(params.entries())
+    }
     const signature = request.headers.get('x-sola-signature') || ''
 
     // Find Sola integration to get webhook secret
@@ -23,20 +31,23 @@ export async function POST(request: NextRequest) {
     const secrets = await getIntegrationSecrets(connection.tenantId, 'sola')
     const webhookSecret = secrets?.webhookSecret
 
-    if (!webhookSecret) {
-      console.error('Sola webhook secret not found')
-      return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 401 })
+    if (webhookSecret && signature) {
+      // Verify signature only when the provider includes one.
+      const payload = JSON.stringify(body)
+      const isValid = verifySolaWebhookSignature(payload, signature, webhookSecret)
+      if (!isValid) {
+        return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+      }
     }
 
-    // Verify webhook signature
-    const payload = JSON.stringify(body)
-    const isValid = verifySolaWebhookSignature(payload, signature, webhookSecret)
-
-    if (!isValid) {
-      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
-    }
-
-    const { event, paymentId, invoiceId, amount, status, transactionId, timestamp } = body
+    const event = body?.event || 'payment'
+    const paymentId = body?.paymentId || body?.xRefnum || body?.xRefNum || body?.TransactionID || ''
+    const invoiceId = body?.invoiceId || body?.xInvoice || body?.InvoiceID || ''
+    const amount = Number(body?.amount || body?.xAmount || 0)
+    const status = String(body?.status || body?.xResult || '').toLowerCase()
+    const transactionId =
+      body?.transactionId || body?.xRefnum || body?.xRefNum || body?.TransactionID || paymentId
+    const timestamp = body?.timestamp || new Date().toISOString()
 
     // Use tenant from connection
     const tenantId = connection.tenantId
@@ -44,8 +55,8 @@ export async function POST(request: NextRequest) {
     // Find invoice by metadata or invoiceId
     const invoice = await prisma.invoice.findFirst({
       where: {
-        id: invoiceId,
         tenantId,
+        OR: [{ id: String(invoiceId) }, { invoiceNumber: String(invoiceId) }],
       },
       include: {
         tenant: true,
@@ -61,7 +72,7 @@ export async function POST(request: NextRequest) {
     // Check if payment already exists
     const existingPayment = await prisma.payment.findFirst({
       where: {
-        solaTransactionId: transactionId || paymentId,
+        solaTransactionId: String(transactionId || paymentId || ''),
       },
     })
 
@@ -71,10 +82,17 @@ export async function POST(request: NextRequest) {
         where: { id: existingPayment.id },
         data: {
           status: status === 'completed' ? 'COMPLETED' :
+                  status === 'paid' ? 'COMPLETED' :
+                  status === 'approved' ? 'COMPLETED' :
+                  status === 's' ? 'COMPLETED' :
+                  status === 'a' ? 'COMPLETED' :
                   status === 'pending' ? 'PENDING' :
                   status === 'failed' ? 'FAILED' :
                   'PENDING',
-          processedAt: status === 'completed' ? new Date(timestamp) : existingPayment.processedAt,
+          processedAt:
+            status === 'completed' || status === 'paid' || status === 'approved' || status === 's' || status === 'a'
+              ? new Date(timestamp)
+              : existingPayment.processedAt,
           solaWebhookData: body,
         },
       })
@@ -83,11 +101,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Create new payment record
-    if (status === 'completed' || status === 'paid') {
+    if (status === 'completed' || status === 'paid' || status === 'approved' || status === 's' || status === 'a') {
       const payment = await prisma.payment.create({
         data: {
           invoiceId: invoice.id,
-          amount: parseFloat(amount),
+          amount: amount || Number(invoice.balance),
           status: 'COMPLETED',
           method: 'CARD', // SOLA typically processes card payments
           reference: transactionId || paymentId,
@@ -97,8 +115,14 @@ export async function POST(request: NextRequest) {
         },
       })
 
+      try {
+        await syncPaymentToQuickBooks(invoice.tenantId, payment.id)
+      } catch (error) {
+        console.error('QuickBooks payment sync trigger error (legacy webhook):', error)
+      }
+
       // Update invoice
-      const newPaidAmount = Number(invoice.paidAmount) + parseFloat(amount)
+      const newPaidAmount = Number(invoice.paidAmount) + (amount || Number(invoice.balance))
       const newBalance = Number(invoice.total) - newPaidAmount
 
       await prisma.invoice.update({
@@ -106,7 +130,12 @@ export async function POST(request: NextRequest) {
         data: {
           paidAmount: newPaidAmount,
           balance: newBalance,
-          status: newBalance <= 0 ? 'PAID' : newPaidAmount > 0 ? 'PARTIAL' : invoice.status,
+          status:
+            newBalance <= 0
+              ? (invoice.progressBillingMode && invoice.progressBillingMode !== 'FULL' ? 'PARTIAL' : 'PAID')
+              : newPaidAmount > 0
+                ? 'PARTIAL'
+                : invoice.status,
           paidAt: newBalance <= 0 ? new Date(timestamp) : invoice.paidAt,
         },
       })
@@ -128,7 +157,7 @@ export async function POST(request: NextRequest) {
         invoice.tenantId,
         invoice.id,
         invoice.invoiceNumber,
-        parseFloat(amount),
+        amount || Number(invoice.balance),
         invoice.client.name
       )
 

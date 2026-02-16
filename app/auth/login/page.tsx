@@ -59,7 +59,9 @@ function LoginForm() {
         <CardHeader className="pt-10 pb-3 space-y-2">
           <CardTitle className="text-center">
             <div className="flex justify-center">
-              <TrimProLogo variant="light" size="lg" />
+              <div className="inline-flex items-center rounded-md bg-[#2E4A59] px-4 py-2">
+                <TrimProLogo variant="light" size="lg" />
+              </div>
             </div>
           </CardTitle>
           <CardDescription className="text-center">

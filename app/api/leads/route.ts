@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { notifyNewLead } from '@/lib/notifications'
+import { syncLeadToQuickBooksProject } from '@/lib/services/qbo-sync'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -199,6 +200,12 @@ export async function POST(request: NextRequest) {
           linkUrl: `/dashboard/requests/${lead.id}`,
         },
       })
+    }
+
+    try {
+      await syncLeadToQuickBooksProject(user.tenantId, lead.id)
+    } catch (error) {
+      console.error('QuickBooks request/project sync trigger error:', error)
     }
 
     return NextResponse.json({ lead }, { status: 201 })

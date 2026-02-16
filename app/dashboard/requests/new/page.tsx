@@ -1,13 +1,16 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ArrowLeft, Save } from 'lucide-react'
 import Link from 'next/link'
+import { parseAddressParts } from '@/lib/address/parse'
+import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
 
 interface User {
   id: string
@@ -29,7 +32,6 @@ export default function NewRequestPage() {
   const [users, setUsers] = useState<User[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [clientMode, setClientMode] = useState<'new' | 'existing'>('new')
-  const [clientSearch, setClientSearch] = useState('')
   const [formData, setFormData] = useState({
     clientId: '',
     firstName: '',
@@ -38,6 +40,9 @@ export default function NewRequestPage() {
     phone: '',
     company: '',
     jobSiteAddress: '',
+    jobSiteCity: '',
+    jobSiteState: '',
+    jobSiteZipCode: '',
     source: 'OTHER',
     status: 'NEW',
     value: '',
@@ -96,17 +101,18 @@ export default function NewRequestPage() {
       phone: selected.phone || '',
       company: selected.companyName || '',
     }))
-    setClientSearch(selected.name)
   }
 
-  const filteredClients = useMemo(() => {
-    const query = clientSearch.trim().toLowerCase()
-    if (!query) return clients
-    return clients.filter((client) => {
-      const haystack = `${client.name} ${client.companyName || ''} ${client.email || ''} ${client.phone || ''}`.toLowerCase()
-      return haystack.includes(query)
-    })
-  }, [clients, clientSearch])
+  const syncAddressParts = (address: string) => {
+    const parsed = parseAddressParts(address)
+    setFormData((prev) => ({
+      ...prev,
+      jobSiteAddress: address,
+      jobSiteCity: parsed?.city || '',
+      jobSiteState: parsed?.state || '',
+      jobSiteZipCode: parsed?.zipCode || '',
+    }))
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -184,54 +190,37 @@ export default function NewRequestPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="clientMode">Client Type</Label>
-                <select
-                  id="clientMode"
+                <Select
                   value={clientMode}
-                  onChange={(e) => {
-                    const nextMode = e.target.value as 'new' | 'existing'
+                  onValueChange={(value) => {
+                    const nextMode = value as 'new' | 'existing'
                     setClientMode(nextMode)
                     if (nextMode === 'new') {
                       setFormData((prev) => ({ ...prev, clientId: '' }))
-                      setClientSearch('')
                     }
                   }}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
                 >
-                  <option value="new">New Client</option>
-                  <option value="existing">Existing Client</option>
-                </select>
+                  <SelectTrigger id="clientMode" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="new">New Client</SelectItem>
+                    <SelectItem value="existing">Existing Client</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
             {clientMode === 'existing' && (
               <>
                 <div>
-                  <Label htmlFor="clientSearch">Search Client</Label>
-                  <Input
-                    id="clientSearch"
-                    value={clientSearch}
-                    onChange={(e) => setClientSearch(e.target.value)}
-                    placeholder="Type name, company, email, or phone..."
-                  />
-                </div>
-                <div>
                   <Label htmlFor="clientId">Select Client *</Label>
-                  <select
-                    id="clientId"
+                  <SearchableClientSelect
+                    clients={clients}
                     value={formData.clientId}
-                    onChange={(e) => handleExistingClientSelect(e.target.value)}
-                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    required={clientMode === 'existing'}
-                  >
-                    <option value="">Select client...</option>
-                    {filteredClients.map((client) => (
-                      <option key={client.id} value={client.id}>
-                        {client.name}
-                        {client.companyName ? ` — ${client.companyName}` : ''}
-                        {client.email ? ` — ${client.email}` : ''}
-                      </option>
-                    ))}
-                  </select>
+                    onSelect={handleExistingClientSelect}
+                    placeholder="Select client..."
+                  />
                 </div>
               </>
             )}
@@ -297,9 +286,38 @@ export default function NewRequestPage() {
               <Input
                 id="jobSiteAddress"
                 value={formData.jobSiteAddress}
-                onChange={(e) => setFormData({ ...formData, jobSiteAddress: e.target.value })}
+                onChange={(e) => syncAddressParts(e.target.value)}
                 placeholder="123 Main St, Austin, TX 78701"
               />
+              <div className="mt-3 grid grid-cols-3 gap-3">
+                <div>
+                  <Label htmlFor="jobSiteCity">City</Label>
+                  <Input
+                    id="jobSiteCity"
+                    value={formData.jobSiteCity}
+                    onChange={(e) => setFormData({ ...formData, jobSiteCity: e.target.value })}
+                    placeholder="City"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="jobSiteState">State</Label>
+                  <Input
+                    id="jobSiteState"
+                    value={formData.jobSiteState}
+                    onChange={(e) => setFormData({ ...formData, jobSiteState: e.target.value })}
+                    placeholder="State"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="jobSiteZipCode">Zip Code</Label>
+                  <Input
+                    id="jobSiteZipCode"
+                    value={formData.jobSiteZipCode}
+                    onChange={(e) => setFormData({ ...formData, jobSiteZipCode: e.target.value })}
+                    placeholder="Zip"
+                  />
+                </div>
+              </div>
               {formData.jobSiteAddress.trim() && (
                 <iframe
                   title="Job Site Map"
@@ -314,51 +332,54 @@ export default function NewRequestPage() {
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <Label htmlFor="source">Source</Label>
-                <select
-                  id="source"
-                  value={formData.source}
-                  onChange={(e) => setFormData({ ...formData, source: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="OTHER">Other</option>
-                  <option value="WEBSITE">Website</option>
-                  <option value="REFERRAL">Referral</option>
-                  <option value="SOCIAL_MEDIA">Social Media</option>
-                  <option value="ADVERTISING">Advertising</option>
-                  <option value="TRADE_SHOW">Trade Show</option>
-                </select>
+                <Select value={formData.source} onValueChange={(value) => setFormData({ ...formData, source: value })}>
+                  <SelectTrigger id="source" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="OTHER">Other</SelectItem>
+                    <SelectItem value="WEBSITE">Website</SelectItem>
+                    <SelectItem value="REFERRAL">Referral</SelectItem>
+                    <SelectItem value="SOCIAL_MEDIA">Social Media</SelectItem>
+                    <SelectItem value="ADVERTISING">Advertising</SelectItem>
+                    <SelectItem value="TRADE_SHOW">Trade Show</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label htmlFor="status">Status</Label>
-                <select
-                  id="status"
-                  value={formData.status}
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="NEW">New</option>
-                  <option value="CONTACTED">Contacted</option>
-                  <option value="QUALIFIED">Qualified</option>
-                  <option value="QUOTE_SENT">Quote Sent</option>
-                  <option value="CONVERTED">Converted</option>
-                  <option value="LOST">Lost</option>
-                </select>
+                <Select value={formData.status} onValueChange={(value) => setFormData({ ...formData, status: value })}>
+                  <SelectTrigger id="status" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NEW">New</SelectItem>
+                    <SelectItem value="CONTACTED">Contacted</SelectItem>
+                    <SelectItem value="QUALIFIED">Qualified</SelectItem>
+                    <SelectItem value="QUOTE_SENT">Quote Sent</SelectItem>
+                    <SelectItem value="CONVERTED">Converted</SelectItem>
+                    <SelectItem value="LOST">Lost</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label htmlFor="assignedToId">Assigned To</Label>
-                <select
-                  id="assignedToId"
-                  value={formData.assignedToId}
-                  onChange={(e) => setFormData({ ...formData, assignedToId: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                <Select
+                  value={formData.assignedToId || '__none__'}
+                  onValueChange={(value) => setFormData({ ...formData, assignedToId: value === '__none__' ? '' : value })}
                 >
-                  <option value="">Unassigned</option>
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.firstName} {user.lastName}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger id="assignedToId" className="w-full">
+                    <SelectValue placeholder="Unassigned" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Unassigned</SelectItem>
+                    {users.map((user) => (
+                      <SelectItem key={user.id} value={user.id}>
+                        {user.firstName} {user.lastName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 

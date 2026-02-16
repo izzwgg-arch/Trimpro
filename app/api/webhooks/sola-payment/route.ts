@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { notifyInvoicePaid, createNotificationsForUsers } from '@/lib/notifications'
+import { getIntegrationSecrets } from '@/lib/integrations/status'
+import { testEmailProvider } from '@/lib/integrations/providers/email'
+import { syncJobToQuickBooksProject, syncPaymentToQuickBooks } from '@/lib/services/qbo-sync'
 
 function normalizePhone(value: string | null | undefined) {
   return (value || '').replace(/\D/g, '')
@@ -26,35 +29,128 @@ function parseJobSiteAddress(address: string | null | undefined) {
   }
 }
 
-async function ensureJobFromEstimate(tenantId: string, estimateId: string): Promise<{
+function money(value: number) {
+  return `$${Number(value || 0).toFixed(2)}`
+}
+
+async function sendPaymentReceiptEmail(params: {
+  tenantId: string
+  to: string
+  clientName: string
+  invoiceId: string
+  invoiceNumber: string
+  amountPaid: number
+  paidToDate: number
+  balance: number
+  transactionId?: string
+}) {
+  const emailSecrets = await getIntegrationSecrets(params.tenantId, 'email')
+  if (!emailSecrets) {
+    console.warn('Receipt email skipped: Email integration not configured')
+    return
+  }
+
+  const appUrl =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.PUBLIC_APP_URL ||
+    process.env.APP_URL ||
+    'https://app.trimprony.com'
+
+  const now = new Date()
+  const subject = `Payment Receipt • Invoice ${params.invoiceNumber} • ${now.toISOString()}`
+  const html = `
+    <html>
+      <body style="margin:0;padding:0;background:#f3f4f6;font-family:Inter,Helvetica,Arial,sans-serif;color:#111827;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:24px 0;">
+          <tr>
+            <td align="center">
+              <table role="presentation" width="640" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;">
+                <tr>
+                  <td style="padding:24px 28px;border-bottom:1px solid #e5e7eb;background:#f9fafb;">
+                    <div style="font-size:24px;font-weight:700;line-height:1.2;">Payment Receipt</div>
+                    <div style="margin-top:6px;font-size:13px;color:#6b7280;">Invoice ${params.invoiceNumber}</div>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:24px 28px;">
+                    <p style="margin:0 0 14px 0;font-size:15px;line-height:1.6;">Hi ${params.clientName || 'there'},</p>
+                    <p style="margin:0 0 18px 0;font-size:15px;line-height:1.6;">
+                      Thank you. We received your payment for invoice <strong>${params.invoiceNumber}</strong>.
+                    </p>
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #e5e7eb;border-radius:10px;background:#f9fafb;padding:12px 14px;">
+                      <tr><td style="padding:6px 0;font-size:14px;color:#374151;">Amount Paid</td><td align="right" style="padding:6px 0;font-size:14px;font-weight:700;">${money(params.amountPaid)}</td></tr>
+                      <tr><td style="padding:6px 0;font-size:14px;color:#374151;">Paid to Date</td><td align="right" style="padding:6px 0;font-size:14px;">${money(params.paidToDate)}</td></tr>
+                      <tr><td style="padding:6px 0;font-size:14px;color:#374151;">Remaining Balance</td><td align="right" style="padding:6px 0;font-size:14px;">${money(params.balance)}</td></tr>
+                      <tr><td style="padding:6px 0;font-size:14px;color:#374151;">Date</td><td align="right" style="padding:6px 0;font-size:14px;">${now.toLocaleString()}</td></tr>
+                      ${params.transactionId ? `<tr><td style="padding:6px 0;font-size:14px;color:#374151;">Transaction ID</td><td align="right" style="padding:6px 0;font-size:14px;">${params.transactionId}</td></tr>` : ''}
+                    </table>
+                    <div style="margin-top:18px;">
+                      <a href="${appUrl}/portal/pay/${params.invoiceId}" style="display:inline-block;padding:10px 14px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">View Invoice</a>
+                    </div>
+                    <p style="margin:18px 0 0 0;font-size:12px;color:#6b7280;">If you have any questions, just reply to this email.</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+    </html>
+  `
+
+  const result = await testEmailProvider(emailSecrets, params.to, subject, html)
+  if (!result.success) {
+    console.error('Failed to send payment receipt email:', result.error || result.message)
+  }
+}
+
+async function ensureJobFromInvoice(invoiceId: string): Promise<{
   job: { id: string; jobNumber: string; title: string } | null
   created: boolean
 }> {
-  const estimate = await prisma.estimate.findFirst({
-    where: { id: estimateId, tenantId },
+  const invoice = await prisma.invoice.findFirst({
+    where: { id: invoiceId },
     include: {
-      lead: true,
       job: {
         select: { id: true, jobNumber: true, title: true },
+      },
+      estimate: {
+        include: {
+          lead: true,
+          job: {
+            select: { id: true, jobNumber: true, title: true },
+          },
+        },
       },
     },
   })
 
-  if (!estimate) return { job: null, created: false }
-  if (estimate.jobId && estimate.job) return { job: estimate.job, created: false }
+  if (!invoice) return { job: null, created: false }
+  if (invoice.jobId && invoice.job) return { job: invoice.job, created: false }
 
-  let clientId = estimate.clientId || null
-  if (!clientId && estimate.lead?.convertedToClientId) {
+  const estimate = invoice.estimate
+  if (estimate?.jobId && estimate.job) {
+    if (invoice.jobId !== estimate.job.id) {
+      await prisma.invoice.update({
+        where: { id: invoice.id },
+        data: { jobId: estimate.job.id },
+      })
+    }
+    return { job: estimate.job, created: false }
+  }
+
+  let clientId = invoice.clientId || estimate?.clientId || null
+  if (!clientId && estimate?.lead?.convertedToClientId) {
     clientId = estimate.lead.convertedToClientId
   }
 
-  if (!clientId && estimate.lead) {
+  if (!clientId && estimate?.lead) {
     const fullName = `${estimate.lead.firstName} ${estimate.lead.lastName}`.trim()
     const normalizedEmail = (estimate.lead.email || '').trim().toLowerCase()
     const normalizedPhone = normalizePhone(estimate.lead.phone)
     const existingClient = await prisma.client.findFirst({
       where: {
-        tenantId,
+        tenantId: invoice.tenantId,
         OR: [
           ...(normalizedEmail
             ? [{ email: { equals: normalizedEmail, mode: 'insensitive' as const } }]
@@ -78,7 +174,7 @@ async function ensureJobFromEstimate(tenantId: string, estimateId: string): Prom
     } else {
       const createdClient = await prisma.client.create({
         data: {
-          tenantId,
+          tenantId: invoice.tenantId,
           name: fullName,
           companyName: estimate.lead.company || null,
           email: estimate.lead.email || null,
@@ -93,95 +189,173 @@ async function ensureJobFromEstimate(tenantId: string, estimateId: string): Prom
 
   if (!clientId) return { job: null, created: false }
 
-  const createdJob = await prisma.$transaction(async (tx) => {
-    const jobCount = await tx.job.count({ where: { tenantId } })
-    const jobNumber = `JOB-${String(jobCount + 1).padStart(6, '0')}`
-    const createdJob = await tx.job.create({
-      data: {
-        tenantId,
-        clientId,
-        jobNumber,
-        title: estimate.title,
-        description: estimate.notes || null,
-        status: 'QUOTE',
-        priority: 3,
-        estimateAmount: estimate.total,
-      },
-      select: { id: true, jobNumber: true, title: true },
-    })
+  for (let attempt = 0; attempt < 300; attempt++) {
+    try {
+      const createdJob = await prisma.$transaction(async (tx) => {
+        const latestJob = await tx.job.findFirst({
+          where: { tenantId: invoice.tenantId, jobNumber: { startsWith: 'JOB-' } },
+          orderBy: { jobNumber: 'desc' },
+          select: { jobNumber: true },
+        })
+        const latestJobNum = latestJob?.jobNumber
+          ? parseInt(String(latestJob.jobNumber).replace(/^JOB-/, ''), 10)
+          : 0
+        const baseNum = Number.isFinite(latestJobNum) ? latestJobNum : 0
+        const jobNumber = `JOB-${String(baseNum + 1 + attempt).padStart(6, '0')}`
+        const mergedDescription = [
+          estimate?.notes ? `Estimate Notes: ${estimate.notes}` : null,
+          invoice.notes ? `Invoice Notes: ${invoice.notes}` : null,
+          estimate?.lead?.notes ? `Request Notes: ${estimate.lead.notes}` : null,
+        ]
+          .filter(Boolean)
+          .join('\n\n')
+          .trim()
 
-    const parsedAddress = parseJobSiteAddress(estimate.jobSiteAddress)
-    if (parsedAddress) {
-      await tx.address.create({
-        data: {
-          jobId: createdJob.id,
-          type: 'job_site',
-          street: parsedAddress.street,
-          city: parsedAddress.city,
-          state: parsedAddress.state,
-          zipCode: parsedAddress.zipCode,
-          country: parsedAddress.country,
-        },
+        const createdJob = await tx.job.create({
+          data: {
+            tenantId: invoice.tenantId,
+            clientId,
+            jobNumber,
+            title: invoice.title || estimate?.title || `Job for ${invoice.invoiceNumber}`,
+            description: mergedDescription || null,
+            status: 'SCHEDULED',
+            priority: 3,
+            estimateAmount: estimate?.total || invoice.total,
+          },
+          select: { id: true, jobNumber: true, title: true },
+        })
+
+        const parsedAddress = parseJobSiteAddress(estimate?.jobSiteAddress || estimate?.lead?.jobSiteAddress)
+        if (parsedAddress) {
+          await tx.address.create({
+            data: {
+              jobId: createdJob.id,
+              type: 'job_site',
+              street: parsedAddress.street,
+              city: parsedAddress.city,
+              state: parsedAddress.state,
+              zipCode: parsedAddress.zipCode,
+              country: parsedAddress.country,
+            },
+          })
+        }
+
+        if (estimate) {
+          await tx.estimate.update({
+            where: { id: estimate.id },
+            data: {
+              clientId,
+              jobId: createdJob.id,
+              status: 'CONVERTED',
+            },
+          })
+        }
+
+        await tx.invoice.update({
+          where: { id: invoice.id },
+          data: { jobId: createdJob.id },
+        })
+
+        if (estimate?.leadId) {
+          await tx.lead.update({
+            where: { id: estimate.leadId },
+            data: { status: 'CONVERTED' },
+          })
+        }
+
+        await tx.activity.create({
+          data: {
+            tenantId: invoice.tenantId,
+            type: 'JOB_CREATED',
+            description: `Payment received. Invoice "${invoice.invoiceNumber}" converted to job ${createdJob.jobNumber}`,
+            clientId,
+            invoiceId: invoice.id,
+            estimateId: estimate?.id,
+            leadId: estimate?.leadId || null,
+            jobId: createdJob.id,
+          },
+        })
+
+        return createdJob
       })
+      return { job: createdJob, created: true }
+    } catch (err: any) {
+      if (err?.code === 'P2002' && err?.meta?.target?.includes?.('jobNumber')) {
+        continue
+      }
+      throw err
     }
-
-    await tx.estimate.update({
-      where: { id: estimate.id },
-      data: {
-        clientId,
-        jobId: createdJob.id,
-        status: 'CONVERTED',
-      },
-    })
-
-    await tx.activity.create({
-      data: {
-        tenantId,
-        type: 'JOB_CREATED',
-        description: `Payment received. Estimate "${estimate.estimateNumber}" converted to job ${createdJob.jobNumber}`,
-        clientId,
-        estimateId: estimate.id,
-        jobId: createdJob.id,
-      },
-    })
-
-    return createdJob
-  })
-  return { job: createdJob, created: true }
+  }
+  throw new Error('Unable to allocate a unique job number')
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
+    const rawBody = await request.text()
+    let body: Record<string, any> = {}
+    try {
+      body = rawBody ? JSON.parse(rawBody) : {}
+    } catch {
+      // Cardknox commonly posts x-www-form-urlencoded (xResult=...&xInvoice=...)
+      const params = new URLSearchParams(rawBody)
+      body = Object.fromEntries(params.entries())
+    }
 
     const resultCode = String(body?.Result || body?.result || body?.xResult || '')
     const paymentStatus = String(body?.status || '').toLowerCase()
-    const isSuccess = resultCode.toUpperCase() === 'S' || paymentStatus === 'completed' || paymentStatus === 'paid'
+    const normalizedResult = resultCode.toUpperCase()
+    const isSuccess =
+      normalizedResult === 'S' ||
+      normalizedResult === 'A' ||
+      normalizedResult === 'APPROVED' ||
+      paymentStatus === 'completed' ||
+      paymentStatus === 'paid' ||
+      paymentStatus === 'approved'
     if (!isSuccess) {
       return NextResponse.json({ ok: true, ignored: true })
     }
 
-    const invoiceId = String(body?.invoiceId || body?.xInvoice || body?.InvoiceID || '')
-    if (!invoiceId) {
-      return NextResponse.json({ error: 'Missing invoice id' }, { status: 400 })
+    const invoiceRef = String(body?.invoiceId || body?.xInvoice || body?.InvoiceID || '')
+    if (!invoiceRef) {
+      return NextResponse.json({ error: 'Missing invoice reference' }, { status: 400 })
     }
 
     const paidAmount = Number(body?.amount || body?.xAmount || 0)
-    const transactionId = String(body?.transactionId || body?.TransactionID || body?.xRefNum || '')
+    const transactionId = String(
+      body?.transactionId || body?.TransactionID || body?.xRefNum || body?.xRefnum || ''
+    )
 
     const invoice = await prisma.invoice.findFirst({
-      where: { id: invoiceId },
-      include: {
-        client: true,
-        estimate: true,
+      where: {
+        OR: [{ id: invoiceRef }, { invoiceNumber: invoiceRef }],
       },
-    })
+      include: {
+        client: {
+          include: {
+            contacts: {
+              where: { isPrimary: true },
+              take: 1,
+            },
+          },
+        },
+        estimate: {
+          include: {
+            lead: true,
+          },
+        },
+      job: {
+        select: { id: true, jobNumber: true, title: true },
+      },
+    },
+  })
 
     if (!invoice) {
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
     }
 
-    const amount = paidAmount > 0 ? paidAmount : Number(invoice.balance)
+    const remainingBeforePayment = Math.max(0, Number(invoice.total) - Number(invoice.paidAmount))
+    const requestedAmount = paidAmount > 0 ? paidAmount : Number(invoice.balance)
+    const amount = Math.max(0, Math.min(requestedAmount, remainingBeforePayment))
 
     const existingPayment = transactionId
       ? await prisma.payment.findFirst({
@@ -192,8 +366,8 @@ export async function POST(request: NextRequest) {
     let newPaidAmount = Number(invoice.paidAmount)
     let newBalance = Number(invoice.balance)
 
-    if (!existingPayment) {
-      await prisma.payment.create({
+    if (!existingPayment && amount > 0) {
+      const createdPayment = await prisma.payment.create({
         data: {
           invoiceId: invoice.id,
           amount,
@@ -205,6 +379,12 @@ export async function POST(request: NextRequest) {
           processedAt: new Date(),
         },
       })
+
+      try {
+        await syncPaymentToQuickBooks(invoice.tenantId, createdPayment.id)
+      } catch (error) {
+        console.error('QuickBooks payment sync trigger error:', error)
+      }
       newPaidAmount = Number(invoice.paidAmount) + amount
       newBalance = Math.max(0, Number(invoice.total) - newPaidAmount)
 
@@ -213,11 +393,31 @@ export async function POST(request: NextRequest) {
         data: {
           paidAmount: newPaidAmount,
           balance: newBalance,
-          status: newBalance <= 0 ? 'PAID' : newPaidAmount > 0 ? 'PARTIAL' : invoice.status,
+          status:
+            newBalance <= 0
+              ? (invoice.progressBillingMode && invoice.progressBillingMode !== 'FULL' ? 'PARTIAL' : 'PAID')
+              : newPaidAmount > 0
+                ? 'PARTIAL'
+                : invoice.status,
           paidAt: newBalance <= 0 ? new Date() : invoice.paidAt,
           solaTransactionId: transactionId || invoice.solaTransactionId,
         },
       })
+
+      const recipientEmail = invoice.client.email || invoice.client.contacts?.[0]?.email
+      if (recipientEmail) {
+        await sendPaymentReceiptEmail({
+          tenantId: invoice.tenantId,
+          to: recipientEmail,
+          clientName: invoice.client.name || 'Customer',
+          invoiceId: invoice.id,
+          invoiceNumber: invoice.invoiceNumber,
+          amountPaid: amount,
+          paidToDate: newPaidAmount,
+          balance: newBalance,
+          transactionId: transactionId || undefined,
+        })
+      }
     }
 
     if (!existingPayment) {
@@ -230,9 +430,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Auto-create/link job as soon as any payment succeeds for an estimate-linked invoice.
-    if (invoice.estimateId && newPaidAmount > 0) {
-      const { job, created } = await ensureJobFromEstimate(invoice.tenantId, invoice.estimateId)
+    // Auto-create/link job as soon as any payment succeeds (partial or full).
+    // This enforces lifecycle: Request -> Estimate -> Invoice -> Job.
+    if (newPaidAmount > 0) {
+      const { job, created } = await ensureJobFromInvoice(invoice.id)
       if (!created) {
         return NextResponse.json({ ok: true })
       }
@@ -251,13 +452,20 @@ export async function POST(request: NextRequest) {
           {
             type: 'SYSTEM',
             title: 'Payment received. Estimate is now a Job.',
-            message: `Payment received. Estimate #${invoice.estimate?.estimateNumber || invoice.estimateId} is now a Job${job ? ` (${job.jobNumber})` : ''}.`,
-            linkUrl: job ? `/dashboard/jobs/${job.id}` : `/dashboard/estimates/${invoice.estimateId}`,
-            linkType: job ? 'job' : 'estimate',
-            linkId: job ? job.id : invoice.estimateId,
-            requiresAck: true,
+            message: `Invoice #${invoice.invoiceNumber} was ${newBalance <= 0 ? 'paid in full' : 'partially paid'} and is now linked to Job${job ? ` ${job.jobNumber}` : ''}.`,
+            linkUrl: job ? `/dashboard/jobs/${job.id}` : `/dashboard/invoices/${invoice.id}`,
+            linkType: job ? 'job' : 'invoice',
+            linkId: job ? job.id : invoice.id,
+            requiresAck: false,
           }
         )
+      }
+      if (job?.id) {
+        try {
+          await syncJobToQuickBooksProject(invoice.tenantId, job.id)
+        } catch (error) {
+          console.error('QuickBooks job/project sync trigger error (payment lifecycle):', error)
+        }
       }
     }
 

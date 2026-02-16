@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { formatDate } from '@/lib/utils'
 import { Search, BookOpen, HelpCircle, FileText, Plus } from 'lucide-react'
 import Link from 'next/link'
@@ -126,23 +127,24 @@ export default function HelpPage() {
                 className="pl-10"
               />
             </div>
-            <select
-              value={module}
-              onChange={(e) => setModule(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option value="all">All Modules</option>
-              <option value="DASHBOARD">Dashboard</option>
-              <option value="CLIENTS">Clients</option>
-              <option value="LEADS">Leads</option>
-              <option value="JOBS">Jobs</option>
-              <option value="ESTIMATES">Estimates</option>
-              <option value="INVOICES">Invoices</option>
-              <option value="SCHEDULING">Scheduling</option>
-              <option value="TASKS">Tasks</option>
-              <option value="ISSUES">Issues</option>
-              <option value="GENERAL">General</option>
-            </select>
+            <Select value={module} onValueChange={setModule}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="All Modules" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Modules</SelectItem>
+                <SelectItem value="DASHBOARD">Dashboard</SelectItem>
+                <SelectItem value="CLIENTS">Clients</SelectItem>
+                <SelectItem value="LEADS">Leads</SelectItem>
+                <SelectItem value="JOBS">Jobs</SelectItem>
+                <SelectItem value="ESTIMATES">Estimates</SelectItem>
+                <SelectItem value="INVOICES">Invoices</SelectItem>
+                <SelectItem value="SCHEDULING">Scheduling</SelectItem>
+                <SelectItem value="TASKS">Tasks</SelectItem>
+                <SelectItem value="ISSUES">Issues</SelectItem>
+                <SelectItem value="GENERAL">General</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>

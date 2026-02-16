@@ -62,11 +62,16 @@ async function refreshQuickBooksToken(secrets: Record<string, any>): Promise<{
   try {
     const clientId = process.env.QBO_CLIENT_ID
     const clientSecret = process.env.QBO_CLIENT_SECRET
+    const savedClientId = secrets.clientId || secrets.qboClientId
+    const savedClientSecret = secrets.clientSecret || secrets.qboClientSecret
 
-    if (!clientId || !clientSecret) {
+    const effectiveClientId = savedClientId || clientId
+    const effectiveClientSecret = savedClientSecret || clientSecret
+
+    if (!effectiveClientId || !effectiveClientSecret) {
       return {
         success: false,
-        error: 'QBO_CLIENT_ID and QBO_CLIENT_SECRET must be configured',
+        error: 'QuickBooks client credentials are missing. Save Client ID and Client Secret in Integration Configuration.',
       }
     }
 
@@ -77,7 +82,7 @@ async function refreshQuickBooksToken(secrets: Record<string, any>): Promise<{
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Accept': 'application/json',
-        'Authorization': `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
+        'Authorization': `Basic ${Buffer.from(`${effectiveClientId}:${effectiveClientSecret}`).toString('base64')}`,
       },
       body: new URLSearchParams({
         grant_type: 'refresh_token',

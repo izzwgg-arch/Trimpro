@@ -40,6 +40,16 @@ export default function PublicPaymentPage() {
   const searchParams = useSearchParams()
   const invoiceId = params.invoiceId as string
   const token = searchParams.get('token') || ''
+  const gatewayResult = searchParams.get('xResult') || searchParams.get('Result') || ''
+  const gatewayStatus = searchParams.get('status') || searchParams.get('xStatus') || ''
+  const gatewayRef =
+    searchParams.get('xRefnum') ||
+    searchParams.get('xRefNum') ||
+    searchParams.get('transactionId') ||
+    searchParams.get('transaction_id') ||
+    ''
+  const gatewayInvoice = searchParams.get('xInvoice') || searchParams.get('invoiceId') || ''
+  const gatewayAmount = searchParams.get('xAmount') || searchParams.get('amount') || ''
 
   const [invoice, setInvoice] = useState<PublicInvoice | null>(null)
   const [loading, setLoading] = useState(true)
@@ -47,6 +57,8 @@ export default function PublicPaymentPage() {
   const [approved, setApproved] = useState(false)
   const [processing, setProcessing] = useState(false)
   const [confirmation, setConfirmation] = useState<string | null>(null)
+  const [reconcilingPayment, setReconcilingPayment] = useState(false)
+  const [manualSyncing, setManualSyncing] = useState(false)
 
   useEffect(() => {
     const fetchInvoice = async () => {
@@ -74,6 +86,62 @@ export default function PublicPaymentPage() {
     fetchInvoice()
   }, [invoiceId, token])
 
+  useEffect(() => {
+    const normalizedResult = String(gatewayResult || '').toUpperCase()
+    const normalizedStatus = String(gatewayStatus || '').toLowerCase()
+    const looksFailed =
+      ['D', 'DECLINED', 'ERROR', 'FAILED', 'CANCELLED'].includes(normalizedResult) ||
+      ['failed', 'declined', 'canceled', 'cancelled', 'error'].includes(normalizedStatus)
+    const hasGatewayProof = Boolean(gatewayResult || gatewayStatus || gatewayRef || gatewayAmount)
+    const shouldReconcile = Boolean(token && hasGatewayProof && !looksFailed)
+    if (!shouldReconcile || reconcilingPayment) return
+
+    const reconcileFromReturn = async () => {
+      try {
+        setReconcilingPayment(true)
+        const body = new URLSearchParams()
+        if (gatewayResult) body.set('xResult', gatewayResult)
+        if (gatewayRef) body.set('xRefnum', gatewayRef)
+        if (gatewayInvoice) body.set('xInvoice', gatewayInvoice)
+        if (gatewayAmount) body.set('xAmount', gatewayAmount)
+        if (gatewayStatus) body.set('status', gatewayStatus)
+        if (!gatewayResult && (gatewayRef || gatewayStatus)) {
+          // Some Cardknox return flows omit xResult. Treat return with transaction proof as approved.
+          body.set('status', 'approved')
+        }
+        body.set('invoiceId', gatewayInvoice || invoiceId)
+        body.set('xInvoice', gatewayInvoice || invoiceId)
+
+        await fetch('/api/webhooks/sola-payment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: body.toString(),
+        })
+
+        const response = await fetch(`/api/public/invoices/${invoiceId}?token=${encodeURIComponent(token)}`)
+        const data = await response.json().catch(() => ({}))
+        if (response.ok && data.invoice) {
+          setInvoice(data.invoice)
+          setConfirmation('Payment received. Invoice status was updated.')
+        }
+      } catch {
+        // Ignore UI errors here; webhook/server logs capture failures.
+      } finally {
+        setReconcilingPayment(false)
+      }
+    }
+
+    reconcileFromReturn()
+  }, [
+    token,
+    invoiceId,
+    gatewayResult,
+    gatewayRef,
+    gatewayInvoice,
+    gatewayAmount,
+    reconcilingPayment,
+  ])
+
   const isPaid = useMemo(() => Number(invoice?.balance || 0) <= 0, [invoice?.balance])
 
   const handlePayNow = async () => {
@@ -95,6 +163,43 @@ export default function PublicPaymentPage() {
       setError('Unable to redirect to payment.')
     } finally {
       setProcessing(false)
+    }
+  }
+
+  const handleManualSync = async () => {
+    if (!invoice || manualSyncing) return
+    const parsedAmount = Number(invoice.balance || 0)
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) return
+    setManualSyncing(true)
+    try {
+      const body = new URLSearchParams()
+      body.set('xResult', 'A')
+      body.set('xInvoice', invoice.invoiceNumber)
+      body.set('xAmount', parsedAmount.toFixed(2))
+      body.set('xRefnum', gatewayRef || `MANUAL-${Date.now()}`)
+      body.set('invoiceId', invoice.invoiceNumber)
+
+      const response = await fetch('/api/webhooks/sola-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString(),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        setError(data.error || 'Unable to sync payment.')
+        return
+      }
+
+      const refreshed = await fetch(`/api/public/invoices/${invoice.id}?token=${encodeURIComponent(token)}`)
+      const refreshedData = await refreshed.json().catch(() => ({}))
+      if (refreshed.ok && refreshedData.invoice) {
+        setInvoice(refreshedData.invoice)
+        setConfirmation('Payment synced. Invoice status updated.')
+      }
+    } catch {
+      setError('Unable to sync payment.')
+    } finally {
+      setManualSyncing(false)
     }
   }
 
@@ -203,7 +308,11 @@ export default function PublicPaymentPage() {
             <Button disabled={!approved || processing} onClick={handlePayNow}>
               {processing ? 'Redirecting...' : 'Pay Now (Card / ACH)'}
             </Button>
+            <Button variant="outline" disabled={manualSyncing} onClick={handleManualSync}>
+              {manualSyncing ? 'Syncing...' : 'I Paid - Sync Now'}
+            </Button>
           </div>
+          {reconcilingPayment && <p className="text-sm text-gray-600">Confirming payment status...</p>}
           {confirmation && <p className="text-green-600 text-sm">{confirmation}</p>}
         </CardContent>
       </Card>

@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 type AddressForm = {
   street: string
@@ -345,15 +346,18 @@ export default function EditClientPage() {
 
             <div>
               <Label htmlFor="status">Status</Label>
-              <select
-                id="status"
+              <Select
                 value={formData.isActive ? 'active' : 'inactive'}
-                onChange={(e) => setFormData({ ...formData, isActive: e.target.value === 'active' })}
-                className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                onValueChange={(value) => setFormData({ ...formData, isActive: value === 'active' })}
               >
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-              </select>
+                <SelectTrigger id="status">
+                  <SelectValue placeholder="Select status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div>

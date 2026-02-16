@@ -32,6 +32,7 @@ import {
 import Link from 'next/link'
 import { ItemPicker } from '@/components/items/ItemPicker'
 import { Checkbox } from '@/components/ui/checkbox'
+import { DocumentAttachments } from '@/components/common/document-attachments'
 
 interface InvoiceDetail {
   id: string
@@ -52,6 +53,7 @@ interface InvoiceDetail {
   notes: string | null
   terms: string | null
   memo: string | null
+  jobSiteAddress?: string | null
   estimateId?: string | null
   paymentToken?: string | null
   isBillRest?: boolean
@@ -541,7 +543,7 @@ export default function InvoiceDetailPage() {
               {creatingPaymentLink ? 'Preparing...' : 'Pay Now'}
             </Button>
           )}
-          <Button variant="outline">
+          <Button variant="outline" onClick={() => router.push(`/dashboard/invoices/${invoiceId}/edit`)}>
             <Edit className="mr-2 h-4 w-4" />
             Edit
           </Button>
@@ -893,6 +895,24 @@ export default function InvoiceDetailPage() {
             </Card>
           )}
 
+          {invoice.jobSiteAddress && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Job Site</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-gray-700">{invoice.jobSiteAddress}</p>
+                <iframe
+                  title="Invoice Job Site Map"
+                  className="mt-3 h-48 w-full rounded-md border"
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                  src={`https://maps.google.com/maps?q=${encodeURIComponent(invoice.jobSiteAddress)}&output=embed`}
+                />
+              </CardContent>
+            </Card>
+          )}
+
           {/* Details */}
           <Card>
             <CardHeader>
@@ -929,6 +949,15 @@ export default function InvoiceDetailPage() {
                 <span className="text-gray-600">Last Updated:</span>
                 <span>{formatDate(invoice.updatedAt)}</span>
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Files</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <DocumentAttachments entityType="invoice" entityId={invoiceId} />
             </CardContent>
           </Card>
         </div>

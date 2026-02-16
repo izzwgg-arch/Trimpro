@@ -36,16 +36,22 @@ export function GoogleMapsLoader({ children }: GoogleMapsLoaderProps) {
       })
   }, [])
 
-  if (error) {
-    return (
-      <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-        <p className="text-sm text-yellow-800">{error}</p>
-        <p className="text-xs text-yellow-600 mt-1">
-          Add NEXT_PUBLIC_GOOGLE_MAPS_API_KEY to your .env file
-        </p>
-      </div>
-    )
-  }
-
-  return <>{children}</>
+  return (
+    <>
+      {error && (
+        <div className="mb-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <p className="text-sm text-yellow-800">{error}</p>
+          <p className="text-xs text-yellow-600 mt-1">
+            Falling back to embedded map view.
+          </p>
+        </div>
+      )}
+      {(loaded || error) && children}
+      {!loaded && !error && (
+        <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-600">
+          Loading map...
+        </div>
+      )}
+    </>
+  )
 }

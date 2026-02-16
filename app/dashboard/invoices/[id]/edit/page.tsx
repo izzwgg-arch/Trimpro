@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ArrowLeft, Save, Plus, Trash2, Eye, EyeOff, Copy } from 'lucide-react'
 import Link from 'next/link'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
@@ -654,43 +655,46 @@ export default function EditInvoicePage() {
               <CardContent className="space-y-4">
                 <div>
                   <Label htmlFor="clientId">Client</Label>
-                  <select
-                    id="clientId"
+                  <Select
                     value={formData.clientId}
-                    onChange={(e) => {
-                      setFormData({ ...formData, clientId: e.target.value, jobId: '' })
-                      if (e.target.value) {
-                        fetchJobs()
-                      }
+                    onValueChange={(value) => {
+                      setFormData({ ...formData, clientId: value, jobId: '' })
+                      if (value) fetchJobs()
                     }}
-                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
                     disabled
                   >
-                    <option value="">Select a client...</option>
-                    {clients.map((client) => (
-                      <option key={client.id} value={client.id}>
-                        {client.name}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger id="clientId">
+                      <SelectValue placeholder="Select a client..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {clients.map((client) => (
+                        <SelectItem key={client.id} value={client.id}>
+                          {client.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <p className="text-xs text-gray-500 mt-1">Client cannot be changed after creation</p>
                 </div>
                 <div>
                   <Label htmlFor="jobId">Job (Optional)</Label>
-                  <select
-                    id="jobId"
-                    value={formData.jobId}
-                    onChange={(e) => setFormData({ ...formData, jobId: e.target.value })}
-                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  <Select
+                    value={formData.jobId || '__none__'}
+                    onValueChange={(value) => setFormData({ ...formData, jobId: value === '__none__' ? '' : value })}
                     disabled={!formData.clientId}
                   >
-                    <option value="">No job</option>
-                    {jobs.map((job) => (
-                      <option key={job.id} value={job.id}>
-                        {job.jobNumber} - {job.title}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger id="jobId">
+                      <SelectValue placeholder="No job" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">No job</SelectItem>
+                      {jobs.map((job) => (
+                        <SelectItem key={job.id} value={job.id}>
+                          {job.jobNumber} - {job.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
                   <Label htmlFor="title">Title *</Label>
@@ -725,20 +729,20 @@ export default function EditInvoicePage() {
                 </div>
                 <div>
                   <Label htmlFor="status">Status</Label>
-                  <select
-                    id="status"
-                    value={formData.status}
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  >
-                    <option value="DRAFT">Draft</option>
-                    <option value="SENT">Sent</option>
-                    <option value="VIEWED">Viewed</option>
-                    <option value="PARTIAL">Partially Paid</option>
-                    <option value="PAID">Paid</option>
-                    <option value="OVERDUE">Overdue</option>
-                    <option value="CANCELLED">Cancelled</option>
-                  </select>
+                  <Select value={formData.status} onValueChange={(value) => setFormData({ ...formData, status: value })}>
+                    <SelectTrigger id="status">
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="DRAFT">Draft</SelectItem>
+                      <SelectItem value="SENT">Sent</SelectItem>
+                      <SelectItem value="VIEWED">Viewed</SelectItem>
+                      <SelectItem value="PARTIAL">Partially Paid</SelectItem>
+                      <SelectItem value="PAID">Paid</SelectItem>
+                      <SelectItem value="OVERDUE">Overdue</SelectItem>
+                      <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </CardContent>
             </Card>

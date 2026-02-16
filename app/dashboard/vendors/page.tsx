@@ -5,6 +5,11 @@ import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ViewModeSelector } from '@/components/ui/ViewModeSelector'
+import { useViewMode } from '@/hooks/useViewMode'
+import { RowCompactItem } from '@/components/lists/RowCompactItem'
+import { RowDetailedItem } from '@/components/lists/RowDetailedItem'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Plus, Search, Filter, Download, Upload, Trash2, Edit, Eye, Building2 } from 'lucide-react'
@@ -55,6 +60,7 @@ export default function VendorsPage() {
   const [showImportDialog, setShowImportDialog] = useState(false)
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importing, setImporting] = useState(false)
+  const [viewMode, setViewMode] = useViewMode('vendors', 'table')
 
   useEffect(() => {
     fetchVendors()
@@ -214,12 +220,13 @@ export default function VendorsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Vendors</h1>
           <p className="mt-2 text-gray-600">Manage your suppliers and vendors</p>
         </div>
         <div className="flex items-center space-x-2">
+          <ViewModeSelector value={viewMode} onChange={setViewMode} />
           <Button onClick={handleExport} variant="outline">
             <Download className="mr-2 h-4 w-4" />
             Export CSV
@@ -250,58 +257,124 @@ export default function VendorsPage() {
                 />
               </div>
             </div>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option value="all">All Status</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
-            <select
-              value={paymentTermsFilter}
-              onChange={(e) => setPaymentTermsFilter(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option value="all">All Payment Terms</option>
-              <option value="NET_15">Net 15</option>
-              <option value="NET_30">Net 30</option>
-              <option value="NET_45">Net 45</option>
-              <option value="DUE_ON_RECEIPT">Due on Receipt</option>
-              <option value="CUSTOM">Custom</option>
-            </select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="All Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={paymentTermsFilter} onValueChange={setPaymentTermsFilter}>
+              <SelectTrigger className="w-[170px]">
+                <SelectValue placeholder="All Payment Terms" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Payment Terms</SelectItem>
+                <SelectItem value="NET_15">Net 15</SelectItem>
+                <SelectItem value="NET_30">Net 30</SelectItem>
+                <SelectItem value="NET_45">Net 45</SelectItem>
+                <SelectItem value="DUE_ON_RECEIPT">Due on Receipt</SelectItem>
+                <SelectItem value="CUSTOM">Custom</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>
 
-      {/* Vendors Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Vendors ({vendors.length})</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {vendors.length === 0 ? (
-            <div className="text-center py-12">
-              <Building2 className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">No vendors found</h3>
-              <p className="text-gray-600 mb-4">
-                {search || statusFilter !== 'all' || paymentTermsFilter !== 'all'
-                  ? 'Try adjusting your filters'
-                  : 'Get started by creating your first vendor'}
-              </p>
-              <div className="flex justify-center space-x-2">
-                <Button onClick={() => router.push('/dashboard/vendors/new')}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  New Vendor
-                </Button>
-                <Button variant="outline" onClick={() => setShowImportDialog(true)}>
-                  <Upload className="mr-2 h-4 w-4" />
-                  Import CSV
-                </Button>
-              </div>
+      {/* Vendors List/Table */}
+      {vendors.length === 0 ? (
+        <Card>
+          <CardContent className="text-center py-12">
+            <Building2 className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">No vendors found</h3>
+            <p className="text-gray-600 mb-4">
+              {search || statusFilter !== 'all' || paymentTermsFilter !== 'all'
+                ? 'Try adjusting your filters'
+                : 'Get started by creating your first vendor'}
+            </p>
+            <div className="flex justify-center space-x-2">
+              <Button onClick={() => router.push('/dashboard/vendors/new')}>
+                <Plus className="mr-2 h-4 w-4" />
+                New Vendor
+              </Button>
+              <Button variant="outline" onClick={() => setShowImportDialog(true)}>
+                <Upload className="mr-2 h-4 w-4" />
+                Import CSV
+              </Button>
             </div>
-          ) : (
+          </CardContent>
+        </Card>
+      ) : viewMode === 'grid' ? (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {vendors.map((vendor) => {
+            const contact = primaryContact(vendor)
+            return (
+              <Card key={vendor.id} className="hover:shadow-lg transition-shadow">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg">{vendor.name}</CardTitle>
+                    <span className={`px-2 py-1 text-xs rounded-full ${statusColors[vendor.status] || 'bg-gray-100 text-gray-800'}`}>
+                      {vendor.status}
+                    </span>
+                  </div>
+                  <CardDescription>{paymentTermsLabels[vendor.paymentTerms] || vendor.paymentTerms}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <div className="text-sm text-muted-foreground">{contact?.email || vendor.email || '-'}</div>
+                  <div className="text-sm text-muted-foreground">{contact?.phone || vendor.phone || '-'}</div>
+                  <div className="flex justify-end gap-1">
+                    <Link href={`/dashboard/vendors/${vendor.id}`}>
+                      <Button variant="ghost" size="sm"><Eye className="h-4 w-4" /></Button>
+                    </Link>
+                    <Link href={`/dashboard/vendors/${vendor.id}/edit`}>
+                      <Button variant="ghost" size="sm"><Edit className="h-4 w-4" /></Button>
+                    </Link>
+                    <Button variant="ghost" size="sm" onClick={() => handleDelete(vendor.id, vendor.name)} className="text-red-600 hover:text-red-700">
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
+      ) : viewMode === 'rowCompact' ? (
+        <div className="space-y-2">
+          {vendors.map((vendor) => (
+            <RowCompactItem
+              key={vendor.id}
+              href={`/dashboard/vendors/${vendor.id}`}
+              primary={vendor.name}
+              secondary={paymentTermsLabels[vendor.paymentTerms] || vendor.paymentTerms}
+              status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[vendor.status] || 'bg-gray-100 text-gray-800'}`}>{vendor.status}</span>}
+              amount={vendor._count.purchaseOrders}
+              date={formatDate(vendor.updatedAt)}
+            />
+          ))}
+        </div>
+      ) : viewMode === 'rowDetailed' ? (
+        <div className="space-y-2">
+          {vendors.map((vendor) => (
+            <RowDetailedItem
+              key={vendor.id}
+              href={`/dashboard/vendors/${vendor.id}`}
+              primary={vendor.name}
+              status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[vendor.status] || 'bg-gray-100 text-gray-800'}`}>{vendor.status}</span>}
+              line2={`${vendor.email || '-'} • ${vendor.phone || '-'} • ${paymentTermsLabels[vendor.paymentTerms] || vendor.paymentTerms}`}
+              rightTop={`${vendor._count.purchaseOrders} POs`}
+              rightBottom={formatDate(vendor.updatedAt)}
+            />
+          ))}
+        </div>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>Vendors ({vendors.length})</CardTitle>
+          </CardHeader>
+          <CardContent>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
@@ -325,57 +398,25 @@ export default function VendorsPage() {
                           <Link href={`/dashboard/vendors/${vendor.id}`} className="text-primary hover:underline font-medium">
                             {vendor.name}
                           </Link>
-                          {vendor.vendorCode && (
-                            <div className="text-sm text-gray-500">Code: {vendor.vendorCode}</div>
-                          )}
+                          {vendor.vendorCode && <div className="text-sm text-gray-500">Code: {vendor.vendorCode}</div>}
                         </td>
+                        <td className="py-3 px-4">{contact ? <div className="font-medium">{contact.name}</div> : <span className="text-gray-400">No contact</span>}</td>
+                        <td className="py-3 px-4">{contact?.email || vendor.email || <span className="text-gray-400">-</span>}</td>
+                        <td className="py-3 px-4">{contact?.phone || vendor.phone || <span className="text-gray-400">-</span>}</td>
+                        <td className="py-3 px-4">{paymentTermsLabels[vendor.paymentTerms] || vendor.paymentTerms}</td>
                         <td className="py-3 px-4">
-                          {contact ? (
-                            <div>
-                              <div className="font-medium">{contact.name}</div>
-                              {contact.title && <div className="text-sm text-gray-500">{contact.title}</div>}
-                            </div>
-                          ) : (
-                            <span className="text-gray-400">No contact</span>
-                          )}
+                          <span className={`px-2 py-1 text-xs rounded-full ${statusColors[vendor.status] || 'bg-gray-100 text-gray-800'}`}>{vendor.status}</span>
                         </td>
-                        <td className="py-3 px-4">
-                          {contact?.email || vendor.email || <span className="text-gray-400">-</span>}
-                        </td>
-                        <td className="py-3 px-4">
-                          {contact?.phone || vendor.phone || <span className="text-gray-400">-</span>}
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className="text-sm">
-                            {paymentTermsLabels[vendor.paymentTerms] || vendor.paymentTerms}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className={`px-2 py-1 text-xs rounded-full ${statusColors[vendor.status] || 'bg-gray-100 text-gray-800'}`}>
-                            {vendor.status}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-sm text-gray-600">
-                          {formatDate(vendor.updatedAt)}
-                        </td>
+                        <td className="py-3 px-4 text-sm text-gray-600">{formatDate(vendor.updatedAt)}</td>
                         <td className="py-3 px-4">
                           <div className="flex items-center justify-end space-x-2">
                             <Link href={`/dashboard/vendors/${vendor.id}`}>
-                              <Button variant="ghost" size="sm">
-                                <Eye className="h-4 w-4" />
-                              </Button>
+                              <Button variant="ghost" size="sm"><Eye className="h-4 w-4" /></Button>
                             </Link>
                             <Link href={`/dashboard/vendors/${vendor.id}/edit`}>
-                              <Button variant="ghost" size="sm">
-                                <Edit className="h-4 w-4" />
-                              </Button>
+                              <Button variant="ghost" size="sm"><Edit className="h-4 w-4" /></Button>
                             </Link>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDelete(vendor.id, vendor.name)}
-                              className="text-red-600 hover:text-red-700"
-                            >
+                            <Button variant="ghost" size="sm" onClick={() => handleDelete(vendor.id, vendor.name)} className="text-red-600 hover:text-red-700">
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
@@ -386,9 +427,9 @@ export default function VendorsPage() {
                 </tbody>
               </table>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
       <Dialog open={showImportDialog} onOpenChange={handleImportDialogOpenChange}>
         <DialogContent

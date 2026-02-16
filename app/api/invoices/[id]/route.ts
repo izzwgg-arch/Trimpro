@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { notifyInvoiceOverdue } from '@/lib/notifications'
+import { formatAddressParts, parseAddressParts } from '@/lib/address/parse'
 
 export async function GET(
   request: NextRequest,
@@ -36,6 +37,10 @@ export async function GET(
             id: true,
             jobNumber: true,
             title: true,
+            addresses: {
+              where: { type: 'job_site' },
+              take: 1,
+            },
           },
         },
         estimate: {
@@ -43,6 +48,7 @@ export async function GET(
             id: true,
             estimateNumber: true,
             total: true,
+            jobSiteAddress: true,
           },
         },
         lineItems: {
@@ -85,8 +91,17 @@ export async function GET(
     }
 
     // Convert Decimal fields to strings for frontend
+    const jobSiteAddress =
+      formatAddressParts(invoice.job?.addresses?.[0]) ||
+      (invoice.estimate?.jobSiteAddress ? String(invoice.estimate.jobSiteAddress) : null)
+    const parsed = parseAddressParts(jobSiteAddress)
+
     const invoiceResponse = {
       ...invoice,
+      jobSiteAddress,
+      jobSiteCity: parsed?.city || null,
+      jobSiteState: parsed?.state || null,
+      jobSiteZipCode: parsed?.zipCode || null,
       subtotal: invoice.subtotal.toString(),
       taxRate: invoice.taxRate.toString(),
       taxAmount: invoice.taxAmount.toString(),

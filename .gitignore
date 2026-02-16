@@ -40,6 +40,11 @@ next-env.d.ts
 # Prisma
 prisma/migrations/*/migration.sql
 
+# Expo / EAS (mobile) - never commit credentials or build artifacts
+apps/mobile/credentials.json
+apps/mobile/credentials/
+apps/mobile/dist/
+
 # IDE
 .vscode
 .idea
