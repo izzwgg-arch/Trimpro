@@ -3,6 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { Input } from '@/components/ui/input'
+import {
+  DROPDOWN_EMPTY,
+  DROPDOWN_ITEM,
+  DROPDOWN_LIST,
+  DROPDOWN_PANEL,
+  DROPDOWN_SEARCH_WRAP,
+  DROPDOWN_TRIGGER,
+} from '@/components/ui/dropdown-styles'
 
 export interface SearchableSelectOption {
   value: string
@@ -56,7 +64,7 @@ export function SearchableSelect({
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#2E4A59]"
+        className={DROPDOWN_TRIGGER}
       >
         <span className={`truncate text-left ${selectedOption ? 'text-foreground' : 'text-muted-foreground'}`}>
           {selectedOption ? selectedOption.label : placeholder}
@@ -65,8 +73,8 @@ export function SearchableSelect({
       </button>
 
       {open && (
-        <div className="absolute z-50 mt-1 w-full rounded-md border border-input bg-background shadow-md">
-          <div className="p-2">
+        <div className={DROPDOWN_PANEL}>
+          <div className={DROPDOWN_SEARCH_WRAP}>
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -74,9 +82,9 @@ export function SearchableSelect({
               className="h-9 text-sm"
             />
           </div>
-          <div className="max-h-60 overflow-y-auto pb-1">
+          <div className={DROPDOWN_LIST}>
             {filteredOptions.length === 0 ? (
-              <div className="px-3 py-2 text-sm text-muted-foreground">{emptyText}</div>
+              <div className={DROPDOWN_EMPTY}>{emptyText}</div>
             ) : (
               filteredOptions.map((option) => (
                 <button
@@ -87,9 +95,7 @@ export function SearchableSelect({
                     setOpen(false)
                     setQuery('')
                   }}
-                  className={`block w-full rounded-sm px-3 py-2 text-left text-sm hover:bg-[#2E4A59] hover:text-white ${
-                    option.value === value ? 'bg-[#2E4A59] text-white' : ''
-                  }`}
+                  className={`${DROPDOWN_ITEM} ${option.value === value ? 'bg-[#2E4A59] text-white' : ''}`}
                 >
                   {option.label}
                 </button>

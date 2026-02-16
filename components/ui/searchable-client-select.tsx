@@ -2,6 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, Check } from 'lucide-react'
+import {
+  DROPDOWN_LIST,
+  DROPDOWN_PANEL,
+  DROPDOWN_SEARCH_INPUT,
+  DROPDOWN_SEARCH_WRAP,
+  DROPDOWN_TRIGGER,
+} from '@/components/ui/dropdown-styles'
 
 type ClientOption = {
   id: string
@@ -71,7 +78,7 @@ export function SearchableClientSelect({
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-left text-sm"
+        className={DROPDOWN_TRIGGER}
       >
         <span className={selectedClient ? 'text-foreground' : 'text-muted-foreground'}>
           {selectedClient
@@ -82,17 +89,17 @@ export function SearchableClientSelect({
       </button>
 
       {open && (
-        <div className="absolute z-50 mt-1 w-full rounded-md border bg-white shadow-lg">
-          <div className="p-2 border-b">
+        <div className={DROPDOWN_PANEL}>
+          <div className={DROPDOWN_SEARCH_WRAP}>
             <input
               ref={searchRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search client..."
-              className="h-9 w-full rounded-md border border-input px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#2E4A59]"
+              className={DROPDOWN_SEARCH_INPUT}
             />
           </div>
-          <div className="max-h-64 overflow-auto py-1">
+          <div className={DROPDOWN_LIST}>
             {filteredClients.length === 0 ? (
               <div className="px-3 py-2 text-sm text-muted-foreground">No clients found</div>
             ) : (

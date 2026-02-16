@@ -11,6 +11,8 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { parseAddressParts } from '@/lib/address/parse'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
+import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
+import { PlaceAutocompleteInput } from '@/components/maps/PlaceAutocompleteInput'
 
 type RequestResponse = {
   lead: {
@@ -55,6 +57,7 @@ export default function EditRequestPage() {
   const [users, setUsers] = useState<Array<{ id: string; firstName: string; lastName: string }>>([])
   const [clients, setClients] = useState<Client[]>([])
   const [clientMode, setClientMode] = useState<'new' | 'existing'>('new')
+  const [jobSitePlaceId, setJobSitePlaceId] = useState<string | null>(null)
 
   const [formData, setFormData] = useState({
     clientId: '',
@@ -172,6 +175,7 @@ export default function EditRequestPage() {
         assignedToId: request.assignedToId || '',
       })
       setClientMode(request.convertedToClientId ? 'existing' : 'new')
+      setJobSitePlaceId(request.jobSiteAddress ? 'existing' : null)
       setError(null)
     } catch (e) {
       console.error('Error loading request:', e)
@@ -190,6 +194,10 @@ export default function EditRequestPage() {
     }
     if (clientMode === 'existing' && !formData.clientId) {
       alert('Please select a valid existing client from the dropdown.')
+      return
+    }
+    if (formData.jobSiteAddress.trim() && !jobSitePlaceId) {
+      alert('Please select a real job site address from the suggestions.')
       return
     }
 
@@ -501,19 +509,35 @@ export default function EditRequestPage() {
 
             <div>
               <Label htmlFor="jobSiteAddress">Job Site Address</Label>
-              <Input
-                id="jobSiteAddress"
-                value={formData.jobSiteAddress}
-                onChange={(e) => syncAddressParts(e.target.value)}
-                placeholder="123 Main St, Austin, TX 78701"
-              />
+              <GoogleMapsLoader>
+                <PlaceAutocompleteInput
+                  inputId="jobSiteAddress"
+                  value={formData.jobSiteAddress}
+                  onChangeText={(text) => {
+                    setJobSitePlaceId(null)
+                    syncAddressParts(text)
+                  }}
+                  onAddressSelected={({ placeId, description, address }) => {
+                    setJobSitePlaceId(placeId)
+                    setFormData((prev) => ({
+                      ...prev,
+                      jobSiteAddress: description,
+                      jobSiteCity: address.city || '',
+                      jobSiteState: address.state || '',
+                      jobSiteZipCode: address.zipCode || '',
+                    }))
+                  }}
+                  placeholder="Start typing an address (required to select from list)"
+                />
+              </GoogleMapsLoader>
               <div className="mt-3 grid grid-cols-3 gap-3">
                 <div>
                   <Label htmlFor="jobSiteCity">City</Label>
                   <Input
                     id="jobSiteCity"
                     value={formData.jobSiteCity}
-                    onChange={(e) => setFormData({ ...formData, jobSiteCity: e.target.value })}
+                    readOnly
+                    disabled
                     placeholder="City"
                   />
                 </div>
@@ -522,7 +546,8 @@ export default function EditRequestPage() {
                   <Input
                     id="jobSiteState"
                     value={formData.jobSiteState}
-                    onChange={(e) => setFormData({ ...formData, jobSiteState: e.target.value })}
+                    readOnly
+                    disabled
                     placeholder="State"
                   />
                 </div>
@@ -531,7 +556,8 @@ export default function EditRequestPage() {
                   <Input
                     id="jobSiteZipCode"
                     value={formData.jobSiteZipCode}
-                    onChange={(e) => setFormData({ ...formData, jobSiteZipCode: e.target.value })}
+                    readOnly
+                    disabled
                     placeholder="Zip"
                   />
                 </div>

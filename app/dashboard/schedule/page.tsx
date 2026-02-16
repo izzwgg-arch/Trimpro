@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -52,6 +52,8 @@ interface TeamMember {
 
 export default function SchedulePage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const jobIdFilter = searchParams.get('jobId') || ''
   const [view, setView] = useState<'day' | 'week' | 'month'>('week')
   const [currentDate, setCurrentDate] = useState(new Date())
   const [schedules, setSchedules] = useState<Schedule[]>([])
@@ -66,7 +68,7 @@ export default function SchedulePage() {
 
   useEffect(() => {
     fetchSchedules()
-  }, [view, currentDate, selectedUserId])
+  }, [view, currentDate, selectedUserId, jobIdFilter])
 
   const fetchTeamMembers = async () => {
     try {
@@ -117,6 +119,7 @@ export default function SchedulePage() {
         endDate: end.toISOString(),
         userId: selectedUserId,
       })
+      if (jobIdFilter) params.set('jobId', jobIdFilter)
 
       const response = await fetch(`/api/schedules?${params}`, {
         headers: {
@@ -194,6 +197,22 @@ export default function SchedulePage() {
           New Schedule
         </Button>
       </div>
+
+      {jobIdFilter && (
+        <div className="flex items-center justify-between rounded-md border bg-muted/30 px-3 py-2 text-sm">
+          <div className="flex items-center gap-2">
+            <span className="font-medium">Filtered:</span>
+            <span>Job schedules only</span>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => router.push('/dashboard/schedule')}
+          >
+            Clear
+          </Button>
+        </div>
+      )}
 
       {/* View Controls */}
       <Card>

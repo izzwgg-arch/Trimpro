@@ -13,6 +13,7 @@ export async function GET(request: NextRequest) {
   const startDate = searchParams.get('startDate')
   const endDate = searchParams.get('endDate')
   const userId = searchParams.get('userId') || 'all'
+  const jobId = searchParams.get('jobId') || ''
 
   try {
     let start: Date
@@ -54,6 +55,10 @@ export async function GET(request: NextRequest) {
 
     if (userId !== 'all') {
       where.userId = userId
+    }
+
+    if (jobId) {
+      where.jobId = jobId
     }
 
     const schedules = await prisma.schedule.findMany({
