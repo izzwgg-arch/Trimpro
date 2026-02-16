@@ -3,7 +3,10 @@ import { TrimProLogo } from '@/components/branding/TrimProLogo'
 
 export default function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-gray-50">
+    // Dashboard uses its own scroll container (main overflow-y-auto). Our root layout
+    // sets body height; to ensure public legal pages always scroll, we make this route
+    // group its own scroll container.
+    <div className="flex h-screen flex-col overflow-y-auto bg-gray-50">
       <header className="border-b bg-white">
         <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-3">
           <Link href="/" className="inline-flex items-center">
@@ -20,7 +23,7 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
         </div>
       </header>
 
-      <main className="mx-auto max-w-4xl px-4 py-10">{children}</main>
+      <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-10">{children}</main>
 
       <footer className="border-t bg-white">
         <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-3 px-4 py-6 text-sm text-muted-foreground">
