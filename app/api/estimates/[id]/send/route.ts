@@ -15,7 +15,7 @@ export async function POST(
 
   try {
     const body = await request.json()
-    const { email, subject, message } = body
+    const { email, emails, subject, message } = body
 
     // Get estimate
     const estimate = await prisma.estimate.findFirst({
@@ -42,10 +42,34 @@ export async function POST(
       return NextResponse.json({ error: 'Estimate not found' }, { status: 404 })
     }
 
-    // Determine recipient email
-    const recipientEmail = email || estimate.client?.email || estimate.client?.contacts[0]?.email
+    const normalizeEmails = (value: any): string[] => {
+      if (Array.isArray(value)) {
+        return value
+          .map((v) => String(v || '').trim())
+          .filter(Boolean)
+      }
+      if (typeof value === 'string') {
+        return value
+          .split(/[,\s;]+/g)
+          .map((v) => v.trim())
+          .filter(Boolean)
+      }
+      return []
+    }
 
-    if (!recipientEmail) {
+    // Determine recipient email(s)
+    const recipientEmails = [
+      ...normalizeEmails(emails),
+      ...normalizeEmails(email),
+      estimate.client?.email ? String(estimate.client.email).trim() : '',
+      estimate.client?.contacts?.[0]?.email ? String(estimate.client.contacts[0].email).trim() : '',
+    ]
+      .map((v) => v.trim())
+      .filter(Boolean)
+
+    const uniqueRecipientEmails = Array.from(new Set(recipientEmails))
+
+    if (uniqueRecipientEmails.length === 0) {
       return NextResponse.json({ error: 'No email address found for client' }, { status: 400 })
     }
 
@@ -80,19 +104,15 @@ export async function POST(
       </html>
     `
 
-    const sendResult = await testEmailProvider(
-      emailSecrets,
-      recipientEmail,
-      effectiveSubject,
-      html
-    )
-
-    if (!sendResult.success) {
-      console.error('Failed to send estimate email:', sendResult.error || sendResult.message)
-      return NextResponse.json(
-        { error: sendResult.error || sendResult.message || 'Failed to send estimate email' },
-        { status: 502 }
-      )
+    for (const recipientEmail of uniqueRecipientEmails) {
+      const sendResult = await testEmailProvider(emailSecrets, recipientEmail, effectiveSubject, html)
+      if (!sendResult.success) {
+        console.error('Failed to send estimate email:', sendResult.error || sendResult.message)
+        return NextResponse.json(
+          { error: sendResult.error || sendResult.message || `Failed to send estimate email to ${recipientEmail}` },
+          { status: 502 }
+        )
+      }
     }
 
     // Update estimate status
@@ -114,7 +134,7 @@ export async function POST(
         subject: effectiveSubject,
         body: message || `Please find attached estimate ${estimate.estimateNumber}.`,
         fromEmail: user.email,
-        toEmails: [recipientEmail],
+        toEmails: uniqueRecipientEmails,
         estimateId: estimate.id,
         clientId: estimate.clientId || undefined,
         sentAt: new Date(),
@@ -127,7 +147,7 @@ export async function POST(
         tenantId: user.tenantId,
         userId: user.id,
         type: 'ESTIMATE_SENT',
-        description: `Estimate "${estimate.title}" sent to ${recipientEmail}`,
+        description: `Estimate "${estimate.title}" sent to ${uniqueRecipientEmails.join(', ')}`,
         estimateId: estimate.id,
         clientId: estimate.clientId || undefined,
       },

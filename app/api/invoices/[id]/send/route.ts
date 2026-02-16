@@ -16,7 +16,7 @@ export async function POST(
 
   try {
     const body = await request.json()
-    const { email, subject, message } = body
+    const { email, emails, subject, message } = body
 
     // Get invoice
     const invoice = await prisma.invoice.findFirst({
@@ -43,10 +43,34 @@ export async function POST(
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
     }
 
-    // Determine recipient email
-    const recipientEmail = email || invoice.client?.email || invoice.client?.contacts[0]?.email
+    const normalizeEmails = (value: any): string[] => {
+      if (Array.isArray(value)) {
+        return value
+          .map((v) => String(v || '').trim())
+          .filter(Boolean)
+      }
+      if (typeof value === 'string') {
+        return value
+          .split(/[,\s;]+/g)
+          .map((v) => v.trim())
+          .filter(Boolean)
+      }
+      return []
+    }
 
-    if (!recipientEmail) {
+    // Determine recipient email(s)
+    const recipientEmails = [
+      ...normalizeEmails(emails),
+      ...normalizeEmails(email),
+      invoice.client?.email ? String(invoice.client.email).trim() : '',
+      invoice.client?.contacts?.[0]?.email ? String(invoice.client.contacts[0].email).trim() : '',
+    ]
+      .map((v) => v.trim())
+      .filter(Boolean)
+
+    const uniqueRecipientEmails = Array.from(new Set(recipientEmails))
+
+    if (uniqueRecipientEmails.length === 0) {
       return NextResponse.json({ error: 'No email address found for client' }, { status: 400 })
     }
 
@@ -100,19 +124,15 @@ export async function POST(
       </html>
     `
 
-    const sendResult = await testEmailProvider(
-      emailSecrets,
-      recipientEmail,
-      effectiveSubject,
-      html
-    )
-
-    if (!sendResult.success) {
-      console.error('Failed to send invoice email:', sendResult.error || sendResult.message)
-      return NextResponse.json(
-        { error: sendResult.error || sendResult.message || 'Failed to send invoice email' },
-        { status: 502 }
-      )
+    for (const recipientEmail of uniqueRecipientEmails) {
+      const sendResult = await testEmailProvider(emailSecrets, recipientEmail, effectiveSubject, html)
+      if (!sendResult.success) {
+        console.error('Failed to send invoice email:', sendResult.error || sendResult.message)
+        return NextResponse.json(
+          { error: sendResult.error || sendResult.message || `Failed to send invoice email to ${recipientEmail}` },
+          { status: 502 }
+        )
+      }
     }
 
     // Update invoice status
@@ -134,7 +154,7 @@ export async function POST(
         subject: effectiveSubject,
         body: message || `Please find attached invoice ${invoice.invoiceNumber}.`,
         fromEmail: user.email,
-        toEmails: [recipientEmail],
+        toEmails: uniqueRecipientEmails,
         invoiceId: invoice.id,
         clientId: invoice.clientId,
         sentAt: new Date(),
@@ -147,7 +167,7 @@ export async function POST(
         tenantId: user.tenantId,
         userId: user.id,
         type: 'EMAIL_SENT',
-        description: `Invoice "${invoice.title}" sent to ${recipientEmail}`,
+        description: `Invoice "${invoice.title}" sent to ${uniqueRecipientEmails.join(', ')}`,
         invoiceId: invoice.id,
         clientId: invoice.clientId,
       },

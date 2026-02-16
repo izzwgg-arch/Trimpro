@@ -33,6 +33,10 @@ import Link from 'next/link'
 import { ItemPicker } from '@/components/items/ItemPicker'
 import { Checkbox } from '@/components/ui/checkbox'
 import { DocumentAttachments } from '@/components/common/document-attachments'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 interface InvoiceDetail {
   id: string
@@ -132,6 +136,11 @@ export default function InvoiceDetailPage() {
   const [creatingPaymentLink, setCreatingPaymentLink] = useState(false)
   const [billRest, setBillRest] = useState(false)
   const [sending, setSending] = useState(false)
+  const [showSendModal, setShowSendModal] = useState(false)
+  const [sendTo, setSendTo] = useState('')
+  const [sendToPreset, setSendToPreset] = useState<string>('custom')
+  const [sendSubject, setSendSubject] = useState('')
+  const [sendMessage, setSendMessage] = useState('')
 
   useEffect(() => {
     fetchInvoice()
@@ -431,9 +440,32 @@ export default function InvoiceDetailPage() {
 
   const handleSendInvoice = async () => {
     if (!invoice || sending) return
-    const defaultEmail = invoice.client?.email || invoice.client?.contacts?.[0]?.email || ''
-    const recipientEmail = window.prompt('Send invoice to email:', defaultEmail)?.trim()
-    if (!recipientEmail) return
+    const emailsOnFile = Array.from(
+      new Set(
+        [invoice.client?.email || '', ...(invoice.client?.contacts || []).map((c) => c.email || '')]
+          .map((v) => String(v || '').trim())
+          .filter(Boolean)
+      )
+    )
+
+    const defaultEmail = emailsOnFile[0] || ''
+    setSendTo(defaultEmail)
+    setSendToPreset(emailsOnFile.length === 1 ? emailsOnFile[0] : 'custom')
+    setSendSubject(`Invoice ${invoice.invoiceNumber}`)
+    setSendMessage(`Please review and pay invoice ${invoice.invoiceNumber}.`)
+    setShowSendModal(true)
+    return
+  }
+
+  const submitSendInvoice = async () => {
+    if (!invoice || sending) return
+    const raw = String(sendTo || '').trim()
+    if (!raw) return
+    const emails = raw
+      .split(/[,\s;]+/g)
+      .map((v) => v.trim())
+      .filter(Boolean)
+    if (emails.length === 0) return
 
     setSending(true)
     try {
@@ -450,9 +482,9 @@ export default function InvoiceDetailPage() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          email: recipientEmail,
-          subject: `Invoice ${invoice.invoiceNumber}`,
-          message: `Please review and pay invoice ${invoice.invoiceNumber}.`,
+          emails,
+          subject: sendSubject || `Invoice ${invoice.invoiceNumber}`,
+          message: sendMessage || `Please review and pay invoice ${invoice.invoiceNumber}.`,
         }),
       })
 
@@ -469,6 +501,7 @@ export default function InvoiceDetailPage() {
       alert('Failed to send invoice email')
     } finally {
       setSending(false)
+      setShowSendModal(false)
     }
   }
 
@@ -553,6 +586,87 @@ export default function InvoiceDetailPage() {
           </Button>
         </div>
       </div>
+
+      <Dialog open={showSendModal} onOpenChange={setShowSendModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Send Invoice</DialogTitle>
+            <DialogDescription>
+              Email on file is prefilled. Choose one, or type one or more recipients (comma-separated).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {(() => {
+              const emailsOnFile = Array.from(
+                new Set(
+                  [
+                    invoice?.client?.email || '',
+                    ...(invoice?.client?.contacts || []).map((c) => c.email || ''),
+                  ]
+                    .map((v) => String(v || '').trim())
+                    .filter(Boolean)
+                )
+              )
+              if (emailsOnFile.length <= 1) return null
+              return (
+                <div className="space-y-2">
+                  <Label>Choose email</Label>
+                  <Select
+                    value={sendToPreset}
+                    onValueChange={(v) => {
+                      setSendToPreset(v)
+                      if (v !== 'custom') setSendTo(v)
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select email" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {emailsOnFile.map((e) => (
+                        <SelectItem key={e} value={e}>
+                          {e}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="custom">Custom...</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )
+            })()}
+
+            <div className="space-y-2">
+              <Label>To</Label>
+              <Input
+                value={sendTo}
+                onChange={(e) => {
+                  setSendTo(e.target.value)
+                  setSendToPreset('custom')
+                }}
+                placeholder="client@email.com"
+              />
+              <p className="text-xs text-muted-foreground">Multiple emails: separate with commas.</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Subject</Label>
+              <Input value={sendSubject} onChange={(e) => setSendSubject(e.target.value)} />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Message</Label>
+              <Input value={sendMessage} onChange={(e) => setSendMessage(e.target.value)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSendModal(false)} disabled={sending}>
+              Cancel
+            </Button>
+            <Button onClick={() => submitSendInvoice()} disabled={sending || !sendTo.trim()}>
+              {sending ? 'Sending...' : 'Send'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="grid gap-6 md:grid-cols-3">
         <div className="md:col-span-2 space-y-6">
