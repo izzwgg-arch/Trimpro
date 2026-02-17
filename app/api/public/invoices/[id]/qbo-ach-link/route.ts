@@ -3,9 +3,11 @@ import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { rateLimitOrThrow } from '@/lib/security/rate-limit'
 import { createAchPaymentSession } from '@/lib/qbo/payments-ach'
+import { requireRecaptchaV3 } from '@/lib/security/recaptcha'
 
 const bodySchema = z.object({
   token: z.string().min(1),
+  recaptchaToken: z.string().optional(),
 })
 
 /**
@@ -27,6 +29,13 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   }
 
   const token = String(parsed.data.token || '').trim()
+  const captcha = await requireRecaptchaV3({
+    request,
+    token: parsed.data.recaptchaToken,
+    expectedAction: 'public_invoice_pay_ach',
+  })
+  if (captcha) return captcha
+
   const invoice = await prisma.invoice.findFirst({
     where: {
       id: params.id,

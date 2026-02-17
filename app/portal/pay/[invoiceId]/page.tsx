@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
+import Script from 'next/script'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -60,6 +61,21 @@ export default function PublicPaymentPage() {
   const [reconcilingPayment, setReconcilingPayment] = useState(false)
   const [manualSyncing, setManualSyncing] = useState(false)
   const [achProcessing, setAchProcessing] = useState(false)
+
+  const recaptchaSiteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || ''
+
+  const getRecaptchaToken = async (action: string): Promise<string> => {
+    if (!recaptchaSiteKey) {
+      throw new Error('reCAPTCHA is not configured')
+    }
+    const grecaptcha = (window as any).grecaptcha
+    if (!grecaptcha?.ready) {
+      throw new Error('reCAPTCHA failed to load')
+    }
+    await new Promise<void>((resolve) => grecaptcha.ready(() => resolve()))
+    const token = await grecaptcha.execute(recaptchaSiteKey, { action })
+    return String(token || '')
+  }
 
   useEffect(() => {
     const fetchInvoice = async () => {
@@ -162,10 +178,11 @@ export default function PublicPaymentPage() {
     if (!invoice || !approved || processing) return
     setProcessing(true)
     try {
+      const recaptchaToken = await getRecaptchaToken('public_invoice_pay_card')
       const response = await fetch(`/api/public/invoices/${invoice.id}/payment-link`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ token, recaptchaToken }),
       })
       const data = await response.json().catch(() => ({}))
       if (!response.ok || !data.paymentUrl) {
@@ -185,10 +202,11 @@ export default function PublicPaymentPage() {
     setAchProcessing(true)
     setError(null)
     try {
+      const recaptchaToken = await getRecaptchaToken('public_invoice_pay_ach')
       const response = await fetch(`/api/public/invoices/${invoice.id}/qbo-ach-link`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ token, recaptchaToken }),
       })
       const data = await response.json().catch(() => ({}))
       if (!response.ok || !data?.hostedUrl) {
@@ -271,6 +289,12 @@ export default function PublicPaymentPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-6">
+      {recaptchaSiteKey ? (
+        <Script
+          src={`https://www.google.com/recaptcha/api.js?render=${encodeURIComponent(recaptchaSiteKey)}`}
+          strategy="afterInteractive"
+        />
+      ) : null}
       <div>
         <h1 className="text-3xl font-bold">Trim Pro Payment Portal</h1>
         <p className="text-gray-600">Invoice {invoice.invoiceNumber}</p>

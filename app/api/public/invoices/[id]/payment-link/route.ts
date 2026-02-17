@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { solaService } from '@/lib/services/sola'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { parseAddressParts } from '@/lib/address/parse'
+import { requireRecaptchaV3 } from '@/lib/security/recaptcha'
 
 function resolvePublicAppUrl() {
   const candidates = [
@@ -28,9 +29,17 @@ export async function POST(
   try {
     const body = await request.json().catch(() => ({}))
     const token = String(body.token || '')
+    const recaptchaToken = body.recaptchaToken
     if (!token) {
       return NextResponse.json({ error: 'Missing token' }, { status: 401 })
     }
+
+    const captcha = await requireRecaptchaV3({
+      request,
+      token: recaptchaToken,
+      expectedAction: 'public_invoice_pay_card',
+    })
+    if (captcha) return captcha
 
     const invoice = await prisma.invoice.findFirst({
       where: {
