@@ -15,6 +15,7 @@ interface PublicInvoice {
   taxAmount: string
   total: string
   balance: string
+  qboAchEnabled?: boolean
   invoiceDate: string
   dueDate: string | null
   client: {
@@ -59,6 +60,7 @@ export default function PublicPaymentPage() {
   const [confirmation, setConfirmation] = useState<string | null>(null)
   const [reconcilingPayment, setReconcilingPayment] = useState(false)
   const [manualSyncing, setManualSyncing] = useState(false)
+  const [achProcessing, setAchProcessing] = useState(false)
 
   useEffect(() => {
     const fetchInvoice = async () => {
@@ -85,6 +87,19 @@ export default function PublicPaymentPage() {
 
     fetchInvoice()
   }, [invoiceId, token])
+
+  const refreshInvoice = async () => {
+    if (!token) return
+    try {
+      const response = await fetch(`/api/public/invoices/${invoiceId}?token=${encodeURIComponent(token)}`)
+      const data = await response.json().catch(() => ({}))
+      if (response.ok && data.invoice) {
+        setInvoice(data.invoice)
+      }
+    } catch {
+      // ignore
+    }
+  }
 
   useEffect(() => {
     const normalizedResult = String(gatewayResult || '').toUpperCase()
@@ -163,6 +178,31 @@ export default function PublicPaymentPage() {
       setError('Unable to redirect to payment.')
     } finally {
       setProcessing(false)
+    }
+  }
+
+  const handlePayByAch = async () => {
+    if (!invoice || !approved || achProcessing) return
+    setAchProcessing(true)
+    setError(null)
+    try {
+      const response = await fetch(`/api/public/invoices/${invoice.id}/qbo-ach-link`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok || !data?.hostedUrl) {
+        setError(data.error || 'Unable to start ACH payment.')
+        return
+      }
+
+      // Redirect in the same tab so the flow feels "automatic".
+      window.location.href = data.hostedUrl
+    } catch {
+      setError('Unable to redirect to ACH payment.')
+    } finally {
+      setAchProcessing(false)
     }
   }
 
@@ -305,12 +345,33 @@ export default function PublicPaymentPage() {
             >
               Download Invoice PDF
             </Button>
-            <Button disabled={!approved || processing} onClick={handlePayNow}>
-              {processing ? 'Redirecting...' : 'Pay Now (Card / ACH)'}
+            <Button variant="outline" onClick={refreshInvoice} disabled={loading}>
+              Refresh
             </Button>
             <Button variant="outline" disabled={manualSyncing} onClick={handleManualSync}>
               {manualSyncing ? 'Syncing...' : 'I Paid - Sync Now'}
             </Button>
+          </div>
+
+          <div className="rounded-lg border bg-gray-50 p-3">
+            <div className="text-sm font-semibold text-gray-900">How would you like to pay?</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button disabled={!approved || processing} onClick={handlePayNow}>
+                {processing ? 'Redirecting...' : 'Pay by Card'}
+              </Button>
+              <Button
+                variant="outline"
+                disabled={!approved || achProcessing || !invoice.qboAchEnabled}
+                onClick={handlePayByAch}
+                title={!invoice.qboAchEnabled ? 'ACH is not enabled for this invoice' : 'Pay by ACH via QuickBooks'}
+              >
+                {achProcessing ? 'Redirecting...' : 'Pay by ACH'}
+              </Button>
+            </div>
+            <div className="mt-2 text-xs text-gray-600">
+              Card payments are processed via our card processor. ACH payments open a QuickBooks-hosted payment page.
+              After payment completes, this page will update once the receipt is received.
+            </div>
           </div>
           {reconcilingPayment && <p className="text-sm text-gray-600">Confirming payment status...</p>}
           {confirmation && <p className="text-green-600 text-sm">{confirmation}</p>}

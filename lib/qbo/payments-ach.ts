@@ -92,7 +92,7 @@ async function ensureQboInvoiceAchHostedLink(params: {
 export async function createAchPaymentSession(params: {
   tenantId: string
   invoiceId: string
-  createdById: string
+  createdById: string | null
 }): Promise<AchSessionResult> {
   assertQuickBooksAchEnabledFlag()
 
@@ -158,7 +158,7 @@ export async function createAchPaymentSession(params: {
       hostedUrl,
       publicToken,
       idempotencyKey,
-      createdById: params.createdById,
+      createdById: params.createdById || null,
       customerEmail: invoice.client?.email || null,
       metadata: {
         source: 'invoice_detail',

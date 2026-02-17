@@ -39,6 +39,7 @@ async function sendPaymentReceiptEmail(params: {
   clientName: string
   invoiceId: string
   invoiceNumber: string
+  invoiceToken?: string | null
   amountPaid: number
   paidToDate: number
   balance: number
@@ -58,6 +59,9 @@ async function sendPaymentReceiptEmail(params: {
 
   const now = new Date()
   const subject = `Payment Receipt • Invoice ${params.invoiceNumber} • ${now.toISOString()}`
+  const receiptUrl = `${appUrl}/portal/pay/${params.invoiceId}${
+    params.invoiceToken ? `?token=${encodeURIComponent(params.invoiceToken)}` : ''
+  }`
   const html = `
     <html>
       <body style="margin:0;padding:0;background:#f3f4f6;font-family:Inter,Helvetica,Arial,sans-serif;color:#111827;">
@@ -85,7 +89,7 @@ async function sendPaymentReceiptEmail(params: {
                       ${params.transactionId ? `<tr><td style="padding:6px 0;font-size:14px;color:#374151;">Transaction ID</td><td align="right" style="padding:6px 0;font-size:14px;">${params.transactionId}</td></tr>` : ''}
                     </table>
                     <div style="margin-top:18px;">
-                      <a href="${appUrl}/portal/pay/${params.invoiceId}" style="display:inline-block;padding:10px 14px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">View Invoice</a>
+                      <a href="${receiptUrl}" style="display:inline-block;padding:10px 14px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;">View Receipt</a>
                     </div>
                     <p style="margin:18px 0 0 0;font-size:12px;color:#6b7280;">If you have any questions, just reply to this email.</p>
                   </td>
@@ -412,6 +416,7 @@ export async function POST(request: NextRequest) {
           clientName: invoice.client.name || 'Customer',
           invoiceId: invoice.id,
           invoiceNumber: invoice.invoiceNumber,
+          invoiceToken: invoice.paymentToken,
           amountPaid: amount,
           paidToDate: newPaidAmount,
           balance: newBalance,

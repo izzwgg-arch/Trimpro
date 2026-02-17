@@ -38,6 +38,7 @@ export async function GET(
         taxAmount: invoice.taxAmount.toString(),
         total: invoice.total.toString(),
         balance: invoice.balance.toString(),
+        qboAchEnabled: invoice.qboAchEnabled,
         invoiceDate: invoice.invoiceDate,
         dueDate: invoice.dueDate,
         client: {
