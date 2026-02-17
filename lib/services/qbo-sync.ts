@@ -1004,6 +1004,7 @@ export async function importQuickBooksCustomersAndPayments(
   const includeItems = options?.includeItems !== false
 
   let importedClients = 0
+  let importedSubClients = 0
   let importedPayments = 0
   let skippedPayments = 0
   let importedItems = 0
@@ -1016,10 +1017,82 @@ export async function importQuickBooksCustomersAndPayments(
     const customers = res?.QueryResponse?.Customer || []
     if (!customers.length) break
 
-    for (const c of customers) {
+    const isSubcustomer = (c: any) => Boolean(c?.Job) || Boolean(c?.ParentRef?.value)
+
+    const resolveOrImportParentClientId = async (parentQboId: string, childQboId: string): Promise<string | null> => {
+      const normalizedParent = String(parentQboId || '').trim()
+      if (!normalizedParent) return null
+      if (normalizedParent === String(childQboId || '').trim()) return null
+
+      const existingMap = await prisma.quickBooksSyncLog.findFirst({
+        where: {
+          integrationId: session.integrationId,
+          type: 'client',
+          qboId: normalizedParent,
+          status: 'success',
+          entityId: { not: null },
+        },
+        orderBy: { createdAt: 'desc' },
+      })
+      if (existingMap?.entityId) return existingMap.entityId
+
+      // Parent not imported yet; fetch parent customer by id and import it now.
+      const parentRes = await quickBooksService.makeAPIRequest(
+        session.accessToken,
+        session.realmId,
+        `/customer/${encodeURIComponent(normalizedParent)}`,
+        'GET'
+      )
+      const parent = parentRes?.Customer || null
+      if (!parent?.Id) return null
+
+      const parentName = parent.DisplayName || parent.CompanyName || 'QuickBooks Client'
+      const parentEmail = parent.PrimaryEmailAddr?.Address || null
+      const parentPhone = parent.PrimaryPhone?.FreeFormNumber || null
+      const parentCompanyName = parent.CompanyName || null
+
+      const existingLocal = await prisma.client.findFirst({
+        where: {
+          tenantId,
+          OR: [
+            ...(parentEmail ? [{ email: { equals: String(parentEmail), mode: 'insensitive' as const } }] : []),
+            { name: { equals: String(parentName), mode: 'insensitive' } },
+          ],
+        },
+        orderBy: { updatedAt: 'desc' },
+      })
+
+      const created =
+        existingLocal ||
+        (await prisma.client.create({
+          data: {
+            tenantId,
+            name: String(parentName),
+            companyName: parentCompanyName ? String(parentCompanyName) : null,
+            email: parentEmail ? String(parentEmail) : null,
+            phone: parentPhone ? String(parentPhone) : null,
+            notes: 'Imported from QuickBooks (parent auto-import during subclient import)',
+            isActive: true,
+          },
+        }))
+
+      await logSync({
+        integrationId: session.integrationId,
+        type: 'client',
+        action: 'import',
+        status: 'success',
+        entityId: created.id,
+        qboId: String(parent.Id),
+      })
+
+      if (!existingLocal) importedClients += 1
+      return created.id
+    }
+
+    const importOneCustomer = async (c: any) => {
       try {
         const qboId = String(c.Id || '')
-        if (!qboId) continue
+        if (!qboId) return
 
         const existingMap = await prisma.quickBooksSyncLog.findFirst({
           where: {
@@ -1031,7 +1104,12 @@ export async function importQuickBooksCustomersAndPayments(
           },
           orderBy: { createdAt: 'desc' },
         })
-        if (existingMap?.entityId) continue
+        if (existingMap?.entityId) return
+
+        const parentQboId = c?.ParentRef?.value ? String(c.ParentRef.value) : null
+        const parentLocalId = parentQboId
+          ? await resolveOrImportParentClientId(parentQboId, qboId)
+          : null
 
         const name = c.DisplayName || c.CompanyName || 'QuickBooks Client'
         const email = c.PrimaryEmailAddr?.Address || null
@@ -1054,6 +1132,7 @@ export async function importQuickBooksCustomersAndPayments(
           (await prisma.client.create({
             data: {
               tenantId,
+              parentId: parentLocalId,
               name: String(name),
               companyName: companyName ? String(companyName) : null,
               email: email ? String(email) : null,
@@ -1063,6 +1142,16 @@ export async function importQuickBooksCustomersAndPayments(
             },
           }))
 
+        // If this is a subcustomer and we found a parent, set it when the local client wasn't already parented.
+        if (parentLocalId && client.parentId !== parentLocalId && client.id !== parentLocalId) {
+          await prisma.client.update({
+            where: { id: client.id },
+            data: {
+              parentId: client.parentId || parentLocalId,
+            },
+          })
+        }
+
         await logSync({
           integrationId: session.integrationId,
           type: 'client',
@@ -1071,10 +1160,21 @@ export async function importQuickBooksCustomersAndPayments(
           entityId: client.id,
           qboId,
         })
-        importedClients += local ? 0 : 1
+        if (!local) {
+          importedClients += 1
+          if (parentLocalId) importedSubClients += 1
+        }
       } catch (error: any) {
         errors.push(`Customer import failed: ${error?.message || 'Unknown error'}`)
       }
+    }
+
+    // Import parents first, then subcustomers/jobs.
+    for (const c of customers.filter((c: any) => !isSubcustomer(c))) {
+      await importOneCustomer(c)
+    }
+    for (const c of customers.filter((c: any) => isSubcustomer(c))) {
+      await importOneCustomer(c)
     }
   }
 
@@ -1279,6 +1379,7 @@ export async function importQuickBooksCustomersAndPayments(
 
   return {
     importedClients,
+    importedSubClients,
     importedItems,
     importedPayments,
     skippedPayments,
