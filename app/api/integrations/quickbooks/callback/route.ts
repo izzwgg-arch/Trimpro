@@ -4,18 +4,25 @@ import { decryptSecrets, encryptSecrets } from '@/lib/integrations/secrets'
 import { updateIntegrationStatus } from '@/lib/integrations/status'
 
 function resolveAppUrl(request: NextRequest): string {
+  // Prefer the current request origin (matches the actual domain the user is on).
+  // Avoid redirecting to raw IPs/localhost from stale env values (breaks browser callbacks).
   const candidates = [
+    request.nextUrl.origin,
     process.env.NEXT_PUBLIC_APP_URL,
     process.env.PUBLIC_APP_URL,
     process.env.APP_URL,
-    request.nextUrl.origin,
     'https://app.trimprony.com',
   ]
+
+  const blocked = /(localhost|127\.0\.0\.1|0\.0\.0\.0|154\.12\.235\.86)(:\d+)?/i
+
   for (const candidate of candidates) {
-    const value = String(candidate || '').trim()
+    const value = String(candidate || '').trim().replace(/\/+$/, '')
     if (!value) continue
-    return value.replace(/\/+$/, '')
+    if (blocked.test(value)) continue
+    return value
   }
+
   return 'https://app.trimprony.com'
 }
 
