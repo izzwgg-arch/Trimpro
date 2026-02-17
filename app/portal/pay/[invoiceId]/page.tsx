@@ -62,7 +62,29 @@ export default function PublicPaymentPage() {
   const [manualSyncing, setManualSyncing] = useState(false)
   const [achProcessing, setAchProcessing] = useState(false)
 
-  const recaptchaSiteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || ''
+  const [recaptchaSiteKey, setRecaptchaSiteKey] = useState<string>(
+    process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || ''
+  )
+  const [recaptchaScriptLoaded, setRecaptchaScriptLoaded] = useState(false)
+
+  useEffect(() => {
+    // Client-side env vars are baked at build time; fetch a runtime fallback if missing.
+    if (recaptchaSiteKey) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch('/api/public/recaptcha/site-key')
+        const data = await res.json().catch(() => ({}))
+        const key = String(data?.siteKey || '')
+        if (!cancelled && key) setRecaptchaSiteKey(key)
+      } catch {
+        // ignore; server will still enforce captcha and return a clear error
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [recaptchaSiteKey])
 
   const getRecaptchaToken = async (action: string): Promise<string> => {
     if (!recaptchaSiteKey) {
@@ -70,7 +92,7 @@ export default function PublicPaymentPage() {
     }
     const grecaptcha = (window as any).grecaptcha
     if (!grecaptcha?.ready) {
-      throw new Error('reCAPTCHA failed to load')
+      throw new Error('reCAPTCHA is still loading. Please try again in a second.')
     }
     await new Promise<void>((resolve) => grecaptcha.ready(() => resolve()))
     const token = await grecaptcha.execute(recaptchaSiteKey, { action })
@@ -190,8 +212,8 @@ export default function PublicPaymentPage() {
         return
       }
       window.location.href = data.paymentUrl
-    } catch {
-      setError('Unable to redirect to payment.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to redirect to payment.')
     } finally {
       setProcessing(false)
     }
@@ -216,8 +238,8 @@ export default function PublicPaymentPage() {
 
       // Redirect in the same tab so the flow feels "automatic".
       window.location.href = data.hostedUrl
-    } catch {
-      setError('Unable to redirect to ACH payment.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to redirect to ACH payment.')
     } finally {
       setAchProcessing(false)
     }
@@ -264,11 +286,10 @@ export default function PublicPaymentPage() {
     return <div className="p-8 text-center text-gray-600">Loading invoice...</div>
   }
 
-  if (error) {
-    return <div className="p-8 text-center text-red-600">{error}</div>
-  }
-
   if (!invoice) {
+    if (error) {
+      return <div className="p-8 text-center text-red-600">{error}</div>
+    }
     return <div className="p-8 text-center text-red-600">Invoice not found.</div>
   }
 
@@ -293,12 +314,14 @@ export default function PublicPaymentPage() {
         <Script
           src={`https://www.google.com/recaptcha/api.js?render=${encodeURIComponent(recaptchaSiteKey)}`}
           strategy="afterInteractive"
+          onLoad={() => setRecaptchaScriptLoaded(true)}
         />
       ) : null}
       <div>
         <h1 className="text-3xl font-bold">Trim Pro Payment Portal</h1>
         <p className="text-gray-600">Invoice {invoice.invoiceNumber}</p>
       </div>
+      {error ? <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
 
       <Card>
         <CardHeader>
@@ -380,16 +403,23 @@ export default function PublicPaymentPage() {
             <div className="text-sm font-semibold text-gray-900">How would you like to pay?</div>
             <div className="mt-2 flex flex-wrap gap-2">
               <Button
-                disabled={!approved || achProcessing}
+                disabled={!approved || achProcessing || (recaptchaSiteKey ? !recaptchaScriptLoaded : false)}
                 onClick={handlePayByAch}
                 title="Pay by ACH via QuickBooks"
               >
                 {achProcessing ? 'Redirecting...' : 'Pay by ACH'}
               </Button>
-              <Button variant="outline" disabled={!approved || processing} onClick={handlePayNow}>
+              <Button
+                variant="outline"
+                disabled={!approved || processing || (recaptchaSiteKey ? !recaptchaScriptLoaded : false)}
+                onClick={handlePayNow}
+              >
                 {processing ? 'Redirecting...' : 'Pay by Card'}
               </Button>
             </div>
+            {recaptchaSiteKey && !recaptchaScriptLoaded ? (
+              <div className="mt-2 text-xs text-gray-500">Loading security check...</div>
+            ) : null}
             <div className="mt-2 text-xs text-gray-600">
               Card payments are processed via our card processor. ACH payments open a QuickBooks-hosted payment page.
               After payment completes, this page will update once the receipt is received.
