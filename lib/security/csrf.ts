@@ -33,8 +33,28 @@ export function requireSameOrigin(request: NextRequest): NextResponse | null {
     return NextResponse.json({ error: 'Missing Origin/Referer' }, { status: 403 })
   }
 
-  if (normalizeOrigin(actual) !== expected) {
-    return NextResponse.json({ error: 'Invalid origin' }, { status: 403 })
+  const normalizedActual = normalizeOrigin(actual)
+
+  // Allow list:
+  // - configured app origin (env)
+  // - origin derived from Host + proto headers (common behind reverse proxies)
+  const host = request.headers.get('x-forwarded-host') || request.headers.get('host') || ''
+  const proto = request.headers.get('x-forwarded-proto') || 'https'
+  const derived = host ? normalizeOrigin(`${proto}://${host}`) : null
+
+  const allowed = new Set<string>([expected])
+  if (derived) allowed.add(derived)
+
+  if (!allowed.has(normalizedActual)) {
+    return NextResponse.json(
+      {
+        error: 'Invalid origin',
+        // Keep response safe but helpful for debugging misconfigured APP_URL/NEXT_PUBLIC_APP_URL.
+        allowed: Array.from(allowed),
+        actual: normalizedActual,
+      },
+      { status: 403 }
+    )
   }
 
   return null
