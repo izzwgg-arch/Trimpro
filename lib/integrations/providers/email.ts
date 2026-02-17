@@ -6,7 +6,7 @@
 import { IntegrationTestResult } from '../types'
 
 function getFromName(secrets: Record<string, any>) {
-  return String(secrets.fromName || secrets.senderName || secrets.brandName || 'Trimpro').trim() || 'Trimpro'
+  return String(secrets.fromName || secrets.senderName || secrets.brandName || 'TrimPro').trim() || 'TrimPro'
 }
 
 function getFromEmail(secrets: Record<string, any>, fallback: string) {

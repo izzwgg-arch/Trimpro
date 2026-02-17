@@ -27,7 +27,7 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
 
       <footer className="border-t bg-white">
         <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-3 px-4 py-6 text-sm text-muted-foreground">
-          <div>© {new Date().getFullYear()} Trimpro</div>
+          <div>© {new Date().getFullYear()} TrimPro</div>
           <div className="flex items-center gap-4">
             <Link href="/privacy" className="hover:underline">
               Privacy Policy
