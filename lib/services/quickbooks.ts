@@ -26,6 +26,25 @@ interface QBOCompanyInfo {
 }
 
 export class QuickBooksService {
+  private extractIntuitTid(headers: Headers): string | null {
+    // Intuit returns a trace id header used by their support team.
+    // Header names are case-insensitive, but in practice they show as `intuit_tid`.
+    return (
+      headers.get('intuit_tid') ||
+      headers.get('intuit-tid') ||
+      headers.get('x-intuit-tid') ||
+      null
+    )
+  }
+
+  private logIntuitTid(intuitTid: string | null, details: { method: string; url: string; status?: number }) {
+    if (!intuitTid) return
+    // Avoid noisy logs unless explicitly enabled.
+    if (process.env.QBO_LOG_INTUIT_TID !== '1') return
+    const statusPart = typeof details.status === 'number' ? ` status=${details.status}` : ''
+    console.info(`[QBO] intuit_tid=${intuitTid} ${details.method} ${details.url}${statusPart}`)
+  }
+
   getAuthorizationUrl(state?: string): string {
     const params = new URLSearchParams({
       client_id: QBO_CLIENT_ID || '',
@@ -54,9 +73,13 @@ export class QuickBooksService {
       }),
     })
 
+    const intuitTid = this.extractIntuitTid(response.headers)
+    this.logIntuitTid(intuitTid, { method: 'POST', url: `${QBO_BASE_URL}/v1/tokens/bearer`, status: response.status })
+
     if (!response.ok) {
       const error = await response.json().catch(() => ({ message: 'Unknown error' }))
-      throw new Error(error.error_description || error.message || 'Failed to exchange code for tokens')
+      const msg = error.error_description || error.message || 'Failed to exchange code for tokens'
+      throw new Error(intuitTid ? `${msg} (intuit_tid: ${intuitTid})` : msg)
     }
 
     return response.json()
@@ -76,9 +99,13 @@ export class QuickBooksService {
       }),
     })
 
+    const intuitTid = this.extractIntuitTid(response.headers)
+    this.logIntuitTid(intuitTid, { method: 'POST', url: `${QBO_BASE_URL}/v1/tokens/bearer`, status: response.status })
+
     if (!response.ok) {
       const error = await response.json().catch(() => ({ message: 'Unknown error' }))
-      throw new Error(error.error_description || error.message || 'Failed to refresh token')
+      const msg = error.error_description || error.message || 'Failed to refresh token'
+      throw new Error(intuitTid ? `${msg} (intuit_tid: ${intuitTid})` : msg)
     }
 
     return response.json()
@@ -108,9 +135,13 @@ export class QuickBooksService {
       body: body ? JSON.stringify(body) : undefined,
     })
 
+    const intuitTid = this.extractIntuitTid(response.headers)
+    this.logIntuitTid(intuitTid, { method, url, status: response.status })
+
     if (!response.ok) {
       const error = await response.json().catch(() => ({ message: 'Unknown error' }))
-      throw new Error(error.fault?.error?.[0]?.Detail || error.message || 'QuickBooks API error')
+      const msg = error.fault?.error?.[0]?.Detail || error.message || 'QuickBooks API error'
+      throw new Error(intuitTid ? `${msg} (intuit_tid: ${intuitTid})` : msg)
     }
 
     return response.json()
