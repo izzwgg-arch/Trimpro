@@ -638,7 +638,17 @@ export default function IntegrationProviderPage() {
             <div className="text-center py-8 space-y-4">
               <p className="text-gray-600 mb-4">QuickBooks uses OAuth 2.0 for authentication.</p>
               {status !== 'CONNECTED' ? (
-                <Button onClick={handleConnectQuickBooks}>Connect QuickBooks</Button>
+                <div className="space-y-2">
+                  <Button onClick={handleConnectQuickBooks}>Connect QuickBooks</Button>
+                  {status !== 'NOT_CONFIGURED' && (
+                    <div className="flex justify-center">
+                      <Button variant="destructive" onClick={handleDisconnect}>
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Reset / Disconnect
+                      </Button>
+                    </div>
+                  )}
+                </div>
               ) : (
                 <div className="space-y-2">
                   {connection?.metadata?.realmId && (
@@ -700,7 +710,7 @@ export default function IntegrationProviderPage() {
               <Button onClick={handleConnectQuickBooks} variant="outline">
                 Connect QuickBooks
               </Button>
-              {status === 'CONNECTED' && (
+              {status !== 'NOT_CONFIGURED' && (
                 <>
                   <Button onClick={handleTest} disabled={testing} variant="outline">
                     <TestTube className="mr-2 h-4 w-4" />
@@ -708,7 +718,7 @@ export default function IntegrationProviderPage() {
                   </Button>
                   <Button variant="destructive" onClick={handleDisconnect}>
                     <Trash2 className="mr-2 h-4 w-4" />
-                    Disconnect
+                    Reset / Disconnect
                   </Button>
                 </>
               )}

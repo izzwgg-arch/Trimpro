@@ -276,6 +276,18 @@ export async function DELETE(
       where: { id: connection.id },
     })
 
+    // QuickBooks has legacy token storage in `quickBooksIntegration` used by older code paths.
+    // When "resetting" / disconnecting QuickBooks, clear that too.
+    if (provider === 'quickbooks') {
+      try {
+        await prisma.quickBooksIntegration.deleteMany({
+          where: { tenantId: user.tenantId },
+        })
+      } catch (err) {
+        console.warn('Failed to delete legacy QuickBooksIntegration row(s):', err)
+      }
+    }
+
     // Create audit log (optional - don't fail if audit log fails)
     try {
       await prisma.auditLog.create({
