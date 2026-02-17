@@ -142,9 +142,23 @@ export default function InvoiceDetailPage() {
   const [sendSubject, setSendSubject] = useState('')
   const [sendMessage, setSendMessage] = useState('')
 
+  // QuickBooks ACH (hosted) UI state
+  const [qboAchEnabled, setQboAchEnabled] = useState<boolean>(false)
+  const [qboAchLoading, setQboAchLoading] = useState<boolean>(false)
+  const [qboAchPublicUrl, setQboAchPublicUrl] = useState<string>('')
+  const [qboAchHostedUrl, setQboAchHostedUrl] = useState<string>('')
+  const [qboAchIntentStatus, setQboAchIntentStatus] = useState<string>('')
+  const [qboAchError, setQboAchError] = useState<string>('')
+
   useEffect(() => {
     fetchInvoice()
   }, [invoiceId])
+
+  useEffect(() => {
+    if (!invoice?.id) return
+    fetchQboAchStatus()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoice?.id])
 
   const fetchInvoice = async () => {
     try {
@@ -185,6 +199,84 @@ export default function InvoiceDetailPage() {
       setInvoice(null)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchQboAchStatus = async () => {
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token || !invoice) return
+      setQboAchLoading(true)
+      const res = await fetch(`/api/payments/qbo/status?invoiceId=${encodeURIComponent(invoice.id)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) return
+      setQboAchEnabled(Boolean(data?.invoice?.qboAchEnabled))
+      setQboAchIntentStatus(String(data?.latest?.status || ''))
+      setQboAchHostedUrl(String(data?.latest?.hostedUrl || ''))
+      setQboAchPublicUrl(
+        data?.latest?.publicToken ? `${window.location.origin}/pay/invoice/${data.latest.publicToken}` : ''
+      )
+    } finally {
+      setQboAchLoading(false)
+    }
+  }
+
+  const handleToggleQboAch = async (enabled: boolean) => {
+    if (!invoice) return
+    setQboAchError('')
+    setQboAchLoading(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const res = await fetch(`/api/invoices/${invoice.id}/qbo-ach`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ enabled }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setQboAchError(data.error || 'Failed to update ACH setting')
+        return
+      }
+      setQboAchEnabled(Boolean(data.enabled))
+      await fetchQboAchStatus()
+    } catch (e: any) {
+      setQboAchError(e?.message || 'Failed to update ACH setting')
+    } finally {
+      setQboAchLoading(false)
+    }
+  }
+
+  const handleCreateQboAchLink = async () => {
+    if (!invoice) return
+    setQboAchError('')
+    setQboAchLoading(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const res = await fetch('/api/payments/qbo/ach/create-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ invoiceId: invoice.id }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setQboAchError(data.error || 'Failed to create ACH payment link')
+        return
+      }
+      setQboAchPublicUrl(String(data.publicUrl || ''))
+      setQboAchHostedUrl(String(data.hostedUrl || ''))
+      setQboAchIntentStatus('LINK_CREATED')
+    } catch (e: any) {
+      setQboAchError(e?.message || 'Failed to create ACH payment link')
+    } finally {
+      setQboAchLoading(false)
     }
   }
 
@@ -954,6 +1046,75 @@ export default function InvoiceDetailPage() {
                       : 'Use Current Invoice Balance'}
                 </Button>
               )}
+            </CardContent>
+          </Card>
+
+          {/* QuickBooks ACH */}
+          <Card>
+            <CardHeader>
+              <CardTitle>QuickBooks ACH</CardTitle>
+              <CardDescription>Hosted ACH payments via QuickBooks Payments</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between rounded border p-2">
+                <span className="text-sm font-medium">Enable ACH on this invoice</span>
+                <Checkbox
+                  checked={qboAchEnabled}
+                  onCheckedChange={(checked) => handleToggleQboAch(Boolean(checked))}
+                  disabled={qboAchLoading}
+                />
+              </div>
+
+              {qboAchError && (
+                <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-800">
+                  {qboAchError}
+                </div>
+              )}
+
+              <div className="text-xs text-gray-500">
+                Status: {qboAchIntentStatus || '—'}
+              </div>
+
+              <Button
+                className="w-full"
+                variant="outline"
+                onClick={handleCreateQboAchLink}
+                disabled={!qboAchEnabled || qboAchLoading || parseFloat(invoice.balance) <= 0}
+              >
+                {qboAchLoading ? 'Working...' : 'Generate ACH payment link'}
+              </Button>
+
+              {qboAchPublicUrl && (
+                <div className="space-y-2">
+                  <div className="text-xs text-gray-500">Customer link</div>
+                  <div className="flex gap-2">
+                    <Input value={qboAchPublicUrl} readOnly />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        navigator.clipboard?.writeText(qboAchPublicUrl)
+                      }}
+                    >
+                      Copy
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {qboAchHostedUrl && (
+                <Button
+                  className="w-full"
+                  onClick={() => window.open(qboAchHostedUrl, '_blank', 'noopener,noreferrer')}
+                  disabled={!qboAchHostedUrl}
+                >
+                  Open QuickBooks hosted payment
+                </Button>
+              )}
+
+              <div className="text-xs text-gray-500">
+                Requires QuickBooks Payments + invoice synced to QuickBooks.
+              </div>
             </CardContent>
           </Card>
 

@@ -65,6 +65,9 @@ model Tenant {
   conversations    Conversation[]
   messages         Message[]
   webhookEvents    WebhookEvent[]
+  invoicePaymentIntents InvoicePaymentIntent[]
+  paymentEvents    PaymentEvent[]
+  idempotencyKeys   IdempotencyKey[]
 
   @@map("tenants")
 }
@@ -136,6 +139,7 @@ model User {
   techAvailability      TechAvailability[]
   assignedConversations Conversation[]
   conversationReadReceipts ConversationReadReceipt[]
+  createdInvoicePaymentIntents InvoicePaymentIntent[] @relation("InvoicePaymentIntentCreatedBy")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -576,10 +580,14 @@ model Invoice {
   emails              Email[]
   tasks               Task[]
   activities          Activity[]
+  paymentIntents      InvoicePaymentIntent[]
 
   // QuickBooks
   qboSyncId String?   @unique
   qboSyncAt DateTime?
+
+  // QuickBooks Payments (ACH) - configuration is per-invoice; actual payment sessions are stored separately.
+  qboAchEnabled Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2259,6 +2267,117 @@ model PaymentTransaction {
   @@index([invoiceId])
   @@index([externalId])
   @@map("payment_transactions")
+}
+
+// ============================================
+// QUICKBOOKS PAYMENTS (ACH) - HOSTED FLOW
+// ============================================
+
+enum QboPaymentIntentStatus {
+  CREATED
+  LINK_CREATED
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+  CANCELLED
+}
+
+model InvoicePaymentIntent {
+  id        String   @id @default(cuid())
+  tenantId  String
+  invoiceId String
+
+  provider String // "qbo"
+  method   String // "ach"
+
+  amount   Decimal @db.Decimal(10, 2)
+  currency String  @default("USD")
+  status   QboPaymentIntentStatus @default(CREATED)
+
+  // QBO identifiers (accounting API)
+  qboRealmId   String?
+  qboInvoiceId String?
+  qboPaymentId String?
+
+  // Hosted payment URL (QuickBooks hosted invoice/pay portal link)
+  hostedUrl String? @db.Text
+
+  // Public, unguessable token used in our public pay page URL
+  publicToken String @unique
+  expiresAt   DateTime?
+
+  // Idempotency for session/link creation
+  idempotencyKey String @unique
+
+  createdById   String?
+  customerEmail String?
+  metadata      Json?
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  createdBy User? @relation("InvoicePaymentIntentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  events PaymentEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([invoiceId])
+  @@index([tenantId, invoiceId])
+  @@index([tenantId, status])
+  @@index([qboRealmId])
+  @@index([qboInvoiceId])
+  @@index([qboPaymentId])
+  @@map("invoice_payment_intents")
+}
+
+model PaymentEvent {
+  id       String   @id @default(cuid())
+  tenantId String
+  intentId String
+
+  provider       String // "qbo"
+  providerEventId String? // webhook-derived event id (idempotency)
+  type           String // "webhook", "status_update", "reconcile"
+  statusFrom     String?
+  statusTo       String?
+
+  payloadHash String?
+  rawPayload  Json?
+
+  receivedAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  intent InvoicePaymentIntent @relation(fields: [intentId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([intentId])
+  @@index([tenantId, provider])
+  @@index([providerEventId])
+  @@map("payment_events")
+}
+
+model IdempotencyKey {
+  id        String   @id @default(cuid())
+  tenantId  String
+  key       String   @unique
+  scope     String
+  requestHash String?
+  response  Json?
+  expiresAt DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([tenantId, scope])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
 }
 
 // ============================================
