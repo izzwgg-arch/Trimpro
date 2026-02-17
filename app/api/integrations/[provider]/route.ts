@@ -159,6 +159,24 @@ export async function POST(
         // If decrypt fails, we can't merge. Don't block saving entirely.
       }
     }
+
+    // Guardrail: never persist masked password placeholders as real secrets.
+    // This can happen if the user hits "Save" after a reset/disconnect without re-entering a secret field.
+    const integration = getIntegration(provider)
+    const passwordKeys = new Set(
+      (integration?.configFields || [])
+        .filter((f: any) => String(f.type) === 'password')
+        .map((f: any) => String(f.key))
+    )
+    for (const key of passwordKeys) {
+      const v = secrets[key]
+      if (typeof v === 'string' && v.includes('•')) {
+        return NextResponse.json(
+          { error: `Please enter the full value for "${key}" (masked value cannot be saved).` },
+          { status: 400 }
+        )
+      }
+    }
     
     // Clean and trim VoIP.ms credentials
     if (provider === 'voipms_sms') {
