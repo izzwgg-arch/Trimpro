@@ -8,10 +8,12 @@ const QBO_BASE_URL = 'https://appcenter.intuit.com/connect/oauth2'
 // Intuit token endpoint (OAuth 2.0) — this is the recommended host for bearer token exchanges.
 // Using appcenter for token exchange may return HTML "shell" responses in some environments.
 const QBO_TOKEN_URL = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer'
+const QBO_ENV = String(process.env.QBO_ENV || 'production').toLowerCase()
+// Default to production unless explicitly set to sandbox.
 const QBO_API_BASE =
-  process.env.QBO_ENV === 'production'
-    ? 'https://quickbooks.api.intuit.com'
-    : 'https://sandbox-quickbooks.api.intuit.com'
+  QBO_ENV === 'sandbox'
+    ? 'https://sandbox-quickbooks.api.intuit.com'
+    : 'https://quickbooks.api.intuit.com'
 
 interface QBOAccessTokenResponse {
   access_token: string
@@ -114,6 +116,22 @@ export class QuickBooksService {
     return response.json()
   }
 
+  private summarizeQboError(payload: any): string {
+    // QBO errors commonly come back as { Fault: { Error: [{ Message, Detail, code, element }], type }, time }
+    const fault = payload?.fault || payload?.Fault
+    const error0 = fault?.error?.[0] || fault?.Error?.[0]
+    const detail = error0?.Detail || error0?.detail
+    const message = error0?.Message || error0?.message
+    const code = error0?.code || error0?.Code
+    const type = fault?.type || fault?.Type
+
+    const parts = [detail, message, code ? `code=${code}` : null, type ? `type=${type}` : null].filter(Boolean)
+    if (parts.length) return String(parts.join(' | '))
+
+    // Fallback: try top-level error fields
+    return String(payload?.message || payload?.Message || 'QuickBooks API error')
+  }
+
   async makeAPIRequest(
     accessToken: string,
     realmId: string,
@@ -142,8 +160,16 @@ export class QuickBooksService {
     this.logIntuitTid(intuitTid, { method, url, status: response.status })
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: 'Unknown error' }))
-      const msg = error.fault?.error?.[0]?.Detail || error.message || 'QuickBooks API error'
+      const raw = await response.text().catch(() => '')
+      let errorPayload: any = null
+      try {
+        errorPayload = raw ? JSON.parse(raw) : {}
+      } catch {
+        errorPayload = { message: raw ? raw.slice(0, 300) : 'Unknown error' }
+      }
+
+      const msgBase = this.summarizeQboError(errorPayload)
+      const msg = `${msgBase} (status=${response.status})`
       throw new Error(intuitTid ? `${msg} (intuit_tid: ${intuitTid})` : msg)
     }
 

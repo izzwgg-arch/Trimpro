@@ -123,9 +123,11 @@ async function fetchQuickBooksCompany(
       }
     }
 
-    const baseUrl = process.env.QBO_ENV === 'production'
-      ? 'https://quickbooks.api.intuit.com'
-      : 'https://sandbox-quickbooks.api.intuit.com'
+    const env = String(process.env.QBO_ENV || 'production').toLowerCase()
+    const baseUrl =
+      env === 'sandbox'
+        ? 'https://sandbox-quickbooks.api.intuit.com'
+        : 'https://quickbooks.api.intuit.com'
 
     const response = await fetch(`${baseUrl}/v3/company/${realmId}/companyinfo/${realmId}`, {
       headers: {
