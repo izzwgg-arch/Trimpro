@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma'
 import { decryptSecrets, encryptSecrets } from '@/lib/integrations/secrets'
 import { updateIntegrationStatus } from '@/lib/integrations/status'
 
+const QBO_TOKEN_URL = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer'
+
 function resolveAppUrl(request: NextRequest): string {
   // Prefer the current request origin (matches the actual domain the user is on).
   // Avoid redirecting to raw IPs/localhost from stale env values (breaks browser callbacks).
@@ -90,7 +92,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Exchange authorization code for tokens
-    const tokenResponse = await fetch('https://appcenter.intuit.com/connect/oauth2/v1/tokens/bearer', {
+    const tokenResponse = await fetch(QBO_TOKEN_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',

@@ -5,6 +5,9 @@ const QBO_CLIENT_ID = process.env.QBO_CLIENT_ID
 const QBO_CLIENT_SECRET = process.env.QBO_CLIENT_SECRET
 const QBO_REDIRECT_URI = process.env.QBO_REDIRECT_URI || 'http://localhost:3000/api/qbo/callback'
 const QBO_BASE_URL = 'https://appcenter.intuit.com/connect/oauth2'
+// Intuit token endpoint (OAuth 2.0) — this is the recommended host for bearer token exchanges.
+// Using appcenter for token exchange may return HTML "shell" responses in some environments.
+const QBO_TOKEN_URL = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer'
 const QBO_API_BASE =
   process.env.QBO_ENV === 'production'
     ? 'https://quickbooks.api.intuit.com'
@@ -59,7 +62,7 @@ export class QuickBooksService {
   }
 
   async exchangeCodeForTokens(code: string): Promise<QBOAccessTokenResponse> {
-    const response = await fetch(`${QBO_BASE_URL}/v1/tokens/bearer`, {
+    const response = await fetch(QBO_TOKEN_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -86,7 +89,7 @@ export class QuickBooksService {
   }
 
   async refreshAccessToken(refreshToken: string): Promise<Omit<QBOAccessTokenResponse, 'realmId'>> {
-    const response = await fetch(`${QBO_BASE_URL}/v1/tokens/bearer`, {
+    const response = await fetch(QBO_TOKEN_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',

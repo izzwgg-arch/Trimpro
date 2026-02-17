@@ -77,7 +77,7 @@ async function refreshQuickBooksToken(secrets: Record<string, any>): Promise<{
 
     const refreshToken = secrets.refreshToken
 
-    const response = await fetch('https://appcenter.intuit.com/connect/oauth2/v1/tokens/bearer', {
+    const response = await fetch('https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
