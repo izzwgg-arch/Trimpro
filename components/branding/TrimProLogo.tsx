@@ -59,12 +59,11 @@ export function TrimProLogo({ variant = 'light', size = 'md', className }: TrimP
           fontWeight: 700,
           fontSize: `${wordHeight}px`,
           letterSpacing: '-0.02em',
-          textTransform: 'lowercase',
           color: wordColor,
           lineHeight: 1,
         }}
       >
-        trimpro
+        TrimPro
       </span>
       
       {/* Icon on the right */}
