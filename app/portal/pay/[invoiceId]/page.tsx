@@ -98,6 +98,7 @@ export default function PublicPaymentPage() {
     const token = await grecaptcha.execute(recaptchaSiteKey, { action })
     return String(token || '')
   }
+  const captchaReady = Boolean(recaptchaSiteKey && recaptchaScriptLoaded)
 
   useEffect(() => {
     const fetchInvoice = async () => {
@@ -403,7 +404,7 @@ export default function PublicPaymentPage() {
             <div className="text-sm font-semibold text-gray-900">How would you like to pay?</div>
             <div className="mt-2 flex flex-wrap gap-2">
               <Button
-                disabled={!approved || achProcessing || (recaptchaSiteKey ? !recaptchaScriptLoaded : false)}
+                disabled={!approved || achProcessing || !captchaReady}
                 onClick={handlePayByAch}
                 title="Pay by ACH via QuickBooks"
               >
@@ -411,13 +412,17 @@ export default function PublicPaymentPage() {
               </Button>
               <Button
                 variant="outline"
-                disabled={!approved || processing || (recaptchaSiteKey ? !recaptchaScriptLoaded : false)}
+                disabled={!approved || processing || !captchaReady}
                 onClick={handlePayNow}
               >
                 {processing ? 'Redirecting...' : 'Pay by Card'}
               </Button>
             </div>
-            {recaptchaSiteKey && !recaptchaScriptLoaded ? (
+            {!recaptchaSiteKey ? (
+              <div className="mt-2 text-xs text-red-600">
+                Payment security check is not configured. Please contact support.
+              </div>
+            ) : !recaptchaScriptLoaded ? (
               <div className="mt-2 text-xs text-gray-500">Loading security check...</div>
             ) : null}
             <div className="mt-2 text-xs text-gray-600">
