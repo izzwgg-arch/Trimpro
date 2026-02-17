@@ -45,6 +45,8 @@ export default function IntegrationProviderPage() {
   const [testPhone, setTestPhone] = useState('')
   const [testEmail, setTestEmail] = useState('')
   const [webhookSecret, setWebhookSecret] = useState<string>('')
+  const [importingQbo, setImportingQbo] = useState(false)
+  const [importResult, setImportResult] = useState<any>(null)
 
   useEffect(() => {
     fetchIntegration()
@@ -259,6 +261,63 @@ export default function IntegrationProviderPage() {
     } catch (error) {
       console.error('Failed to connect QuickBooks:', error)
       alert('Failed to connect to QuickBooks. Please try again.')
+    }
+  }
+
+  const handleQuickBooksImport = async () => {
+    if (importingQbo) return
+    if (!confirm('Import ALL clients and items from QuickBooks into TrimPro? This may take a minute.')) {
+      return
+    }
+
+    setImportingQbo(true)
+    setImportResult(null)
+
+    try {
+      let token = localStorage.getItem('accessToken')
+      if (!token) {
+        const refreshed = await refreshToken()
+        if (!refreshed) return
+        token = localStorage.getItem('accessToken')
+      }
+
+      let response = await fetch('/api/qbo/import', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ includeItems: true, includePayments: false }),
+      })
+
+      if (response.status === 401) {
+        const refreshed = await refreshToken()
+        if (!refreshed) return
+        token = localStorage.getItem('accessToken')
+        response = await fetch('/api/qbo/import', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ includeItems: true, includePayments: false }),
+        })
+      }
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'QuickBooks import failed')
+        setImportResult({ success: false, ...data })
+        return
+      }
+
+      setImportResult({ success: true, ...data })
+      fetchConnection()
+    } catch (error) {
+      console.error('QuickBooks import failed:', error)
+      alert('QuickBooks import failed. Please try again.')
+    } finally {
+      setImportingQbo(false)
     }
   }
 
@@ -720,8 +779,22 @@ export default function IntegrationProviderPage() {
                     <Trash2 className="mr-2 h-4 w-4" />
                     Reset / Disconnect
                   </Button>
+                  <Button onClick={handleQuickBooksImport} disabled={importingQbo} variant="outline">
+                    {importingQbo ? 'Importing...' : 'Import Clients + Items'}
+                  </Button>
                 </>
               )}
+            </div>
+          )}
+
+          {provider === 'quickbooks' && importResult?.success && (
+            <div className="rounded border bg-white p-3 text-sm text-gray-700">
+              Imported clients: {importResult.importedClients ?? 0} · Imported items: {importResult.importedItems ?? 0}
+              {Array.isArray(importResult.errors) && importResult.errors.length ? (
+                <div className="mt-2 text-xs text-amber-700">
+                  {importResult.errors.slice(0, 5).join(' | ')}
+                </div>
+              ) : null}
             </div>
           )}
 

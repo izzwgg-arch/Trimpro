@@ -9,6 +9,7 @@ type SyncType =
   | 'estimate'
   | 'invoice'
   | 'payment'
+  | 'item'
   | 'vendor'
   | 'purchase_order'
 
@@ -994,15 +995,18 @@ export async function syncPurchaseOrderToQuickBooks(tenantId: string, purchaseOr
 
 export async function importQuickBooksCustomersAndPayments(
   tenantId: string,
-  options?: { includePayments?: boolean }
+  options?: { includePayments?: boolean; includeItems?: boolean }
 ) {
   const session = await getQboSession(tenantId)
   if (!session) throw new Error('QuickBooks is not connected for this tenant.')
   const includePayments = Boolean(options?.includePayments)
+  // Default: import items as well (matches "import all clients and items" request).
+  const includeItems = options?.includeItems !== false
 
   let importedClients = 0
   let importedPayments = 0
   let skippedPayments = 0
+  let importedItems = 0
   const errors: string[] = []
 
   // Import customers
@@ -1070,6 +1074,94 @@ export async function importQuickBooksCustomersAndPayments(
         importedClients += local ? 0 : 1
       } catch (error: any) {
         errors.push(`Customer import failed: ${error?.message || 'Unknown error'}`)
+      }
+    }
+  }
+
+  // Import Items (products/services) when requested.
+  for (let start = 1; includeItems && start <= 10000; start += 1000) {
+    const query = `select * from Item startposition ${start} maxresults 1000`
+    const res = await quickBooksService.query(session.accessToken, session.realmId, query)
+    const items = res?.QueryResponse?.Item || []
+    if (!items.length) break
+
+    for (const it of items) {
+      try {
+        const qboId = String(it.Id || '')
+        if (!qboId) continue
+
+        const existingMap = await prisma.quickBooksSyncLog.findFirst({
+          where: {
+            integrationId: session.integrationId,
+            type: 'item',
+            qboId,
+            status: 'success',
+            entityId: { not: null },
+          },
+          orderBy: { createdAt: 'desc' },
+        })
+        if (existingMap?.entityId) continue
+
+        const name = String(it.Name || it.FullyQualifiedName || 'QuickBooks Item').trim()
+        const sku = it.Sku ? String(it.Sku).trim() : null
+        const description = it.Description ? String(it.Description) : null
+        const active = typeof it.Active === 'boolean' ? it.Active : true
+        const taxable = typeof it.Taxable === 'boolean' ? it.Taxable : true
+
+        // QuickBooks item Type values include: Service, Inventory, NonInventory, Category, etc.
+        const qboType = String(it.Type || '').toLowerCase()
+        const type =
+          qboType === 'service'
+            ? 'SERVICE'
+            : qboType === 'inventory'
+              ? 'MATERIAL'
+              : 'PRODUCT'
+
+        const unitPrice = toNumber(it.UnitPrice)
+        const purchaseCost = it.PurchaseCost != null ? toNumber(it.PurchaseCost) : null
+
+        const local = await prisma.item.findFirst({
+          where: {
+            tenantId,
+            OR: [
+              ...(sku ? [{ sku: { equals: sku, mode: 'insensitive' as const } }] : []),
+              { name: { equals: name, mode: 'insensitive' } },
+            ],
+          },
+          orderBy: { updatedAt: 'desc' },
+        })
+
+        const item =
+          local ||
+          (await prisma.item.create({
+            data: {
+              tenantId,
+              name,
+              sku,
+              type: type as any,
+              kind: 'SINGLE',
+              description,
+              unit: 'ea',
+              defaultUnitPrice: unitPrice,
+              defaultUnitCost: purchaseCost,
+              taxable,
+              isActive: active,
+              notes: 'Imported from QuickBooks historical import',
+            },
+          }))
+
+        await logSync({
+          integrationId: session.integrationId,
+          type: 'item',
+          action: 'import',
+          status: 'success',
+          entityId: item.id,
+          qboId,
+          data: { qboType: it.Type || null },
+        })
+        importedItems += local ? 0 : 1
+      } catch (error: any) {
+        errors.push(`Item import failed: ${error?.message || 'Unknown error'}`)
       }
     }
   }
@@ -1187,6 +1279,7 @@ export async function importQuickBooksCustomersAndPayments(
 
   return {
     importedClients,
+    importedItems,
     importedPayments,
     skippedPayments,
     errors: errors.slice(0, 20),
