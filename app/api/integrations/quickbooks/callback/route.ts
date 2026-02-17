@@ -3,6 +3,27 @@ import { prisma } from '@/lib/prisma'
 import { decryptSecrets, encryptSecrets } from '@/lib/integrations/secrets'
 import { updateIntegrationStatus } from '@/lib/integrations/status'
 
+function resolveAppUrl(request: NextRequest): string {
+  const candidates = [
+    process.env.NEXT_PUBLIC_APP_URL,
+    process.env.PUBLIC_APP_URL,
+    process.env.APP_URL,
+    request.nextUrl.origin,
+    'https://app.trimprony.com',
+  ]
+  for (const candidate of candidates) {
+    const value = String(candidate || '').trim()
+    if (!value) continue
+    return value.replace(/\/+$/, '')
+  }
+  return 'https://app.trimprony.com'
+}
+
+function redirectToApp(request: NextRequest, pathWithQuery: string) {
+  const base = resolveAppUrl(request)
+  return NextResponse.redirect(new URL(pathWithQuery, base))
+}
+
 async function getQuickBooksConfig(tenantId: string) {
   const connection = await prisma.integrationConnection.findUnique({
     where: {
@@ -39,13 +60,12 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get('error')
 
   if (error) {
-    return NextResponse.redirect(
-      `/dashboard/settings/integrations/quickbooks?error=${encodeURIComponent(error)}`
-    )
+    return redirectToApp(request, `/dashboard/settings/integrations/quickbooks?error=${encodeURIComponent(error)}`)
   }
 
   if (!code || !state || !realmId) {
-    return NextResponse.redirect(
+    return redirectToApp(
+      request,
       `/dashboard/settings/integrations/quickbooks?error=${encodeURIComponent('Missing required parameters')}`
     )
   }
@@ -77,12 +97,24 @@ export async function GET(request: NextRequest) {
       }),
     })
 
-    if (!tokenResponse.ok) {
-      const errorText = await tokenResponse.text()
-      throw new Error(`Token exchange failed: ${errorText}`)
+    const raw = await tokenResponse.text()
+    let tokenData: any = null
+    try {
+      tokenData = raw ? JSON.parse(raw) : {}
+    } catch {
+      // Intuit sometimes returns an HTML error page when credentials/redirect_uri are wrong.
+      throw new Error(`Token exchange failed: Unexpected response from Intuit (${tokenResponse.status}).`)
     }
 
-    const tokenData = await tokenResponse.json()
+    if (!tokenResponse.ok) {
+      const detail =
+        tokenData?.error_description ||
+        tokenData?.error ||
+        tokenData?.message ||
+        raw?.slice?.(0, 300) ||
+        'Unknown error'
+      throw new Error(`Token exchange failed: ${detail}`)
+    }
     const { access_token, refresh_token, expires_in } = tokenData
 
     // Encrypt and store tokens
@@ -164,10 +196,11 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    return NextResponse.redirect('/dashboard/settings/integrations/quickbooks?success=connected')
+    return redirectToApp(request, '/dashboard/settings/integrations/quickbooks?success=connected')
   } catch (error: any) {
     console.error('QuickBooks callback error:', error)
-    return NextResponse.redirect(
+    return redirectToApp(
+      request,
       `/dashboard/settings/integrations/quickbooks?error=${encodeURIComponent(error.message || 'Connection failed')}`
     )
   }
