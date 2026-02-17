@@ -5,6 +5,7 @@ import { getPaginationParams, createPaginationResponse } from '@/lib/pagination'
 import { validateRequest, createInvoiceSchema } from '@/lib/validation'
 import crypto from 'crypto'
 import { syncInvoiceToQuickBooks } from '@/lib/services/qbo-sync'
+import { createAchPaymentSession } from '@/lib/qbo/payments-ach'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -183,6 +184,8 @@ export async function POST(request: NextRequest) {
             terms: terms || null,
             memo: memo || null,
             paymentToken: crypto.randomBytes(20).toString('hex'),
+            // ACH should be available by default (hosted by QuickBooks; no bank info stored by TrimPro).
+            qboAchEnabled: true,
           },
           include: {
             client: true,
@@ -223,6 +226,7 @@ export async function POST(request: NextRequest) {
           terms: terms || null,
           memo: memo || null,
           paymentToken: crypto.randomBytes(20).toString('hex'),
+          qboAchEnabled: true,
         },
         include: {
           client: true,
@@ -331,6 +335,22 @@ export async function POST(request: NextRequest) {
       await syncInvoiceToQuickBooks(user.tenantId, invoice.id)
     } catch (error) {
       console.error('QuickBooks invoice sync trigger error:', error)
+    }
+
+    // Best-effort: automatically generate the QuickBooks ACH hosted payment link after sync.
+    // This pre-populates the ACH button without any manual checkbox/toggle.
+    try {
+      const achEnabled = String(process.env.QUICKBOOKS_ACH_ENABLED || '').toLowerCase()
+      if (achEnabled === 'true' || achEnabled === '1' || achEnabled === 'yes') {
+        await createAchPaymentSession({
+          tenantId: user.tenantId,
+          invoiceId: invoice.id,
+          createdById: user.id,
+        })
+      }
+    } catch (error) {
+      // Don't block invoice creation if QBO Payments isn't enabled/configured yet.
+      console.warn('QuickBooks ACH session auto-create skipped:', (error as any)?.message || error)
     }
 
     return NextResponse.json({ invoice }, { status: 201 })

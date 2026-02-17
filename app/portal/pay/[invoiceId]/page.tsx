@@ -15,7 +15,6 @@ interface PublicInvoice {
   taxAmount: string
   total: string
   balance: string
-  qboAchEnabled?: boolean
   invoiceDate: string
   dueDate: string | null
   client: {
@@ -357,9 +356,9 @@ export default function PublicPaymentPage() {
             <div className="text-sm font-semibold text-gray-900">How would you like to pay?</div>
             <div className="mt-2 flex flex-wrap gap-2">
               <Button
-                disabled={!approved || achProcessing || !invoice.qboAchEnabled}
+                disabled={!approved || achProcessing}
                 onClick={handlePayByAch}
-                title={!invoice.qboAchEnabled ? 'ACH is not enabled for this invoice' : 'Pay by ACH via QuickBooks'}
+                title="Pay by ACH via QuickBooks"
               >
                 {achProcessing ? 'Redirecting...' : 'Pay by ACH'}
               </Button>

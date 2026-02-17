@@ -143,7 +143,6 @@ export default function InvoiceDetailPage() {
   const [sendMessage, setSendMessage] = useState('')
 
   // QuickBooks ACH (hosted) UI state
-  const [qboAchEnabled, setQboAchEnabled] = useState<boolean>(false)
   const [qboAchLoading, setQboAchLoading] = useState<boolean>(false)
   const [qboAchPublicUrl, setQboAchPublicUrl] = useState<string>('')
   const [qboAchHostedUrl, setQboAchHostedUrl] = useState<string>('')
@@ -212,40 +211,11 @@ export default function InvoiceDetailPage() {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) return
-      setQboAchEnabled(Boolean(data?.invoice?.qboAchEnabled))
       setQboAchIntentStatus(String(data?.latest?.status || ''))
       setQboAchHostedUrl(String(data?.latest?.hostedUrl || ''))
       setQboAchPublicUrl(
         data?.latest?.publicToken ? `${window.location.origin}/pay/invoice/${data.latest.publicToken}` : ''
       )
-    } finally {
-      setQboAchLoading(false)
-    }
-  }
-
-  const handleToggleQboAch = async (enabled: boolean) => {
-    if (!invoice) return
-    setQboAchError('')
-    setQboAchLoading(true)
-    try {
-      const token = localStorage.getItem('accessToken')
-      const res = await fetch(`/api/invoices/${invoice.id}/qbo-ach`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ enabled }),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        setQboAchError(data.error || 'Failed to update ACH setting')
-        return
-      }
-      setQboAchEnabled(Boolean(data.enabled))
-      await fetchQboAchStatus()
-    } catch (e: any) {
-      setQboAchError(e?.message || 'Failed to update ACH setting')
     } finally {
       setQboAchLoading(false)
     }
@@ -1056,15 +1026,6 @@ export default function InvoiceDetailPage() {
               <CardDescription>Hosted ACH payments via QuickBooks Payments</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="flex items-center justify-between rounded border p-2">
-                <span className="text-sm font-medium">Enable ACH on this invoice</span>
-                <Checkbox
-                  checked={qboAchEnabled}
-                  onCheckedChange={(checked) => handleToggleQboAch(Boolean(checked))}
-                  disabled={qboAchLoading}
-                />
-              </div>
-
               {qboAchError && (
                 <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-800">
                   {qboAchError}
@@ -1079,7 +1040,7 @@ export default function InvoiceDetailPage() {
                 className="w-full"
                 variant="outline"
                 onClick={handleCreateQboAchLink}
-                disabled={!qboAchEnabled || qboAchLoading || parseFloat(invoice.balance) <= 0}
+                disabled={qboAchLoading || parseFloat(invoice.balance) <= 0}
               >
                 {qboAchLoading ? 'Working...' : 'Generate ACH payment link'}
               </Button>

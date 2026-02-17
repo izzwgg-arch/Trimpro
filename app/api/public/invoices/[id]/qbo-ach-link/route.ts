@@ -36,14 +36,10 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       id: true,
       tenantId: true,
       balance: true,
-      qboAchEnabled: true,
     },
   })
 
   if (!invoice) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
-  if (!invoice.qboAchEnabled) {
-    return NextResponse.json({ error: 'ACH is not enabled for this invoice.' }, { status: 400 })
-  }
   if (Number(invoice.balance) <= 0) {
     return NextResponse.json({ error: 'Invoice already paid' }, { status: 400 })
   }

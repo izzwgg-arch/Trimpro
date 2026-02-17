@@ -104,10 +104,6 @@ export async function createAchPaymentSession(params: {
   })
   if (!invoice) throw new Error('Invoice not found.')
 
-  if (!invoice.qboAchEnabled) {
-    throw new Error('QuickBooks ACH is not enabled for this invoice.')
-  }
-
   if (!invoice.qboSyncId) {
     throw new Error('Invoice is not synced to QuickBooks yet (missing QuickBooks invoice id).')
   }
