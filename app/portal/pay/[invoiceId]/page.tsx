@@ -5,6 +5,7 @@ import { useParams, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 interface PublicInvoice {
   id: string
@@ -61,6 +62,7 @@ export default function PublicPaymentPage() {
   const [reconcilingPayment, setReconcilingPayment] = useState(false)
   const [manualSyncing, setManualSyncing] = useState(false)
   const [achProcessing, setAchProcessing] = useState(false)
+  const [showPayChoice, setShowPayChoice] = useState(false)
 
   useEffect(() => {
     const fetchInvoice = async () => {
@@ -87,6 +89,20 @@ export default function PublicPaymentPage() {
 
     fetchInvoice()
   }, [invoiceId, token])
+
+  useEffect(() => {
+    // Auto-prompt payment method selection when arriving from the invoice email.
+    // If the user is returning from a gateway (card) redirect, don't interrupt with a modal.
+    const hasGatewayProof = Boolean(gatewayResult || gatewayStatus || gatewayRef || gatewayAmount)
+    const unpaid = Number(invoice?.balance || 0) > 0
+    if (!loading && !error && invoice && unpaid && approved && !hasGatewayProof) {
+      setShowPayChoice(true)
+    } else {
+      setShowPayChoice(false)
+    }
+    // Only react to changes that indicate a new arrival/ready-to-pay state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, error, invoice?.id, invoice?.balance, approved])
 
   const refreshInvoice = async () => {
     if (!token) return
@@ -335,6 +351,45 @@ export default function PublicPaymentPage() {
               I approve this invoice and authorize payment.
             </label>
           </div>
+
+          <Dialog open={showPayChoice} onOpenChange={setShowPayChoice}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>How would you like to pay?</DialogTitle>
+                <DialogDescription>
+                  Choose a payment method to continue. Card payments are processed via our card processor. ACH opens a
+                  QuickBooks-hosted payment page.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex flex-col gap-2">
+                <Button
+                  disabled={!approved || processing}
+                  onClick={() => {
+                    setShowPayChoice(false)
+                    handlePayNow()
+                  }}
+                >
+                  {processing ? 'Redirecting...' : 'Pay by Card'}
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={!approved || achProcessing || !invoice.qboAchEnabled}
+                  onClick={() => {
+                    setShowPayChoice(false)
+                    handlePayByAch()
+                  }}
+                  title={!invoice.qboAchEnabled ? 'ACH is not enabled for this invoice' : 'Pay by ACH via QuickBooks'}
+                >
+                  {achProcessing ? 'Redirecting...' : 'Pay by ACH'}
+                </Button>
+                {!invoice.qboAchEnabled && (
+                  <div className="text-xs text-gray-600">
+                    ACH isn’t enabled for this invoice. Please choose Card or contact the office.
+                  </div>
+                )}
+              </div>
+            </DialogContent>
+          </Dialog>
 
           <div className="flex items-center gap-2">
             <Button
