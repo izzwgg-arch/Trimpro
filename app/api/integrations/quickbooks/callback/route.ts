@@ -95,6 +95,7 @@ export async function GET(request: NextRequest) {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Accept': 'application/json',
+        'User-Agent': 'TrimPro/1.0 (+https://app.trimprony.com)',
         'Authorization': `Basic ${Buffer.from(`${cfg.clientId}:${cfg.clientSecret}`).toString('base64')}`,
       },
       body: new URLSearchParams({
@@ -104,13 +105,29 @@ export async function GET(request: NextRequest) {
       }),
     })
 
+    const intuitTid =
+      tokenResponse.headers.get('intuit_tid') ||
+      tokenResponse.headers.get('intuit-tid') ||
+      tokenResponse.headers.get('x-intuit-tid') ||
+      null
+    const contentType = tokenResponse.headers.get('content-type') || ''
+
     const raw = await tokenResponse.text()
     let tokenData: any = null
     try {
       tokenData = raw ? JSON.parse(raw) : {}
     } catch {
       // Intuit sometimes returns an HTML error page when credentials/redirect_uri are wrong.
-      throw new Error(`Token exchange failed: Unexpected response from Intuit (${tokenResponse.status}).`)
+      const snippet = String(raw || '')
+        .replace(/"access_token"\s*:\s*"[^"]+"/gi, '"access_token":"[redacted]"')
+        .replace(/"refresh_token"\s*:\s*"[^"]+"/gi, '"refresh_token":"[redacted]"')
+        .replace(/\s+/g, ' ')
+        .slice(0, 220)
+      const tidPart = intuitTid ? ` intuit_tid=${intuitTid}` : ''
+      const ctPart = contentType ? ` content-type=${contentType}` : ''
+      throw new Error(
+        `Token exchange failed: Unexpected response from Intuit (status=${tokenResponse.status}${ctPart}${tidPart}). Snippet: ${snippet || '[empty]'}`
+      )
     }
 
     if (!tokenResponse.ok) {
@@ -120,7 +137,8 @@ export async function GET(request: NextRequest) {
         tokenData?.message ||
         raw?.slice?.(0, 300) ||
         'Unknown error'
-      throw new Error(`Token exchange failed: ${detail}`)
+      const tidPart = intuitTid ? ` (intuit_tid: ${intuitTid})` : ''
+      throw new Error(`Token exchange failed: ${detail}${tidPart}`)
     }
     const { access_token, refresh_token, expires_in } = tokenData
 
