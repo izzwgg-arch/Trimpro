@@ -23,6 +23,7 @@ interface Client {
   email: string | null
   phone: string | null
   isActive: boolean
+  openInvoiceBalance?: string
   contacts: Array<{
     id: string
     firstName: string
@@ -413,6 +414,9 @@ export default function ClientsPage() {
                         <span>{client._count.jobs} jobs</span>
                         <span>{client._count.invoices} invoices</span>
                       </div>
+                      <div className="text-xs font-semibold text-gray-800" title="Total open balance across all unpaid invoices">
+                        {formatCurrency(client.openInvoiceBalance || 0)}
+                      </div>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -449,14 +453,22 @@ export default function ClientsPage() {
                 />
               }
               primary={client.name}
-              secondary={client.companyName || client.email || client.phone || 'No contact info'}
+              secondary={
+                `${client.companyName || client.email || client.phone || 'No contact info'} • Open: ${formatCurrency(
+                  client.openInvoiceBalance || 0
+                )}`
+              }
               status={
                 <span className={`px-2 py-1 text-xs rounded-full ${client.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
                   {client.isActive ? 'Active' : 'Inactive'}
                 </span>
               }
-              amount={<span>{client._count.jobs} jobs</span>}
-              date={<span>{client._count.invoices} invoices</span>}
+              amount={<span>{formatCurrency(client.openInvoiceBalance || 0)}</span>}
+              date={
+                <span>
+                  {client._count.jobs} jobs • {client._count.invoices} invoices
+                </span>
+              }
               actions={
                 <Button
                   variant="ghost"
@@ -497,8 +509,12 @@ export default function ClientsPage() {
                 </span>
               }
               line2={`${client.companyName || 'No company'} • ${client.email || 'No email'} • ${client.phone || 'No phone'}`}
-              rightTop={<span>{client._count.jobs} jobs</span>}
-              rightBottom={<span>{client._count.invoices} invoices</span>}
+              rightTop={<span>{formatCurrency(client.openInvoiceBalance || 0)}</span>}
+              rightBottom={
+                <span>
+                  {client._count.jobs} jobs • {client._count.invoices} invoices
+                </span>
+              }
               actions={
                 <Button
                   variant="ghost"
@@ -570,6 +586,12 @@ export default function ClientsPage() {
               header: 'Invoices',
               sortValue: (client) => client._count.invoices,
               render: (client) => client._count.invoices,
+            },
+            {
+              key: 'openBalance',
+              header: 'Open Balance',
+              sortValue: (client) => parseFloat(client.openInvoiceBalance || '0'),
+              render: (client) => <span className="font-medium">{formatCurrency(client.openInvoiceBalance || 0)}</span>,
             },
             {
               key: 'actions',

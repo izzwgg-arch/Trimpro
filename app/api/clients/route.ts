@@ -63,8 +63,32 @@ export async function GET(request: NextRequest) {
       prisma.client.count({ where }),
     ])
 
+    const clientIds = clients.map((c) => c.id)
+    const openBalanceByClientId = new Map<string, string>()
+
+    if (clientIds.length) {
+      // "Open" means there is a remaining balance and it isn't closed/cancelled/refunded.
+      const grouped = await prisma.invoice.groupBy({
+        by: ['clientId'],
+        where: {
+          tenantId: user.tenantId,
+          clientId: { in: clientIds },
+          balance: { gt: 0 },
+          status: { notIn: ['PAID', 'CANCELLED', 'REFUNDED'] as any },
+        } as any,
+        _sum: { balance: true },
+      })
+
+      for (const row of grouped) {
+        openBalanceByClientId.set(String(row.clientId), row._sum.balance?.toString() || '0')
+      }
+    }
+
     return NextResponse.json({
-      clients,
+      clients: clients.map((c) => ({
+        ...c,
+        openInvoiceBalance: openBalanceByClientId.get(c.id) || '0',
+      })),
       pagination: createPaginationResponse(total, limit, skip),
     })
   } catch (error) {
