@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
       where.clientId = clientId
     }
 
-    const [invoices, total] = await Promise.all([
+    const [invoices, total, allTimeTotal, allTimeOverdue, unpaidAgg, unpaidCount] = await Promise.all([
       prisma.invoice.findMany({
         where,
         include: {
@@ -75,10 +75,33 @@ export async function GET(request: NextRequest) {
         take,
       }),
       prisma.invoice.count({ where }),
+      prisma.invoice.count({ where: { tenantId: user.tenantId } }),
+      prisma.invoice.count({ where: { tenantId: user.tenantId, status: 'OVERDUE' as any } }),
+      prisma.invoice.aggregate({
+        where: {
+          tenantId: user.tenantId,
+          status: { notIn: ['PAID', 'CANCELLED', 'REFUNDED'] as any },
+          balance: { gt: 0 } as any,
+        },
+        _sum: { balance: true },
+      }),
+      prisma.invoice.count({
+        where: {
+          tenantId: user.tenantId,
+          status: { notIn: ['PAID', 'CANCELLED', 'REFUNDED'] as any },
+          balance: { gt: 0 } as any,
+        },
+      }),
     ])
 
     return NextResponse.json({
       invoices,
+      summary: {
+        totalInvoicesAllTime: allTimeTotal,
+        overdueCountAllTime: allTimeOverdue,
+        unpaidCountAllTime: unpaidCount,
+        totalUnpaidAllTime: Number((unpaidAgg as any)?._sum?.balance ?? 0),
+      },
       pagination: createPaginationResponse(total, limit, skip),
     })
   } catch (error) {

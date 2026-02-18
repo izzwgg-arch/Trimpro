@@ -68,6 +68,12 @@ export default function InvoicesPage() {
   const [duplicating, setDuplicating] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [viewMode, setViewMode] = useViewMode('invoices', 'grid')
+  const [summary, setSummary] = useState<{
+    totalInvoicesAllTime: number
+    overdueCountAllTime: number
+    unpaidCountAllTime: number
+    totalUnpaidAllTime: number
+  } | null>(null)
 
   const toggleSelected = (id: string, checked: boolean) => {
     setSelectedIds((prev) => (checked ? (prev.includes(id) ? prev : [...prev, id]) : prev.filter((x) => x !== id)))
@@ -114,6 +120,14 @@ export default function InvoicesPage() {
       setInvoices(data.invoices || [])
       setTotalPages(Number(data?.pagination?.totalPages || 1))
       setTotal(Number(data?.pagination?.total || 0))
+      if (data?.summary) {
+        setSummary({
+          totalInvoicesAllTime: Number(data.summary.totalInvoicesAllTime || 0),
+          overdueCountAllTime: Number(data.summary.overdueCountAllTime || 0),
+          unpaidCountAllTime: Number(data.summary.unpaidCountAllTime || 0),
+          totalUnpaidAllTime: Number(data.summary.totalUnpaidAllTime || 0),
+        })
+      }
     } catch (error) {
       console.error('Failed to fetch invoices:', error)
     } finally {
@@ -211,12 +225,6 @@ export default function InvoicesPage() {
     )
   }
 
-  const totalUnpaid = invoices
-    .filter((inv) => inv.status !== 'PAID' && inv.status !== 'CANCELLED')
-    .reduce((sum, inv) => sum + parseFloat(inv.balance), 0)
-
-  const overdueCount = invoices.filter((inv) => inv.status === 'OVERDUE').length
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
@@ -248,9 +256,9 @@ export default function InvoicesPage() {
             <CardTitle className="text-sm font-medium">Total Unpaid</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(totalUnpaid)}</div>
+            <div className="text-2xl font-bold">{formatCurrency(summary?.totalUnpaidAllTime || 0)}</div>
             <p className="text-xs text-gray-500 mt-1">
-              {invoices.filter((inv) => inv.status !== 'PAID' && inv.status !== 'CANCELLED').length} invoices
+              {summary?.unpaidCountAllTime ?? 0} invoices
             </p>
           </CardContent>
         </Card>
@@ -259,7 +267,7 @@ export default function InvoicesPage() {
             <CardTitle className="text-sm font-medium">Overdue</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">{overdueCount}</div>
+            <div className="text-2xl font-bold text-red-600">{summary?.overdueCountAllTime ?? 0}</div>
             <p className="text-xs text-gray-500 mt-1">Requires attention</p>
           </CardContent>
         </Card>
@@ -268,7 +276,7 @@ export default function InvoicesPage() {
             <CardTitle className="text-sm font-medium">Total Invoices</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{invoices.length}</div>
+            <div className="text-2xl font-bold">{summary?.totalInvoicesAllTime ?? 0}</div>
             <p className="text-xs text-gray-500 mt-1">All time</p>
           </CardContent>
         </Card>

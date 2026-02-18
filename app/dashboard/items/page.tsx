@@ -63,6 +63,8 @@ export default function ItemsPage() {
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
+  const [activeCount, setActiveCount] = useState(0)
+  const [totalValue, setTotalValue] = useState(0)
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
   const [kindFilter, setKindFilter] = useState('all')
@@ -150,6 +152,8 @@ export default function ItemsPage() {
       setItems(data.items || [])
       setTotalPages(Number(data?.pagination?.totalPages || 1))
       setTotal(Number(data?.pagination?.total || 0))
+      setActiveCount(Number(data?.stats?.activeCount || 0))
+      setTotalValue(Number(data?.stats?.totalValue || 0))
     } catch (error) {
       console.error('Failed to fetch items:', error)
       setItems([])
@@ -363,12 +367,6 @@ export default function ItemsPage() {
     )
   }
 
-  const activeItems = items.filter((item) => item.isActive).length
-  const totalValue = items.reduce((sum, item) => {
-    const price = Number(item.defaultUnitPrice)
-    return sum + (Number.isFinite(price) ? price : 0)
-  }, 0)
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -423,7 +421,7 @@ export default function ItemsPage() {
             <CardTitle className="text-sm font-medium">Total Items</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{items.length}</div>
+            <div className="text-2xl font-bold">{total}</div>
           </CardContent>
         </Card>
         <Card>
@@ -431,7 +429,7 @@ export default function ItemsPage() {
             <CardTitle className="text-sm font-medium">Active Items</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{activeItems}</div>
+            <div className="text-2xl font-bold">{activeCount}</div>
           </CardContent>
         </Card>
         <Card>

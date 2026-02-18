@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
       where.isActive = active === 'true'
     }
 
-    const [items, total] = await Promise.all([
+    const [items, total, activeCount, sumAgg] = await Promise.all([
       prisma.item.findMany({
         where,
         include: {
@@ -75,10 +75,20 @@ export async function GET(request: NextRequest) {
         take: limit,
       }),
       prisma.item.count({ where }),
+      prisma.item.count({ where: { ...where, isActive: true } }),
+      prisma.item.aggregate({
+        where,
+        _sum: { defaultUnitPrice: true },
+      }),
     ])
 
     return NextResponse.json({
       items,
+      stats: {
+        total,
+        activeCount,
+        totalValue: Number((sumAgg as any)?._sum?.defaultUnitPrice ?? 0),
+      },
       pagination: {
         page,
         limit,
