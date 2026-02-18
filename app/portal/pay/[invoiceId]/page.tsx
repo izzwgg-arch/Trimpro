@@ -85,6 +85,18 @@ export default function PublicPaymentPage() {
   const [recaptchaScriptLoaded, setRecaptchaScriptLoaded] = useState(false)
 
   useEffect(() => {
+    // Global CSS disables body scroll; portal pages need natural scrolling.
+    // Keep it scoped to this page so we don't affect the authenticated dashboard.
+    const body = document.body
+    const prev = body.getAttribute('data-allow-scroll')
+    body.setAttribute('data-allow-scroll', 'true')
+    return () => {
+      if (prev == null) body.removeAttribute('data-allow-scroll')
+      else body.setAttribute('data-allow-scroll', prev)
+    }
+  }, [])
+
+  useEffect(() => {
     // Client-side env vars are baked at build time; fetch a runtime fallback if missing.
     if (recaptchaSiteKey) return
     let cancelled = false

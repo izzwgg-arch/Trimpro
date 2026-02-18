@@ -71,6 +71,10 @@
     padding: 0;
     overflow: hidden; /* Prevent body scroll, let main handle it */
   }
+  /* Allow body scrolling on public portal pages that need natural page scroll. */
+  body[data-allow-scroll='true'] {
+    overflow: auto !important;
+  }
   #__next {
     height: 100%;
     background-color: rgb(243 244 246) !important; /* gray-100 */
