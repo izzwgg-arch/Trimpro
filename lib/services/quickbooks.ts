@@ -108,8 +108,21 @@ export class QuickBooksService {
     this.logIntuitTid(intuitTid, { method: 'POST', url: `${QBO_BASE_URL}/v1/tokens/bearer`, status: response.status })
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: 'Unknown error' }))
-      const msg = error.error_description || error.message || 'Failed to refresh token'
+      // Intuit sometimes returns non-JSON (or JSON with different fields). Capture a short snippet for debugging.
+      const raw = await response.text().catch(() => '')
+      let error: any = null
+      try {
+        error = raw ? JSON.parse(raw) : {}
+      } catch {
+        error = { message: raw ? raw.slice(0, 300) : 'Unknown error' }
+      }
+      const msgBase =
+        error?.error_description ||
+        error?.message ||
+        error?.error ||
+        (raw ? String(raw).slice(0, 200) : null) ||
+        'Failed to refresh token'
+      const msg = `${msgBase} (status=${response.status})`
       throw new Error(intuitTid ? `${msg} (intuit_tid: ${intuitTid})` : msg)
     }
 

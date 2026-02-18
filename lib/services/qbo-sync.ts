@@ -71,42 +71,58 @@ async function getQboSession(tenantId: string) {
   const isExpired = expiresAt ? expiresAt.getTime() <= Date.now() + 30_000 : false
 
   if (!accessToken || isExpired) {
-    const refreshed = await quickBooksService.refreshAccessToken(refreshToken)
-    accessToken = refreshed.access_token
-    const newRefresh = refreshed.refresh_token || refreshToken
-    const newExpiresAt = new Date(Date.now() + refreshed.expires_in * 1000)
+    try {
+      const refreshed = await quickBooksService.refreshAccessToken(refreshToken)
+      accessToken = refreshed.access_token
+      const newRefresh = refreshed.refresh_token || refreshToken
+      const newExpiresAt = new Date(Date.now() + refreshed.expires_in * 1000)
 
-    // Persist into encrypted IntegrationConnection if present.
-    if (secrets) {
-      const merged = {
-        ...secrets,
-        accessToken: refreshed.access_token,
-        refreshToken: newRefresh,
-        realmId,
-        tokenExpiresAt: newExpiresAt.toISOString(),
+      // Persist into encrypted IntegrationConnection if present.
+      if (secrets) {
+        const merged = {
+          ...secrets,
+          accessToken: refreshed.access_token,
+          refreshToken: newRefresh,
+          realmId,
+          tokenExpiresAt: newExpiresAt.toISOString(),
+        }
+        await prisma.integrationConnection.update({
+          where: { tenantId_provider: { tenantId, provider: 'quickbooks' } },
+          data: {
+            encryptedSecrets: encryptSecrets(merged),
+            status: 'CONNECTED',
+            lastCheckedAt: new Date(),
+            lastError: null,
+            metadata: { realmId, refreshedAt: new Date().toISOString() },
+          },
+        })
       }
-      await prisma.integrationConnection.update({
-        where: { tenantId_provider: { tenantId, provider: 'quickbooks' } },
+
+      // Backwards compatibility for older paths.
+      await prisma.quickBooksIntegration.update({
+        where: { tenantId },
         data: {
-          encryptedSecrets: encryptSecrets(merged),
-          status: 'CONNECTED',
-          lastCheckedAt: new Date(),
-          lastError: null,
-          metadata: { realmId, refreshedAt: new Date().toISOString() },
+          accessToken: refreshed.access_token,
+          refreshToken: newRefresh,
+          tokenExpiresAt: newExpiresAt,
+          realmId,
         },
       })
+    } catch (error: any) {
+      const message = error?.message || 'Failed to refresh QuickBooks access token'
+      // Surface this to the UI so actions don't "silently" do nothing.
+      try {
+        await prisma.integrationConnection.update({
+          where: { tenantId_provider: { tenantId, provider: 'quickbooks' } },
+          data: {
+            status: 'ERROR',
+            lastCheckedAt: new Date(),
+            lastError: message,
+          },
+        })
+      } catch {}
+      throw error
     }
-
-    // Backwards compatibility for older paths.
-    await prisma.quickBooksIntegration.update({
-      where: { tenantId },
-      data: {
-        accessToken: refreshed.access_token,
-        refreshToken: newRefresh,
-        tokenExpiresAt: newExpiresAt,
-        realmId,
-      },
-    })
   }
 
   return {
