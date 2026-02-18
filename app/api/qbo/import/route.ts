@@ -11,10 +11,19 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}))
     const includePayments = Boolean(body?.includePayments)
     const includeItems = body?.includeItems === undefined ? true : Boolean(body?.includeItems)
-    const result = await importQuickBooksCustomersAndPayments(user.tenantId, { includePayments, includeItems })
+    const includeOpenInvoices = Boolean(body?.includeOpenInvoices)
+    const result = await importQuickBooksCustomersAndPayments(user.tenantId, {
+      includePayments,
+      includeItems,
+      includeOpenInvoices,
+    })
     return NextResponse.json({
       success: true,
-      mode: includePayments ? 'customers_items_and_payments' : 'customers_and_items',
+      mode: includePayments
+        ? 'customers_items_and_payments'
+        : includeOpenInvoices
+          ? 'customers_items_and_open_invoices'
+          : 'customers_and_items',
       ...result,
     })
   } catch (error: any) {

@@ -47,6 +47,7 @@ export default function IntegrationProviderPage() {
   const [webhookSecret, setWebhookSecret] = useState<string>('')
   const [importingQbo, setImportingQbo] = useState(false)
   const [importResult, setImportResult] = useState<any>(null)
+  const [importingQboInvoices, setImportingQboInvoices] = useState(false)
 
   useEffect(() => {
     fetchIntegration()
@@ -266,7 +267,7 @@ export default function IntegrationProviderPage() {
 
   const handleQuickBooksImport = async () => {
     if (importingQbo) return
-    if (!confirm('Import ALL clients and items from QuickBooks into TrimPro? This may take a minute.')) {
+    if (!confirm('Import ALL clients and ALL items from QuickBooks into TrimPro? This may take a minute.')) {
       return
     }
 
@@ -287,7 +288,7 @@ export default function IntegrationProviderPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ includeItems: true, includePayments: false }),
+        body: JSON.stringify({ includeItems: true, includePayments: false, includeOpenInvoices: false }),
       })
 
       if (response.status === 401) {
@@ -300,7 +301,7 @@ export default function IntegrationProviderPage() {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ includeItems: true, includePayments: false }),
+          body: JSON.stringify({ includeItems: true, includePayments: false, includeOpenInvoices: false }),
         })
       }
 
@@ -318,6 +319,64 @@ export default function IntegrationProviderPage() {
       alert('QuickBooks import failed. Please try again.')
     } finally {
       setImportingQbo(false)
+    }
+  }
+
+  const handleQuickBooksImportOpenInvoices = async () => {
+    if (importingQboInvoices) return
+    if (!confirm('Import open/unpaid invoices from QuickBooks into TrimPro?')) {
+      return
+    }
+
+    setImportingQboInvoices(true)
+    setImportResult(null)
+
+    try {
+      let token = localStorage.getItem('accessToken')
+      if (!token) {
+        const refreshed = await refreshToken()
+        if (!refreshed) return
+        token = localStorage.getItem('accessToken')
+      }
+
+      let response = await fetch('/api/qbo/import', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        // We still import/refresh customers mapping under the hood, but don't re-import items.
+        body: JSON.stringify({ includeItems: false, includePayments: false, includeOpenInvoices: true }),
+      })
+
+      if (response.status === 401) {
+        const refreshed = await refreshToken()
+        if (!refreshed) return
+        token = localStorage.getItem('accessToken')
+        response = await fetch('/api/qbo/import', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ includeItems: false, includePayments: false, includeOpenInvoices: true }),
+        })
+      }
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'QuickBooks invoice import failed')
+        setImportResult({ success: false, ...data })
+        return
+      }
+
+      setImportResult({ success: true, ...data })
+      fetchConnection()
+    } catch (error) {
+      console.error('QuickBooks invoice import failed:', error)
+      alert('QuickBooks invoice import failed. Please try again.')
+    } finally {
+      setImportingQboInvoices(false)
     }
   }
 
@@ -782,6 +841,9 @@ export default function IntegrationProviderPage() {
                   <Button onClick={handleQuickBooksImport} disabled={importingQbo} variant="outline">
                     {importingQbo ? 'Importing...' : 'Import Clients + Items'}
                   </Button>
+                  <Button onClick={handleQuickBooksImportOpenInvoices} disabled={importingQboInvoices} variant="outline">
+                    {importingQboInvoices ? 'Importing...' : 'Import Open Invoices'}
+                  </Button>
                 </>
               )}
             </div>
@@ -789,7 +851,8 @@ export default function IntegrationProviderPage() {
 
           {provider === 'quickbooks' && importResult?.success && (
             <div className="rounded border bg-white p-3 text-sm text-gray-700">
-              Imported clients: {importResult.importedClients ?? 0} · Imported items: {importResult.importedItems ?? 0}
+              Imported clients: {importResult.importedClients ?? 0} · Imported items: {importResult.importedItems ?? 0} · Imported open invoices:{' '}
+              {importResult.importedOpenInvoices ?? 0}
               {Array.isArray(importResult.errors) && importResult.errors.length ? (
                 <div className="mt-2 text-xs text-amber-700">
                   {importResult.errors.slice(0, 5).join(' | ')}

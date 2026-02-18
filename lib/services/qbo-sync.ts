@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma'
 import { quickBooksService } from '@/lib/services/quickbooks'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { encryptSecrets } from '@/lib/integrations/secrets'
+import crypto from 'crypto'
 
 type SyncType =
   | 'client'
@@ -995,16 +996,19 @@ export async function syncPurchaseOrderToQuickBooks(tenantId: string, purchaseOr
 
 export async function importQuickBooksCustomersAndPayments(
   tenantId: string,
-  options?: { includePayments?: boolean; includeItems?: boolean }
+  options?: { includePayments?: boolean; includeItems?: boolean; includeOpenInvoices?: boolean }
 ) {
   const session = await getQboSession(tenantId)
   if (!session) throw new Error('QuickBooks is not connected for this tenant.')
   const includePayments = Boolean(options?.includePayments)
   // Default: import items as well (matches "import all clients and items" request).
   const includeItems = options?.includeItems !== false
+  const includeOpenInvoices = Boolean(options?.includeOpenInvoices)
 
   let importedClients = 0
   let importedSubClients = 0
+  let importedOpenInvoices = 0
+  let skippedOpenInvoices = 0
   let importedPayments = 0
   let skippedPayments = 0
   let importedItems = 0
@@ -1325,6 +1329,182 @@ export async function importQuickBooksCustomersAndPayments(
     }
   }
 
+  // Import open/unpaid invoices when requested.
+  // - Must run after customers import so CustomerRef can be mapped to local clientId.
+  // - Uses QB invoice ids in `invoice.qboSyncId` to avoid duplicates.
+  for (let start = 1; includeOpenInvoices && start <= 10000; start += 1000) {
+    // Only open invoices: Balance > 0
+    const query = `select * from Invoice where Balance > '0' startposition ${start} maxresults 1000`
+    const res = await quickBooksService.query(session.accessToken, session.realmId, query)
+    const invoices = res?.QueryResponse?.Invoice || []
+    if (!invoices.length) break
+
+    for (const inv of invoices) {
+      try {
+        const qboInvoiceId = String(inv.Id || '')
+        if (!qboInvoiceId) continue
+
+        const exists = await prisma.invoice.findFirst({
+          where: { tenantId, qboSyncId: qboInvoiceId },
+          select: { id: true },
+        })
+        if (exists) continue
+
+        const customerQboId = inv?.CustomerRef?.value ? String(inv.CustomerRef.value) : ''
+        const clientId = customerQboId ? qboCustomerIdToLocalClientId.get(customerQboId) || null : null
+        if (!clientId) {
+          skippedOpenInvoices += 1
+          errors.push(`Invoice import skipped (missing client mapping): QB invoice ${qboInvoiceId}`)
+          continue
+        }
+
+        const docNumber = String(inv.DocNumber || '').trim()
+        const invoiceNumberBase = docNumber ? `QB-${docNumber}` : `QB-${qboInvoiceId}`
+        let invoiceNumber = invoiceNumberBase
+
+        // Guard global uniqueness on invoiceNumber
+        const collision = await prisma.invoice.findFirst({
+          where: { invoiceNumber },
+          select: { id: true },
+        })
+        if (collision) {
+          invoiceNumber = `${invoiceNumberBase}-${qboInvoiceId.slice(-6)}`
+        }
+
+        const totalAmt = toNumber(inv.TotalAmt)
+        const balance = toNumber(inv.Balance)
+        const taxAmount = toNumber(inv?.TxnTaxDetail?.TotalTax)
+        const subtotal = Math.max(0, totalAmt - taxAmount)
+        const paidAmount = Math.max(0, totalAmt - balance)
+
+        const txnDateRaw = inv.TxnDate ? String(inv.TxnDate) : null
+        const dueDateRaw = inv.DueDate ? String(inv.DueDate) : null
+        const invoiceDate = txnDateRaw ? new Date(`${txnDateRaw}T00:00:00.000Z`) : new Date()
+        const dueDate = dueDateRaw ? new Date(`${dueDateRaw}T00:00:00.000Z`) : null
+
+        const now = new Date()
+        const isOverdue = dueDate ? dueDate.getTime() < now.getTime() && balance > 0 : false
+        const status = balance <= 0 ? 'PAID' : isOverdue ? 'OVERDUE' : 'SENT'
+
+        const title = `QuickBooks Invoice ${docNumber || qboInvoiceId}`
+        const notes = inv.PrivateNote ? String(inv.PrivateNote) : 'Imported from QuickBooks (open invoice import)'
+
+        // Build line items; fall back to one summary line if QBO doesn't include usable lines.
+        const qboLines = Array.isArray(inv.Line) ? inv.Line : []
+        const lineRows = qboLines
+          .filter((l: any) => l && typeof l === 'object')
+          .filter((l: any) => {
+            const dt = String(l.DetailType || '')
+            return dt !== 'SubTotalLineDetail' && dt !== 'DescriptionOnly'
+          })
+          .map((l: any, idx: number) => {
+            const amount = toNumber(l.Amount)
+            if (!amount) return null
+            const qty = toNumber(l?.SalesItemLineDetail?.Qty) || 1
+            const unitPrice =
+              toNumber(l?.SalesItemLineDetail?.UnitPrice) || (qty ? amount / qty : amount)
+            const desc =
+              String(l.Description || '') ||
+              String(l?.SalesItemLineDetail?.ItemRef?.name || '') ||
+              `QuickBooks line ${idx + 1}`
+
+            return {
+              description: desc.slice(0, 500),
+              quantity: qty,
+              unitPrice,
+              total: amount,
+              sortOrder: idx,
+              taxable: true,
+            }
+          })
+          .filter(Boolean) as Array<{
+          description: string
+          quantity: number
+          unitPrice: number
+          total: number
+          sortOrder: number
+          taxable: boolean
+        }>
+
+        const linesToInsert =
+          lineRows.length > 0
+            ? lineRows
+            : [
+                {
+                  description: 'Imported from QuickBooks',
+                  quantity: 1,
+                  unitPrice: subtotal || totalAmt || 0,
+                  total: subtotal || totalAmt || 0,
+                  sortOrder: 0,
+                  taxable: true,
+                },
+              ]
+
+        const created = await prisma.invoice.create({
+          data: {
+            tenantId,
+            clientId,
+            jobId: null,
+            estimateId: null,
+            invoiceNumber,
+            title,
+            status: status as any,
+            subtotal,
+            taxRate: 0,
+            taxAmount,
+            discount: 0,
+            total: totalAmt,
+            paidAmount,
+            balance,
+            invoiceDate,
+            dueDate,
+            sentAt: invoiceDate,
+            notes,
+            terms: null,
+            memo: null,
+            paymentToken: crypto.randomBytes(20).toString('hex'),
+            qboAchEnabled: true,
+            qboSyncId: qboInvoiceId,
+            qboSyncAt: new Date(),
+          },
+        })
+
+        await prisma.invoiceLineItem.createMany({
+          data: linesToInsert.map((l) => ({
+            invoiceId: created.id,
+            groupId: null,
+            sourceItemId: null,
+            sourceBundleId: null,
+            description: l.description,
+            quantity: l.quantity,
+            unitPrice: l.unitPrice,
+            unitCost: null,
+            total: l.total,
+            sortOrder: l.sortOrder,
+            notes: null,
+            vendorId: null,
+            taxable: l.taxable,
+            taxRate: null,
+          })),
+        })
+
+        await logSync({
+          integrationId: session.integrationId,
+          type: 'invoice',
+          action: 'import',
+          status: 'success',
+          entityId: created.id,
+          qboId: qboInvoiceId,
+          data: { docNumber: docNumber || null, balance },
+        })
+
+        importedOpenInvoices += 1
+      } catch (error: any) {
+        errors.push(`Invoice import failed: ${error?.message || 'Unknown error'}`)
+      }
+    }
+  }
+
   // Import payments only when explicitly requested.
   for (let start = 1; includePayments && start <= 10000; start += 1000) {
     const query = `select * from Payment startposition ${start} maxresults 1000`
@@ -1440,6 +1620,8 @@ export async function importQuickBooksCustomersAndPayments(
     importedClients,
     importedSubClients,
     importedItems,
+    importedOpenInvoices,
+    skippedOpenInvoices,
     importedPayments,
     skippedPayments,
     errors: errors.slice(0, 20),
