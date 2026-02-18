@@ -85,7 +85,6 @@ export default function PublicPaymentPage() {
   const [processing, setProcessing] = useState(false)
   const [confirmation, setConfirmation] = useState<string | null>(null)
   const [reconcilingPayment, setReconcilingPayment] = useState(false)
-  const [manualSyncing, setManualSyncing] = useState(false)
   const [achProcessing, setAchProcessing] = useState(false)
 
   const [recaptchaSiteKey, setRecaptchaSiteKey] = useState<string>(
@@ -385,43 +384,6 @@ export default function PublicPaymentPage() {
       setError(err instanceof Error ? err.message : 'Unable to redirect to ACH payment.')
     } finally {
       setAchProcessing(false)
-    }
-  }
-
-  const handleManualSync = async () => {
-    if (!invoice || manualSyncing) return
-    const parsedAmount = Number(invoice.balance || 0)
-    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) return
-    setManualSyncing(true)
-    try {
-      const body = new URLSearchParams()
-      body.set('xResult', 'A')
-      body.set('xInvoice', invoice.invoiceNumber)
-      body.set('xAmount', parsedAmount.toFixed(2))
-      body.set('xRefnum', gatewayRef || `MANUAL-${Date.now()}`)
-      body.set('invoiceId', invoice.invoiceNumber)
-
-      const response = await fetch('/api/webhooks/sola-payment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: body.toString(),
-      })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok) {
-        setError(data.error || 'Unable to sync payment.')
-        return
-      }
-
-      const refreshed = await fetch(`/api/public/invoices/${invoice.id}?token=${encodeURIComponent(token)}`)
-      const refreshedData = await refreshed.json().catch(() => ({}))
-      if (refreshed.ok && refreshedData.invoice) {
-        setInvoice(refreshedData.invoice)
-        setConfirmation('Payment synced. Invoice status updated.')
-      }
-    } catch {
-      setError('Unable to sync payment.')
-    } finally {
-      setManualSyncing(false)
     }
   }
 
@@ -827,9 +789,6 @@ export default function PublicPaymentPage() {
             </Button>
             <Button variant="outline" onClick={refreshInvoice} disabled={loading}>
               Refresh
-            </Button>
-            <Button variant="outline" disabled={manualSyncing} onClick={handleManualSync}>
-              {manualSyncing ? 'Syncing...' : 'I Paid - Sync Now'}
             </Button>
           </div>
 
