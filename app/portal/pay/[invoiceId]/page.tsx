@@ -80,6 +80,8 @@ export default function PublicPaymentPage() {
     lineItemIds: string[]
     amount: number
   } | null>(null)
+  const [customPrevAmount, setCustomPrevAmount] = useState<string>('')
+  const [customPrevEnabled, setCustomPrevEnabled] = useState(false)
   const [processing, setProcessing] = useState(false)
   const [confirmation, setConfirmation] = useState<string | null>(null)
   const [reconcilingPayment, setReconcilingPayment] = useState(false)
@@ -209,6 +211,13 @@ export default function PublicPaymentPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedInvoiceIds])
 
+  useEffect(() => {
+    if (!customPrevEnabled) return
+    // Custom previous-invoices mode overrides other selection modes.
+    setPartialSelection(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customPrevEnabled])
+
   const refreshInvoice = async () => {
     if (!token) return
     try {
@@ -282,9 +291,14 @@ export default function PublicPaymentPage() {
   const outstandingCount = Number(invoice?.outstanding?.count || 0)
   const outstandingTotal = Number(invoice?.outstanding?.total || 0)
   const openInvoices = Array.isArray(invoice?.outstanding?.invoices) ? invoice!.outstanding!.invoices : []
+  const previousInvoices = openInvoices.filter((i) => !i.isCurrent)
   const selectedTotal = useMemo(() => {
     if (partialSelection && selectedInvoiceIds.length === 1 && selectedInvoiceIds[0] === partialSelection.invoiceId) {
       return Number(partialSelection.amount || 0)
+    }
+    if (customPrevEnabled) {
+      const n = Number(String(customPrevAmount || '').replace(/[^0-9.]/g, ''))
+      return Number.isFinite(n) ? Math.max(0, n) : 0
     }
     const byId = new Map(openInvoices.map((i) => [String(i.id), Number(i.balance || 0)]))
     return selectedInvoiceIds.reduce((sum, id) => sum + Math.max(0, Number(byId.get(String(id)) || 0)), 0)
@@ -295,13 +309,20 @@ export default function PublicPaymentPage() {
   const handlePayNow = async () => {
     if (!invoice || !approved || processing) return
     if (selectedInvoiceIds.length === 0) {
-      setError('Select at least one invoice to pay.')
-      return
+      // In custom-prev mode we pay previous invoices even if none are explicitly selected.
+      if (!customPrevEnabled) {
+        setError('Select at least one invoice to pay.')
+        return
+      }
     }
     setProcessing(true)
     try {
       const recaptchaToken = await getRecaptchaToken('public_invoice_pay_card')
       const payload: any = { token, recaptchaToken, selectedInvoiceIds }
+      if (customPrevEnabled) {
+        payload.customPrevOnly = true
+        payload.customPrevAmount = customPrevAmount
+      }
       if (
         partialSelection &&
         selectedInvoiceIds.length === 1 &&
@@ -333,6 +354,10 @@ export default function PublicPaymentPage() {
     if (!invoice || !approved || achProcessing) return
     if (partialSelection) {
       setError('Partial payments are currently available for card payments only.')
+      return
+    }
+    if (customPrevEnabled) {
+      setError('Custom amount toward previous invoices is currently available for card payments only.')
       return
     }
     if (selectedInvoiceIds.length !== 1) {
@@ -591,6 +616,24 @@ export default function PublicPaymentPage() {
           </Button>
         </div>
       ) : null}
+      {customPrevEnabled ? (
+        <div className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            Custom amount (previous invoices):{' '}
+            <span className="font-semibold">{toCurrency(selectedTotal)}</span>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setCustomPrevEnabled(false)
+              setCustomPrevAmount('')
+            }}
+          >
+            Clear
+          </Button>
+        </div>
+      ) : null}
 
       <Card>
         <CardHeader>
@@ -667,6 +710,46 @@ export default function PublicPaymentPage() {
 
               {showOutstanding ? (
                 <div className="mt-3 rounded border bg-gray-50 p-2">
+                  {previousInvoices.length > 0 ? (
+                    <div className="mb-3 rounded border bg-white p-2">
+                      <div className="text-xs font-medium text-gray-700">
+                        Pay a custom amount toward previous invoices
+                      </div>
+                      <div className="mt-1 text-[11px] text-gray-500">
+                        This applies your payment to older invoices first and rolls over until the amount runs out.
+                        The current invoice on this page is excluded.
+                      </div>
+                      <div className="mt-2 flex items-center gap-2">
+                        <input
+                          value={customPrevAmount}
+                          onChange={(e) => setCustomPrevAmount(e.target.value)}
+                          placeholder="Enter amount (e.g. 2500)"
+                          className="h-9 w-56 rounded border px-3 text-sm"
+                          inputMode="decimal"
+                        />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={!approved}
+                          onClick={() => {
+                            const n = Number(String(customPrevAmount || '').replace(/[^0-9.]/g, ''))
+                            if (!Number.isFinite(n) || n <= 0) {
+                              setError('Enter a valid custom amount greater than 0.')
+                              return
+                            }
+                            setError(null)
+                            setCustomPrevEnabled(true)
+                            // In custom-prev mode, we don't need explicit invoice selection.
+                            setSelectedInvoiceIds([])
+                          }}
+                        >
+                          Apply
+                        </Button>
+                      </div>
+                      {!approved ? <div className="mt-1 text-[11px] text-gray-500">Check approval box to enable.</div> : null}
+                    </div>
+                  ) : null}
+
                   <div className="flex items-center justify-between gap-2 mb-2">
                     <div className="text-xs font-medium text-gray-600">Select invoices to pay</div>
                     <div className="flex items-center gap-2">
@@ -676,7 +759,9 @@ export default function PublicPaymentPage() {
                         onCheckedChange={(checked) => {
                           const next = Boolean(checked)
                           setSelectedInvoiceIds(next ? openInvoices.map((i) => String(i.id)) : [])
+                          setCustomPrevEnabled(false)
                         }}
+                        disabled={customPrevEnabled}
                       />
                       <label htmlFor="select-all" className="text-xs text-gray-700">
                         Select all
@@ -700,11 +785,13 @@ export default function PublicPaymentPage() {
                               checked={checked}
                               onCheckedChange={(v) => {
                                 const next = Boolean(v)
+                                setCustomPrevEnabled(false)
                                 setSelectedInvoiceIds((prev) =>
                                   next ? Array.from(new Set([...prev, id])) : prev.filter((x) => x !== id)
                                 )
                               }}
                               onClick={(e) => e.stopPropagation()}
+                              disabled={customPrevEnabled}
                             />
                             <div className="min-w-0">
                               <div className="text-xs font-medium truncate">
@@ -766,6 +853,8 @@ export default function PublicPaymentPage() {
               >
                 {processing
                   ? 'Redirecting...'
+                  : customPrevEnabled
+                    ? 'Pay Custom Amount by Card'
                   : selectedInvoiceIds.length > 1
                     ? 'Pay Selected by Card'
                     : 'Pay by Card'}

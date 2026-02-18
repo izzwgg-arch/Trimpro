@@ -404,6 +404,8 @@ export async function POST(request: NextRequest) {
         resp?.plannedAmountsByInvoice && typeof resp.plannedAmountsByInvoice === 'object'
           ? (resp.plannedAmountsByInvoice as Record<string, any>)
           : null
+      const allocationMode = typeof resp?.allocationMode === 'string' ? String(resp.allocationMode) : null
+      const maxTotalAmount = resp?.maxTotalAmount != null ? Number(resp.maxTotalAmount) : null
       if (!clientId || !invoiceIds.length) {
         return NextResponse.json({ error: 'Invalid payment intent' }, { status: 400 })
       }
@@ -438,6 +440,9 @@ export async function POST(request: NextRequest) {
       if (plannedAmountsByInvoice && plannedTotal > 0) {
         remaining = Math.min(remaining, plannedTotal)
       }
+      if (allocationMode === 'waterfall' && maxTotalAmount != null && Number.isFinite(maxTotalAmount) && maxTotalAmount > 0) {
+        remaining = Math.min(remaining, maxTotalAmount)
+      }
       let appliedCount = 0
       let appliedTotal = 0
 
@@ -446,7 +451,10 @@ export async function POST(request: NextRequest) {
         const invBalance = Math.max(0, Number(inv.balance || 0))
         if (invBalance <= 0) continue
         const plannedForThis = plannedAmountsByInvoice ? Number(plannedAmountsByInvoice[String(inv.id)] || 0) : 0
-        const maxForThis = plannedAmountsByInvoice && plannedForThis > 0 ? Math.min(invBalance, plannedForThis) : invBalance
+        const maxForThis =
+          plannedAmountsByInvoice && plannedForThis > 0
+            ? Math.min(invBalance, plannedForThis)
+            : invBalance
         const amountForThis = Math.min(remaining, maxForThis)
         if (amountForThis <= 0) continue
 

@@ -37,6 +37,9 @@ export async function POST(
       selectedInvoiceIdsRaw
         ? Array.from(new Set(selectedInvoiceIdsRaw.map((v: any) => String(v || '').trim()).filter(Boolean)))
         : []
+    const customPrevOnly = Boolean(body?.customPrevOnly)
+    const customPrevAmountRaw = body?.customPrevAmount
+    const customPrevAmount = customPrevAmountRaw == null ? null : Number(customPrevAmountRaw)
     const partialInvoiceId = String(body?.partialInvoiceId || '').trim()
     const partialLineItemIdsRaw = Array.isArray(body?.partialLineItemIds) ? body.partialLineItemIds : null
     const partialLineItemIds = partialLineItemIdsRaw
@@ -110,6 +113,8 @@ export async function POST(
     let invoicesToPay: Array<{ id: string; balance: any; dueDate: any; invoiceDate: any }> = []
     let plannedAmountsByInvoice: Record<string, number> | null = null
     let lineItemIdsByInvoice: Record<string, string[]> | null = null
+    let allocationMode: 'waterfall' | 'planned' | null = null
+    let maxTotalAmount: number | null = null
 
     if (partialInvoiceId && partialLineItemIds.length) {
       if (selectedInvoiceIds.length !== 1 || selectedInvoiceIds[0] !== partialInvoiceId) {
@@ -142,6 +147,28 @@ export async function POST(
       invoicesToPay = [{ id: partialInvoiceId, balance: capped, dueDate: null, invoiceDate: null }]
       plannedAmountsByInvoice = { [partialInvoiceId]: capped }
       lineItemIdsByInvoice = { [partialInvoiceId]: items.map((i) => i.id) }
+      allocationMode = 'planned'
+      maxTotalAmount = capped
+    } else if (customPrevOnly && customPrevAmount != null) {
+      if (!Number.isFinite(customPrevAmount) || customPrevAmount <= 0) {
+        return NextResponse.json({ error: 'Custom amount must be greater than 0.' }, { status: 400 })
+      }
+      // Previous invoices only: exclude the "current" invoice on this page.
+      invoicesToPay = await prisma.invoice.findMany({
+        where: {
+          ...(openWhere as any),
+          id: { not: invoice.id },
+        },
+        select: { id: true, balance: true, dueDate: true, invoiceDate: true },
+        orderBy: [{ dueDate: 'asc' }, { invoiceDate: 'asc' }],
+      })
+      invoicesToPay = invoicesToPay.filter((i) => Number(i.balance) > 0)
+      const totalOutstandingPrev = invoicesToPay.reduce((sum, i) => sum + Math.max(0, Number(i.balance || 0)), 0)
+      if (totalOutstandingPrev <= 0) {
+        return NextResponse.json({ error: 'No previous invoices with a balance due.' }, { status: 400 })
+      }
+      maxTotalAmount = Math.min(customPrevAmount, totalOutstandingPrev)
+      allocationMode = 'waterfall'
     } else if (selectedInvoiceIds.length) {
       invoicesToPay = await prisma.invoice.findMany({
         where: {
@@ -161,7 +188,8 @@ export async function POST(
 
     // Ensure we're only paying open invoices with balance > 0
     invoicesToPay = invoicesToPay.filter((i) => Number(i.balance) > 0)
-    const amountToPay = invoicesToPay.reduce((sum, i) => sum + Math.max(0, Number(i.balance || 0)), 0)
+    const sumBalances = invoicesToPay.reduce((sum, i) => sum + Math.max(0, Number(i.balance || 0)), 0)
+    const amountToPay = maxTotalAmount != null ? Math.min(maxTotalAmount, sumBalances) : sumBalances
 
     if (!Number.isFinite(amountToPay) || amountToPay <= 0) {
       return NextResponse.json({ error: 'Invoice already paid' }, { status: 400 })
@@ -190,6 +218,8 @@ export async function POST(
           invoiceIds: invoicesToPay.map((i) => i.id),
           plannedAmountsByInvoice,
           lineItemIdsByInvoice,
+          allocationMode,
+          maxTotalAmount,
           createdAt: new Date().toISOString(),
         },
         expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 14),
