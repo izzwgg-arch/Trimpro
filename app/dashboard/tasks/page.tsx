@@ -11,6 +11,7 @@ import { useViewMode } from '@/hooks/useViewMode'
 import { RowCompactItem } from '@/components/lists/RowCompactItem'
 import { RowDetailedItem } from '@/components/lists/RowDetailedItem'
 import { TableView } from '@/components/lists/TableView'
+import { PaginationControls } from '@/components/ui/PaginationControls'
 import { formatDate } from '@/lib/utils'
 import { Plus, Search, Filter, CheckSquare, Calendar, User, AlertCircle } from 'lucide-react'
 import Link from 'next/link'
@@ -82,6 +83,9 @@ export default function TasksPage() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
   const [filter, setFilter] = useState('all') // all, my, assigned
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [total, setTotal] = useState(0)
   const [viewMode, setViewMode] = useViewMode('tasks', 'grid')
 
   useEffect(() => {
@@ -92,8 +96,13 @@ export default function TasksPage() {
   }, [searchParams])
 
   useEffect(() => {
-    fetchTasks()
+    setPage(1)
   }, [search, status, filter])
+
+  useEffect(() => {
+    fetchTasks()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, status, filter, page])
 
   const fetchTasks = async () => {
     try {
@@ -102,7 +111,7 @@ export default function TasksPage() {
         search,
         status,
         filter,
-        page: '1',
+        page: String(page),
         limit: '50',
       })
 
@@ -119,6 +128,8 @@ export default function TasksPage() {
 
       const data = await response.json()
       setTasks(data.tasks || [])
+      setTotalPages(Number(data?.pagination?.totalPages || 1))
+      setTotal(Number(data?.pagination?.total || 0))
     } catch (error) {
       console.error('Failed to fetch tasks:', error)
     } finally {
@@ -425,6 +436,15 @@ export default function TasksPage() {
           ]}
         />
       )}
+
+      <PaginationControls
+        page={page}
+        totalPages={totalPages}
+        total={total}
+        disabled={loading}
+        onPrev={() => setPage((p) => Math.max(1, p - 1))}
+        onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+      />
     </div>
   )
 }

@@ -11,6 +11,7 @@ import { useViewMode } from '@/hooks/useViewMode'
 import { RowCompactItem } from '@/components/lists/RowCompactItem'
 import { RowDetailedItem } from '@/components/lists/RowDetailedItem'
 import { TableView } from '@/components/lists/TableView'
+import { PaginationControls } from '@/components/ui/PaginationControls'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Plus, Search, Filter, DollarSign, Calendar, AlertCircle, Trash2, Copy } from 'lucide-react'
 import Link from 'next/link'
@@ -60,6 +61,9 @@ export default function InvoicesPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [total, setTotal] = useState(0)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [duplicating, setDuplicating] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -77,8 +81,13 @@ export default function InvoicesPage() {
   }, [searchParams])
 
   useEffect(() => {
-    fetchInvoices()
+    setPage(1)
   }, [search, status])
+
+  useEffect(() => {
+    fetchInvoices()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, status, page])
 
   const fetchInvoices = async () => {
     try {
@@ -86,7 +95,7 @@ export default function InvoicesPage() {
       const params = new URLSearchParams({
         search,
         status,
-        page: '1',
+        page: String(page),
         limit: '50',
       })
 
@@ -103,6 +112,8 @@ export default function InvoicesPage() {
 
       const data = await response.json()
       setInvoices(data.invoices || [])
+      setTotalPages(Number(data?.pagination?.totalPages || 1))
+      setTotal(Number(data?.pagination?.total || 0))
     } catch (error) {
       console.error('Failed to fetch invoices:', error)
     } finally {
@@ -556,6 +567,15 @@ export default function InvoicesPage() {
           ]}
         />
       )}
+
+      <PaginationControls
+        page={page}
+        totalPages={totalPages}
+        total={total}
+        disabled={loading}
+        onPrev={() => setPage((p) => Math.max(1, p - 1))}
+        onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+      />
     </div>
   )
 }

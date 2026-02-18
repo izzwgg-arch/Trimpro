@@ -11,6 +11,7 @@ import { useViewMode } from '@/hooks/useViewMode'
 import { RowCompactItem } from '@/components/lists/RowCompactItem'
 import { RowDetailedItem } from '@/components/lists/RowDetailedItem'
 import { TableView } from '@/components/lists/TableView'
+import { PaginationControls } from '@/components/ui/PaginationControls'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Plus, Search, Filter, User, Phone, Mail, CheckCircle, Trash2, FileText, Briefcase, Copy } from 'lucide-react'
 import Link from 'next/link'
@@ -71,6 +72,9 @@ export default function RequestsPage() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
   const [source, setSource] = useState('all')
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [total, setTotal] = useState(0)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [convertingId, setConvertingId] = useState<string | null>(null)
   const [duplicating, setDuplicating] = useState(false)
@@ -78,8 +82,13 @@ export default function RequestsPage() {
   const [viewMode, setViewMode] = useViewMode('requests', 'grid')
 
   useEffect(() => {
-    fetchRequests()
+    setPage(1)
   }, [search, status, source])
+
+  useEffect(() => {
+    fetchRequests()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, status, source, page])
 
   const fetchRequests = async () => {
     try {
@@ -88,7 +97,7 @@ export default function RequestsPage() {
         search,
         status,
         source,
-        page: '1',
+        page: String(page),
         limit: '50',
       })
 
@@ -105,6 +114,8 @@ export default function RequestsPage() {
 
       const data = await response.json()
       setRequests(data.leads || [])
+      setTotalPages(Number(data?.pagination?.totalPages || 1))
+      setTotal(Number(data?.pagination?.total || 0))
     } catch (error) {
       console.error('Failed to fetch requests:', error)
     } finally {
@@ -716,6 +727,15 @@ export default function RequestsPage() {
           ]}
         />
       )}
+
+      <PaginationControls
+        page={page}
+        totalPages={totalPages}
+        total={total}
+        disabled={loading}
+        onPrev={() => setPage((p) => Math.max(1, p - 1))}
+        onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+      />
     </div>
   )
 }

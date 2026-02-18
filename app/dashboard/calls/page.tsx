@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { PaginationControls } from '@/components/ui/PaginationControls'
 import { formatDate, formatPhoneNumber } from '@/lib/utils'
 import { Search, Filter, Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Clock } from 'lucide-react'
 import Link from 'next/link'
@@ -64,14 +65,22 @@ export default function CallsPage() {
   const [search, setSearch] = useState('')
   const [direction, setDirection] = useState('all')
   const [status, setStatus] = useState('all')
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [total, setTotal] = useState(0)
   const [vitalConfig, setVitalConfig] = useState<VitalPbxConfig | null>(null)
   const [canCall, setCanCall] = useState(true)
   const [sipPassword, setSipPassword] = useState('')
 
   useEffect(() => {
+    setPage(1)
+  }, [search, direction, status])
+
+  useEffect(() => {
     fetchCalls()
     fetchVitalConfig()
-  }, [search, direction, status])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, direction, status, page])
 
   const fetchVitalConfig = async () => {
     try {
@@ -130,7 +139,7 @@ export default function CallsPage() {
       const params = new URLSearchParams({
         direction,
         status,
-        page: '1',
+        page: String(page),
         limit: '50',
       })
 
@@ -152,6 +161,8 @@ export default function CallsPage() {
 
       const data = await response.json()
       setCalls(data.calls || [])
+      setTotalPages(Number(data?.pagination?.totalPages || 1))
+      setTotal(Number(data?.pagination?.total || 0))
     } catch (error) {
       console.error('Failed to fetch calls:', error)
     } finally {
@@ -393,6 +404,15 @@ export default function CallsPage() {
           })
         )}
       </div>
+
+      <PaginationControls
+        page={page}
+        totalPages={totalPages}
+        total={total}
+        disabled={loading}
+        onPrev={() => setPage((p) => Math.max(1, p - 1))}
+        onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+      />
     </div>
   )
 }

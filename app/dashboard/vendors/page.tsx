@@ -10,6 +10,7 @@ import { ViewModeSelector } from '@/components/ui/ViewModeSelector'
 import { useViewMode } from '@/hooks/useViewMode'
 import { RowCompactItem } from '@/components/lists/RowCompactItem'
 import { RowDetailedItem } from '@/components/lists/RowDetailedItem'
+import { PaginationControls } from '@/components/ui/PaginationControls'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Plus, Search, Filter, Download, Upload, Trash2, Edit, Eye, Building2 } from 'lucide-react'
@@ -57,14 +58,22 @@ export default function VendorsPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [paymentTermsFilter, setPaymentTermsFilter] = useState('all')
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [total, setTotal] = useState(0)
   const [showImportDialog, setShowImportDialog] = useState(false)
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importing, setImporting] = useState(false)
   const [viewMode, setViewMode] = useViewMode('vendors', 'table')
 
   useEffect(() => {
-    fetchVendors()
+    setPage(1)
   }, [search, statusFilter, paymentTermsFilter])
+
+  useEffect(() => {
+    fetchVendors()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, statusFilter, paymentTermsFilter, page])
 
   const fetchVendors = async () => {
     try {
@@ -73,7 +82,7 @@ export default function VendorsPage() {
         search,
         status: statusFilter,
         paymentTerms: paymentTermsFilter !== 'all' ? paymentTermsFilter : '',
-        page: '1',
+        page: String(page),
         limit: '100',
       })
 
@@ -97,6 +106,8 @@ export default function VendorsPage() {
 
       const data = await response.json()
       setVendors(data.vendors || [])
+      setTotalPages(Number(data?.pagination?.totalPages || 1))
+      setTotal(Number(data?.pagination?.total || 0))
     } catch (error) {
       console.error('Error fetching vendors:', error)
       setVendors([])
@@ -430,6 +441,15 @@ export default function VendorsPage() {
           </CardContent>
         </Card>
       )}
+
+      <PaginationControls
+        page={page}
+        totalPages={totalPages}
+        total={total}
+        disabled={loading}
+        onPrev={() => setPage((p) => Math.max(1, p - 1))}
+        onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+      />
 
       <Dialog open={showImportDialog} onOpenChange={handleImportDialogOpenChange}>
         <DialogContent

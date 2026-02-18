@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { PaginationControls } from '@/components/ui/PaginationControls'
 import { formatDate } from '@/lib/utils'
 import { Search, BookOpen, HelpCircle, FileText, Plus } from 'lucide-react'
 import Link from 'next/link'
@@ -38,6 +39,9 @@ export default function HelpPage() {
   const [search, setSearch] = useState('')
   const [module, setModule] = useState('all')
   const [category, setCategory] = useState('all')
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [total, setTotal] = useState(0)
   const [userRole, setUserRole] = useState<string>('')
 
   useEffect(() => {
@@ -51,8 +55,16 @@ export default function HelpPage() {
         // Ignore
       }
     }
-    fetchArticles()
+  }, [])
+
+  useEffect(() => {
+    setPage(1)
   }, [search, module, category])
+
+  useEffect(() => {
+    fetchArticles()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, module, category, page])
 
   const fetchArticles = async () => {
     try {
@@ -61,7 +73,7 @@ export default function HelpPage() {
         search,
         module,
         category,
-        page: '1',
+        page: String(page),
         limit: '50',
       })
 
@@ -78,6 +90,8 @@ export default function HelpPage() {
 
       const data = await response.json()
       setArticles(data.articles || [])
+      setTotalPages(Number(data?.pagination?.totalPages || 1))
+      setTotal(Number(data?.pagination?.total || 0))
     } catch (error) {
       console.error('Failed to fetch articles:', error)
     } finally {
@@ -220,6 +234,15 @@ export default function HelpPage() {
           </div>
         )}
       </div>
+
+      <PaginationControls
+        page={page}
+        totalPages={totalPages}
+        total={total}
+        disabled={loading}
+        onPrev={() => setPage((p) => Math.max(1, p - 1))}
+        onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+      />
     </div>
   )
 }
