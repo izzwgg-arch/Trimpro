@@ -14,6 +14,7 @@ import {
   MessageSquare,
   CheckSquare,
   AlertCircle,
+  AlertTriangle,
   TrendingUp,
   TrendingDown,
 } from 'lucide-react'
@@ -53,6 +54,7 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [dismissedPayments, setDismissedPayments] = useState<Set<string>>(new Set())
+  const [qboHealth, setQboHealth] = useState<{ ok: boolean; error?: string | null } | null>(null)
   const DISMISSED_KEY = 'dashboard.dismissedPayments'
 
   useEffect(() => {
@@ -68,6 +70,8 @@ export default function DashboardPage() {
       console.warn('Failed to restore dismissed payments:', error)
     }
     fetchStats()
+    // Best-effort daily QuickBooks health check (server-side throttled + notification throttled).
+    checkQuickBooksHealth()
   }, [])
 
   useEffect(() => {
@@ -99,6 +103,44 @@ export default function DashboardPage() {
       console.error('Failed to fetch dashboard stats:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const checkQuickBooksHealth = async () => {
+    try {
+      let token = localStorage.getItem('accessToken')
+      if (!token) {
+        const ok = await refreshAccessToken()
+        if (!ok) return
+        token = localStorage.getItem('accessToken')
+      }
+
+      let res = await fetch('/api/integrations/quickbooks/health', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+
+      if (res.status === 401) {
+        const ok = await refreshAccessToken()
+        if (!ok) return
+        token = localStorage.getItem('accessToken')
+        res = await fetch('/api/integrations/quickbooks/health', {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      }
+
+      const data = await res.json().catch(() => null)
+      if (!data) return
+
+      if (data.connected && data.ok === false) {
+        setQboHealth({
+          ok: false,
+          error: data.error || data.lastError || 'QuickBooks health check failed',
+        })
+      } else {
+        setQboHealth({ ok: true, error: null })
+      }
+    } catch {
+      // Non-critical; ignore.
     }
   }
 
@@ -135,6 +177,22 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      {qboHealth?.ok === false ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-900">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+            <div className="min-w-0">
+              <div className="font-medium">QuickBooks needs attention</div>
+              <div className="text-sm opacity-90 break-words">
+                {qboHealth.error || 'QuickBooks token refresh failed.'}{' '}
+                <a className="underline" href="/dashboard/settings/integrations/quickbooks">
+                  Open QuickBooks settings
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
         <p className="mt-2 text-gray-600">Welcome back! Here's what's happening today.</p>
