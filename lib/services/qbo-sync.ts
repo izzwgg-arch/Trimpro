@@ -1030,8 +1030,23 @@ export async function importQuickBooksCustomersAndPayments(
     select: { qboId: true, entityId: true, createdAt: true },
     orderBy: { createdAt: 'asc' },
   })
+  // Filter out stale mappings (e.g., after a factory reset that wiped clients but preserved sync logs).
+  const mappedClientIds = Array.from(
+    new Set(existingClientMaps.map((r) => (r.entityId ? String(r.entityId) : null)).filter(Boolean) as string[])
+  )
+  const existingClients = mappedClientIds.length
+    ? await prisma.client.findMany({
+        where: { tenantId, id: { in: mappedClientIds } },
+        select: { id: true },
+      })
+    : []
+  const existingClientIdSet = new Set(existingClients.map((c) => c.id))
+
   for (const row of existingClientMaps) {
-    if (row.qboId && row.entityId) qboCustomerIdToLocalClientId.set(String(row.qboId), String(row.entityId))
+    if (!row.qboId || !row.entityId) continue
+    const localId = String(row.entityId)
+    if (!existingClientIdSet.has(localId)) continue
+    qboCustomerIdToLocalClientId.set(String(row.qboId), localId)
   }
 
   for (let start = 1; start <= 10000; start += 1000) {
@@ -1136,8 +1151,16 @@ export async function importQuickBooksCustomersAndPayments(
           orderBy: { createdAt: 'desc' },
         })
         if (existingMap?.entityId) {
-          qboCustomerIdToLocalClientId.set(qboId, String(existingMap.entityId))
-          return
+          const localId = String(existingMap.entityId)
+          const stillExists = await prisma.client.findFirst({
+            where: { id: localId, tenantId },
+            select: { id: true },
+          })
+          if (stillExists) {
+            qboCustomerIdToLocalClientId.set(qboId, localId)
+            return
+          }
+          // Stale sync log entry; continue importing.
         }
 
         const parentQboId = c?.ParentRef?.value ? String(c.ParentRef.value) : null
@@ -1263,7 +1286,15 @@ export async function importQuickBooksCustomersAndPayments(
           },
           orderBy: { createdAt: 'desc' },
         })
-        if (existingMap?.entityId) continue
+        if (existingMap?.entityId) {
+          const localId = String(existingMap.entityId)
+          const stillExists = await prisma.item.findFirst({
+            where: { id: localId, tenantId },
+            select: { id: true },
+          })
+          if (stillExists) continue
+          // Stale sync log entry; continue importing.
+        }
 
         const name = String(it.Name || it.FullyQualifiedName || 'QuickBooks Item').trim()
         const sku = it.Sku ? String(it.Sku).trim() : null
