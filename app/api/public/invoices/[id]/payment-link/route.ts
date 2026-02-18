@@ -37,6 +37,11 @@ export async function POST(
       selectedInvoiceIdsRaw
         ? Array.from(new Set(selectedInvoiceIdsRaw.map((v: any) => String(v || '').trim()).filter(Boolean)))
         : []
+    const partialInvoiceId = String(body?.partialInvoiceId || '').trim()
+    const partialLineItemIdsRaw = Array.isArray(body?.partialLineItemIds) ? body.partialLineItemIds : null
+    const partialLineItemIds = partialLineItemIdsRaw
+      ? Array.from(new Set(partialLineItemIdsRaw.map((v: any) => String(v || '').trim()).filter(Boolean)))
+      : []
     if (!token) {
       return NextResponse.json({ error: 'Missing token' }, { status: 401 })
     }
@@ -103,7 +108,41 @@ export async function POST(
     }
 
     let invoicesToPay: Array<{ id: string; balance: any; dueDate: any; invoiceDate: any }> = []
-    if (selectedInvoiceIds.length) {
+    let plannedAmountsByInvoice: Record<string, number> | null = null
+    let lineItemIdsByInvoice: Record<string, string[]> | null = null
+
+    if (partialInvoiceId && partialLineItemIds.length) {
+      if (selectedInvoiceIds.length !== 1 || selectedInvoiceIds[0] !== partialInvoiceId) {
+        return NextResponse.json({ error: 'Partial payments require selecting exactly one invoice.' }, { status: 400 })
+      }
+
+      const target = await prisma.invoice.findFirst({
+        where: {
+          id: partialInvoiceId,
+          tenantId: invoice.tenantId,
+          clientId: invoice.clientId,
+        },
+        select: { id: true, balance: true },
+      })
+      if (!target) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
+      if (Number(target.balance) <= 0) return NextResponse.json({ error: 'Invoice already paid' }, { status: 400 })
+
+      const items = await prisma.invoiceLineItem.findMany({
+        where: {
+          invoiceId: partialInvoiceId,
+          id: { in: partialLineItemIds },
+        },
+        select: { id: true, total: true },
+      })
+      const amount = items.reduce((sum, li) => sum + Math.max(0, Number(li.total || 0)), 0)
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return NextResponse.json({ error: 'Select at least one line item to pay.' }, { status: 400 })
+      }
+      const capped = Math.min(amount, Number(target.balance))
+      invoicesToPay = [{ id: partialInvoiceId, balance: capped, dueDate: null, invoiceDate: null }]
+      plannedAmountsByInvoice = { [partialInvoiceId]: capped }
+      lineItemIdsByInvoice = { [partialInvoiceId]: items.map((i) => i.id) }
+    } else if (selectedInvoiceIds.length) {
       invoicesToPay = await prisma.invoice.findMany({
         where: {
           ...(openWhere as any),
@@ -149,6 +188,8 @@ export async function POST(
         response: {
           clientId: invoice.clientId,
           invoiceIds: invoicesToPay.map((i) => i.id),
+          plannedAmountsByInvoice,
+          lineItemIdsByInvoice,
           createdAt: new Date().toISOString(),
         },
         expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 14),

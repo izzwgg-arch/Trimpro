@@ -73,6 +73,13 @@ export default function PublicPaymentPage() {
   const [previewInvoiceId, setPreviewInvoiceId] = useState<string | null>(null)
   const [previewInvoice, setPreviewInvoice] = useState<PublicInvoice | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewSelectedLineItemIds, setPreviewSelectedLineItemIds] = useState<string[]>([])
+  const [partialSelection, setPartialSelection] = useState<{
+    invoiceId: string
+    invoiceNumber: string
+    lineItemIds: string[]
+    amount: number
+  } | null>(null)
   const [processing, setProcessing] = useState(false)
   const [confirmation, setConfirmation] = useState<string | null>(null)
   const [reconcilingPayment, setReconcilingPayment] = useState(false)
@@ -187,6 +194,21 @@ export default function PublicPaymentPage() {
     loadPreview()
   }, [previewInvoiceId, token])
 
+  useEffect(() => {
+    // When preview loads, default to selecting all items (full invoice amount) for convenience.
+    if (!previewInvoice) return
+    setPreviewSelectedLineItemIds((prev) => (prev.length ? prev : (previewInvoice.lineItems || []).map((li) => li.id)))
+  }, [previewInvoice])
+
+  useEffect(() => {
+    // Partial selection only makes sense when paying exactly one invoice.
+    if (!partialSelection) return
+    if (selectedInvoiceIds.length !== 1 || selectedInvoiceIds[0] !== partialSelection.invoiceId) {
+      setPartialSelection(null)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedInvoiceIds])
+
   const refreshInvoice = async () => {
     if (!token) return
     try {
@@ -261,21 +283,38 @@ export default function PublicPaymentPage() {
   const outstandingTotal = Number(invoice?.outstanding?.total || 0)
   const openInvoices = Array.isArray(invoice?.outstanding?.invoices) ? invoice!.outstanding!.invoices : []
   const selectedTotal = useMemo(() => {
+    if (partialSelection && selectedInvoiceIds.length === 1 && selectedInvoiceIds[0] === partialSelection.invoiceId) {
+      return Number(partialSelection.amount || 0)
+    }
     const byId = new Map(openInvoices.map((i) => [String(i.id), Number(i.balance || 0)]))
     return selectedInvoiceIds.reduce((sum, id) => sum + Math.max(0, Number(byId.get(String(id)) || 0)), 0)
-  }, [openInvoices, selectedInvoiceIds])
+  }, [openInvoices, selectedInvoiceIds, partialSelection])
   const selectAllChecked = openInvoices.length > 0 && selectedInvoiceIds.length === openInvoices.length
   const selectAllIndeterminate = selectedInvoiceIds.length > 0 && selectedInvoiceIds.length < openInvoices.length
 
   const handlePayNow = async () => {
     if (!invoice || !approved || processing) return
+    if (selectedInvoiceIds.length === 0) {
+      setError('Select at least one invoice to pay.')
+      return
+    }
     setProcessing(true)
     try {
       const recaptchaToken = await getRecaptchaToken('public_invoice_pay_card')
+      const payload: any = { token, recaptchaToken, selectedInvoiceIds }
+      if (
+        partialSelection &&
+        selectedInvoiceIds.length === 1 &&
+        selectedInvoiceIds[0] === partialSelection.invoiceId &&
+        partialSelection.lineItemIds.length > 0
+      ) {
+        payload.partialInvoiceId = partialSelection.invoiceId
+        payload.partialLineItemIds = partialSelection.lineItemIds
+      }
       const response = await fetch(`/api/public/invoices/${invoice.id}/payment-link`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, recaptchaToken, selectedInvoiceIds }),
+        body: JSON.stringify(payload),
       })
       const data = await response.json().catch(() => ({}))
       if (!response.ok || !data.paymentUrl) {
@@ -292,6 +331,10 @@ export default function PublicPaymentPage() {
 
   const handlePayByAch = async () => {
     if (!invoice || !approved || achProcessing) return
+    if (partialSelection) {
+      setError('Partial payments are currently available for card payments only.')
+      return
+    }
     if (selectedInvoiceIds.length !== 1) {
       setError('To pay by ACH, select exactly 1 invoice (QuickBooks ACH is per-invoice).')
       return
@@ -421,20 +464,34 @@ export default function PublicPaymentPage() {
 
                   <div className="rounded border">
                     <div className="grid grid-cols-12 gap-2 border-b bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700">
+                      <div className="col-span-1"></div>
                       <div className="col-span-6">Description</div>
                       <div className="col-span-2 text-right">Qty</div>
                       <div className="col-span-2 text-right">Unit</div>
                       <div className="col-span-2 text-right">Total</div>
                     </div>
                     <div className="divide-y">
-                      {(previewInvoice.lineItems || []).map((li) => (
+                      {(previewInvoice.lineItems || []).map((li) => {
+                        const checked = previewSelectedLineItemIds.includes(li.id)
+                        return (
                         <div key={li.id} className="grid grid-cols-12 gap-2 px-3 py-2 text-xs">
+                          <div className="col-span-1">
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={(v) => {
+                                const next = Boolean(v)
+                                setPreviewSelectedLineItemIds((prev) =>
+                                  next ? Array.from(new Set([...prev, li.id])) : prev.filter((x) => x !== li.id)
+                                )
+                              }}
+                            />
+                          </div>
                           <div className="col-span-6">{li.description}</div>
                           <div className="col-span-2 text-right">{li.quantity}</div>
                           <div className="col-span-2 text-right">{toCurrency(li.unitPrice)}</div>
                           <div className="col-span-2 text-right">{toCurrency(li.total)}</div>
                         </div>
-                      ))}
+                      )})}
                     </div>
                   </div>
 
@@ -454,6 +511,20 @@ export default function PublicPaymentPage() {
                   </div>
 
                   <div className="flex items-center justify-end gap-2">
+                    <div className="mr-auto text-xs text-gray-700">
+                      Selected items:{' '}
+                      <span className="font-semibold">
+                        {previewSelectedLineItemIds.length}
+                      </span>{' '}
+                      • Amount:{' '}
+                      <span className="font-semibold">
+                        {toCurrency(
+                          (previewInvoice.lineItems || [])
+                            .filter((li) => previewSelectedLineItemIds.includes(li.id))
+                            .reduce((sum, li) => sum + Math.max(0, Number(li.total || 0)), 0)
+                        )}
+                      </span>
+                    </div>
                     <Button
                       variant="outline"
                       onClick={() => {
@@ -469,13 +540,26 @@ export default function PublicPaymentPage() {
                     <Button
                       onClick={() => {
                         if (!previewInvoice?.id) return
-                        setSelectedInvoiceIds((prev) =>
-                          prev.includes(previewInvoice.id) ? prev : [...prev, previewInvoice.id]
-                        )
+                        const amount = (previewInvoice.lineItems || [])
+                          .filter((li) => previewSelectedLineItemIds.includes(li.id))
+                          .reduce((sum, li) => sum + Math.max(0, Number(li.total || 0)), 0)
+
+                        if (!Number.isFinite(amount) || amount <= 0) {
+                          setError('Select at least one item to pay.')
+                          return
+                        }
+
+                        setSelectedInvoiceIds([previewInvoice.id])
+                        setPartialSelection({
+                          invoiceId: previewInvoice.id,
+                          invoiceNumber: previewInvoice.invoiceNumber,
+                          lineItemIds: previewSelectedLineItemIds,
+                          amount,
+                        })
                         setPreviewInvoiceId(null)
                       }}
                     >
-                      Add to selection
+                      Pay selected items
                     </Button>
                   </div>
                 </div>
@@ -496,6 +580,17 @@ export default function PublicPaymentPage() {
         <p className="text-gray-600">Invoice {invoice.invoiceNumber}</p>
       </div>
       {error ? <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
+      {partialSelection ? (
+        <div className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            Partial payment selected: <span className="font-semibold">{toCurrency(partialSelection.amount)}</span> for invoice{' '}
+            <span className="font-semibold">{partialSelection.invoiceNumber}</span>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => setPartialSelection(null)}>
+            Clear
+          </Button>
+        </div>
+      ) : null}
 
       <Card>
         <CardHeader>

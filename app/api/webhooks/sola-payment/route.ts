@@ -400,6 +400,10 @@ export async function POST(request: NextRequest) {
       const resp = (intent.response || {}) as any
       const clientId = String(resp?.clientId || '').trim()
       const invoiceIds = Array.isArray(resp?.invoiceIds) ? resp.invoiceIds.map((x: any) => String(x || '').trim()).filter(Boolean) : []
+      const plannedAmountsByInvoice =
+        resp?.plannedAmountsByInvoice && typeof resp.plannedAmountsByInvoice === 'object'
+          ? (resp.plannedAmountsByInvoice as Record<string, any>)
+          : null
       if (!clientId || !invoiceIds.length) {
         return NextResponse.json({ error: 'Invalid payment intent' }, { status: 400 })
       }
@@ -427,7 +431,13 @@ export async function POST(request: NextRequest) {
       })
 
       const totalOutstanding = openInvoices.reduce((sum, inv) => sum + Math.max(0, Number(inv.balance || 0)), 0)
+      const plannedTotal = plannedAmountsByInvoice
+        ? openInvoices.reduce((sum, inv) => sum + Math.max(0, Number(plannedAmountsByInvoice[String(inv.id)] || 0)), 0)
+        : 0
       let remaining = paidAmount > 0 ? paidAmount : totalOutstanding
+      if (plannedAmountsByInvoice && plannedTotal > 0) {
+        remaining = Math.min(remaining, plannedTotal)
+      }
       let appliedCount = 0
       let appliedTotal = 0
 
@@ -435,7 +445,9 @@ export async function POST(request: NextRequest) {
         if (remaining <= 0) break
         const invBalance = Math.max(0, Number(inv.balance || 0))
         if (invBalance <= 0) continue
-        const amountForThis = Math.min(remaining, invBalance)
+        const plannedForThis = plannedAmountsByInvoice ? Number(plannedAmountsByInvoice[String(inv.id)] || 0) : 0
+        const maxForThis = plannedAmountsByInvoice && plannedForThis > 0 ? Math.min(invBalance, plannedForThis) : invBalance
+        const amountForThis = Math.min(remaining, maxForThis)
         if (amountForThis <= 0) continue
 
         const uniqueTxn = transactionId ? `${transactionId}:${inv.id}` : `BULK:${Date.now()}:${inv.id}`
