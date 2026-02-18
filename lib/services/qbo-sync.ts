@@ -1011,6 +1011,25 @@ export async function importQuickBooksCustomersAndPayments(
   const errors: string[] = []
 
   // Import customers
+  // Keep a local in-memory mapping so subcustomers can be linked even if the parent is on a later page.
+  const qboCustomerIdToLocalClientId = new Map<string, string>()
+  const pendingParentLinks: Array<{ childLocalId: string; parentQboId: string }> = []
+
+  const existingClientMaps = await prisma.quickBooksSyncLog.findMany({
+    where: {
+      integrationId: session.integrationId,
+      type: 'client',
+      status: 'success',
+      qboId: { not: null },
+      entityId: { not: null },
+    },
+    select: { qboId: true, entityId: true, createdAt: true },
+    orderBy: { createdAt: 'asc' },
+  })
+  for (const row of existingClientMaps) {
+    if (row.qboId && row.entityId) qboCustomerIdToLocalClientId.set(String(row.qboId), String(row.entityId))
+  }
+
   for (let start = 1; start <= 10000; start += 1000) {
     const query = `select * from Customer startposition ${start} maxresults 1000`
     const res = await quickBooksService.query(session.accessToken, session.realmId, query)
@@ -1024,6 +1043,9 @@ export async function importQuickBooksCustomersAndPayments(
       if (!normalizedParent) return null
       if (normalizedParent === String(childQboId || '').trim()) return null
 
+      const cached = qboCustomerIdToLocalClientId.get(normalizedParent)
+      if (cached) return cached
+
       const existingMap = await prisma.quickBooksSyncLog.findFirst({
         where: {
           integrationId: session.integrationId,
@@ -1034,7 +1056,10 @@ export async function importQuickBooksCustomersAndPayments(
         },
         orderBy: { createdAt: 'desc' },
       })
-      if (existingMap?.entityId) return existingMap.entityId
+      if (existingMap?.entityId) {
+        qboCustomerIdToLocalClientId.set(normalizedParent, String(existingMap.entityId))
+        return String(existingMap.entityId)
+      }
 
       // Parent not imported yet; fetch parent customer by id and import it now.
       const parentRes = await quickBooksService.makeAPIRequest(
@@ -1083,9 +1108,11 @@ export async function importQuickBooksCustomersAndPayments(
         status: 'success',
         entityId: created.id,
         qboId: String(parent.Id),
+        data: { parentQboId: null, qboJob: Boolean(parent?.Job) },
       })
 
       if (!existingLocal) importedClients += 1
+      qboCustomerIdToLocalClientId.set(String(parent.Id), created.id)
       return created.id
     }
 
@@ -1104,7 +1131,10 @@ export async function importQuickBooksCustomersAndPayments(
           },
           orderBy: { createdAt: 'desc' },
         })
-        if (existingMap?.entityId) return
+        if (existingMap?.entityId) {
+          qboCustomerIdToLocalClientId.set(qboId, String(existingMap.entityId))
+          return
+        }
 
         const parentQboId = c?.ParentRef?.value ? String(c.ParentRef.value) : null
         const parentLocalId = parentQboId
@@ -1159,10 +1189,17 @@ export async function importQuickBooksCustomersAndPayments(
           status: 'success',
           entityId: client.id,
           qboId,
+          data: { parentQboId: parentQboId || null, qboJob: Boolean(c?.Job) },
         })
+        qboCustomerIdToLocalClientId.set(qboId, client.id)
         if (!local) {
           importedClients += 1
           if (parentLocalId) importedSubClients += 1
+        }
+
+        // If we couldn't resolve the parent yet, record a pending link to be attempted after all pages are imported.
+        if (parentQboId && !parentLocalId) {
+          pendingParentLinks.push({ childLocalId: client.id, parentQboId: String(parentQboId) })
         }
       } catch (error: any) {
         errors.push(`Customer import failed: ${error?.message || 'Unknown error'}`)
@@ -1175,6 +1212,28 @@ export async function importQuickBooksCustomersAndPayments(
     }
     for (const c of customers.filter((c: any) => isSubcustomer(c))) {
       await importOneCustomer(c)
+    }
+  }
+
+  // Final pass: attach any subclients whose parents were imported later.
+  for (const link of pendingParentLinks) {
+    const parentLocalId = qboCustomerIdToLocalClientId.get(link.parentQboId)
+    if (!parentLocalId) continue
+    if (parentLocalId === link.childLocalId) continue
+    try {
+      const existing = await prisma.client.findFirst({
+        where: { id: link.childLocalId, tenantId },
+        select: { id: true, parentId: true },
+      })
+      if (!existing) continue
+      if (existing.parentId) continue
+      await prisma.client.update({
+        where: { id: link.childLocalId },
+        data: { parentId: parentLocalId },
+      })
+      importedSubClients += 1
+    } catch {
+      // best-effort
     }
   }
 
