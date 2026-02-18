@@ -4,6 +4,7 @@ import { solaService } from '@/lib/services/sola'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { parseAddressParts } from '@/lib/address/parse'
 import { requireRecaptchaV3 } from '@/lib/security/recaptcha'
+import crypto from 'crypto'
 
 function resolvePublicAppUrl() {
   const candidates = [
@@ -31,6 +32,11 @@ export async function POST(
     const token = String(body.token || '')
     const recaptchaToken = body.recaptchaToken
     const payAllOutstanding = Boolean(body.payAllOutstanding)
+    const selectedInvoiceIdsRaw = Array.isArray(body?.selectedInvoiceIds) ? body.selectedInvoiceIds : null
+    const selectedInvoiceIds =
+      selectedInvoiceIdsRaw
+        ? Array.from(new Set(selectedInvoiceIdsRaw.map((v: any) => String(v || '').trim()).filter(Boolean)))
+        : []
     if (!token) {
       return NextResponse.json({ error: 'Missing token' }, { status: 401 })
     }
@@ -42,10 +48,20 @@ export async function POST(
     })
     if (captcha) return captcha
 
+    // Authorize: token belongs to some invoice; then allow paying any invoice for the same client.
+    const authInvoice = await prisma.invoice.findFirst({
+      where: { paymentToken: token },
+      select: { tenantId: true, clientId: true },
+    })
+    if (!authInvoice) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
     const invoice = await prisma.invoice.findFirst({
       where: {
         id: params.id,
-        paymentToken: token,
+        tenantId: authInvoice.tenantId,
+        clientId: authInvoice.clientId,
       },
       include: {
         client: {
@@ -86,17 +102,27 @@ export async function POST(
       status: { notIn: ['PAID', 'CANCELLED', 'REFUNDED'] as any },
     }
 
-    const openAgg = payAllOutstanding
-      ? await prisma.invoice.aggregate({
-          where: openWhere as any,
-          _sum: { balance: true },
-          _count: { _all: true },
-        })
-      : null
+    let invoicesToPay: Array<{ id: string; balance: any; dueDate: any; invoiceDate: any }> = []
+    if (selectedInvoiceIds.length) {
+      invoicesToPay = await prisma.invoice.findMany({
+        where: {
+          ...(openWhere as any),
+          id: { in: selectedInvoiceIds },
+        },
+        select: { id: true, balance: true, dueDate: true, invoiceDate: true },
+      })
+    } else if (payAllOutstanding) {
+      invoicesToPay = await prisma.invoice.findMany({
+        where: openWhere as any,
+        select: { id: true, balance: true, dueDate: true, invoiceDate: true },
+      })
+    } else {
+      invoicesToPay = [{ id: invoice.id, balance: invoice.balance, dueDate: invoice.dueDate, invoiceDate: invoice.invoiceDate }]
+    }
 
-    const amountToPay = payAllOutstanding
-      ? Number((openAgg as any)?._sum?.balance ?? 0)
-      : Number(invoice.balance)
+    // Ensure we're only paying open invoices with balance > 0
+    invoicesToPay = invoicesToPay.filter((i) => Number(i.balance) > 0)
+    const amountToPay = invoicesToPay.reduce((sum, i) => sum + Math.max(0, Number(i.balance || 0)), 0)
 
     if (!Number.isFinite(amountToPay) || amountToPay <= 0) {
       return NextResponse.json({ error: 'Invoice already paid' }, { status: 400 })
@@ -113,16 +139,36 @@ export async function POST(
     const jobAddress = invoice.job?.addresses?.[0]
     const estimateAddress = parseAddressParts(invoice.estimate?.jobSiteAddress)
 
-    const groupRef = `TPCLIENT:${invoice.clientId}`
-    const displayRef = payAllOutstanding ? 'Outstanding Invoices' : `Invoice ${invoice.invoiceNumber}`
-    const description = payAllOutstanding
-      ? `Outstanding invoices for ${invoice.client.name}`
-      : `Invoice ${invoice.invoiceNumber} - ${invoice.title}`
+    // Store selected invoice ids server-side (no URL bloat); reference is what comes back in xInvoice.
+    const intentKey = `pp_${crypto.randomBytes(16).toString('hex')}`
+    await prisma.idempotencyKey.create({
+      data: {
+        tenantId: invoice.tenantId,
+        key: intentKey,
+        scope: 'public_payment_intent',
+        response: {
+          clientId: invoice.clientId,
+          invoiceIds: invoicesToPay.map((i) => i.id),
+          createdAt: new Date().toISOString(),
+        },
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 14),
+      } as any,
+    })
+
+    const ref = `TPINTENT:${intentKey}`
+    const displayRef =
+      invoicesToPay.length > 1
+        ? `Selected Invoices (${invoicesToPay.length})`
+        : `Invoice ${invoice.invoiceNumber}`
+    const description =
+      invoicesToPay.length > 1
+        ? `Selected invoices for ${invoice.client.name}`
+        : `Invoice ${invoice.invoiceNumber} - ${invoice.title}`
 
     const paymentLink = await solaService.createPaymentLink({
       // Keep invoiceId in metadata; use invoiceNumber as the payment reference that comes back via hosted forms.
       invoiceId: invoice.id,
-      invoiceNumber: payAllOutstanding ? groupRef : invoice.invoiceNumber,
+      invoiceNumber: ref,
       amount: amountToPay,
       description: description,
       clientEmail: invoice.client.email || invoice.client.contacts?.[0]?.email || undefined,
@@ -150,9 +196,11 @@ export async function POST(
       paymentUrl: paymentLink.url,
       paymentId: paymentLink.id,
       expiresAt: paymentLink.expiresAt,
-      mode: payAllOutstanding ? 'all_outstanding' : 'single',
-      reference: payAllOutstanding ? groupRef : invoice.invoiceNumber,
+      mode: invoicesToPay.length > 1 ? 'multi' : 'single',
+      reference: ref,
       label: displayRef,
+      amount: amountToPay,
+      count: invoicesToPay.length,
     })
   } catch (error: any) {
     console.error('Public payment link error:', error)

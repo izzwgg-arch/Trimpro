@@ -46,12 +46,13 @@ export async function GET(
         select: {
           id: true,
           invoiceNumber: true,
+          status: true,
           balance: true,
           invoiceDate: true,
           dueDate: true,
         },
         orderBy: [{ dueDate: 'asc' }, { invoiceDate: 'asc' }],
-        take: 50,
+        take: 200,
       }),
     ])
 
@@ -85,6 +86,7 @@ export async function GET(
           invoices: outstandingInvoices.map((inv) => ({
             id: inv.id,
             invoiceNumber: inv.invoiceNumber,
+            status: (inv as any).status,
             balance: inv.balance.toString(),
             invoiceDate: inv.invoiceDate,
             dueDate: inv.dueDate,

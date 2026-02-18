@@ -8,6 +8,7 @@ import { requireRecaptchaV3 } from '@/lib/security/recaptcha'
 const bodySchema = z.object({
   token: z.string().min(1),
   recaptchaToken: z.string().optional(),
+  targetInvoiceId: z.string().optional(),
 })
 
 /**
@@ -29,6 +30,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   }
 
   const token = String(parsed.data.token || '').trim()
+  const targetInvoiceId = String(parsed.data.targetInvoiceId || params.id).trim()
   const captcha = await requireRecaptchaV3({
     request,
     token: parsed.data.recaptchaToken,
@@ -36,10 +38,18 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   })
   if (captcha) return captcha
 
+  // Authorize: the token must belong to *some* invoice; then allow paying any invoice for the same client.
+  const authInvoice = await prisma.invoice.findFirst({
+    where: { paymentToken: token },
+    select: { tenantId: true, clientId: true },
+  })
+  if (!authInvoice) return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+
   const invoice = await prisma.invoice.findFirst({
     where: {
-      id: params.id,
-      paymentToken: token,
+      id: targetInvoiceId,
+      tenantId: authInvoice.tenantId,
+      clientId: authInvoice.clientId,
     },
     select: {
       id: true,

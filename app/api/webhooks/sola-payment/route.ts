@@ -383,10 +383,26 @@ export async function POST(request: NextRequest) {
       body?.transactionId || body?.TransactionID || body?.xRefNum || body?.xRefnum || ''
     )
 
-    // Bulk payment reference format: "TPCLIENT:<clientId>"
-    if (invoiceRef.startsWith('TPCLIENT:')) {
-      const clientId = invoiceRef.slice('TPCLIENT:'.length).trim()
-      if (!clientId) return NextResponse.json({ error: 'Missing client reference' }, { status: 400 })
+    // Bulk payment reference format: "TPINTENT:<intentKey>"
+    if (invoiceRef.startsWith('TPINTENT:')) {
+      const intentKey = invoiceRef.slice('TPINTENT:'.length).trim()
+      if (!intentKey) return NextResponse.json({ error: 'Missing intent reference' }, { status: 400 })
+
+      const intent = await prisma.idempotencyKey.findUnique({
+        where: { key: intentKey },
+        select: { tenantId: true, response: true, expiresAt: true },
+      })
+      if (!intent) return NextResponse.json({ error: 'Payment intent not found' }, { status: 404 })
+      if (intent.expiresAt && new Date(intent.expiresAt).getTime() < Date.now()) {
+        return NextResponse.json({ error: 'Payment intent expired' }, { status: 400 })
+      }
+
+      const resp = (intent.response || {}) as any
+      const clientId = String(resp?.clientId || '').trim()
+      const invoiceIds = Array.isArray(resp?.invoiceIds) ? resp.invoiceIds.map((x: any) => String(x || '').trim()).filter(Boolean) : []
+      if (!clientId || !invoiceIds.length) {
+        return NextResponse.json({ error: 'Invalid payment intent' }, { status: 400 })
+      }
 
       const client = await prisma.client.findFirst({
         where: { id: clientId },
@@ -401,8 +417,9 @@ export async function POST(request: NextRequest) {
 
       const openInvoices = await prisma.invoice.findMany({
         where: {
-          tenantId: client.tenantId,
+          tenantId: intent.tenantId,
           clientId: client.id,
+          id: { in: invoiceIds },
           balance: { gt: 0 } as any,
           status: { notIn: ['PAID', 'CANCELLED', 'REFUNDED'] as any },
         },

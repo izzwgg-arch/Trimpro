@@ -68,8 +68,11 @@ export default function PublicPaymentPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [approved, setApproved] = useState(false)
-  const [payAllOutstanding, setPayAllOutstanding] = useState(false)
-  const [showOutstanding, setShowOutstanding] = useState(false)
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([])
+  const [showOutstanding, setShowOutstanding] = useState(true)
+  const [previewInvoiceId, setPreviewInvoiceId] = useState<string | null>(null)
+  const [previewInvoice, setPreviewInvoice] = useState<PublicInvoice | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
   const [processing, setProcessing] = useState(false)
   const [confirmation, setConfirmation] = useState<string | null>(null)
   const [reconcilingPayment, setReconcilingPayment] = useState(false)
@@ -130,6 +133,11 @@ export default function PublicPaymentPage() {
           return
         }
         setInvoice(data.invoice)
+        // Default selection: current invoice; if only one open invoice, keep it.
+        const open = Array.isArray(data?.invoice?.outstanding?.invoices) ? data.invoice.outstanding.invoices : []
+        const currentId = String(data?.invoice?.id || invoiceId)
+        const currentIsOpen = open.some((x: any) => String(x?.id) === currentId)
+        setSelectedInvoiceIds(currentIsOpen ? [currentId] : open.length ? [String(open[0].id)] : [currentId])
       } catch {
         setError('Unable to load invoice.')
       } finally {
@@ -139,6 +147,33 @@ export default function PublicPaymentPage() {
 
     fetchInvoice()
   }, [invoiceId, token])
+
+  useEffect(() => {
+    const loadPreview = async () => {
+      if (!previewInvoiceId) {
+        setPreviewInvoice(null)
+        return
+      }
+      if (!token) return
+      setPreviewLoading(true)
+      try {
+        const res = await fetch(`/api/public/invoices/preview?token=${encodeURIComponent(token)}&id=${encodeURIComponent(previewInvoiceId)}`)
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          setError(data.error || 'Unable to load invoice preview.')
+          setPreviewInvoice(null)
+          return
+        }
+        setPreviewInvoice(data.invoice || null)
+      } catch {
+        setError('Unable to load invoice preview.')
+        setPreviewInvoice(null)
+      } finally {
+        setPreviewLoading(false)
+      }
+    }
+    loadPreview()
+  }, [previewInvoiceId, token])
 
   const refreshInvoice = async () => {
     if (!token) return
@@ -212,7 +247,13 @@ export default function PublicPaymentPage() {
   const isPaid = useMemo(() => Number(invoice?.balance || 0) <= 0, [invoice?.balance])
   const outstandingCount = Number(invoice?.outstanding?.count || 0)
   const outstandingTotal = Number(invoice?.outstanding?.total || 0)
-  const canPayAll = outstandingCount > 1 && outstandingTotal > Number(invoice?.balance || 0)
+  const openInvoices = Array.isArray(invoice?.outstanding?.invoices) ? invoice!.outstanding!.invoices : []
+  const selectedTotal = useMemo(() => {
+    const byId = new Map(openInvoices.map((i) => [String(i.id), Number(i.balance || 0)]))
+    return selectedInvoiceIds.reduce((sum, id) => sum + Math.max(0, Number(byId.get(String(id)) || 0)), 0)
+  }, [openInvoices, selectedInvoiceIds])
+  const selectAllChecked = openInvoices.length > 0 && selectedInvoiceIds.length === openInvoices.length
+  const selectAllIndeterminate = selectedInvoiceIds.length > 0 && selectedInvoiceIds.length < openInvoices.length
 
   const handlePayNow = async () => {
     if (!invoice || !approved || processing) return
@@ -222,7 +263,7 @@ export default function PublicPaymentPage() {
       const response = await fetch(`/api/public/invoices/${invoice.id}/payment-link`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, recaptchaToken, payAllOutstanding }),
+        body: JSON.stringify({ token, recaptchaToken, selectedInvoiceIds }),
       })
       const data = await response.json().catch(() => ({}))
       if (!response.ok || !data.paymentUrl) {
@@ -239,8 +280,8 @@ export default function PublicPaymentPage() {
 
   const handlePayByAch = async () => {
     if (!invoice || !approved || achProcessing) return
-    if (payAllOutstanding) {
-      setError('Pay all outstanding invoices is currently available for card payments only.')
+    if (selectedInvoiceIds.length !== 1) {
+      setError('To pay by ACH, select exactly 1 invoice (QuickBooks ACH is per-invoice).')
       return
     }
     setAchProcessing(true)
@@ -250,7 +291,7 @@ export default function PublicPaymentPage() {
       const response = await fetch(`/api/public/invoices/${invoice.id}/qbo-ach-link`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, recaptchaToken }),
+        body: JSON.stringify({ token, recaptchaToken, targetInvoiceId: selectedInvoiceIds[0] }),
       })
       const data = await response.json().catch(() => ({}))
       if (!response.ok || !data?.hostedUrl) {
@@ -317,7 +358,7 @@ export default function PublicPaymentPage() {
 
   if (isPaid) {
     return (
-      <div className="mx-auto max-w-3xl p-6">
+    <div className="mx-auto max-w-3xl p-6 min-h-screen overflow-y-auto">
         <Card>
           <CardHeader>
             <CardTitle>Payment Complete</CardTitle>
@@ -331,7 +372,106 @@ export default function PublicPaymentPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-6">
+    <div className="mx-auto max-w-4xl space-y-6 p-6 min-h-screen overflow-y-auto">
+      {previewInvoiceId ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-3xl rounded-lg bg-white shadow-lg">
+            <div className="flex items-center justify-between border-b px-4 py-3">
+              <div className="text-sm font-semibold">
+                Invoice Preview{previewInvoice?.invoiceNumber ? ` • ${previewInvoice.invoiceNumber}` : ''}
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setPreviewInvoiceId(null)}>
+                Close
+              </Button>
+            </div>
+            <div className="max-h-[80vh] overflow-y-auto p-4">
+              {previewLoading ? (
+                <div className="text-sm text-gray-600">Loading preview...</div>
+              ) : !previewInvoice ? (
+                <div className="text-sm text-gray-600">No preview available.</div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="text-base font-semibold">
+                        {previewInvoice.title || `Invoice ${previewInvoice.invoiceNumber}`}
+                      </div>
+                      <div className="text-xs text-gray-600">
+                        {previewInvoice.client?.name || 'Client'} •{' '}
+                        {previewInvoice.invoiceDate ? new Date(previewInvoice.invoiceDate).toLocaleDateString() : ''}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs text-gray-600">Balance</div>
+                      <div className="text-lg font-bold">{toCurrency(previewInvoice.balance)}</div>
+                    </div>
+                  </div>
+
+                  <div className="rounded border">
+                    <div className="grid grid-cols-12 gap-2 border-b bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700">
+                      <div className="col-span-6">Description</div>
+                      <div className="col-span-2 text-right">Qty</div>
+                      <div className="col-span-2 text-right">Unit</div>
+                      <div className="col-span-2 text-right">Total</div>
+                    </div>
+                    <div className="divide-y">
+                      {(previewInvoice.lineItems || []).map((li) => (
+                        <div key={li.id} className="grid grid-cols-12 gap-2 px-3 py-2 text-xs">
+                          <div className="col-span-6">{li.description}</div>
+                          <div className="col-span-2 text-right">{li.quantity}</div>
+                          <div className="col-span-2 text-right">{toCurrency(li.unitPrice)}</div>
+                          <div className="col-span-2 text-right">{toCurrency(li.total)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="ml-auto max-w-xs space-y-1 text-sm">
+                    <div className="flex justify-between">
+                      <span>Subtotal</span>
+                      <span>{toCurrency(previewInvoice.subtotal)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Tax</span>
+                      <span>{toCurrency(previewInvoice.taxAmount)}</span>
+                    </div>
+                    <div className="flex justify-between border-t pt-2 font-bold">
+                      <span>Balance Due</span>
+                      <span>{toCurrency(previewInvoice.balance)}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        if (!previewInvoice?.id) return
+                        window.open(
+                          `/api/public/invoices/${previewInvoice.id}/pdf?token=${encodeURIComponent(token)}`,
+                          '_blank'
+                        )
+                      }}
+                    >
+                      Download PDF
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        if (!previewInvoice?.id) return
+                        setSelectedInvoiceIds((prev) =>
+                          prev.includes(previewInvoice.id) ? prev : [...prev, previewInvoice.id]
+                        )
+                        setPreviewInvoiceId(null)
+                      }}
+                    >
+                      Add to selection
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
       {recaptchaSiteKey ? (
         <Script
           src={`https://www.google.com/recaptcha/api.js?render=${encodeURIComponent(recaptchaSiteKey)}`}
@@ -400,7 +540,9 @@ export default function PublicPaymentPage() {
               onCheckedChange={(checked) => setApproved(Boolean(checked))}
             />
             <label htmlFor="approve-invoice" className="text-sm">
-              {payAllOutstanding ? 'I approve these invoices and authorize payment.' : 'I approve this invoice and authorize payment.'}
+              {selectedInvoiceIds.length > 1
+                ? 'I approve these invoices and authorize payment.'
+                : 'I approve this invoice and authorize payment.'}
             </label>
           </div>
 
@@ -416,33 +558,64 @@ export default function PublicPaymentPage() {
                 </Button>
               </div>
 
-              {canPayAll ? (
-                <div className="mt-3 flex items-center gap-2">
-                  <Checkbox
-                    id="pay-all"
-                    checked={payAllOutstanding}
-                    onCheckedChange={(checked) => setPayAllOutstanding(Boolean(checked))}
-                    disabled={!approved}
-                  />
-                  <label htmlFor="pay-all" className={`text-sm ${!approved ? 'text-gray-400' : ''}`}>
-                    Pay all outstanding invoices ({outstandingCount}) • {toCurrency(outstandingTotal)}
-                  </label>
-                </div>
-              ) : null}
-
               {showOutstanding ? (
-                <div className="mt-3 max-h-40 overflow-auto rounded border bg-gray-50 p-2">
-                  <div className="text-xs font-medium text-gray-600 mb-2">Open invoices</div>
-                  <div className="space-y-1">
-                    {(invoice.outstanding.invoices || []).map((inv) => (
-                      <div key={inv.id} className="flex items-center justify-between text-xs">
-                        <div className="truncate">
-                          {inv.invoiceNumber}
-                          {inv.isCurrent ? ' (this page)' : ''}
+                <div className="mt-3 rounded border bg-gray-50 p-2">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <div className="text-xs font-medium text-gray-600">Select invoices to pay</div>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="select-all"
+                        checked={selectAllChecked}
+                        onCheckedChange={(checked) => {
+                          const next = Boolean(checked)
+                          setSelectedInvoiceIds(next ? openInvoices.map((i) => String(i.id)) : [])
+                        }}
+                      />
+                      <label htmlFor="select-all" className="text-xs text-gray-700">
+                        Select all
+                        {selectAllIndeterminate ? ' (partial)' : ''}
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="max-h-56 overflow-auto rounded bg-white border">
+                    {(invoice.outstanding.invoices || []).map((inv) => {
+                      const id = String(inv.id)
+                      const checked = selectedInvoiceIds.includes(id)
+                      return (
+                        <div
+                          key={id}
+                          className="flex items-center justify-between gap-2 px-2 py-2 border-b last:border-b-0 cursor-pointer hover:bg-gray-50"
+                          onClick={() => setPreviewInvoiceId(id)}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={(v) => {
+                                const next = Boolean(v)
+                                setSelectedInvoiceIds((prev) =>
+                                  next ? Array.from(new Set([...prev, id])) : prev.filter((x) => x !== id)
+                                )
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                            <div className="min-w-0">
+                              <div className="text-xs font-medium truncate">
+                                {inv.invoiceNumber}
+                                {inv.isCurrent ? ' (this page)' : ''}
+                              </div>
+                              <div className="text-[11px] text-gray-500 truncate">Click to preview</div>
+                            </div>
+                          </div>
+                          <div className="text-xs font-semibold">{toCurrency(inv.balance)}</div>
                         </div>
-                        <div className="font-medium">{toCurrency(inv.balance)}</div>
-                      </div>
-                    ))}
+                      )
+                    })}
+                  </div>
+
+                  <div className="mt-2 text-xs text-gray-700">
+                    Selected: <span className="font-semibold">{selectedInvoiceIds.length}</span> invoice(s) • Amount:{' '}
+                    <span className="font-semibold">{toCurrency(selectedTotal)}</span>
                   </div>
                 </div>
               ) : null}
@@ -468,9 +641,12 @@ export default function PublicPaymentPage() {
 
           <div className="rounded-lg border bg-gray-50 p-3">
             <div className="text-sm font-semibold text-gray-900">How would you like to pay?</div>
+            <div className="mt-1 text-xs text-gray-600">
+              Amount to pay: <span className="font-semibold">{toCurrency(selectedTotal || invoice.balance)}</span>
+            </div>
             <div className="mt-2 flex flex-wrap gap-2">
               <Button
-                disabled={!approved || achProcessing || !captchaReady || payAllOutstanding}
+                disabled={!approved || achProcessing || !captchaReady || selectedInvoiceIds.length !== 1}
                 onClick={handlePayByAch}
                 title="Pay by ACH via QuickBooks"
               >
@@ -481,7 +657,11 @@ export default function PublicPaymentPage() {
                 disabled={!approved || processing || !captchaReady}
                 onClick={handlePayNow}
               >
-                {processing ? 'Redirecting...' : payAllOutstanding ? 'Pay All by Card' : 'Pay by Card'}
+                {processing
+                  ? 'Redirecting...'
+                  : selectedInvoiceIds.length > 1
+                    ? 'Pay Selected by Card'
+                    : 'Pay by Card'}
               </Button>
             </div>
             {!recaptchaSiteKey ? (
