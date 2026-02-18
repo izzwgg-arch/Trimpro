@@ -70,6 +70,7 @@ export default function ItemsPage() {
   const [importing, setImporting] = useState(false)
   const [duplicating, setDuplicating] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [bulkDeleting, setBulkDeleting] = useState(false)
 
   // Check for bundle parameter in URL
   useEffect(() => {
@@ -83,6 +84,12 @@ export default function ItemsPage() {
     fetchItems()
     fetchCategories()
   }, [search, typeFilter, kindFilter, categoryFilter, activeFilter])
+
+  useEffect(() => {
+    // When the filter/search changes, remove selections that are no longer visible.
+    const visible = new Set(items.map((i) => i.id))
+    setSelectedIds((prev) => prev.filter((id) => visible.has(id)))
+  }, [items])
 
   const fetchCategories = async () => {
     try {
@@ -288,6 +295,52 @@ export default function ItemsPage() {
     }
   }
 
+  const handleDeleteSelected = async () => {
+    if (selectedIds.length === 0 || bulkDeleting) return
+    if (
+      !window.confirm(
+        `Delete ${selectedIds.length} selected item(s)? Items used in estimates/invoices/purchase orders/bundles will be skipped. This action cannot be undone.`
+      )
+    ) {
+      return
+    }
+
+    setBulkDeleting(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch('/api/items', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ ids: selectedIds }),
+      })
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'Failed to delete selected items')
+        return
+      }
+
+      const blocked = Array.isArray(data.blocked) ? data.blocked : []
+      const deletedCount = Number(data.deletedCount || 0)
+      setSelectedIds([])
+      fetchItems()
+
+      if (blocked.length) {
+        alert(`Deleted ${deletedCount} item(s). Skipped ${blocked.length} blocked item(s) (in use).`)
+      } else {
+        alert(`Deleted ${deletedCount} item(s).`)
+      }
+    } catch (error) {
+      console.error('Bulk delete error:', error)
+      alert('Failed to delete selected items')
+    } finally {
+      setBulkDeleting(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -328,6 +381,16 @@ export default function ItemsPage() {
           >
             <Copy className="mr-2 h-4 w-4" />
             {duplicating ? 'Duplicating...' : `Duplicate${selectedIds.length ? ` (${selectedIds.length})` : ''}`}
+          </Button>
+          <Button
+            onClick={handleDeleteSelected}
+            variant="outline"
+            disabled={selectedIds.length === 0 || bulkDeleting}
+            className="text-red-700 border-red-200 hover:bg-red-50"
+            title="Delete selected items"
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            {bulkDeleting ? 'Deleting...' : `Delete${selectedIds.length ? ` (${selectedIds.length})` : ''}`}
           </Button>
           <Button onClick={() => router.push('/dashboard/items/new')} variant="outline">
             <Plus className="mr-2 h-4 w-4" />
@@ -467,6 +530,9 @@ export default function ItemsPage() {
                       <input
                         type="checkbox"
                         checked={items.length > 0 && selectedIds.length === items.length}
+                        ref={(el) => {
+                          if (el) el.indeterminate = selectedIds.length > 0 && selectedIds.length < items.length
+                        }}
                         onChange={(e) => {
                           if (e.target.checked) {
                             setSelectedIds(items.map((item) => item.id))

@@ -214,3 +214,115 @@ export async function POST(request: NextRequest) {
     }, { status: 500 })
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  const authError = await authenticateRequest(request)
+  if (authError) return authError
+
+  const user = getAuthUser(request)
+
+  try {
+    const body = await request.json().catch(() => ({}))
+    const ids = Array.isArray(body?.ids) ? body.ids.map((x: any) => String(x)) : []
+    const uniqueIds = Array.from(new Set(ids.map((x) => x.trim()).filter(Boolean)))
+
+    if (uniqueIds.length === 0) {
+      return NextResponse.json({ error: 'No item ids provided' }, { status: 400 })
+    }
+
+    const items = await prisma.item.findMany({
+      where: {
+        tenantId: user.tenantId,
+        id: { in: uniqueIds },
+      },
+      select: {
+        id: true,
+        name: true,
+        kind: true,
+        _count: {
+          select: {
+            estimateLineItems: true,
+            invoiceLineItems: true,
+            purchaseOrderLineItems: true,
+            bundleComponents: true,
+          },
+        },
+      },
+    })
+
+    const foundIds = new Set(items.map((i) => i.id))
+    const notFound = uniqueIds.filter((id) => !foundIds.has(id))
+
+    const blocked = items
+      .filter(
+        (i) =>
+          (i._count.estimateLineItems || 0) > 0 ||
+          (i._count.invoiceLineItems || 0) > 0 ||
+          (i._count.purchaseOrderLineItems || 0) > 0 ||
+          (i._count.bundleComponents || 0) > 0
+      )
+      .map((i) => ({
+        id: i.id,
+        name: i.name,
+        estimates: i._count.estimateLineItems,
+        invoices: i._count.invoiceLineItems,
+        purchaseOrders: i._count.purchaseOrderLineItems,
+        bundles: i._count.bundleComponents,
+      }))
+
+    const deletable = items.filter((i) => !blocked.some((b) => b.id === i.id))
+    const deletableIds = deletable.map((i) => i.id)
+
+    if (deletableIds.length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          deletedCount: 0,
+          blocked,
+          notFound,
+          error: 'No items could be deleted (all selected items are in use).',
+        },
+        { status: 400 }
+      )
+    }
+
+    const bundleItemIds = deletable.filter((i) => i.kind === 'BUNDLE').map((i) => i.id)
+
+    const now = new Date()
+    const [bundleDefDeleteResult, deleteResult, _audit] = await prisma.$transaction([
+      prisma.bundleDefinition.deleteMany({
+        where: {
+          tenantId: user.tenantId,
+          itemId: { in: bundleItemIds },
+        },
+      }),
+      prisma.item.deleteMany({
+        where: {
+          tenantId: user.tenantId,
+          id: { in: deletableIds },
+        },
+      }),
+      prisma.auditLog.createMany({
+        data: deletableIds.map((id) => ({
+          tenantId: user.tenantId,
+          userId: user.id,
+          action: 'DELETE',
+          entityType: 'Item',
+          entityId: id,
+          createdAt: now,
+        })),
+      }),
+    ])
+
+    return NextResponse.json({
+      success: true,
+      deletedCount: deleteResult.count,
+      deletedBundleDefinitions: bundleDefDeleteResult.count,
+      blocked,
+      notFound,
+    })
+  } catch (error: any) {
+    console.error('Bulk delete items error:', error)
+    return NextResponse.json({ error: error?.message || 'Internal server error' }, { status: 500 })
+  }
+}
