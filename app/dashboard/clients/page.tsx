@@ -49,7 +49,13 @@ export default function ClientsPage() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [viewMode, setViewMode] = useViewMode('clients', 'grid')
+
+  const toggleSelected = (id: string, checked: boolean) => {
+    setSelectedIds((prev) => (checked ? (prev.includes(id) ? prev : [...prev, id]) : prev.filter((x) => x !== id)))
+  }
 
   useEffect(() => {
     fetchClients()
@@ -158,6 +164,88 @@ export default function ClientsPage() {
     return output
   }, [clients])
 
+  const visibleClientIds = useMemo(() => flattenedClients.map((x) => x.client.id), [flattenedClients])
+  const allVisibleSelected = useMemo(
+    () => visibleClientIds.length > 0 && visibleClientIds.every((id) => selectedIds.includes(id)),
+    [selectedIds, visibleClientIds]
+  )
+  const someVisibleSelected = useMemo(
+    () => visibleClientIds.some((id) => selectedIds.includes(id)) && !allVisibleSelected,
+    [allVisibleSelected, selectedIds, visibleClientIds]
+  )
+
+  useEffect(() => {
+    // Drop selections that are no longer on the page (after search/filter refresh).
+    const visible = new Set(visibleClientIds)
+    setSelectedIds((prev) => prev.filter((id) => visible.has(id)))
+  }, [visibleClientIds])
+
+  const setSelectAllVisible = (checked: boolean) => {
+    if (!checked) {
+      setSelectedIds([])
+      return
+    }
+    setSelectedIds((prev) => Array.from(new Set([...prev, ...visibleClientIds])))
+  }
+
+  const handleDeleteSelected = async () => {
+    if (selectedIds.length === 0 || bulkDeleting) return
+    if (
+      !confirm(
+        `Delete ${selectedIds.length} selected client(s)? Clients with jobs/invoices will be skipped. This action cannot be undone.`
+      )
+    ) {
+      return
+    }
+
+    setBulkDeleting(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+
+      const response = await fetch('/api/clients', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ ids: selectedIds }),
+      })
+
+      if (response.status === 401) {
+        router.push('/auth/login')
+        return
+      }
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'Failed to delete selected clients')
+        return
+      }
+
+      const blocked = Array.isArray(data.blocked) ? data.blocked : []
+      const deletedCount = Number(data.deletedCount || 0)
+      setSelectedIds([])
+      await fetchClients()
+
+      if (blocked.length) {
+        alert(
+          `Deleted ${deletedCount} client(s). Skipped ${blocked.length} blocked client(s) (has jobs/invoices).`
+        )
+      } else {
+        alert(`Deleted ${deletedCount} client(s).`)
+      }
+    } catch (error) {
+      console.error('Failed to bulk delete clients:', error)
+      alert('Failed to delete selected clients. Please try again.')
+    } finally {
+      setBulkDeleting(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -178,6 +266,16 @@ export default function ClientsPage() {
         </div>
         <div className="flex items-center gap-2">
           <ViewModeSelector value={viewMode} onChange={setViewMode} />
+          <Button
+            variant="outline"
+            onClick={handleDeleteSelected}
+            disabled={selectedIds.length === 0 || bulkDeleting}
+            className="text-red-700 border-red-200 hover:bg-red-50"
+            title="Delete selected clients"
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            {bulkDeleting ? 'Deleting...' : `Delete${selectedIds.length ? ` (${selectedIds.length})` : ''}`}
+          </Button>
           <Button onClick={() => router.push('/dashboard/clients/new')}>
             <Plus className="mr-2 h-4 w-4" />
             New Client
@@ -189,6 +287,19 @@ export default function ClientsPage() {
       <Card>
         <CardContent className="pt-6">
           <div className="flex items-center space-x-4">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={allVisibleSelected}
+                ref={(el) => {
+                  if (el) el.indeterminate = someVisibleSelected
+                }}
+                onChange={(e) => setSelectAllVisible(e.target.checked)}
+                className="h-4 w-4"
+                title="Select all visible clients"
+              />
+              <span className="text-sm text-gray-600">Select all</span>
+            </div>
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               <Input
@@ -248,9 +359,18 @@ export default function ClientsPage() {
                       )}
                       {client.companyName && <CardDescription className="mt-1">{client.companyName}</CardDescription>}
                     </div>
-                    <span className={`px-2 py-1 text-xs rounded-full ${client.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
-                      {client.isActive ? 'Active' : 'Inactive'}
-                    </span>
+                    <div className="flex flex-col items-end gap-1">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(client.id)}
+                        onChange={(e) => toggleSelected(client.id, e.target.checked)}
+                        className="h-4 w-4"
+                        title="Select client"
+                      />
+                      <span className={`px-2 py-1 text-xs rounded-full ${client.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                        {client.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -307,6 +427,16 @@ export default function ClientsPage() {
             <RowCompactItem
               key={client.id}
               href={`/dashboard/clients/${client.id}`}
+              leading={
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(client.id)}
+                  onChange={(e) => toggleSelected(client.id, e.target.checked)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="h-4 w-4"
+                  title="Select client"
+                />
+              }
               primary={client.name}
               secondary={client.companyName || client.email || client.phone || 'No contact info'}
               status={
@@ -339,6 +469,16 @@ export default function ClientsPage() {
             <RowDetailedItem
               key={client.id}
               href={`/dashboard/clients/${client.id}`}
+              leading={
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(client.id)}
+                  onChange={(e) => toggleSelected(client.id, e.target.checked)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="h-4 w-4"
+                  title="Select client"
+                />
+              }
               primary={client.name}
               status={
                 <span className={`px-2 py-1 text-xs rounded-full ${client.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
@@ -371,6 +511,21 @@ export default function ClientsPage() {
           rowKey={(client) => client.id}
           onRowClick={(client) => router.push(`/dashboard/clients/${client.id}`)}
           columns={[
+            {
+              key: 'select',
+              header: '',
+              headerClassName: 'w-[40px]',
+              render: (client) => (
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(client.id)}
+                  onChange={(e) => toggleSelected(client.id, e.target.checked)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="h-4 w-4"
+                  title="Select client"
+                />
+              ),
+            },
             {
               key: 'name',
               header: 'Client',

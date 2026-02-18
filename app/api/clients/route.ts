@@ -212,3 +212,97 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  const authError = await authenticateRequest(request)
+  if (authError) return authError
+
+  const user = getAuthUser(request)
+
+  try {
+    const body = await request.json().catch(() => ({}))
+    const ids = Array.isArray(body?.ids) ? body.ids.map((x: any) => String(x)) : []
+    const uniqueIds = Array.from(new Set(ids.map((x) => x.trim()).filter(Boolean)))
+
+    if (uniqueIds.length === 0) {
+      return NextResponse.json({ error: 'No client ids provided' }, { status: 400 })
+    }
+
+    // Preload to validate tenant scope and detect blocked deletions.
+    const clients = await prisma.client.findMany({
+      where: {
+        tenantId: user.tenantId,
+        id: { in: uniqueIds },
+      },
+      select: {
+        id: true,
+        name: true,
+        _count: {
+          select: {
+            jobs: true,
+            invoices: true,
+          },
+        },
+      },
+    })
+
+    const foundIds = new Set(clients.map((c) => c.id))
+    const notFound = uniqueIds.filter((id) => !foundIds.has(id))
+
+    const blocked = clients
+      .filter((c) => (c._count.jobs || 0) > 0 || (c._count.invoices || 0) > 0)
+      .map((c) => ({
+        id: c.id,
+        name: c.name,
+        jobs: c._count.jobs,
+        invoices: c._count.invoices,
+      }))
+
+    const deletable = clients.filter((c) => !blocked.some((b) => b.id === c.id))
+    const deletableIds = deletable.map((c) => c.id)
+
+    if (deletableIds.length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          deletedCount: 0,
+          blocked,
+          notFound,
+          error: 'No clients could be deleted (all selected clients are blocked by jobs/invoices).',
+        },
+        { status: 400 }
+      )
+    }
+
+    const now = new Date()
+
+    const [deleteResult] = await prisma.$transaction([
+      prisma.client.deleteMany({
+        where: {
+          tenantId: user.tenantId,
+          id: { in: deletableIds },
+        },
+      }),
+      prisma.auditLog.createMany({
+        data: deletableIds.map((id) => ({
+          tenantId: user.tenantId,
+          userId: user.id,
+          action: 'DELETE',
+          entityType: 'Client',
+          entityId: id,
+          createdAt: now,
+        })),
+      }),
+    ])
+
+    return NextResponse.json({
+      success: true,
+      deletedCount: deleteResult.count,
+      blocked,
+      notFound,
+    })
+  } catch (error: any) {
+    console.error('Bulk delete clients error:', error)
+    return NextResponse.json({ error: error?.message || 'Internal server error' }, { status: 500 })
+  }
+}
