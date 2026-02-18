@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
+import { normalizeEmailList, splitEmailList, isValidEmail } from '@/lib/email'
 
 export async function GET(
   request: NextRequest,
@@ -202,6 +203,18 @@ export async function PUT(
     const body = await request.json()
     const { name, companyName, email, phone, website, notes, tags, isActive, billingAddress, shippingAddress } = body
 
+    let normalizedEmail: string | null | undefined = undefined
+    if (email !== undefined) {
+      normalizedEmail = normalizeEmailList(email)
+      const parts = splitEmailList(normalizedEmail)
+      if (parts.some((e) => !isValidEmail(e))) {
+        return NextResponse.json(
+          { error: 'Invalid email address (use comma-separated emails like a@x.com, b@y.com)' },
+          { status: 400 }
+        )
+      }
+    }
+
     // Get existing client
     const existing = await prisma.client.findFirst({
       where: {
@@ -223,7 +236,7 @@ export async function PUT(
       data: {
         name: name !== undefined ? name : existing.name,
         companyName: companyName !== undefined ? companyName : existing.companyName,
-        email: email !== undefined ? email : existing.email,
+        email: normalizedEmail !== undefined ? normalizedEmail : existing.email,
         phone: phone !== undefined ? phone : existing.phone,
         website: website !== undefined ? website : existing.website,
         notes: notes !== undefined ? notes : existing.notes,

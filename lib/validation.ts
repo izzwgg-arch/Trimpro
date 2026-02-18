@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { normalizeEmailList, splitEmailList } from '@/lib/email'
 
 /**
  * Common validation schemas for API endpoints
@@ -72,7 +73,16 @@ export const createClientSchema = z.object({
   name: z.string().min(1).max(255),
   parentId: z.string().optional().nullable(),
   companyName: z.string().max(255).optional().nullable(),
-  email: z.string().email().optional().nullable(),
+  email: z
+    .preprocess((val) => {
+      if (val === '' || val === null || val === undefined) return null
+      if (typeof val !== 'string') return val
+      return normalizeEmailList(val)
+    }, z.string().nullable().optional())
+    .refine((val) => {
+      if (!val) return true
+      return splitEmailList(val).every((email) => z.string().email().safeParse(email).success)
+    }, 'Invalid email address (use comma-separated emails like a@x.com, b@y.com)'),
   phone: z.string().max(50).optional().nullable(),
   website: z.preprocess(
     (val) => (val === '' || val === null || val === undefined ? null : val),

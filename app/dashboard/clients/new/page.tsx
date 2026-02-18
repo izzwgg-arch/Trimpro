@@ -197,11 +197,12 @@ export default function NewClientPage() {
                 <Label htmlFor="email">Email</Label>
                 <Input
                   id="email"
-                  type="email"
+                  type="text"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  placeholder="john@example.com"
+                  placeholder="john@example.com, billing@example.com"
                 />
+                <p className="mt-1 text-xs text-gray-500">You can enter multiple emails separated by commas.</p>
               </div>
               <div>
                 <Label htmlFor="phone">Phone</Label>

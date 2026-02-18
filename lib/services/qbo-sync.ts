@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma'
 import { quickBooksService } from '@/lib/services/quickbooks'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { encryptSecrets } from '@/lib/integrations/secrets'
+import { getPrimaryEmail } from '@/lib/email'
 import crypto from 'crypto'
 
 type SyncType =
@@ -248,10 +249,12 @@ async function ensureClientCustomer(params: {
   const mappedId = await getMappedQboId(params.integrationId, 'client', client.id)
   const createIfMissing = params.createIfMissing !== false
   const billing = client.addresses?.[0]
+  const primaryEmail = getPrimaryEmail(client.email)
   const payload: any = {
     DisplayName: client.name,
     CompanyName: client.companyName || client.name,
-    PrimaryEmailAddr: client.email ? { Address: client.email } : undefined,
+    // QBO supports a single email. TrimPro can store comma-separated emails.
+    PrimaryEmailAddr: primaryEmail ? { Address: primaryEmail } : undefined,
     PrimaryPhone: client.phone ? { FreeFormNumber: client.phone } : undefined,
     BillAddr: billing
       ? {
