@@ -28,6 +28,33 @@ export async function GET(
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
     }
 
+    const outstandingWhere = {
+      tenantId: invoice.tenantId,
+      clientId: invoice.clientId,
+      balance: { gt: 0 },
+      status: { notIn: ['PAID', 'CANCELLED', 'REFUNDED'] as any },
+    }
+
+    const [outstandingCount, outstandingAgg, outstandingInvoices] = await Promise.all([
+      prisma.invoice.count({ where: outstandingWhere as any }),
+      prisma.invoice.aggregate({
+        where: outstandingWhere as any,
+        _sum: { balance: true },
+      }),
+      prisma.invoice.findMany({
+        where: outstandingWhere as any,
+        select: {
+          id: true,
+          invoiceNumber: true,
+          balance: true,
+          invoiceDate: true,
+          dueDate: true,
+        },
+        orderBy: [{ dueDate: 'asc' }, { invoiceDate: 'asc' }],
+        take: 50,
+      }),
+    ])
+
     return NextResponse.json({
       invoice: {
         id: invoice.id,
@@ -52,6 +79,18 @@ export async function GET(
           unitPrice: li.unitPrice.toString(),
           total: li.total.toString(),
         })),
+        outstanding: {
+          count: outstandingCount,
+          total: Number((outstandingAgg as any)?._sum?.balance ?? 0),
+          invoices: outstandingInvoices.map((inv) => ({
+            id: inv.id,
+            invoiceNumber: inv.invoiceNumber,
+            balance: inv.balance.toString(),
+            invoiceDate: inv.invoiceDate,
+            dueDate: inv.dueDate,
+            isCurrent: inv.id === invoice.id,
+          })),
+        },
       },
     })
   } catch (error) {

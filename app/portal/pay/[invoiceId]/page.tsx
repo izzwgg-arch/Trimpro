@@ -22,6 +22,18 @@ interface PublicInvoice {
     name: string
     companyName: string | null
   }
+  outstanding?: {
+    count: number
+    total: number
+    invoices: Array<{
+      id: string
+      invoiceNumber: string
+      balance: string
+      invoiceDate: string
+      dueDate: string | null
+      isCurrent: boolean
+    }>
+  }
   lineItems: Array<{
     id: string
     description: string
@@ -56,6 +68,8 @@ export default function PublicPaymentPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [approved, setApproved] = useState(false)
+  const [payAllOutstanding, setPayAllOutstanding] = useState(false)
+  const [showOutstanding, setShowOutstanding] = useState(false)
   const [processing, setProcessing] = useState(false)
   const [confirmation, setConfirmation] = useState<string | null>(null)
   const [reconcilingPayment, setReconcilingPayment] = useState(false)
@@ -196,6 +210,9 @@ export default function PublicPaymentPage() {
   ])
 
   const isPaid = useMemo(() => Number(invoice?.balance || 0) <= 0, [invoice?.balance])
+  const outstandingCount = Number(invoice?.outstanding?.count || 0)
+  const outstandingTotal = Number(invoice?.outstanding?.total || 0)
+  const canPayAll = outstandingCount > 1 && outstandingTotal > Number(invoice?.balance || 0)
 
   const handlePayNow = async () => {
     if (!invoice || !approved || processing) return
@@ -205,7 +222,7 @@ export default function PublicPaymentPage() {
       const response = await fetch(`/api/public/invoices/${invoice.id}/payment-link`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, recaptchaToken }),
+        body: JSON.stringify({ token, recaptchaToken, payAllOutstanding }),
       })
       const data = await response.json().catch(() => ({}))
       if (!response.ok || !data.paymentUrl) {
@@ -222,6 +239,10 @@ export default function PublicPaymentPage() {
 
   const handlePayByAch = async () => {
     if (!invoice || !approved || achProcessing) return
+    if (payAllOutstanding) {
+      setError('Pay all outstanding invoices is currently available for card payments only.')
+      return
+    }
     setAchProcessing(true)
     setError(null)
     try {
@@ -379,9 +400,54 @@ export default function PublicPaymentPage() {
               onCheckedChange={(checked) => setApproved(Boolean(checked))}
             />
             <label htmlFor="approve-invoice" className="text-sm">
-              I approve this invoice and authorize payment.
+              {payAllOutstanding ? 'I approve these invoices and authorize payment.' : 'I approve this invoice and authorize payment.'}
             </label>
           </div>
+
+          {invoice?.outstanding && outstandingCount > 0 ? (
+            <div className="rounded-md border p-3 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  You have {outstandingCount} open invoice{outstandingCount === 1 ? '' : 's'} totaling{' '}
+                  <span className="font-semibold">{toCurrency(outstandingTotal)}</span>.
+                </div>
+                <Button variant="outline" size="sm" onClick={() => setShowOutstanding((s) => !s)}>
+                  {showOutstanding ? 'Hide' : 'Review'}
+                </Button>
+              </div>
+
+              {canPayAll ? (
+                <div className="mt-3 flex items-center gap-2">
+                  <Checkbox
+                    id="pay-all"
+                    checked={payAllOutstanding}
+                    onCheckedChange={(checked) => setPayAllOutstanding(Boolean(checked))}
+                    disabled={!approved}
+                  />
+                  <label htmlFor="pay-all" className={`text-sm ${!approved ? 'text-gray-400' : ''}`}>
+                    Pay all outstanding invoices ({outstandingCount}) • {toCurrency(outstandingTotal)}
+                  </label>
+                </div>
+              ) : null}
+
+              {showOutstanding ? (
+                <div className="mt-3 max-h-40 overflow-auto rounded border bg-gray-50 p-2">
+                  <div className="text-xs font-medium text-gray-600 mb-2">Open invoices</div>
+                  <div className="space-y-1">
+                    {(invoice.outstanding.invoices || []).map((inv) => (
+                      <div key={inv.id} className="flex items-center justify-between text-xs">
+                        <div className="truncate">
+                          {inv.invoiceNumber}
+                          {inv.isCurrent ? ' (this page)' : ''}
+                        </div>
+                        <div className="font-medium">{toCurrency(inv.balance)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="flex items-center gap-2">
             <Button
@@ -404,7 +470,7 @@ export default function PublicPaymentPage() {
             <div className="text-sm font-semibold text-gray-900">How would you like to pay?</div>
             <div className="mt-2 flex flex-wrap gap-2">
               <Button
-                disabled={!approved || achProcessing || !captchaReady}
+                disabled={!approved || achProcessing || !captchaReady || payAllOutstanding}
                 onClick={handlePayByAch}
                 title="Pay by ACH via QuickBooks"
               >
@@ -415,7 +481,7 @@ export default function PublicPaymentPage() {
                 disabled={!approved || processing || !captchaReady}
                 onClick={handlePayNow}
               >
-                {processing ? 'Redirecting...' : 'Pay by Card'}
+                {processing ? 'Redirecting...' : payAllOutstanding ? 'Pay All by Card' : 'Pay by Card'}
               </Button>
             </div>
             {!recaptchaSiteKey ? (

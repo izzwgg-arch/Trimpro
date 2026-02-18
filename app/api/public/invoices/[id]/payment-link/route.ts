@@ -30,6 +30,7 @@ export async function POST(
     const body = await request.json().catch(() => ({}))
     const token = String(body.token || '')
     const recaptchaToken = body.recaptchaToken
+    const payAllOutstanding = Boolean(body.payAllOutstanding)
     if (!token) {
       return NextResponse.json({ error: 'Missing token' }, { status: 401 })
     }
@@ -78,7 +79,26 @@ export async function POST(
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
     }
 
-    if (Number(invoice.balance) <= 0) {
+    const openWhere = {
+      tenantId: invoice.tenantId,
+      clientId: invoice.clientId,
+      balance: { gt: 0 },
+      status: { notIn: ['PAID', 'CANCELLED', 'REFUNDED'] as any },
+    }
+
+    const openAgg = payAllOutstanding
+      ? await prisma.invoice.aggregate({
+          where: openWhere as any,
+          _sum: { balance: true },
+          _count: { _all: true },
+        })
+      : null
+
+    const amountToPay = payAllOutstanding
+      ? Number((openAgg as any)?._sum?.balance ?? 0)
+      : Number(invoice.balance)
+
+    if (!Number.isFinite(amountToPay) || amountToPay <= 0) {
       return NextResponse.json({ error: 'Invoice already paid' }, { status: 400 })
     }
 
@@ -93,11 +113,18 @@ export async function POST(
     const jobAddress = invoice.job?.addresses?.[0]
     const estimateAddress = parseAddressParts(invoice.estimate?.jobSiteAddress)
 
+    const groupRef = `TPCLIENT:${invoice.clientId}`
+    const displayRef = payAllOutstanding ? 'Outstanding Invoices' : `Invoice ${invoice.invoiceNumber}`
+    const description = payAllOutstanding
+      ? `Outstanding invoices for ${invoice.client.name}`
+      : `Invoice ${invoice.invoiceNumber} - ${invoice.title}`
+
     const paymentLink = await solaService.createPaymentLink({
+      // Keep invoiceId in metadata; use invoiceNumber as the payment reference that comes back via hosted forms.
       invoiceId: invoice.id,
-      invoiceNumber: invoice.invoiceNumber,
-      amount: Number(invoice.balance),
-      description: `Invoice ${invoice.invoiceNumber} - ${invoice.title}`,
+      invoiceNumber: payAllOutstanding ? groupRef : invoice.invoiceNumber,
+      amount: amountToPay,
+      description: description,
       clientEmail: invoice.client.email || invoice.client.contacts?.[0]?.email || undefined,
       clientName: invoice.client.name,
       clientPhone: invoice.client.phone || invoice.client.contacts?.[0]?.phone || undefined,
@@ -123,6 +150,9 @@ export async function POST(
       paymentUrl: paymentLink.url,
       paymentId: paymentLink.id,
       expiresAt: paymentLink.expiresAt,
+      mode: payAllOutstanding ? 'all_outstanding' : 'single',
+      reference: payAllOutstanding ? groupRef : invoice.invoiceNumber,
+      label: displayRef,
     })
   } catch (error: any) {
     console.error('Public payment link error:', error)

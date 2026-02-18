@@ -108,6 +108,60 @@ async function sendPaymentReceiptEmail(params: {
   }
 }
 
+async function sendBulkPaymentReceiptEmail(params: {
+  tenantId: string
+  to: string
+  clientName: string
+  amountPaid: number
+  appliedCount: number
+  transactionId?: string
+}) {
+  const emailSecrets = await getIntegrationSecrets(params.tenantId, 'email')
+  if (!emailSecrets) return
+
+  const now = new Date()
+  const subject = `Payment Receipt • ${params.appliedCount} invoice(s) • ${now.toISOString()}`
+  const html = `
+    <html>
+      <body style="margin:0;padding:0;background:#f3f4f6;font-family:Inter,Helvetica,Arial,sans-serif;color:#111827;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:24px 0;">
+          <tr>
+            <td align="center">
+              <table role="presentation" width="640" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;">
+                <tr>
+                  <td style="padding:24px 28px;border-bottom:1px solid #e5e7eb;background:#f9fafb;">
+                    <div style="font-size:24px;font-weight:700;line-height:1.2;">Payment Receipt</div>
+                    <div style="margin-top:6px;font-size:13px;color:#6b7280;">Outstanding invoices payment</div>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:24px 28px;">
+                    <p style="margin:0 0 14px 0;font-size:15px;line-height:1.6;">Hi ${params.clientName || 'there'},</p>
+                    <p style="margin:0 0 18px 0;font-size:15px;line-height:1.6;">
+                      Thank you. We received your payment and applied it to <strong>${params.appliedCount}</strong> invoice(s).
+                    </p>
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #e5e7eb;border-radius:10px;background:#f9fafb;padding:12px 14px;">
+                      <tr><td style="padding:6px 0;font-size:14px;color:#374151;">Amount Paid</td><td align="right" style="padding:6px 0;font-size:14px;font-weight:700;">${money(params.amountPaid)}</td></tr>
+                      <tr><td style="padding:6px 0;font-size:14px;color:#374151;">Date</td><td align="right" style="padding:6px 0;font-size:14px;">${now.toLocaleString()}</td></tr>
+                      ${params.transactionId ? `<tr><td style="padding:6px 0;font-size:14px;color:#374151;">Transaction ID</td><td align="right" style="padding:6px 0;font-size:14px;">${params.transactionId}</td></tr>` : ''}
+                    </table>
+                    <p style="margin:18px 0 0 0;font-size:12px;color:#6b7280;">If you have any questions, just reply to this email.</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+    </html>
+  `
+
+  const result = await testEmailProvider(emailSecrets, params.to, subject, html)
+  if (!result.success) {
+    console.error('Failed to send bulk payment receipt email:', result.error || result.message)
+  }
+}
+
 async function ensureJobFromInvoice(invoiceId: string): Promise<{
   job: { id: string; jobNumber: string; title: string } | null
   created: boolean
@@ -328,6 +382,146 @@ export async function POST(request: NextRequest) {
     const transactionId = String(
       body?.transactionId || body?.TransactionID || body?.xRefNum || body?.xRefnum || ''
     )
+
+    // Bulk payment reference format: "TPCLIENT:<clientId>"
+    if (invoiceRef.startsWith('TPCLIENT:')) {
+      const clientId = invoiceRef.slice('TPCLIENT:'.length).trim()
+      if (!clientId) return NextResponse.json({ error: 'Missing client reference' }, { status: 400 })
+
+      const client = await prisma.client.findFirst({
+        where: { id: clientId },
+        include: {
+          contacts: {
+            where: { isPrimary: true },
+            take: 1,
+          },
+        },
+      })
+      if (!client) return NextResponse.json({ error: 'Client not found' }, { status: 404 })
+
+      const openInvoices = await prisma.invoice.findMany({
+        where: {
+          tenantId: client.tenantId,
+          clientId: client.id,
+          balance: { gt: 0 } as any,
+          status: { notIn: ['PAID', 'CANCELLED', 'REFUNDED'] as any },
+        },
+        orderBy: [{ dueDate: 'asc' }, { invoiceDate: 'asc' }],
+      })
+
+      const totalOutstanding = openInvoices.reduce((sum, inv) => sum + Math.max(0, Number(inv.balance || 0)), 0)
+      let remaining = paidAmount > 0 ? paidAmount : totalOutstanding
+      let appliedCount = 0
+      let appliedTotal = 0
+
+      for (const inv of openInvoices) {
+        if (remaining <= 0) break
+        const invBalance = Math.max(0, Number(inv.balance || 0))
+        if (invBalance <= 0) continue
+        const amountForThis = Math.min(remaining, invBalance)
+        if (amountForThis <= 0) continue
+
+        const uniqueTxn = transactionId ? `${transactionId}:${inv.id}` : `BULK:${Date.now()}:${inv.id}`
+        const exists = await prisma.payment.findFirst({
+          where: { solaTransactionId: uniqueTxn },
+          select: { id: true },
+        })
+        if (exists) continue
+
+        const createdPayment = await prisma.payment.create({
+          data: {
+            invoiceId: inv.id,
+            amount: amountForThis,
+            status: 'COMPLETED',
+            method: 'CARD',
+            reference: transactionId || null,
+            solaTransactionId: uniqueTxn,
+            solaWebhookData: body,
+            processedAt: new Date(),
+            notes: 'Bulk payment (pay all outstanding invoices)',
+          } as any,
+        })
+
+        try {
+          await syncPaymentToQuickBooks(client.tenantId, createdPayment.id)
+        } catch (error) {
+          console.error('QuickBooks payment sync trigger error (bulk):', error)
+        }
+
+        const newPaidAmount = Number(inv.paidAmount || 0) + amountForThis
+        const newBalance = Math.max(0, Number(inv.total || 0) - newPaidAmount)
+        await prisma.invoice.update({
+          where: { id: inv.id },
+          data: {
+            paidAmount: newPaidAmount,
+            balance: newBalance,
+            status:
+              newBalance <= 0
+                ? (inv.progressBillingMode && inv.progressBillingMode !== 'FULL' ? 'PARTIAL' : 'PAID')
+                : newPaidAmount > 0
+                  ? 'PARTIAL'
+                  : inv.status,
+            paidAt: newBalance <= 0 ? new Date() : inv.paidAt,
+            solaTransactionId: transactionId || inv.solaTransactionId,
+          } as any,
+        })
+
+        // Best-effort: keep lifecycle consistent (creates job if needed).
+        try {
+          await ensureJobFromInvoice(inv.id)
+        } catch {
+          // ignore
+        }
+
+        appliedCount += 1
+        appliedTotal += amountForThis
+        remaining -= amountForThis
+      }
+
+      // Notify office/admin/accounting once (avoid spamming N notifications)
+      try {
+        const users = await prisma.user.findMany({
+          where: {
+            tenantId: client.tenantId,
+            role: { in: ['ADMIN', 'ACCOUNTING', 'OFFICE'] },
+            status: 'ACTIVE',
+          },
+          select: { id: true },
+        })
+        if (users.length) {
+          await createNotificationsForUsers(client.tenantId, users.map((u) => u.id), {
+            type: 'PAYMENT_RECEIVED' as any,
+            title: 'Payment Received (Multiple Invoices)',
+            message: `${client.name} paid ${money(appliedTotal)} applied to ${appliedCount} invoice(s).`,
+            linkUrl: '/dashboard/invoices',
+            linkType: 'invoice',
+            linkId: null as any,
+            requiresAck: true,
+          } as any)
+        }
+      } catch {
+        // ignore
+      }
+
+      // Receipt email (single)
+      try {
+        const to = client.email || client.contacts?.[0]?.email
+        if (to && appliedCount > 0 && appliedTotal > 0) {
+          await sendBulkPaymentReceiptEmail({
+            tenantId: client.tenantId,
+            to,
+            clientName: client.name || 'Customer',
+            amountPaid: appliedTotal,
+            appliedCount,
+            transactionId: transactionId || undefined,
+          })
+        }
+      } catch (error) {
+        console.error('Bulk receipt email error:', error)
+      }
+
+      return NextResponse.json({ ok: true, bulk: true, appliedCount, appliedTotal })
+    }
 
     const invoice = await prisma.invoice.findFirst({
       where: {
