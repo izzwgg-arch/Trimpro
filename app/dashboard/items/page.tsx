@@ -60,6 +60,9 @@ export default function ItemsPage() {
   const [items, setItems] = useState<Item[]>([])
   const [categories, setCategories] = useState<ItemCategory[]>([])
   const [loading, setLoading] = useState(true)
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [total, setTotal] = useState(0)
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
   const [kindFilter, setKindFilter] = useState('all')
@@ -81,9 +84,15 @@ export default function ItemsPage() {
   }, [])
 
   useEffect(() => {
+    // Reset to first page on filter changes.
+    setPage(1)
+  }, [search, typeFilter, kindFilter, categoryFilter, activeFilter])
+
+  useEffect(() => {
     fetchItems()
     fetchCategories()
-  }, [search, typeFilter, kindFilter, categoryFilter, activeFilter])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, typeFilter, kindFilter, categoryFilter, activeFilter, page])
 
   useEffect(() => {
     // When the filter/search changes, remove selections that are no longer visible.
@@ -115,7 +124,7 @@ export default function ItemsPage() {
         kind: kindFilter,
         categoryId: categoryFilter !== 'all' ? categoryFilter : '',
         active: activeFilter !== 'all' ? activeFilter : '',
-        page: '1',
+        page: String(page),
         limit: '100',
       })
 
@@ -139,6 +148,8 @@ export default function ItemsPage() {
       const data = await response.json()
       console.log('Fetched items:', data.items?.length || 0, 'items')
       setItems(data.items || [])
+      setTotalPages(Number(data?.pagination?.totalPages || 1))
+      setTotal(Number(data?.pagination?.total || 0))
     } catch (error) {
       console.error('Failed to fetch items:', error)
       setItems([])
@@ -647,6 +658,27 @@ export default function ItemsPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Pagination */}
+      {totalPages > 1 ? (
+        <div className="flex items-center justify-between pt-2">
+          <div className="text-sm text-gray-600">
+            Page {page} of {totalPages} · {total} total
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
+              Prev
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       {/* Import Dialog */}
       <Dialog open={showImportDialog} onOpenChange={handleImportDialogOpenChange}>

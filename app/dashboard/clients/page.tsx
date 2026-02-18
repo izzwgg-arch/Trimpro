@@ -48,6 +48,9 @@ export default function ClientsPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [total, setTotal] = useState(0)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -58,8 +61,14 @@ export default function ClientsPage() {
   }
 
   useEffect(() => {
-    fetchClients()
+    // Reset to first page on filter changes.
+    setPage(1)
   }, [search, status])
+
+  useEffect(() => {
+    fetchClients()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, status, page])
 
   const fetchClients = async () => {
     try {
@@ -67,7 +76,7 @@ export default function ClientsPage() {
       const params = new URLSearchParams({
         search,
         status,
-        page: '1',
+        page: String(page),
         limit: '50',
       })
 
@@ -84,6 +93,8 @@ export default function ClientsPage() {
 
       const data = await response.json()
       setClients(data.clients || [])
+      setTotalPages(Number(data?.pagination?.totalPages || 1))
+      setTotal(Number(data?.pagination?.total || 0))
     } catch (error) {
       console.error('Failed to fetch clients:', error)
     } finally {
@@ -581,6 +592,27 @@ export default function ClientsPage() {
           ]}
         />
       )}
+
+      {/* Pagination */}
+      {totalPages > 1 ? (
+        <div className="flex items-center justify-between pt-2">
+          <div className="text-sm text-gray-600">
+            Page {page} of {totalPages} · {total} total
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
+              Prev
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
