@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { notifyNewLead } from '@/lib/notifications'
+import { syncClientToQuickBooks } from '@/lib/services/qbo-sync'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -136,16 +137,40 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Client selection rules (matches UI):
+    // - Existing Client: clientId is provided -> do NOT create/sync a QBO customer here.
+    // - New Client: clientId is null/empty -> create a new TrimPro client (and sync to QBO).
+    let resolvedClientId: string | null = null
+    let createdClientIdForSync: string | null = null
     if (clientId) {
       const client = await prisma.client.findFirst({
         where: {
           id: clientId,
           tenantId: user.tenantId,
         },
+        select: { id: true },
       })
       if (!client) {
         return NextResponse.json({ error: 'Client not found' }, { status: 404 })
       }
+      resolvedClientId = client.id
+    } else {
+      // "New Client" path
+      const fullName = `${String(firstName || '').trim()} ${String(lastName || '').trim()}`.trim()
+      const createdClient = await prisma.client.create({
+        data: {
+          tenantId: user.tenantId,
+          name: fullName,
+          companyName: company || null,
+          email: email || null,
+          phone: phone || null,
+          notes: notes || null,
+          isActive: true,
+        },
+        select: { id: true },
+      })
+      resolvedClientId = createdClient.id
+      createdClientIdForSync = createdClient.id
     }
 
     // Create lead
@@ -157,7 +182,7 @@ export async function POST(request: NextRequest) {
         email: email || null,
         phone: phone || null,
         company: company || null,
-        convertedToClientId: clientId || null,
+        convertedToClientId: resolvedClientId,
         jobSiteAddress: jobSiteAddress || null,
         source: source || 'OTHER',
         status: status || 'NEW',
@@ -170,6 +195,15 @@ export async function POST(request: NextRequest) {
         assignedTo: true,
       },
     })
+
+    // Sync QBO customer ONLY when this request created a new client.
+    if (createdClientIdForSync) {
+      try {
+        await syncClientToQuickBooks(user.tenantId, createdClientIdForSync)
+      } catch (error) {
+        console.error('QuickBooks client sync trigger error (new client from request):', error)
+      }
+    }
 
     // Create activity
     await prisma.activity.create({

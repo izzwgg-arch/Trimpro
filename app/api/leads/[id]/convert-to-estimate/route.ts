@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
-import { syncEstimateToQuickBooks } from '@/lib/services/qbo-sync'
+import { syncClientToQuickBooks, syncEstimateToQuickBooks } from '@/lib/services/qbo-sync'
 
 function normalizePhone(value: string | null | undefined) {
   return (value || '').replace(/\D/g, '')
@@ -166,6 +166,14 @@ export async function POST(
     }
     if (!estimate) {
       return NextResponse.json({ error: 'Unable to allocate a new estimate number. Please retry.' }, { status: 409 })
+    }
+
+    if (createdClientIdForSync) {
+      try {
+        await syncClientToQuickBooks(user.tenantId, createdClientIdForSync)
+      } catch (error) {
+        console.error('QuickBooks client sync trigger error (request convert):', error)
+      }
     }
 
     try {
