@@ -1334,7 +1334,7 @@ export async function importQuickBooksCustomersAndPayments(
   // - Uses QB invoice ids in `invoice.qboSyncId` to avoid duplicates.
   for (let start = 1; includeOpenInvoices && start <= 10000; start += 1000) {
     // Only open invoices: Balance > 0
-    const query = `select * from Invoice where Balance > '0' startposition ${start} maxresults 1000`
+    const query = `select * from Invoice where Balance > 0 startposition ${start} maxresults 1000`
     const res = await quickBooksService.query(session.accessToken, session.realmId, query)
     const invoices = res?.QueryResponse?.Invoice || []
     if (!invoices.length) break
