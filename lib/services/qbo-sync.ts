@@ -1364,8 +1364,9 @@ export async function importQuickBooksCustomersAndPayments(
   // - Must run after customers import so CustomerRef can be mapped to local clientId.
   // - Uses QB invoice ids in `invoice.qboSyncId` to avoid duplicates.
   for (let start = 1; includeOpenInvoices && start <= 10000; start += 1000) {
-    // Only open invoices: Balance > 0
-    const query = `select * from Invoice where Balance > 0 startposition ${start} maxresults 1000`
+    // QBOQL is picky about which fields support comparison operators across objects.
+    // Query invoices broadly and filter open/unpaid locally by Balance > 0.
+    const query = `select * from Invoice startposition ${start} maxresults 1000`
     const res = await quickBooksService.query(session.accessToken, session.realmId, query)
     const invoices = res?.QueryResponse?.Invoice || []
     if (!invoices.length) break
@@ -1374,6 +1375,10 @@ export async function importQuickBooksCustomersAndPayments(
       try {
         const qboInvoiceId = String(inv.Id || '')
         if (!qboInvoiceId) continue
+
+        const balance = toNumber(inv.Balance)
+        // Skip paid/zero-balance invoices; this importer is specifically for open/unpaid.
+        if (balance <= 0) continue
 
         const exists = await prisma.invoice.findFirst({
           where: { tenantId, qboSyncId: qboInvoiceId },
@@ -1403,7 +1408,6 @@ export async function importQuickBooksCustomersAndPayments(
         }
 
         const totalAmt = toNumber(inv.TotalAmt)
-        const balance = toNumber(inv.Balance)
         const taxAmount = toNumber(inv?.TxnTaxDetail?.TotalTax)
         const subtotal = Math.max(0, totalAmt - taxAmount)
         const paidAmount = Math.max(0, totalAmt - balance)
