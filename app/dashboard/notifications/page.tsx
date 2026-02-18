@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Bell } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
+import { refreshAccessToken } from '@/lib/auth/client'
 
 interface Notification {
   id: string
@@ -21,26 +22,11 @@ export default function NotificationsPage() {
   const [items, setItems] = useState<Notification[]>([])
   const [loading, setLoading] = useState(true)
 
-  const refreshToken = async (): Promise<boolean> => {
-    const refreshToken = localStorage.getItem('refreshToken')
-    if (!refreshToken) return false
-    const res = await fetch('/api/auth/refresh', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken }),
-    })
-    if (!res.ok) return false
-    const data = await res.json()
-    localStorage.setItem('accessToken', data.accessToken)
-    localStorage.setItem('refreshToken', data.refreshToken)
-    return true
-  }
-
   const fetchAll = async () => {
     try {
       let token = localStorage.getItem('accessToken')
       if (!token) {
-        const ok = await refreshToken()
+        const ok = await refreshAccessToken()
         if (!ok) return router.push('/auth/login')
         token = localStorage.getItem('accessToken')
       }
@@ -49,7 +35,7 @@ export default function NotificationsPage() {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (res.status === 401) {
-        const ok = await refreshToken()
+        const ok = await refreshAccessToken()
         if (!ok) return router.push('/auth/login')
         token = localStorage.getItem('accessToken')
         res = await fetch('/api/notifications?limit=200', {

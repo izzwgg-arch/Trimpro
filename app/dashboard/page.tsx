@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button'
 import { DashboardRevenueChart } from '@/components/dashboard/DashboardRevenueChart'
 import { DashboardJobsPipelineChart } from '@/components/dashboard/DashboardJobsPipelineChart'
 import { DashboardJobsChart } from '@/components/dashboard/DashboardJobsChart'
+import { refreshAccessToken } from '@/lib/auth/client'
 
 interface DashboardStats {
   kpis: {
@@ -102,30 +103,12 @@ export default function DashboardPage() {
   }
 
   const refreshToken = async () => {
-    const refreshToken = localStorage.getItem('refreshToken')
-    if (!refreshToken) {
+    const ok = await refreshAccessToken()
+    if (!ok) {
       window.location.href = '/auth/login'
       return
     }
-
-    try {
-      const response = await fetch('/api/auth/refresh', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken }),
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        localStorage.setItem('accessToken', data.accessToken)
-        localStorage.setItem('refreshToken', data.refreshToken)
-        fetchStats()
-      } else {
-        window.location.href = '/auth/login'
-      }
-    } catch (error) {
-      window.location.href = '/auth/login'
-    }
+    fetchStats()
   }
 
   const dismissPayment = (paymentId: string) => {

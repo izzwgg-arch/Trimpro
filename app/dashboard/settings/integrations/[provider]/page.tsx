@@ -22,6 +22,7 @@ import {
 import Link from 'next/link'
 import { getIntegration, IntegrationProvider } from '@/lib/integrations/registry'
 import { SecretField } from '@/components/integrations/SecretField'
+import { refreshAccessToken } from '@/lib/auth/client'
 
 const statusColors: Record<string, string> = {
   NOT_CONFIGURED: 'bg-gray-100 text-gray-800',
@@ -72,40 +73,18 @@ export default function IntegrationProviderPage() {
   }
 
   const refreshToken = async (): Promise<boolean> => {
-    const refreshToken = localStorage.getItem('refreshToken')
-    if (!refreshToken) {
-      router.push('/auth/login')
-      return false
-    }
-
-    try {
-      const response = await fetch('/api/auth/refresh', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken }),
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        localStorage.setItem('accessToken', data.accessToken)
-        localStorage.setItem('refreshToken', data.refreshToken)
-        return true
-      } else {
-        router.push('/auth/login')
-        return false
-      }
-    } catch (error) {
-      router.push('/auth/login')
-      return false
-    }
+    const ok = await refreshAccessToken()
+    if (!ok) router.push('/auth/login')
+    return ok
   }
 
   const fetchConnection = async () => {
     try {
       let token = localStorage.getItem('accessToken')
       if (!token) {
-        router.push('/auth/login')
-        return
+        const refreshed = await refreshToken()
+        if (!refreshed) return
+        token = localStorage.getItem('accessToken')
       }
 
       let response = await fetch(`/api/integrations/${provider}`, {

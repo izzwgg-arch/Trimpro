@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import styles from './messages.module.css'
+import { refreshAccessToken } from '@/lib/auth/client'
 import {
   Search,
   MessageSquare,
@@ -212,32 +213,9 @@ export default function MessagesPage() {
   }, [selectedConversation?.messages, isAtBottom, scrollToBottom, selectedConversation])
 
   const refreshToken = async (): Promise<boolean> => {
-    const refreshToken = localStorage.getItem('refreshToken')
-    if (!refreshToken) {
-      router.push('/auth/login')
-      return false
-    }
-
-    try {
-      const response = await fetch('/api/auth/refresh', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken }),
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        localStorage.setItem('accessToken', data.accessToken)
-        localStorage.setItem('refreshToken', data.refreshToken)
-        return true
-      } else {
-        router.push('/auth/login')
-        return false
-      }
-    } catch (error) {
-      router.push('/auth/login')
-      return false
-    }
+    const ok = await refreshAccessToken()
+    if (!ok) router.push('/auth/login')
+    return ok
   }
 
   const fetchConversations = async () => {
