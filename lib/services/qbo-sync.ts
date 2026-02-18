@@ -216,6 +216,7 @@ async function ensureClientCustomer(params: {
   accessToken: string
   realmId: string
   integrationId: string
+  createIfMissing?: boolean
 }) {
   const client = await prisma.client.findFirst({
     where: { id: params.clientId, tenantId: params.tenantId },
@@ -229,6 +230,7 @@ async function ensureClientCustomer(params: {
   if (!client) return null
 
   const mappedId = await getMappedQboId(params.integrationId, 'client', client.id)
+  const createIfMissing = params.createIfMissing !== false
   const billing = client.addresses?.[0]
   const payload: any = {
     DisplayName: client.name,
@@ -295,6 +297,19 @@ async function ensureClientCustomer(params: {
       qboId,
     })
     return qboId
+  }
+
+  if (!createIfMissing) {
+    await logSync({
+      integrationId: params.integrationId,
+      type: 'client',
+      action: 'skip',
+      status: 'success',
+      entityId: client.id,
+      error:
+        'QuickBooks customer is not linked yet. Skipping customer creation because createIfMissing=false (will create on invoice conversion).',
+    })
+    return null
   }
 
   const created = await quickBooksService.createCustomer(params.accessToken, params.realmId, payload)
@@ -368,6 +383,7 @@ export async function syncClientToQuickBooks(tenantId: string, clientId: string)
       accessToken: session.accessToken,
       realmId: session.realmId,
       integrationId: session.integrationId,
+      createIfMissing: true,
     })
   } catch (error: any) {
     await logSync({
@@ -407,6 +423,7 @@ export async function syncLeadToQuickBooksProject(tenantId: string, leadId: stri
         accessToken: session.accessToken,
         realmId: session.realmId,
         integrationId: session.integrationId,
+        createIfMissing: false,
       })
     }
 
@@ -466,6 +483,7 @@ export async function syncJobToQuickBooksProject(tenantId: string, jobId: string
       accessToken: session.accessToken,
       realmId: session.realmId,
       integrationId: session.integrationId,
+      createIfMissing: false,
     })
     if (!parentQboCustomerId) return
 
@@ -511,6 +529,7 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
       accessToken: session.accessToken,
       realmId: session.realmId,
       integrationId: session.integrationId,
+      createIfMissing: false,
     })
     if (!customerQboId) return
 
@@ -613,6 +632,7 @@ export async function syncInvoiceToQuickBooks(tenantId: string, invoiceId: strin
       accessToken: session.accessToken,
       realmId: session.realmId,
       integrationId: session.integrationId,
+      createIfMissing: true,
     })
     if (!customerQboId) return
 
@@ -661,6 +681,15 @@ export async function syncInvoiceToQuickBooks(tenantId: string, invoiceId: strin
           UnitPrice: toNumber(li.unitPrice),
         },
       })),
+    }
+
+    // If we previously created a QBO Estimate, link the invoice to it so QBO treats this like a conversion.
+    // This does not create any new entities; it only adds a relationship when the estimate exists.
+    if (invoice.estimateId) {
+      const estimateQboId = await getMappedQboId(session.integrationId, 'estimate', invoice.estimateId)
+      if (estimateQboId) {
+        payload.LinkedTxn = [{ TxnId: estimateQboId, TxnType: 'Estimate' }]
+      }
     }
 
     const created = await quickBooksService.createInvoice(

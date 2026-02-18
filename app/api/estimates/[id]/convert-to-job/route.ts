@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
-import { syncClientToQuickBooks, syncJobToQuickBooksProject } from '@/lib/services/qbo-sync'
+import { syncJobToQuickBooksProject } from '@/lib/services/qbo-sync'
 
 function normalizePhone(value: string | null | undefined) {
   return (value || '').replace(/\D/g, '')
@@ -183,13 +183,6 @@ export async function POST(
       return createdJob
     })
 
-    if (createdClientIdForSync) {
-      try {
-        await syncClientToQuickBooks(user.tenantId, createdClientIdForSync)
-      } catch (error) {
-        console.error('QuickBooks client sync trigger error (estimate convert-to-job):', error)
-      }
-    }
     try {
       await syncJobToQuickBooksProject(user.tenantId, job.id)
     } catch (error) {

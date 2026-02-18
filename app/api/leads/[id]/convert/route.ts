@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
-import { syncClientToQuickBooks } from '@/lib/services/qbo-sync'
 
 export async function POST(
   request: NextRequest,
@@ -44,12 +43,6 @@ export async function POST(
         isActive: true,
       },
     })
-
-    try {
-      await syncClientToQuickBooks(user.tenantId, client.id)
-    } catch (error) {
-      console.error('QuickBooks client sync trigger error (lead convert route):', error)
-    }
 
     // Update lead
     const updatedLead = await prisma.lead.update({

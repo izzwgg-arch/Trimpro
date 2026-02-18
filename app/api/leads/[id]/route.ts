@@ -3,7 +3,6 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { parseAddressParts } from '@/lib/address/parse'
 import { geocodeAddressPartsFromString } from '@/lib/geocoding'
-import { syncClientToQuickBooks } from '@/lib/services/qbo-sync'
 
 export async function GET(
   request: NextRequest,
@@ -239,12 +238,6 @@ export async function PUT(
           isActive: true,
         },
       })
-
-      try {
-        await syncClientToQuickBooks(user.tenantId, client.id)
-      } catch (error) {
-        console.error('QuickBooks client sync trigger error (lead convert):', error)
-      }
 
       // Update lead with client ID
       await prisma.lead.update({
