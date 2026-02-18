@@ -192,9 +192,8 @@ async function main() {
 
       // Work entities
       await tx.task.deleteMany({ where: { tenantId } })
-      await tx.issueWatcher.deleteMany({ where: { tenantId } })
+      // IssueWatchers/IssueNotes cascade from Issue; JobAssignments cascade from Job.
       await tx.issue.deleteMany({ where: { tenantId } })
-      await tx.jobAssignment.deleteMany({ where: { tenantId } })
 
       // Documents
       await tx.purchaseOrder.deleteMany({ where: { tenantId } })
