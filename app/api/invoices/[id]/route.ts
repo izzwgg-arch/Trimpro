@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { notifyInvoiceOverdue } from '@/lib/notifications'
 import { formatAddressParts, parseAddressParts } from '@/lib/address/parse'
 import { geocodeAddressPartsFromString } from '@/lib/geocoding'
+import { syncInvoiceToQuickBooks } from '@/lib/services/qbo-sync'
 
 export async function GET(
   request: NextRequest,
@@ -451,6 +452,13 @@ export async function PUT(
           daysOverdue
         )
       }
+    }
+
+    // Best-effort: if this invoice is connected to QBO, push edits over as an update.
+    try {
+      await syncInvoiceToQuickBooks(user.tenantId, invoiceRecord.id)
+    } catch (error) {
+      console.error('QuickBooks invoice sync trigger error (invoice update):', error)
     }
 
     return NextResponse.json({ invoice: invoiceRecord })

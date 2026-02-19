@@ -152,6 +152,37 @@ async function getMappedQboId(integrationId: string, type: SyncType, entityId: s
   return row?.qboId || null
 }
 
+function extractSalesItemLines(qboLines: any): any[] {
+  const lines = Array.isArray(qboLines) ? qboLines : []
+  return lines.filter((l) => l && l.DetailType === 'SalesItemLineDetail')
+}
+
+function buildSalesItemLinesWithIds(params: {
+  localLineItems: any[]
+  existingQboSalesLines: any[]
+  serviceItemId: string
+}) {
+  const local = Array.isArray(params.localLineItems) ? params.localLineItems : []
+  const existing = Array.isArray(params.existingQboSalesLines) ? params.existingQboSalesLines : []
+
+  return local.map((li: any, idx: number) => {
+    const existingLine = existing[idx] || null
+    const out: any = {
+      DetailType: 'SalesItemLineDetail',
+      Description: li?.notes || li?.description,
+      Amount: toNumber(li?.quantity) * toNumber(li?.unitPrice),
+      SalesItemLineDetail: {
+        ItemRef: { value: params.serviceItemId },
+        Qty: toNumber(li?.quantity),
+        UnitPrice: toNumber(li?.unitPrice),
+      },
+    }
+    // For updates, QBO needs an Id per line to avoid duplicates.
+    if (existingLine?.Id) out.Id = String(existingLine.Id)
+    return out
+  })
+}
+
 async function findCustomerByDisplayName(
   accessToken: string,
   realmId: string,
@@ -586,17 +617,6 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
     if (!customerQboId) return
 
     const existingQboId = await getMappedQboId(session.integrationId, 'estimate', estimate.id)
-    if (existingQboId) {
-      await logSync({
-        integrationId: session.integrationId,
-        type: 'estimate',
-        action: 'skip',
-        status: 'success',
-        entityId: estimate.id,
-        qboId: existingQboId,
-      })
-      return
-    }
 
     const serviceItemId = await ensureDefaultServiceItem({
       accessToken: session.accessToken,
@@ -631,6 +651,49 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
           UnitPrice: toNumber(li.unitPrice),
         },
       })),
+    }
+
+    if (existingQboId) {
+      const fetched = await quickBooksService.makeAPIRequest(
+        session.accessToken,
+        session.realmId,
+        `/estimate/${existingQboId}`,
+        'GET'
+      )
+      const qboEstimate = fetched?.Estimate
+      const syncToken = qboEstimate?.SyncToken
+      if (!syncToken) throw new Error('QuickBooks estimate SyncToken missing (cannot update)')
+
+      const existingSalesLines = extractSalesItemLines(qboEstimate?.Line)
+      const updatePayload: any = {
+        ...payload,
+        Id: existingQboId,
+        SyncToken: String(syncToken),
+        // Full update so line removals reflect in QBO.
+        Line: buildSalesItemLinesWithIds({
+          localLineItems: lineItems,
+          existingQboSalesLines: existingSalesLines,
+          serviceItemId,
+        }),
+      }
+
+      const updated = await quickBooksService.makeAPIRequest(
+        session.accessToken,
+        session.realmId,
+        '/estimate?operation=update',
+        'POST',
+        updatePayload
+      )
+      const qboId = String(updated?.Estimate?.Id || existingQboId)
+      await logSync({
+        integrationId: session.integrationId,
+        type: 'estimate',
+        action: 'update',
+        status: 'success',
+        entityId: estimate.id,
+        qboId,
+      })
+      return
     }
 
     const created = await quickBooksService.makeAPIRequest(
@@ -678,27 +741,34 @@ export async function syncInvoiceToQuickBooks(tenantId: string, invoiceId: strin
     })
     if (!invoice?.clientId) return
 
-    const customerQboId = await ensureClientCustomer({
+    let customerQboId = await ensureClientCustomer({
       tenantId,
       clientId: invoice.clientId,
       accessToken: session.accessToken,
       realmId: session.realmId,
       integrationId: session.integrationId,
-      createIfMissing: true,
+      // Strict flow: do not create new QBO customers for existing clients as a side-effect of invoice sync.
+      createIfMissing: false,
     })
-    if (!customerQboId) return
-
-    if (invoice.qboSyncId) {
-      await logSync({
-        integrationId: session.integrationId,
-        type: 'invoice',
-        action: 'skip',
-        status: 'success',
-        entityId: invoice.id,
-        qboId: invoice.qboSyncId,
-      })
-      return
+    if (!customerQboId) {
+      const clientCreatedAt = (invoice as any)?.client?.createdAt
+      const invoiceCreatedAt = invoice.createdAt
+      const isLikelyNewClient =
+        clientCreatedAt instanceof Date &&
+        Math.abs(invoiceCreatedAt.getTime() - clientCreatedAt.getTime()) < 10 * 60 * 1000
+      if (isLikelyNewClient) {
+        await syncClientToQuickBooks(tenantId, invoice.clientId)
+        customerQboId = await ensureClientCustomer({
+          tenantId,
+          clientId: invoice.clientId,
+          accessToken: session.accessToken,
+          realmId: session.realmId,
+          integrationId: session.integrationId,
+          createIfMissing: false,
+        })
+      }
     }
+    if (!customerQboId) return
 
     const serviceItemId = await ensureDefaultServiceItem({
       accessToken: session.accessToken,
@@ -735,19 +805,62 @@ export async function syncInvoiceToQuickBooks(tenantId: string, invoiceId: strin
       })),
     }
 
-    // If we previously created a QBO Estimate, link the invoice to it so QBO treats this like a conversion.
-    // This does not create any new entities; it only adds a relationship when the estimate exists.
+    // Link to Estimate when present so QBO treats this like a conversion.
     if (invoice.estimateId) {
       let estimateQboId = await getMappedQboId(session.integrationId, 'estimate', invoice.estimateId)
       if (!estimateQboId) {
-        // Best-effort: ensure the estimate exists in QBO before creating the invoice, so QBO can link them.
-        // This keeps the "estimate -> invoice" flow intact even if estimate sync ran later/failed previously.
         await syncEstimateToQuickBooks(tenantId, invoice.estimateId)
         estimateQboId = await getMappedQboId(session.integrationId, 'estimate', invoice.estimateId)
       }
-      if (estimateQboId) {
-        payload.LinkedTxn = [{ TxnId: estimateQboId, TxnType: 'Estimate' }]
+      if (estimateQboId) payload.LinkedTxn = [{ TxnId: estimateQboId, TxnType: 'Estimate' }]
+    }
+
+    if (invoice.qboSyncId) {
+      const fetched = await quickBooksService.makeAPIRequest(
+        session.accessToken,
+        session.realmId,
+        `/invoice/${invoice.qboSyncId}`,
+        'GET'
+      )
+      const qboInvoice = fetched?.Invoice
+      const syncToken = qboInvoice?.SyncToken
+      if (!syncToken) throw new Error('QuickBooks invoice SyncToken missing (cannot update)')
+
+      const existingSalesLines = extractSalesItemLines(qboInvoice?.Line)
+      const updatePayload: any = {
+        ...payload,
+        Id: invoice.qboSyncId,
+        SyncToken: String(syncToken),
+        Line: buildSalesItemLinesWithIds({
+          localLineItems: lineItems,
+          existingQboSalesLines: existingSalesLines,
+          serviceItemId,
+        }),
       }
+
+      const updated = await quickBooksService.makeAPIRequest(
+        session.accessToken,
+        session.realmId,
+        '/invoice?operation=update',
+        'POST',
+        updatePayload
+      )
+      const qboId = String(updated?.Invoice?.Id || invoice.qboSyncId)
+      await prisma.invoice.update({
+        where: { id: invoice.id },
+        data: {
+          qboSyncAt: new Date(),
+        },
+      })
+      await logSync({
+        integrationId: session.integrationId,
+        type: 'invoice',
+        action: 'update',
+        status: 'success',
+        entityId: invoice.id,
+        qboId,
+      })
+      return
     }
 
     const created = await quickBooksService.createInvoice(
