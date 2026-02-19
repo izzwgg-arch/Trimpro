@@ -98,10 +98,12 @@ export default function NewEstimatePage() {
         if (!response.ok) return
         const data = await response.json()
         const lead = data.lead
+        // Use convertedToClientId first, then fall back to client.id if client object exists
+        const resolvedClientId = lead.convertedToClientId || lead.client?.id || null
         setFormData((prev) => ({
           ...prev,
           leadId: lead.id,
-          clientId: lead.convertedToClientId || prev.clientId,
+          clientId: resolvedClientId || prev.clientId,
           title: prev.title || `Estimate for ${lead.firstName} ${lead.lastName}`.trim(),
           jobSiteAddress: lead.jobSiteAddress || prev.jobSiteAddress,
           notes: prev.notes || lead.notes || '',
