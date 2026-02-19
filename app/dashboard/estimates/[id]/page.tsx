@@ -314,46 +314,47 @@ export default function EstimateDetailPage() {
 
   const handleOpenConvertToInvoice = () => {
     if (!estimate) return
-    if (!confirm(`Open a new invoice draft from estimate "${estimate.estimateNumber}"? (It will only convert after you Save.)`)) {
-      return
-    }
-
-    // Business rule: do NOT convert/create an Invoice immediately.
-    // Open the New Invoice page prefilled from this estimate; conversion happens only on Save.
-    router.push(`/dashboard/invoices/new?estimateId=${encodeURIComponent(estimate.id)}`)
+    // Bring back the progress billing modal; invoice is only created after the user saves the draft.
+    setBillingMode('FULL')
+    setBillingPercent('50')
+    setSelectedLineItemIds(estimate.lineItems.map((li) => li.id))
+    setShowBillingModal(true)
   }
 
   const handleConvertToInvoice = async () => {
     if (!estimate) return
-    setConvertingInvoice(true)
     try {
-      const token = localStorage.getItem('accessToken')
-      const response = await fetch(`/api/estimates/${estimateId}/convert-to-invoice`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          billingMode,
-          percentage: Number(billingPercent || 0),
-          selectedLineItemIds,
-        }),
-      })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok) {
-        alert(data.error || 'Failed to convert estimate to invoice')
+      setConvertingInvoice(true)
+
+      const mode = billingMode || 'FULL'
+      if (mode === 'PERCENTAGE') {
+        const pct = Number(billingPercent || 0)
+        if (!Number.isFinite(pct) || pct <= 0 || pct > 100) {
+          alert('Percentage must be between 0 and 100.')
+          return
+        }
+      }
+      if (mode === 'MANUAL' && selectedLineItemIds.length === 0) {
+        alert('Select at least one line item to bill.')
         return
       }
-      setShowBillingModal(false)
-      if (data?.invoice?.id) {
-        router.push(`/dashboard/invoices/${data.invoice.id}`)
-      } else {
-        router.push('/dashboard/invoices')
+
+      // Business rule: do NOT create/convert immediately. Open a draft invoice prefilled from this estimate.
+      const qs = new URLSearchParams()
+      qs.set('estimateId', estimate.id)
+      qs.set('billingMode', mode)
+      if (mode === 'PERCENTAGE') {
+        qs.set('percentage', String(Number(billingPercent || 0)))
       }
+      if (mode === 'MANUAL') {
+        qs.set('selectedLineItemIds', selectedLineItemIds.join(','))
+      }
+
+      setShowBillingModal(false)
+      router.push(`/dashboard/invoices/new?${qs.toString()}`)
     } catch (error) {
-      console.error('Convert estimate to invoice error:', error)
-      alert('Failed to convert estimate to invoice')
+      console.error('Open invoice draft error:', error)
+      alert('Failed to open invoice draft')
     } finally {
       setConvertingInvoice(false)
     }
@@ -515,6 +516,115 @@ export default function EstimateDetailPage() {
           </Button>
         </div>
       </div>
+
+      <Dialog open={showBillingModal} onOpenChange={setShowBillingModal}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Convert To Invoice</DialogTitle>
+            <DialogDescription>
+              Choose what to bill from this estimate. This opens a new invoice draft; it is not created until you Save.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Billing Mode</Label>
+              <Select value={billingMode} onValueChange={(v) => setBillingMode(v as any)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select billing mode" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="FULL">Full - bill entire estimate</SelectItem>
+                  <SelectItem value="PERCENTAGE">Percentage - progress billing</SelectItem>
+                  <SelectItem value="MANUAL">Manual - select line items</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {billingMode === 'PERCENTAGE' && (
+              <div className="space-y-2">
+                <Label>Percent to bill</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={billingPercent}
+                  onChange={(e) => setBillingPercent(e.target.value)}
+                  placeholder="50"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Creates a single invoice line: Progress Billing (x%) - Estimate {estimate.estimateNumber}
+                </p>
+              </div>
+            )}
+
+            {billingMode === 'MANUAL' && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>Select items to bill</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSelectedLineItemIds(estimate.lineItems.map((li) => li.id))}
+                  >
+                    Select All
+                  </Button>
+                </div>
+                <div className="max-h-72 overflow-auto rounded border">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-white">
+                      <tr className="border-b">
+                        <th className="w-10 px-3 py-2"></th>
+                        <th className="px-3 py-2 text-left">Item</th>
+                        <th className="px-3 py-2 text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {estimate.lineItems.map((li) => {
+                        const checked = selectedLineItemIds.includes(li.id)
+                        const label = li.group?.name ? `${li.description} (${li.group.name})` : li.description
+                        return (
+                          <tr key={li.id} className="border-b last:border-b-0">
+                            <td className="px-3 py-2">
+                              <Checkbox
+                                checked={checked}
+                                onCheckedChange={(val) => {
+                                  const on = Boolean(val)
+                                  setSelectedLineItemIds((prev) => {
+                                    if (on) return Array.from(new Set([...prev, li.id]))
+                                    return prev.filter((id) => id !== li.id)
+                                  })
+                                }}
+                              />
+                            </td>
+                            <td className="px-3 py-2">{label}</td>
+                            <td className="px-3 py-2 text-right">{formatCurrency(parseFloat(li.total || '0'))}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowBillingModal(false)}
+              disabled={convertingInvoice}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleConvertToInvoice} disabled={convertingInvoice}>
+              {convertingInvoice ? 'Opening...' : 'Continue'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showSendModal} onOpenChange={setShowSendModal}>
         <DialogContent>

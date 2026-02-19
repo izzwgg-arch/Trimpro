@@ -54,6 +54,15 @@ export default function NewInvoicePage() {
   const clientIdParam = searchParams.get('clientId')
   const jobIdParam = searchParams.get('jobId')
   const estimateIdParam = searchParams.get('estimateId')
+  const billingModeParam = (searchParams.get('billingMode') || '').toUpperCase()
+  const percentageParam = searchParams.get('percentage')
+  const selectedLineItemIdsParam = searchParams.get('selectedLineItemIds')
+  const selectedLineItemIdSet = new Set(
+    String(selectedLineItemIdsParam || '')
+      .split(',')
+      .map((v) => v.trim())
+      .filter(Boolean)
+  )
   
   const [loading, setLoading] = useState(false)
   const [clients, setClients] = useState<Client[]>([])
@@ -119,7 +128,7 @@ export default function NewInvoicePage() {
     if (estimateIdParam) {
       loadFromEstimate()
     }
-  }, [formData.clientId, estimateIdParam])
+  }, [formData.clientId, estimateIdParam, billingModeParam, percentageParam, selectedLineItemIdsParam])
 
   const fetchClients = async () => {
     try {
@@ -179,22 +188,66 @@ export default function NewInvoicePage() {
       if (response.ok) {
         const data = await response.json()
         const est = data.estimate
-        
+
+        const effectiveMode =
+          billingModeParam === 'PERCENTAGE' || billingModeParam === 'MANUAL' || billingModeParam === 'FULL'
+            ? (billingModeParam as 'FULL' | 'PERCENTAGE' | 'MANUAL')
+            : 'FULL'
+        const pct = percentageParam ? Number(percentageParam) : 0
+
         setFormData(prev => ({
           ...prev,
           clientId: est.client?.id || prev.clientId,
-          title: est.title || prev.title,
+          title:
+            prev.title ||
+            `${est.title} - ${
+              effectiveMode === 'FULL'
+                ? 'Full Billing'
+                : effectiveMode === 'PERCENTAGE'
+                  ? `${(Number.isFinite(pct) ? pct : 0).toFixed(2)}% Billing`
+                  : 'Partial Billing'
+            }`,
           taxRate: est.taxRate ? (parseFloat(est.taxRate) * 100).toString() : prev.taxRate,
-          discount: est.discount || prev.discount,
+          // Match historical conversion behavior: conversions from estimates start with 0 discount on the invoice.
+          discount: '0',
           notes: est.notes || prev.notes,
           terms: est.terms || prev.terms,
         }))
-        
-        // Map estimate line items to invoice line items
+
+        // Billing mode: PERCENTAGE becomes a single "progress billing" line.
+        if (effectiveMode === 'PERCENTAGE') {
+          const safePct = Number.isFinite(pct) ? pct : 0
+          const amount = Math.max(0, (Number(est.total || 0) * safePct) / 100)
+          setLineItems([
+            {
+              description: `Progress Billing (${safePct.toFixed(2)}%) - Estimate ${est.estimateNumber}`,
+              quantity: '1',
+              unitPrice: amount.toFixed(2),
+              unitCost: '0',
+              notes: '',
+              vendorId: null as any,
+              vendorName: null as any,
+              taxable: false,
+              taxRate: '',
+              isVisibleToClient: true,
+              showDescriptionToCustomer: true,
+              showCostToCustomer: false,
+              showPriceToCustomer: true,
+              showTaxToCustomer: true,
+              showNotesToCustomer: false,
+            },
+          ])
+        } else {
+          const sourceLines =
+            effectiveMode === 'MANUAL' && selectedLineItemIdSet.size > 0
+              ? (est.lineItems || []).filter((li: any) => selectedLineItemIdSet.has(String(li.id)))
+              : (est.lineItems || [])
+
+          // Map estimate line items to invoice line items
         const groupsMap = new Map<string, { name: string; sourceBundleId?: string }>()
         const mappedItems: LineItem[] = []
         
-        est.lineItems?.forEach((li: any) => {
+          sourceLines.forEach((li: any) => {
           if (li.group && !groupsMap.has(li.group.id)) {
             groupsMap.set(li.group.id, {
               name: li.group.name,
@@ -204,7 +257,7 @@ export default function NewInvoicePage() {
         })
         
         const processedGroups = new Set<string>()
-        est.lineItems?.forEach((li: any) => {
+          sourceLines.forEach((li: any) => {
           const group = li.group
           if (group && !processedGroups.has(group.id)) {
             mappedItems.push({
@@ -252,6 +305,7 @@ export default function NewInvoicePage() {
         
         if (mappedItems.length > 0) {
           setLineItems(mappedItems)
+        }
         }
 
         // Optional items (separate section)
