@@ -399,12 +399,13 @@ export default function PublicPaymentPage() {
     setAchProcessing(true)
     setError(null)
     try {
-      const recaptchaToken = await getRecaptchaToken('public_invoice_pay_ach')
-      
       // Create ACH links for all selected invoices
       const achLinks: Array<{ invoiceId: string; invoiceNumber?: string; hostedUrl: string }> = []
       
       for (const targetInvoiceId of selectedInvoiceIds) {
+        // Generate a new reCAPTCHA token for each invoice (tokens can only be used once)
+        const recaptchaToken = await getRecaptchaToken('public_invoice_pay_ach')
+        
         const response = await fetch(`/api/public/invoices/${invoice.id}/qbo-ach-link`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
