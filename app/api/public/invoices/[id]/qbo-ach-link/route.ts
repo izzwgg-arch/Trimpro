@@ -59,12 +59,19 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       id: true,
       tenantId: true,
       balance: true,
+      qboSyncId: true,
     },
   })
 
   if (!invoice) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
   if (Number(invoice.balance) <= 0) {
     return NextResponse.json({ error: 'Invoice already paid' }, { status: 400 })
+  }
+  if (!invoice.qboSyncId) {
+    return NextResponse.json(
+      { error: 'Invoice is not synced to QuickBooks yet. Please sync the invoice first.' },
+      { status: 400 }
+    )
   }
 
   try {
@@ -80,7 +87,16 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       intentId: result.intentId,
     })
   } catch (err: any) {
-    return NextResponse.json({ error: err?.message || 'Unable to create ACH link' }, { status: 400 })
+    console.error('[QBO ACH] Failed to create ACH link:', {
+      invoiceId: invoice.id,
+      tenantId: invoice.tenantId,
+      error: err?.message || String(err),
+      stack: err?.stack,
+    })
+    return NextResponse.json(
+      { error: err?.message || 'Unable to create ACH link', details: process.env.NODE_ENV === 'development' ? String(err) : undefined },
+      { status: 400 }
+    )
   }
 }
 
