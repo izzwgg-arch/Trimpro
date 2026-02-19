@@ -162,6 +162,7 @@ export async function PUT(
   try {
     const body = await request.json()
     const {
+      estimateNumber,
       title,
       jobSiteAddress,
       lineItems,
@@ -190,6 +191,17 @@ export async function PUT(
     if (!existing) {
       return NextResponse.json({ error: 'Estimate not found' }, { status: 404 })
     }
+
+    const normalizeEstimateNumber = (val: any) => {
+      if (val === null || val === undefined) return null
+      const raw = String(val).trim()
+      if (!raw) return null
+      if (/^\d+$/.test(raw)) return `EST-${raw.padStart(6, '0')}`
+      const m = raw.match(/^EST-(\d+)$/i)
+      if (m) return `EST-${m[1].padStart(6, '0')}`
+      return raw
+    }
+    const normalizedEstimateNumber = normalizeEstimateNumber(estimateNumber)
 
     // Recalculate totals if line items changed
     let subtotal = Number(existing.subtotal)
@@ -325,10 +337,16 @@ export async function PUT(
     const total = subtotalAfterDiscount + tax
 
     // Update estimate
-    const estimate = await prisma.estimate.update({
-      where: { id: params.id },
-      data: {
-        title: title !== undefined ? title : existing.title,
+    let estimateRecord: any = null
+    try {
+      estimateRecord = await prisma.estimate.update({
+        where: { id: params.id },
+        data: {
+          estimateNumber:
+            normalizedEstimateNumber && normalizedEstimateNumber !== existing.estimateNumber
+              ? normalizedEstimateNumber
+              : undefined,
+          title: title !== undefined ? title : existing.title,
         jobSiteAddress:
           jobSiteAddress !== undefined
             ? (jobSiteAddress || null)
@@ -344,15 +362,21 @@ export async function PUT(
         isNotesVisibleToClient:
           isNotesVisibleToClient !== undefined ? Boolean(isNotesVisibleToClient) : existing.isNotesVisibleToClient,
         terms: terms !== undefined ? terms : existing.terms,
-      },
-      include: {
-        lineItems: {
-          orderBy: { sortOrder: 'asc' },
         },
-      },
-    })
+        include: {
+          lineItems: {
+            orderBy: { sortOrder: 'asc' },
+          },
+        },
+      })
+    } catch (err: any) {
+      if (err?.code === 'P2002' && err?.meta?.target?.includes?.('estimateNumber')) {
+        return NextResponse.json({ error: 'Estimate number already exists' }, { status: 400 })
+      }
+      throw err
+    }
 
-    return NextResponse.json({ estimate })
+    return NextResponse.json({ estimate: estimateRecord })
   } catch (error) {
     console.error('Update estimate error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

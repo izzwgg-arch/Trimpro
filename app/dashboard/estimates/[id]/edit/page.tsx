@@ -533,6 +533,7 @@ export default function EditEstimatePage() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
+          estimateNumber,
           title: formData.title,
           jobSiteAddress: formData.jobSiteAddress || null,
           taxRate: taxRate,
@@ -665,6 +666,15 @@ export default function EditEstimatePage() {
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-gray-500 mt-1">Client cannot be changed after creation</p>
+                </div>
+                <div>
+                  <Label htmlFor="estimateNumber">Estimate #</Label>
+                  <Input
+                    id="estimateNumber"
+                    value={estimateNumber}
+                    onChange={(e) => setEstimateNumber(e.target.value)}
+                    placeholder="ex: EST-000123"
+                  />
                 </div>
                 <div>
                   <Label htmlFor="title">Title *</Label>

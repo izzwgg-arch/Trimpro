@@ -550,6 +550,7 @@ export default function EditInvoicePage() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
+          invoiceNumber,
           title: formData.title,
           taxRate: taxRate,
           discount,
@@ -685,6 +686,15 @@ export default function EditInvoicePage() {
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-gray-500 mt-1">Client cannot be changed after creation</p>
+                </div>
+                <div>
+                  <Label htmlFor="invoiceNumber">Invoice #</Label>
+                  <Input
+                    id="invoiceNumber"
+                    value={invoiceNumber}
+                    onChange={(e) => setInvoiceNumber(e.target.value)}
+                    placeholder="ex: INV-000123"
+                  />
                 </div>
                 <div>
                   <Label htmlFor="jobId">Job (Optional)</Label>

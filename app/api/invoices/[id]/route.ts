@@ -201,6 +201,7 @@ export async function PUT(
   try {
     const body = await request.json()
     const {
+      invoiceNumber,
       title,
       lineItems,
       groups, // Array of { groupId, name, sourceBundleId }
@@ -235,6 +236,17 @@ export async function PUT(
     if (existing.status === 'PAID') {
       return NextResponse.json({ error: 'Cannot edit paid invoice' }, { status: 400 })
     }
+
+    const normalizeInvoiceNumber = (val: any) => {
+      if (val === null || val === undefined) return null
+      const raw = String(val).trim()
+      if (!raw) return null
+      if (/^\d+$/.test(raw)) return `INV-${raw.padStart(6, '0')}`
+      const m = raw.match(/^INV-(\d+)$/i)
+      if (m) return `INV-${m[1].padStart(6, '0')}`
+      return raw
+    }
+    const normalizedInvoiceNumber = normalizeInvoiceNumber(invoiceNumber)
 
     // Recalculate totals if line items changed
     let subtotal = Number(existing.subtotal)
@@ -331,10 +343,16 @@ export async function PUT(
     const balance = total - paidAmount
 
     // Update invoice
-    const invoice = await prisma.invoice.update({
-      where: { id: params.id },
-      data: {
-        title: title !== undefined ? title : existing.title,
+    let invoiceRecord: any = null
+    try {
+      invoiceRecord = await prisma.invoice.update({
+        where: { id: params.id },
+        data: {
+          invoiceNumber:
+            normalizedInvoiceNumber && normalizedInvoiceNumber !== existing.invoiceNumber
+              ? normalizedInvoiceNumber
+              : undefined,
+          title: title !== undefined ? title : existing.title,
         subtotal: subtotal,
         taxRate: taxRateNum,
         taxAmount: tax,
@@ -349,37 +367,50 @@ export async function PUT(
           isNotesVisibleToClient !== undefined ? Boolean(isNotesVisibleToClient) : existing.isNotesVisibleToClient,
         terms: terms !== undefined ? terms : existing.terms,
         memo: memo !== undefined ? memo : existing.memo,
-      },
-      include: {
-        lineItems: {
-          orderBy: { sortOrder: 'asc' },
         },
-      },
-    })
+        include: {
+          lineItems: {
+            orderBy: { sortOrder: 'asc' },
+          },
+        },
+      })
+    } catch (err: any) {
+      if (err?.code === 'P2002' && err?.meta?.target?.includes?.('invoiceNumber')) {
+        return NextResponse.json({ error: 'Invoice number already exists' }, { status: 400 })
+      }
+      throw err
+    }
 
     // Update status to overdue if past due date
-    if (invoice.dueDate && invoice.balance.toNumber() > 0 && new Date(invoice.dueDate) < new Date() && invoice.status !== 'PAID') {
-      const wasOverdue = invoice.status === 'OVERDUE'
+    if (
+      invoiceRecord.dueDate &&
+      invoiceRecord.balance.toNumber() > 0 &&
+      new Date(invoiceRecord.dueDate) < new Date() &&
+      invoiceRecord.status !== 'PAID'
+    ) {
+      const wasOverdue = invoiceRecord.status === 'OVERDUE'
       await prisma.invoice.update({
         where: { id: params.id },
         data: { status: 'OVERDUE' },
       })
-      invoice.status = 'OVERDUE'
+      invoiceRecord.status = 'OVERDUE'
 
       // Notify if status just changed to overdue
-      if (!wasOverdue && invoice.client) {
-        const daysOverdue = Math.floor((new Date().getTime() - new Date(invoice.dueDate).getTime()) / (1000 * 60 * 60 * 24))
+      if (!wasOverdue && invoiceRecord.client) {
+        const daysOverdue = Math.floor(
+          (new Date().getTime() - new Date(invoiceRecord.dueDate).getTime()) / (1000 * 60 * 60 * 24)
+        )
         await notifyInvoiceOverdue(
           user.tenantId,
-          invoice.id,
-          invoice.invoiceNumber,
-          invoice.client.name,
+          invoiceRecord.id,
+          invoiceRecord.invoiceNumber,
+          invoiceRecord.client.name,
           daysOverdue
         )
       }
     }
 
-    return NextResponse.json({ invoice })
+    return NextResponse.json({ invoice: invoiceRecord })
   } catch (error) {
     console.error('Update invoice error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
