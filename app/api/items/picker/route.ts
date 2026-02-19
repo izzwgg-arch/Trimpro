@@ -102,6 +102,7 @@ export async function GET(request: NextRequest) {
       vendorName: item.vendor?.name || null,
       taxable: item.taxable,
       taxRate: item.taxRate ? Number(item.taxRate) : null,
+      description: item.description,
       notes: item.notes,
     }))
 
@@ -118,6 +119,7 @@ export async function GET(request: NextRequest) {
       vendorName: item.vendor?.name || null,
       taxable: item.taxable,
       taxRate: item.taxRate ? Number(item.taxRate) : null,
+      description: item.description,
       notes: item.notes,
       bundleId: item.bundleDefinition?.id || null, // BundleDefinition ID (for API calls)
     }))

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
+import { renderPdfFromHtml } from '@/lib/pdf/render-html-to-pdf'
+
+export const runtime = 'nodejs'
 
 function escapeHtml(value: string) {
   return value
@@ -29,6 +32,8 @@ export async function GET(
   try {
     const shouldPrint = request.nextUrl.searchParams.get('print') === '1'
     const shouldDownload = request.nextUrl.searchParams.get('download') === '1'
+    const format = request.nextUrl.searchParams.get('format') || 'pdf'
+    const wantsHtml = format === 'html'
     const logoUrl = process.env.PDF_LOGO_URL || process.env.NEXT_PUBLIC_PDF_LOGO_URL || defaultLogoDataUri()
 
     const estimate = await prisma.estimate.findFirst({
@@ -267,6 +272,7 @@ export async function GET(
             <table>
               <thead>
                 <tr>
+                  <th>Item</th>
                   <th>Description</th>
                   <th class="text-right">Qty</th>
                   <th class="text-right">Unit Price</th>
@@ -276,10 +282,11 @@ export async function GET(
               <tbody>
                 ${
                   visibleItems.length === 0
-                    ? '<tr><td colspan="4" class="muted">No visible items</td></tr>'
+                    ? '<tr><td colspan="5" class="muted">No visible items</td></tr>'
                     : visibleItems.map((item) => `
                         <tr>
-                          <td>${escapeHtml(item.showDescriptionToCustomer === false ? '' : item.description)}</td>
+                          <td>${escapeHtml(item.description)}</td>
+                          <td>${escapeHtml(item.showDescriptionToCustomer === false ? '' : (item.notes || ''))}</td>
                           <td class="text-right">${Number(item.quantity).toFixed(2)}</td>
                           <td class="text-right">$${Number(item.unitPrice).toFixed(2)}</td>
                           <td class="text-right">$${Number(item.total).toFixed(2)}</td>
@@ -297,6 +304,7 @@ export async function GET(
                     <table>
                       <thead>
                         <tr>
+                          <th>Item</th>
                           <th>Description</th>
                           <th class="text-right">Qty</th>
                           <th class="text-right">Unit</th>
@@ -308,7 +316,8 @@ export async function GET(
                           .map(
                             (item) => `
                               <tr>
-                                <td>${escapeHtml(item.showDescriptionToCustomer === false ? '' : item.description)}</td>
+                                <td>${escapeHtml(item.description)}</td>
+                                <td>${escapeHtml(item.showDescriptionToCustomer === false ? '' : (item.notes || ''))}</td>
                                 <td class="text-right">${Number(item.quantity).toFixed(2)}</td>
                                 <td class="text-right">$${Number(item.unitPrice).toFixed(2)}</td>
                                 <td class="text-right">$${Number(item.total).toFixed(2)}</td>
@@ -353,12 +362,32 @@ export async function GET(
       </html>
     `
 
-    return new NextResponse(html, {
-      headers: {
-        'Content-Type': 'text/html',
-        'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="Estimate-${estimate.estimateNumber}.html"`,
-      },
-    })
+    if (wantsHtml) {
+      return new NextResponse(html, {
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="Estimate-${estimate.estimateNumber}.html"`,
+        },
+      })
+    }
+
+    try {
+      const pdf = await renderPdfFromHtml(html)
+      return new NextResponse(pdf, {
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="Estimate-${estimate.estimateNumber}.pdf"`,
+        },
+      })
+    } catch (e) {
+      console.error('PDF render failed; falling back to HTML:', e)
+      return new NextResponse(html, {
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="Estimate-${estimate.estimateNumber}.html"`,
+        },
+      })
+    }
   } catch (error) {
     console.error('Generate estimate PDF error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
+import { renderPdfFromHtml } from '@/lib/pdf/render-html-to-pdf'
+
+export const runtime = 'nodejs'
 
 function escapeHtml(value: string) {
   return value
@@ -29,6 +32,8 @@ export async function GET(
   try {
     const shouldPrint = request.nextUrl.searchParams.get('print') === '1'
     const shouldDownload = request.nextUrl.searchParams.get('download') === '1'
+    const format = request.nextUrl.searchParams.get('format') || 'pdf'
+    const wantsHtml = format === 'html'
     const logoUrl = process.env.PDF_LOGO_URL || process.env.NEXT_PUBLIC_PDF_LOGO_URL || defaultLogoDataUri()
 
     const purchaseOrder = await prisma.purchaseOrder.findFirst({
@@ -309,12 +314,32 @@ export async function GET(
       </html>
     `
 
-    return new NextResponse(html, {
-      headers: {
-        'Content-Type': 'text/html',
-        'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="PO-${purchaseOrder.poNumber}.html"`,
-      },
-    })
+    if (wantsHtml) {
+      return new NextResponse(html, {
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="PO-${purchaseOrder.poNumber}.html"`,
+        },
+      })
+    }
+
+    try {
+      const pdf = await renderPdfFromHtml(html)
+      return new NextResponse(pdf, {
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="PO-${purchaseOrder.poNumber}.pdf"`,
+        },
+      })
+    } catch (e) {
+      console.error('PDF render failed; falling back to HTML:', e)
+      return new NextResponse(html, {
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="PO-${purchaseOrder.poNumber}.html"`,
+        },
+      })
+    }
   } catch (error) {
     console.error('Generate PDF error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

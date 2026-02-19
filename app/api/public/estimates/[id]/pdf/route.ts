@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { prisma } from '@/lib/prisma'
+import { renderPdfFromHtml } from '@/lib/pdf/render-html-to-pdf'
+
+export const runtime = 'nodejs'
 
 function escapeHtml(value: string) {
   return value
@@ -36,6 +39,9 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    const format = request.nextUrl.searchParams.get('format') || 'pdf'
+    const wantsHtml = format === 'html'
+    const shouldDownload = request.nextUrl.searchParams.get('download') === '1'
     const sentRaw = request.nextUrl.searchParams.get('sent') || ''
     const sig = request.nextUrl.searchParams.get('sig') || ''
 
@@ -88,7 +94,8 @@ export async function GET(
       .map(
         (li) => `
           <tr>
-            <td>${escapeHtml(li.showDescriptionToCustomer === false ? '' : li.description)}</td>
+            <td>${escapeHtml(li.description)}</td>
+            <td>${escapeHtml(li.showDescriptionToCustomer === false ? '' : (li.notes || ''))}</td>
             <td style="text-align:right">${Number(li.quantity).toFixed(2)}</td>
             <td style="text-align:right">$${Number(li.unitPrice).toFixed(2)}</td>
             <td style="text-align:right">$${Number(li.total).toFixed(2)}</td>
@@ -101,7 +108,8 @@ export async function GET(
       .map(
         (li) => `
           <tr>
-            <td>${escapeHtml(li.showDescriptionToCustomer === false ? '' : li.description)}</td>
+            <td>${escapeHtml(li.description)}</td>
+            <td>${escapeHtml(li.showDescriptionToCustomer === false ? '' : (li.notes || ''))}</td>
             <td style="text-align:right">${Number(li.quantity).toFixed(2)}</td>
             <td style="text-align:right">$${Number(li.unitPrice).toFixed(2)}</td>
             <td style="text-align:right">$${Number(li.total).toFixed(2)}</td>
@@ -243,6 +251,7 @@ export async function GET(
       <table>
         <thead>
           <tr>
+            <th>Item</th>
             <th>Description</th>
             <th style="text-align:right">Qty</th>
             <th style="text-align:right">Unit</th>
@@ -260,6 +269,7 @@ export async function GET(
               <table>
                 <thead>
                   <tr>
+                    <th>Item</th>
                     <th>Description</th>
                     <th style="text-align:right">Qty</th>
                     <th style="text-align:right">Unit</th>
@@ -284,12 +294,34 @@ export async function GET(
   </body>
 </html>`
 
-    return new NextResponse(html, {
-      status: 200,
-      headers: {
-        'Content-Type': 'text/html; charset=utf-8',
-      },
-    })
+    if (wantsHtml) {
+      return new NextResponse(html, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+        },
+      })
+    }
+
+    try {
+      const pdf = await renderPdfFromHtml(html)
+      return new NextResponse(pdf, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="Estimate-${estimate.estimateNumber}.pdf"`,
+        },
+      })
+    } catch (e) {
+      console.error('Public PDF render failed; falling back to HTML:', e)
+      return new NextResponse(html, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="Estimate-${estimate.estimateNumber}.html"`,
+        },
+      })
+    }
   } catch (error) {
     console.error('Public estimate pdf error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

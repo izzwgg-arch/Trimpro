@@ -422,7 +422,7 @@ export default function NewInvoicePage() {
         quantity: '1',
         unitPrice: item.defaultUnitPrice.toString(),
         unitCost: item.defaultUnitCost?.toString() || '0',
-        notes: item.notes || '',
+        notes: item.description || '',
         vendorId: item.vendorId || null,
         vendorName: item.vendorName || null,
         taxable: item.taxable,
@@ -658,7 +658,7 @@ export default function NewInvoicePage() {
         quantity: '1',
         unitPrice: item.defaultUnitPrice.toString(),
         unitCost: item.defaultUnitCost?.toString() || '0',
-        notes: item.notes || '',
+        notes: item.description || '',
         vendorId: item.vendorId || null,
         vendorName: item.vendorName || null,
         taxable: item.taxable,
@@ -982,7 +982,7 @@ export default function NewInvoicePage() {
             <Card>
               <CardHeader>
                 <CardTitle>Line Items</CardTitle>
-                <CardDescription>Click in Description field to search and add items</CardDescription>
+                <CardDescription>Click in Item field to search and add items</CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
                 <div className="space-y-2">
@@ -1040,6 +1040,22 @@ export default function NewInvoicePage() {
                           ) : (
                             <>
                               <div className="flex items-center gap-1">
+                                <Label className="text-xs text-gray-500">Item</Label>
+                              </div>
+                              <FastPicker
+                                value={item.description}
+                                onChange={(value) => updateLineItem(index, 'description', value)}
+                                onSelect={(selectedItem) => handleItemSelect(selectedItem, index)}
+                                onNextLine={() => handleNextLine(index)}
+                                items={pickerItems}
+                                bundles={pickerBundles}
+                                placeholder="Type to search items..."
+                                className="w-full"
+                                inputRef={(el) => {
+                                  pickerInputRefs.current[index] = el
+                                }}
+                              />
+                              <div className="flex items-center gap-1">
                                 <Label className="text-xs text-gray-500">Description</Label>
                                 <Button
                                   type="button"
@@ -1061,23 +1077,10 @@ export default function NewInvoicePage() {
                                   )}
                                 </Button>
                               </div>
-                              <FastPicker
-                                value={item.description}
-                                onChange={(value) => updateLineItem(index, 'description', value)}
-                                onSelect={(selectedItem) => handleItemSelect(selectedItem, index)}
-                                onNextLine={() => handleNextLine(index)}
-                                items={pickerItems}
-                                bundles={pickerBundles}
-                                placeholder="Type to search items..."
-                                className="w-full"
-                                inputRef={(el) => {
-                                  pickerInputRefs.current[index] = el
-                                }}
-                              />
                               <Input
                                 value={item.notes || ''}
                                 onChange={(e) => updateLineItem(index, 'notes', e.target.value)}
-                                placeholder="Item description/notes (optional)"
+                                placeholder="Description (optional)"
                                 className="w-full text-sm"
                               />
                             </>
@@ -1296,6 +1299,22 @@ export default function NewInvoicePage() {
                           ) : (
                             <>
                               <div className="flex items-center gap-1">
+                                <Label className="text-xs text-gray-500">Item</Label>
+                              </div>
+                              <FastPicker
+                                value={item.description}
+                                onChange={(value) => updateOptionalItem(index, 'description', value)}
+                                onSelect={(selectedItem) => handleOptionalItemSelect(selectedItem, index)}
+                                onNextLine={() => handleNextOptionalLine(index)}
+                                items={pickerItems}
+                                bundles={pickerBundles}
+                                placeholder="Type to search items..."
+                                className="w-full"
+                                inputRef={(el) => {
+                                  optionalPickerInputRefs.current[index] = el
+                                }}
+                              />
+                              <div className="flex items-center gap-1">
                                 <Label className="text-xs text-gray-500">Description</Label>
                                 <Button
                                   type="button"
@@ -1317,23 +1336,10 @@ export default function NewInvoicePage() {
                                   )}
                                 </Button>
                               </div>
-                              <FastPicker
-                                value={item.description}
-                                onChange={(value) => updateOptionalItem(index, 'description', value)}
-                                onSelect={(selectedItem) => handleOptionalItemSelect(selectedItem, index)}
-                                onNextLine={() => handleNextOptionalLine(index)}
-                                items={pickerItems}
-                                bundles={pickerBundles}
-                                placeholder="Type to search items..."
-                                className="w-full"
-                                inputRef={(el) => {
-                                  optionalPickerInputRefs.current[index] = el
-                                }}
-                              />
                               <Input
                                 value={item.notes || ''}
                                 onChange={(e) => updateOptionalItem(index, 'notes', e.target.value)}
-                                placeholder="Item description/notes (optional)"
+                                placeholder="Description (optional)"
                                 className="w-full text-sm"
                               />
                             </>

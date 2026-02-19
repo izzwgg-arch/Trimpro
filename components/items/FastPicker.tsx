@@ -16,6 +16,9 @@ export interface FastPickerItem {
   vendorName: string | null
   taxable: boolean
   taxRate: number | null
+  // Item master "Description" (ex: QBO SalesDesc/PurchaseDesc). Used to prefill
+  // line-item description/notes fields on estimates/invoices/POs.
+  description?: string | null
   notes: string | null
   // For bundles
   bundleId?: string

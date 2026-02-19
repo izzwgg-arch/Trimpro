@@ -351,7 +351,7 @@ export default function EditPurchaseOrderPage() {
         quantity: '1',
         unitCost: item.defaultUnitCost?.toString() || '0',
         unitPrice: item.defaultUnitPrice.toString(),
-        notes: item.notes || '',
+        notes: item.description || '',
         vendorId: item.vendorId || null,
         vendorName: item.vendorName || null,
         sourceItemId: item.id,

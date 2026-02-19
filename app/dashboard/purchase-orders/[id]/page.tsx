@@ -259,7 +259,10 @@ export default function PurchaseOrderDetailPage() {
       throw new Error('Not authenticated')
     }
 
-    const response = await fetch(`/api/purchase-orders/${params.id}/pdf${print ? '?print=1' : ''}`, {
+    const qs = new URLSearchParams()
+    qs.set('format', 'html')
+    if (print) qs.set('print', '1')
+    const response = await fetch(`/api/purchase-orders/${params.id}/pdf?${qs.toString()}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
 
@@ -274,14 +277,35 @@ export default function PurchaseOrderDetailPage() {
     return response.text()
   }
 
+  const fetchPdfBlob = async () => {
+    const token = localStorage.getItem('accessToken')
+    if (!token) {
+      router.push('/auth/login')
+      throw new Error('Not authenticated')
+    }
+
+    const response = await fetch(`/api/purchase-orders/${params.id}/pdf?download=1`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+
+    if (response.status === 401) {
+      router.push('/auth/login')
+      throw new Error('Unauthorized')
+    }
+    if (!response.ok) {
+      throw new Error('Failed to generate PDF')
+    }
+
+    return response.blob()
+  }
+
   const handleDownloadPDF = async () => {
     try {
-      const html = await fetchPdfHtml(false)
-      const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+      const blob = await fetchPdfBlob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `PO-${po?.poNumber || params.id}.html`
+      a.download = `PO-${po?.poNumber || params.id}.pdf`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)

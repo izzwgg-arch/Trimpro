@@ -588,7 +588,7 @@ export default function PublicPaymentPage() {
                       onClick={() => {
                         if (!previewInvoice?.id) return
                         window.open(
-                          `/api/public/invoices/${previewInvoice.id}/pdf?token=${encodeURIComponent(token)}`,
+                          `/api/public/invoices/${previewInvoice.id}/pdf?download=1&token=${encodeURIComponent(token)}`,
                           '_blank'
                         )
                       }}
@@ -905,7 +905,10 @@ export default function PublicPaymentPage() {
             <Button
               variant="outline"
               onClick={() =>
-                window.open(`/api/public/invoices/${invoice.id}/pdf?token=${encodeURIComponent(token)}`, '_blank')
+                window.open(
+                  `/api/public/invoices/${invoice.id}/pdf?download=1&token=${encodeURIComponent(token)}`,
+                  '_blank'
+                )
               }
             >
               Download Invoice PDF

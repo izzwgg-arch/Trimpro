@@ -28,6 +28,7 @@ interface LineItem {
   taxable: boolean
   taxRate?: string
   // Per-field visibility
+  showDescriptionToCustomer: boolean
   showCostToCustomer: boolean
   showPriceToCustomer: boolean
   showTaxToCustomer: boolean
@@ -182,6 +183,7 @@ export default function EditEstimatePage() {
             quantity: '1',
             unitPrice: '0',
             taxable: true,
+            showDescriptionToCustomer: true,
             showCostToCustomer: false,
             showPriceToCustomer: true,
             showTaxToCustomer: true,
@@ -206,6 +208,7 @@ export default function EditEstimatePage() {
           vendorName: li.vendorName || undefined,
           taxable: li.taxable ?? true,
           taxRate: li.taxRate ? (parseFloat(li.taxRate) * 100).toString() : undefined,
+          showDescriptionToCustomer: li.showDescriptionToCustomer ?? true,
           showCostToCustomer: li.showCostToCustomer ?? false,
           showPriceToCustomer: li.showPriceToCustomer ?? true,
           showTaxToCustomer: li.showTaxToCustomer ?? true,
@@ -222,6 +225,7 @@ export default function EditEstimatePage() {
           quantity: '1',
           unitPrice: '0',
           taxable: true,
+          showDescriptionToCustomer: true,
           showCostToCustomer: false,
           showPriceToCustomer: true,
           showTaxToCustomer: true,
@@ -385,7 +389,7 @@ export default function EditEstimatePage() {
         quantity: '1',
         unitPrice: item.defaultUnitPrice.toString(),
         unitCost: item.defaultUnitCost?.toString() || '0',
-        notes: item.notes || '',
+        notes: item.description || '',
         vendorId: item.vendorId || null,
         vendorName: item.vendorName || null,
         taxable: item.taxable,
@@ -441,9 +445,10 @@ export default function EditEstimatePage() {
     }, 100)
   }
 
-  const toggleVisibility = (index: number, field: 'cost' | 'price' | 'tax' | 'notes') => {
+  const toggleVisibility = (index: number, field: 'description' | 'cost' | 'price' | 'tax' | 'notes') => {
     const updated = [...lineItems]
     const fieldMap = {
+      description: 'showDescriptionToCustomer',
       cost: 'showCostToCustomer',
       price: 'showPriceToCustomer',
       tax: 'showTaxToCustomer',
@@ -492,6 +497,7 @@ export default function EditEstimatePage() {
           total: parseFloat(item.quantity || '1') * parseFloat(item.unitPrice || '0'),
           sortOrder: index,
           isVisibleToClient: true,
+          showDescriptionToCustomer: item.showDescriptionToCustomer,
           showCostToCustomer: item.showCostToCustomer,
           showPriceToCustomer: item.showPriceToCustomer,
           showTaxToCustomer: item.showTaxToCustomer,
@@ -707,7 +713,7 @@ export default function EditEstimatePage() {
             <Card>
               <CardHeader>
                 <CardTitle>Line Items</CardTitle>
-                <CardDescription>Click in Description field to search and add items</CardDescription>
+                <CardDescription>Click in Item field to search and add items</CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
                 <div className="space-y-2">
@@ -764,6 +770,9 @@ export default function EditEstimatePage() {
                             </div>
                           ) : (
                             <>
+                              <div className="flex items-center gap-1">
+                                <Label className="text-xs text-gray-500">Item</Label>
+                              </div>
                               <FastPicker
                                 value={item.description}
                                 onChange={(value) => updateLineItem(index, 'description', value)}
@@ -777,10 +786,32 @@ export default function EditEstimatePage() {
                                   pickerInputRefs.current[index] = el
                                 }}
                               />
+                              <div className="flex items-center gap-1">
+                                <Label className="text-xs text-gray-500">Description</Label>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  tabIndex={-1}
+                                  onClick={() => toggleVisibility(index, 'description')}
+                                  title={
+                                    item.showDescriptionToCustomer
+                                      ? 'Hide description from customer'
+                                      : 'Show description to customer'
+                                  }
+                                  className="p-0 h-3 w-3"
+                                >
+                                  {item.showDescriptionToCustomer ? (
+                                    <Eye className="h-3 w-3 text-gray-600" />
+                                  ) : (
+                                    <EyeOff className="h-3 w-3 text-gray-400" />
+                                  )}
+                                </Button>
+                              </div>
                               <Input
                                 value={item.notes || ''}
                                 onChange={(e) => updateLineItem(index, 'notes', e.target.value)}
-                                placeholder="Item description/notes (optional)"
+                                placeholder="Description (optional)"
                                 className="w-full text-sm"
                               />
                             </>

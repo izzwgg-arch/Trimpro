@@ -3,6 +3,9 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { solaService } from '@/lib/services/sola'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
+import { renderPdfFromHtml } from '@/lib/pdf/render-html-to-pdf'
+
+export const runtime = 'nodejs'
 
 function escapeHtml(value: string) {
   return value
@@ -44,6 +47,8 @@ export async function GET(
   try {
     const shouldPrint = request.nextUrl.searchParams.get('print') === '1'
     const shouldDownload = request.nextUrl.searchParams.get('download') === '1'
+    const format = request.nextUrl.searchParams.get('format') || 'pdf'
+    const wantsHtml = format === 'html'
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || request.nextUrl.origin
     const logoUrl = process.env.PDF_LOGO_URL || process.env.NEXT_PUBLIC_PDF_LOGO_URL || defaultLogoDataUri()
 
@@ -367,6 +372,7 @@ export async function GET(
             <table>
               <thead>
                 <tr>
+                  <th>Item</th>
                   <th>Description</th>
                   <th class="text-right">Qty</th>
                   <th class="text-right">Unit Price</th>
@@ -376,7 +382,8 @@ export async function GET(
               <tbody>
                 ${invoice.lineItems.map((item) => `
                   <tr>
-                    <td>${escapeHtml(item.showDescriptionToCustomer === false ? '' : item.description)}</td>
+                    <td>${escapeHtml(item.description)}</td>
+                    <td>${escapeHtml(item.showDescriptionToCustomer === false ? '' : (item.notes || ''))}</td>
                     <td class="text-right">${Number(item.quantity).toFixed(2)}</td>
                     <td class="text-right">$${Number(item.unitPrice).toFixed(2)}</td>
                     <td class="text-right">$${Number(item.total).toFixed(2)}</td>
@@ -393,6 +400,7 @@ export async function GET(
                     <table>
                       <thead>
                         <tr>
+                          <th>Item</th>
                           <th>Description</th>
                           <th class="text-right">Qty</th>
                           <th class="text-right">Unit</th>
@@ -404,7 +412,8 @@ export async function GET(
                           .map(
                             (item) => `
                               <tr>
-                                <td>${escapeHtml(item.showDescriptionToCustomer === false ? '' : item.description)}</td>
+                                <td>${escapeHtml(item.description)}</td>
+                                <td>${escapeHtml(item.showDescriptionToCustomer === false ? '' : (item.notes || ''))}</td>
                                 <td class="text-right">${Number(item.quantity).toFixed(2)}</td>
                                 <td class="text-right">$${Number(item.unitPrice).toFixed(2)}</td>
                                 <td class="text-right">$${Number(item.total).toFixed(2)}</td>
@@ -446,12 +455,32 @@ export async function GET(
       </html>
     `
 
-    return new NextResponse(html, {
-      headers: {
-        'Content-Type': 'text/html',
-        'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="Invoice-${invoice.invoiceNumber}.html"`,
-      },
-    })
+    if (wantsHtml) {
+      return new NextResponse(html, {
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="Invoice-${invoice.invoiceNumber}.html"`,
+        },
+      })
+    }
+
+    try {
+      const pdf = await renderPdfFromHtml(html)
+      return new NextResponse(pdf, {
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="Invoice-${invoice.invoiceNumber}.pdf"`,
+        },
+      })
+    } catch (e) {
+      console.error('PDF render failed; falling back to HTML:', e)
+      return new NextResponse(html, {
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="Invoice-${invoice.invoiceNumber}.html"`,
+        },
+      })
+    }
   } catch (error) {
     console.error('Generate invoice PDF error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
