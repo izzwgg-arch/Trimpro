@@ -204,6 +204,7 @@ export async function PUT(
       invoiceNumber,
       title,
       lineItems,
+      optionalItems,
       groups, // Array of { groupId, name, sourceBundleId }
       taxRate,
       discount,
@@ -271,6 +272,9 @@ export async function PUT(
       await prisma.invoiceLineItem.deleteMany({
         where: { invoiceId: params.id },
       })
+      await prisma.invoiceOptionalLineItem.deleteMany({
+        where: { invoiceId: params.id },
+      })
 
       // Create new groups
       const groupMap = new Map<string, string>() // groupId -> database group ID
@@ -312,6 +316,8 @@ export async function PUT(
             sortOrder: i,
             isVisibleToClient: item.isVisibleToClient !== undefined ? Boolean(item.isVisibleToClient) : true,
             // New per-field visibility flags
+            showDescriptionToCustomer:
+              item.showDescriptionToCustomer !== undefined ? Boolean(item.showDescriptionToCustomer) : true,
             showCostToCustomer: item.showCostToCustomer !== undefined ? Boolean(item.showCostToCustomer) : false,
             showPriceToCustomer: item.showPriceToCustomer !== undefined ? Boolean(item.showPriceToCustomer) : true,
             showTaxToCustomer: item.showTaxToCustomer !== undefined ? Boolean(item.showTaxToCustomer) : true,
@@ -325,6 +331,43 @@ export async function PUT(
             sourceBundleId: item.sourceBundleId || null,
           },
         })
+      }
+
+      // Create optional line items (do NOT affect main totals)
+      if (optionalItems && Array.isArray(optionalItems) && optionalItems.length > 0) {
+        for (let i = 0; i < optionalItems.length; i++) {
+          const item = optionalItems[i]
+          const qty = parseFloat(item.quantity || 0)
+          const price = parseFloat(item.unitPrice || 0)
+          const itemTotal = qty * price
+          const dbGroupId = item.groupId ? groupMap.get(item.groupId) || null : null
+
+          await prisma.invoiceOptionalLineItem.create({
+            data: {
+              invoiceId: params.id,
+              groupId: dbGroupId,
+              description: item.description,
+              quantity: qty,
+              unitPrice: price,
+              unitCost: item.unitCost ? parseFloat(item.unitCost) : null,
+              total: itemTotal,
+              sortOrder: i,
+              isVisibleToClient: item.isVisibleToClient !== undefined ? Boolean(item.isVisibleToClient) : true,
+              showDescriptionToCustomer:
+                item.showDescriptionToCustomer !== undefined ? Boolean(item.showDescriptionToCustomer) : true,
+              showCostToCustomer: item.showCostToCustomer !== undefined ? Boolean(item.showCostToCustomer) : false,
+              showPriceToCustomer: item.showPriceToCustomer !== undefined ? Boolean(item.showPriceToCustomer) : true,
+              showTaxToCustomer: item.showTaxToCustomer !== undefined ? Boolean(item.showTaxToCustomer) : true,
+              showNotesToCustomer: item.showNotesToCustomer !== undefined ? Boolean(item.showNotesToCustomer) : false,
+              vendorId: item.vendorId || null,
+              taxable: item.taxable !== undefined ? Boolean(item.taxable) : true,
+              taxRate: item.taxRate ? parseFloat(item.taxRate) : null,
+              notes: item.notes || null,
+              sourceItemId: item.sourceItemId || null,
+              sourceBundleId: item.sourceBundleId || null,
+            },
+          })
+        }
       }
     }
 
