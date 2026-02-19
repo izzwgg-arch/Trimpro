@@ -1351,7 +1351,14 @@ export async function importQuickBooksCustomersAndPayments(
 
         const name = String(it.Name || it.FullyQualifiedName || 'QuickBooks Item').trim()
         const sku = it.Sku ? String(it.Sku).trim() : null
-        const description = it.Description ? String(it.Description) : null
+        // Some QBO item setups use SalesDesc/PurchaseDesc instead of Description.
+        const description = it.Description
+          ? String(it.Description)
+          : it.SalesDesc
+            ? String(it.SalesDesc)
+            : it.PurchaseDesc
+              ? String(it.PurchaseDesc)
+              : null
         const active = typeof it.Active === 'boolean' ? it.Active : true
         const taxable = typeof it.Taxable === 'boolean' ? it.Taxable : true
 

@@ -56,7 +56,8 @@ export async function POST(request: NextRequest) {
         const qboId = normalizeText(it?.Id)
         if (!qboId) continue
         const name = normalizeText(it?.Name || it?.FullyQualifiedName)
-        const description = normalizeText(it?.Description)
+        // In QBO, some accounts populate SalesDesc/PurchaseDesc instead of Description.
+        const description = normalizeText(it?.Description || it?.SalesDesc || it?.PurchaseDesc)
         if (!description) continue // Only update items that have a description in QBO.
         qboDescById.set(qboId, { name, description })
       }
