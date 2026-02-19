@@ -307,18 +307,25 @@ async function ensureClientCustomer(params: {
     })
   }
 
-  const existing = await findCustomerByDisplayName(params.accessToken, params.realmId, client.name)
-  if (existing?.Id) {
-    const qboId = String(existing.Id)
-    await logSync({
-      integrationId: params.integrationId,
-      type: 'client',
-      action: 'link',
-      status: 'success',
-      entityId: client.id,
-      qboId,
-    })
-    return qboId
+  // Try to link by DisplayName without creating duplicates.
+  const candidates = Array.from(
+    new Set([client.name, client.companyName].map((v) => String(v || '').trim()).filter(Boolean))
+  )
+  for (const candidate of candidates) {
+    const existing = await findCustomerByDisplayName(params.accessToken, params.realmId, candidate)
+    if (existing?.Id) {
+      const qboId = String(existing.Id)
+      await logSync({
+        integrationId: params.integrationId,
+        type: 'client',
+        action: 'link',
+        status: 'success',
+        entityId: client.id,
+        qboId,
+        data: { matchedDisplayName: candidate },
+      })
+      return qboId
+    }
   }
 
   if (!createIfMissing) {
@@ -545,17 +552,37 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
     })
     if (!estimate?.clientId) return
 
-    const customerQboId = await ensureClientCustomer({
+    let customerQboId = await ensureClientCustomer({
       tenantId,
       clientId: estimate.clientId,
       accessToken: session.accessToken,
       realmId: session.realmId,
       integrationId: session.integrationId,
-      // A request with an existing client should NOT create a QBO customer.
-      // But when we are actually syncing an Estimate, we need a QBO customer to attach it to.
-      // This matches the expected behavior: estimates/invoices should actually appear in QBO.
-      createIfMissing: true,
+      // Strict flow: only create QBO customers when we explicitly create a new client in TrimPro
+      // (Clients page or "New Client" request). For existing clients, we link by name; no create.
+      createIfMissing: false,
     })
+    if (!customerQboId) {
+      // Best-effort: if this looks like a newly created client (very recent), try syncing the client
+      // first (which is allowed for "new client" flow) and then re-attempt link-only resolution.
+      const clientCreatedAt = (estimate as any)?.client?.createdAt
+      const estimateCreatedAt = estimate.createdAt
+      const isLikelyNewClient =
+        clientCreatedAt instanceof Date &&
+        Math.abs(estimateCreatedAt.getTime() - clientCreatedAt.getTime()) < 10 * 60 * 1000
+
+      if (isLikelyNewClient) {
+        await syncClientToQuickBooks(tenantId, estimate.clientId)
+        customerQboId = await ensureClientCustomer({
+          tenantId,
+          clientId: estimate.clientId,
+          accessToken: session.accessToken,
+          realmId: session.realmId,
+          integrationId: session.integrationId,
+          createIfMissing: false,
+        })
+      }
+    }
     if (!customerQboId) return
 
     const existingQboId = await getMappedQboId(session.integrationId, 'estimate', estimate.id)
