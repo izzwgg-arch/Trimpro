@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { splitEmailList } from '@/lib/email'
 import {
   ArrowLeft,
   Calendar,
@@ -311,7 +312,7 @@ export default function EstimateDetailPage() {
     const emailsOnFile = Array.from(
       new Set(
         [
-          estimate.client?.email || '',
+          ...splitEmailList(estimate.client?.email || ''),
           ...(estimate.client?.contacts || []).map((c) => c.email || ''),
         ]
           .map((v) => String(v || '').trim())
@@ -319,7 +320,8 @@ export default function EstimateDetailPage() {
       )
     )
 
-    const defaultEmail = emailsOnFile[0] || ''
+    // If there are multiple emails on file, default to sending to all of them.
+    const defaultEmail = emailsOnFile.length > 1 ? emailsOnFile.join(', ') : emailsOnFile[0] || ''
     setSendTo(defaultEmail)
     setSendToPreset(emailsOnFile.length === 1 ? emailsOnFile[0] : 'custom')
     setSendSubject(`Estimate ${estimate.estimateNumber}`)
@@ -365,7 +367,12 @@ export default function EstimateDetailPage() {
         return
       }
 
-      alert('Estimate email sent successfully')
+      if (Array.isArray(data?.failedRecipients) && data.failedRecipients.length) {
+        const failed = data.failedRecipients.map((r: any) => r.recipient || '').filter(Boolean).join(', ')
+        alert(`Estimate sent, but failed for: ${failed}`)
+      } else {
+        alert('Estimate email sent successfully')
+      }
       await fetchEstimate()
     } catch (error) {
       console.error('Send estimate error:', error)
@@ -466,7 +473,7 @@ export default function EstimateDetailPage() {
               const emailsOnFile = Array.from(
                 new Set(
                   [
-                    estimate.client?.email || '',
+                    ...splitEmailList(estimate.client?.email || ''),
                     ...(estimate.client?.contacts || []).map((c) => c.email || ''),
                   ]
                     .map((v) => String(v || '').trim())

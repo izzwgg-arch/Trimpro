@@ -4,6 +4,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { testEmailProvider } from '@/lib/integrations/providers/email'
+import { isValidEmail } from '@/lib/email'
 
 function escapeHtml(value: string) {
   return String(value || '')
@@ -77,8 +78,8 @@ export async function POST(
     const recipientEmails = [
       ...normalizeEmails(emails),
       ...normalizeEmails(email),
-      estimate.client?.email ? String(estimate.client.email).trim() : '',
-      estimate.client?.contacts?.[0]?.email ? String(estimate.client.contacts[0].email).trim() : '',
+      ...normalizeEmails(estimate.client?.email),
+      ...(estimate.client?.contacts || []).flatMap((c) => normalizeEmails(c.email)),
     ]
       .map((v) => v.trim())
       .filter(Boolean)
@@ -87,6 +88,14 @@ export async function POST(
 
     if (uniqueRecipientEmails.length === 0) {
       return NextResponse.json({ error: 'No email address found for client' }, { status: 400 })
+    }
+
+    const invalidRecipients = uniqueRecipientEmails.filter((addr) => !isValidEmail(addr))
+    if (invalidRecipients.length) {
+      return NextResponse.json(
+        { error: `Invalid recipient email(s): ${invalidRecipients.join(', ')}` },
+        { status: 400 }
+      )
     }
 
     // Force public base URL in recipient emails to avoid internal/private links.
@@ -176,15 +185,30 @@ export async function POST(
   </body>
 </html>`
 
+    const results: Array<{
+      recipient: string
+      success: boolean
+      message?: string
+      error?: string
+    }> = []
+
     for (const recipientEmail of uniqueRecipientEmails) {
       const sendResult = await testEmailProvider(emailSecrets, recipientEmail, effectiveSubject, html)
-      if (!sendResult.success) {
-        console.error('Failed to send estimate email:', sendResult.error || sendResult.message)
-        return NextResponse.json(
-          { error: sendResult.error || sendResult.message || `Failed to send estimate email to ${recipientEmail}` },
-          { status: 502 }
-        )
-      }
+      results.push({
+        recipient: recipientEmail,
+        success: !!sendResult.success,
+        message: sendResult.message,
+        error: sendResult.error,
+      })
+    }
+
+    const sentRecipients = results.filter((r) => r.success).map((r) => r.recipient)
+    const failedRecipients = results.filter((r) => !r.success)
+
+    if (sentRecipients.length === 0) {
+      const firstError = failedRecipients[0]?.error || failedRecipients[0]?.message || 'Failed to send estimate email'
+      console.error('Failed to send estimate email:', firstError)
+      return NextResponse.json({ error: firstError, failedRecipients }, { status: 502 })
     }
 
     // Update estimate status
@@ -202,11 +226,14 @@ export async function POST(
         tenantId: user.tenantId,
         userId: user.id,
         direction: 'OUTBOUND',
-        status: 'SENT',
+        status: failedRecipients.length ? 'FAILED' : 'SENT',
         subject: effectiveSubject,
         body: message || `Please find attached estimate ${estimate.estimateNumber}.`,
         fromEmail: user.email,
-        toEmails: uniqueRecipientEmails,
+        toEmails: sentRecipients,
+        providerData: {
+          recipients: results,
+        },
         estimateId: estimate.id,
         clientId: estimate.clientId || undefined,
         sentAt: new Date(),
@@ -219,13 +246,21 @@ export async function POST(
         tenantId: user.tenantId,
         userId: user.id,
         type: 'ESTIMATE_SENT',
-        description: `Estimate "${estimate.title}" sent to ${uniqueRecipientEmails.join(', ')}`,
+        description: failedRecipients.length
+          ? `Estimate "${estimate.title}" sent to ${sentRecipients.join(', ')} (failed: ${failedRecipients
+              .map((r) => r.recipient)
+              .join(', ')})`
+          : `Estimate "${estimate.title}" sent to ${sentRecipients.join(', ')}`,
         estimateId: estimate.id,
         clientId: estimate.clientId || undefined,
       },
     })
 
-    return NextResponse.json({ message: 'Estimate sent successfully' })
+    return NextResponse.json({
+      message: failedRecipients.length ? 'Estimate sent (some recipients failed)' : 'Estimate sent successfully',
+      sentRecipients,
+      failedRecipients: failedRecipients.map((r) => ({ recipient: r.recipient, error: r.error || r.message || '' })),
+    })
   } catch (error) {
     console.error('Send estimate error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
