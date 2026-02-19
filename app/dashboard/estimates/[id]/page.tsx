@@ -80,6 +80,7 @@ interface EstimateDetail {
     quantity: string
     unitPrice: string
     unitCost?: string | null
+    notes?: string | null
     total: string
     sortOrder: number
     isVisibleToClient?: boolean
@@ -96,6 +97,17 @@ interface EstimateDetail {
       name: string
       kind: string
     } | null
+  }>
+  optionalItems?: Array<{
+    id: string
+    description: string
+    quantity: string
+    unitPrice: string
+    unitCost?: string | null
+    notes?: string | null
+    total: string
+    sortOrder: number
+    isVisibleToClient?: boolean
   }>
 }
 
@@ -447,6 +459,10 @@ export default function EstimateDetailPage() {
   }
 
   const primaryContact = estimate.client?.contacts?.[0] || null
+  const optionalItems = (estimate as any).optionalItems || []
+  const optionalItemsSubtotal = Array.isArray(optionalItems)
+    ? optionalItems.reduce((sum: number, item: any) => sum + parseFloat(item.total || '0'), 0)
+    : 0
 
   return (
     <div className="space-y-6">
@@ -781,6 +797,60 @@ export default function EstimateDetailPage() {
             </CardContent>
           </Card>
 
+          {/* Optional Items */}
+          {Array.isArray(optionalItems) && optionalItems.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Optional Items</CardTitle>
+                <CardDescription>Optional items are not included in the estimate total unless added later.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left py-2 px-4 font-semibold">Item</th>
+                        <th className="text-left py-2 px-4 font-semibold">Description</th>
+                        <th className="text-right py-2 px-4 font-semibold">Quantity</th>
+                        <th className="text-right py-2 px-4 font-semibold">Unit Price</th>
+                        <th className="text-right py-2 px-4 font-semibold">Vendor Cost</th>
+                        <th className="text-right py-2 px-4 font-semibold">Margin</th>
+                        <th className="text-right py-2 px-4 font-semibold">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {optionalItems.map((item: any) => {
+                        const unitCost = item.unitCost ? parseFloat(item.unitCost) : 0
+                        const unitPrice = parseFloat(item.unitPrice || '0')
+                        const qty = parseFloat(item.quantity || '0')
+                        const marginTotal = (unitPrice - unitCost) * qty
+                        const isVisibleToClient = item.isVisibleToClient ?? true
+                        return (
+                          <tr key={item.id} className={`border-b ${!isVisibleToClient ? 'bg-gray-50' : ''}`}>
+                            <td className="py-3 px-4">
+                              {item.description}
+                              {!isVisibleToClient && (
+                                <span className="ml-2 text-xs text-gray-500">(Hidden from client)</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4">{item.notes || '-'}</td>
+                            <td className="py-3 px-4 text-right">{item.quantity}</td>
+                            <td className="py-3 px-4 text-right">{formatCurrency(unitPrice)}</td>
+                            <td className="py-3 px-4 text-right">{formatCurrency(unitCost)}</td>
+                            <td className="py-3 px-4 text-right">{formatCurrency(marginTotal)}</td>
+                            <td className="py-3 px-4 text-right font-semibold">
+                              {formatCurrency(parseFloat(item.total || '0'))}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Notes & Terms */}
           {(estimate.notes || estimate.terms) && (
             <div className="grid gap-6 md:grid-cols-2">
@@ -825,6 +895,12 @@ export default function EstimateDetailPage() {
                 <span className="text-gray-600">Subtotal:</span>
                 <span className="font-semibold">{formatCurrency(parseFloat(estimate.subtotal))}</span>
               </div>
+              {optionalItemsSubtotal > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Optional Items Subtotal:</span>
+                  <span className="font-semibold">{formatCurrency(optionalItemsSubtotal)}</span>
+                </div>
+              )}
               {parseFloat(estimate.discount) > 0 && (
                 <div className="flex justify-between text-red-600">
                   <span>Discount:</span>
