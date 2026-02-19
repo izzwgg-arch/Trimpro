@@ -118,8 +118,9 @@ export default function NewEstimatePage() {
         if (!response.ok) return
         const data = await response.json()
         const lead = data.lead
-        // Use convertedToClientId first, then fall back to client.id if client object exists
-        const resolvedClientId = lead.convertedToClientId || lead.client?.id || null
+        // Requests can be linked to a client via different fields depending on how/when it was created.
+        // Prefer convertedToClientId (current flow), then fall back to direct clientId or included client object.
+        const resolvedClientId = lead.convertedToClientId || lead.clientId || lead.client?.id || null
         setFormData((prev) => ({
           ...prev,
           leadId: lead.id,
