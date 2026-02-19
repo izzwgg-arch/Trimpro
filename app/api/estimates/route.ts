@@ -237,6 +237,22 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    // If estimate is created from a request (lead), convert the request
+    if (leadId) {
+      const lead = await prisma.lead.findFirst({
+        where: {
+          id: leadId,
+          tenantId: user.tenantId,
+        },
+      })
+      if (lead && lead.status !== 'CONVERTED') {
+        await prisma.lead.update({
+          where: { id: leadId },
+          data: { status: 'ESTIMATE_SENT' },
+        })
+      }
+    }
+
     // Create activity
     await prisma.activity.create({
       data: {
