@@ -27,18 +27,14 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
       return NextResponse.json({ error: 'Invalid token' }, { status: 400 })
     }
 
-    // Some clients/proxies can cause NextRequest.json() to throw even when content-type is set.
-    // Fall back to parsing raw text so "Approve" never silently fails.
+    // Read the body exactly once. In some environments, calling request.json() and then falling back
+    // can consume the stream and result in an empty body.
+    const rawBody = await request.text().catch(() => '')
     let bodyJson: any = null
     try {
-      bodyJson = await request.json()
+      bodyJson = rawBody ? JSON.parse(rawBody) : null
     } catch {
-      const raw = await request.text().catch(() => '')
-      try {
-        bodyJson = raw ? JSON.parse(raw) : null
-      } catch {
-        bodyJson = null
-      }
+      bodyJson = null
     }
     const parsedBody = bodySchema.safeParse(bodyJson)
     if (!parsedBody.success) {
