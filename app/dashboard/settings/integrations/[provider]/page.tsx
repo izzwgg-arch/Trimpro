@@ -50,6 +50,7 @@ export default function IntegrationProviderPage() {
   const [importResult, setImportResult] = useState<any>(null)
   const [importingQboInvoices, setImportingQboInvoices] = useState(false)
   const [updatingLineItems, setUpdatingLineItems] = useState(false)
+  const [updatingQboItems, setUpdatingQboItems] = useState(false)
 
   useEffect(() => {
     fetchIntegration()
@@ -413,6 +414,62 @@ export default function IntegrationProviderPage() {
       alert('Failed to update line items. Please try again.')
     } finally {
       setUpdatingLineItems(false)
+    }
+  }
+
+  const handleUpdateQboItems = async () => {
+    if (updatingQboItems) return
+    if (!confirm('Update existing QuickBooks-imported items that have a Description in QuickBooks (no duplicates)?')) {
+      return
+    }
+
+    setUpdatingQboItems(true)
+    setImportResult(null)
+
+    try {
+      let token = localStorage.getItem('accessToken')
+      if (!token) {
+        const refreshed = await refreshToken()
+        if (!refreshed) return
+        token = localStorage.getItem('accessToken')
+      }
+
+      let response = await fetch('/api/qbo/update-items', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      if (response.status === 401) {
+        const refreshed = await refreshToken()
+        if (!refreshed) return
+        token = localStorage.getItem('accessToken')
+        response = await fetch('/api/qbo/update-items', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+        })
+      }
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'Failed to update items')
+        setImportResult({ success: false, ...data })
+        return
+      }
+
+      setImportResult({ success: true, ...data })
+      alert(data.message || `Updated ${data.updated || 0} item(s)`)
+      fetchConnection()
+    } catch (error) {
+      console.error('Update items failed:', error)
+      alert('Failed to update items. Please try again.')
+    } finally {
+      setUpdatingQboItems(false)
     }
   }
 
@@ -884,6 +941,9 @@ export default function IntegrationProviderPage() {
               )}
               <Button onClick={handleUpdateLineItems} disabled={updatingLineItems || status === 'NOT_CONFIGURED'} variant="outline">
                 {updatingLineItems ? 'Updating...' : 'Update Line Items'}
+              </Button>
+              <Button onClick={handleUpdateQboItems} disabled={updatingQboItems || status === 'NOT_CONFIGURED'} variant="outline">
+                {updatingQboItems ? 'Updating...' : 'Update Items'}
               </Button>
             </div>
           )}

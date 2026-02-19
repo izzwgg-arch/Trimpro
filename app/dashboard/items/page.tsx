@@ -554,6 +554,7 @@ export default function ItemsPage() {
                       />
                     </th>
                     <th className="text-left py-3 px-4 font-medium text-gray-700">Name</th>
+                    <th className="text-left py-3 px-4 font-medium text-gray-700">Description</th>
                     <th className="text-left py-3 px-4 font-medium text-gray-700">SKU</th>
                     <th className="text-left py-3 px-4 font-medium text-gray-700">Type</th>
                     <th className="text-left py-3 px-4 font-medium text-gray-700">Unit</th>
@@ -599,6 +600,11 @@ export default function ItemsPage() {
                             Contains multiple items
                           </div>
                         )}
+                      </td>
+                      <td className="py-3 px-4 text-gray-600">
+                        <div className="max-w-[360px] truncate" title={item.description || ''}>
+                          {item.description || '-'}
+                        </div>
                       </td>
                       <td className="py-3 px-4 text-gray-600">{item.sku || '-'}</td>
                       <td className="py-3 px-4">
