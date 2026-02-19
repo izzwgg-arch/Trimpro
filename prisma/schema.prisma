@@ -68,6 +68,9 @@ model Tenant {
   invoicePaymentIntents  InvoicePaymentIntent[]
   paymentEvents          PaymentEvent[]
   idempotencyKeys        IdempotencyKey[]
+  estimateApprovalTokens EstimateApprovalToken[]
+  estimateItemApprovals  EstimateItemApproval[]
+  invoiceLineItemSources InvoiceLineItemSource[]
 
   @@map("tenants")
 }
@@ -474,6 +477,7 @@ model Estimate {
   activities    Activity[]
   approvalTokens EstimateApprovalToken[]
   itemApprovals  EstimateItemApproval[]
+  invoiceLineItemSources InvoiceLineItemSource[]
 
   createdById String?
 
@@ -695,6 +699,7 @@ model Invoice {
   tasks               Task[]
   activities          Activity[]
   paymentIntents      InvoicePaymentIntent[]
+  lineItemSources     InvoiceLineItemSource[]
 
   // QuickBooks
   qboSyncId String?   @unique
