@@ -27,6 +27,7 @@ import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
 import { DocumentAttachments } from '@/components/common/document-attachments'
+import { buildCreateContextQuery } from '@/src/lib/create-context'
 
 const JobSiteMap = dynamic(() => import('@/components/maps/JobSiteMap').then(mod => ({ default: mod.JobSiteMap })), {
   ssr: false,
@@ -404,7 +405,17 @@ export default function JobDetailPage() {
               className="h-8 text-xs px-2"
               onClick={() =>
                 router.push(
-                  `/dashboard/tasks/new?jobId=${jobId}&clientId=${job.client.id}&jobNumber=${encodeURIComponent(job.jobNumber)}&clientName=${encodeURIComponent(job.client.name)}&projectType=${encodeURIComponent(job.title)}`
+                  `/dashboard/tasks/new${buildCreateContextQuery({
+                    clientId: job.client.id,
+                    sourceType: 'job',
+                    sourceId: jobId,
+                    jobId,
+                    extra: {
+                      jobNumber: job.jobNumber,
+                      clientName: job.client.name,
+                      projectType: job.title,
+                    },
+                  })}`
                 )
               }
             >
@@ -417,7 +428,17 @@ export default function JobDetailPage() {
               className="h-8 text-xs px-2"
               onClick={() =>
                 router.push(
-                  `/dashboard/issues/new?jobId=${jobId}&clientId=${job.client.id}&jobNumber=${encodeURIComponent(job.jobNumber)}&clientName=${encodeURIComponent(job.client.name)}&projectType=${encodeURIComponent(job.title)}`
+                  `/dashboard/issues/new${buildCreateContextQuery({
+                    clientId: job.client.id,
+                    sourceType: 'job',
+                    sourceId: jobId,
+                    jobId,
+                    extra: {
+                      jobNumber: job.jobNumber,
+                      clientName: job.client.name,
+                      projectType: job.title,
+                    },
+                  })}`
                 )
               }
             >
@@ -428,7 +449,16 @@ export default function JobDetailPage() {
               variant="outline"
               size="sm"
               className="h-8 text-xs px-2"
-              onClick={() => router.push(`/dashboard/estimates/new?jobId=${jobId}&clientId=${job.client.id}`)}
+              onClick={() =>
+                router.push(
+                  `/dashboard/estimates/new${buildCreateContextQuery({
+                    clientId: job.client.id,
+                    sourceType: 'job',
+                    sourceId: jobId,
+                    jobId,
+                  })}`
+                )
+              }
             >
               <FileText className="mr-1.5 h-3.5 w-3.5" />
               New Estimate

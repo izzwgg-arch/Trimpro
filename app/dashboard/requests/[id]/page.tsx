@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { parseAddressParts } from '@/lib/address/parse'
+import { buildCreateContextQuery } from '@/src/lib/create-context'
 
 interface RequestDetail {
   id: string
@@ -337,23 +338,101 @@ export default function RequestDetailPage() {
           <CardTitle>Quick Actions</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <Button variant="outline" onClick={() => router.push(`/dashboard/estimates/new?requestId=${requestId}`)}>
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9"
+              onClick={() => {
+                const clientId = request?.convertedToClientId || request?.client?.id || null
+                router.push(
+                  `/dashboard/estimates/new${buildCreateContextQuery({
+                    clientId,
+                    sourceType: 'request',
+                    sourceId: requestId,
+                    requestId,
+                  })}`
+                )
+              }}
+            >
               <FileText className="mr-2 h-4 w-4" />
               New Estimate
             </Button>
-            <Button variant="outline" onClick={() => router.push(`/dashboard/tasks/new?requestId=${requestId}`)}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9"
+              onClick={() => {
+                const clientId = request?.convertedToClientId || request?.client?.id || null
+                router.push(
+                  `/dashboard/jobs/new${buildCreateContextQuery({
+                    clientId,
+                    sourceType: 'request',
+                    sourceId: requestId,
+                    requestId,
+                  })}`
+                )
+              }}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              New Job
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9"
+              onClick={() => {
+                const clientId = request?.convertedToClientId || request?.client?.id || null
+                router.push(
+                  `/dashboard/tasks/new${buildCreateContextQuery({
+                    clientId,
+                    sourceType: 'request',
+                    sourceId: requestId,
+                    requestId,
+                  })}`
+                )
+              }}
+            >
               <CheckSquare className="mr-2 h-4 w-4" />
               New Task
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9"
+              onClick={() => {
+                const clientId = request?.convertedToClientId || request?.client?.id || null
+                router.push(
+                  `/dashboard/issues/new${buildCreateContextQuery({
+                    clientId,
+                    sourceType: 'request',
+                    sourceId: requestId,
+                    requestId,
+                  })}`
+                )
+              }}
+            >
+              <AlertCircle className="mr-2 h-4 w-4" />
+              New Issue
+            </Button>
             {request.phone && (
-              <Button variant="outline" onClick={() => window.location.href = `tel:${request.phone}`}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9"
+                onClick={() => (window.location.href = `tel:${request.phone}`)}
+              >
                 <Phone className="mr-2 h-4 w-4" />
                 Call
               </Button>
             )}
             {request.email && (
-              <Button variant="outline" onClick={() => window.location.href = `mailto:${request.email}`}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9"
+                onClick={() => (window.location.href = `mailto:${request.email}`)}
+              >
                 <Mail className="mr-2 h-4 w-4" />
                 Email
               </Button>

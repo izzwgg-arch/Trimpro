@@ -34,6 +34,7 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { DocumentAttachments } from '@/components/common/document-attachments'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { buildCreateContextQuery } from '@/src/lib/create-context'
 
 interface EstimateDetail {
   id: string
@@ -486,7 +487,19 @@ export default function EstimateDetailPage() {
           <span className={`px-3 py-1 text-sm rounded-full ${statusColors[estimate.status] || 'bg-gray-100 text-gray-800'}`}>
             {estimate.status}
           </span>
-          <Button variant="outline" onClick={() => router.push('/dashboard/estimates/new')}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              const clientId = estimate?.client?.id || null
+              router.push(
+                `/dashboard/estimates/new${buildCreateContextQuery({
+                  clientId,
+                  sourceType: 'estimate',
+                  sourceId: estimateId,
+                })}`
+              )
+            }}
+          >
             <Plus className="mr-2 h-4 w-4" />
             New Estimate
           </Button>

@@ -11,6 +11,7 @@ import { ArrowLeft, Save, Plus, Trash2, Eye, EyeOff } from 'lucide-react'
 import Link from 'next/link'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
 import { refreshAccessToken } from '@/lib/auth/client'
+import { useCreateContextPrefill } from '@/src/hooks/useCreateContextPrefill'
 
 interface Client {
   id: string
@@ -49,6 +50,9 @@ export default function NewEstimatePage() {
   const clientIdParam = searchParams.get('clientId')
   const requestIdParam = searchParams.get('requestId')
   const jobIdParam = searchParams.get('jobId')
+
+  const { prefillClientId, address: prefillAddress, noAddressWarning, applyDefaultsOnce } =
+    useCreateContextPrefill('estimate')
   
   const [loading, setLoading] = useState(false)
   const [clients, setClients] = useState<Client[]>([])
@@ -102,11 +106,46 @@ export default function NewEstimatePage() {
   const pickerInputRefs = useRef<(HTMLInputElement | null)[]>([])
   const optionalItemRefs = useRef<(HTMLDivElement | null)[]>([])
   const optionalPickerInputRefs = useRef<(HTMLInputElement | null)[]>([])
+  const jobSiteAddressRef = useRef<string>('')
+
+  useEffect(() => {
+    jobSiteAddressRef.current = formData.jobSiteAddress || ''
+  }, [formData.jobSiteAddress])
 
   useEffect(() => {
     fetchClients()
     fetchPickerData()
   }, [])
+
+  useEffect(() => {
+    // Context-aware autofill (from inside Request/Job/Estimate/etc).
+    // Only apply once and never overwrite user-entered values.
+    applyDefaultsOnce(
+      () => {
+        const wantsClient = Boolean(prefillClientId && !formData.clientId)
+        // Avoid overriding Job context: jobId implies jobSite is fetched from the Job record.
+        const wantsAddress = Boolean(prefillAddress && !jobIdParam && !formData.jobSiteAddress)
+        return wantsClient || wantsAddress
+      },
+      () => {
+        setFormData((prev) => {
+          const addrStr = prefillAddress
+            ? `${prefillAddress.street}, ${prefillAddress.city}, ${prefillAddress.state} ${prefillAddress.zipCode}`.replace(
+                /\s+,/g,
+                ','
+              )
+            : ''
+          return {
+            ...prev,
+            clientId: prev.clientId || prefillClientId || '',
+            jobSiteAddress: prev.jobSiteAddress || (!jobIdParam ? addrStr : ''),
+          }
+        })
+      }
+    )
+    // Intentionally exclude formData from deps; applyDefaultsOnce guarantees single application.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillClientId, prefillAddress, jobIdParam, applyDefaultsOnce])
 
   useEffect(() => {
     if (!requestIdParam) return
@@ -207,6 +246,49 @@ export default function NewEstimatePage() {
     } catch (error) {
       console.error('Error fetching items for picker:', error)
     }
+  }
+
+  const fetchClientDefaultAddressString = async (clientId: string): Promise<string> => {
+    try {
+      let token = localStorage.getItem('accessToken')
+      let res = await fetch(`/api/clients/${clientId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.status === 401) {
+        const ok = await refreshAccessToken()
+        if (!ok) return ''
+        token = localStorage.getItem('accessToken')
+        res = await fetch(`/api/clients/${clientId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      }
+      if (!res.ok) return ''
+      const data = await res.json().catch(() => null)
+      const addresses = (data?.client?.addresses || []) as any[]
+      if (!Array.isArray(addresses) || addresses.length === 0) return ''
+      const billingDefault = addresses.find((a) => a?.type === 'billing' && a?.isDefault)
+      const billingAny = addresses.find((a) => a?.type === 'billing')
+      const anyDefault = addresses.find((a) => a?.isDefault)
+      const picked = billingDefault || billingAny || anyDefault || addresses[0]
+      if (!picked?.street) return ''
+      return `${picked.street}, ${picked.city || ''}, ${picked.state || ''} ${picked.zipCode || ''}`.replace(/\s+,/g, ',').trim()
+    } catch {
+      return ''
+    }
+  }
+
+  const handleClientSelect = async (value: string) => {
+    setFormData((prev) => ({ ...prev, clientId: value }))
+    if (jobIdParam) return
+    // Only fill address if user hasn't entered one yet.
+    if (jobSiteAddressRef.current.trim()) return
+    const addr = await fetchClientDefaultAddressString(value)
+    if (!addr) return
+    setFormData((prev) => {
+      if (prev.clientId !== value) return prev
+      if (prev.jobSiteAddress && prev.jobSiteAddress.trim()) return prev
+      return { ...prev, jobSiteAddress: addr }
+    })
   }
 
   const addLineItem = () => {
@@ -859,6 +941,12 @@ export default function NewEstimatePage() {
         </div>
       </div>
 
+      {noAddressWarning && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          Client has no address on file. Job site address was not auto-filled.
+        </div>
+      )}
+
       <form onSubmit={handleSubmit}>
         <div className="grid gap-6 md:grid-cols-3">
           <div className="md:col-span-2 space-y-6">
@@ -871,7 +959,7 @@ export default function NewEstimatePage() {
                   <Label htmlFor="clientId">Client *</Label>
                   <Select
                     value={formData.clientId}
-                    onValueChange={(value) => setFormData({ ...formData, clientId: value })}
+                    onValueChange={handleClientSelect}
                     disabled={Boolean(jobIdParam)}
                   >
                     <SelectTrigger id="clientId">

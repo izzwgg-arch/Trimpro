@@ -11,6 +11,8 @@ import { ArrowLeft, Save } from 'lucide-react'
 import Link from 'next/link'
 import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
 import { PlaceAutocompleteInput } from '@/components/maps/PlaceAutocompleteInput'
+import { useCreateContextPrefill } from '@/src/hooks/useCreateContextPrefill'
+import { refreshAccessToken } from '@/lib/auth/client'
 
 interface Client {
   id: string
@@ -22,6 +24,8 @@ export default function NewJobPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const clientIdParam = searchParams.get('clientId')
+  const { prefillClientId, address: prefillAddress, noAddressWarning, applyDefaultsOnce } =
+    useCreateContextPrefill('job')
   const [loading, setLoading] = useState(false)
   const [clients, setClients] = useState<Client[]>([])
   const [jobSitePlaceId, setJobSitePlaceId] = useState<string | null>(null)
@@ -48,6 +52,50 @@ export default function NewJobPage() {
     fetchClients()
   }, [])
 
+  useEffect(() => {
+    // Context-aware autofill: apply once, don't overwrite user edits.
+    applyDefaultsOnce(
+      () => {
+        const wantsClient = Boolean(prefillClientId && !formData.clientId)
+        const wantsAddress = Boolean(
+          prefillAddress &&
+            !jobSitePlaceId &&
+            !formData.jobSite.street &&
+            !formData.jobSite.city &&
+            !formData.jobSite.state &&
+            !formData.jobSite.zipCode
+        )
+        return wantsClient || wantsAddress
+      },
+      () => {
+        setFormData((prev) => ({
+          ...prev,
+          clientId: prev.clientId || prefillClientId || '',
+          jobSite:
+            prefillAddress &&
+            !prev.jobSite.street &&
+            !prev.jobSite.city &&
+            !prev.jobSite.state &&
+            !prev.jobSite.zipCode
+              ? {
+                  ...prev.jobSite,
+                  street: prefillAddress.street,
+                  city: prefillAddress.city,
+                  state: prefillAddress.state,
+                  zipCode: prefillAddress.zipCode,
+                  country: prefillAddress.country || 'US',
+                }
+              : prev.jobSite,
+        }))
+        if (prefillAddress && !jobSitePlaceId) {
+          // Job form requires a "place id" when street is filled; use a stable marker for stored addresses.
+          setJobSitePlaceId(`stored:${prefillAddress.id}`)
+        }
+      }
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillClientId, prefillAddress, applyDefaultsOnce])
+
   const fetchClients = async () => {
     try {
       const token = localStorage.getItem('accessToken')
@@ -61,6 +109,64 @@ export default function NewJobPage() {
     } catch (error) {
       console.error('Error fetching clients:', error)
     }
+  }
+
+  const fetchClientDefaultAddress = async (clientId: string) => {
+    try {
+      let token = localStorage.getItem('accessToken')
+      let res = await fetch(`/api/clients/${clientId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.status === 401) {
+        const ok = await refreshAccessToken()
+        if (!ok) return null
+        token = localStorage.getItem('accessToken')
+        res = await fetch(`/api/clients/${clientId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      }
+      if (!res.ok) return null
+      const data = await res.json().catch(() => null)
+      const addresses = (data?.client?.addresses || []) as any[]
+      if (!Array.isArray(addresses) || addresses.length === 0) return null
+      const billingDefault = addresses.find((a) => a?.type === 'billing' && a?.isDefault)
+      const billingAny = addresses.find((a) => a?.type === 'billing')
+      const anyDefault = addresses.find((a) => a?.isDefault)
+      return billingDefault || billingAny || anyDefault || addresses[0] || null
+    } catch {
+      return null
+    }
+  }
+
+  const handleClientChange = async (value: string) => {
+    setFormData((prev) => ({ ...prev, clientId: value }))
+
+    // Only update job site if user hasn't chosen/entered one yet.
+    const isJobSiteEmpty =
+      !formData.jobSite.street && !formData.jobSite.city && !formData.jobSite.state && !formData.jobSite.zipCode
+    if (!isJobSiteEmpty) return
+
+    const addr = await fetchClientDefaultAddress(value)
+    if (!addr?.street) return
+
+    setFormData((prev) => {
+      if (prev.clientId !== value) return prev
+      const stillEmpty =
+        !prev.jobSite.street && !prev.jobSite.city && !prev.jobSite.state && !prev.jobSite.zipCode
+      if (!stillEmpty) return prev
+      return {
+        ...prev,
+        jobSite: {
+          ...prev.jobSite,
+          street: addr.street,
+          city: addr.city || '',
+          state: addr.state || '',
+          zipCode: addr.zipCode || '',
+          country: addr.country || 'US',
+        },
+      }
+    })
+    setJobSitePlaceId(`stored:${addr.id || value}`)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -149,6 +255,12 @@ export default function NewJobPage() {
         </div>
       </div>
 
+      {noAddressWarning && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          Client has no address on file. Job site address was not auto-filled.
+        </div>
+      )}
+
       <form onSubmit={handleSubmit}>
         <Card>
           <CardHeader>
@@ -158,7 +270,7 @@ export default function NewJobPage() {
           <CardContent className="space-y-4">
             <div>
               <Label htmlFor="clientId">Client *</Label>
-              <Select value={formData.clientId} onValueChange={(value) => setFormData({ ...formData, clientId: value })}>
+              <Select value={formData.clientId} onValueChange={handleClientChange}>
                 <SelectTrigger id="clientId">
                   <SelectValue placeholder="Select a client" />
                 </SelectTrigger>

@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ArrowLeft, Save } from 'lucide-react'
 import Link from 'next/link'
+import { useCreateContextPrefill } from '@/src/hooks/useCreateContextPrefill'
 
 interface User {
   id: string
@@ -37,9 +38,12 @@ export default function NewIssuePage() {
   const searchParams = useSearchParams()
   const clientIdParam = searchParams.get('clientId')
   const jobIdParam = searchParams.get('jobId')
+  const requestIdParam = searchParams.get('requestId')
   const jobNumberParam = searchParams.get('jobNumber') || ''
   const clientNameParam = searchParams.get('clientName') || ''
   const projectTypeParam = searchParams.get('projectType') || ''
+
+  const { prefillClientId, sourceType, sourceId, applyDefaultsOnce } = useCreateContextPrefill('issue')
   const [loading, setLoading] = useState(false)
   const [users, setUsers] = useState<User[]>([])
   const [clients, setClients] = useState<Client[]>([])
@@ -54,7 +58,31 @@ export default function NewIssuePage() {
     assigneeId: '',
     clientId: clientIdParam || '',
     jobId: jobIdParam || '',
+    leadId: '',
   })
+
+  useEffect(() => {
+    // Context-aware autofill: when created from a Request, link issue -> leadId and client.
+    applyDefaultsOnce(
+      () => {
+        const wantsClient = Boolean(prefillClientId && !formData.clientId)
+        const leadFromUrl =
+          (sourceType === 'request' ? sourceId : null) || requestIdParam || null
+        const wantsLead = Boolean(leadFromUrl && !formData.leadId && !jobIdParam)
+        return wantsClient || wantsLead
+      },
+      () => {
+        const leadFromUrl =
+          (sourceType === 'request' ? sourceId : null) || requestIdParam || null
+        setFormData((prev) => ({
+          ...prev,
+          clientId: prev.clientId || prefillClientId || '',
+          leadId: prev.leadId || (leadFromUrl || ''),
+        }))
+      }
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillClientId, sourceType, sourceId, requestIdParam, jobIdParam, applyDefaultsOnce])
 
   useEffect(() => {
     fetchUsers()
@@ -159,6 +187,7 @@ export default function NewIssuePage() {
         body: JSON.stringify({
           ...formData,
           clientId: formData.clientId || null,
+          leadId: formData.leadId || null,
           jobId: formData.jobId || null,
           assigneeId: formData.assigneeId || null,
         }),
