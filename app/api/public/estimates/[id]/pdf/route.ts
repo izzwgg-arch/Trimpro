@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { prisma } from '@/lib/prisma'
 import { renderPdfFromHtml } from '@/lib/pdf/render-html-to-pdf'
+import { getOrCreateEstimateApprovalToken } from '@/lib/estimate-approval'
 
 export const runtime = 'nodejs'
 
@@ -81,6 +82,12 @@ export async function GET(
     if (!estimate) {
       return NextResponse.json({ error: 'Estimate not found' }, { status: 404 })
     }
+
+    const approvalToken = await getOrCreateEstimateApprovalToken({
+      tenantId: estimate.tenantId,
+      estimateId: estimate.id,
+    })
+    const approveUrl = approvalToken.url
 
     const logoUrl = process.env.PDF_LOGO_URL || process.env.NEXT_PUBLIC_PDF_LOGO_URL || defaultLogoDataUri()
     const visibleLineItems = estimate.lineItems.filter((li) => li.isVisibleToClient !== false)
@@ -220,6 +227,16 @@ export async function GET(
         margin-top: 8px;
         padding-top: 8px;
       }
+      .approve {
+        margin: 0 0 18px;
+        padding: 12px;
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        background: #f8fafc;
+        font-size: 13px;
+        color: #111827;
+      }
+      .approve a { color: #1d4ed8; text-decoration: underline; }
     </style>
   </head>
   <body>
@@ -246,6 +263,11 @@ export async function GET(
       <div style="margin-bottom:14px;">
         <div><strong>${escapeHtml(estimate.client?.name || 'Client')}</strong></div>
         ${estimate.client?.email ? `<div class="muted">${escapeHtml(estimate.client.email)}</div>` : ''}
+      </div>
+
+      <div class="approve">
+        <strong>Approve this estimate:</strong>
+        <a href="${escapeHtml(approveUrl)}">${escapeHtml(approveUrl)}</a>
       </div>
 
       <table>

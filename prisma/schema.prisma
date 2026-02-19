@@ -427,6 +427,11 @@ enum EstimateStatus {
   CONVERTED
 }
 
+enum EstimateItemApprovalStatus {
+  APPROVED
+  REVOKED
+}
+
 model Estimate {
   id             String         @id @default(cuid())
   tenantId       String
@@ -467,6 +472,8 @@ model Estimate {
   emails        Email[]
   invoices      Invoice[]
   activities    Activity[]
+  approvalTokens EstimateApprovalToken[]
+  itemApprovals  EstimateItemApproval[]
 
   createdById String?
 
@@ -478,6 +485,77 @@ model Estimate {
   @@index([tenantId, status])
   @@index([estimateNumber])
   @@map("estimates")
+}
+
+model EstimateApprovalToken {
+  id        String   @id @default(cuid())
+  tenantId  String
+  estimateId String
+
+  // Store hash for lookup, and encrypted token for re-sending/copying the same link.
+  tokenHash String   @unique
+  tokenEnc  String   @db.Text
+
+  createdAt    DateTime @default(now())
+  expiresAt    DateTime?
+  lastViewedAt DateTime?
+  revokedAt    DateTime?
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  estimate Estimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, estimateId])
+  @@index([expiresAt])
+  @@index([revokedAt])
+  @@map("estimate_approval_tokens")
+}
+
+model EstimateItemApproval {
+  id        String                    @id @default(cuid())
+  tenantId  String
+  estimateId String
+  estimateLineItemId String
+
+  // For now we approve the full line item; keep field for future partial qty approvals.
+  approvedQty Decimal? @db.Decimal(10, 2)
+
+  status     EstimateItemApprovalStatus @default(APPROVED)
+  approvedAt DateTime?
+  revokedAt  DateTime?
+
+  approvedByName  String?
+  approvedByEmail String?
+  notes           String? @db.Text
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  estimate Estimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, estimateId, estimateLineItemId])
+  @@index([tenantId])
+  @@index([tenantId, estimateId])
+  @@index([estimateLineItemId])
+  @@map("estimate_item_approvals")
+}
+
+model InvoiceLineItemSource {
+  id        String   @id @default(cuid())
+  tenantId  String
+  invoiceId String
+  estimateId String
+  estimateLineItemId String
+
+  createdAt DateTime @default(now())
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  estimate Estimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, estimateId, estimateLineItemId])
+  @@index([tenantId])
+  @@index([invoiceId])
+  @@index([estimateId])
+  @@map("invoice_line_item_sources")
 }
 
 model EstimateLineItem {

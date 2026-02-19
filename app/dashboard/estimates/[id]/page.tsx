@@ -146,9 +146,82 @@ export default function EstimateDetailPage() {
   const [sendSubject, setSendSubject] = useState('')
   const [sendMessage, setSendMessage] = useState('')
 
+  const [approvalInfo, setApprovalInfo] = useState<{
+    approveUrl: string
+    expiresAt: string | null
+    approvals: any[]
+    invoiceHistory: any[]
+  } | null>(null)
+  const [loadingApprovals, setLoadingApprovals] = useState(false)
+  const [regeneratingApprovalLink, setRegeneratingApprovalLink] = useState(false)
+
   useEffect(() => {
     fetchEstimate()
   }, [estimateId])
+
+  const fetchApprovals = async () => {
+    try {
+      setLoadingApprovals(true)
+      const token = localStorage.getItem('accessToken')
+      if (!token) return
+      const res = await fetch(`/api/estimates/${estimateId}/approvals`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      })
+      if (!res.ok) return
+      const data = await res.json().catch(() => null)
+      if (data?.approveUrl) setApprovalInfo(data)
+    } catch (e) {
+      console.error('Failed to fetch estimate approvals:', e)
+    } finally {
+      setLoadingApprovals(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!estimateId) return
+    fetchApprovals()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [estimateId])
+
+  const handleCopyApprovalLink = async () => {
+    const url = approvalInfo?.approveUrl
+    if (!url) return
+    try {
+      await navigator.clipboard.writeText(url)
+      alert('Approval link copied.')
+    } catch {
+      // Fallback
+      prompt('Copy approval link:', url)
+    }
+  }
+
+  const handleRegenerateApprovalLink = async () => {
+    if (!confirm('Regenerate approval link? This will revoke the old link.')) return
+    try {
+      setRegeneratingApprovalLink(true)
+      const token = localStorage.getItem('accessToken')
+      if (!token) return
+      const res = await fetch(`/api/estimates/${estimateId}/approvals`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: 'regenerate' }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        alert(data?.error || 'Failed to regenerate link')
+        return
+      }
+      setApprovalInfo((prev) =>
+        prev ? { ...prev, approveUrl: data.approveUrl, expiresAt: data.expiresAt || null } : prev
+      )
+    } catch (e) {
+      console.error('Regenerate approval link error:', e)
+      alert('Failed to regenerate link')
+    } finally {
+      setRegeneratingApprovalLink(false)
+    }
+  }
 
   const fetchEstimate = async () => {
     try {
@@ -1042,6 +1115,76 @@ export default function EstimateDetailPage() {
                 <span>Total:</span>
                 <span>{formatCurrency(parseFloat(estimate.total))}</span>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Approvals */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Approvals</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {loadingApprovals && <div className="text-sm text-gray-600">Loading approval status...</div>}
+              {!loadingApprovals && approvalInfo?.approveUrl && (
+                <>
+                  <div className="text-sm text-gray-700">
+                    Public approval link (customer, no login):
+                  </div>
+                  <div className="flex gap-2">
+                    <Input value={approvalInfo.approveUrl} readOnly />
+                    <Button type="button" variant="outline" onClick={handleCopyApprovalLink}>
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleRegenerateApprovalLink}
+                      disabled={regeneratingApprovalLink}
+                    >
+                      {regeneratingApprovalLink ? 'Regenerating...' : 'Regenerate Link'}
+                    </Button>
+                  </div>
+
+                  <div className="text-sm text-gray-700">
+                    Approved items: <strong>{(approvalInfo.approvals || []).length}</strong>
+                  </div>
+                  {(approvalInfo.approvals || []).slice(0, 6).map((a: any) => (
+                    <div key={a.id} className="rounded border p-2 text-sm">
+                      <div className="font-medium">{a.item?.description || a.estimateLineItemId}</div>
+                      <div className="text-gray-600">
+                        {a.approvedByName ? `Approved by ${a.approvedByName}` : 'Approved'}{' '}
+                        {a.approvedAt ? `• ${new Date(a.approvedAt).toLocaleString()}` : ''}
+                      </div>
+                    </div>
+                  ))}
+                  {(approvalInfo.approvals || []).length > 6 && (
+                    <div className="text-xs text-gray-500">
+                      Showing 6 of {(approvalInfo.approvals || []).length} approved items.
+                    </div>
+                  )}
+
+                  <div className="text-sm text-gray-700">
+                    Invoiced from approvals: <strong>{(approvalInfo.invoiceHistory || []).length}</strong>
+                  </div>
+                  {(approvalInfo.invoiceHistory || []).slice(0, 6).map((h: any) => (
+                    <div key={h.id} className="rounded border p-2 text-sm">
+                      <div className="font-medium">
+                        {h.invoice?.invoiceNumber || h.invoiceId}
+                      </div>
+                      <div className="text-gray-600">
+                        {h.createdAt ? `Created ${new Date(h.createdAt).toLocaleString()}` : ''}
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+              {!loadingApprovals && !approvalInfo?.approveUrl && (
+                <div className="text-sm text-gray-600">
+                  Approval link will be generated when the estimate is sent (or when PDF is generated).
+                </div>
+              )}
             </CardContent>
           </Card>
 

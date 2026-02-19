@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { testEmailProvider } from '@/lib/integrations/providers/email'
 import { isValidEmail } from '@/lib/email'
+import { getOrCreateEstimateApprovalToken } from '@/lib/estimate-approval'
 
 function escapeHtml(value: string) {
   return String(value || '')
@@ -109,6 +110,11 @@ export async function POST(
       .digest('hex')
     // Public signed link so recipients do not need dashboard auth.
     const pdfUrl = `${appUrl}/api/public/estimates/${params.id}/pdf?sent=${sentEpoch}&sig=${sig}`
+    const approvalToken = await getOrCreateEstimateApprovalToken({
+      tenantId: user.tenantId,
+      estimateId: estimate.id,
+    })
+    const approveUrl = approvalToken.url
     const effectiveSubject = `${subject || `Estimate ${estimate.estimateNumber}`} • ${sentIso}`
     
     const emailSecrets = await getIntegrationSecrets(user.tenantId, 'email')
@@ -122,6 +128,7 @@ export async function POST(
     const total = Number(estimate.total || 0).toFixed(2)
     const validUntil = estimate.validUntil ? new Date(estimate.validUntil).toLocaleDateString() : ''
     const safeMessage = message ? escapeHtml(String(message)) : ''
+    const customerName = estimate.client?.companyName || estimate.client?.name || `${estimate.title || ''}`.trim() || 'Customer'
     const html = `<!doctype html>
 <html>
   <head>
@@ -170,10 +177,12 @@ export async function POST(
           </div>
 
           <div class="btns">
-            <a class="btn" href="${escapeHtml(pdfUrl)}" target="_blank" rel="noopener noreferrer">View / Download Estimate</a>
+            <a class="btn" href="${escapeHtml(approveUrl)}" target="_blank" rel="noopener noreferrer">Approve Estimate</a>
+            <a class="btn btn-secondary" href="${escapeHtml(pdfUrl)}" target="_blank" rel="noopener noreferrer">Download PDF</a>
           </div>
 
           <div class="muted" style="margin-top:14px;">
+            Customer: ${escapeHtml(customerName)}<br/>
             If you have questions, reply to this email and we’ll help.
           </div>
         </div>
