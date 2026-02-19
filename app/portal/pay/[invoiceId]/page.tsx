@@ -86,6 +86,7 @@ export default function PublicPaymentPage() {
   const [confirmation, setConfirmation] = useState<string | null>(null)
   const [reconcilingPayment, setReconcilingPayment] = useState(false)
   const [achProcessing, setAchProcessing] = useState(false)
+  const [remainingAchLinks, setRemainingAchLinks] = useState<Array<{ invoiceId: string; invoiceNumber?: string; hostedUrl: string }>>([])
 
   const [recaptchaSiteKey, setRecaptchaSiteKey] = useState<string>(
     process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || ''
@@ -128,12 +129,31 @@ export default function PublicPaymentPage() {
       throw new Error('reCAPTCHA is not configured')
     }
     const grecaptcha = (window as any).grecaptcha
-    if (!grecaptcha?.ready) {
-      throw new Error('reCAPTCHA is still loading. Please try again in a second.')
+    if (!grecaptcha) {
+      throw new Error('reCAPTCHA script not loaded. Please refresh the page.')
     }
-    await new Promise<void>((resolve) => grecaptcha.ready(() => resolve()))
+    await new Promise<void>((resolve, reject) => {
+      if (grecaptcha.ready) {
+        grecaptcha.ready(() => resolve())
+      } else {
+        // Wait up to 5 seconds for reCAPTCHA to become ready
+        const timeout = setTimeout(() => reject(new Error('reCAPTCHA timeout')), 5000)
+        const checkReady = () => {
+          if (grecaptcha.ready) {
+            clearTimeout(timeout)
+            grecaptcha.ready(() => resolve())
+          } else {
+            setTimeout(checkReady, 100)
+          }
+        }
+        checkReady()
+      }
+    })
     const token = await grecaptcha.execute(recaptchaSiteKey, { action })
-    return String(token || '')
+    if (!token) {
+      throw new Error('Failed to generate reCAPTCHA token')
+    }
+    return String(token)
   }
   const captchaReady = Boolean(recaptchaSiteKey && recaptchaScriptLoaded)
 
@@ -166,6 +186,19 @@ export default function PublicPaymentPage() {
     }
 
     fetchInvoice()
+    
+    // Check for remaining ACH payment links from previous session
+    const stored = sessionStorage.getItem('qbo_ach_remaining')
+    if (stored) {
+      try {
+        const links = JSON.parse(stored)
+        if (Array.isArray(links) && links.length > 0) {
+          setRemainingAchLinks(links)
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
   }, [invoiceId, token])
 
   useEffect(() => {
@@ -359,27 +392,59 @@ export default function PublicPaymentPage() {
       setError('Custom amount toward previous invoices is currently available for card payments only.')
       return
     }
-    if (selectedInvoiceIds.length !== 1) {
-      setError('To pay by ACH, select exactly 1 invoice (QuickBooks ACH is per-invoice).')
+    if (selectedInvoiceIds.length === 0) {
+      setError('Please select at least one invoice to pay.')
       return
     }
     setAchProcessing(true)
     setError(null)
     try {
       const recaptchaToken = await getRecaptchaToken('public_invoice_pay_ach')
-      const response = await fetch(`/api/public/invoices/${invoice.id}/qbo-ach-link`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, recaptchaToken, targetInvoiceId: selectedInvoiceIds[0] }),
-      })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok || !data?.hostedUrl) {
-        setError(data.error || 'Unable to start ACH payment.')
+      
+      // Create ACH links for all selected invoices
+      const achLinks: Array<{ invoiceId: string; invoiceNumber?: string; hostedUrl: string }> = []
+      
+      for (const targetInvoiceId of selectedInvoiceIds) {
+        const response = await fetch(`/api/public/invoices/${invoice.id}/qbo-ach-link`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token, recaptchaToken, targetInvoiceId }),
+        })
+        const data = await response.json().catch(() => ({}))
+        if (response.ok && data?.hostedUrl) {
+          // Find invoice number from outstanding invoices list
+          const outstanding = invoice.outstanding?.invoices || []
+          const inv = outstanding.find((i: any) => String(i.id) === String(targetInvoiceId))
+          achLinks.push({
+            invoiceId: targetInvoiceId,
+            invoiceNumber: inv?.invoiceNumber || targetInvoiceId,
+            hostedUrl: data.hostedUrl,
+          })
+        } else {
+          setError(data.error || `Unable to create ACH link for invoice ${targetInvoiceId}`)
+          return
+        }
+      }
+
+      if (achLinks.length === 0) {
+        setError('No ACH payment links were created.')
         return
       }
 
-      // Redirect in the same tab so the flow feels "automatic".
-      window.location.href = data.hostedUrl
+      // If only one invoice, redirect directly
+      if (achLinks.length === 1) {
+        window.location.href = achLinks[0].hostedUrl
+        return
+      }
+
+      // Multiple invoices: redirect to first one, then user can come back for others
+      // Store remaining links in sessionStorage for later
+      const remaining = achLinks.slice(1)
+      if (remaining.length > 0) {
+        sessionStorage.setItem('qbo_ach_remaining', JSON.stringify(remaining))
+        sessionStorage.setItem('qbo_ach_return_url', window.location.href)
+      }
+      window.location.href = achLinks[0].hostedUrl
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to redirect to ACH payment.')
     } finally {
@@ -559,7 +624,14 @@ export default function PublicPaymentPage() {
         <Script
           src={`https://www.google.com/recaptcha/api.js?render=${encodeURIComponent(recaptchaSiteKey)}`}
           strategy="afterInteractive"
-          onLoad={() => setRecaptchaScriptLoaded(true)}
+          onLoad={() => {
+            setRecaptchaScriptLoaded(true)
+            console.log('reCAPTCHA script loaded')
+          }}
+          onError={() => {
+            setError('Failed to load security check. Please refresh the page.')
+            console.error('reCAPTCHA script failed to load')
+          }}
         />
       ) : null}
       <div>
@@ -567,6 +639,44 @@ export default function PublicPaymentPage() {
         <p className="text-gray-600">Invoice {invoice.invoiceNumber}</p>
       </div>
       {error ? <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
+      {remainingAchLinks.length > 0 ? (
+        <div className="rounded border border-blue-200 bg-blue-50 p-3 text-sm">
+          <div className="font-semibold text-blue-900">Continue ACH Payment</div>
+          <div className="mt-1 text-blue-700">
+            You have {remainingAchLinks.length} more invoice{remainingAchLinks.length > 1 ? 's' : ''} to pay by ACH.
+          </div>
+          <div className="mt-2 flex gap-2">
+            <Button
+              size="sm"
+              onClick={() => {
+                const next = remainingAchLinks[0]
+                const remaining = remainingAchLinks.slice(1)
+                if (remaining.length > 0) {
+                  sessionStorage.setItem('qbo_ach_remaining', JSON.stringify(remaining))
+                } else {
+                  sessionStorage.removeItem('qbo_ach_remaining')
+                  sessionStorage.removeItem('qbo_ach_return_url')
+                }
+                setRemainingAchLinks(remaining)
+                window.location.href = next.hostedUrl
+              }}
+            >
+              Pay Next Invoice ({remainingAchLinks[0]?.invoiceNumber || 'Invoice'})
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                sessionStorage.removeItem('qbo_ach_remaining')
+                sessionStorage.removeItem('qbo_ach_return_url')
+                setRemainingAchLinks([])
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : null}
       {partialSelection ? (
         <div className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 flex items-center justify-between gap-2">
           <div className="min-w-0">
@@ -799,11 +909,11 @@ export default function PublicPaymentPage() {
             </div>
             <div className="mt-2 flex flex-wrap gap-2">
               <Button
-                disabled={!approved || achProcessing || !captchaReady || selectedInvoiceIds.length !== 1}
+                disabled={!approved || achProcessing || !captchaReady || selectedInvoiceIds.length === 0}
                 onClick={handlePayByAch}
-                title="Pay by ACH via QuickBooks"
+                title="Pay by ACH via QuickBooks (one invoice at a time)"
               >
-                {achProcessing ? 'Redirecting...' : 'Pay by ACH'}
+                {achProcessing ? 'Creating payment links...' : selectedInvoiceIds.length > 1 ? `Pay ${selectedInvoiceIds.length} Invoices by ACH` : 'Pay by ACH'}
               </Button>
               <Button
                 variant="outline"
