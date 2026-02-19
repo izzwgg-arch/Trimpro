@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
-import { getQboSession } from '@/lib/services/qbo-sync'
+import { getQboSessionForTenant } from '@/lib/qbo/session'
 import { quickBooksService } from '@/lib/services/quickbooks'
-
-function toNumber(value: any): number {
-  const n = Number(value)
-  return Number.isFinite(n) ? n : 0
-}
 
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -37,7 +32,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get QuickBooks session
-    const session = await getQboSession(user.tenantId)
+    const session = await getQboSessionForTenant(user.tenantId)
     if (!session) {
       return NextResponse.json(
         { error: 'QuickBooks integration not configured' },
