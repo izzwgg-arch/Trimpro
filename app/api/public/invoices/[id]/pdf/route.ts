@@ -269,6 +269,7 @@ export async function GET(
         status: 200,
         headers: {
           'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-store',
         },
       })
     }
@@ -279,6 +280,7 @@ export async function GET(
         status: 200,
         headers: {
           'Content-Type': 'application/pdf',
+          'Cache-Control': 'no-store',
           'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="Invoice-${invoice.invoiceNumber}.pdf"`,
         },
       })
@@ -288,6 +290,7 @@ export async function GET(
         status: 200,
         headers: {
           'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-store',
           'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="Invoice-${invoice.invoiceNumber}.html"`,
         },
       })

@@ -211,6 +211,7 @@ export default function EstimateDetailPage() {
     }
 
     const response = await fetch(`/api/estimates/${estimateId}/pdf?download=1`, {
+      cache: 'no-store',
       headers: { Authorization: `Bearer ${token}` },
     })
 

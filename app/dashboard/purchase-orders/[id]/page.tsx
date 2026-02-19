@@ -285,6 +285,7 @@ export default function PurchaseOrderDetailPage() {
     }
 
     const response = await fetch(`/api/purchase-orders/${params.id}/pdf?download=1`, {
+      cache: 'no-store',
       headers: { Authorization: `Bearer ${token}` },
     })
 

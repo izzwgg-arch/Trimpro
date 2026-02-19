@@ -413,6 +413,7 @@ export default function InvoiceDetailPage() {
     }
 
     const response = await fetch(`/api/invoices/${invoiceId}/pdf?download=1`, {
+      cache: 'no-store',
       headers: { Authorization: `Bearer ${token}` },
     })
 

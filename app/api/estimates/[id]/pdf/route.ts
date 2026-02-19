@@ -366,6 +366,7 @@ export async function GET(
       return new NextResponse(html, {
         headers: {
           'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-store',
           'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="Estimate-${estimate.estimateNumber}.html"`,
         },
       })
@@ -376,6 +377,7 @@ export async function GET(
       return new NextResponse(pdf, {
         headers: {
           'Content-Type': 'application/pdf',
+          'Cache-Control': 'no-store',
           'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="Estimate-${estimate.estimateNumber}.pdf"`,
         },
       })
@@ -384,6 +386,7 @@ export async function GET(
       return new NextResponse(html, {
         headers: {
           'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-store',
           'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="Estimate-${estimate.estimateNumber}.html"`,
         },
       })
