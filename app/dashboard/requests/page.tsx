@@ -166,46 +166,11 @@ export default function RequestsPage() {
 
   const handleConvertToEstimate = async (request: Request) => {
     const requestName = `${request.firstName} ${request.lastName}`.trim()
-    if (!confirm(`Convert request "${requestName}" into an estimate?`)) return
+    if (!confirm(`Open a new estimate draft for request "${requestName}"? (It will only convert after you Save.)`)) return
 
-    setConvertingId(request.id)
-    try {
-      const token = localStorage.getItem('accessToken')
-      if (!token) {
-        router.push('/auth/login')
-        return
-      }
-
-      const response = await fetch(`/api/leads/${request.id}/convert-to-estimate`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
-
-      if (response.status === 401) {
-        router.push('/auth/login')
-        return
-      }
-
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok) {
-        alert(data.error || 'Failed to convert request to estimate')
-        return
-      }
-
-      const estimateId = data?.estimate?.id
-      if (estimateId) {
-        router.push(`/dashboard/estimates/${estimateId}`)
-      } else {
-        fetchRequests()
-      }
-    } catch (error) {
-      console.error('Failed to convert request:', error)
-      alert('Failed to convert request to estimate. Please try again.')
-    } finally {
-      setConvertingId(null)
-    }
+    // Important business rule: do NOT convert/create an Estimate just by clicking this button.
+    // Instead, open the New Estimate page prefilled; conversion happens only on Save.
+    router.push(`/dashboard/estimates/new?requestId=${encodeURIComponent(request.id)}`)
   }
 
   const handleConvertToJob = async (request: Request) => {

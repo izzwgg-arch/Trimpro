@@ -302,10 +302,13 @@ export default function EstimateDetailPage() {
 
   const handleOpenConvertToInvoice = () => {
     if (!estimate) return
-    setBillingMode('FULL')
-    setBillingPercent('50')
-    setSelectedLineItemIds(estimate.lineItems.map((li) => li.id))
-    setShowBillingModal(true)
+    if (!confirm(`Open a new invoice draft from estimate "${estimate.estimateNumber}"? (It will only convert after you Save.)`)) {
+      return
+    }
+
+    // Business rule: do NOT convert/create an Invoice immediately.
+    // Open the New Invoice page prefilled from this estimate; conversion happens only on Save.
+    router.push(`/dashboard/invoices/new?estimateId=${encodeURIComponent(estimate.id)}`)
   }
 
   const handleConvertToInvoice = async () => {

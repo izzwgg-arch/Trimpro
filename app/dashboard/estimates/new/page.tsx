@@ -87,6 +87,7 @@ export default function NewEstimatePage() {
     clientId: clientIdParam || '',
     leadId: requestIdParam || '',
     jobId: jobIdParam || '',
+    estimateNumber: '',
     title: '',
     jobSiteAddress: '',
     taxRate: '0',
@@ -692,9 +693,18 @@ export default function NewEstimatePage() {
       const tax = subtotalAfterDiscount * taxRate
       const total = subtotalAfterDiscount + tax
 
+      const isBlankLine = (item: any) => {
+        const desc = String(item.description || '').trim()
+        const qty = parseFloat(item.quantity || '0')
+        const price = parseFloat(item.unitPrice || '0')
+        const hasMeta = Boolean(item.sourceItemId || item.sourceBundleId || item.groupId)
+        return !hasMeta && desc === '' && qty === 0 && price === 0
+      }
+
       // Prepare line items for API
       const apiLineItems = lineItems
         .filter(item => !item.isGroupHeader) // Exclude group headers from API
+        .filter(item => !isBlankLine(item))
         .map((item, index) => ({
           description: item.description,
           quantity: parseFloat(item.quantity || '1'),
@@ -719,6 +729,7 @@ export default function NewEstimatePage() {
 
       const apiOptionalItems = optionalItems
         .filter(item => !item.isGroupHeader)
+        .filter(item => !isBlankLine(item))
         .map((item, index) => ({
           description: item.description,
           quantity: parseFloat(item.quantity || '1'),
@@ -762,6 +773,7 @@ export default function NewEstimatePage() {
           clientId: formData.clientId,
           leadId: formData.leadId || null,
           jobId: formData.jobId || null,
+          estimateNumber: formData.estimateNumber || null,
           title: formData.title,
           jobSiteAddress: formData.jobSiteAddress || null,
           subtotal,
@@ -864,6 +876,18 @@ export default function NewEstimatePage() {
                   {jobIdParam && (
                     <p className="mt-1 text-xs text-gray-500">Client is locked because this estimate is being created from a job.</p>
                   )}
+                </div>
+                <div>
+                  <Label htmlFor="estimateNumber">Estimate # (optional)</Label>
+                  <Input
+                    id="estimateNumber"
+                    value={formData.estimateNumber}
+                    onChange={(e) => setFormData({ ...formData, estimateNumber: e.target.value })}
+                    placeholder="Leave blank to auto-generate (ex: EST-000123)"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    If you enter a number, future estimates continue upward from the highest number.
+                  </p>
                 </div>
                 <div>
                   <Label htmlFor="title">Title *</Label>

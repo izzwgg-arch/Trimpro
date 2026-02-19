@@ -170,6 +170,12 @@ const dateOrDateTime = z.string().refine((val) => {
 }, 'Invalid datetime')
 
 export const createInvoiceSchema = z.object({
+  invoiceNumber: z
+    .preprocess((val) => {
+      if (val === '' || val === null || val === undefined) return null
+      return String(val)
+    }, z.string().nullable().optional())
+    .transform((val) => (val ? String(val).trim() : null)),
   clientId: z.string().min(1),
   jobId: z.string().optional().nullable(),
   estimateId: z.string().optional().nullable(),
@@ -203,7 +209,6 @@ export const createInvoiceSchema = z.object({
         })
         .passthrough()
     )
-    .min(1)
     .optional(),
   items: z.array(z.object({
     description: z.string(),
@@ -246,8 +251,6 @@ export const createInvoiceSchema = z.object({
   notes: z.string().max(5000).optional().nullable(),
   terms: z.string().max(1000).optional().nullable(),
   memo: z.string().max(1000).optional().nullable(),
-}).refine((data) => (data.lineItems && data.lineItems.length > 0) || (data.items && data.items.length > 0), {
-  message: 'At least one line item is required',
 })
 
 /**

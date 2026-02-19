@@ -124,6 +124,7 @@ export async function POST(request: NextRequest) {
 
   const body = validation.data as any
   const {
+    invoiceNumber: invoiceNumberOverride,
     clientId,
     jobId,
     estimateId,
@@ -157,6 +158,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Client not found' }, { status: 404 })
     }
 
+    const normalizeInvoiceNumber = (val: any) => {
+      if (val === null || val === undefined) return null
+      const raw = String(val).trim()
+      if (!raw) return null
+      if (/^\d+$/.test(raw)) return `INV-${raw.padStart(6, '0')}`
+      const m = raw.match(/^INV-(\d+)$/i)
+      if (m) return `INV-${m[1].padStart(6, '0')}`
+      return raw
+    }
+    const invoiceNumberOverrideTrimmed = normalizeInvoiceNumber(invoiceNumberOverride)
+
     // Calculate totals
     const subtotal = lineItems.reduce((sum: number, item: any) => {
       const qty = typeof item.quantity === 'number' ? item.quantity : parseFloat(item.quantity || 0)
@@ -170,93 +182,84 @@ export async function POST(request: NextRequest) {
     const tax = subtotalAfterDiscount * taxRateValue
     const total = subtotalAfterDiscount + tax
 
-    // Generate invoice number with global collision-safe retry.
-    // invoiceNumber is globally unique in schema, so tenant-local counters can collide.
-    const latestInvoice = await prisma.invoice.findFirst({
-      where: { invoiceNumber: { startsWith: 'INV-' } },
-      orderBy: { invoiceNumber: 'desc' },
-      select: { invoiceNumber: true },
-    })
-    const latestNum = latestInvoice?.invoiceNumber
-      ? parseInt(latestInvoice.invoiceNumber.replace(/^INV-/, ''), 10)
-      : 0
-    const startNum = Number.isFinite(latestNum) ? latestNum : 0
+    const baseInvoiceData = {
+      tenantId: user.tenantId,
+      clientId,
+      jobId: jobId || null,
+      estimateId: estimateId || null,
+      title,
+      status: 'DRAFT' as const,
+      subtotal: subtotal,
+      taxRate: taxRateValue,
+      taxAmount: tax,
+      discount: discountAmount,
+      total: total,
+      balance: total,
+      paidAmount: 0,
+      invoiceDate: invoiceDate ? new Date(invoiceDate) : new Date(),
+      dueDate: dueDate ? new Date(dueDate) : null,
+      notes: notes || null,
+      terms: terms || null,
+      memo: memo || null,
+      paymentToken: crypto.randomBytes(20).toString('hex'),
+      // ACH should be available by default (hosted by QuickBooks; no bank info stored by TrimPro).
+      qboAchEnabled: true,
+    }
+
     let invoiceNumber = ''
     let invoice: any = null
-    for (let attempt = 0; attempt < 300; attempt++) {
-      invoiceNumber = `INV-${String(startNum + 1 + attempt).padStart(6, '0')}`
+
+    if (invoiceNumberOverrideTrimmed) {
+      invoiceNumber = invoiceNumberOverrideTrimmed
       try {
         invoice = await prisma.invoice.create({
-          data: {
-            tenantId: user.tenantId,
-            clientId,
-            jobId: jobId || null,
-            estimateId: estimateId || null,
-            invoiceNumber,
-            title,
-            status: 'DRAFT',
-            subtotal: subtotal,
-            taxRate: taxRateValue,
-            taxAmount: tax,
-            discount: discountAmount,
-            total: total,
-            balance: total,
-            paidAmount: 0,
-            invoiceDate: invoiceDate ? new Date(invoiceDate) : new Date(),
-            dueDate: dueDate ? new Date(dueDate) : null,
-            notes: notes || null,
-            terms: terms || null,
-            memo: memo || null,
-            paymentToken: crypto.randomBytes(20).toString('hex'),
-            // ACH should be available by default (hosted by QuickBooks; no bank info stored by TrimPro).
-            qboAchEnabled: true,
-          },
-          include: {
-            client: true,
-            job: true,
-          },
+          data: { ...baseInvoiceData, invoiceNumber },
+          include: { client: true, job: true },
         })
-        break
       } catch (err: any) {
         if (err?.code === 'P2002' && err?.meta?.target?.includes?.('invoiceNumber')) {
-          continue
+          return NextResponse.json({ error: 'Invoice number already exists' }, { status: 400 })
         }
         throw err
       }
-    }
-    if (!invoice) {
-      // Last-resort unique fallback to guarantee create path never deadlocks on numbering.
-      const suffix = crypto.randomBytes(3).toString('hex').toUpperCase()
-      invoiceNumber = `INV-${String(startNum + 1).padStart(6, '0')}-${suffix}`
-      invoice = await prisma.invoice.create({
-        data: {
-          tenantId: user.tenantId,
-          clientId,
-          jobId: jobId || null,
-          estimateId: estimateId || null,
-          invoiceNumber,
-          title,
-          status: 'DRAFT',
-          subtotal: subtotal,
-          taxRate: taxRateValue,
-          taxAmount: tax,
-          discount: discountAmount,
-          total: total,
-          balance: total,
-          paidAmount: 0,
-          invoiceDate: invoiceDate ? new Date(invoiceDate) : new Date(),
-          dueDate: dueDate ? new Date(dueDate) : null,
-          notes: notes || null,
-          terms: terms || null,
-          memo: memo || null,
-          paymentToken: crypto.randomBytes(20).toString('hex'),
-          qboAchEnabled: true,
-        },
-        include: {
-          client: true,
-          job: true,
-        },
+    } else {
+      // Generate invoice number with global collision-safe retry.
+      // invoiceNumber is globally unique in schema, so tenant-local counters can collide.
+      const latestInvoice = await prisma.invoice.findFirst({
+        where: { invoiceNumber: { startsWith: 'INV-' } },
+        orderBy: { invoiceNumber: 'desc' },
+        select: { invoiceNumber: true },
       })
+      const latestNum = latestInvoice?.invoiceNumber
+        ? parseInt(latestInvoice.invoiceNumber.replace(/^INV-/, ''), 10)
+        : 0
+      const startNum = Number.isFinite(latestNum) ? latestNum : 0
+
+      for (let attempt = 0; attempt < 300; attempt++) {
+        invoiceNumber = `INV-${String(startNum + 1 + attempt).padStart(6, '0')}`
+        try {
+          invoice = await prisma.invoice.create({
+            data: { ...baseInvoiceData, invoiceNumber },
+            include: { client: true, job: true },
+          })
+          break
+        } catch (err: any) {
+          if (err?.code === 'P2002' && err?.meta?.target?.includes?.('invoiceNumber')) {
+            continue
+          }
+          throw err
+        }
+      }
+
+      if (!invoice) {
+        // Last-resort unique fallback to guarantee create path never deadlocks on numbering.
+        const suffix = crypto.randomBytes(3).toString('hex').toUpperCase()
+        invoiceNumber = `INV-${String(startNum + 1).padStart(6, '0')}-${suffix}`
+        invoice = await prisma.invoice.create({
+          data: { ...baseInvoiceData, invoiceNumber },
+          include: { client: true, job: true },
+        })
+      }
     }
 
     // Link estimate if provided

@@ -102,6 +102,7 @@ export async function POST(request: NextRequest) {
       clientId,
       leadId,
       jobId,
+      estimateNumber: estimateNumberOverride,
       title,
       jobSiteAddress,
       lineItems,
@@ -115,12 +116,13 @@ export async function POST(request: NextRequest) {
       terms,
     } = body
 
-    if (!title || !lineItems || lineItems.length === 0) {
-      return NextResponse.json({ error: 'Title and at least one line item are required' }, { status: 400 })
+    if (!title) {
+      return NextResponse.json({ error: 'Title is required' }, { status: 400 })
     }
 
     // Calculate totals
-    const subtotal = lineItems.reduce((sum: number, item: any) => {
+    const effectiveLineItems = Array.isArray(lineItems) ? lineItems : []
+    const subtotal = effectiveLineItems.reduce((sum: number, item: any) => {
       const qty = parseFloat(item.quantity || 0)
       const price = parseFloat(item.unitPrice || 0)
       return sum + (qty * price)
@@ -131,52 +133,78 @@ export async function POST(request: NextRequest) {
     const tax = taxRate ? (subtotalAfterDiscount * parseFloat(taxRate)) : 0
     const total = subtotalAfterDiscount + tax
 
-    // Generate estimate number with global collision-safe retry.
-    let estimate: any = null
-    for (let attempt = 0; attempt < 300; attempt++) {
-      const latestEstimate = await prisma.estimate.findFirst({
-        where: { estimateNumber: { startsWith: 'EST-' } },
-        orderBy: { estimateNumber: 'desc' },
-        select: { estimateNumber: true },
-      })
-      const latestNumMatch = latestEstimate?.estimateNumber?.match(/^EST-(\d+)/)
-      const latestNum = latestNumMatch ? parseInt(latestNumMatch[1], 10) : 0
-      const baseNum = Number.isFinite(latestNum) ? latestNum : 0
-      const estimateNumber = `EST-${String(baseNum + 1 + attempt).padStart(6, '0')}`
+    const normalizeEstimateNumber = (val: any) => {
+      if (val === null || val === undefined) return null
+      const raw = String(val).trim()
+      if (!raw) return null
+      if (/^\d+$/.test(raw)) return `EST-${raw.padStart(6, '0')}`
+      const m = raw.match(/^EST-(\d+)$/i)
+      if (m) return `EST-${m[1].padStart(6, '0')}`
+      return raw
+    }
+    const estimateNumberOverrideTrimmed = normalizeEstimateNumber(estimateNumberOverride)
 
+    const baseEstimateData = {
+      tenantId: user.tenantId,
+      clientId: clientId || null,
+      leadId: leadId || null,
+      jobId: jobId || null,
+      title,
+      jobSiteAddress: jobSiteAddress || null,
+      status: 'DRAFT' as const,
+      subtotal: subtotal,
+      taxRate: taxRate ? parseFloat(taxRate) : 0,
+      taxAmount: tax,
+      discount: discountAmount,
+      total: total,
+      validUntil: validUntil ? new Date(validUntil) : null,
+      notes: notes || null,
+      isNotesVisibleToClient: isNotesVisibleToClient !== undefined ? Boolean(isNotesVisibleToClient) : true,
+      terms: terms || null,
+      createdById: user.id,
+    }
+
+    let estimate: any = null
+    let estimateNumber = ''
+
+    if (estimateNumberOverrideTrimmed) {
+      estimateNumber = estimateNumberOverrideTrimmed
       try {
         estimate = await prisma.estimate.create({
-          data: {
-            tenantId: user.tenantId,
-            clientId: clientId || null,
-            leadId: leadId || null,
-            jobId: jobId || null,
-            estimateNumber,
-            title,
-            jobSiteAddress: jobSiteAddress || null,
-            status: 'DRAFT',
-            subtotal: subtotal,
-            taxRate: taxRate ? parseFloat(taxRate) : 0,
-            taxAmount: tax,
-            discount: discountAmount,
-            total: total,
-            validUntil: validUntil ? new Date(validUntil) : null,
-            notes: notes || null,
-            isNotesVisibleToClient: isNotesVisibleToClient !== undefined ? Boolean(isNotesVisibleToClient) : true,
-            terms: terms || null,
-            createdById: user.id,
-          },
-          include: {
-            client: true,
-            lead: true,
-          },
+          data: { ...baseEstimateData, estimateNumber },
+          include: { client: true, lead: true },
         })
-        break
       } catch (err: any) {
         if (err?.code === 'P2002' && err?.meta?.target?.includes?.('estimateNumber')) {
-          continue
+          return NextResponse.json({ error: 'Estimate number already exists' }, { status: 400 })
         }
         throw err
+      }
+    } else {
+      // Generate estimate number with global collision-safe retry.
+      for (let attempt = 0; attempt < 300; attempt++) {
+        const latestEstimate = await prisma.estimate.findFirst({
+          where: { estimateNumber: { startsWith: 'EST-' } },
+          orderBy: { estimateNumber: 'desc' },
+          select: { estimateNumber: true },
+        })
+        const latestNumMatch = latestEstimate?.estimateNumber?.match(/^EST-(\d+)/)
+        const latestNum = latestNumMatch ? parseInt(latestNumMatch[1], 10) : 0
+        const baseNum = Number.isFinite(latestNum) ? latestNum : 0
+        estimateNumber = `EST-${String(baseNum + 1 + attempt).padStart(6, '0')}`
+
+        try {
+          estimate = await prisma.estimate.create({
+            data: { ...baseEstimateData, estimateNumber },
+            include: { client: true, lead: true },
+          })
+          break
+        } catch (err: any) {
+          if (err?.code === 'P2002' && err?.meta?.target?.includes?.('estimateNumber')) {
+            continue
+          }
+          throw err
+        }
       }
     }
     if (!estimate) {
@@ -201,9 +229,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Create line items
-    for (let i = 0; i < lineItems.length; i++) {
-      const item = lineItems[i]
+    // Create line items (draft estimates may be created with no items)
+    for (let i = 0; i < effectiveLineItems.length; i++) {
+      const item = effectiveLineItems[i]
       const qty = parseFloat(item.quantity || 0)
       const price = parseFloat(item.unitPrice || 0)
       const itemTotal = qty * price

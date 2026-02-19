@@ -94,6 +94,7 @@ export default function NewInvoicePage() {
     clientId: clientIdParam || '',
     jobId: jobIdParam || '',
     estimateId: estimateIdParam || '',
+    invoiceNumber: '',
     title: '',
     taxRate: '0',
     discount: '0',
@@ -763,8 +764,17 @@ export default function NewInvoicePage() {
       const tax = subtotalAfterDiscount * taxRate
       const total = subtotalAfterDiscount + tax
 
+      const isBlankLine = (item: any) => {
+        const desc = String(item.description || '').trim()
+        const qty = parseFloat(item.quantity || '0')
+        const price = parseFloat(item.unitPrice || '0')
+        const hasMeta = Boolean(item.sourceItemId || item.sourceBundleId || item.groupId)
+        return !hasMeta && desc === '' && qty === 0 && price === 0
+      }
+
       const apiLineItems = lineItems
         .filter(item => !item.isGroupHeader)
+        .filter(item => !isBlankLine(item))
         .map((item, index) => ({
           description: item.description,
           quantity: parseFloat(item.quantity || '1'),
@@ -789,6 +799,7 @@ export default function NewInvoicePage() {
 
       const apiOptionalItems = optionalItems
         .filter(item => !item.isGroupHeader)
+        .filter(item => !isBlankLine(item))
         .map((item, index) => ({
           description: item.description,
           quantity: parseFloat(item.quantity || '1'),
@@ -831,6 +842,7 @@ export default function NewInvoicePage() {
           clientId: formData.clientId,
           jobId: formData.jobId || null,
           estimateId: formData.estimateId || null,
+          invoiceNumber: formData.invoiceNumber || null,
           title: formData.title,
           subtotal,
           taxRate: taxRate,
@@ -952,6 +964,18 @@ export default function NewInvoicePage() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+                <div>
+                  <Label htmlFor="invoiceNumber">Invoice # (optional)</Label>
+                  <Input
+                    id="invoiceNumber"
+                    value={formData.invoiceNumber}
+                    onChange={(e) => setFormData({ ...formData, invoiceNumber: e.target.value })}
+                    placeholder="Leave blank to auto-generate (ex: INV-000123)"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    If you enter a number, future invoices continue upward from the highest number.
+                  </p>
                 </div>
                 <div>
                   <Label htmlFor="title">Title *</Label>
