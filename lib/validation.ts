@@ -174,16 +174,71 @@ export const createInvoiceSchema = z.object({
   jobId: z.string().optional().nullable(),
   estimateId: z.string().optional().nullable(),
   title: z.string().min(1).max(255),
-  lineItems: z.array(z.object({
-    description: z.string(),
-    quantity: z.union([z.string(), z.number()]).transform((val) => typeof val === 'string' ? parseFloat(val) : val),
-    unitPrice: z.union([z.string(), z.number()]).transform((val) => typeof val === 'string' ? parseFloat(val) : val),
-  })).min(1).optional(),
+  lineItems: z
+    .array(
+      z
+        .object({
+          description: z.string(),
+          quantity: z
+            .union([z.string(), z.number()])
+            .transform((val) => (typeof val === 'string' ? parseFloat(val) : val)),
+          unitPrice: z
+            .union([z.string(), z.number()])
+            .transform((val) => (typeof val === 'string' ? parseFloat(val) : val)),
+          // Preserve existing per-field toggles and metadata (used by the UI).
+          isVisibleToClient: z.boolean().optional(),
+          showDescriptionToCustomer: z.boolean().optional(),
+          showCostToCustomer: z.boolean().optional(),
+          showPriceToCustomer: z.boolean().optional(),
+          showTaxToCustomer: z.boolean().optional(),
+          showNotesToCustomer: z.boolean().optional(),
+          notes: z.string().optional().nullable(),
+          vendorId: z.string().optional().nullable(),
+          taxable: z.boolean().optional(),
+          taxRate: z.union([z.string(), z.number()]).optional().nullable(),
+          unitCost: z.union([z.string(), z.number()]).optional().nullable(),
+          groupId: z.string().optional().nullable(),
+          sourceItemId: z.string().optional().nullable(),
+          sourceBundleId: z.string().optional().nullable(),
+        })
+        .passthrough()
+    )
+    .min(1)
+    .optional(),
   items: z.array(z.object({
     description: z.string(),
     quantity: z.number().positive(),
     unitPrice: z.number().nonnegative(),
   })).min(1).optional(),
+  optionalItems: z
+    .array(
+      z
+        .object({
+          description: z.string(),
+          quantity: z
+            .union([z.string(), z.number()])
+            .transform((val) => (typeof val === 'string' ? parseFloat(val) : val)),
+          unitPrice: z
+            .union([z.string(), z.number()])
+            .transform((val) => (typeof val === 'string' ? parseFloat(val) : val)),
+          isVisibleToClient: z.boolean().optional(),
+          showDescriptionToCustomer: z.boolean().optional(),
+          showCostToCustomer: z.boolean().optional(),
+          showPriceToCustomer: z.boolean().optional(),
+          showTaxToCustomer: z.boolean().optional(),
+          showNotesToCustomer: z.boolean().optional(),
+          notes: z.string().optional().nullable(),
+          vendorId: z.string().optional().nullable(),
+          taxable: z.boolean().optional(),
+          taxRate: z.union([z.string(), z.number()]).optional().nullable(),
+          unitCost: z.union([z.string(), z.number()]).optional().nullable(),
+          groupId: z.string().optional().nullable(),
+          sourceItemId: z.string().optional().nullable(),
+          sourceBundleId: z.string().optional().nullable(),
+        })
+        .passthrough()
+    )
+    .optional(),
   taxRate: z.union([z.string(), z.number()]).optional().nullable(),
   discount: z.union([z.string(), z.number()]).optional().nullable(),
   invoiceDate: dateOrDateTime.optional().nullable(),

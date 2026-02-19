@@ -55,6 +55,9 @@ export async function GET(
         lineItems: {
           orderBy: { sortOrder: 'asc' },
         },
+        optionalItems: {
+          orderBy: { sortOrder: 'asc' },
+        },
         payments: {
           orderBy: { createdAt: 'desc' },
           include: {
@@ -127,6 +130,7 @@ export async function GET(
         total: item.total.toString(),
         isVisibleToClient: item.isVisibleToClient,
         // New visibility fields
+        showDescriptionToCustomer: item.showDescriptionToCustomer ?? true,
         showCostToCustomer: item.showCostToCustomer ?? false,
         showPriceToCustomer: item.showPriceToCustomer ?? true,
         showTaxToCustomer: item.showTaxToCustomer ?? true,
@@ -151,6 +155,26 @@ export async function GET(
           name: item.sourceItem.name,
           kind: item.sourceItem.kind,
         } : null,
+      })),
+      optionalItems: invoice.optionalItems.map((item) => ({
+        ...item,
+        quantity: item.quantity.toString(),
+        unitPrice: item.unitPrice.toString(),
+        unitCost: item.unitCost ? item.unitCost.toString() : null,
+        total: item.total.toString(),
+        isVisibleToClient: item.isVisibleToClient,
+        showDescriptionToCustomer: item.showDescriptionToCustomer ?? true,
+        showCostToCustomer: item.showCostToCustomer ?? false,
+        showPriceToCustomer: item.showPriceToCustomer ?? true,
+        showTaxToCustomer: item.showTaxToCustomer ?? true,
+        showNotesToCustomer: item.showNotesToCustomer ?? false,
+        vendorId: item.vendorId || null,
+        taxable: item.taxable ?? true,
+        taxRate: item.taxRate ? item.taxRate.toString() : null,
+        notes: item.notes || null,
+        groupId: item.groupId || null,
+        sourceItemId: item.sourceItemId || null,
+        sourceBundleId: item.sourceBundleId || null,
       })),
       payments: invoice.payments.map(payment => ({
         ...payment,

@@ -27,7 +27,9 @@ interface LineItem {
   vendorName?: string
   taxable: boolean
   taxRate?: string
+  isVisibleToClient?: boolean
   // Per-field visibility
+  showDescriptionToCustomer: boolean
   showCostToCustomer: boolean
   showPriceToCustomer: boolean
   showTaxToCustomer: boolean
@@ -57,6 +59,21 @@ export default function NewEstimatePage() {
       quantity: '1',
       unitPrice: '0',
       taxable: true,
+      showDescriptionToCustomer: true,
+      showCostToCustomer: false,
+      showPriceToCustomer: true,
+      showTaxToCustomer: true,
+      showNotesToCustomer: false,
+    },
+  ])
+  const [optionalItems, setOptionalItems] = useState<LineItem[]>([
+    {
+      description: '',
+      quantity: '1',
+      unitPrice: '0',
+      taxable: true,
+      isVisibleToClient: true,
+      showDescriptionToCustomer: true,
       showCostToCustomer: false,
       showPriceToCustomer: true,
       showTaxToCustomer: true,
@@ -81,6 +98,8 @@ export default function NewEstimatePage() {
 
   const lineItemRefs = useRef<(HTMLDivElement | null)[]>([])
   const pickerInputRefs = useRef<(HTMLInputElement | null)[]>([])
+  const optionalItemRefs = useRef<(HTMLDivElement | null)[]>([])
+  const optionalPickerInputRefs = useRef<(HTMLInputElement | null)[]>([])
 
   useEffect(() => {
     fetchClients()
@@ -185,6 +204,7 @@ export default function NewEstimatePage() {
         quantity: '1',
         unitPrice: '0',
         taxable: true,
+        showDescriptionToCustomer: true,
         showCostToCustomer: false,
         showPriceToCustomer: true,
         showTaxToCustomer: true,
@@ -232,6 +252,7 @@ export default function NewEstimatePage() {
             unitPrice: '0', // Bundle price calculated from components
             taxable: item.taxable,
             taxRate: item.taxRate?.toString() || '',
+            showDescriptionToCustomer: true,
             showCostToCustomer: false,
             showPriceToCustomer: true,
             showTaxToCustomer: true,
@@ -276,6 +297,7 @@ export default function NewEstimatePage() {
               vendorName: comp.vendor?.name || null,
               taxable: sourceItem?.taxable ?? true,
               taxRate: sourceItem?.taxRate?.toString() || '',
+              showDescriptionToCustomer: true,
               showCostToCustomer: false,
               showPriceToCustomer: true,
               showTaxToCustomer: true,
@@ -357,6 +379,7 @@ export default function NewEstimatePage() {
           quantity: '1',
           unitPrice: '0',
           taxable: true,
+          showDescriptionToCustomer: true,
           showCostToCustomer: false,
           showPriceToCustomer: true,
           showTaxToCustomer: true,
@@ -383,9 +406,10 @@ export default function NewEstimatePage() {
     }, 100)
   }
 
-  const toggleVisibility = (index: number, field: 'cost' | 'price' | 'tax' | 'notes') => {
+  const toggleVisibility = (index: number, field: 'description' | 'cost' | 'price' | 'tax' | 'notes') => {
     const updated = [...lineItems]
     const fieldMap = {
+      description: 'showDescriptionToCustomer',
       cost: 'showCostToCustomer',
       price: 'showPriceToCustomer',
       tax: 'showTaxToCustomer',
@@ -397,6 +421,238 @@ export default function NewEstimatePage() {
       [fieldMap[field]]: !updated[index][fieldMap[field]],
     }
     setLineItems(updated)
+  }
+
+  // Optional items (separate section; not included in main totals)
+  const addOptionalItem = () => {
+    setOptionalItems((prev) => [
+      ...prev,
+      {
+        description: '',
+        quantity: '1',
+        unitPrice: '0',
+        taxable: true,
+        isVisibleToClient: true,
+        showDescriptionToCustomer: true,
+        showCostToCustomer: false,
+        showPriceToCustomer: true,
+        showTaxToCustomer: true,
+        showNotesToCustomer: false,
+      },
+    ])
+  }
+
+  const removeOptionalItem = (index: number) => {
+    setOptionalItems((prev) => {
+      if (prev.length <= 1) return prev
+      const item = prev[index]
+      if (item?.groupId && item.isGroupHeader) {
+        return prev.filter((li, i) => li.groupId !== item.groupId || i === index)
+      }
+      return prev.filter((_, i) => i !== index)
+    })
+  }
+
+  const updateOptionalItem = (index: number, field: keyof LineItem, value: any) => {
+    setOptionalItems((prev) => {
+      const updated = [...prev]
+      updated[index] = { ...updated[index], [field]: value }
+      return updated
+    })
+  }
+
+  const toggleOptionalRowVisibility = (index: number) => {
+    setOptionalItems((prev) => {
+      const updated = [...prev]
+      updated[index] = {
+        ...updated[index],
+        isVisibleToClient: !(updated[index].isVisibleToClient ?? true),
+      }
+      return updated
+    })
+  }
+
+  const handleOptionalItemSelect = async (item: FastPickerItem, lineIndex: number) => {
+    const updated = [...optionalItems]
+
+    if (item.kind === 'BUNDLE') {
+      try {
+        const token = localStorage.getItem('accessToken')
+        const bundleDefId = item.bundleId || item.id
+        const response = await fetch(`/api/items/bundles/${bundleDefId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+
+        if (response.ok) {
+          const bundleData = await response.json()
+          const bundle = bundleData.bundle
+          const components = bundle?.components || []
+
+          const groupId = `opt-group-${Date.now()}`
+          updated[lineIndex] = {
+            description: bundle?.name || item.name,
+            quantity: '1',
+            unitPrice: '0',
+            taxable: item.taxable,
+            taxRate: item.taxRate?.toString() || '',
+            isVisibleToClient: true,
+            showDescriptionToCustomer: true,
+            showCostToCustomer: false,
+            showPriceToCustomer: true,
+            showTaxToCustomer: true,
+            showNotesToCustomer: false,
+            groupId,
+            groupName: bundle?.name || item.name,
+            isGroupHeader: true,
+            sourceBundleId: bundleDefId,
+          }
+
+          const childLines: LineItem[] = components.map((comp: any) => {
+            const sourceItem = comp.componentItem
+            const sourceBundle = comp.componentBundle
+            const sourceName = sourceItem?.name || sourceBundle?.item?.name || 'Unknown'
+            const sourcePrice = sourceItem?.defaultUnitPrice
+              ? Number(sourceItem.defaultUnitPrice)
+              : sourceBundle
+                ? Number(bundle?.item?.defaultUnitPrice || 0)
+                : 0
+            const sourceCost = sourceItem?.defaultUnitCost
+              ? Number(sourceItem.defaultUnitCost)
+              : sourceBundle
+                ? Number(bundle?.item?.defaultUnitCost || 0)
+                : null
+
+            const overridePrice = comp.defaultUnitPriceOverride
+              ? Number(comp.defaultUnitPriceOverride)
+              : sourcePrice
+            const overrideCost = comp.defaultUnitCostOverride
+              ? Number(comp.defaultUnitCostOverride)
+              : sourceCost
+
+            return {
+              description: sourceName,
+              quantity: comp.quantity.toString(),
+              unitPrice: overridePrice.toString(),
+              unitCost: overrideCost?.toString() || '0',
+              notes: comp.notes || '',
+              vendorId: comp.vendorId || null,
+              vendorName: comp.vendor?.name || null,
+              taxable: sourceItem?.taxable ?? true,
+              taxRate: sourceItem?.taxRate?.toString() || '',
+              isVisibleToClient: true,
+              showDescriptionToCustomer: true,
+              showCostToCustomer: false,
+              showPriceToCustomer: true,
+              showTaxToCustomer: true,
+              showNotesToCustomer: false,
+              groupId,
+              sourceItemId: comp.componentItemId || null,
+              sourceBundleId: comp.componentBundleId || null,
+            }
+          })
+
+          updated.splice(lineIndex + 1, 0, ...childLines)
+        } else {
+          updated[lineIndex] = {
+            ...updated[lineIndex],
+            description: item.name,
+            quantity: '1',
+            unitPrice: item.defaultUnitPrice.toString(),
+            unitCost: item.defaultUnitCost?.toString() || '0',
+            taxable: item.taxable,
+            taxRate: item.taxRate?.toString() || '',
+            sourceBundleId: item.bundleId,
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching bundle details (optional):', error)
+        updated[lineIndex] = {
+          ...updated[lineIndex],
+          description: item.name,
+          quantity: '1',
+          unitPrice: item.defaultUnitPrice.toString(),
+          unitCost: item.defaultUnitCost?.toString() || '0',
+          taxable: item.taxable,
+          taxRate: item.taxRate?.toString() || '',
+          sourceBundleId: item.bundleId,
+        }
+      }
+    } else {
+      updated[lineIndex] = {
+        ...updated[lineIndex],
+        description: item.name,
+        quantity: '1',
+        unitPrice: item.defaultUnitPrice.toString(),
+        unitCost: item.defaultUnitCost?.toString() || '0',
+        notes: item.notes || '',
+        vendorId: item.vendorId || null,
+        vendorName: item.vendorName || null,
+        taxable: item.taxable,
+        taxRate: item.taxRate?.toString() || '',
+        sourceItemId: item.id,
+      }
+    }
+
+    setOptionalItems(updated)
+
+    return new Promise<void>((resolve) => {
+      requestAnimationFrame(() => {
+        setTimeout(() => resolve(), 0)
+      })
+    })
+  }
+
+  const handleNextOptionalLine = (currentIndex: number) => {
+    const nextIndex = currentIndex + 1
+    setOptionalItems((prev) => {
+      if (nextIndex < prev.length) return prev
+      return [
+        ...prev,
+        {
+          description: '',
+          quantity: '1',
+          unitPrice: '0',
+          taxable: true,
+          isVisibleToClient: true,
+          showDescriptionToCustomer: true,
+          showCostToCustomer: false,
+          showPriceToCustomer: true,
+          showTaxToCustomer: true,
+          showNotesToCustomer: false,
+        },
+      ]
+    })
+    setTimeout(() => {
+      const nextInput = optionalPickerInputRefs.current[nextIndex]
+      if (nextInput) {
+        nextInput.focus()
+        nextInput.dispatchEvent(new Event('focus', { bubbles: true }))
+      } else {
+        const nextContainer = optionalItemRefs.current[nextIndex]
+        const fallbackInput = nextContainer?.querySelector<HTMLInputElement>('[data-picker-input="true"]')
+        if (fallbackInput) {
+          fallbackInput.focus()
+          fallbackInput.dispatchEvent(new Event('focus', { bubbles: true }))
+        }
+      }
+    }, 100)
+  }
+
+  const toggleOptionalFieldVisibility = (index: number, field: 'description' | 'cost' | 'price' | 'tax' | 'notes') => {
+    const updated = [...optionalItems]
+    const fieldMap = {
+      description: 'showDescriptionToCustomer',
+      cost: 'showCostToCustomer',
+      price: 'showPriceToCustomer',
+      tax: 'showTaxToCustomer',
+      notes: 'showNotesToCustomer',
+    } as const
+
+    updated[index] = {
+      ...updated[index],
+      [fieldMap[field]]: !updated[index][fieldMap[field]],
+    }
+    setOptionalItems(updated)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -437,6 +693,31 @@ export default function NewEstimatePage() {
           total: parseFloat(item.quantity || '1') * parseFloat(item.unitPrice || '0'),
           sortOrder: index,
           isVisibleToClient: true, // Legacy field
+          showDescriptionToCustomer: item.showDescriptionToCustomer,
+          showCostToCustomer: item.showCostToCustomer,
+          showPriceToCustomer: item.showPriceToCustomer,
+          showTaxToCustomer: item.showTaxToCustomer,
+          showNotesToCustomer: item.showNotesToCustomer,
+          vendorId: item.vendorId || null,
+          taxable: item.taxable,
+          taxRate: item.taxRate ? parseFloat(item.taxRate) / 100 : null,
+          notes: item.notes || null,
+          groupId: item.groupId || null,
+          sourceItemId: item.sourceItemId || null,
+          sourceBundleId: item.sourceBundleId || null,
+        }))
+
+      const apiOptionalItems = optionalItems
+        .filter(item => !item.isGroupHeader)
+        .map((item, index) => ({
+          description: item.description,
+          quantity: parseFloat(item.quantity || '1'),
+          unitPrice: parseFloat(item.unitPrice || '0'),
+          unitCost: item.unitCost ? parseFloat(item.unitCost) : null,
+          total: parseFloat(item.quantity || '1') * parseFloat(item.unitPrice || '0'),
+          sortOrder: index,
+          isVisibleToClient: item.isVisibleToClient !== false,
+          showDescriptionToCustomer: item.showDescriptionToCustomer,
           showCostToCustomer: item.showCostToCustomer,
           showPriceToCustomer: item.showPriceToCustomer,
           showTaxToCustomer: item.showTaxToCustomer,
@@ -452,7 +733,7 @@ export default function NewEstimatePage() {
 
       // Create groups for bundles
       const groups = new Map<string, { name: string; sourceBundleId?: string }>()
-      lineItems.forEach(item => {
+      ;[...lineItems, ...optionalItems].forEach(item => {
         if (item.groupId && item.groupName && !groups.has(item.groupId)) {
           groups.set(item.groupId, {
             name: item.groupName,
@@ -483,6 +764,7 @@ export default function NewEstimatePage() {
           isNotesVisibleToClient,
           terms: formData.terms || null,
           lineItems: apiLineItems,
+          optionalItems: apiOptionalItems,
           groups: Array.from(groups.entries()).map(([groupId, group]) => ({
             groupId,
             ...group,
@@ -513,6 +795,11 @@ export default function NewEstimatePage() {
 
   // Calculate totals
   const subtotal = lineItems.reduce((sum, item) => {
+    if (item.isGroupHeader) return sum
+    return sum + parseFloat(item.quantity || '0') * parseFloat(item.unitPrice || '0')
+  }, 0)
+
+  const optionalSubtotal = optionalItems.reduce((sum, item) => {
     if (item.isGroupHeader) return sum
     return sum + parseFloat(item.quantity || '0') * parseFloat(item.unitPrice || '0')
   }, 0)
@@ -661,6 +948,28 @@ export default function NewEstimatePage() {
                             </div>
                           ) : (
                             <>
+                              <div className="flex items-center gap-1">
+                                <Label className="text-xs text-gray-500">Description</Label>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  tabIndex={-1}
+                                  onClick={() => toggleVisibility(index, 'description')}
+                                  title={
+                                    item.showDescriptionToCustomer
+                                      ? 'Hide description from customer'
+                                      : 'Show description to customer'
+                                  }
+                                  className="p-0 h-3 w-3"
+                                >
+                                  {item.showDescriptionToCustomer ? (
+                                    <Eye className="h-3 w-3 text-gray-600" />
+                                  ) : (
+                                    <EyeOff className="h-3 w-3 text-gray-400" />
+                                  )}
+                                </Button>
+                              </div>
                               <FastPicker
                                 value={item.description}
                                 onChange={(value) => updateLineItem(index, 'description', value)}
@@ -686,12 +995,13 @@ export default function NewEstimatePage() {
 
                         {/* Quantity */}
                         {!isGroupHeader && (
-                          <div className="w-20">
+                          <div className="w-24">
+                            <Label className="text-xs text-gray-500 mb-1 block">Quantity</Label>
                             <Input
                               type="number"
                               step="0.01"
-                              min="0"
-                              placeholder="Qty"
+                              min="1"
+                              placeholder="1"
                               value={item.quantity}
                               onChange={(e) => updateLineItem(index, 'quantity', e.target.value)}
                               required
@@ -846,6 +1156,279 @@ export default function NewEstimatePage() {
 
             <Card>
               <CardHeader>
+                <CardTitle>Optional Items</CardTitle>
+                <CardDescription>Optional items are shown separately and do not affect the total unless added later.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="space-y-2">
+                  {optionalItems.map((item, index) => {
+                    const isGroupHeader = item.isGroupHeader
+                    const isInGroup = !!item.groupId && !isGroupHeader
+                    const isVisible = item.isVisibleToClient !== false
+
+                    return (
+                      <div
+                        key={index}
+                        ref={(el) => {
+                          optionalItemRefs.current[index] = el
+                        }}
+                        className={`flex gap-2 ${isGroupHeader ? 'items-center' : 'items-start'} p-2 rounded border ${
+                          isGroupHeader
+                            ? 'bg-purple-50 border-purple-200'
+                            : isInGroup
+                              ? 'bg-purple-25 border-purple-100 ml-4'
+                              : 'border-gray-300'
+                        } ${!isGroupHeader && !isVisible ? 'opacity-70' : ''}`}
+                      >
+                        {/* Customer visibility toggle (whole optional line) */}
+                        {!isGroupHeader && (
+                          <div className="flex flex-col gap-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => toggleOptionalRowVisibility(index)}
+                              title={isVisible ? 'Hide optional item from customer' : 'Show optional item to customer'}
+                              className="p-1 h-6"
+                            >
+                              {isVisible ? (
+                                <Eye className="h-3 w-3 text-gray-600" />
+                              ) : (
+                                <EyeOff className="h-3 w-3 text-gray-400" />
+                              )}
+                            </Button>
+                          </div>
+                        )}
+
+                        {/* Item Name with FastPicker */}
+                        <div className="flex-1 space-y-1">
+                          {isGroupHeader ? (
+                            <div className="flex items-center gap-2">
+                              <Input
+                                value={item.description}
+                                onChange={(e) => updateOptionalItem(index, 'description', e.target.value)}
+                                placeholder="Bundle name"
+                                className="flex-1 font-semibold"
+                                readOnly
+                              />
+                              <span className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded">
+                                Bundle
+                              </span>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="flex items-center gap-1">
+                                <Label className="text-xs text-gray-500">Description</Label>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  tabIndex={-1}
+                                  onClick={() => toggleOptionalFieldVisibility(index, 'description')}
+                                  title={
+                                    item.showDescriptionToCustomer
+                                      ? 'Hide description from customer'
+                                      : 'Show description to customer'
+                                  }
+                                  className="p-0 h-3 w-3"
+                                >
+                                  {item.showDescriptionToCustomer ? (
+                                    <Eye className="h-3 w-3 text-gray-600" />
+                                  ) : (
+                                    <EyeOff className="h-3 w-3 text-gray-400" />
+                                  )}
+                                </Button>
+                              </div>
+                              <FastPicker
+                                value={item.description}
+                                onChange={(value) => updateOptionalItem(index, 'description', value)}
+                                onSelect={(selectedItem) => handleOptionalItemSelect(selectedItem, index)}
+                                onNextLine={() => handleNextOptionalLine(index)}
+                                items={pickerItems}
+                                bundles={pickerBundles}
+                                placeholder="Type to search items..."
+                                className="w-full"
+                                inputRef={(el) => {
+                                  optionalPickerInputRefs.current[index] = el
+                                }}
+                              />
+                              <Input
+                                value={item.notes || ''}
+                                onChange={(e) => updateOptionalItem(index, 'notes', e.target.value)}
+                                placeholder="Item description/notes (optional)"
+                                className="w-full text-sm"
+                              />
+                            </>
+                          )}
+                        </div>
+
+                        {/* Quantity */}
+                        {!isGroupHeader && (
+                          <div className="w-24">
+                            <Label className="text-xs text-gray-500 mb-1 block">Quantity</Label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="1"
+                              placeholder="1"
+                              value={item.quantity}
+                              onChange={(e) => updateOptionalItem(index, 'quantity', e.target.value)}
+                              required
+                            />
+                          </div>
+                        )}
+
+                        {/* Unit Price with visibility toggle */}
+                        {!isGroupHeader && (
+                          <div className="w-28 relative">
+                            <div className="flex items-center gap-1 mb-1">
+                              <Label className="text-xs text-gray-500">Price</Label>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                tabIndex={-1}
+                                onClick={() => toggleOptionalFieldVisibility(index, 'price')}
+                                title={item.showPriceToCustomer ? 'Hide price from customer' : 'Show price to customer'}
+                                className="p-0 h-3 w-3"
+                              >
+                                {item.showPriceToCustomer ? (
+                                  <Eye className="h-3 w-3 text-gray-600" />
+                                ) : (
+                                  <EyeOff className="h-3 w-3 text-gray-400" />
+                                )}
+                              </Button>
+                            </div>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              placeholder="0.00"
+                              value={item.unitPrice}
+                              onChange={(e) => updateOptionalItem(index, 'unitPrice', e.target.value)}
+                              required
+                            />
+                          </div>
+                        )}
+
+                        {/* Unit Cost with visibility toggle */}
+                        {!isGroupHeader && (
+                          <div className="w-28 relative">
+                            <div className="flex items-center gap-1 mb-1">
+                              <Label className="text-xs text-gray-500">Cost</Label>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                tabIndex={-1}
+                                onClick={() => toggleOptionalFieldVisibility(index, 'cost')}
+                                title={item.showCostToCustomer ? 'Hide cost from customer' : 'Show cost to customer'}
+                                className="p-0 h-3 w-3"
+                              >
+                                {item.showCostToCustomer ? (
+                                  <Eye className="h-3 w-3 text-gray-600" />
+                                ) : (
+                                  <EyeOff className="h-3 w-3 text-gray-400" />
+                                )}
+                              </Button>
+                            </div>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              placeholder="0.00"
+                              value={item.unitCost || ''}
+                              onChange={(e) => updateOptionalItem(index, 'unitCost', e.target.value)}
+                              className="bg-gray-50"
+                            />
+                          </div>
+                        )}
+
+                        {/* Tax with visibility toggle */}
+                        {!isGroupHeader && (
+                          <div className="w-24 relative">
+                            <div className="flex items-center gap-1 mb-1">
+                              <Label className="text-xs text-gray-500">Tax</Label>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                tabIndex={-1}
+                                onClick={() => toggleOptionalFieldVisibility(index, 'tax')}
+                                title={item.showTaxToCustomer ? 'Hide tax from customer' : 'Show tax to customer'}
+                                className="p-0 h-3 w-3"
+                              >
+                                {item.showTaxToCustomer ? (
+                                  <Eye className="h-3 w-3 text-gray-600" />
+                                ) : (
+                                  <EyeOff className="h-3 w-3 text-gray-400" />
+                                )}
+                              </Button>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="checkbox"
+                                checked={item.taxable}
+                                onChange={(e) => updateOptionalItem(index, 'taxable', e.target.checked)}
+                                className="h-4 w-4"
+                                title="Taxable"
+                              />
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                max="100"
+                                placeholder="%"
+                                value={item.taxRate || ''}
+                                onChange={(e) => updateOptionalItem(index, 'taxRate', e.target.value)}
+                                className="text-xs w-16"
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Total (Quantity × Unit Price) */}
+                        {!isGroupHeader && (
+                          <div className="w-28">
+                            <Label className="text-xs text-gray-500 mb-1 block">Total</Label>
+                            <div className="px-3 py-2 bg-gray-50 rounded border text-right font-medium">
+                              ${(parseFloat(item.quantity || '0') * parseFloat(item.unitPrice || '0')).toFixed(2)}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Remove button */}
+                        {optionalItems.length > 1 && !isGroupHeader && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              if (item.groupId) {
+                                setOptionalItems(
+                                  optionalItems.filter((li, i) => li.groupId !== item.groupId || i === index)
+                                )
+                              } else {
+                                removeOptionalItem(index)
+                              }
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+                <Button type="button" variant="outline" onClick={addOptionalItem}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Optional Item
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
                 <CardTitle>Additional Information</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -909,6 +1492,10 @@ export default function NewEstimatePage() {
                 <div className="flex justify-between">
                   <span>Subtotal:</span>
                   <span>${subtotal.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-sm text-gray-600">
+                  <span>Optional Items Subtotal:</span>
+                  <span>${optionalSubtotal.toFixed(2)}</span>
                 </div>
                 <div>
                   <Label htmlFor="discount">Discount ($)</Label>

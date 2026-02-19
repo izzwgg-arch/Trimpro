@@ -24,50 +24,50 @@ model Tenant {
   updatedAt DateTime @updatedAt
 
   // Relationships
-  users            User[]
-  clients          Client[]
-  leads            Lead[]
-  jobs             Job[]
-  estimates        Estimate[]
-  invoices         Invoice[]
-  purchaseOrders   PurchaseOrder[]
-  vendors          Vendor[]
-  vendorContacts   VendorContact[]
-  tasks            Task[]
-  issues           Issue[]
-  priceBook        PriceBookItem[]
-  items            Item[]
-  itemCategories   ItemCategory[]
-  bundleDefinitions BundleDefinition[]
-  bundleComponents BundleComponent[]
-  documentLineGroups DocumentLineGroup[]
-  qboIntegration     QuickBooksIntegration?
+  users                  User[]
+  clients                Client[]
+  leads                  Lead[]
+  jobs                   Job[]
+  estimates              Estimate[]
+  invoices               Invoice[]
+  purchaseOrders         PurchaseOrder[]
+  vendors                Vendor[]
+  vendorContacts         VendorContact[]
+  tasks                  Task[]
+  issues                 Issue[]
+  priceBook              PriceBookItem[]
+  items                  Item[]
+  itemCategories         ItemCategory[]
+  bundleDefinitions      BundleDefinition[]
+  bundleComponents       BundleComponent[]
+  documentLineGroups     DocumentLineGroup[]
+  qboIntegration         QuickBooksIntegration?
   integrationConnections IntegrationConnection[]
   paymentTransactions    PaymentTransaction[]
-  automations      Automation[]
-  notifications    Notification[]
-  helpArticles     HelpArticle[]
-  auditLogs        AuditLog[]
-  emailTemplates   EmailTemplate[]
-  smsTemplates     SmsTemplate[]
-  webhooks         Webhook[]
-  schedules        Schedule[]
-  calls            Call[]
-  smsMessages      SmsMessage[]
-  emails           Email[]
-  roles            Role[]
-  reports          Report[]
-  reportSchedules  ReportSchedule[]
-  dailyStats       DailyStats[]
-  dispatchEvents   DispatchEvent[]
-  techAvailability TechAvailability[]
-  serviceZones     ServiceZone[]
-  conversations    Conversation[]
-  messages         Message[]
-  webhookEvents    WebhookEvent[]
-  invoicePaymentIntents InvoicePaymentIntent[]
-  paymentEvents    PaymentEvent[]
-  idempotencyKeys   IdempotencyKey[]
+  automations            Automation[]
+  notifications          Notification[]
+  helpArticles           HelpArticle[]
+  auditLogs              AuditLog[]
+  emailTemplates         EmailTemplate[]
+  smsTemplates           SmsTemplate[]
+  webhooks               Webhook[]
+  schedules              Schedule[]
+  calls                  Call[]
+  smsMessages            SmsMessage[]
+  emails                 Email[]
+  roles                  Role[]
+  reports                Report[]
+  reportSchedules        ReportSchedule[]
+  dailyStats             DailyStats[]
+  dispatchEvents         DispatchEvent[]
+  techAvailability       TechAvailability[]
+  serviceZones           ServiceZone[]
+  conversations          Conversation[]
+  messages               Message[]
+  webhookEvents          WebhookEvent[]
+  invoicePaymentIntents  InvoicePaymentIntent[]
+  paymentEvents          PaymentEvent[]
+  idempotencyKeys        IdempotencyKey[]
 
   @@map("tenants")
 }
@@ -119,27 +119,27 @@ model User {
   lastLoginIp   String?
 
   // Relationships
-  tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  assignedJobs          JobAssignment[]
-  assignedTasks         Task[]                 @relation("TaskAssignee")
-  createdTasks          Task[]                 @relation("TaskCreator")
-  assignedIssues        Issue[]                @relation("IssueAssignee")
-  createdIssues         Issue[]                @relation("IssueCreator")
-  watchedIssues         IssueWatcher[]
-  assignedLeads         Lead[]                 @relation("LeadAssignee")
-  sentEmails            Email[]
-  calls                 Call[]
-  smsMessages           SmsMessage[]
-  notifications         Notification[]
-  createdAuditLogs      AuditLog[]
-  activities            Activity[]
-  schedules             Schedule[]
-  userRoles             UserRoleAssignment[]
-  permissionConstraints PermissionConstraint[] @relation("UserPermissionConstraints")
-  techAvailability      TechAvailability[]
-  assignedConversations Conversation[]
-  conversationReadReceipts ConversationReadReceipt[]
-  createdInvoicePaymentIntents InvoicePaymentIntent[] @relation("InvoicePaymentIntentCreatedBy")
+  tenant                       Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignedJobs                 JobAssignment[]
+  assignedTasks                Task[]                    @relation("TaskAssignee")
+  createdTasks                 Task[]                    @relation("TaskCreator")
+  assignedIssues               Issue[]                   @relation("IssueAssignee")
+  createdIssues                Issue[]                   @relation("IssueCreator")
+  watchedIssues                IssueWatcher[]
+  assignedLeads                Lead[]                    @relation("LeadAssignee")
+  sentEmails                   Email[]
+  calls                        Call[]
+  smsMessages                  SmsMessage[]
+  notifications                Notification[]
+  createdAuditLogs             AuditLog[]
+  activities                   Activity[]
+  schedules                    Schedule[]
+  userRoles                    UserRoleAssignment[]
+  permissionConstraints        PermissionConstraint[]    @relation("UserPermissionConstraints")
+  techAvailability             TechAvailability[]
+  assignedConversations        Conversation[]
+  conversationReadReceipts     ConversationReadReceipt[]
+  createdInvoicePaymentIntents InvoicePaymentIntent[]    @relation("InvoicePaymentIntentCreatedBy")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -285,19 +285,19 @@ enum LeadSource {
 }
 
 model Lead {
-  id          String     @id @default(cuid())
-  tenantId    String
-  firstName   String
-  lastName    String
-  email       String?
-  phone       String?
-  company     String?
-  source      LeadSource @default(OTHER)
-  status      LeadStatus @default(NEW)
-  value       Decimal?   @db.Decimal(10, 2)
-  probability Int?       @default(50) // 0-100
-  notes       String?    @db.Text
-  jobSiteAddress String? @db.Text
+  id             String     @id @default(cuid())
+  tenantId       String
+  firstName      String
+  lastName       String
+  email          String?
+  phone          String?
+  company        String?
+  source         LeadSource @default(OTHER)
+  status         LeadStatus @default(NEW)
+  value          Decimal?   @db.Decimal(10, 2)
+  probability    Int?       @default(50) // 0-100
+  notes          String?    @db.Text
+  jobSiteAddress String?    @db.Text
 
   // Conversion
   convertedToClientId String?
@@ -452,20 +452,21 @@ model Estimate {
   acceptedAt DateTime?
 
   // Notes
-  notes String? @db.Text
+  notes                  String? @db.Text
   isNotesVisibleToClient Boolean @default(true) // Toggle for notes visibility
-  terms String? @db.Text
+  terms                  String? @db.Text
 
   // Relationships
-  tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  client      Client?            @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  lead        Lead?              @relation(fields: [leadId], references: [id], onDelete: SetNull)
-  job         Job?               @relation(fields: [jobId], references: [id])
-  lineItems   EstimateLineItem[]
-  attachments Attachment[]
-  emails      Email[]
-  invoices    Invoice[]
-  activities  Activity[]
+  tenant        Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client        Client?                    @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  lead          Lead?                      @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  job           Job?                       @relation(fields: [jobId], references: [id])
+  lineItems     EstimateLineItem[]
+  optionalItems EstimateOptionalLineItem[]
+  attachments   Attachment[]
+  emails        Email[]
+  invoices      Invoice[]
+  activities    Activity[]
 
   createdById String?
 
@@ -480,38 +481,72 @@ model Estimate {
 }
 
 model EstimateLineItem {
-  id              String  @id @default(cuid())
-  estimateId      String
-  groupId         String? // FK to DocumentLineGroup
-  sourceItemId    String? // FK to Item (template reference)
-  sourceBundleId  String? // FK to BundleDefinition (if derived from nested bundle)
-  description     String
-  quantity        Decimal @db.Decimal(10, 2)
-  unitPrice       Decimal @db.Decimal(10, 2)
-  unitCost        Decimal? @db.Decimal(10, 2) // Internal vendor cost
-  total           Decimal @db.Decimal(10, 2)
-  sortOrder       Int     @default(0)
-  isVisibleToClient Boolean @default(true) // Legacy - overall visibility
+  id                        String   @id @default(cuid())
+  estimateId                String
+  groupId                   String? // FK to DocumentLineGroup
+  sourceItemId              String? // FK to Item (template reference)
+  sourceBundleId            String? // FK to BundleDefinition (if derived from nested bundle)
+  description               String
+  quantity                  Decimal  @db.Decimal(10, 2)
+  unitPrice                 Decimal  @db.Decimal(10, 2)
+  unitCost                  Decimal? @db.Decimal(10, 2) // Internal vendor cost
+  total                     Decimal  @db.Decimal(10, 2)
+  sortOrder                 Int      @default(0)
+  isVisibleToClient         Boolean  @default(true) // Legacy - overall visibility
   // Per-field visibility toggles
-  showCostToCustomer Boolean @default(false) // Show unit cost to customer
-  showPriceToCustomer Boolean @default(true) // Show unit price to customer
-  showTaxToCustomer Boolean @default(true) // Show tax line/rate to customer
-  showNotesToCustomer Boolean @default(false) // Show notes to customer
-  notes           String? @db.Text // Line item notes (internal or customer-facing)
-  vendorId        String? // Vendor for this specific line item
-  taxable         Boolean @default(true)
-  taxRate         Decimal? @db.Decimal(5, 4)
+  showDescriptionToCustomer Boolean  @default(true) // Show line item description/name to customer
+  showCostToCustomer        Boolean  @default(false) // Show unit cost to customer
+  showPriceToCustomer       Boolean  @default(true) // Show unit price to customer
+  showTaxToCustomer         Boolean  @default(true) // Show tax line/rate to customer
+  showNotesToCustomer       Boolean  @default(false) // Show notes to customer
+  notes                     String?  @db.Text // Line item notes (internal or customer-facing)
+  vendorId                  String? // Vendor for this specific line item
+  taxable                   Boolean  @default(true)
+  taxRate                   Decimal? @db.Decimal(5, 4)
 
-  estimate Estimate            @relation(fields: [estimateId], references: [id], onDelete: Cascade)
-  group    DocumentLineGroup?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
-  sourceItem Item?             @relation("EstimateLineItemSource", fields: [sourceItemId], references: [id], onDelete: SetNull)
-  vendor   Vendor?             @relation("EstimateLineItemVendor", fields: [vendorId], references: [id], onDelete: SetNull)
+  estimate   Estimate           @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  group      DocumentLineGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  sourceItem Item?              @relation("EstimateLineItemSource", fields: [sourceItemId], references: [id], onDelete: SetNull)
+  vendor     Vendor?            @relation("EstimateLineItemVendor", fields: [vendorId], references: [id], onDelete: SetNull)
 
   @@index([estimateId])
   @@index([groupId])
   @@index([sourceItemId])
   @@index([vendorId])
   @@map("estimate_line_items")
+}
+
+model EstimateOptionalLineItem {
+  id                        String   @id @default(cuid())
+  estimateId                String
+  groupId                   String? // FK to DocumentLineGroup
+  sourceItemId              String? // FK to Item (template reference)
+  sourceBundleId            String? // FK to BundleDefinition (if derived from nested bundle)
+  description               String
+  quantity                  Decimal  @db.Decimal(10, 2)
+  unitPrice                 Decimal  @db.Decimal(10, 2)
+  unitCost                  Decimal? @db.Decimal(10, 2) // Internal vendor cost
+  total                     Decimal  @db.Decimal(10, 2)
+  sortOrder                 Int      @default(0)
+  isVisibleToClient         Boolean  @default(true) // Overall visibility in customer-facing output
+  // Per-field visibility toggles
+  showDescriptionToCustomer Boolean  @default(true)
+  showCostToCustomer        Boolean  @default(false)
+  showPriceToCustomer       Boolean  @default(true)
+  showTaxToCustomer         Boolean  @default(true)
+  showNotesToCustomer       Boolean  @default(false)
+  notes                     String?  @db.Text
+  vendorId                  String?
+  taxable                   Boolean  @default(true)
+  taxRate                   Decimal? @db.Decimal(5, 4)
+
+  estimate Estimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+
+  @@index([estimateId])
+  @@index([groupId])
+  @@index([sourceItemId])
+  @@index([vendorId])
+  @@map("estimate_optional_line_items")
 }
 
 // ============================================
@@ -563,17 +598,18 @@ model Invoice {
   // Progress billing / hosted payment
   progressBillingMode    String?
   progressBillingPercent Decimal? @db.Decimal(5, 2)
-  isBillRest             Boolean   @default(false)
-  paymentToken           String?   @unique
-  solaPaymentUrl         String?   @db.Text
+  isBillRest             Boolean  @default(false)
+  paymentToken           String?  @unique
+  solaPaymentUrl         String?  @db.Text
   solaTransactionId      String?
 
   // Relationships
-  tenant              Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  client              Client                @relation(fields: [clientId], references: [id], onDelete: Restrict)
-  job                 Job?                  @relation(fields: [jobId], references: [id], onDelete: SetNull)
-  estimate            Estimate?             @relation(fields: [estimateId], references: [id], onDelete: SetNull)
+  tenant              Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client              Client                    @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  job                 Job?                      @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  estimate            Estimate?                 @relation(fields: [estimateId], references: [id], onDelete: SetNull)
   lineItems           InvoiceLineItem[]
+  optionalItems       InvoiceOptionalLineItem[]
   payments            Payment[]
   paymentTransactions PaymentTransaction[]
   attachments         Attachment[]
@@ -601,38 +637,72 @@ model Invoice {
 }
 
 model InvoiceLineItem {
-  id              String  @id @default(cuid())
-  invoiceId       String
-  groupId         String? // FK to DocumentLineGroup
-  sourceItemId    String? // FK to Item (template reference)
-  sourceBundleId  String? // FK to BundleDefinition (if derived from nested bundle)
-  description     String
-  quantity        Decimal @db.Decimal(10, 2)
-  unitPrice       Decimal @db.Decimal(10, 2)
-  unitCost        Decimal? @db.Decimal(10, 2) // Internal vendor cost
-  total           Decimal @db.Decimal(10, 2)
-  sortOrder       Int     @default(0)
-  isVisibleToClient Boolean @default(true) // Legacy - overall visibility
+  id                        String   @id @default(cuid())
+  invoiceId                 String
+  groupId                   String? // FK to DocumentLineGroup
+  sourceItemId              String? // FK to Item (template reference)
+  sourceBundleId            String? // FK to BundleDefinition (if derived from nested bundle)
+  description               String
+  quantity                  Decimal  @db.Decimal(10, 2)
+  unitPrice                 Decimal  @db.Decimal(10, 2)
+  unitCost                  Decimal? @db.Decimal(10, 2) // Internal vendor cost
+  total                     Decimal  @db.Decimal(10, 2)
+  sortOrder                 Int      @default(0)
+  isVisibleToClient         Boolean  @default(true) // Legacy - overall visibility
   // Per-field visibility toggles
-  showCostToCustomer Boolean @default(false) // Show unit cost to customer
-  showPriceToCustomer Boolean @default(true) // Show unit price to customer
-  showTaxToCustomer Boolean @default(true) // Show tax line/rate to customer
-  showNotesToCustomer Boolean @default(false) // Show notes to customer
-  notes           String? @db.Text // Line item notes (internal or customer-facing)
-  vendorId        String? // Vendor for this specific line item
-  taxable         Boolean @default(true)
-  taxRate         Decimal? @db.Decimal(5, 4)
+  showDescriptionToCustomer Boolean  @default(true) // Show line item description/name to customer
+  showCostToCustomer        Boolean  @default(false) // Show unit cost to customer
+  showPriceToCustomer       Boolean  @default(true) // Show unit price to customer
+  showTaxToCustomer         Boolean  @default(true) // Show tax line/rate to customer
+  showNotesToCustomer       Boolean  @default(false) // Show notes to customer
+  notes                     String?  @db.Text // Line item notes (internal or customer-facing)
+  vendorId                  String? // Vendor for this specific line item
+  taxable                   Boolean  @default(true)
+  taxRate                   Decimal? @db.Decimal(5, 4)
 
-  invoice Invoice           @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  group   DocumentLineGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
-  sourceItem Item?          @relation("InvoiceLineItemSource", fields: [sourceItemId], references: [id], onDelete: SetNull)
-  vendor   Vendor?          @relation("InvoiceLineItemVendor", fields: [vendorId], references: [id], onDelete: SetNull)
+  invoice    Invoice            @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  group      DocumentLineGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  sourceItem Item?              @relation("InvoiceLineItemSource", fields: [sourceItemId], references: [id], onDelete: SetNull)
+  vendor     Vendor?            @relation("InvoiceLineItemVendor", fields: [vendorId], references: [id], onDelete: SetNull)
 
   @@index([invoiceId])
   @@index([groupId])
   @@index([sourceItemId])
   @@index([vendorId])
   @@map("invoice_line_items")
+}
+
+model InvoiceOptionalLineItem {
+  id                        String   @id @default(cuid())
+  invoiceId                 String
+  groupId                   String? // FK to DocumentLineGroup
+  sourceItemId              String? // FK to Item (template reference)
+  sourceBundleId            String? // FK to BundleDefinition (if derived from nested bundle)
+  description               String
+  quantity                  Decimal  @db.Decimal(10, 2)
+  unitPrice                 Decimal  @db.Decimal(10, 2)
+  unitCost                  Decimal? @db.Decimal(10, 2)
+  total                     Decimal  @db.Decimal(10, 2)
+  sortOrder                 Int      @default(0)
+  isVisibleToClient         Boolean  @default(true)
+  // Per-field visibility toggles
+  showDescriptionToCustomer Boolean  @default(true)
+  showCostToCustomer        Boolean  @default(false)
+  showPriceToCustomer       Boolean  @default(true)
+  showTaxToCustomer         Boolean  @default(true)
+  showNotesToCustomer       Boolean  @default(false)
+  notes                     String?  @db.Text
+  vendorId                  String?
+  taxable                   Boolean  @default(true)
+  taxRate                   Decimal? @db.Decimal(5, 4)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([groupId])
+  @@index([sourceItemId])
+  @@index([vendorId])
+  @@map("invoice_optional_line_items")
 }
 
 // ============================================
@@ -723,58 +793,58 @@ enum PaymentTerms {
 }
 
 model Vendor {
-  id            String       @id @default(cuid())
-  tenantId      String
-  name          String
-  vendorCode    String?      @unique
-  status        VendorStatus @default(ACTIVE)
-  email         String?
-  phone         String?
-  website       String?
-  notes         String?      @db.Text
-  
+  id         String       @id @default(cuid())
+  tenantId   String
+  name       String
+  vendorCode String?      @unique
+  status     VendorStatus @default(ACTIVE)
+  email      String?
+  phone      String?
+  website    String?
+  notes      String?      @db.Text
+
   // Billing Address
   billingStreet  String?
   billingCity    String?
   billingState   String?
   billingZip     String?
-  billingCountry String?     @default("USA")
-  
+  billingCountry String? @default("USA")
+
   // Shipping Address (optional, can be same as billing)
   shippingStreet  String?
   shippingCity    String?
   shippingState   String?
   shippingZip     String?
   shippingCountry String?
-  
+
   // Payment Terms
-  paymentTerms     PaymentTerms @default(NET_30)
-  customTermsText  String?      @db.Text
-  
+  paymentTerms    PaymentTerms @default(NET_30)
+  customTermsText String?      @db.Text
+
   // Tax Info
-  taxId            String?      // EIN/Tax ID (will be masked in UI)
-  
+  taxId String? // EIN/Tax ID (will be masked in UI)
+
   // Currency
-  defaultCurrency  String?      @default("USD")
-  
+  defaultCurrency String? @default("USD")
+
   // Legacy fields (for backward compatibility)
-  address          String?
-  city             String?
-  state            String?
-  zipCode          String?
-  country          String?
-  contactPerson    String?
-  isActive         Boolean      @default(true) // Deprecated, use status
+  address       String?
+  city          String?
+  state         String?
+  zipCode       String?
+  country       String?
+  contactPerson String?
+  isActive      Boolean @default(true) // Deprecated, use status
 
   // Relationships
-  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  purchaseOrders PurchaseOrder[]
-  items          Item[]
-  contacts       VendorContact[]
-  attachments    Attachment[]
-  bundleComponents BundleComponent[]
-  estimateLineItems EstimateLineItem[] @relation("EstimateLineItemVendor")
-  invoiceLineItems InvoiceLineItem[] @relation("InvoiceLineItemVendor")
+  tenant                 Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  purchaseOrders         PurchaseOrder[]
+  items                  Item[]
+  contacts               VendorContact[]
+  attachments            Attachment[]
+  bundleComponents       BundleComponent[]
+  estimateLineItems      EstimateLineItem[]      @relation("EstimateLineItemVendor")
+  invoiceLineItems       InvoiceLineItem[]       @relation("InvoiceLineItemVendor")
   purchaseOrderLineItems PurchaseOrderLineItem[] @relation("POLineItemVendor")
 
   createdAt DateTime @default(now())
@@ -788,19 +858,19 @@ model Vendor {
 }
 
 model VendorContact {
-  id          String   @id @default(cuid())
-  vendorId   String
-  tenantId   String
-  name       String
-  title      String?   // Role/title
-  email      String?
-  phone      String?
-  isPrimary  Boolean   @default(false)
-  notes      String?   @db.Text
+  id        String  @id @default(cuid())
+  vendorId  String
+  tenantId  String
+  name      String
+  title     String? // Role/title
+  email     String?
+  phone     String?
+  isPrimary Boolean @default(false)
+  notes     String? @db.Text
 
   // Relationships
-  vendor    Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -849,26 +919,26 @@ model PurchaseOrder {
 }
 
 model PurchaseOrderLineItem {
-  id              String  @id @default(cuid())
-  poId            String
-  groupId         String? // FK to DocumentLineGroup
-  sourceItemId    String? // FK to Item (template reference)
-  sourceBundleId  String? // FK to BundleDefinition (if derived from nested bundle)
-  description     String
-  quantity        Decimal @db.Decimal(10, 2)
-  unitPrice       Decimal @db.Decimal(10, 2)
-  unitCost        Decimal? @db.Decimal(10, 2) // Vendor cost (primary for PO)
-  total           Decimal @db.Decimal(10, 2)
-  sortOrder       Int     @default(0)
-  notes           String? @db.Text
-  vendorId        String? // Vendor for this specific line item
-  taxable         Boolean @default(false)
-  taxRate         Decimal? @db.Decimal(5, 4)
-  
-  purchaseOrder PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  id             String   @id @default(cuid())
+  poId           String
+  groupId        String? // FK to DocumentLineGroup
+  sourceItemId   String? // FK to Item (template reference)
+  sourceBundleId String? // FK to BundleDefinition (if derived from nested bundle)
+  description    String
+  quantity       Decimal  @db.Decimal(10, 2)
+  unitPrice      Decimal  @db.Decimal(10, 2)
+  unitCost       Decimal? @db.Decimal(10, 2) // Vendor cost (primary for PO)
+  total          Decimal  @db.Decimal(10, 2)
+  sortOrder      Int      @default(0)
+  notes          String?  @db.Text
+  vendorId       String? // Vendor for this specific line item
+  taxable        Boolean  @default(false)
+  taxRate        Decimal? @db.Decimal(5, 4)
+
+  purchaseOrder PurchaseOrder      @relation(fields: [poId], references: [id], onDelete: Cascade)
   group         DocumentLineGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
-  sourceItem    Item? @relation("POLineItemSource", fields: [sourceItemId], references: [id], onDelete: SetNull)
-  vendor        Vendor? @relation("POLineItemVendor", fields: [vendorId], references: [id], onDelete: SetNull)
+  sourceItem    Item?              @relation("POLineItemSource", fields: [sourceItemId], references: [id], onDelete: SetNull)
+  vendor        Vendor?            @relation("POLineItemVendor", fields: [vendorId], references: [id], onDelete: SetNull)
 
   @@index([poId])
   @@index([groupId])
@@ -921,14 +991,14 @@ enum ItemKind {
 }
 
 model ItemCategory {
-  id        String   @id @default(cuid())
-  tenantId  String
-  name      String
+  id          String  @id @default(cuid())
+  tenantId    String
+  name        String
   description String? @db.Text
-  isActive  Boolean  @default(true)
+  isActive    Boolean @default(true)
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  items   Item[]
+  items  Item[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -940,32 +1010,32 @@ model ItemCategory {
 }
 
 model Item {
-  id              String     @id @default(cuid())
-  tenantId        String
-  name            String
-  sku             String?
-  type            ItemType   @default(PRODUCT)
-  kind            ItemKind   @default(SINGLE)
-  description     String?    @db.Text
-  unit            String     @default("ea")
-  defaultUnitCost Decimal?  @db.Decimal(10, 2)
-  defaultUnitPrice Decimal   @db.Decimal(10, 2)
-  taxable         Boolean    @default(true)
-  taxRate         Decimal?   @db.Decimal(5, 4)
-  isActive        Boolean    @default(true)
-  vendorId        String?
-  categoryId      String?
-  tags            String[]   @default([])
-  notes           String?    @db.Text
+  id               String   @id @default(cuid())
+  tenantId         String
+  name             String
+  sku              String?
+  type             ItemType @default(PRODUCT)
+  kind             ItemKind @default(SINGLE)
+  description      String?  @db.Text
+  unit             String   @default("ea")
+  defaultUnitCost  Decimal? @db.Decimal(10, 2)
+  defaultUnitPrice Decimal  @db.Decimal(10, 2)
+  taxable          Boolean  @default(true)
+  taxRate          Decimal? @db.Decimal(5, 4)
+  isActive         Boolean  @default(true)
+  vendorId         String?
+  categoryId       String?
+  tags             String[] @default([])
+  notes            String?  @db.Text
 
   // Relationships
-  tenant  Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  vendor  Vendor?      @relation(fields: [vendorId], references: [id], onDelete: SetNull)
-  category ItemCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  bundleDefinition BundleDefinition?
-  bundleComponents BundleComponent[]
-  estimateLineItems EstimateLineItem[] @relation("EstimateLineItemSource")
-  invoiceLineItems InvoiceLineItem[] @relation("InvoiceLineItemSource")
+  tenant                 Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vendor                 Vendor?                 @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  category               ItemCategory?           @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  bundleDefinition       BundleDefinition?
+  bundleComponents       BundleComponent[]
+  estimateLineItems      EstimateLineItem[]      @relation("EstimateLineItemSource")
+  invoiceLineItems       InvoiceLineItem[]       @relation("InvoiceLineItemSource")
   purchaseOrderLineItems PurchaseOrderLineItem[] @relation("POLineItemSource")
 
   createdAt DateTime @default(now())
@@ -983,55 +1053,55 @@ model Item {
 }
 
 model BundleDefinition {
-  id          String   @id @default(cuid())
-  itemId      String   @unique
+  id          String  @id @default(cuid())
+  itemId      String  @unique
   tenantId    String
   name        String
-  description String?  @db.Text
-  isActive    Boolean  @default(true)
-  
+  description String? @db.Text
+  isActive    Boolean @default(true)
+
   // Pricing strategy
   pricingStrategy String @default("SUM_COMPONENTS") // SUM_COMPONENTS | OVERRIDE_PRICE
-  
+
   // Relationships
-  item      Item              @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  components BundleComponent[]
-  nestedIn  BundleComponent[] @relation("BundleNested")
+  item               Item                @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  components         BundleComponent[]
+  nestedIn           BundleComponent[]   @relation("BundleNested")
   documentLineGroups DocumentLineGroup[]
-  
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
+
   @@index([tenantId])
   @@index([itemId])
   @@map("bundle_definitions")
 }
 
 model BundleComponent {
-  id                      String   @id @default(cuid())
-  bundleId                String
-  tenantId                String
-  componentType           String   // "ITEM" | "BUNDLE"
-  componentItemId         String?  // FK to Item (if componentType = "ITEM")
-  componentBundleId       String?  // FK to BundleDefinition (if componentType = "BUNDLE")
-  quantity                Decimal  @db.Decimal(10, 2)
-  sortOrder               Int      @default(0)
+  id                       String   @id @default(cuid())
+  bundleId                 String
+  tenantId                 String
+  componentType            String // "ITEM" | "BUNDLE"
+  componentItemId          String? // FK to Item (if componentType = "ITEM")
+  componentBundleId        String? // FK to BundleDefinition (if componentType = "BUNDLE")
+  quantity                 Decimal  @db.Decimal(10, 2)
+  sortOrder                Int      @default(0)
   defaultUnitPriceOverride Decimal? @db.Decimal(10, 2) // Customer Price
   defaultUnitCostOverride  Decimal? @db.Decimal(10, 2) // Vendor/Unit Cost
-  vendorId                 String?  // FK to Vendor (specific vendor for this component)
-  notes                   String?  @db.Text
-  
+  vendorId                 String? // FK to Vendor (specific vendor for this component)
+  notes                    String?  @db.Text
+
   // Relationships
-  bundle          BundleDefinition @relation(fields: [bundleId], references: [id], onDelete: Cascade)
-  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  componentItem   Item?            @relation(fields: [componentItemId], references: [id], onDelete: SetNull)
+  bundle          BundleDefinition  @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  componentItem   Item?             @relation(fields: [componentItemId], references: [id], onDelete: SetNull)
   componentBundle BundleDefinition? @relation("BundleNested", fields: [componentBundleId], references: [id], onDelete: SetNull)
-  vendor          Vendor?          @relation(fields: [vendorId], references: [id], onDelete: SetNull)
-  
+  vendor          Vendor?           @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
+
   @@index([bundleId])
   @@index([tenantId])
   @@index([componentItemId])
@@ -1041,25 +1111,25 @@ model BundleComponent {
 }
 
 model DocumentLineGroup {
-  id              String   @id @default(cuid())
-  tenantId        String
-  documentType    String   // "ESTIMATE" | "INVOICE" | "PURCHASE_ORDER"
-  documentId      String
-  name            String
-  sourceBundleId  String?  // FK to BundleDefinition (nullable for manual groups)
-  sourceBundleName String?
+  id                    String    @id @default(cuid())
+  tenantId              String
+  documentType          String // "ESTIMATE" | "INVOICE" | "PURCHASE_ORDER"
+  documentId            String
+  name                  String
+  sourceBundleId        String? // FK to BundleDefinition (nullable for manual groups)
+  sourceBundleName      String?
   sourceBundleUpdatedAt DateTime?
-  
+
   // Relationships
-  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  sourceBundle    BundleDefinition? @relation(fields: [sourceBundleId], references: [id], onDelete: SetNull)
-  estimateLineItems EstimateLineItem[]
-  invoiceLineItems InvoiceLineItem[]
+  tenant                 Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sourceBundle           BundleDefinition?       @relation(fields: [sourceBundleId], references: [id], onDelete: SetNull)
+  estimateLineItems      EstimateLineItem[]
+  invoiceLineItems       InvoiceLineItem[]
   purchaseOrderLineItems PurchaseOrderLineItem[]
-  
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
+
   @@index([tenantId, documentType, documentId])
   @@index([sourceBundleId])
   @@map("document_line_groups")
@@ -2220,15 +2290,15 @@ model Webhook {
 // ============================================
 
 model IntegrationConnection {
-  id              String   @id @default(cuid())
-  tenantId        String
-  provider        String // "email", "voipms_sms", "whatsapp", "quickbooks", "sola"
-  status          String   @default("NOT_CONFIGURED") // "NOT_CONFIGURED" | "CONNECTED" | "ERROR" | "CONNECTING"
-  displayName     String?
-  encryptedSecrets String? @db.Text
-  metadata        Json?
-  lastCheckedAt   DateTime?
-  lastError       String?  @db.Text
+  id               String    @id @default(cuid())
+  tenantId         String
+  provider         String // "email", "voipms_sms", "whatsapp", "quickbooks", "sola"
+  status           String    @default("NOT_CONFIGURED") // "NOT_CONFIGURED" | "CONNECTED" | "ERROR" | "CONNECTING"
+  displayName      String?
+  encryptedSecrets String?   @db.Text
+  metadata         Json?
+  lastCheckedAt    DateTime?
+  lastError        String?   @db.Text
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -2243,17 +2313,17 @@ model IntegrationConnection {
 }
 
 model PaymentTransaction {
-  id          String   @id @default(cuid())
-  tenantId    String
-  provider    String // "sola", "stripe", "paypal", etc.
-  status      String // "pending" | "succeeded" | "failed" | "refunded" | "chargeback"
-  amount      Decimal  @db.Decimal(10, 2)
-  currency    String   @default("USD")
-  externalId  String?  @unique // Provider's transaction ID
-  customerId  String?
-  invoiceId   String?
-  rawEvent    Json? // Raw webhook/event data
-  metadata    Json?
+  id         String  @id @default(cuid())
+  tenantId   String
+  provider   String // "sola", "stripe", "paypal", etc.
+  status     String // "pending" | "succeeded" | "failed" | "refunded" | "chargeback"
+  amount     Decimal @db.Decimal(10, 2)
+  currency   String  @default("USD")
+  externalId String? @unique // Provider's transaction ID
+  customerId String?
+  invoiceId  String?
+  rawEvent   Json? // Raw webhook/event data
+  metadata   Json?
 
   tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   invoice Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
@@ -2284,15 +2354,15 @@ enum QboPaymentIntentStatus {
 }
 
 model InvoicePaymentIntent {
-  id        String   @id @default(cuid())
+  id        String @id @default(cuid())
   tenantId  String
   invoiceId String
 
   provider String // "qbo"
   method   String // "ach"
 
-  amount   Decimal @db.Decimal(10, 2)
-  currency String  @default("USD")
+  amount   Decimal                @db.Decimal(10, 2)
+  currency String                 @default("USD")
   status   QboPaymentIntentStatus @default(CREATED)
 
   // QBO identifiers (accounting API)
@@ -2304,7 +2374,7 @@ model InvoicePaymentIntent {
   hostedUrl String? @db.Text
 
   // Public, unguessable token used in our public pay page URL
-  publicToken String @unique
+  publicToken String    @unique
   expiresAt   DateTime?
 
   // Idempotency for session/link creation
@@ -2314,9 +2384,9 @@ model InvoicePaymentIntent {
   customerEmail String?
   metadata      Json?
 
-  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  createdBy User? @relation("InvoicePaymentIntentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  createdBy User?   @relation("InvoicePaymentIntentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 
   events PaymentEvent[]
 
@@ -2334,22 +2404,22 @@ model InvoicePaymentIntent {
 }
 
 model PaymentEvent {
-  id       String   @id @default(cuid())
+  id       String @id @default(cuid())
   tenantId String
   intentId String
 
-  provider       String // "qbo"
+  provider        String // "qbo"
   providerEventId String? // webhook-derived event id (idempotency)
-  type           String // "webhook", "status_update", "reconcile"
-  statusFrom     String?
-  statusTo       String?
+  type            String // "webhook", "status_update", "reconcile"
+  statusFrom      String?
+  statusTo        String?
 
   payloadHash String?
   rawPayload  Json?
 
   receivedAt DateTime @default(now())
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   intent InvoicePaymentIntent @relation(fields: [intentId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
@@ -2362,13 +2432,13 @@ model PaymentEvent {
 }
 
 model IdempotencyKey {
-  id        String   @id @default(cuid())
-  tenantId  String
-  key       String   @unique
-  scope     String
+  id          String    @id @default(cuid())
+  tenantId    String
+  key         String    @unique
+  scope       String
   requestHash String?
-  response  Json?
-  expiresAt DateTime?
+  response    Json?
+  expiresAt   DateTime?
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -2411,34 +2481,34 @@ enum ConversationStatus {
 }
 
 model Conversation {
-  id            String            @id @default(cuid())
-  tenantId      String
-  channel       MessageChannel
-  clientId      String?
+  id             String         @id @default(cuid())
+  tenantId       String
+  channel        MessageChannel
+  clientId       String?
   assignedUserId String?
-  jobId         String?
-  
+  jobId          String?
+
   // Participants (phone numbers, emails, etc.)
-  participants  Json // Array of phone numbers/emails
-  
+  participants Json // Array of phone numbers/emails
+
   status        ConversationStatus @default(ACTIVE)
   lastMessageAt DateTime?
-  unreadCount   Int               @default(0)
-  
+  unreadCount   Int                @default(0)
+
   // Metadata
-  metadata      Json?
-  
-  tenant        Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  client        Client?           @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  assignedUser  User?             @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
-  job           Job?              @relation(fields: [jobId], references: [id], onDelete: SetNull)
-  
-  messages      Message[]
-  readReceipts  ConversationReadReceipt[]
-  
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
-  
+  metadata Json?
+
+  tenant       Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client       Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  assignedUser User?   @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
+  job          Job?    @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  messages     Message[]
+  readReceipts ConversationReadReceipt[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([tenantId])
   @@index([tenantId, clientId])
   @@index([tenantId, assignedUserId])
@@ -2448,51 +2518,51 @@ model Conversation {
 }
 
 model Message {
-  id               String            @id @default(cuid())
-  conversationId   String
-  tenantId         String
-  direction        MessageDirection
-  channel          MessageChannel
-  
+  id             String           @id @default(cuid())
+  conversationId String
+  tenantId       String
+  direction      MessageDirection
+  channel        MessageChannel
+
   // Content
-  body             String?           @db.Text
-  media            MessageMedia[]
-  
+  body  String?        @db.Text
+  media MessageMedia[]
+
   // Sender/Recipient
-  fromNumber       String?
-  toNumber         String?
-  fromEmail        String?
-  toEmail          String?
-  
+  fromNumber String?
+  toNumber   String?
+  fromEmail  String?
+  toEmail    String?
+
   // Provider tracking
-  provider         String            // "webwhatis", "voipms", "twilio", etc.
-  providerMessageId String?          @unique
-  
+  provider          String // "webwhatis", "voipms", "twilio", etc.
+  providerMessageId String? @unique
+
   // Status
-  status           MessageStatus     @default(QUEUED)
-  errorCode        String?
-  errorMessage     String?           @db.Text
-  
+  status       MessageStatus @default(QUEUED)
+  errorCode    String?
+  errorMessage String?       @db.Text
+
   // Delivery tracking
-  queuedAt         DateTime?         @default(now())
-  sentAt           DateTime?
-  deliveredAt      DateTime?
-  readAt           DateTime?
-  failedAt         DateTime?
-  
+  queuedAt    DateTime? @default(now())
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  readAt      DateTime?
+  failedAt    DateTime?
+
   // Retry info
-  retryCount       Int               @default(0)
-  lastRetryAt      DateTime?
-  
+  retryCount  Int       @default(0)
+  lastRetryAt DateTime?
+
   // Metadata
-  metadata         Json?
-  
-  conversation     Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  
+  metadata Json?
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([tenantId])
   @@index([tenantId, conversationId])
   @@index([tenantId, direction])
@@ -2504,32 +2574,32 @@ model Message {
 }
 
 model MessageMedia {
-  id          String   @id @default(cuid())
-  messageId   String
-  type        String   // "image", "video", "file", "audio"
-  url         String   @db.Text
+  id           String  @id @default(cuid())
+  messageId    String
+  type         String // "image", "video", "file", "audio"
+  url          String  @db.Text
   thumbnailUrl String? @db.Text
-  mimeType    String?
-  size        Int?     // Bytes
-  filename    String?
-  
-  message     Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  
-  createdAt   DateTime @default(now())
-  
+  mimeType     String?
+  size         Int? // Bytes
+  filename     String?
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
   @@index([messageId])
   @@map("message_media")
 }
 
 model ConversationReadReceipt {
-  id            String       @id @default(cuid())
+  id             String   @id @default(cuid())
   conversationId String
-  userId        String
-  readAt        DateTime     @default(now())
-  
-  conversation  Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+  userId         String
+  readAt         DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@unique([conversationId, userId])
   @@index([conversationId])
   @@index([userId])
@@ -2537,27 +2607,27 @@ model ConversationReadReceipt {
 }
 
 model WebhookEvent {
-  id          String   @id @default(cuid())
-  tenantId    String
-  provider    String   // "webwhatis", "voipms", etc.
-  eventId     String   @unique // Provider's event ID for idempotency
-  eventType   String   // "inbound_message", "message_status_update", etc.
-  
-  receivedAt  DateTime @default(now())
+  id        String @id @default(cuid())
+  tenantId  String
+  provider  String // "webwhatis", "voipms", etc.
+  eventId   String @unique // Provider's event ID for idempotency
+  eventType String // "inbound_message", "message_status_update", etc.
+
+  receivedAt  DateTime  @default(now())
   processedAt DateTime?
-  processed   Boolean  @default(false)
-  error       String?  @db.Text
-  
+  processed   Boolean   @default(false)
+  error       String?   @db.Text
+
   // Raw payload (be careful - don't log secrets)
-  rawPayload  Json?
-  
+  rawPayload Json?
+
   // Hash for deduplication
   payloadHash String?
-  
-  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  
-  createdAt   DateTime @default(now())
-  
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
   @@index([tenantId])
   @@index([tenantId, provider])
   @@index([tenantId, processed])

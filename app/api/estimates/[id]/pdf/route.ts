@@ -49,6 +49,9 @@ export async function GET(
         lineItems: {
           orderBy: { sortOrder: 'asc' },
         },
+        optionalItems: {
+          orderBy: { sortOrder: 'asc' },
+        },
       },
     })
 
@@ -57,7 +60,11 @@ export async function GET(
     }
 
     const visibleItems = estimate.lineItems.filter((item) => item.isVisibleToClient !== false)
+    const visibleOptionalItems = estimate.optionalItems.filter((item) => item.isVisibleToClient !== false)
     const subtotal = visibleItems.reduce((sum, item) => {
+      return sum + Number(item.quantity) * Number(item.unitPrice)
+    }, 0)
+    const optionalSubtotal = visibleOptionalItems.reduce((sum, item) => {
       return sum + Number(item.quantity) * Number(item.unitPrice)
     }, 0)
     const discount = Number(estimate.discount || 0)
@@ -272,7 +279,7 @@ export async function GET(
                     ? '<tr><td colspan="4" class="muted">No visible items</td></tr>'
                     : visibleItems.map((item) => `
                         <tr>
-                          <td>${escapeHtml(item.description)}</td>
+                          <td>${escapeHtml(item.showDescriptionToCustomer === false ? '' : item.description)}</td>
                           <td class="text-right">${Number(item.quantity).toFixed(2)}</td>
                           <td class="text-right">$${Number(item.unitPrice).toFixed(2)}</td>
                           <td class="text-right">$${Number(item.total).toFixed(2)}</td>
@@ -281,6 +288,44 @@ export async function GET(
                 }
               </tbody>
             </table>
+
+            ${
+              visibleOptionalItems.length > 0
+                ? `
+                  <div class="section">
+                    <h3>Optional Items</h3>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Description</th>
+                          <th class="text-right">Qty</th>
+                          <th class="text-right">Unit</th>
+                          <th class="text-right">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${visibleOptionalItems
+                          .map(
+                            (item) => `
+                              <tr>
+                                <td>${escapeHtml(item.showDescriptionToCustomer === false ? '' : item.description)}</td>
+                                <td class="text-right">${Number(item.quantity).toFixed(2)}</td>
+                                <td class="text-right">$${Number(item.unitPrice).toFixed(2)}</td>
+                                <td class="text-right">$${Number(item.total).toFixed(2)}</td>
+                              </tr>
+                            `
+                          )
+                          .join('')}
+                      </tbody>
+                    </table>
+                    <div class="summary" style="margin-top:12px; width: 320px;">
+                      <h4>Optional Subtotal</h4>
+                      <div class="summary-row total"><span>Optional Items</span><span>$${optionalSubtotal.toFixed(2)}</span></div>
+                    </div>
+                  </div>
+                `
+                : ''
+            }
 
             <div class="summary">
               <h4>Summary</h4>

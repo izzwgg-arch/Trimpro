@@ -36,6 +36,9 @@ export async function GET(
         lineItems: {
           orderBy: { sortOrder: 'asc' },
         },
+        optionalItems: {
+          orderBy: { sortOrder: 'asc' },
+        },
       },
     })
 
@@ -44,11 +47,31 @@ export async function GET(
     }
 
     const logoUrl = process.env.PDF_LOGO_URL || process.env.NEXT_PUBLIC_PDF_LOGO_URL || defaultLogoDataUri()
-    const rows = invoice.lineItems
+    const visibleLineItems = invoice.lineItems.filter((li) => li.isVisibleToClient !== false)
+    const visibleOptionalItems = invoice.optionalItems.filter((li) => li.isVisibleToClient !== false)
+    const optionalSubtotal = visibleOptionalItems.reduce(
+      (sum, item) => sum + Number(item.quantity) * Number(item.unitPrice),
+      0
+    )
+
+    const rows = visibleLineItems
       .map(
         (li) => `
           <tr>
-            <td>${escapeHtml(li.description)}</td>
+            <td>${escapeHtml(li.showDescriptionToCustomer === false ? '' : li.description)}</td>
+            <td style="text-align:right">${Number(li.quantity).toFixed(2)}</td>
+            <td style="text-align:right">$${Number(li.unitPrice).toFixed(2)}</td>
+            <td style="text-align:right">$${Number(li.total).toFixed(2)}</td>
+          </tr>
+        `
+      )
+      .join('')
+
+    const optionalRows = visibleOptionalItems
+      .map(
+        (li) => `
+          <tr>
+            <td>${escapeHtml(li.showDescriptionToCustomer === false ? '' : li.description)}</td>
             <td style="text-align:right">${Number(li.quantity).toFixed(2)}</td>
             <td style="text-align:right">$${Number(li.unitPrice).toFixed(2)}</td>
             <td style="text-align:right">$${Number(li.total).toFixed(2)}</td>
@@ -198,6 +221,30 @@ export async function GET(
         </thead>
         <tbody>${rows}</tbody>
       </table>
+
+      ${
+        visibleOptionalItems.length > 0
+          ? `
+            <div style="margin-top: 20px;">
+              <h3 style="margin: 0 0 8px; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: #6b7280;">Optional Items</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Description</th>
+                    <th style="text-align:right">Qty</th>
+                    <th style="text-align:right">Unit</th>
+                    <th style="text-align:right">Total</th>
+                  </tr>
+                </thead>
+                <tbody>${optionalRows}</tbody>
+              </table>
+              <div class="summary">
+                <div class="summary-row total"><span>Optional Items</span><span>$${optionalSubtotal.toFixed(2)}</span></div>
+              </div>
+            </div>
+          `
+          : ''
+      }
       <div class="summary">
         <div class="summary-row"><span>Subtotal</span><span>$${Number(invoice.subtotal).toFixed(2)}</span></div>
         <div class="summary-row"><span>Tax</span><span>$${Number(invoice.taxAmount).toFixed(2)}</span></div>

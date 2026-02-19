@@ -50,6 +50,9 @@ export async function POST(
         lineItems: {
           orderBy: { sortOrder: 'asc' },
         },
+        optionalItems: {
+          orderBy: { sortOrder: 'asc' },
+        },
       },
     })
 
@@ -73,6 +76,7 @@ export async function POST(
       total: number
       sortOrder: number
       isVisibleToClient: boolean
+      showDescriptionToCustomer: boolean
       showCostToCustomer: boolean
       showPriceToCustomer: boolean
       showTaxToCustomer: boolean
@@ -135,6 +139,7 @@ export async function POST(
           total: lineTotal,
           sortOrder: idx,
           isVisibleToClient: line.isVisibleToClient,
+          showDescriptionToCustomer: (line as any).showDescriptionToCustomer ?? true,
           showCostToCustomer: line.showCostToCustomer,
           showPriceToCustomer: line.showPriceToCustomer,
           showTaxToCustomer: line.showTaxToCustomer,
@@ -201,6 +206,38 @@ export async function POST(
                 ...line,
               },
             })
+          }
+
+          // Copy optional items from estimate (not included in invoice totals)
+          if (estimate.optionalItems && estimate.optionalItems.length > 0) {
+            for (let i = 0; i < estimate.optionalItems.length; i++) {
+              const opt = estimate.optionalItems[i] as any
+              await tx.invoiceOptionalLineItem.create({
+                data: {
+                  invoiceId: invoice.id,
+                  // DocumentLineGroup ids are scoped to the source estimate; don't carry them over.
+                  groupId: null,
+                  description: opt.description,
+                  quantity: opt.quantity,
+                  unitPrice: opt.unitPrice,
+                  unitCost: opt.unitCost || null,
+                  total: opt.total,
+                  sortOrder: opt.sortOrder ?? i,
+                  isVisibleToClient: opt.isVisibleToClient !== false,
+                  showDescriptionToCustomer: opt.showDescriptionToCustomer !== false,
+                  showCostToCustomer: opt.showCostToCustomer !== undefined ? Boolean(opt.showCostToCustomer) : false,
+                  showPriceToCustomer: opt.showPriceToCustomer !== undefined ? Boolean(opt.showPriceToCustomer) : true,
+                  showTaxToCustomer: opt.showTaxToCustomer !== undefined ? Boolean(opt.showTaxToCustomer) : true,
+                  showNotesToCustomer: opt.showNotesToCustomer !== undefined ? Boolean(opt.showNotesToCustomer) : false,
+                  notes: opt.notes || null,
+                  vendorId: opt.vendorId || null,
+                  taxable: opt.taxable !== undefined ? Boolean(opt.taxable) : true,
+                  taxRate: opt.taxRate || null,
+                  sourceItemId: opt.sourceItemId || null,
+                  sourceBundleId: opt.sourceBundleId || null,
+                },
+              })
+            }
           }
 
           await tx.activity.create({
