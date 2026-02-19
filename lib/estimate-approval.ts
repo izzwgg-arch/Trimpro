@@ -14,12 +14,22 @@ export function hashApprovalToken(rawToken: string): string {
 }
 
 export function buildPublicApproveEstimateUrl(rawToken: string): string {
-  const appUrl =
-    process.env.NEXT_PUBLIC_APP_URL ||
+  // IMPORTANT:
+  // Public approval links must be reachable from customers (email/PDF). Do not default to an IP/port
+  // or internal APP_URL in production. Use the public domain unless explicitly overridden.
+  const envUrl =
     process.env.PUBLIC_APP_URL ||
-    process.env.APP_URL ||
-    'https://app.trimprony.com'
-  return `${String(appUrl).replace(/\/$/, '')}/approve/estimate/${rawToken}`
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.PUBLIC_APPROVAL_BASE_URL ||
+    process.env.PUBLIC_BASE_URL ||
+    ''
+
+  const fallback = 'https://app.trimprony.com'
+  const rawBase = (envUrl || fallback).trim()
+
+  // Normalize: force https in production and strip trailing slash.
+  const base = rawBase.replace(/\/$/, '')
+  return `${base}/approve/estimate/${rawToken}`
 }
 
 export async function getOrCreateEstimateApprovalToken(params: {
