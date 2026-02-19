@@ -553,6 +553,7 @@ export default function EstimateDetailPage() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b">
+                      <th className="text-left py-2 px-4 font-semibold">Item</th>
                       <th className="text-left py-2 px-4 font-semibold">Description</th>
                       <th className="text-right py-2 px-4 font-semibold">Quantity</th>
                       <th className="text-right py-2 px-4 font-semibold">Unit Price</th>
@@ -645,6 +646,7 @@ export default function EstimateDetailPage() {
                                 </div>
                               </div>
                             </td>
+                            <td className="py-3 px-4"></td>
                             <td className="py-3 px-4 text-right"></td>
                             <td className="py-3 px-4 text-right"></td>
                             <td className="py-3 px-4 text-right"></td>
@@ -673,6 +675,7 @@ export default function EstimateDetailPage() {
                                     <span className="ml-2 text-xs text-gray-500">(Hidden from client)</span>
                                   )}
                                 </td>
+                                <td className="py-3 px-4">{item.notes || '-'}</td>
                                 <td className="py-3 px-4 text-right">{item.quantity}</td>
                                 <td className="py-3 px-4 text-right">{formatCurrency(unitPrice)}</td>
                                 <td className="py-3 px-4 text-right">{formatCurrency(unitCost)}</td>
@@ -686,7 +689,7 @@ export default function EstimateDetailPage() {
                           // Add "Add Item" row
                           rows.push(
                             <tr key={`add-item-${groupId}`} className="border-b bg-gray-50/50">
-                              <td colSpan={6} className="py-2 px-4 pl-8">
+                              <td colSpan={7} className="py-2 px-4 pl-8">
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -718,6 +721,7 @@ export default function EstimateDetailPage() {
                                 <span className="ml-2 text-xs text-gray-500">(Hidden from client)</span>
                               )}
                             </td>
+                            <td className="py-3 px-4">{item.notes || '-'}</td>
                             <td className="py-3 px-4 text-right">{item.quantity}</td>
                             <td className="py-3 px-4 text-right">{formatCurrency(unitPrice)}</td>
                             <td className="py-3 px-4 text-right">{formatCurrency(unitCost)}</td>

@@ -593,7 +593,7 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
       PrivateNote: estimate.notes || undefined,
       Line: lineItems.map((li: any) => ({
         DetailType: 'SalesItemLineDetail',
-        Description: li.description,
+        Description: li.notes || li.description, // Use notes (description) if available, otherwise use item name
         Amount: toNumber(li.quantity) * toNumber(li.unitPrice),
         SalesItemLineDetail: {
           ItemRef: { value: serviceItemId },
@@ -695,7 +695,7 @@ export async function syncInvoiceToQuickBooks(tenantId: string, invoiceId: strin
       PrivateNote: invoice.notes || undefined,
       Line: lineItems.map((li: any) => ({
         DetailType: 'SalesItemLineDetail',
-        Description: li.description,
+        Description: li.notes || li.description, // Use notes (description) if available, otherwise use item name
         Amount: toNumber(li.quantity) * toNumber(li.unitPrice),
         SalesItemLineDetail: {
           ItemRef: { value: serviceItemId },
@@ -1491,13 +1491,22 @@ export async function importQuickBooksCustomersAndPayments(
             const qty = toNumber(l?.SalesItemLineDetail?.Qty) || 1
             const unitPrice =
               toNumber(l?.SalesItemLineDetail?.UnitPrice) || (qty ? amount / qty : amount)
-            const desc =
-              String(l.Description || '') ||
-              String(l?.SalesItemLineDetail?.ItemRef?.name || '') ||
-              `QuickBooks line ${idx + 1}`
+            
+            // Extract item name from ItemRef
+            const itemName = String(l?.SalesItemLineDetail?.ItemRef?.name || '') || 
+                            String(l?.SalesItemLineDetail?.ItemRef?.value || '') || 
+                            ''
+            
+            // Extract description from Description field
+            const description = String(l.Description || '')
+            
+            // Use item name as description if no description provided, fallback to line number
+            const finalDescription = itemName || description || `QuickBooks line ${idx + 1}`
+            const finalNotes = description && itemName ? description : null
 
             return {
-              description: desc.slice(0, 500),
+              description: finalDescription.slice(0, 500),
+              notes: finalNotes ? finalNotes.slice(0, 2000) : null,
               quantity: qty,
               unitPrice,
               total: amount,
@@ -1507,6 +1516,7 @@ export async function importQuickBooksCustomersAndPayments(
           })
           .filter(Boolean) as Array<{
           description: string
+          notes: string | null
           quantity: number
           unitPrice: number
           total: number
@@ -1569,7 +1579,7 @@ export async function importQuickBooksCustomersAndPayments(
             unitCost: null,
             total: l.total,
             sortOrder: l.sortOrder,
-            notes: null,
+            notes: l.notes || null,
             vendorId: null,
             taxable: l.taxable,
             taxRate: null,

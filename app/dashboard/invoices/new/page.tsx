@@ -676,7 +676,7 @@ export default function NewInvoicePage() {
                         ref={(el) => {
                           lineItemRefs.current[index] = el
                         }}
-                        className={`flex gap-2 items-end p-2 rounded border ${
+                        className={`flex gap-2 ${isGroupHeader ? 'items-center' : 'items-start'} p-2 rounded border ${
                           isGroupHeader
                             ? 'bg-purple-50 border-purple-200'
                             : isInGroup
@@ -703,7 +703,7 @@ export default function NewInvoicePage() {
                           </div>
                         )}
 
-                        <div className="flex-1">
+                        <div className="flex-1 space-y-1">
                           {isGroupHeader ? (
                             <div className="flex items-center gap-2">
                               <Input
@@ -718,19 +718,27 @@ export default function NewInvoicePage() {
                               </span>
                             </div>
                           ) : (
-                            <FastPicker
-                              value={item.description}
-                              onChange={(value) => updateLineItem(index, 'description', value)}
-                              onSelect={(selectedItem) => handleItemSelect(selectedItem, index)}
-                              onNextLine={() => handleNextLine(index)}
-                              items={pickerItems}
-                              bundles={pickerBundles}
-                              placeholder="Type to search items..."
-                              className="w-full"
-                              inputRef={(el) => {
-                                pickerInputRefs.current[index] = el
-                              }}
-                            />
+                            <>
+                              <FastPicker
+                                value={item.description}
+                                onChange={(value) => updateLineItem(index, 'description', value)}
+                                onSelect={(selectedItem) => handleItemSelect(selectedItem, index)}
+                                onNextLine={() => handleNextLine(index)}
+                                items={pickerItems}
+                                bundles={pickerBundles}
+                                placeholder="Type to search items..."
+                                className="w-full"
+                                inputRef={(el) => {
+                                  pickerInputRefs.current[index] = el
+                                }}
+                              />
+                              <Input
+                                value={item.notes || ''}
+                                onChange={(e) => updateLineItem(index, 'notes', e.target.value)}
+                                placeholder="Item description/notes (optional)"
+                                className="w-full text-sm"
+                              />
+                            </>
                           )}
                         </div>
 
@@ -842,6 +850,14 @@ export default function NewInvoicePage() {
                                   onChange={(e) => updateLineItem(index, 'taxRate', e.target.value)}
                                   className="text-xs w-16"
                                 />
+                              </div>
+                            </div>
+
+                            {/* Total (Quantity × Unit Price) */}
+                            <div className="w-28">
+                              <Label className="text-xs text-gray-500 mb-1 block">Total</Label>
+                              <div className="px-3 py-2 bg-gray-50 rounded border text-right font-medium">
+                                ${(parseFloat(item.quantity || '0') * parseFloat(item.unitPrice || '0')).toFixed(2)}
                               </div>
                             </div>
                           </>

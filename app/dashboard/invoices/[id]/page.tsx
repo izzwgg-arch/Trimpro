@@ -742,6 +742,7 @@ export default function InvoiceDetailPage() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b">
+                      <th className="text-left py-2 px-4 font-semibold">Item</th>
                       <th className="text-left py-2 px-4 font-semibold">Description</th>
                       <th className="text-right py-2 px-4 font-semibold">Quantity</th>
                       <th className="text-right py-2 px-4 font-semibold">Unit Price</th>
@@ -832,6 +833,7 @@ export default function InvoiceDetailPage() {
                                 </div>
                               </div>
                             </td>
+                            <td className="py-3 px-4"></td>
                             <td className="py-3 px-4 text-right"></td>
                             <td className="py-3 px-4 text-right"></td>
                             <td className="py-3 px-4 text-right font-semibold">
@@ -845,6 +847,7 @@ export default function InvoiceDetailPage() {
                             rows.push(
                               <tr key={item.id} className="border-b bg-gray-50/50">
                                 <td className="py-3 px-4 pl-8">{item.description}</td>
+                                <td className="py-3 px-4">{item.notes || '-'}</td>
                                 <td className="py-3 px-4 text-right">{item.quantity}</td>
                                 <td className="py-3 px-4 text-right">{formatCurrency(parseFloat(item.unitPrice))}</td>
                                 <td className="py-3 px-4 text-right">
@@ -856,7 +859,7 @@ export default function InvoiceDetailPage() {
                           // Add "Add Item" row
                           rows.push(
                             <tr key={`add-item-${groupId}`} className="border-b bg-gray-50/50">
-                              <td colSpan={4} className="py-2 px-4 pl-8">
+                              <td colSpan={5} className="py-2 px-4 pl-8">
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -878,6 +881,7 @@ export default function InvoiceDetailPage() {
                         rows.push(
                           <tr key={item.id} className="border-b">
                             <td className="py-3 px-4">{item.description}</td>
+                            <td className="py-3 px-4">{item.notes || '-'}</td>
                             <td className="py-3 px-4 text-right">{item.quantity}</td>
                             <td className="py-3 px-4 text-right">{formatCurrency(parseFloat(item.unitPrice))}</td>
                             <td className="py-3 px-4 text-right font-semibold">

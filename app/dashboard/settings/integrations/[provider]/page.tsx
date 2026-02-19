@@ -49,6 +49,7 @@ export default function IntegrationProviderPage() {
   const [importingQbo, setImportingQbo] = useState(false)
   const [importResult, setImportResult] = useState<any>(null)
   const [importingQboInvoices, setImportingQboInvoices] = useState(false)
+  const [updatingLineItems, setUpdatingLineItems] = useState(false)
 
   useEffect(() => {
     fetchIntegration()
@@ -356,6 +357,62 @@ export default function IntegrationProviderPage() {
       alert('QuickBooks invoice import failed. Please try again.')
     } finally {
       setImportingQboInvoices(false)
+    }
+  }
+
+  const handleUpdateLineItems = async () => {
+    if (updatingLineItems) return
+    if (!confirm('Update line items for all existing QuickBooks-imported invoices? This will separate item names and descriptions.')) {
+      return
+    }
+
+    setUpdatingLineItems(true)
+    setImportResult(null)
+
+    try {
+      let token = localStorage.getItem('accessToken')
+      if (!token) {
+        const refreshed = await refreshToken()
+        if (!refreshed) return
+        token = localStorage.getItem('accessToken')
+      }
+
+      let response = await fetch('/api/qbo/update-invoice-line-items', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      if (response.status === 401) {
+        const refreshed = await refreshToken()
+        if (!refreshed) return
+        token = localStorage.getItem('accessToken')
+        response = await fetch('/api/qbo/update-invoice-line-items', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+        })
+      }
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'Failed to update line items')
+        setImportResult({ success: false, ...data })
+        return
+      }
+
+      setImportResult({ success: true, ...data })
+      alert(data.message || `Updated ${data.updated || 0} invoice(s)`)
+      fetchConnection()
+    } catch (error) {
+      console.error('Update line items failed:', error)
+      alert('Failed to update line items. Please try again.')
+    } finally {
+      setUpdatingLineItems(false)
     }
   }
 
@@ -825,18 +882,35 @@ export default function IntegrationProviderPage() {
                   </Button>
                 </>
               )}
+              <Button onClick={handleUpdateLineItems} disabled={updatingLineItems || status === 'NOT_CONFIGURED'} variant="outline">
+                {updatingLineItems ? 'Updating...' : 'Update Line Items'}
+              </Button>
             </div>
           )}
 
           {provider === 'quickbooks' && importResult?.success && (
             <div className="rounded border bg-white p-3 text-sm text-gray-700">
-              Imported clients: {importResult.importedClients ?? 0} · Imported items: {importResult.importedItems ?? 0} · Imported open invoices:{' '}
-              {importResult.importedOpenInvoices ?? 0}
-              {Array.isArray(importResult.errors) && importResult.errors.length ? (
-                <div className="mt-2 text-xs text-amber-700">
-                  {importResult.errors.slice(0, 5).join(' | ')}
-                </div>
-              ) : null}
+              {importResult.updated !== undefined ? (
+                <>
+                  Updated invoices: {importResult.updated ?? 0}
+                  {importResult.errors > 0 && ` · Errors: ${importResult.errors}`}
+                  {Array.isArray(importResult.errorDetails) && importResult.errorDetails.length > 0 ? (
+                    <div className="mt-2 text-xs text-amber-700">
+                      {importResult.errorDetails.slice(0, 5).join(' | ')}
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  Imported clients: {importResult.importedClients ?? 0} · Imported items: {importResult.importedItems ?? 0} · Imported open invoices:{' '}
+                  {importResult.importedOpenInvoices ?? 0}
+                  {Array.isArray(importResult.errors) && importResult.errors.length ? (
+                    <div className="mt-2 text-xs text-amber-700">
+                      {importResult.errors.slice(0, 5).join(' | ')}
+                    </div>
+                  ) : null}
+                </>
+              )}
             </div>
           )}
 
