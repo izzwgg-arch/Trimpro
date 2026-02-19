@@ -551,7 +551,10 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
       accessToken: session.accessToken,
       realmId: session.realmId,
       integrationId: session.integrationId,
-      createIfMissing: false,
+      // A request with an existing client should NOT create a QBO customer.
+      // But when we are actually syncing an Estimate, we need a QBO customer to attach it to.
+      // This matches the expected behavior: estimates/invoices should actually appear in QBO.
+      createIfMissing: true,
     })
     if (!customerQboId) return
 
@@ -708,7 +711,13 @@ export async function syncInvoiceToQuickBooks(tenantId: string, invoiceId: strin
     // If we previously created a QBO Estimate, link the invoice to it so QBO treats this like a conversion.
     // This does not create any new entities; it only adds a relationship when the estimate exists.
     if (invoice.estimateId) {
-      const estimateQboId = await getMappedQboId(session.integrationId, 'estimate', invoice.estimateId)
+      let estimateQboId = await getMappedQboId(session.integrationId, 'estimate', invoice.estimateId)
+      if (!estimateQboId) {
+        // Best-effort: ensure the estimate exists in QBO before creating the invoice, so QBO can link them.
+        // This keeps the "estimate -> invoice" flow intact even if estimate sync ran later/failed previously.
+        await syncEstimateToQuickBooks(tenantId, invoice.estimateId)
+        estimateQboId = await getMappedQboId(session.integrationId, 'estimate', invoice.estimateId)
+      }
       if (estimateQboId) {
         payload.LinkedTxn = [{ TxnId: estimateQboId, TxnType: 'Estimate' }]
       }
