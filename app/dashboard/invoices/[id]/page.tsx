@@ -405,7 +405,7 @@ export default function InvoiceDetailPage() {
     return response.text()
   }
 
-  const fetchPdfBlob = async () => {
+  const fetchPdfBlob = async (): Promise<{ blob: Blob; filename: string }> => {
     const token = localStorage.getItem('accessToken')
     if (!token) {
       router.push('/auth/login')
@@ -424,16 +424,28 @@ export default function InvoiceDetailPage() {
       throw new Error('Failed to generate PDF')
     }
 
-    return response.blob()
+    const contentType = (response.headers.get('content-type') || '').toLowerCase()
+    const cd = response.headers.get('content-disposition') || ''
+    const match = /filename=\"?([^\";]+)\"?/i.exec(cd)
+    const headerFilename = match?.[1]?.trim()
+
+    const blob = await response.blob()
+    const fallbackExt = contentType.includes('pdf') ? 'pdf' : 'html'
+    const fallbackFilename = `Invoice-${invoice?.invoiceNumber || invoiceId}.${fallbackExt}`
+
+    return {
+      blob,
+      filename: headerFilename || fallbackFilename,
+    }
   }
 
   const handleDownloadPDF = async () => {
     try {
-      const blob = await fetchPdfBlob()
+      const { blob, filename } = await fetchPdfBlob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `Invoice-${invoice?.invoiceNumber || invoiceId}.pdf`
+      a.download = filename
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
