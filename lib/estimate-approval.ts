@@ -28,7 +28,8 @@ export function buildPublicApproveEstimateUrl(rawToken: string): string {
   const rawBase = (envUrl || fallback).trim()
 
   // Normalize: force https in production and strip trailing slash.
-  const base = rawBase.replace(/\/$/, '')
+  const httpsBase = rawBase.replace(/^http:\/\//i, 'https://')
+  const base = httpsBase.replace(/\/$/, '')
   return `${base}/approve/estimate/${rawToken}`
 }
 
