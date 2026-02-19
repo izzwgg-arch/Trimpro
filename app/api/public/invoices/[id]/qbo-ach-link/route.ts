@@ -36,7 +36,11 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     token: parsed.data.recaptchaToken,
     expectedAction: 'public_invoice_pay_ach',
   })
-  if (captcha) return captcha
+  if (captcha) {
+    const errorData = await captcha.json().catch(() => ({}))
+    console.error('[QBO ACH] reCAPTCHA verification failed:', errorData)
+    return captcha
+  }
 
   // Authorize: the token must belong to *some* invoice; then allow paying any invoice for the same client.
   const authInvoice = await prisma.invoice.findFirst({

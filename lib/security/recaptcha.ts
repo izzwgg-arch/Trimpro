@@ -70,8 +70,13 @@ export async function requireRecaptchaV3(params: {
 
   const data = (await resp.json().catch(() => null)) as RecaptchaVerifyResponse | null
   if (!data?.success) {
+    const errorCodes = data?.['error-codes'] || []
+    const errorMsg = errorCodes.length > 0 
+      ? `reCAPTCHA verification failed: ${errorCodes.join(', ')}`
+      : 'reCAPTCHA verification failed'
+    console.error('[reCAPTCHA] Verification failed:', { errorCodes, action: params.expectedAction, hasToken: !!token })
     return NextResponse.json(
-      { error: 'reCAPTCHA verification failed', codes: data?.['error-codes'] || [] },
+      { error: errorMsg, codes: errorCodes },
       { status: 403 }
     )
   }
