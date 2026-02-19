@@ -929,14 +929,27 @@ export async function syncPaymentToQuickBooks(tenantId: string, paymentId: strin
     }
     if (!invoiceQboId) throw new Error('Unable to sync payment: local invoice has no QuickBooks id')
 
-    const customerQboId = await ensureClientCustomer({
-      tenantId,
-      clientId: payment.invoice.clientId,
-      accessToken: session.accessToken,
-      realmId: session.realmId,
-      integrationId: session.integrationId,
-    })
-    if (!customerQboId) throw new Error('Unable to resolve customer in QuickBooks')
+    // IMPORTANT: To ensure QBO applies the payment to the *existing* invoice (and shows PARTIALLY PAID
+    // when balance remains), we must use the same CustomerRef as the invoice in QBO. Otherwise QBO
+    // may reject or mis-apply the payment.
+    const qboInvoiceRes = await quickBooksService.makeAPIRequest(
+      session.accessToken,
+      session.realmId,
+      `/invoice/${invoiceQboId}`,
+      'GET'
+    )
+    const customerQboId =
+      String(qboInvoiceRes?.Invoice?.CustomerRef?.value || '') ||
+      (await ensureClientCustomer({
+        tenantId,
+        clientId: payment.invoice.clientId,
+        accessToken: session.accessToken,
+        realmId: session.realmId,
+        integrationId: session.integrationId,
+        // Do not create a customer as a side-effect of payment sync.
+        createIfMissing: false,
+      }))
+    if (!customerQboId) throw new Error('Unable to resolve customer in QuickBooks for payment')
 
     const amount = toNumber(payment.amount)
     const invoiceNumber = payment.invoice.invoiceNumber || payment.invoice.id
