@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { quickBooksService } from '@/lib/services/quickbooks'
+import { getIntegrationSecrets } from '@/lib/integrations/status'
 
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -25,7 +26,15 @@ export async function POST(request: NextRequest) {
     // Check if token needs refresh
     let accessToken = integration.accessToken
     if (integration.tokenExpiresAt && integration.tokenExpiresAt < new Date()) {
-      const refreshed = await quickBooksService.refreshAccessToken(integration.refreshToken || '')
+      // Get saved credentials from IntegrationConnection if available
+      const secrets = await getIntegrationSecrets(user.tenantId, 'quickbooks' as any)
+      const clientId = secrets?.clientId || null
+      const clientSecret = secrets?.clientSecret || null
+      const refreshed = await quickBooksService.refreshAccessToken(
+        integration.refreshToken || '',
+        clientId || undefined,
+        clientSecret || undefined
+      )
       
       accessToken = refreshed.access_token
       

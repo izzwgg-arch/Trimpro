@@ -90,13 +90,25 @@ export class QuickBooksService {
     return response.json()
   }
 
-  async refreshAccessToken(refreshToken: string): Promise<Omit<QBOAccessTokenResponse, 'realmId'>> {
+  async refreshAccessToken(
+    refreshToken: string,
+    clientId?: string,
+    clientSecret?: string
+  ): Promise<Omit<QBOAccessTokenResponse, 'realmId'>> {
+    // Use provided credentials or fall back to env vars
+    const cid = clientId || QBO_CLIENT_ID || ''
+    const csecret = clientSecret || QBO_CLIENT_SECRET || ''
+    
+    if (!cid || !csecret) {
+      throw new Error('QuickBooks OAuth credentials missing (clientId/clientSecret required)')
+    }
+
     const response = await fetch(QBO_TOKEN_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Accept': 'application/json',
-        'Authorization': `Basic ${Buffer.from(`${QBO_CLIENT_ID}:${QBO_CLIENT_SECRET}`).toString('base64')}`,
+        'Authorization': `Basic ${Buffer.from(`${cid}:${csecret}`).toString('base64')}`,
       },
       body: new URLSearchParams({
         grant_type: 'refresh_token',

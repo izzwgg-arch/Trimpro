@@ -73,7 +73,10 @@ async function getQboSession(tenantId: string) {
 
   if (!accessToken || isExpired) {
     try {
-      const refreshed = await quickBooksService.refreshAccessToken(refreshToken)
+      // Use saved clientId/clientSecret from IntegrationConnection if available, otherwise fall back to env vars
+      const clientId = secrets?.clientId || null
+      const clientSecret = secrets?.clientSecret || null
+      const refreshed = await quickBooksService.refreshAccessToken(refreshToken, clientId || undefined, clientSecret || undefined)
       accessToken = refreshed.access_token
       const newRefresh = refreshed.refresh_token || refreshToken
       const newExpiresAt = new Date(Date.now() + refreshed.expires_in * 1000)
