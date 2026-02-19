@@ -16,7 +16,9 @@ export function middleware(request: NextRequest) {
     if (isIpHost) {
       const url = request.nextUrl.clone()
       url.protocol = 'https:'
-      url.host = 'app.trimprony.com'
+      url.hostname = 'app.trimprony.com'
+      // Ensure we don't carry over a direct-node port (e.g., :3000) into the public URL.
+      url.port = ''
       return NextResponse.redirect(url, 308)
     }
   }
