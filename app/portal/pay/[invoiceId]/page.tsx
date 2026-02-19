@@ -432,19 +432,24 @@ export default function PublicPaymentPage() {
         return
       }
 
-      // If only one invoice, redirect directly
-      if (achLinks.length === 1) {
-        window.location.href = achLinks[0].hostedUrl
-        return
-      }
-
-      // Multiple invoices: redirect to first one, then user can come back for others
-      // Store remaining links in sessionStorage for later
-      const remaining = achLinks.slice(1)
-      if (remaining.length > 0) {
+      // Store all links for tracking
+      if (achLinks.length > 1) {
+        const remaining = achLinks.slice(1)
         sessionStorage.setItem('qbo_ach_remaining', JSON.stringify(remaining))
         sessionStorage.setItem('qbo_ach_return_url', window.location.href)
+        sessionStorage.setItem('qbo_ach_total_count', String(achLinks.length))
+        sessionStorage.setItem('qbo_ach_current_index', '1')
+        
+        // Show confirmation before redirecting
+        const invoiceNumbers = achLinks.map(l => l.invoiceNumber || l.invoiceId).join(', ')
+        const confirmMessage = `You selected ${achLinks.length} invoice(s) to pay by ACH:\n${invoiceNumbers}\n\nQuickBooks requires each invoice to be paid separately. You will be redirected to pay the first invoice, then you can continue with the remaining ${remaining.length} invoice(s).\n\nClick OK to proceed.`
+        if (!confirm(confirmMessage)) {
+          setAchProcessing(false)
+          return
+        }
       }
+
+      // Redirect to first invoice's payment page
       window.location.href = achLinks[0].hostedUrl
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to redirect to ACH payment.')
@@ -641,10 +646,13 @@ export default function PublicPaymentPage() {
       </div>
       {error ? <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
       {remainingAchLinks.length > 0 ? (
-        <div className="rounded border border-blue-200 bg-blue-50 p-3 text-sm">
-          <div className="font-semibold text-blue-900">Continue ACH Payment</div>
-          <div className="mt-1 text-blue-700">
+        <div className="rounded border border-blue-200 bg-blue-50 p-4 text-sm">
+          <div className="font-semibold text-blue-900 mb-2">Continue ACH Payment</div>
+          <div className="mt-1 text-blue-700 mb-3">
             You have {remainingAchLinks.length} more invoice{remainingAchLinks.length > 1 ? 's' : ''} to pay by ACH.
+            <div className="mt-2 text-xs text-blue-600">
+              <strong>Remaining invoices:</strong> {remainingAchLinks.map(l => l.invoiceNumber || l.invoiceId).join(', ')}
+            </div>
           </div>
           <div className="mt-2 flex gap-2">
             <Button
@@ -657,6 +665,8 @@ export default function PublicPaymentPage() {
                 } else {
                   sessionStorage.removeItem('qbo_ach_remaining')
                   sessionStorage.removeItem('qbo_ach_return_url')
+                  sessionStorage.removeItem('qbo_ach_total_count')
+                  sessionStorage.removeItem('qbo_ach_current_index')
                 }
                 setRemainingAchLinks(remaining)
                 window.location.href = next.hostedUrl
@@ -670,6 +680,8 @@ export default function PublicPaymentPage() {
               onClick={() => {
                 sessionStorage.removeItem('qbo_ach_remaining')
                 sessionStorage.removeItem('qbo_ach_return_url')
+                sessionStorage.removeItem('qbo_ach_total_count')
+                sessionStorage.removeItem('qbo_ach_current_index')
                 setRemainingAchLinks([])
               }}
             >
