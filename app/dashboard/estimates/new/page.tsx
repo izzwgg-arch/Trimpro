@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ArrowLeft, Save, Plus, Trash2, Eye, EyeOff } from 'lucide-react'
 import Link from 'next/link'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
+import { refreshAccessToken } from '@/lib/auth/client'
 
 interface Client {
   id: string
@@ -111,10 +112,20 @@ export default function NewEstimatePage() {
     if (!requestIdParam) return
     const fetchRequestContext = async () => {
       try {
-        const token = localStorage.getItem('accessToken')
-        const response = await fetch(`/api/leads/${requestIdParam}`, {
+        let token = localStorage.getItem('accessToken')
+        let response = await fetch(`/api/leads/${requestIdParam}`, {
           headers: { Authorization: `Bearer ${token}` },
         })
+
+        if (response.status === 401) {
+          const ok = await refreshAccessToken()
+          if (!ok) return
+          token = localStorage.getItem('accessToken')
+          response = await fetch(`/api/leads/${requestIdParam}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+        }
+
         if (!response.ok) return
         const data = await response.json()
         const lead = data.lead
