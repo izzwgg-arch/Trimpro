@@ -790,11 +790,13 @@ export async function syncPaymentToQuickBooks(tenantId: string, paymentId: strin
     if (!customerQboId) throw new Error('Unable to resolve customer in QuickBooks')
 
     const amount = toNumber(payment.amount)
+    const invoiceNumber = payment.invoice.invoiceNumber || payment.invoice.id
+    const paymentNote = payment.reference || payment.notes || `Payment for Invoice ${invoiceNumber}`
     const payload = {
       CustomerRef: { value: customerQboId },
       TotalAmt: amount,
       TxnDate: qboDate(payment.processedAt || payment.createdAt),
-      PrivateNote: payment.reference || undefined,
+      PrivateNote: paymentNote,
       Line: [
         {
           Amount: amount,

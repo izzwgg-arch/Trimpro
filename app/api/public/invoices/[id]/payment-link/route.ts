@@ -110,7 +110,7 @@ export async function POST(
       status: { notIn: ['PAID', 'CANCELLED', 'REFUNDED'] as any },
     }
 
-    let invoicesToPay: Array<{ id: string; balance: any; dueDate: any; invoiceDate: any }> = []
+    let invoicesToPay: Array<{ id: string; balance: any; dueDate: any; invoiceDate: any; invoiceNumber: any; qboSyncId: any }> = []
     let plannedAmountsByInvoice: Record<string, number> | null = null
     let lineItemIdsByInvoice: Record<string, string[]> | null = null
     let allocationMode: 'waterfall' | 'planned' | null = null
@@ -127,7 +127,7 @@ export async function POST(
           tenantId: invoice.tenantId,
           clientId: invoice.clientId,
         },
-        select: { id: true, balance: true },
+        select: { id: true, balance: true, invoiceNumber: true, qboSyncId: true },
       })
       if (!target) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
       if (Number(target.balance) <= 0) return NextResponse.json({ error: 'Invoice already paid' }, { status: 400 })
@@ -144,7 +144,7 @@ export async function POST(
         return NextResponse.json({ error: 'Select at least one line item to pay.' }, { status: 400 })
       }
       const capped = Math.min(amount, Number(target.balance))
-      invoicesToPay = [{ id: partialInvoiceId, balance: capped, dueDate: null, invoiceDate: null }]
+      invoicesToPay = [{ id: partialInvoiceId, balance: capped, dueDate: null, invoiceDate: null, invoiceNumber: target.invoiceNumber, qboSyncId: target.qboSyncId }]
       plannedAmountsByInvoice = { [partialInvoiceId]: capped }
       lineItemIdsByInvoice = { [partialInvoiceId]: items.map((i) => i.id) }
       allocationMode = 'planned'
@@ -159,7 +159,7 @@ export async function POST(
           ...(openWhere as any),
           id: { not: invoice.id },
         },
-        select: { id: true, balance: true, dueDate: true, invoiceDate: true },
+        select: { id: true, balance: true, dueDate: true, invoiceDate: true, invoiceNumber: true, qboSyncId: true },
         orderBy: [{ dueDate: 'asc' }, { invoiceDate: 'asc' }],
       })
       invoicesToPay = invoicesToPay.filter((i) => Number(i.balance) > 0)
@@ -175,15 +175,15 @@ export async function POST(
           ...(openWhere as any),
           id: { in: selectedInvoiceIds },
         },
-        select: { id: true, balance: true, dueDate: true, invoiceDate: true },
+        select: { id: true, balance: true, dueDate: true, invoiceDate: true, invoiceNumber: true, qboSyncId: true },
       })
     } else if (payAllOutstanding) {
       invoicesToPay = await prisma.invoice.findMany({
         where: openWhere as any,
-        select: { id: true, balance: true, dueDate: true, invoiceDate: true },
+        select: { id: true, balance: true, dueDate: true, invoiceDate: true, invoiceNumber: true, qboSyncId: true },
       })
     } else {
-      invoicesToPay = [{ id: invoice.id, balance: invoice.balance, dueDate: invoice.dueDate, invoiceDate: invoice.invoiceDate }]
+      invoicesToPay = [{ id: invoice.id, balance: invoice.balance, dueDate: invoice.dueDate, invoiceDate: invoice.invoiceDate, invoiceNumber: invoice.invoiceNumber, qboSyncId: invoice.qboSyncId }]
     }
 
     // Ensure we're only paying open invoices with balance > 0
@@ -208,6 +208,8 @@ export async function POST(
 
     // Store selected invoice ids server-side (no URL bloat); reference is what comes back in xInvoice.
     const intentKey = `pp_${crypto.randomBytes(16).toString('hex')}`
+    const invoiceNumbers = invoicesToPay.map((i) => i.invoiceNumber).filter(Boolean)
+    const qboInvoiceIds = invoicesToPay.map((i) => i.qboSyncId).filter(Boolean)
     await prisma.idempotencyKey.create({
       data: {
         tenantId: invoice.tenantId,
@@ -216,6 +218,8 @@ export async function POST(
         response: {
           clientId: invoice.clientId,
           invoiceIds: invoicesToPay.map((i) => i.id),
+          invoiceNumbers,
+          qboInvoiceIds,
           plannedAmountsByInvoice,
           lineItemIdsByInvoice,
           allocationMode,
@@ -229,11 +233,15 @@ export async function POST(
     const ref = `TPINTENT:${intentKey}`
     const displayRef =
       invoicesToPay.length > 1
-        ? `Selected Invoices (${invoicesToPay.length})`
+        ? invoiceNumbers.length > 0
+          ? `Invoices ${invoiceNumbers.join(', ')}`
+          : `Selected Invoices (${invoicesToPay.length})`
         : `Invoice ${invoice.invoiceNumber}`
     const description =
       invoicesToPay.length > 1
-        ? `Selected invoices for ${invoice.client.name}`
+        ? invoiceNumbers.length > 0
+          ? `Invoices ${invoiceNumbers.join(', ')} for ${invoice.client.name}`
+          : `Selected invoices for ${invoice.client.name}`
         : `Invoice ${invoice.invoiceNumber} - ${invoice.title}`
 
     const paymentLink = await solaService.createPaymentLink({

@@ -101,6 +101,15 @@ export async function createAchPaymentSession(params: {
     include: {
       client: { select: { email: true } },
     },
+    select: {
+      id: true,
+      tenantId: true,
+      invoiceId: true,
+      invoiceNumber: true,
+      qboSyncId: true,
+      balance: true,
+      client: { select: { email: true } },
+    },
   })
   if (!invoice) throw new Error('Invoice not found.')
 
@@ -158,6 +167,8 @@ export async function createAchPaymentSession(params: {
       customerEmail: invoice.client?.email || null,
       metadata: {
         source: 'invoice_detail',
+        invoiceNumber: invoice.invoiceNumber || invoice.id,
+        qboInvoiceId: String(invoice.qboSyncId),
       },
     },
   })
