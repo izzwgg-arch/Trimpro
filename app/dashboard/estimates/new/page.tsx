@@ -345,9 +345,13 @@ export default function NewEstimatePage() {
         quantity: '1',
         unitPrice: item.defaultUnitPrice.toString(),
         unitCost: item.defaultUnitCost?.toString() || '0',
-        // Prefill line-item description from Item.description (ex: QBO SalesDesc/PurchaseDesc),
-        // not Item.notes (which we use for internal bookkeeping like import markers).
-        notes: item.description || '',
+        // Prefill "Description" from Item.description (QBO SalesDesc/PurchaseDesc).
+        // Fallback to Item.notes only when it isn't the QBO import marker.
+        notes:
+          (item.description && item.description.trim()) ||
+          (item.notes && item.notes.trim() && item.notes !== 'Imported from QuickBooks historical import'
+            ? item.notes
+            : ''),
         vendorId: item.vendorId || null,
         vendorName: item.vendorName || null,
         taxable: item.taxable,
@@ -586,7 +590,11 @@ export default function NewEstimatePage() {
         quantity: '1',
         unitPrice: item.defaultUnitPrice.toString(),
         unitCost: item.defaultUnitCost?.toString() || '0',
-        notes: item.description || '',
+        notes:
+          (item.description && item.description.trim()) ||
+          (item.notes && item.notes.trim() && item.notes !== 'Imported from QuickBooks historical import'
+            ? item.notes
+            : ''),
         vendorId: item.vendorId || null,
         vendorName: item.vendorName || null,
         taxable: item.taxable,

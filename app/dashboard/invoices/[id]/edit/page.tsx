@@ -409,7 +409,11 @@ export default function EditInvoicePage() {
         quantity: '1',
         unitPrice: item.defaultUnitPrice.toString(),
         unitCost: item.defaultUnitCost?.toString() || '0',
-        notes: item.description || '',
+        notes:
+          (item.description && item.description.trim()) ||
+          (item.notes && item.notes.trim() && item.notes !== 'Imported from QuickBooks historical import'
+            ? item.notes
+            : ''),
         vendorId: item.vendorId || null,
         vendorName: item.vendorName || null,
         taxable: item.taxable,

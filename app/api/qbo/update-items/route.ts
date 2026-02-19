@@ -88,7 +88,8 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      if (normalizeText(local.description)) {
+      const localDesc = normalizeText(local.description)
+      if (localDesc && localDesc !== 'Imported from QuickBooks historical import') {
         skippedAlreadyHasDescription++
         continue
       }
