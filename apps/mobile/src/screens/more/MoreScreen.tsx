@@ -1,46 +1,72 @@
 import React from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
-import { Screen } from '../../components/Screen'
-import { BRAND } from '../../config/env'
+import { AppScreen } from '../../components/AppScreen'
 import { MoreStackParamList } from '../../types/navigation'
 import { useOutboxCount } from '../../hooks/useOutboxCount'
+import { Card } from '../../components/Card'
+import { colors, spacing, typography } from '../../theme/tokens'
+import { Ionicons } from '@expo/vector-icons'
 
 type Props = NativeStackScreenProps<MoreStackParamList, 'MoreHome'>
 
 export function MoreScreen({ navigation }: Props) {
   const outboxCount = useOutboxCount()
   return (
-    <Screen style={styles.screen}>
-      <Text style={styles.title}>More</Text>
-      <View style={styles.card}>
-        <MenuButton label="Requests" onPress={() => navigation.navigate('Requests')} />
-        <MenuButton label="Issues" onPress={() => navigation.navigate('Issues')} />
-        <MenuButton label="Calls" onPress={() => navigation.navigate('Calls')} />
-        <MenuButton label={`Outbox${outboxCount > 0 ? ` (${outboxCount})` : ''}`} onPress={() => navigation.navigate('Outbox')} />
-        <MenuButton label="Profile" onPress={() => navigation.navigate('Profile')} />
+    <AppScreen>
+      <View style={styles.header}>
+        <Text style={styles.title}>More</Text>
+        <Text style={styles.subtitle}>Additional tools and profile settings.</Text>
       </View>
-    </Screen>
+      <Card>
+        <MenuButton label="Requests" icon="document-text-outline" onPress={() => navigation.navigate('Requests')} />
+        <MenuButton label="Issues" icon="alert-circle-outline" onPress={() => navigation.navigate('Issues')} />
+        <MenuButton label="Calls" icon="call-outline" onPress={() => navigation.navigate('Calls')} />
+        <MenuButton label={`Outbox${outboxCount > 0 ? ` (${outboxCount})` : ''}`} icon="cloud-upload-outline" onPress={() => navigation.navigate('Outbox')} />
+        <MenuButton label="Profile" icon="person-outline" onPress={() => navigation.navigate('Profile')} />
+      </Card>
+    </AppScreen>
   )
 }
 
-function MenuButton({ label, onPress }: { label: string; onPress: () => void }) {
+function MenuButton({
+  label,
+  icon,
+  onPress,
+}: {
+  label: string
+  icon: keyof typeof Ionicons.glyphMap
+  onPress: () => void
+}) {
   return (
-    <Pressable style={styles.menuButton} onPress={onPress}>
+    <Pressable
+      style={({ pressed }) => [styles.menuButton, pressed && styles.menuButtonPressed]}
+      onPress={onPress}
+      android_ripple={{ color: 'rgba(15,23,42,0.08)' }}
+    >
+      <Ionicons name={icon} size={18} color={colors.textSecondary} />
       <Text style={styles.menuText}>{label}</Text>
+      <Ionicons name="chevron-forward-outline" size={16} color={colors.muted} />
     </Pressable>
   )
 }
 
 const styles = StyleSheet.create({
-  screen: { padding: 14 },
-  title: { fontSize: 24, fontWeight: '800', color: BRAND.text, marginBottom: 12 },
-  card: { backgroundColor: BRAND.white, borderRadius: 12, padding: 8 },
+  header: { paddingTop: spacing.sm, paddingBottom: spacing.sm },
+  title: { ...typography.h2, color: colors.textPrimary },
+  subtitle: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
   menuButton: {
+    minHeight: 48,
     borderRadius: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 12,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
-  menuText: { color: BRAND.text, fontSize: 16, fontWeight: '600' },
+  menuButtonPressed: {
+    opacity: 0.9,
+  },
+  menuText: { ...typography.body, color: colors.textPrimary, fontWeight: '600', flex: 1 },
 })
 

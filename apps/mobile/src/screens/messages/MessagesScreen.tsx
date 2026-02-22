@@ -2,11 +2,14 @@ import React from 'react'
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native'
 import { useQuery } from '@tanstack/react-query'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
-import { Screen } from '../../components/Screen'
+import { AppScreen } from '../../components/AppScreen'
 import { apiRequest } from '../../api/client'
 import { Conversation } from '../../types/models'
-import { BRAND } from '../../config/env'
 import { MessagesStackParamList } from '../../types/navigation'
+import { colors, spacing, typography } from '../../theme/tokens'
+import { EmptyState } from '../../components/EmptyState'
+import { PressableCard } from '../../components/Card'
+import { SectionHeader } from '../../components/SectionHeader'
 
 interface ConversationsResponse {
   conversations: Conversation[]
@@ -33,13 +36,17 @@ export function MessagesScreen({ navigation }: Props) {
   })
 
   return (
-    <Screen style={styles.screen}>
+    <AppScreen>
       <View style={styles.headerRow}>
         <View>
           <Text style={styles.title}>Messages</Text>
-          <Text style={styles.subtitle}>Conversations with clients and team chat.</Text>
+          <Text style={styles.subtitle}>Client and crew conversations.</Text>
         </View>
-        <Pressable style={styles.teamButton} onPress={() => navigation.navigate('TeamChat')}>
+        <Pressable
+          style={({ pressed }) => [styles.teamButton, pressed && styles.teamButtonPressed]}
+          android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
+          onPress={() => navigation.navigate('TeamChat')}
+        >
           <Text style={styles.teamButtonText}>
             Team Chat
             {teamSummaryQuery.data?.unreadCount ? ` (${teamSummaryQuery.data.unreadCount})` : ''}
@@ -50,15 +57,16 @@ export function MessagesScreen({ navigation }: Props) {
         data={query.data?.conversations ?? []}
         keyExtractor={(item) => item.id}
         refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => query.refetch()} />}
-        ListEmptyComponent={<Text style={styles.empty}>No conversations.</Text>}
+        ListHeaderComponent={<SectionHeader title="Recent Conversations" />}
+        ListEmptyComponent={<EmptyState icon="chatbubble-ellipses-outline" title="No conversations" description="Messages will show here when available." />}
         renderItem={({ item }) => (
-          <Pressable style={styles.card} onPress={() => navigation.navigate('MessageThread', { conversationId: item.id })}>
+          <PressableCard style={styles.card} onPress={() => navigation.navigate('MessageThread', { conversationId: item.id })}>
             <Text style={styles.cardTitle}>{item.client?.name || item.participants?.[0] || 'Conversation'}</Text>
             <Text style={styles.meta}>{item.messages?.[0]?.body || 'No recent messages'}</Text>
-          </Pressable>
+          </PressableCard>
         )}
       />
-    </Screen>
+    </AppScreen>
   )
 }
 
@@ -68,36 +76,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10,
+    marginTop: spacing.sm,
+    marginBottom: spacing.sm,
   },
-  title: { fontSize: 24, fontWeight: '800', color: BRAND.text },
-  subtitle: { color: BRAND.muted, marginTop: 2 },
+  title: { ...typography.h2, color: colors.textPrimary },
+  subtitle: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
   teamButton: {
-    backgroundColor: BRAND.primary,
+    backgroundColor: colors.brandPrimary,
     borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    minHeight: 44,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    justifyContent: 'center',
   },
+  teamButtonPressed: { opacity: 0.9 },
   teamButtonText: {
-    color: BRAND.white,
+    color: colors.surface,
     fontWeight: '700',
     fontSize: 12,
   },
-  empty: { textAlign: 'center', color: BRAND.muted, marginTop: 42 },
-  card: {
-    backgroundColor: BRAND.white,
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#EAECF0',
-    shadowColor: '#101828',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
-  cardTitle: { color: BRAND.text, fontWeight: '700', marginBottom: 4 },
-  meta: { color: BRAND.muted, fontSize: 13 },
+  card: { marginBottom: spacing.sm },
+  cardTitle: { ...typography.sub, color: colors.textPrimary, fontWeight: '700', marginBottom: 4 },
+  meta: { ...typography.caption, color: colors.textSecondary },
 })
 

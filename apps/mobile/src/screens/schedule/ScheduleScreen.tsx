@@ -1,11 +1,14 @@
 import React from 'react'
 import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native'
 import { useQuery } from '@tanstack/react-query'
-import { Screen } from '../../components/Screen'
+import { AppScreen } from '../../components/AppScreen'
 import { apiRequest } from '../../api/client'
 import { ScheduleItem } from '../../types/models'
-import { BRAND } from '../../config/env'
 import { useAuth } from '../../auth/AuthContext'
+import { colors, spacing, typography } from '../../theme/tokens'
+import { Card } from '../../components/Card'
+import { EmptyState } from '../../components/EmptyState'
+import { SectionHeader } from '../../components/SectionHeader'
 
 interface ScheduleResponse {
   schedules: ScheduleItem[]
@@ -21,47 +24,39 @@ export function ScheduleScreen() {
   })
 
   return (
-    <Screen style={styles.screen}>
-      <Text style={styles.title}>Schedule</Text>
-      <Text style={styles.subtitle}>Weekly calendar timeline for assigned work.</Text>
+    <AppScreen>
+      <View style={styles.header}>
+        <Text style={styles.title}>Schedule</Text>
+        <Text style={styles.subtitle}>Weekly timeline for your assigned work.</Text>
+      </View>
       <FlatList
         data={query.data?.schedules ?? []}
         keyExtractor={(item) => item.id}
         refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => query.refetch()} />}
-        ListEmptyComponent={<Text style={styles.empty}>No schedule items.</Text>}
+        ListHeaderComponent={<SectionHeader title="This Week" />}
+        ListEmptyComponent={
+          <EmptyState icon="calendar-outline" title="No schedule items" description="New assignments appear here automatically." />
+        }
         renderItem={({ item }) => (
-          <View style={styles.card}>
+          <Card style={styles.card}>
             <Text style={styles.cardTitle}>{item.title}</Text>
             <Text style={styles.meta}>
               {new Date(item.startTime).toLocaleString()} - {new Date(item.endTime).toLocaleString()}
             </Text>
             <Text style={styles.meta}>{item.job ? `${item.job.jobNumber} - ${item.job.title}` : item.type}</Text>
-          </View>
+          </Card>
         )}
       />
-    </Screen>
+    </AppScreen>
   )
 }
 
 const styles = StyleSheet.create({
-  screen: { padding: 14 },
-  title: { fontSize: 24, fontWeight: '800', color: BRAND.text, marginBottom: 2 },
-  subtitle: { color: BRAND.muted, marginBottom: 12 },
-  empty: { textAlign: 'center', color: BRAND.muted, marginTop: 42 },
-  card: {
-    backgroundColor: BRAND.white,
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#EAECF0',
-    shadowColor: '#101828',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
-  cardTitle: { color: BRAND.text, fontWeight: '700', marginBottom: 4 },
-  meta: { color: BRAND.muted, fontSize: 13 },
+  header: { paddingTop: spacing.sm, paddingBottom: spacing.sm },
+  title: { ...typography.h2, color: colors.textPrimary },
+  subtitle: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  card: { marginBottom: spacing.sm },
+  cardTitle: { ...typography.sub, color: colors.textPrimary, fontWeight: '700', marginBottom: 4 },
+  meta: { ...typography.caption, color: colors.textSecondary },
 })
 
