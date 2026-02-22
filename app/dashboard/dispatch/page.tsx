@@ -30,6 +30,38 @@ import {
   X,
 } from 'lucide-react'
 
+function VideoThumbnail({ src, className = 'h-full w-full object-cover bg-black/80' }: { src: string; className?: string }) {
+  const videoRef = useRef<HTMLVideoElement>(null)
+
+  const handleMouseEnter = () => {
+    if (videoRef.current) {
+      videoRef.current.play().catch(() => {
+        // Ignore autoplay errors
+      })
+    }
+  }
+
+  const handleMouseLeave = () => {
+    if (videoRef.current) {
+      videoRef.current.pause()
+      videoRef.current.currentTime = 0
+    }
+  }
+
+  return (
+    <video
+      ref={videoRef}
+      src={src}
+      className={className}
+      muted
+      loop
+      playsInline
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    />
+  )
+}
+
 type DispatchView = 'board' | 'calendar' | 'list' | 'live'
 
 type Job = {
@@ -651,7 +683,7 @@ export default function DispatchPage() {
                         <img src={item.attachment.url} alt={item.attachment.fileName || 'upload'} className="max-h-48 rounded border object-cover" />
                       )}
                       {String(item.attachment?.mimeType || '').startsWith('video/') && (
-                        <video src={item.attachment.url} controls className="max-h-56 rounded border w-full bg-black/80" />
+                        <VideoThumbnail src={item.attachment.url} className="max-h-56 rounded border w-full bg-black/80" />
                       )}
                       <a className="text-xs text-blue-600 underline inline-block" href={item.attachment.url} target="_blank" rel="noreferrer">
                         Open media
@@ -781,7 +813,7 @@ export default function DispatchPage() {
                           {isImage ? (
                             <img src={m.url} alt={m.fileName || 'media'} className="h-full w-full object-cover" />
                           ) : isVideo ? (
-                            <video src={m.url} className="h-full w-full object-cover bg-black/80" />
+                            <VideoThumbnail src={m.url} />
                           ) : (
                             <div className="h-full w-full grid place-items-center text-slate-500">
                               <Film className="h-6 w-6" />
