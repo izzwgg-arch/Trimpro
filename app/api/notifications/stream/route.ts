@@ -36,6 +36,26 @@ export async function GET(request: NextRequest) {
 
       let cursor = sinceDate || new Date(Date.now() - 60_000)
 
+      // Do an immediate check on connection
+      try {
+        const initialNotifications = await prisma.notification.findMany({
+          where: {
+            tenantId: user.tenantId,
+            userId: user.id,
+            createdAt: { gt: cursor },
+          },
+          orderBy: { createdAt: 'asc' },
+          take: 50,
+        })
+
+        if (initialNotifications.length > 0) {
+          cursor = new Date(initialNotifications[initialNotifications.length - 1]!.createdAt)
+          send('notifications', { notifications: initialNotifications })
+        }
+      } catch (e: any) {
+        send('error', { error: 'initial_check_error' })
+      }
+
       while (!request.signal.aborted) {
         try {
           const notifications = await prisma.notification.findMany({
@@ -60,7 +80,7 @@ export async function GET(request: NextRequest) {
         }
 
         // Poll cadence; fast enough to feel real-time without hammering DB
-        await sleep(4000)
+        await sleep(1000) // Reduced to 1 second for faster updates
       }
 
       controller.close()
