@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
+import { notifyIssueAssigned, createNotificationsForUsers } from '@/lib/notifications'
 
 export async function GET(
   request: NextRequest,
@@ -189,19 +190,8 @@ export async function PUT(
         return NextResponse.json({ error: 'Assignee not found' }, { status: 404 })
       }
 
-      // Create notification for new assignee
-      await prisma.notification.create({
-        data: {
-          tenantId: user.tenantId,
-          userId: assigneeId,
-          type: 'ISSUE_ASSIGNED',
-          title: 'Issue Reassigned',
-          message: `${user.firstName} ${user.lastName} assigned you: "${existing.title}"`,
-          linkType: 'issue',
-          linkId: existing.id,
-          linkUrl: `/dashboard/issues/${existing.id}`,
-        },
-      })
+      // Notify new assignee with push notification
+      await notifyIssueAssigned(user.tenantId, assigneeId, existing.id, existing.title)
     }
 
     // Update issue
@@ -267,6 +257,42 @@ export async function PUT(
           clientId: issue.clientId || undefined,
           jobId: issue.jobId || undefined,
         },
+      })
+    }
+
+    // Notify assignee and watchers about any update (including status changes and other field updates)
+    const notifyUserIds: string[] = []
+    if (issue.assigneeId) {
+      notifyUserIds.push(issue.assigneeId)
+    }
+    
+    // Get watchers
+    const watchers = await prisma.issueWatcher.findMany({
+      where: { issueId: issue.id },
+      select: { userId: true },
+    })
+    for (const watcher of watchers) {
+      if (!notifyUserIds.includes(watcher.userId)) {
+        notifyUserIds.push(watcher.userId)
+      }
+    }
+
+    if (notifyUserIds.length > 0) {
+      let notificationTitle = 'Issue Updated'
+      let notificationMessage = `"${issue.title}" has been updated`
+
+      if (statusChanged) {
+        notificationTitle = status === 'RESOLVED' ? 'Issue Resolved' : 'Issue Status Updated'
+        notificationMessage = `"${issue.title}" ${status === 'RESOLVED' ? 'has been resolved' : `status changed to ${status}`}`
+      }
+
+      await createNotificationsForUsers(user.tenantId, notifyUserIds, {
+        type: 'OTHER',
+        title: notificationTitle,
+        message: notificationMessage,
+        linkType: 'issue',
+        linkId: issue.id,
+        linkUrl: `/dashboard/issues/${issue.id}`,
       })
     }
 

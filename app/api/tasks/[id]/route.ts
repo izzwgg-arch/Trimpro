@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
+import { notifyTaskAssigned, createNotificationsForUsers } from '@/lib/notifications'
 
 export async function GET(
   request: NextRequest,
@@ -143,19 +144,8 @@ export async function PUT(
         return NextResponse.json({ error: 'Assignee not found' }, { status: 404 })
       }
 
-      // Create notification for new assignee
-      await prisma.notification.create({
-        data: {
-          tenantId: user.tenantId,
-          userId: assigneeId,
-          type: 'TASK_ASSIGNED',
-          title: 'Task Reassigned',
-          message: `${user.firstName} ${user.lastName} assigned you: "${existing.title}"`,
-          linkType: 'task',
-          linkId: existing.id,
-          linkUrl: `/dashboard/tasks/${existing.id}`,
-        },
-      })
+      // Notify new assignee with push notification
+      await notifyTaskAssigned(user.tenantId, assigneeId, existing.id, existing.title)
     }
 
     // Track status change
@@ -212,6 +202,26 @@ export async function PUT(
           clientId: task.clientId || undefined,
           jobId: task.jobId || undefined,
         },
+      })
+    }
+
+    // Notify assignee about any update (including status changes and other field updates)
+    if (task.assigneeId) {
+      let notificationTitle = 'Task Updated'
+      let notificationMessage = `"${task.title}" has been updated`
+
+      if (statusChanged) {
+        notificationTitle = status === 'COMPLETED' ? 'Task Completed' : 'Task Status Updated'
+        notificationMessage = `"${task.title}" ${status === 'COMPLETED' ? 'has been completed' : `status changed to ${status}`}`
+      }
+
+      await createNotificationsForUsers(user.tenantId, [task.assigneeId], {
+        type: 'OTHER',
+        title: notificationTitle,
+        message: notificationMessage,
+        linkType: 'task',
+        linkId: task.id,
+        linkUrl: `/dashboard/tasks/${task.id}`,
       })
     }
 

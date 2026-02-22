@@ -1,14 +1,29 @@
 import 'react-native-gesture-handler'
 import React, { useEffect, useRef, useState } from 'react'
+import { View } from 'react-native'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import * as Notifications from 'expo-notifications'
 import * as Linking from 'expo-linking'
+import * as SplashScreen from 'expo-splash-screen'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { RootNavigator } from './navigation/RootNavigator'
 import { registerPushToken } from './notifications/registerPush'
 import { flushOutbox, loadOutbox } from './offline/outbox'
 import { useOnlineState } from './hooks/useOnlineState'
 import { apiRequest } from './api/client'
+import { NotificationPopup } from './components/NotificationPopup'
+
+// Keep splash screen visible until we explicitly hide it
+SplashScreen.preventAutoHideAsync()
+
+// Configure notification behavior
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+})
 
 const queryClient = new QueryClient()
 
@@ -17,6 +32,8 @@ function SyncAndPushBootstrap() {
   const isOnline = useOnlineState()
   const [initializedPush, setInitializedPush] = useState(false)
   const assignmentSignatureRef = useRef('')
+  const [currentNotification, setCurrentNotification] = useState<Notifications.Notification | null>(null)
+  const lastNotificationIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (!token || initializedPush) return
@@ -24,6 +41,16 @@ function SyncAndPushBootstrap() {
     void registerPushToken()
   }, [initializedPush, token])
 
+  // Handle foreground notifications (show popup)
+  useEffect(() => {
+    const sub = Notifications.addNotificationReceivedListener((notification) => {
+      // Show popup for foreground notifications
+      setCurrentNotification(notification)
+    })
+    return () => sub.remove()
+  }, [])
+
+  // Handle notification taps
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
       const data = (response.notification.request.content.data || {}) as Record<string, any>
@@ -42,6 +69,76 @@ function SyncAndPushBootstrap() {
     })
     return () => sub.remove()
   }, [])
+
+  // Poll for new notifications
+  useEffect(() => {
+    if (!token || !isOnline) return
+    let stopped = false
+    let lastPollTime = Date.now()
+
+    const pollNotifications = async () => {
+      try {
+        const data = await apiRequest<{
+          notifications: Array<{
+            id: string
+            title: string
+            message: string | null
+            linkType: string | null
+            linkId: string | null
+            createdAt: string
+          }>
+        }>('/api/notifications?status=UNREAD&limit=5')
+
+        // Check for notifications created after our last poll
+        const newNotifications = data.notifications.filter((n) => {
+          const createdAt = new Date(n.createdAt).getTime()
+          return createdAt > lastPollTime - 5000 // Include notifications from 5 seconds before last poll
+        })
+
+        // Show the most recent new notification
+        if (newNotifications.length > 0) {
+          const latest = newNotifications[0]
+          if (latest.id !== lastNotificationIdRef.current) {
+            lastNotificationIdRef.current = latest.id
+
+            // Create a notification object for the popup
+            const notification: Notifications.Notification = {
+              request: {
+                identifier: latest.id,
+                content: {
+                  title: latest.title,
+                  body: latest.message || undefined,
+                  data: {
+                    linkType: latest.linkType || undefined,
+                    linkId: latest.linkId || undefined,
+                  },
+                },
+                trigger: null,
+              },
+              date: new Date(latest.createdAt),
+            }
+
+            setCurrentNotification(notification)
+          }
+        }
+
+        lastPollTime = Date.now()
+      } catch {
+        // Non-blocking
+      }
+    }
+
+    // Poll immediately, then every 5 seconds for faster updates
+    void pollNotifications()
+    const interval = setInterval(() => {
+      if (!stopped) void pollNotifications()
+    }, 5000)
+
+    return () => {
+      stopped = true
+      clearInterval(interval)
+    }
+  }, [token, isOnline])
 
   useEffect(() => {
     if (!token || !isOnline) return
@@ -100,10 +197,46 @@ function SyncAndPushBootstrap() {
     }
   }, [isOnline, token])
 
-  return <RootNavigator />
+  return (
+    <>
+      <RootNavigator />
+      <NotificationPopup
+        notification={currentNotification}
+        onDismiss={() => setCurrentNotification(null)}
+      />
+    </>
+  )
 }
 
 export default function AppRoot() {
+  const [appIsReady, setAppIsReady] = useState(false)
+
+  useEffect(() => {
+    async function prepare() {
+      try {
+        // Wait for app to be ready, then add a minimum delay for splash screen
+        await new Promise((resolve) => setTimeout(resolve, 2500)) // 2.5 second minimum display
+        setAppIsReady(true)
+      } catch (e) {
+        console.warn('Error preparing app:', e)
+        setAppIsReady(true)
+      }
+    }
+
+    void prepare()
+  }, [])
+
+  useEffect(() => {
+    if (appIsReady) {
+      // Hide splash screen after minimum delay
+      void SplashScreen.hideAsync()
+    }
+  }, [appIsReady])
+
+  if (!appIsReady) {
+    return null
+  }
+
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
