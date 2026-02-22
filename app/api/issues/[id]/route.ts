@@ -266,12 +266,12 @@ export async function PUT(
       notifyUserIds.push(issue.assigneeId)
     }
     
-    // Get watchers
-    const watchers = await prisma.issueWatcher.findMany({
+    // Get watchers from database
+    const issueWatchers = await prisma.issueWatcher.findMany({
       where: { issueId: issue.id },
       select: { userId: true },
     })
-    for (const watcher of watchers) {
+    for (const watcher of issueWatchers) {
       if (!notifyUserIds.includes(watcher.userId)) {
         notifyUserIds.push(watcher.userId)
       }
