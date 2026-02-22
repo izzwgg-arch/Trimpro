@@ -202,27 +202,36 @@ export async function POST(request: NextRequest) {
           })
 
           const cleanFileDesc = getCleanFileDescription(attachment.fileName, attachment.mimeType)
-          const jobDisplayName = job.title || job.jobNumber
+          const jobDisplayName = (job.title || job.jobNumber || 'Job').trim()
+          const jobNumber = job.jobNumber || 'Unknown'
 
           const recipientIds = Array.from(new Set(job.assignments.map((a) => a.userId).filter((id) => id !== user.id)))
           if (recipientIds.length > 0) {
-            await createNotificationsForUsers(user.tenantId, recipientIds, {
-              type: 'OTHER',
-              title: `${actorName} uploaded ${cleanFileDesc}`,
-              message: `${jobDisplayName} (${job.jobNumber})`,
-              linkType: 'job',
-              linkId: job.id,
-              linkUrl: `/dashboard/dispatch?jobId=${job.id}`,
-            })
+            try {
+              await createNotificationsForUsers(user.tenantId, recipientIds, {
+                type: 'OTHER',
+                title: `${actorName} uploaded ${cleanFileDesc}`,
+                message: `${jobDisplayName} (${jobNumber})`,
+                linkType: 'job',
+                linkId: job.id,
+                linkUrl: `/dashboard/dispatch?jobId=${job.id}`,
+              })
+            } catch (notifError) {
+              console.error('Failed to create notifications for assigned users:', notifError)
+            }
           }
 
-          await notifyDispatchJobActivity({
-            tenantId: user.tenantId,
-            jobId: job.id,
-            title: `${actorName} uploaded ${cleanFileDesc}`,
-            message: `${jobDisplayName} (${job.jobNumber})`,
-            excludeUserId: user.id,
-          })
+          try {
+            await notifyDispatchJobActivity({
+              tenantId: user.tenantId,
+              jobId: job.id,
+              title: `${actorName} uploaded ${cleanFileDesc}`,
+              message: `${jobDisplayName} (${jobNumber})`,
+              excludeUserId: user.id,
+            })
+          } catch (dispatchNotifError) {
+            console.error('Failed to create dispatch notifications:', dispatchNotifError)
+          }
         }
       } catch (error) {
         console.error('Attachment dispatch fanout error:', error)
