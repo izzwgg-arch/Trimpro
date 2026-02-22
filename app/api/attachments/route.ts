@@ -119,6 +119,42 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    // If attachment is for a job, also attach it to any linked invoices
+    if (entityTypeRaw === 'job') {
+      try {
+        const linkedInvoices = await prisma.invoice.findMany({
+          where: {
+            jobId: entityId,
+            tenantId: user.tenantId,
+          },
+          select: { id: true },
+        })
+
+        // Create duplicate attachments for each linked invoice
+        if (linkedInvoices.length > 0) {
+          await Promise.all(
+            linkedInvoices.map((invoice) =>
+              prisma.attachment.create({
+                data: {
+                  invoiceId: invoice.id,
+                  fileName,
+                  url,
+                  key,
+                  mimeType,
+                  fileSize,
+                  uploadedById: user.id,
+                },
+              })
+            )
+          )
+          console.log(`[Attachment] Also attached to ${linkedInvoices.length} invoice(s) linked to job ${entityId}`)
+        }
+      } catch (invoiceAttachError) {
+        console.error('[Attachment] Failed to attach to linked invoices:', invoiceAttachError)
+        // Don't fail the main attachment creation if invoice attachment fails
+      }
+    }
+
     if (entityTypeRaw === 'job') {
       try {
         console.log('[Attachment] Processing job attachment notification for jobId:', entityId, 'userId:', user.id)
