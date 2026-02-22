@@ -2020,6 +2020,10 @@ model Role {
   isSystem    Boolean @default(false) // System roles cannot be deleted
   isActive    Boolean @default(true)
 
+  // Mobile app permissions (stored as JSON array of permission keys)
+  // Separate from web permissions to allow different access levels for mobile vs web
+  mobilePermissions Json? // Array of mobile permission keys, e.g., ["mobile.jobs.view_all", "mobile.tasks.create"]
+
   // Relationships
   tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   permissions           RolePermission[]

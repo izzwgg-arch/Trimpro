@@ -8,8 +8,10 @@ interface AuthContextValue {
   user: AuthUser | null
   token: string | null
   isLoading: boolean
+  mobilePermissions: string[]
   signIn: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
+  refreshPermissions: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
@@ -24,6 +26,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [token, setToken] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [mobilePermissions, setMobilePermissions] = useState<string[]>([])
 
   const signOut = useCallback(async () => {
     setUser(null)
@@ -46,6 +49,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (mounted && storedToken && storedUser) {
           setToken(storedToken)
           setUser(JSON.parse(storedUser) as AuthUser)
+          // Fetch permissions on app load
+          await fetchPermissions(storedToken)
         }
       } finally {
         if (mounted) setIsLoading(false)
@@ -54,6 +59,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       mounted = false
     }
+  }, [fetchPermissions])
+
+  const fetchPermissions = useCallback(async (authToken: string) => {
+    try {
+      // apiRequest gets token from storage, but we need to ensure it's saved first
+      // For initial load, token should already be in storage from signIn
+      const meResponse = await apiRequest<{
+        user: AuthUser
+        mobilePermissions: string[]
+      }>('/api/me')
+      
+      setMobilePermissions(meResponse.mobilePermissions || [])
+      return meResponse.mobilePermissions || []
+    } catch (error) {
+      console.error('Failed to fetch permissions:', error)
+      setMobilePermissions([])
+      return []
+    }
   }, [])
 
   const signIn = useCallback(async (email: string, password: string) => {
@@ -61,17 +84,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(response.accessToken)
     setUser(response.user)
     await saveAuth(response.accessToken, response.refreshToken, JSON.stringify(response.user))
-  }, [])
+    
+    // Fetch permissions after login
+    await fetchPermissions(response.accessToken)
+  }, [fetchPermissions])
+
+  const refreshPermissions = useCallback(async () => {
+    if (token) {
+      await fetchPermissions(token)
+    }
+  }, [token, fetchPermissions])
 
   const value = useMemo(
     () => ({
       user,
       token,
       isLoading,
+      mobilePermissions,
       signIn,
       signOut,
+      refreshPermissions,
     }),
-    [isLoading, signIn, signOut, token, user]
+    [isLoading, signIn, signOut, token, user, mobilePermissions, refreshPermissions]
   )
 
   if (isLoading) {

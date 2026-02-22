@@ -138,6 +138,78 @@ async function seedRoles(tenantId: string) {
 
   const createdRoles = []
 
+  // Define default mobile permissions for each role
+  const mobilePermissionsByRole: Record<string, string[]> = {
+    Owner: [
+      'mobile.access',
+      'mobile.jobs.view_all',
+      'mobile.jobs.assign',
+      'mobile.jobs.complete',
+      'mobile.tasks.create',
+      'mobile.tasks.assign_to_any',
+      'mobile.issues.create',
+      'mobile.issues.assign_to_any',
+      'mobile.messaging.enabled',
+      'mobile.media.upload',
+    ],
+    Admin: [
+      'mobile.access',
+      'mobile.jobs.view_all',
+      'mobile.jobs.assign',
+      'mobile.jobs.complete',
+      'mobile.tasks.create',
+      'mobile.tasks.assign_to_any',
+      'mobile.issues.create',
+      'mobile.issues.assign_to_any',
+      'mobile.messaging.enabled',
+      'mobile.media.upload',
+    ],
+    Manager: [
+      'mobile.access',
+      'mobile.jobs.view_all',
+      'mobile.jobs.assign',
+      'mobile.jobs.complete',
+      'mobile.tasks.create',
+      'mobile.tasks.assign_to_any',
+      'mobile.issues.create',
+      'mobile.issues.assign_to_any',
+      'mobile.messaging.enabled',
+      'mobile.media.upload',
+    ],
+    Dispatcher: [
+      'mobile.access',
+      'mobile.jobs.view_all',
+      'mobile.jobs.assign',
+      'mobile.jobs.complete',
+      'mobile.tasks.create',
+      'mobile.tasks.assign_to_any',
+      'mobile.issues.create',
+      'mobile.issues.assign_to_any',
+      'mobile.messaging.enabled',
+      'mobile.media.upload',
+    ],
+    Tech: [
+      'mobile.access',
+      'mobile.jobs.view_assigned',
+      'mobile.jobs.complete',
+      'mobile.tasks.create',
+      'mobile.tasks.assign_to_admin',
+      'mobile.issues.create',
+      'mobile.issues.assign_to_admin',
+      'mobile.messaging.enabled',
+      'mobile.media.upload',
+    ],
+    Accounting: [
+      'mobile.access',
+      'mobile.jobs.view_assigned',
+      'mobile.messaging.enabled',
+    ],
+    ReadOnly: [
+      'mobile.access',
+      'mobile.jobs.view_assigned',
+    ],
+  }
+
   for (const roleDef of systemRoles) {
     const role = await prisma.role.create({
       data: {
@@ -146,6 +218,7 @@ async function seedRoles(tenantId: string) {
         description: roleDef.description,
         isSystem: true,
         isActive: true,
+        mobilePermissions: mobilePermissionsByRole[roleDef.name] || ['mobile.access'],
       },
     })
 
@@ -163,8 +236,9 @@ async function seedRoles(tenantId: string) {
       })
     }
 
+    const mobilePermsCount = (mobilePermissionsByRole[roleDef.name] || []).length
     createdRoles.push(role)
-    console.log(`   ✅ Created role: ${roleDef.name} (${permissionsToAssign.length} permissions)`)
+    console.log(`   ✅ Created role: ${roleDef.name} (${permissionsToAssign.length} web permissions, ${mobilePermsCount} mobile permissions)`)
   }
 
   return createdRoles

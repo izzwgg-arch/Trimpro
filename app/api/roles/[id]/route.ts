@@ -70,7 +70,7 @@ export async function PUT(
     }
 
     const body = await request.json()
-    const { name, description, permissions } = body
+    const { name, description, permissions, mobilePermissions } = body
 
     // Update role
     const updatedRole = await prisma.role.update({
@@ -78,6 +78,10 @@ export async function PUT(
       data: {
         name: name || role.name,
         description: description !== undefined ? description : role.description,
+        mobilePermissions:
+          mobilePermissions !== undefined && Array.isArray(mobilePermissions)
+            ? mobilePermissions
+            : role.mobilePermissions,
       },
     })
 
@@ -124,6 +128,7 @@ export async function PUT(
             name: updatedRole.name,
             description: updatedRole.description,
             permissions,
+            mobilePermissions,
           },
         },
       },

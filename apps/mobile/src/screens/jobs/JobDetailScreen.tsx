@@ -14,6 +14,7 @@ import { JobsStackParamList } from '../../types/navigation'
 import { enqueueOutbox } from '../../offline/outbox'
 import { useOnlineState } from '../../hooks/useOnlineState'
 import { useAuth } from '../../auth/AuthContext'
+import { useMobilePermissions } from '../../hooks/useMobilePermissions'
 
 type Props = NativeStackScreenProps<JobsStackParamList, 'JobDetail'>
 
@@ -42,6 +43,7 @@ export function JobDetailScreen({ route }: Props) {
   const [noteText, setNoteText] = useState('')
   const [locationSharing, setLocationSharing] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
+  const { canCompleteJobs, canUploadMedia, canCreateTasks, canCreateIssues, canAssignTasksToAdmin, canAssignIssuesToAdmin } = useMobilePermissions()
 
   const jobQuery = useQuery({
     queryKey: ['mobile-job', jobId],
@@ -306,17 +308,33 @@ export function JobDetailScreen({ route }: Props) {
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Status flow</Text>
               <View style={styles.statusWrap}>
-                {FIELD_STATUS_FLOW.map((status) => (
-                  <Pressable
-                    key={status}
-                    style={[styles.statusButton, job.status === status && styles.statusButtonActive]}
-                    onPress={() => statusMutation.mutate(status)}
-                  >
-                    <Text style={[styles.statusButtonText, job.status === status && styles.statusButtonTextActive]}>
-                      {status.replaceAll('_', ' ')}
-                    </Text>
-                  </Pressable>
-                ))}
+                {FIELD_STATUS_FLOW.map((status) => {
+                  const isCompleted = status === 'COMPLETED'
+                  const canChange = !isCompleted || canCompleteJobs()
+                  
+                  return (
+                    <Pressable
+                      key={status}
+                      style={[
+                        styles.statusButton,
+                        job.status === status && styles.statusButtonActive,
+                        !canChange && styles.statusButtonDisabled,
+                      ]}
+                      onPress={() => {
+                        if (!canChange) {
+                          Alert.alert('Permission Denied', 'You do not have permission to complete jobs.')
+                          return
+                        }
+                        statusMutation.mutate(status)
+                      }}
+                      disabled={!canChange}
+                    >
+                      <Text style={[styles.statusButtonText, job.status === status && styles.statusButtonTextActive]}>
+                        {status.replaceAll('_', ' ')}
+                      </Text>
+                    </Pressable>
+                  )
+                })}
               </View>
             </View>
 
@@ -334,16 +352,17 @@ export function JobDetailScreen({ route }: Props) {
               </Pressable>
             </View>
 
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Media uploads</Text>
-              <View style={styles.row}>
-                <Pressable style={styles.secondaryButton} onPress={() => onPickMedia(false)}>
-                  <Text style={styles.secondaryButtonText}>Upload from gallery</Text>
-                </Pressable>
-                <Pressable style={styles.secondaryButton} onPress={() => onPickMedia(true)}>
-                  <Text style={styles.secondaryButtonText}>Take photo / video</Text>
-                </Pressable>
-              </View>
+            {canUploadMedia() && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Media uploads</Text>
+                <View style={styles.row}>
+                  <Pressable style={styles.secondaryButton} onPress={() => onPickMedia(false)}>
+                    <Text style={styles.secondaryButtonText}>Upload from gallery</Text>
+                  </Pressable>
+                  <Pressable style={styles.secondaryButton} onPress={() => onPickMedia(true)}>
+                    <Text style={styles.secondaryButtonText}>Take photo / video</Text>
+                  </Pressable>
+                </View>
               {uploadProgress !== null && (
                 <Text style={styles.meta}>Upload progress: {Math.round(uploadProgress * 100)}%</Text>
               )}
@@ -355,7 +374,8 @@ export function JobDetailScreen({ route }: Props) {
                   <Text style={styles.attachmentMeta}>{Math.round(a.fileSize / 1024)} KB</Text>
                 </View>
               ))}
-            </View>
+              </View>
+            )}
 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Location</Text>
@@ -364,6 +384,93 @@ export function JobDetailScreen({ route }: Props) {
                 <Switch value={locationSharing} onValueChange={onToggleLocation} />
               </View>
             </View>
+
+            {(canCreateTasks() || canCreateIssues()) && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Quick Actions</Text>
+                <View style={styles.row}>
+                  {canCreateTasks() && (
+                    <Pressable
+                      style={styles.secondaryButton}
+                      onPress={async () => {
+                        if (!job) return
+                        try {
+                          // Get admin users for assignment
+                          const usersResponse = await apiRequest<{ users: Array<{ id: string; role: string; firstName: string; lastName: string }> }>(
+                            '/api/users?role=ADMIN&limit=10'
+                          )
+                          const adminUsers = usersResponse.users.filter((u) => u.role === 'ADMIN' || u.role === 'OFFICE')
+                          
+                          if (adminUsers.length === 0) {
+                            Alert.alert('No Admin Users', 'No admin users found to assign the task to.')
+                            return
+                          }
+
+                          // If user can only assign to admin, use first admin
+                          // If user can assign to any, they could choose, but for simplicity, auto-assign to first admin
+                          const assigneeId = adminUsers[0].id
+                          
+                          await apiRequest('/api/tasks?mobile=true', 'POST', {
+                            title: `Task for ${job.jobNumber}`,
+                            description: `Task created from job ${job.jobNumber}: ${job.title}`,
+                            assigneeId,
+                            jobId: job.id,
+                            priority: 'MEDIUM',
+                            status: 'TODO',
+                          })
+
+                          Alert.alert('Success', `Task created and assigned to ${adminUsers[0].firstName} ${adminUsers[0].lastName}`)
+                          queryClient.invalidateQueries({ queryKey: ['mobile-assignments'] })
+                        } catch (error: any) {
+                          Alert.alert('Error', error?.message || 'Failed to create task')
+                        }
+                      }}
+                    >
+                      <Text style={styles.secondaryButtonText}>Create Task for Admin</Text>
+                    </Pressable>
+                  )}
+                  {canCreateIssues() && (
+                    <Pressable
+                      style={styles.secondaryButton}
+                      onPress={async () => {
+                        if (!job) return
+                        try {
+                          // Get admin users for assignment
+                          const usersResponse = await apiRequest<{ users: Array<{ id: string; role: string; firstName: string; lastName: string }> }>(
+                            '/api/users?role=ADMIN&limit=10'
+                          )
+                          const adminUsers = usersResponse.users.filter((u) => u.role === 'ADMIN' || u.role === 'OFFICE')
+                          
+                          if (adminUsers.length === 0) {
+                            Alert.alert('No Admin Users', 'No admin users found to assign the issue to.')
+                            return
+                          }
+
+                          const assigneeId = adminUsers[0].id
+                          
+                          await apiRequest('/api/issues?mobile=true', 'POST', {
+                            title: `Issue for ${job.jobNumber}`,
+                            description: `Issue created from job ${job.jobNumber}: ${job.title}`,
+                            assigneeId,
+                            jobId: job.id,
+                            type: 'OTHER',
+                            priority: 'MEDIUM',
+                            status: 'OPEN',
+                          })
+
+                          Alert.alert('Success', `Issue created and assigned to ${adminUsers[0].firstName} ${adminUsers[0].lastName}`)
+                          queryClient.invalidateQueries({ queryKey: ['mobile-assignments'] })
+                        } catch (error: any) {
+                          Alert.alert('Error', error?.message || 'Failed to create issue')
+                        }
+                      }}
+                    >
+                      <Text style={styles.secondaryButtonText}>Create Issue for Admin</Text>
+                    </Pressable>
+                  )}
+                </View>
+              </View>
+            )}
           </>
         )}
       </ScrollView>
@@ -422,6 +529,9 @@ const styles = StyleSheet.create({
   statusButtonActive: {
     borderColor: BRAND.primary,
     backgroundColor: '#EEF4F7',
+  },
+  statusButtonDisabled: {
+    opacity: 0.5,
   },
   statusButtonText: {
     color: '#475467',

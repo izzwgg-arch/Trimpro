@@ -37,9 +37,16 @@ export default function RolesPage() {
     name: '',
     description: '',
     permissions: [] as string[],
+    mobilePermissions: [] as string[],
   })
 
   const permissionsByCategory = getPermissionsByCategory()
+  
+  // Get mobile permissions separately
+  const mobilePermissions = permissionsByCategory['Mobile App'] || []
+  const webPermissionsByCategory = Object.fromEntries(
+    Object.entries(permissionsByCategory).filter(([cat]) => cat !== 'Mobile App')
+  )
 
   useEffect(() => {
     fetchRoles()
@@ -84,7 +91,7 @@ export default function RolesPage() {
 
       if (response.ok) {
         setShowCreateModal(false)
-        setFormData({ name: '', description: '', permissions: [] })
+        setFormData({ name: '', description: '', permissions: [], mobilePermissions: [] })
         fetchRoles()
       } else {
         const error = await response.json()
@@ -112,7 +119,7 @@ export default function RolesPage() {
 
       if (response.ok) {
         setEditingRole(null)
-        setFormData({ name: '', description: '', permissions: [] })
+        setFormData({ name: '', description: '', permissions: [], mobilePermissions: [] })
         fetchRoles()
       } else {
         const error = await response.json()
@@ -170,13 +177,58 @@ export default function RolesPage() {
     }))
   }
 
-  const openEditModal = (role: Role) => {
+  const openEditModal = async (role: Role) => {
     setEditingRole(role)
-    setFormData({
-      name: role.name,
-      description: role.description || '',
-      permissions: role.permissions.map((rp) => rp.permission.key),
-    })
+    
+    // Fetch full role data including mobile permissions
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch(`/api/roles/${role.id}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        const fullRole = data.role
+        const mobilePerms = Array.isArray(fullRole.mobilePermissions) 
+          ? fullRole.mobilePermissions 
+          : []
+        
+        setFormData({
+          name: fullRole.name,
+          description: fullRole.description || '',
+          permissions: fullRole.permissions.map((rp: any) => rp.permission.key),
+          mobilePermissions: mobilePerms,
+        })
+      } else {
+        // Fallback to basic data
+        setFormData({
+          name: role.name,
+          description: role.description || '',
+          permissions: role.permissions.map((rp) => rp.permission.key),
+          mobilePermissions: [],
+        })
+      }
+    } catch (error) {
+      console.error('Error fetching role details:', error)
+      setFormData({
+        name: role.name,
+        description: role.description || '',
+        permissions: role.permissions.map((rp) => rp.permission.key),
+        mobilePermissions: [],
+      })
+    }
+  }
+  
+  const toggleMobilePermission = (permissionKey: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      mobilePermissions: prev.mobilePermissions.includes(permissionKey)
+        ? prev.mobilePermissions.filter((p) => p !== permissionKey)
+        : [...prev.mobilePermissions, permissionKey],
+    }))
   }
 
   const filteredRoles = roles.filter((role) =>
@@ -196,7 +248,7 @@ export default function RolesPage() {
         </div>
         <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
           <DialogTrigger asChild>
-            <Button onClick={() => setFormData({ name: '', description: '', permissions: [] })}>
+            <Button onClick={() => setFormData({ name: '', description: '', permissions: [], mobilePermissions: [] })}>
               <Plus className="mr-2 h-4 w-4" />
               Create Role
             </Button>
@@ -368,9 +420,9 @@ export default function RolesPage() {
                 />
               </div>
               <div>
-                <Label>Permissions</Label>
+                <Label>Web App Permissions</Label>
                 <div className="mt-2 space-y-4 max-h-96 overflow-y-auto border rounded-md p-4">
-                  {Object.entries(permissionsByCategory).map(([category, perms]) => (
+                  {Object.entries(webPermissionsByCategory).map(([category, perms]) => (
                     <div key={category} className="space-y-2">
                       <div className="flex items-center justify-between">
                         <h4 className="font-semibold text-sm">{category}</h4>
@@ -403,6 +455,50 @@ export default function RolesPage() {
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+              <div>
+                <Label>Mobile App Permissions</Label>
+                <div className="mt-2 space-y-4 max-h-96 overflow-y-auto border rounded-md p-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-semibold text-sm">Mobile App</h4>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          const allSelected = mobilePermissions.every((p) => formData.mobilePermissions.includes(p.key))
+                          setFormData((prev) => ({
+                            ...prev,
+                            mobilePermissions: allSelected
+                              ? []
+                              : mobilePermissions.map((p) => p.key),
+                          }))
+                        }}
+                      >
+                        {mobilePermissions.every((p) => formData.mobilePermissions.includes(p.key))
+                          ? 'Deselect All'
+                          : 'Select All'}
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 ml-4">
+                      {mobilePermissions.map((perm) => (
+                        <label
+                          key={perm.key}
+                          className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={formData.mobilePermissions.includes(perm.key)}
+                            onChange={() => toggleMobilePermission(perm.key)}
+                            className="rounded"
+                          />
+                          <span className="text-sm">{perm.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

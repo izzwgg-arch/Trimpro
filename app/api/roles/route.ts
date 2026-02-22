@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { name, description, permissions } = body
+    const { name, description, permissions, mobilePermissions } = body
 
     if (!name) {
       return NextResponse.json({ error: 'Role name is required' }, { status: 400 })
@@ -61,6 +61,7 @@ export async function POST(request: NextRequest) {
         description: description || null,
         isSystem: false,
         isActive: true,
+        mobilePermissions: mobilePermissions && Array.isArray(mobilePermissions) ? mobilePermissions : [],
       },
     })
 
@@ -96,6 +97,7 @@ export async function POST(request: NextRequest) {
           name,
           description,
           permissions,
+          mobilePermissions,
         },
       },
     })

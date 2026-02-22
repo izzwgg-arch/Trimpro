@@ -17,6 +17,7 @@ import { SectionHeader } from '../../components/SectionHeader'
 import { Card } from '../../components/Card'
 import { StatusBadge } from '../../components/StatusBadge'
 import { useAuth } from '../../auth/AuthContext'
+import { useMobilePermissions } from '../../hooks/useMobilePermissions'
 
 type Props = NativeStackScreenProps<JobsStackParamList, 'JobsList'>
 
@@ -40,12 +41,18 @@ export function JobsScreen({ navigation }: Props) {
   const isOnline = useOnlineState()
   const outboxCount = useOutboxCount()
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null)
+  const [statusFilter, setStatusFilter] = useState<string | null>(null)
   const todayKey = useMemo(() => new Date().toDateString(), [])
+  const { canViewAllJobs } = useMobilePermissions()
 
   const jobsQuery = useQuery({
-    queryKey: ['mobile-jobs'],
+    queryKey: ['mobile-jobs', statusFilter],
     queryFn: async () => {
-      const data = await apiRequest<JobsResponse>('/api/mobile/jobs?limit=100')
+      let url = '/api/mobile/jobs?limit=100'
+      if (statusFilter) {
+        url += `&status=${statusFilter}`
+      }
+      const data = await apiRequest<JobsResponse>(url)
       setLastSyncAt(new Date())
       return data
     },
@@ -249,6 +256,37 @@ export function JobsScreen({ navigation }: Props) {
               outboxCount={outboxCount}
             />
 
+            {canViewAllJobs() && (
+              <Card style={styles.filterCard}>
+                <View style={styles.filterChips}>
+                  <Pressable
+                    style={[styles.filterChip, !statusFilter && styles.filterChipActive]}
+                    onPress={() => setStatusFilter(null)}
+                  >
+                    <Text style={[styles.filterChipText, !statusFilter && styles.filterChipTextActive]}>All</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.filterChip, statusFilter === 'SCHEDULED' && styles.filterChipActive]}
+                    onPress={() => setStatusFilter('SCHEDULED')}
+                  >
+                    <Text style={[styles.filterChipText, statusFilter === 'SCHEDULED' && styles.filterChipTextActive]}>Scheduled</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.filterChip, statusFilter === 'IN_PROGRESS' && styles.filterChipActive]}
+                    onPress={() => setStatusFilter('IN_PROGRESS')}
+                  >
+                    <Text style={[styles.filterChipText, statusFilter === 'IN_PROGRESS' && styles.filterChipTextActive]}>In Progress</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.filterChip, statusFilter === 'COMPLETED' && styles.filterChipActive]}
+                    onPress={() => setStatusFilter('COMPLETED')}
+                  >
+                    <Text style={[styles.filterChipText, statusFilter === 'COMPLETED' && styles.filterChipTextActive]}>Completed</Text>
+                  </Pressable>
+                </View>
+              </Card>
+            )}
+
             <Card>
               <SectionHeader title="Today's Jobs" rightActionLabel="See all" onRightAction={() => {}} />
               {todaysJobs.length === 0 ? (
@@ -391,5 +429,33 @@ const styles = StyleSheet.create({
   rowTitle: { ...typography.sub, color: colors.textPrimary, fontWeight: '700' },
   rowMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
   stackItem: { marginBottom: spacing.sm },
+  filterCard: {
+    marginBottom: spacing.xs,
+  },
+  filterChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  filterChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.divider,
+  },
+  filterChipActive: {
+    backgroundColor: colors.brandPrimary,
+    borderColor: colors.brandPrimary,
+  },
+  filterChipText: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  filterChipTextActive: {
+    color: '#E6C98B',
+  },
 })
 

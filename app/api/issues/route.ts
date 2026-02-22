@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { notifyIssueAssigned } from '@/lib/notifications'
+import { hasMobilePermission, requireMobilePermission } from '@/lib/authorization'
+
+// Helper to detect if request is from mobile app
+function isMobileRequest(request: NextRequest): boolean {
+  const userAgent = request.headers.get('user-agent') || ''
+  const isMobileUA = /Mobile|Android|iPhone|iPad/i.test(userAgent)
+  const hasMobileParam = request.nextUrl.searchParams.get('mobile') === 'true'
+  return isMobileUA || hasMobileParam
+}
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -135,6 +144,13 @@ export async function POST(request: NextRequest) {
   if (authError) return authError
 
   const user = getAuthUser(request)
+  const isMobile = isMobileRequest(request)
+
+  // If request is from mobile, enforce mobile permissions
+  if (isMobile) {
+    const createPermError = await requireMobilePermission(request, 'mobile.issues.create')
+    if (createPermError) return createPermError
+  }
 
   try {
     const body = await request.json()
@@ -153,6 +169,50 @@ export async function POST(request: NextRequest) {
 
     if (!title) {
       return NextResponse.json({ error: 'Title is required' }, { status: 400 })
+    }
+
+    // If mobile request and assignee is provided, check assignment permissions
+    if (isMobile && assigneeId) {
+      // Verify assignee belongs to tenant
+      const assignee = await prisma.user.findFirst({
+        where: {
+          id: assigneeId,
+          tenantId: user.tenantId,
+        },
+        select: {
+          id: true,
+          role: true,
+        },
+      })
+
+      if (!assignee) {
+        return NextResponse.json({ error: 'Assignee not found' }, { status: 404 })
+      }
+
+      // Check if assigning to admin
+      const isAdmin = assignee.role === 'ADMIN' || assignee.role === 'OFFICE'
+      
+      // If assigning to admin, require mobile.issues.assign_to_admin or mobile.issues.assign_to_any
+      if (isAdmin) {
+        const canAssignToAdmin = await hasMobilePermission(user.id, user.tenantId, 'mobile.issues.assign_to_admin')
+        const canAssignToAny = await hasMobilePermission(user.id, user.tenantId, 'mobile.issues.assign_to_any')
+        
+        if (!canAssignToAdmin && !canAssignToAny) {
+          return NextResponse.json(
+            { error: 'You do not have permission to assign issues to admin users' },
+            { status: 403 }
+          )
+        }
+      } else {
+        // If assigning to non-admin, require mobile.issues.assign_to_any (admin-level)
+        const canAssignToAny = await hasMobilePermission(user.id, user.tenantId, 'mobile.issues.assign_to_any')
+        if (!canAssignToAny) {
+          return NextResponse.json(
+            { error: 'You do not have permission to assign issues to this user' },
+            { status: 403 }
+          )
+        }
+      }
     }
 
     let resolvedClientId = clientId || null
@@ -253,6 +313,24 @@ export async function POST(request: NextRequest) {
     // Notify assignee
     if (assigneeId && assigneeId !== user.id) {
       await notifyIssueAssigned(user.tenantId, assigneeId, issue.id, title)
+    }
+
+    // Audit log for mobile issue creation
+    if (isMobile) {
+      await prisma.auditLog.create({
+        data: {
+          tenantId: user.tenantId,
+          userId: user.id,
+          action: 'CREATE',
+          entityType: 'Issue',
+          entityId: issue.id,
+          changes: {
+            title,
+            assigneeId: assigneeId || null,
+            source: 'mobile',
+          },
+        },
+      })
     }
 
     return NextResponse.json({ issue }, { status: 201 })

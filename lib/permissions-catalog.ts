@@ -897,6 +897,101 @@ export const PERMISSIONS: PermissionDefinition[] = [
     category: 'System',
     module: 'system',
   },
+
+  // ============================================
+  // MOBILE APP PERMISSIONS
+  // ============================================
+  {
+    key: 'mobile.access',
+    label: 'Access Mobile App',
+    description: 'Can log into and use mobile app',
+    category: 'Mobile App',
+    module: 'mobile',
+  },
+  {
+    key: 'mobile.jobs.view_assigned',
+    label: 'View Assigned Jobs',
+    description: 'Can view jobs assigned to them',
+    category: 'Mobile App',
+    module: 'mobile',
+  },
+  {
+    key: 'mobile.jobs.view_all',
+    label: 'View All Jobs',
+    description: 'Can view all jobs in the organization (admin/dispatch style)',
+    category: 'Mobile App',
+    module: 'mobile',
+  },
+  {
+    key: 'mobile.jobs.assign',
+    label: 'Assign Jobs',
+    description: 'Can assign/reassign jobs to team members (admin/dispatch style)',
+    category: 'Mobile App',
+    module: 'mobile',
+  },
+  {
+    key: 'mobile.jobs.complete',
+    label: 'Complete Jobs',
+    description: 'Can mark a job as completed',
+    category: 'Mobile App',
+    module: 'mobile',
+  },
+  {
+    key: 'mobile.tasks.create',
+    label: 'Create Tasks',
+    description: 'Can create tasks from mobile',
+    category: 'Mobile App',
+    module: 'mobile',
+  },
+  {
+    key: 'mobile.tasks.assign_to_admin',
+    label: 'Assign Tasks to Admin',
+    description: 'Can assign tasks to admin accounts (field worker -> admin)',
+    category: 'Mobile App',
+    module: 'mobile',
+  },
+  {
+    key: 'mobile.tasks.assign_to_any',
+    label: 'Assign Tasks to Any User',
+    description: 'Can assign tasks to any user (admin)',
+    category: 'Mobile App',
+    module: 'mobile',
+  },
+  {
+    key: 'mobile.issues.create',
+    label: 'Create Issues',
+    description: 'Can create issues from mobile',
+    category: 'Mobile App',
+    module: 'mobile',
+  },
+  {
+    key: 'mobile.issues.assign_to_admin',
+    label: 'Assign Issues to Admin',
+    description: 'Can assign issues to admin accounts (field worker -> admin)',
+    category: 'Mobile App',
+    module: 'mobile',
+  },
+  {
+    key: 'mobile.issues.assign_to_any',
+    label: 'Assign Issues to Any User',
+    description: 'Can assign issues to any user (admin)',
+    category: 'Mobile App',
+    module: 'mobile',
+  },
+  {
+    key: 'mobile.messaging.enabled',
+    label: 'Use Messaging',
+    description: 'Can use job chat/messages',
+    category: 'Mobile App',
+    module: 'mobile',
+  },
+  {
+    key: 'mobile.media.upload',
+    label: 'Upload Media',
+    description: 'Can upload photos/videos/files to jobs',
+    category: 'Mobile App',
+    module: 'mobile',
+  },
 ]
 
 /**

@@ -13,7 +13,6 @@ import { TasksScreen } from '../screens/tasks/TasksScreen'
 import { MessagesScreen } from '../screens/messages/MessagesScreen'
 import { MessageThreadScreen } from '../screens/messages/MessageThreadScreen'
 import { TeamChatScreen } from '../screens/messages/TeamChatScreen'
-import { MoreScreen } from '../screens/more/MoreScreen'
 import { CreateRequestScreen } from '../screens/requests/CreateRequestScreen'
 import { IssuesScreen } from '../screens/issues/IssuesScreen'
 import { IssueDetailScreen } from '../screens/issues/IssueDetailScreen'
@@ -27,6 +26,8 @@ import {
   MoreStackParamList,
   RootTabParamList,
   TasksStackParamList,
+  IssuesStackParamList,
+  RootDrawerParamList,
 } from '../types/navigation'
 import { TaskDetailScreen } from '../screens/tasks/TaskDetailScreen'
 import { useOutboxCount } from '../hooks/useOutboxCount'
@@ -37,9 +38,12 @@ const JobsStack = createNativeStackNavigator<JobsStackParamList>()
 const ScheduleStack = createNativeStackNavigator()
 const TasksStack = createNativeStackNavigator<TasksStackParamList>()
 const MessagesStack = createNativeStackNavigator<MessagesStackParamList>()
-const MoreStack = createNativeStackNavigator<MoreStackParamList>()
+const IssuesStack = createNativeStackNavigator<IssuesStackParamList>()
+const RequestsStack = createNativeStackNavigator()
+const CallsStack = createNativeStackNavigator()
+const OutboxStack = createNativeStackNavigator()
+const ProfileStack = createNativeStackNavigator()
 const AuthStack = createNativeStackNavigator()
-type RootDrawerParamList = RootTabParamList
 
 const linking: LinkingOptions<RootDrawerParamList> = {
   prefixes: ['trimprofield://'],
@@ -65,17 +69,16 @@ const linking: LinkingOptions<RootDrawerParamList> = {
           TeamChat: 'messages/team',
         },
       } as never,
-      MoreTab: {
+      RequestsTab: 'requests',
+      IssuesTab: {
         screens: {
-          MoreHome: 'more',
-          Requests: 'requests',
-          Issues: 'issues',
+          IssuesList: 'issues',
           IssueDetail: 'issues/:issueId',
-          Calls: 'calls',
-          Profile: 'profile',
-          Outbox: 'outbox',
         },
       } as never,
+      CallsTab: 'calls',
+      OutboxTab: 'outbox',
+      ProfileTab: 'profile',
     },
   },
 }
@@ -116,17 +119,44 @@ function MessagesStackNavigator() {
   )
 }
 
-function MoreStackNavigator() {
+function RequestsStackNavigator() {
   return (
-    <MoreStack.Navigator screenOptions={stackOptions}>
-      <MoreStack.Screen name="MoreHome" component={MoreScreen} options={mainHeaderOptions('More')} />
-      <MoreStack.Screen name="Requests" component={CreateRequestScreen} options={{ title: 'Requests' }} />
-      <MoreStack.Screen name="Issues" component={IssuesScreen} options={{ title: 'Issues' }} />
-      <MoreStack.Screen name="IssueDetail" component={IssueDetailScreen} options={{ title: 'Issue Details' }} />
-      <MoreStack.Screen name="Calls" component={CallsScreen} options={{ title: 'Calls' }} />
-      <MoreStack.Screen name="Outbox" component={OutboxScreen} options={{ title: 'Outbox' }} />
-      <MoreStack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profile' }} />
-    </MoreStack.Navigator>
+    <RequestsStack.Navigator screenOptions={stackOptions}>
+      <RequestsStack.Screen name="RequestsHome" component={CreateRequestScreen} options={mainHeaderOptions('Requests')} />
+    </RequestsStack.Navigator>
+  )
+}
+
+function IssuesStackNavigator() {
+  return (
+    <IssuesStack.Navigator screenOptions={stackOptions}>
+      <IssuesStack.Screen name="IssuesList" component={IssuesScreen} options={mainHeaderOptions('Issues')} />
+      <IssuesStack.Screen name="IssueDetail" component={IssueDetailScreen} options={{ title: 'Issue Details' }} />
+    </IssuesStack.Navigator>
+  )
+}
+
+function CallsStackNavigator() {
+  return (
+    <CallsStack.Navigator screenOptions={stackOptions}>
+      <CallsStack.Screen name="CallsHome" component={CallsScreen} options={mainHeaderOptions('Calls')} />
+    </CallsStack.Navigator>
+  )
+}
+
+function OutboxStackNavigator() {
+  return (
+    <OutboxStack.Navigator screenOptions={stackOptions}>
+      <OutboxStack.Screen name="OutboxHome" component={OutboxScreen} options={mainHeaderOptions('Outbox')} />
+    </OutboxStack.Navigator>
+  )
+}
+
+function ProfileStackNavigator() {
+  return (
+    <ProfileStack.Navigator screenOptions={stackOptions}>
+      <ProfileStack.Screen name="ProfileHome" component={ProfileScreen} options={mainHeaderOptions('Profile')} />
+    </ProfileStack.Navigator>
   )
 }
 
@@ -159,6 +189,7 @@ function DrawerContent(props: DrawerContentComponentProps) {
   const { user, signOut } = useAuth()
   const outboxCount = useOutboxCount()
 
+  // Navigation items - More option removed, all items now directly in sidebar
   const items: Array<{
     key: keyof RootDrawerParamList
     label: string
@@ -168,7 +199,11 @@ function DrawerContent(props: DrawerContentComponentProps) {
     { key: 'ScheduleTab', label: 'Schedule', icon: 'calendar-outline' },
     { key: 'TasksTab', label: 'Tasks', icon: 'checkbox-outline' },
     { key: 'MessagesTab', label: 'Messages', icon: 'chatbubble-ellipses-outline' },
-    { key: 'MoreTab', label: `More${outboxCount > 0 ? ` (${outboxCount})` : ''}`, icon: 'ellipsis-horizontal-circle-outline' },
+    { key: 'RequestsTab', label: 'Requests', icon: 'document-text-outline' },
+    { key: 'IssuesTab', label: 'Issues', icon: 'alert-circle-outline' },
+    { key: 'CallsTab', label: 'Calls', icon: 'call-outline' },
+    { key: 'OutboxTab', label: `Outbox${outboxCount > 0 ? ` (${outboxCount})` : ''}`, icon: 'cloud-upload-outline' },
+    { key: 'ProfileTab', label: 'Profile', icon: 'person-outline' },
   ]
 
   const current = props.state.routeNames[props.state.index]
@@ -206,7 +241,7 @@ function DrawerContent(props: DrawerContentComponentProps) {
 
       <View style={styles.drawerBottom}>
         <Pressable
-          onPress={() => props.navigation.navigate('MoreTab')}
+          onPress={() => props.navigation.navigate('ProfileTab')}
           android_ripple={{ color: 'rgba(15,23,42,0.1)' }}
           style={({ pressed }) => [styles.bottomBtn, pressed && styles.navPressed]}
         >
@@ -262,7 +297,11 @@ export function RootNavigator() {
           <Drawer.Screen name="ScheduleTab" component={ScheduleStackNavigator} options={{ title: 'Schedule' }} />
           <Drawer.Screen name="TasksTab" component={TasksStackNavigator} options={{ title: 'Tasks' }} />
           <Drawer.Screen name="MessagesTab" component={MessagesStackNavigator} options={{ title: 'Messages' }} />
-          <Drawer.Screen name="MoreTab" component={MoreStackNavigator} options={{ title: 'More' }} />
+          <Drawer.Screen name="RequestsTab" component={RequestsStackNavigator} options={{ title: 'Requests' }} />
+          <Drawer.Screen name="IssuesTab" component={IssuesStackNavigator} options={{ title: 'Issues' }} />
+          <Drawer.Screen name="CallsTab" component={CallsStackNavigator} options={{ title: 'Calls' }} />
+          <Drawer.Screen name="OutboxTab" component={OutboxStackNavigator} options={{ title: 'Outbox' }} />
+          <Drawer.Screen name="ProfileTab" component={ProfileStackNavigator} options={{ title: 'Profile' }} />
         </Drawer.Navigator>
       )}
     </NavigationContainer>

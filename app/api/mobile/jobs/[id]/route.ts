@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
-import { requirePermission } from '@/lib/authorization'
+import { requireMobilePermission, hasMobilePermission } from '@/lib/authorization'
 
 /**
  * Mobile API: Get single job details
+ * - If user has mobile.jobs.view_all: can view any job
+ * - Otherwise: can only view jobs assigned to them
  */
 export async function GET(
   request: NextRequest,
@@ -13,23 +15,33 @@ export async function GET(
   const authError = await authenticateRequest(request)
   if (authError) return authError
 
-  const permError = await requirePermission(request, 'jobs.view')
+  // Require at least mobile.jobs.view_assigned permission
+  const permError = await requireMobilePermission(request, 'mobile.jobs.view_assigned')
   if (permError) return permError
 
   const user = getAuthUser(request)
   const jobId = params.id
 
   try {
+    // Check if user can view all jobs
+    const canViewAll = await hasMobilePermission(user.id, user.tenantId, 'mobile.jobs.view_all')
+
+    const where: any = {
+      id: jobId,
+      tenantId: user.tenantId,
+    }
+
+    // If user doesn't have view_all, only allow viewing assigned jobs
+    if (!canViewAll) {
+      where.assignments = {
+        some: {
+          userId: user.id,
+        },
+      }
+    }
+
     const job = await prisma.job.findFirst({
-      where: {
-        id: jobId,
-        tenantId: user.tenantId,
-        assignments: {
-          some: {
-            userId: user.id,
-          },
-        }, // Only jobs assigned to this user
-      },
+      where,
       include: {
         client: {
           select: {

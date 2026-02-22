@@ -294,3 +294,95 @@ export async function getEffectivePermissions(
     roles,
   }
 }
+
+/**
+ * Get all mobile permissions for a user (from all their roles)
+ */
+export async function getUserMobilePermissions(
+  userId: string,
+  tenantId: string
+): Promise<string[]> {
+  const user = await prisma.user.findFirst({
+    where: { id: userId, tenantId },
+    include: {
+      userRoles: {
+        where: {
+          role: {
+            isActive: true,
+          },
+        },
+        include: {
+          role: true,
+        },
+      },
+    },
+  })
+
+  if (!user) {
+    return []
+  }
+
+  const mobilePermissions = new Set<string>()
+
+  // Collect mobile permissions from all active roles
+  for (const userRole of user.userRoles || []) {
+    const role = userRole.role
+    if (role.mobilePermissions && Array.isArray(role.mobilePermissions)) {
+      for (const perm of role.mobilePermissions) {
+        if (typeof perm === 'string') {
+          mobilePermissions.add(perm)
+        }
+      }
+    }
+  }
+
+  return Array.from(mobilePermissions)
+}
+
+/**
+ * Check if user has a specific mobile permission
+ */
+export async function hasMobilePermission(
+  userId: string,
+  tenantId: string,
+  permission: string
+): Promise<boolean> {
+  const mobilePermissions = await getUserMobilePermissions(userId, tenantId)
+  return mobilePermissions.includes(permission)
+}
+
+/**
+ * Check if user has any of the specified mobile permissions
+ */
+export async function hasAnyMobilePermission(
+  userId: string,
+  tenantId: string,
+  permissions: string[]
+): Promise<boolean> {
+  const mobilePermissions = await getUserMobilePermissions(userId, tenantId)
+  return permissions.some((perm) => mobilePermissions.includes(perm))
+}
+
+/**
+ * Require mobile permission middleware for API routes
+ * Returns error response if user doesn't have permission
+ */
+export async function requireMobilePermission(
+  request: NextRequest,
+  permission: string
+): Promise<NextResponse | null> {
+  const user = (request as any).user
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const hasPerm = await hasMobilePermission(user.id, user.tenantId, permission)
+  if (!hasPerm) {
+    return NextResponse.json(
+      { error: 'Forbidden: Insufficient mobile permissions' },
+      { status: 403 }
+    )
+  }
+
+  return null // Permission granted
+}

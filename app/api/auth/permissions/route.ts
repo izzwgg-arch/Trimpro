@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
-import { getUserPermissions } from '@/lib/authorization'
+import { getUserPermissions, getUserMobilePermissions } from '@/lib/authorization'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -10,8 +10,9 @@ export async function GET(request: NextRequest) {
 
   try {
     const permissions = await getUserPermissions(user.id, user.tenantId)
+    const mobilePermissions = await getUserMobilePermissions(user.id, user.tenantId)
 
-    return NextResponse.json({ permissions })
+    return NextResponse.json({ permissions, mobilePermissions })
   } catch (error) {
     console.error('Get permissions error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

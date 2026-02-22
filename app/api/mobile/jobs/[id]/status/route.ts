@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
-import { requirePermission } from '@/lib/authorization'
+import { requireMobilePermission, hasMobilePermission } from '@/lib/authorization'
 import { publishDispatchRealtime } from '@/lib/dispatch-realtime'
 import { notifyDispatchJobActivity, createNotificationsForUsers } from '@/lib/notifications'
 
 /**
  * Mobile API: Update job status
+ * Requires mobile.jobs.complete permission and job must be assigned to user OR user must have mobile.jobs.view_all+assign
  */
 export async function POST(
   request: NextRequest,
@@ -15,7 +16,8 @@ export async function POST(
   const authError = await authenticateRequest(request)
   if (authError) return authError
 
-  const permError = await requirePermission(request, 'jobs.update')
+  // Require mobile.jobs.complete permission
+  const permError = await requireMobilePermission(request, 'mobile.jobs.complete')
   if (permError) return permError
 
   const user = getAuthUser(request)
@@ -29,21 +31,42 @@ export async function POST(
       return NextResponse.json({ error: 'Status is required' }, { status: 400 })
     }
 
-    // Verify job exists, belongs to tenant, and is assigned to user
+    // Check if user can view all jobs (admin/dispatch)
+    const canViewAll = await hasMobilePermission(user.id, user.tenantId, 'mobile.jobs.view_all')
+    const canAssign = await hasMobilePermission(user.id, user.tenantId, 'mobile.jobs.assign')
+
+    // Verify job exists and belongs to tenant
     const job = await prisma.job.findFirst({
       where: {
         id: jobId,
         tenantId: user.tenantId,
+      },
+      include: {
         assignments: {
-          some: {
-            userId: user.id,
-          },
+          select: { userId: true },
         },
       },
     })
 
     if (!job) {
-      return NextResponse.json({ error: 'Job not found or not assigned to you' }, { status: 404 })
+      return NextResponse.json({ error: 'Job not found' }, { status: 404 })
+    }
+
+    // Check access: user must be assigned OR have view_all+assign (admin)
+    const isAssigned = job.assignments.some((a) => a.userId === user.id)
+    const isAdmin = canViewAll && canAssign
+
+    if (!isAssigned && !isAdmin) {
+      return NextResponse.json(
+        { error: 'Job not assigned to you and you do not have admin access' },
+        { status: 403 }
+      )
+    }
+
+    // Special check for completing job
+    if (status === 'COMPLETED') {
+      // Additional verification that user has complete permission
+      // (already checked above, but double-check for clarity)
     }
 
     // Update status

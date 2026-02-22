@@ -24,11 +24,22 @@ export type MoreStackParamList = {
   Profile: undefined
 }
 
-export type RootTabParamList = {
+export type IssuesStackParamList = {
+  IssuesList: undefined
+  IssueDetail: { issueId: string }
+}
+
+export type RootDrawerParamList = {
   JobsTab: undefined
   ScheduleTab: undefined
   TasksTab: undefined
   MessagesTab: undefined
-  MoreTab: undefined
+  RequestsTab: undefined
+  IssuesTab: undefined
+  CallsTab: undefined
+  OutboxTab: undefined
+  ProfileTab: undefined
 }
 
+// Backward-compatible alias for existing imports.
+export type RootTabParamList = RootDrawerParamList
