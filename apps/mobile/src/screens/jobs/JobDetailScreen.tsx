@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, Platform } from 'react-native'
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, Platform } from 'react-native'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import * as ImagePicker from 'expo-image-picker'
@@ -261,12 +261,47 @@ export function JobDetailScreen({ route }: Props) {
             <StatusChip status={job.status} />
             <Text style={styles.meta}>Client: {job.client?.name || 'N/A'}</Text>
             <Text style={styles.meta}>Phone: {job.client?.phone || 'N/A'}</Text>
-            <Text style={styles.meta}>
-              Address:{' '}
-              {job.address?.street
-                ? `${job.address.street}, ${job.address.city || ''} ${job.address.state || ''}`
-                : 'No job site'}
-            </Text>
+            {job.address?.street ? (
+              <Pressable
+                onPress={() => {
+                  const address = `${job.address.street}, ${job.address.city || ''} ${job.address.state || ''} ${job.address.zipCode || ''}`.trim()
+                  const encodedAddress = encodeURIComponent(address)
+                  
+                  // Try Google Maps app first
+                  const androidGoogleMapsUrl = `comgooglemaps://?q=${encodedAddress}`
+                  const iosGoogleMapsUrl = `googlemaps://?q=${encodedAddress}`
+                  // Fallback to native maps
+                  const appleMapsUrl = `maps://?q=${encodedAddress}`
+                  // Final fallback to web Google Maps
+                  const webMapsUrl = `https://maps.google.com/?q=${encodedAddress}`
+                  
+                  const googleMapsUrl = Platform.OS === 'android' ? androidGoogleMapsUrl : iosGoogleMapsUrl
+                  
+                  // Try Google Maps app first
+                  Linking.canOpenURL(googleMapsUrl)
+                    .then((supported) => {
+                      if (supported) {
+                        return Linking.openURL(googleMapsUrl)
+                      }
+                      // Fallback to native maps (iOS Maps or Android Maps)
+                      return Linking.canOpenURL(appleMapsUrl).then((nativeSupported) => {
+                        if (nativeSupported) {
+                          return Linking.openURL(appleMapsUrl)
+                        }
+                        // Final fallback to web
+                        return Linking.openURL(webMapsUrl)
+                      })
+                    })
+                    .catch(() => Linking.openURL(webMapsUrl))
+                }}
+              >
+                <Text style={[styles.meta, styles.addressLink]}>
+                  Address: {`${job.address.street}, ${job.address.city || ''} ${job.address.state || ''}`}
+                </Text>
+              </Pressable>
+            ) : (
+              <Text style={styles.meta}>Address: No job site</Text>
+            )}
 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Status flow</Text>
@@ -448,6 +483,10 @@ const styles = StyleSheet.create({
   attachmentMeta: {
     color: BRAND.muted,
     fontSize: 12,
+  },
+  addressLink: {
+    color: BRAND.primary,
+    textDecorationLine: 'underline',
   },
 })
 

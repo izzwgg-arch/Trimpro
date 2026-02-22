@@ -1,6 +1,6 @@
 import React from 'react'
 import { Ionicons } from '@expo/vector-icons'
-import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native'
 import { Job } from '../types/models'
 import { colors, spacing, typography } from '../theme/tokens'
 import { PressableCard } from './Card'
@@ -44,9 +44,50 @@ export function JobCard({
       <Text style={styles.meta} numberOfLines={1}>
         {scheduleText}
       </Text>
-      <Text style={styles.meta} numberOfLines={1}>
-        {address}
-      </Text>
+      {job.address?.street ? (
+        <Pressable
+          onPress={(e) => {
+            e.stopPropagation()
+            const fullAddress = `${job.address.street}, ${job.address.city || ''} ${job.address.state || ''} ${job.address.zipCode || ''}`.trim()
+            const encodedAddress = encodeURIComponent(fullAddress)
+            
+            // Try Google Maps app first
+            const androidGoogleMapsUrl = `comgooglemaps://?q=${encodedAddress}`
+            const iosGoogleMapsUrl = `googlemaps://?q=${encodedAddress}`
+            // Fallback to native maps
+            const appleMapsUrl = `maps://?q=${encodedAddress}`
+            // Final fallback to web Google Maps
+            const webMapsUrl = `https://maps.google.com/?q=${encodedAddress}`
+            
+            const googleMapsUrl = Platform.OS === 'android' ? androidGoogleMapsUrl : iosGoogleMapsUrl
+            
+            // Try Google Maps app first
+            Linking.canOpenURL(googleMapsUrl)
+              .then((supported) => {
+                if (supported) {
+                  return Linking.openURL(googleMapsUrl)
+                }
+                // Fallback to native maps (iOS Maps or Android Maps)
+                return Linking.canOpenURL(appleMapsUrl).then((nativeSupported) => {
+                  if (nativeSupported) {
+                    return Linking.openURL(appleMapsUrl)
+                  }
+                  // Final fallback to web
+                  return Linking.openURL(webMapsUrl)
+                })
+              })
+              .catch(() => Linking.openURL(webMapsUrl))
+          }}
+        >
+          <Text style={[styles.meta, styles.addressLink]} numberOfLines={1}>
+            {address}
+          </Text>
+        </Pressable>
+      ) : (
+        <Text style={styles.meta} numberOfLines={1}>
+          {address}
+        </Text>
+      )}
 
       <View style={styles.iconRow}>
         <IconDot name="chatbubble-ellipses-outline" active={Boolean(hasUnreadMessages)} />
@@ -107,6 +148,10 @@ const styles = StyleSheet.create({
     minWidth: 24,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  addressLink: {
+    color: colors.brandPrimary,
+    textDecorationLine: 'underline',
   },
 })
 
