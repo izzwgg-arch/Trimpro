@@ -35,7 +35,10 @@ export function MessagesScreen({ navigation }: Props) {
   return (
     <Screen style={styles.screen}>
       <View style={styles.headerRow}>
-        <Text style={styles.title}>Messages</Text>
+        <View>
+          <Text style={styles.title}>Messages</Text>
+          <Text style={styles.subtitle}>Conversations with clients and team chat.</Text>
+        </View>
         <Pressable style={styles.teamButton} onPress={() => navigation.navigate('TeamChat')}>
           <Text style={styles.teamButtonText}>
             Team Chat
@@ -65,9 +68,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 10,
   },
-  title: { fontSize: 24, fontWeight: '800', color: BRAND.text, marginBottom: 12 },
+  title: { fontSize: 24, fontWeight: '800', color: BRAND.text },
+  subtitle: { color: BRAND.muted, marginTop: 2 },
   teamButton: {
     backgroundColor: BRAND.primary,
     borderRadius: 10,
@@ -80,7 +84,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   empty: { textAlign: 'center', color: BRAND.muted, marginTop: 42 },
-  card: { backgroundColor: BRAND.white, borderRadius: 14, padding: 12, marginBottom: 10 },
+  card: {
+    backgroundColor: BRAND.white,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#EAECF0',
+    shadowColor: '#101828',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
   cardTitle: { color: BRAND.text, fontWeight: '700', marginBottom: 4 },
   meta: { color: BRAND.muted, fontSize: 13 },
 })

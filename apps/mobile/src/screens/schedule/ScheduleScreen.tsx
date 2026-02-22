@@ -23,6 +23,7 @@ export function ScheduleScreen() {
   return (
     <Screen style={styles.screen}>
       <Text style={styles.title}>Schedule</Text>
+      <Text style={styles.subtitle}>Weekly calendar timeline for assigned work.</Text>
       <FlatList
         data={query.data?.schedules ?? []}
         keyExtractor={(item) => item.id}
@@ -44,9 +45,22 @@ export function ScheduleScreen() {
 
 const styles = StyleSheet.create({
   screen: { padding: 14 },
-  title: { fontSize: 24, fontWeight: '800', color: BRAND.text, marginBottom: 12 },
+  title: { fontSize: 24, fontWeight: '800', color: BRAND.text, marginBottom: 2 },
+  subtitle: { color: BRAND.muted, marginBottom: 12 },
   empty: { textAlign: 'center', color: BRAND.muted, marginTop: 42 },
-  card: { backgroundColor: BRAND.white, borderRadius: 14, padding: 12, marginBottom: 10 },
+  card: {
+    backgroundColor: BRAND.white,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#EAECF0',
+    shadowColor: '#101828',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
   cardTitle: { color: BRAND.text, fontWeight: '700', marginBottom: 4 },
   meta: { color: BRAND.muted, fontSize: 13 },
 })

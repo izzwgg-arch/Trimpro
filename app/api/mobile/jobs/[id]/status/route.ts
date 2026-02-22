@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
+import { publishDispatchRealtime } from '@/lib/dispatch-realtime'
+import { notifyDispatchJobActivity } from '@/lib/notifications'
 
 /**
  * Mobile API: Update job status
@@ -69,6 +71,32 @@ export async function POST(
           source: 'mobile',
         },
       },
+    })
+
+    publishDispatchRealtime(user.tenantId, {
+      id: `mobile_status_${jobId}_${Date.now()}`,
+      kind: 'dispatch_event',
+      ts: new Date().toISOString(),
+      jobId,
+      eventType: 'STATUS_CHANGED',
+      payload: {
+        oldStatus: job.status,
+        newStatus: status,
+        notes: notes || null,
+        source: 'mobile',
+      },
+      job: {
+        id: job.id,
+        jobNumber: job.jobNumber,
+        title: job.title,
+      },
+    })
+
+    await notifyDispatchJobActivity({
+      tenantId: user.tenantId,
+      jobId: job.id,
+      title: `Status updated: ${job.jobNumber}`,
+      message: `${job.status} -> ${status}`,
     })
 
     return NextResponse.json({ job: updatedJob })

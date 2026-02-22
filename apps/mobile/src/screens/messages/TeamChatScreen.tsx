@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import * as ImagePicker from 'expo-image-picker'
 import * as FileSystem from 'expo-file-system/legacy'
 import { Screen } from '../../components/Screen'
-import { BRAND } from '../../config/env'
+import { API_BASE_URL, BRAND } from '../../config/env'
 import { apiRequest } from '../../api/client'
 import { useAuth } from '../../auth/AuthContext'
 import { useOnlineState } from '../../hooks/useOnlineState'
@@ -142,7 +142,7 @@ export function TeamChatScreen() {
       for (const media of localMedia) {
         if (!media.localUri || !token) continue
         const uploadResult = await FileSystem.uploadAsync(
-          `${process.env.EXPO_PUBLIC_API_URL?.replace(/\/+$/, '') || 'http://localhost:3000'}/api/uploads`,
+          `${API_BASE_URL}/api/uploads`,
           media.localUri,
           {
             fieldName: 'file',
@@ -217,7 +217,7 @@ export function TeamChatScreen() {
     setUploading(true)
     try {
       const uploadResult = await FileSystem.uploadAsync(
-        `${process.env.EXPO_PUBLIC_API_URL?.replace(/\/+$/, '') || 'http://localhost:3000'}/api/uploads`,
+        `${API_BASE_URL}/api/uploads`,
         asset.uri,
         {
           fieldName: 'file',

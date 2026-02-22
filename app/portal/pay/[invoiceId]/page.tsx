@@ -409,7 +409,12 @@ export default function PublicPaymentPage() {
         const response = await fetch(`/api/public/invoices/${invoice.id}/qbo-ach-link`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token, recaptchaToken, targetInvoiceId }),
+          body: JSON.stringify({
+            token,
+            recaptchaToken,
+            targetInvoiceId,
+            returnUrl: window.location.href,
+          }),
         })
         const data = await response.json().catch(() => ({}))
         if (response.ok && data?.hostedUrl) {

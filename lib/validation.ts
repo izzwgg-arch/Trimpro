@@ -21,9 +21,11 @@ export const dateRangeSchema = z.object({
 // Job assignment
 export const jobAssignmentSchema = z.object({
   jobId: z.string().min(1),
+  techId: z.string().optional().nullable(),
   userId: z.string().optional().nullable(),
-  scheduledStart: z.string().datetime().optional().nullable(),
-  scheduledEnd: z.string().datetime().optional().nullable(),
+  userIds: z.array(z.string()).optional().nullable(),
+  scheduledStart: z.string().optional().nullable(),
+  scheduledEnd: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
 })
 

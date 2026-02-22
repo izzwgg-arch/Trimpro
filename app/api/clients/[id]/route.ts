@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { normalizeEmailList, splitEmailList, isValidEmail } from '@/lib/email'
+import { syncClientToQuickBooks } from '@/lib/services/qbo-sync'
 
 export async function GET(
   request: NextRequest,
@@ -168,7 +169,9 @@ export async function GET(
       calls: client.calls || [],
       smsMessages: client.smsMessages || [],
       emails: client.emails || [],
-      notes: client.notes_history || [],
+      // Keep `notes` as the client text field; expose history on a separate key.
+      notes: client.notes || null,
+      notesHistory: client.notes_history || [],
       tasks: client.tasks || [],
       issues: client.issues || [],
       parent: client.parent || null,
@@ -309,6 +312,13 @@ export async function PUT(
         },
       },
     })
+
+    // Best-effort: keep QBO customer in sync after every client edit.
+    try {
+      await syncClientToQuickBooks(user.tenantId, client.id)
+    } catch (error) {
+      console.error('QuickBooks client sync trigger error (client update):', error)
+    }
 
     return NextResponse.json({ client })
   } catch (error) {

@@ -8,10 +8,10 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "build:apk": "npx eas-cli build -p android --profile preview",
-    "build:aab": "npx eas-cli build -p android --profile production",
-    "ota:preview": "npx eas-cli update --platform android --channel preview --message \"preview update\"",
-    "ota:prod": "npx eas-cli update --platform android --channel production --message \"production update\""
+    "build:apk": "eas build -p android --profile preview --non-interactive",
+    "build:aab": "eas build -p android --profile production --non-interactive",
+    "ota:preview": "eas update --channel preview --message \"preview update\" --non-interactive",
+    "ota:prod": "eas update --channel production --message \"production update\" --non-interactive"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

@@ -19,12 +19,24 @@ export type AchSessionResult = {
 }
 
 function appBaseUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.PUBLIC_APP_URL ||
-    process.env.APP_URL ||
-    'https://app.trimprony.com'
-  ).replace(/\/+$/, '')
+  const candidates = [
+    process.env.PUBLIC_APP_URL,
+    process.env.NEXT_PUBLIC_APP_URL,
+    process.env.APP_URL,
+    process.env.CANONICAL_PUBLIC_APP_URL,
+    'https://app.trimprony.com',
+  ]
+
+  const blocked = /(localhost|127\.0\.0\.1|0\.0\.0\.0|\b\d{1,3}(\.\d{1,3}){3}\b)(:\d+)?/i
+
+  for (const candidate of candidates) {
+    const value = String(candidate || '').trim()
+    if (!value) continue
+    if (blocked.test(value)) continue
+    return value.replace(/\/+$/, '').replace(/^http:\/\//i, 'https://')
+  }
+
+  return 'https://app.trimprony.com'
 }
 
 /**
@@ -38,6 +50,7 @@ async function ensureQboInvoiceAchHostedLink(params: {
   accessToken: string
   realmId: string
   qboInvoiceId: string
+  sendToEmail?: string | null
 }): Promise<string> {
   const getInvoice = async () => {
     const res = await quickBooksService.makeAPIRequest(
@@ -49,14 +62,19 @@ async function ensureQboInvoiceAchHostedLink(params: {
     return res?.Invoice || res?.QueryResponse?.Invoice?.[0] || null
   }
 
+  const extractLink = (inv: any): string | null => {
+    const maybeLink = inv?.InvoiceLink || inv?.InvoiceLinkUri || inv?.OnlineInvoiceLink || inv?.OnlineInvoiceUrl
+    return maybeLink ? String(maybeLink) : null
+  }
+
   const inv = await getInvoice()
   if (!inv?.Id) {
     throw new Error('QuickBooks invoice not found.')
   }
 
-  const maybeLink = inv.InvoiceLink || inv?.InvoiceLinkUri || inv?.OnlineInvoiceLink || inv?.OnlineInvoiceUrl
-  if (inv.AllowOnlineACHPayment && maybeLink) {
-    return String(maybeLink)
+  const existingLink = extractLink(inv)
+  if (inv.AllowOnlineACHPayment && existingLink) {
+    return existingLink
   }
 
   // Update invoice to allow online payments (ACH).
@@ -65,7 +83,16 @@ async function ensureQboInvoiceAchHostedLink(params: {
     SyncToken: String(inv.SyncToken || '0'),
     sparse: true,
     AllowOnlinePayment: true,
+    // ACH-only flow: explicitly disable card rails so the hosted page shows bank payment only.
+    AllowOnlineCreditCardPayment: false,
     AllowOnlineACHPayment: true,
+  }
+
+  // For API-created invoices, QBO often doesn't generate InvoiceLink until the invoice has a BillEmail
+  // (and sometimes an EmailStatus). This does not force an email send; it just records where it would send.
+  if (params.sendToEmail) {
+    payload.BillEmail = { Address: String(params.sendToEmail) }
+    payload.EmailStatus = 'NeedToSend'
   }
 
   await quickBooksService.makeAPIRequest(
@@ -76,17 +103,43 @@ async function ensureQboInvoiceAchHostedLink(params: {
     payload
   )
 
-  const updated = await getInvoice()
-  const updatedLink =
-    updated?.InvoiceLink || updated?.InvoiceLinkUri || updated?.OnlineInvoiceLink || updated?.OnlineInvoiceUrl
-
-  if (!updatedLink) {
-    throw new Error(
-      'QuickBooks did not provide a hosted payment link. QuickBooks Payments (ACH) may not be enabled for this company.'
-    )
+  // QBO sometimes generates InvoiceLink asynchronously (especially for freshly-created invoices).
+  // Poll a few times before giving up.
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const updated = await getInvoice()
+    const updatedLink = extractLink(updated)
+    if (updatedLink) return updatedLink
+    await new Promise((r) => setTimeout(r, 400 + attempt * 250))
   }
 
-  return String(updatedLink)
+  // If ACH works for imported invoices but not for freshly-created ones, QBO often requires the invoice to be "sent"
+  // before it produces `InvoiceLink`. We only attempt this if we have an email to send to.
+  const sendTo = String(params.sendToEmail || '').trim()
+  if (sendTo) {
+    try {
+      const sendRes = await quickBooksService.makeAPIRequest(
+        params.accessToken,
+        params.realmId,
+        `/invoice/${encodeURIComponent(params.qboInvoiceId)}/send?sendTo=${encodeURIComponent(sendTo)}`,
+        'POST',
+        {}
+      )
+      const sentInvoice = sendRes?.Invoice || sendRes?.QueryResponse?.Invoice?.[0] || null
+      const sentLink = extractLink(sentInvoice)
+      if (sentLink) return sentLink
+    } catch (e) {
+      // If sending fails, fall back to the generic error below.
+    }
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const afterSend = await getInvoice()
+      const linkAfterSend = extractLink(afterSend)
+      if (linkAfterSend) return linkAfterSend
+      await new Promise((r) => setTimeout(r, 500 + attempt * 300))
+    }
+  }
+
+  throw new Error('QuickBooks did not provide a hosted payment link for this invoice.')
 }
 
 export async function createAchPaymentSession(params: {
@@ -99,7 +152,17 @@ export async function createAchPaymentSession(params: {
   const invoice = await prisma.invoice.findFirst({
     where: { id: params.invoiceId, tenantId: params.tenantId },
     include: {
-      client: { select: { email: true } },
+      client: {
+        select: {
+          email: true,
+          contacts: {
+            where: { email: { not: null } },
+            orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+            take: 1,
+            select: { email: true },
+          },
+        },
+      },
     },
   })
   if (!invoice) throw new Error('Invoice not found.')
@@ -115,6 +178,13 @@ export async function createAchPaymentSession(params: {
   const session = await getQboSessionForTenant(params.tenantId)
   if (!session) {
     throw new Error('QuickBooks is not connected for this company.')
+  }
+
+  const sendToEmail =
+    String(invoice.client?.email || '').trim() || String(invoice.client?.contacts?.[0]?.email || '').trim() || null
+  if (!sendToEmail) {
+    // QBO typically requires BillEmail/EmailStatus to generate InvoiceLink for API-created invoices.
+    throw new Error('Client email is required to generate a QuickBooks ACH payment link. Please add an email to the client and try again.')
   }
 
   const amount = invoice.balance
@@ -137,6 +207,7 @@ export async function createAchPaymentSession(params: {
     accessToken: session.accessToken,
     realmId: session.realmId,
     qboInvoiceId: String(invoice.qboSyncId),
+    sendToEmail,
   })
 
   const publicToken = randomPublicToken()
@@ -155,7 +226,7 @@ export async function createAchPaymentSession(params: {
       publicToken,
       idempotencyKey,
       createdById: params.createdById || null,
-      customerEmail: invoice.client?.email || null,
+      customerEmail: sendToEmail,
       metadata: {
         source: 'invoice_detail',
         invoiceNumber: invoice.invoiceNumber || invoice.id,

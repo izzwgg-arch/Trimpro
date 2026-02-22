@@ -27,7 +27,8 @@ export default function PublicEstimateApprovalPage() {
   const token = String((params as any)?.token || '')
 
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [estimate, setEstimate] = useState<any>(null)
   const [items, setItems] = useState<ApprovalItem[]>([])
 
@@ -55,14 +56,15 @@ export default function PublicEstimateApprovalPage() {
 
   const refresh = async () => {
     setLoading(true)
-    setError(null)
+    setLoadError(null)
+    setActionError(null)
     setSuccessMsg(null)
 
     try {
       const res = await fetch(`/api/public/estimate-approval/${encodeURIComponent(token)}`, { cache: 'no-store' })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        setError(data?.error || 'Unable to load estimate approval.')
+        setLoadError(data?.error || 'Unable to load estimate approval.')
         setEstimate(null)
         setItems([])
         return
@@ -81,7 +83,7 @@ export default function PublicEstimateApprovalPage() {
         return next
       })
     } catch (e: any) {
-      setError(e?.message || 'Unable to load estimate approval.')
+      setLoadError(e?.message || 'Unable to load estimate approval.')
     } finally {
       setLoading(false)
     }
@@ -110,25 +112,45 @@ export default function PublicEstimateApprovalPage() {
     setSelectedIds(new Set())
   }
 
+  const describeApiError = (data: any, fallback: string) => {
+    const err = data?.error
+    if (!err) return fallback
+    if (typeof err === 'string') return err
+    if (typeof err?.message === 'string') return err.message
+    if (Array.isArray(err?.formErrors) && err.formErrors.length) return err.formErrors.join(' ')
+    if (err?.fieldErrors && typeof err.fieldErrors === 'object') {
+      const parts: string[] = []
+      for (const [k, v] of Object.entries(err.fieldErrors)) {
+        if (Array.isArray(v) && v.length) parts.push(`${k}: ${v.join(', ')}`)
+      }
+      if (parts.length) return parts.join(' • ')
+    }
+    try {
+      return JSON.stringify(err)
+    } catch {
+      return fallback
+    }
+  }
+
   const approve = async (approveAll: boolean) => {
     setBusy(true)
     setSuccessMsg(null)
     setCreatedInvoice(null)
     try {
       if (!signerName.trim()) {
-        setError('Signer name is required.')
+        setActionError('Signer name is required.')
         return
       }
       if (!eSign) {
-        setError('Please confirm you approve this estimate.')
+        setActionError('Please confirm you approve this estimate.')
         return
       }
       if (!approveAll && selectedIds.size === 0) {
-        setError('Select at least one item to approve.')
+        setActionError('Select at least one item to approve.')
         return
       }
 
-      setError(null)
+      setActionError(null)
       const res = await fetch(`/api/public/estimate-approval/${encodeURIComponent(token)}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -141,13 +163,15 @@ export default function PublicEstimateApprovalPage() {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        setError(typeof data?.error === 'string' ? data.error : 'Approval failed.')
+        setActionError(describeApiError(data, 'Approval failed.'))
         return
       }
 
       setSuccessMsg(`Approved ${data.approvedCount || 0} item(s).`)
       await refresh()
       clearAll()
+    } catch (e: any) {
+      setActionError(e?.message || 'Approval failed.')
     } finally {
       setBusy(false)
     }
@@ -155,7 +179,7 @@ export default function PublicEstimateApprovalPage() {
 
   const createInvoice = async () => {
     setBusy(true)
-    setError(null)
+    setActionError(null)
     setSuccessMsg(null)
     try {
       const res = await fetch(`/api/public/estimate-approval/${encodeURIComponent(token)}/create-invoice`, {
@@ -164,7 +188,7 @@ export default function PublicEstimateApprovalPage() {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        setError(data?.error || 'Unable to create invoice.')
+        setActionError(describeApiError(data, 'Unable to create invoice.'))
         return
       }
 
@@ -173,6 +197,8 @@ export default function PublicEstimateApprovalPage() {
         portalPayUrl: data?.invoice?.portalPayUrl,
       })
       await refresh()
+    } catch (e: any) {
+      setActionError(e?.message || 'Unable to create invoice.')
     } finally {
       setBusy(false)
     }
@@ -182,7 +208,7 @@ export default function PublicEstimateApprovalPage() {
     return <div className="p-6 text-gray-600">Loading...</div>
   }
 
-  if (error) {
+  if (loadError) {
     return (
       <div className="p-6 max-w-3xl mx-auto">
         <Card>
@@ -190,7 +216,12 @@ export default function PublicEstimateApprovalPage() {
             <CardTitle>Estimate Approval</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-red-600">{error}</div>
+            <div className="text-red-600">{loadError}</div>
+            <div className="mt-3">
+              <Button type="button" variant="outline" onClick={refresh}>
+                Try Again
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -217,6 +248,10 @@ export default function PublicEstimateApprovalPage() {
           <CardTitle>Items</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
+          {actionError && (
+            <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-900">{actionError}</div>
+          )}
+
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="outline" onClick={selectAll} disabled={busy || selectableIds.length === 0}>
               Select All

@@ -2,25 +2,13 @@
   "build": {
     "preview": {
       "distribution": "internal",
-      "channel": "preview",
-      "env": {
-        "EXPO_PUBLIC_API_URL": "https://app.trimprony.com"
-      },
-      "android": {
-        "buildType": "apk",
-        "credentialsSource": "local"
-      }
+      "android": { "buildType": "apk", "credentialsSource": "local" },
+      "channel": "preview"
     },
     "production": {
       "distribution": "store",
-      "channel": "production",
-      "env": {
-        "EXPO_PUBLIC_API_URL": "https://app.trimprony.com"
-      },
-      "android": {
-        "buildType": "app-bundle",
-        "credentialsSource": "local"
-      }
+      "android": { "buildType": "app-bundle", "credentialsSource": "local" },
+      "channel": "production"
     }
   }
 }

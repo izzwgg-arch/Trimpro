@@ -24,10 +24,33 @@ export function buildPublicApproveEstimateUrl(rawToken: string): string {
     process.env.PUBLIC_BASE_URL ||
     ''
 
-  const fallback = 'https://app.trimprony.com'
-  const rawBase = (envUrl || fallback).trim()
+  const fallback = process.env.CANONICAL_PUBLIC_APP_URL || 'https://app.trimprony.com'
 
-  // Normalize: force https in production and strip trailing slash.
+  const isProbablyIp = (hostname: string) => {
+    // IPv4 (basic) + localhost. Good enough to prevent emitting internal URLs in emails/PDFs.
+    if (!hostname) return false
+    if (hostname === 'localhost') return true
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)) return true
+    return false
+  }
+
+  const chooseBase = () => {
+    const candidate = (envUrl || '').trim()
+    if (!candidate) return fallback
+    try {
+      const u = new URL(candidate)
+      if (isProbablyIp(u.hostname)) return fallback
+      // Avoid emitting nonstandard ports in public links (common misconfig: :3000).
+      const origin = `${u.protocol}//${u.hostname}`
+      return origin
+    } catch {
+      return fallback
+    }
+  }
+
+  const rawBase = chooseBase().trim()
+
+  // Normalize: force https and strip trailing slash.
   const httpsBase = rawBase.replace(/^http:\/\//i, 'https://')
   const base = httpsBase.replace(/\/$/, '')
   return `${base}/approve/estimate/${rawToken}`

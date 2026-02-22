@@ -8,12 +8,12 @@ export function middleware(request: NextRequest) {
 
   // Only redirect known "bad" hosts in production.
   if (process.env.NODE_ENV === 'production') {
-    const isIpHost =
-      host.includes('154.12.235.86') ||
-      // Safety: if someone hit the node port directly from email.
-      host.endsWith(':3000')
+    const [hostname, port] = host.split(':')
+    const isIpHost = hostname === 'localhost' || /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)
+    // Safety: if someone hit the node port directly from email (common old links).
+    const isDirectNodePort = port === '3000'
 
-    if (isIpHost) {
+    if (isIpHost || isDirectNodePort) {
       const url = request.nextUrl.clone()
       url.protocol = 'https:'
       url.hostname = 'app.trimprony.com'
@@ -27,7 +27,8 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Keep this very narrow to avoid impacting app routing or static assets.
-  matcher: ['/approve/estimate/:path*', '/api/public/estimate-approval/:path*'],
+  // Redirect only triggers for IP/localhost/:3000 hosts, but we match broadly so old invoice/portal links
+  // also get corrected to the canonical HTTPS domain.
+  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
 }
 

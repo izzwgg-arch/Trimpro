@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
+import { createNotificationsForUsers, notifyDispatchJobActivity } from '@/lib/notifications'
+import { publishDispatchRealtime } from '@/lib/dispatch-realtime'
 
 type EntityType = 'estimate' | 'invoice' | 'job' | 'task' | 'issue'
 
@@ -83,6 +85,7 @@ export async function POST(request: NextRequest) {
     const mimeType = String(body?.mimeType || 'application/octet-stream')
     const fileSize = Number(body?.fileSize || 0)
     const key = String(body?.key || url)
+    const metadata = body?.metadata && typeof body.metadata === 'object' ? body.metadata : null
 
     if (!isValidEntityType(entityTypeRaw) || !entityId || !fileName || !url || !key || !fileSize) {
       return NextResponse.json({ error: 'Missing required attachment fields' }, { status: 400 })
@@ -115,6 +118,90 @@ export async function POST(request: NextRequest) {
         uploadedById: user.id,
       },
     })
+
+    if (entityTypeRaw === 'job') {
+      try {
+        const [job, uploader] = await Promise.all([
+          prisma.job.findFirst({
+            where: { id: entityId, tenantId: user.tenantId },
+            include: {
+              assignments: { select: { userId: true } },
+            },
+          }),
+          prisma.user.findUnique({
+            where: { id: user.id },
+            select: { firstName: true, lastName: true, email: true },
+          }),
+        ])
+
+        if (job) {
+          const mediaKind = attachment.mimeType.startsWith('image/')
+            ? 'photo'
+            : attachment.mimeType.startsWith('video/')
+            ? 'video'
+            : 'file'
+
+          await prisma.dispatchEvent.create({
+            data: {
+              tenantId: user.tenantId,
+              jobId: entityId,
+              eventType: 'NOTE_ADDED',
+              actorUserId: user.id,
+              payload: {
+                kind: 'media_uploaded',
+                attachmentId: attachment.id,
+                fileName: attachment.fileName,
+                mimeType: attachment.mimeType,
+                fileSize: attachment.fileSize,
+                metadata,
+              },
+            },
+          })
+
+          publishDispatchRealtime(user.tenantId, {
+            id: `att_${attachment.id}`,
+            kind: mediaKind,
+            ts: attachment.createdAt.toISOString(),
+            jobId: entityId,
+            attachment: {
+              id: attachment.id,
+              fileName: attachment.fileName,
+              mimeType: attachment.mimeType,
+              url: attachment.url,
+              fileSize: attachment.fileSize,
+            },
+            payload: { metadata },
+            job: {
+              id: job.id,
+              jobNumber: job.jobNumber,
+              title: job.title,
+            },
+          })
+
+          const recipientIds = Array.from(new Set(job.assignments.map((a) => a.userId).filter((id) => id !== user.id)))
+          if (recipientIds.length > 0) {
+            const actorName = `${uploader?.firstName || ''} ${uploader?.lastName || ''}`.trim() || uploader?.email || 'A team member'
+            await createNotificationsForUsers(user.tenantId, recipientIds, {
+              type: 'OTHER',
+              title: `New media on ${job.jobNumber}`,
+              message: `${actorName} uploaded ${attachment.fileName}`,
+              linkType: 'job',
+              linkId: job.id,
+              linkUrl: `/dashboard/dispatch?jobId=${job.id}`,
+            })
+          }
+
+          await notifyDispatchJobActivity({
+            tenantId: user.tenantId,
+            jobId: job.id,
+            title: `Media uploaded on ${job.jobNumber}`,
+            message: `${attachment.fileName} was uploaded`,
+          })
+        }
+      } catch (error) {
+        console.error('Attachment dispatch fanout error:', error)
+      }
+    }
 
     return NextResponse.json({ attachment }, { status: 201 })
   } catch (error) {

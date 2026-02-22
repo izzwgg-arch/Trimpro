@@ -61,6 +61,7 @@ export async function GET(request: NextRequest) {
           status: true,
           priority: true,
           type: true,
+          jobId: true,
           updatedAt: true,
         },
         orderBy: [{ updatedAt: 'desc' }],

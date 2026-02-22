@@ -7,7 +7,7 @@ import * as FileSystem from 'expo-file-system/legacy'
 import { Screen } from '../../components/Screen'
 import { apiRequest } from '../../api/client'
 import { StatusChip } from '../../components/StatusChip'
-import { BRAND } from '../../config/env'
+import { API_BASE_URL, BRAND } from '../../config/env'
 import { MoreStackParamList } from '../../types/navigation'
 import { useAuth } from '../../auth/AuthContext'
 import { useOnlineState } from '../../hooks/useOnlineState'
@@ -94,7 +94,7 @@ export function IssueDetailScreen({ route }: Props) {
       return
     }
     const upload = await FileSystem.uploadAsync(
-      `${process.env.EXPO_PUBLIC_API_URL?.replace(/\/+$/, '') || 'http://localhost:3000'}/api/uploads`,
+      `${API_BASE_URL}/api/uploads`,
       asset.uri,
       {
         fieldName: 'file',

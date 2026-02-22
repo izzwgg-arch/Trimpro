@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
+import { publishDispatchRealtime } from '@/lib/dispatch-realtime'
+import { notifyDispatchJobActivity } from '@/lib/notifications'
 
 /**
  * Mobile API: Add note to job
@@ -47,11 +49,9 @@ export async function POST(
     // Create note
     const note = await prisma.note.create({
       data: {
-        tenantId: user.tenantId,
-        entityType: 'Job',
-        entityId: jobId,
+        jobId,
         content: content.trim(),
-        createdBy: user.id,
+        createdById: user.id,
       },
     })
 
@@ -68,6 +68,31 @@ export async function POST(
           source: 'mobile',
         },
       },
+    })
+
+    publishDispatchRealtime(user.tenantId, {
+      id: `mobile_note_${note.id}`,
+      kind: 'dispatch_event',
+      ts: new Date().toISOString(),
+      jobId,
+      eventType: 'NOTE_ADDED',
+      payload: {
+        noteId: note.id,
+        content: content.trim(),
+        source: 'mobile',
+      },
+      job: {
+        id: job.id,
+        jobNumber: job.jobNumber,
+        title: job.title,
+      },
+    })
+
+    await notifyDispatchJobActivity({
+      tenantId: user.tenantId,
+      jobId: job.id,
+      title: `New note on ${job.jobNumber}`,
+      message: content.trim().slice(0, 140),
     })
 
     return NextResponse.json({ note }, { status: 201 })

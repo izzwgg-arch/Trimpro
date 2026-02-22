@@ -40,15 +40,20 @@ export async function GET(
           },
         },
         addresses: {
-          where: { type: 'JOB_SITE' },
+          where: { type: 'job_site' },
           take: 1,
         },
-        assignedTo: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
+        assignments: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+              },
+            },
           },
+          take: 1,
         },
       },
     })
@@ -70,7 +75,7 @@ export async function GET(
         createdAt: job.createdAt.toISOString(),
         client: job.client,
         address: job.addresses[0] || null,
-        assignedTo: job.assignedTo,
+        assignedTo: job.assignments[0]?.user || null,
       },
     })
   } catch (error) {

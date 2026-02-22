@@ -107,6 +107,7 @@ export async function GET(
     const total = Number(invoice.total || 0)
     const balance = Number(invoice.balance || 0)
     const paid = Number(invoice.paidAmount || 0)
+    const showNotes = invoice.isNotesVisibleToClient !== false && Boolean(invoice.notes)
     const generatedAt = new Date().toLocaleString()
     const invoiceDate = invoice.invoiceDate ? new Date(invoice.invoiceDate).toLocaleDateString() : new Date().toLocaleDateString()
     const dueDate = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : 'N/A'
@@ -441,7 +442,7 @@ export async function GET(
               <div class="summary-row total"><span>Balance Due</span><span>$${balance.toFixed(2)}</span></div>
             </div>
 
-            ${invoice.notes ? `<div class="notes">${escapeHtml(invoice.notes)}</div>` : ''}
+            ${showNotes ? `<div class="notes">${escapeHtml(invoice.notes!)}</div>` : ''}
 
             <div class="pay-online">
               <h4>Pay Online</h4>

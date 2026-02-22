@@ -674,6 +674,7 @@ model Invoice {
 
   // Notes
   notes String? @db.Text
+  isNotesVisibleToClient Boolean @default(true) // Toggle for notes visibility
   terms String? @db.Text
   memo  String? @db.Text
 

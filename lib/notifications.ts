@@ -103,6 +103,42 @@ export async function createNotificationsForUsers(
 }
 
 /**
+ * Notify dispatch-facing users about job activity (status, notes, media, messages).
+ */
+export async function notifyDispatchJobActivity(params: {
+  tenantId: string
+  jobId: string
+  title: string
+  message?: string | null
+  excludeUserId?: string | null
+}) {
+  const dispatchUsers = await prisma.user.findMany({
+    where: {
+      tenantId: params.tenantId,
+      role: { in: ['ADMIN', 'OFFICE', 'ACCOUNTING'] },
+      status: 'ACTIVE',
+      ...(params.excludeUserId ? { id: { not: params.excludeUserId } } : {}),
+    },
+    select: { id: true },
+  })
+
+  if (dispatchUsers.length === 0) return
+
+  await createNotificationsForUsers(
+    params.tenantId,
+    dispatchUsers.map((u) => u.id),
+    {
+      type: 'OTHER',
+      title: params.title,
+      message: params.message || null,
+      linkUrl: `/dashboard/dispatch?jobId=${params.jobId}`,
+      linkType: 'job',
+      linkId: params.jobId,
+    }
+  )
+}
+
+/**
  * Notify when a job is assigned to a tech
  */
 export async function notifyJobAssigned(

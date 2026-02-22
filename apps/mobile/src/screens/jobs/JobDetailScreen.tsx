@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native'
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, Platform } from 'react-native'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import * as ImagePicker from 'expo-image-picker'
@@ -9,7 +9,7 @@ import { Screen } from '../../components/Screen'
 import { apiRequest } from '../../api/client'
 import { Attachment, Job } from '../../types/models'
 import { StatusChip } from '../../components/StatusChip'
-import { BRAND } from '../../config/env'
+import { API_BASE_URL, BRAND } from '../../config/env'
 import { JobsStackParamList } from '../../types/navigation'
 import { enqueueOutbox } from '../../offline/outbox'
 import { useOnlineState } from '../../hooks/useOnlineState'
@@ -144,30 +144,51 @@ export function JobDetailScreen({ route }: Props) {
         Alert.alert('Large file warning', 'This video is very large and may upload slowly in the field.')
       }
 
-      const uploadTask = FileSystem.createUploadTask(
-        `${process.env.EXPO_PUBLIC_API_URL?.replace(/\/+$/, '') || 'http://localhost:3000'}/api/uploads`,
-        asset.uri,
-        {
-          fieldName: 'file',
-          httpMethod: 'POST',
-          uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-          mimeType: guessedMime,
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: 'application/json',
-          },
+      setUploadProgress(0)
+      const uploadResult = await FileSystem.uploadAsync(`${API_BASE_URL}/api/uploads`, asset.uri, {
+        fieldName: 'file',
+        httpMethod: 'POST',
+        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+        mimeType: guessedMime,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
         },
-        (progressEvent) => {
-          if (!progressEvent.totalBytesExpectedToSend) return
-          setUploadProgress(progressEvent.totalBytesSent / progressEvent.totalBytesExpectedToSend)
-        }
-      )
+      })
+      setUploadProgress(1)
 
-      const uploadResult = await uploadTask.uploadAsync()
-      if (!uploadResult || uploadResult.status < 200 || uploadResult.status >= 300) {
-        throw new Error('Upload failed')
+      if (uploadResult.status < 200 || uploadResult.status >= 300) {
+        let detail = ''
+        try {
+          const parsed = JSON.parse(uploadResult.body || '{}')
+          detail = parsed?.error ? String(parsed.error) : ''
+        } catch {
+          detail = uploadResult.body || ''
+        }
+        throw new Error(detail || `Upload failed (${uploadResult.status})`)
       }
-      const uploadPayload = JSON.parse(uploadResult.body)
+      const uploadPayload = JSON.parse(uploadResult.body || '{}')
+      const persistedFileSize = Number(uploadPayload?.size || fileSize || 0)
+      if (!persistedFileSize || persistedFileSize <= 0) {
+        throw new Error('Upload completed but file size could not be determined.')
+      }
+
+      let geoMeta: any = null
+      try {
+        const perm = await Location.getForegroundPermissionsAsync()
+        if (perm.granted) {
+          const pos = await Location.getLastKnownPositionAsync()
+          if (pos?.coords) {
+            geoMeta = {
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+              accuracy: pos.coords.accuracy,
+            }
+          }
+        }
+      } catch {
+        // Optional metadata only.
+      }
 
       await apiRequest('/api/attachments', 'POST', {
         entityType: 'job',
@@ -176,7 +197,15 @@ export function JobDetailScreen({ route }: Props) {
         url: uploadPayload.url,
         key: uploadPayload.filename || uploadPayload.url,
         mimeType: guessedMime,
-        fileSize,
+        fileSize: persistedFileSize,
+        metadata: {
+          uploadedAtClient: new Date().toISOString(),
+          device: {
+            os: Platform.OS,
+            osVersion: String((Platform as any).Version ?? ''),
+          },
+          geo: geoMeta,
+        },
       })
 
       setUploadProgress(null)
@@ -215,7 +244,14 @@ export function JobDetailScreen({ route }: Props) {
   return (
     <Screen>
       <ScrollView contentContainerStyle={styles.content}>
-        {!job ? (
+        {jobQuery.isError ? (
+          <View style={styles.errorWrap}>
+            <Text style={styles.empty}>Unable to load job details.</Text>
+            <Pressable style={styles.secondaryButton} onPress={() => jobQuery.refetch()}>
+              <Text style={styles.secondaryButtonText}>Retry</Text>
+            </Pressable>
+          </View>
+        ) : !job ? (
           <Text style={styles.empty}>Loading job details...</Text>
         ) : (
           <>
@@ -309,6 +345,11 @@ const styles = StyleSheet.create({
     color: BRAND.muted,
     textAlign: 'center',
     marginTop: 40,
+  },
+  errorWrap: {
+    marginTop: 40,
+    alignItems: 'center',
+    gap: 12,
   },
   title: {
     fontSize: 22,

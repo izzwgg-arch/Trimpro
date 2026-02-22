@@ -32,6 +32,8 @@ export function NotificationBell() {
   const streamAbortRef = useRef<AbortController | null>(null)
   const toastTimerRef = useRef<number | null>(null)
   const shownToastIdsRef = useRef<Set<string>>(new Set())
+  const seenNotificationIdsRef = useRef<Set<string>>(new Set())
+  const initializedSeenIdsRef = useRef(false)
 
   const showTransientToast = (notification: Notification) => {
     if (shownToastIdsRef.current.has(notification.id)) return
@@ -39,10 +41,17 @@ export function NotificationBell() {
     setToastNotification(notification)
     if (toastTimerRef.current) {
       window.clearTimeout(toastTimerRef.current)
+      toastTimerRef.current = null
     }
-    toastTimerRef.current = window.setTimeout(() => {
-      setToastNotification(null)
-    }, 5000)
+    const isPayment =
+      notification.type === 'PAYMENT_RECEIVED' ||
+      /payment received|invoice paid/i.test(`${notification.title} ${notification.message || ''}`)
+    // Keep payment toasts visible until the user explicitly closes them.
+    if (!isPayment) {
+      toastTimerRef.current = window.setTimeout(() => {
+        setToastNotification(null)
+      }, 5000)
+    }
   }
 
   useEffect(() => {
@@ -173,14 +182,9 @@ export function NotificationBell() {
 
             if (evt === 'notifications' && payload?.notifications) {
               const incoming: Notification[] = payload.notifications
-              const paymentToast = incoming.find(
-                (n) =>
-                  n.status === 'UNREAD' &&
-                  (n.type === 'PAYMENT_RECEIVED' || /payment received|invoice paid/i.test(`${n.title} ${n.message || ''}`))
-              )
-              if (paymentToast) {
-                showTransientToast(paymentToast)
-              }
+              incoming
+                .filter((n) => n.status === 'UNREAD')
+                .forEach((n) => showTransientToast(n))
               setNotifications((prev) => {
                 // merge unique by id, newest first
                 const map = new Map<string, Notification>()
@@ -234,6 +238,23 @@ export function NotificationBell() {
       if (response.ok) {
         const data = await response.json()
         const notifs = data.notifications || []
+
+        // Polling fallback for popups: if SSE stream drops, still show toasts for newly
+        // arrived unread notifications.
+        const newlySeen = notifs.filter((n: Notification) => !seenNotificationIdsRef.current.has(n.id))
+        if (!initializedSeenIdsRef.current) {
+          // First load seeds the set; don't toast old historical notifications.
+          initializedSeenIdsRef.current = true
+        } else {
+          newlySeen
+            .filter((n: Notification) => n.status === 'UNREAD')
+            .forEach((n: Notification) => showTransientToast(n))
+        }
+
+        for (const n of notifs) {
+          seenNotificationIdsRef.current.add(n.id)
+        }
+
         setNotifications(notifs)
         setUnreadCount(notifs.filter((n: Notification) => n.status === 'UNREAD').length)
       }

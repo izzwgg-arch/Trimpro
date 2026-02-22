@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
-import { requirePermission } from '@/lib/authorization'
+import { requireAnyPermission } from '@/lib/authorization'
 import { validateRequest, jobAssignmentSchema } from '@/lib/validation'
-import { notifyJobAssigned } from '@/lib/notifications'
+import { notifyDispatchJobActivity, notifyJobAssigned } from '@/lib/notifications'
+import { publishDispatchRealtime } from '@/lib/dispatch-realtime'
 
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
 
-  const permError = await requirePermission(request, 'dispatch.assign')
+  const permError = await requireAnyPermission(request, ['dispatch.assign', 'dispatch.dispatch'])
   if (permError) return permError
 
   const user = getAuthUser(request)
@@ -20,9 +21,26 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: validation.error }, { status: validation.status })
   }
 
-  const { jobId, userId, scheduledStart, scheduledEnd, notes } = validation.data
+  const { jobId, userId, techId, userIds, scheduledStart, scheduledEnd, notes } = validation.data
 
   try {
+    const parseMaybeDate = (raw?: string | null): Date | null => {
+      const v = String(raw || '').trim()
+      if (!v) return null
+      const d = new Date(v)
+      return Number.isNaN(d.getTime()) ? null : d
+    }
+    const parsedStart = parseMaybeDate(scheduledStart)
+    const parsedEnd = parseMaybeDate(scheduledEnd)
+
+    const normalizedUserIds = Array.from(
+      new Set(
+        (Array.isArray(userIds) ? userIds : [])
+          .concat([userId, techId].filter(Boolean) as string[])
+          .map((id) => String(id || '').trim())
+          .filter(Boolean)
+      )
+    )
 
     // Verify job exists and belongs to tenant
     const job = await prisma.job.findFirst({
@@ -30,73 +48,143 @@ export async function POST(request: NextRequest) {
         id: jobId,
         tenantId: user.tenantId,
       },
+      include: {
+        assignments: { select: { userId: true } },
+      },
     })
 
     if (!job) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 })
     }
 
-    // If userId provided, verify user exists and is in same tenant
-    if (userId) {
-      const assignedUser = await prisma.user.findFirst({
+    // If assignees provided, verify users exist and are in same tenant
+    if (normalizedUserIds.length > 0) {
+      const assignedUsers = await prisma.user.findMany({
         where: {
-          id: userId,
+          id: { in: normalizedUserIds },
           tenantId: user.tenantId,
           status: 'ACTIVE',
         },
+        select: { id: true },
       })
 
-      if (!assignedUser) {
+      if (assignedUsers.length !== normalizedUserIds.length) {
         return NextResponse.json({ error: 'User not found or inactive' }, { status: 404 })
       }
     }
 
-    // Update job assignment
-    const updatedJob = await prisma.job.update({
-      where: { id: jobId },
-      data: {
-        assignedToId: userId || null,
-        scheduledStart: scheduledStart ? new Date(scheduledStart) : null,
-        scheduledEnd: scheduledEnd ? new Date(scheduledEnd) : null,
-      },
-    })
+    const previousAssignees = new Set(job.assignments.map((a) => a.userId))
+    const nextAssignees = new Set(normalizedUserIds)
+    const changed =
+      previousAssignees.size !== nextAssignees.size ||
+      [...previousAssignees].some((id) => !nextAssignees.has(id))
 
-    // Create dispatch event for audit
-    await prisma.dispatchEvent.create({
-      data: {
-        tenantId: user.tenantId,
-        jobId: jobId,
-        eventType: userId ? 'ASSIGNED' : 'UNASSIGNED',
-        actorUserId: user.id,
-        payload: {
-          assignedTo: userId || null,
-          scheduledStart: scheduledStart || null,
-          scheduledEnd: scheduledEnd || null,
-          notes: notes || null,
+    // Update assignment and schedule atomically.
+    const updatedJob = await prisma.$transaction(async (tx) => {
+      await tx.jobAssignment.deleteMany({
+        where: { jobId },
+      })
+
+      if (normalizedUserIds.length > 0) {
+        await tx.jobAssignment.createMany({
+          data: normalizedUserIds.map((uid) => ({
+            jobId,
+            userId: uid,
+            notes: notes || null,
+          })),
+          skipDuplicates: true,
+        })
+      }
+
+      const shouldSetScheduledStatus =
+        normalizedUserIds.length > 0 && ['QUOTE', 'ON_HOLD'].includes(String(job.status))
+
+      const jobUpdate = await tx.job.update({
+        where: { id: jobId },
+        data: {
+          scheduledStart: parsedStart,
+          scheduledEnd: parsedEnd,
+          status: shouldSetScheduledStatus ? 'SCHEDULED' : undefined,
         },
-      },
-    })
-
-    // Create audit log
-    await prisma.auditLog.create({
-      data: {
-        tenantId: user.tenantId,
-        userId: user.id,
-        action: 'UPDATE', // Use standard audit action
-        entityType: 'Job',
-        entityId: jobId,
-        changes: {
-          assignedTo: userId || null,
-          scheduledStart: scheduledStart || null,
-          scheduledEnd: scheduledEnd || null,
+        include: {
+          assignments: {
+            include: {
+              user: {
+                select: { id: true, firstName: true, lastName: true, email: true },
+              },
+            },
+          },
         },
-      },
+      })
+
+      await tx.dispatchEvent.create({
+        data: {
+          tenantId: user.tenantId,
+          jobId: jobId,
+          eventType: changed ? 'REASSIGNED' : 'ASSIGNED',
+          actorUserId: user.id,
+          payload: {
+            assignedTo: normalizedUserIds,
+            scheduledStart: parsedStart ? parsedStart.toISOString() : null,
+            scheduledEnd: parsedEnd ? parsedEnd.toISOString() : null,
+            notes: notes || null,
+          },
+        },
+      })
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: user.tenantId,
+          userId: user.id,
+          action: 'UPDATE',
+          entityType: 'Job',
+          entityId: jobId,
+          changes: {
+            assignment: {
+              previous: [...previousAssignees],
+              next: normalizedUserIds,
+            },
+            scheduledStart: parsedStart ? parsedStart.toISOString() : null,
+            scheduledEnd: parsedEnd ? parsedEnd.toISOString() : null,
+          },
+        },
+      })
+
+      return jobUpdate
     })
 
-    // Notify tech if job was assigned
-    if (userId && job.title) {
-      await notifyJobAssigned(user.tenantId, userId, jobId, job.title)
+    // Notify assigned users.
+    for (const uid of normalizedUserIds) {
+      await notifyJobAssigned(user.tenantId, uid, jobId, job.title)
     }
+
+    publishDispatchRealtime(user.tenantId, {
+      id: `assign_${jobId}_${Date.now()}`,
+      kind: 'dispatch_event',
+      ts: new Date().toISOString(),
+      jobId,
+      eventType: normalizedUserIds.length === 0 ? 'UNASSIGNED' : changed ? 'REASSIGNED' : 'ASSIGNED',
+      payload: {
+        assignedTo: normalizedUserIds,
+        scheduledStart: parsedStart ? parsedStart.toISOString() : null,
+        scheduledEnd: parsedEnd ? parsedEnd.toISOString() : null,
+      },
+      job: {
+        id: jobId,
+        jobNumber: job.jobNumber,
+        title: job.title,
+      },
+    })
+
+    await notifyDispatchJobActivity({
+      tenantId: user.tenantId,
+      jobId,
+      title: `Assignment updated: ${job.jobNumber}`,
+      message:
+        normalizedUserIds.length === 0
+          ? 'Job was unassigned'
+          : `${normalizedUserIds.length} crew member(s) assigned`,
+    })
 
     return NextResponse.json({ job: updatedJob })
   } catch (error) {

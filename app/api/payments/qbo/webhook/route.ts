@@ -5,6 +5,8 @@ import { rateLimitOrThrow } from '@/lib/security/rate-limit'
 import { getQboSessionForTenant } from '@/lib/qbo/session'
 import { quickBooksService } from '@/lib/services/quickbooks'
 import { notifyInvoicePaid } from '@/lib/notifications'
+import { sendPaymentReceiptEmail } from '@/lib/services/email'
+import { splitEmailList } from '@/lib/email'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,7 +25,19 @@ async function applyInvoicePayment(params: {
   const invoice = await prisma.invoice.findFirst({
     where: { id: params.invoiceId, tenantId: params.tenantId },
     include: {
-      client: { select: { name: true } },
+      client: {
+        select: {
+          name: true,
+          email: true,
+          contacts: {
+            where: { email: { not: null } },
+            orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+            take: 1,
+            select: { email: true },
+          },
+        },
+      },
+      tenant: { select: { name: true } },
     },
   })
   if (!invoice) return
@@ -85,6 +99,32 @@ async function applyInvoicePayment(params: {
     amount,
     invoice.client?.name || 'Customer'
   )
+
+  // Customer-facing receipt email (best effort).
+  try {
+    const to =
+      splitEmailList(invoice.client?.email || '')[0] ||
+      String(invoice.client?.contacts?.[0]?.email || '').trim() ||
+      ''
+    if (to) {
+      const appUrl =
+        process.env.PUBLIC_APP_URL ||
+        process.env.NEXT_PUBLIC_APP_URL ||
+        process.env.CANONICAL_PUBLIC_APP_URL ||
+        'https://app.trimprony.com'
+      await sendPaymentReceiptEmail({
+        to,
+        invoiceNumber: invoice.invoiceNumber,
+        amount,
+        paidAt: new Date(),
+        reference: params.reference,
+        companyName: invoice.tenant?.name || null,
+        invoiceUrl: `${String(appUrl).replace(/\/+$/, '')}/portal/pay/${invoice.id}`,
+      })
+    }
+  } catch (e) {
+    console.error('[QBO ACH] Failed to send receipt email:', e)
+  }
 }
 
 export async function POST(request: NextRequest) {

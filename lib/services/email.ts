@@ -312,3 +312,51 @@ export async function sendInvoiceEmail(
     ],
   })
 }
+
+export async function sendPaymentReceiptEmail(params: {
+  to: string
+  invoiceNumber: string
+  amount: number
+  paidAt?: Date | string | null
+  reference?: string | null
+  companyName?: string | null
+  invoiceUrl?: string | null
+}): Promise<void> {
+  const emailService = new EmailService()
+  const paidAtText = params.paidAt ? new Date(params.paidAt).toLocaleString() : new Date().toLocaleString()
+  const amountText = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(
+    Number(params.amount || 0)
+  )
+  const company = params.companyName || FROM_NAME
+
+  await emailService.sendEmail({
+    to: params.to,
+    subject: `Payment receipt for invoice ${params.invoiceNumber}`,
+    html: `
+      <html>
+        <body>
+          <h2>Payment Receipt</h2>
+          <p>Thank you. We received your ACH payment.</p>
+          <p><strong>Invoice:</strong> ${params.invoiceNumber}</p>
+          <p><strong>Amount paid:</strong> ${amountText}</p>
+          <p><strong>Paid at:</strong> ${paidAtText}</p>
+          ${params.reference ? `<p><strong>Reference:</strong> ${params.reference}</p>` : ''}
+          ${params.invoiceUrl ? `<p><a href="${params.invoiceUrl}">View invoice</a></p>` : ''}
+          <p>— ${company}</p>
+        </body>
+      </html>
+    `,
+    text: `
+Payment Receipt
+
+Thank you. We received your ACH payment.
+Invoice: ${params.invoiceNumber}
+Amount paid: ${amountText}
+Paid at: ${paidAtText}
+${params.reference ? `Reference: ${params.reference}` : ''}
+${params.invoiceUrl ? `View invoice: ${params.invoiceUrl}` : ''}
+
+— ${company}
+    `.trim(),
+  })
+}
