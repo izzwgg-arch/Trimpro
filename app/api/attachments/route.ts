@@ -147,13 +147,16 @@ export async function POST(request: NextRequest) {
           const getCleanFileDescription = (fileName: string, mimeType: string): string => {
             // Check if filename looks like a UUID (contains 8-4-4-4-12 pattern)
             const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
-            if (uuidPattern.test(fileName)) {
-              // It's a UUID, return friendly description based on mime type
+            // Also check for numeric-only filenames (like "1000073388.jpg")
+            const numericOnlyPattern = /^[0-9]+\.[a-z]{3,4}$/i
+            
+            if (uuidPattern.test(fileName) || numericOnlyPattern.test(fileName)) {
+              // It's a UUID or numeric filename, return friendly description based on mime type
               if (mimeType.startsWith('image/')) return 'a photo'
               if (mimeType.startsWith('video/')) return 'a video'
               return 'a file'
             }
-            // Not a UUID, return the filename (but maybe truncate if too long)
+            // Not a UUID/numeric, return the filename (but maybe truncate if too long)
             return fileName.length > 30 ? fileName.substring(0, 27) + '...' : fileName
           }
 
@@ -229,12 +232,13 @@ export async function POST(request: NextRequest) {
 
           try {
             console.log('[Attachment] Creating dispatch notifications, actorName:', actorName, 'cleanFileDesc:', cleanFileDesc)
+            // Don't exclude the uploader - they should see their own uploads too
             await notifyDispatchJobActivity({
               tenantId: user.tenantId,
               jobId: job.id,
               title: `${actorName} uploaded ${cleanFileDesc}`,
               message: `${jobDisplayName} (${jobNumber})`,
-              excludeUserId: user.id,
+              excludeUserId: null, // Include uploader so they see their own uploads
             })
             console.log('[Attachment] Successfully created dispatch notifications')
           } catch (dispatchNotifError) {
