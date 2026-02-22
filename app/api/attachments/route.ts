@@ -121,6 +121,7 @@ export async function POST(request: NextRequest) {
 
     if (entityTypeRaw === 'job') {
       try {
+        console.log('[Attachment] Processing job attachment notification for jobId:', entityId, 'userId:', user.id)
         const [job, uploader] = await Promise.all([
           prisma.job.findFirst({
             where: { id: entityId, tenantId: user.tenantId },
@@ -135,6 +136,7 @@ export async function POST(request: NextRequest) {
         ])
 
         if (job) {
+          console.log('[Attachment] Job found:', job.jobNumber, 'Assignments:', job.assignments.length)
           const mediaKind = attachment.mimeType.startsWith('image/')
             ? 'photo'
             : attachment.mimeType.startsWith('video/')
@@ -206,8 +208,11 @@ export async function POST(request: NextRequest) {
           const jobNumber = job.jobNumber || 'Unknown'
 
           const recipientIds = Array.from(new Set(job.assignments.map((a) => a.userId).filter((id) => id !== user.id)))
+          console.log('[Attachment] Recipient IDs for assigned users:', recipientIds.length, recipientIds)
+          
           if (recipientIds.length > 0) {
             try {
+              console.log('[Attachment] Creating notifications for assigned users:', recipientIds)
               await createNotificationsForUsers(user.tenantId, recipientIds, {
                 type: 'OTHER',
                 title: `${actorName} uploaded ${cleanFileDesc}`,
@@ -216,12 +221,14 @@ export async function POST(request: NextRequest) {
                 linkId: job.id,
                 linkUrl: `/dashboard/dispatch?jobId=${job.id}`,
               })
+              console.log('[Attachment] Successfully created notifications for assigned users')
             } catch (notifError) {
-              console.error('Failed to create notifications for assigned users:', notifError)
+              console.error('[Attachment] Failed to create notifications for assigned users:', notifError)
             }
           }
 
           try {
+            console.log('[Attachment] Creating dispatch notifications, actorName:', actorName, 'cleanFileDesc:', cleanFileDesc)
             await notifyDispatchJobActivity({
               tenantId: user.tenantId,
               jobId: job.id,
@@ -229,9 +236,13 @@ export async function POST(request: NextRequest) {
               message: `${jobDisplayName} (${jobNumber})`,
               excludeUserId: user.id,
             })
+            console.log('[Attachment] Successfully created dispatch notifications')
           } catch (dispatchNotifError) {
-            console.error('Failed to create dispatch notifications:', dispatchNotifError)
+            console.error('[Attachment] Failed to create dispatch notifications:', dispatchNotifError)
           }
+        } else {
+          console.log('[Attachment] Job not found for entityId:', entityId, 'tenantId:', user.tenantId)
+        }
         }
       } catch (error) {
         console.error('Attachment dispatch fanout error:', error)
