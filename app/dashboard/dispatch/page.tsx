@@ -958,11 +958,43 @@ function JobCard({
         {job.indicators.issueReported && <ShieldAlert className="h-3.5 w-3.5 text-rose-600" />}
         {job.indicators.taskCompleted && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />}
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-1">
-        <Button variant="outline" size="sm" onClick={onOpen}>Open Job</Button>
-        <Button variant="outline" size="sm" onClick={onAssign}>Assign Crew</Button>
-        <Button variant="outline" size="sm" onClick={onMessage}>Message Crew</Button>
-        <Button variant="outline" size="sm" onClick={onMedia}>View Media</Button>
+      <div className="mt-3 grid grid-cols-2 gap-1.5">
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={onOpen}
+          className="text-xs px-2 py-1.5 h-auto flex items-center justify-center gap-1"
+        >
+          <User className="h-3 w-3 flex-shrink-0" />
+          <span className="truncate">Open Job</span>
+        </Button>
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={onAssign}
+          className="text-xs px-2 py-1.5 h-auto flex items-center justify-center gap-1"
+        >
+          <Plus className="h-3 w-3 flex-shrink-0" />
+          <span className="truncate">Assign</span>
+        </Button>
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={onMessage}
+          className="text-xs px-2 py-1.5 h-auto flex items-center justify-center gap-1"
+        >
+          <MessageSquare className="h-3 w-3 flex-shrink-0" />
+          <span className="truncate">Message</span>
+        </Button>
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={onMedia}
+          className="text-xs px-2 py-1.5 h-auto flex items-center justify-center gap-1"
+        >
+          <Camera className="h-3 w-3 flex-shrink-0" />
+          <span className="truncate">Media</span>
+        </Button>
       </div>
     </div>
   )
