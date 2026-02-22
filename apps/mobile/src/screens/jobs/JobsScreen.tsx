@@ -3,15 +3,20 @@ import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'rea
 import { useQuery } from '@tanstack/react-query'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { Ionicons } from '@expo/vector-icons'
-import { Screen } from '../../components/Screen'
+import { AppScreen } from '../../components/AppScreen'
 import { apiRequest } from '../../api/client'
 import { Attachment, Conversation, Issue, Job, Task } from '../../types/models'
-import { StatusChip } from '../../components/StatusChip'
 import { SyncBanner } from '../../components/SyncBanner'
 import { useOnlineState } from '../../hooks/useOnlineState'
 import { useOutboxCount } from '../../hooks/useOutboxCount'
-import { BRAND } from '../../config/env'
+import { colors, radius, spacing, typography } from '../../theme/tokens'
 import { JobsStackParamList } from '../../types/navigation'
+import { EmptyState } from '../../components/EmptyState'
+import { JobCard } from '../../components/JobCard'
+import { SectionHeader } from '../../components/SectionHeader'
+import { Card } from '../../components/Card'
+import { StatusBadge } from '../../components/StatusBadge'
+import { useAuth } from '../../auth/AuthContext'
 
 type Props = NativeStackScreenProps<JobsStackParamList, 'JobsList'>
 
@@ -31,6 +36,7 @@ interface ConversationsResponse {
 }
 
 export function JobsScreen({ navigation }: Props) {
+  const { user } = useAuth()
   const isOnline = useOnlineState()
   const outboxCount = useOutboxCount()
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null)
@@ -149,8 +155,60 @@ export function JobsScreen({ navigation }: Props) {
     await Promise.all([jobsQuery.refetch(), assignmentsQuery.refetch(), conversationsQuery.refetch()])
   }
 
+  const todayLabel = useMemo(
+    () =>
+      new Date().toLocaleDateString(undefined, {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+      }),
+    []
+  )
+
+  const greeting = useMemo(() => {
+    const h = new Date().getHours()
+    if (h < 12) return 'Good morning'
+    if (h < 18) return 'Good afternoon'
+    return 'Good evening'
+  }, [])
+
+  const lastSyncText = useMemo(() => {
+    if (!lastSyncAt) return 'Not synced yet'
+    const mins = Math.max(0, Math.floor((Date.now() - lastSyncAt.getTime()) / 60000))
+    if (mins < 1) return 'Synced just now'
+    if (mins < 60) return `Synced ${mins}m ago`
+    const hrs = Math.floor(mins / 60)
+    return `Synced ${hrs}h ago`
+  }, [lastSyncAt])
+
+  const renderTaskItem = (task: AssignmentsResponse['tasks'][number]) => (
+    <Pressable key={task.id} style={({ pressed }) => [styles.rowPressable, pressed && styles.rowPressed]} onPress={() => openTask(task.id)}>
+      <View style={styles.rowTextWrap}>
+        <Text style={styles.rowTitle} numberOfLines={1}>
+          {task.title}
+        </Text>
+        <Text style={styles.rowMeta}>Due {task.dueDate ? new Date(task.dueDate).toLocaleString() : 'No date'}</Text>
+      </View>
+      <StatusBadge status={task.status} />
+    </Pressable>
+  )
+
+  const renderIssueItem = (issue: AssignmentsResponse['issues'][number]) => (
+    <Pressable key={issue.id} style={({ pressed }) => [styles.rowPressable, pressed && styles.rowPressed]} onPress={() => openIssue(issue.id)}>
+      <View style={styles.rowTextWrap}>
+        <Text style={styles.rowTitle} numberOfLines={1}>
+          {issue.title}
+        </Text>
+        <Text style={styles.rowMeta}>
+          {issue.type ? `${issue.type} • ` : ''}Updated {new Date(issue.updatedAt).toLocaleString()}
+        </Text>
+      </View>
+      <StatusBadge status={issue.status} />
+    </Pressable>
+  )
+
   return (
-    <Screen style={styles.screen}>
+    <AppScreen>
       <FlatList
         data={jobs}
         keyExtractor={(item) => item.id}
@@ -162,7 +220,28 @@ export function JobsScreen({ navigation }: Props) {
         }
         ListHeaderComponent={
           <View style={styles.listHeader}>
-            <Text style={styles.header}>Dashboard</Text>
+            <Card style={styles.hero}>
+              <Text style={styles.heroGreeting}>
+                {greeting}, {user?.firstName || 'Crew'}
+              </Text>
+              <Text style={styles.heroDate}>{todayLabel}</Text>
+              <View style={styles.heroChips}>
+                <View style={[styles.chip, { backgroundColor: isOnline ? 'rgba(22,163,74,0.12)' : 'rgba(220,38,38,0.12)' }]}>
+                  <View style={[styles.dot, { backgroundColor: isOnline ? colors.success : colors.danger }]} />
+                  <Text style={[styles.chipText, { color: isOnline ? '#15803D' : '#B91C1C' }]}>{isOnline ? 'Online' : 'Offline'}</Text>
+                </View>
+                <View style={styles.chip}>
+                  <Ionicons name="cloud-done-outline" size={12} color={colors.textSecondary} />
+                  <Text style={styles.chipText}>{lastSyncText}</Text>
+                </View>
+              </View>
+              <View style={styles.glanceRow}>
+                <GlanceStat label="Jobs Today" value={todaysJobs.length} />
+                <GlanceStat label="Tasks Due" value={todaysTasks.length} />
+                <GlanceStat label="Open Issues" value={openIssues.length} />
+              </View>
+            </Card>
+
             <SyncBanner
               isOnline={isOnline}
               isSyncing={jobsQuery.isFetching || assignmentsQuery.isFetching || conversationsQuery.isFetching}
@@ -170,163 +249,147 @@ export function JobsScreen({ navigation }: Props) {
               outboxCount={outboxCount}
             />
 
-            <SectionCard title="Today's Jobs" onSeeAll={() => {}}>
+            <Card>
+              <SectionHeader title="Today's Jobs" rightActionLabel="See all" onRightAction={() => {}} />
               {todaysJobs.length === 0 ? (
-                <Text style={styles.sectionEmpty}>No jobs assigned for today.</Text>
+                <EmptyState icon="briefcase-outline" title="No jobs for today" description="New assignments will appear here." />
               ) : (
                 todaysJobs.slice(0, 5).map((job) => (
-                  <Pressable key={job.id} style={styles.todayJobCard} onPress={() => navigation.navigate('JobDetail', { jobId: job.id })}>
-                    <View style={styles.notificationTitleRow}>
-                      <Text style={styles.notificationTitle} numberOfLines={1}>
-                        {job.jobNumber} - {job.title}
-                      </Text>
-                      <StatusChip status={job.status} />
-                    </View>
-                    <Text style={styles.notificationMeta}>
-                      {job.client?.name || 'No client'} • {job.scheduledStart ? new Date(job.scheduledStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'No time'}
-                    </Text>
-                    <Text style={styles.notificationMeta} numberOfLines={1}>
-                      {job.address?.street ? `${job.address.street}, ${job.address.city || ''} ${job.address.state || ''}` : 'No job site address'}
-                    </Text>
-                    <View style={styles.iconRow}>
-                      <Ionicons name="chatbubble-ellipses-outline" size={14} color={(unreadMessagesByJob.get(job.id) || 0) > 0 ? BRAND.primary : '#98A2B3'} />
-                      <Ionicons name="images-outline" size={14} color={(todayMediaQuery.data?.get(job.id) || 0) > 0 ? BRAND.primary : '#98A2B3'} />
-                      <Ionicons name="alert-circle-outline" size={14} color={openIssues.some((x) => x.jobId === job.id) ? '#B42318' : '#98A2B3'} />
-                    </View>
-                  </Pressable>
+                  <View key={job.id} style={styles.stackItem}>
+                    <JobCard
+                      job={job}
+                      onPress={() => navigation.navigate('JobDetail', { jobId: job.id })}
+                      hasUnreadMessages={(unreadMessagesByJob.get(job.id) || 0) > 0}
+                      hasNewMedia={(todayMediaQuery.data?.get(job.id) || 0) > 0}
+                      hasOpenIssue={openIssues.some((x) => x.jobId === job.id)}
+                    />
+                  </View>
                 ))
               )}
-            </SectionCard>
+            </Card>
 
-            <SectionCard title="Today's Tasks" onSeeAll={navigateToTasks}>
+            <Card>
+              <SectionHeader title="Today's Tasks" rightActionLabel="See all" onRightAction={navigateToTasks} />
               {todaysTasks.length === 0 ? (
-                <Text style={styles.sectionEmpty}>No tasks due today.</Text>
+                <EmptyState icon="checkbox-outline" title="No tasks due today" description="You are all caught up." />
               ) : (
-                todaysTasks.slice(0, 5).map((t) => (
-                  <Pressable key={t.id} style={styles.notificationRow} onPress={() => openTask(t.id)}>
-                    <View style={styles.notificationTitleRow}>
-                      <Text style={styles.notificationTitle} numberOfLines={1}>
-                        {t.title}
-                      </Text>
-                      <StatusChip status={t.status} />
-                    </View>
-                    <Text style={styles.notificationMeta}>Due: {t.dueDate ? new Date(t.dueDate).toLocaleString() : 'No due date'}</Text>
-                  </Pressable>
-                ))
+                todaysTasks.slice(0, 5).map(renderTaskItem)
               )}
-            </SectionCard>
+            </Card>
 
-            <SectionCard title="Open Issues" onSeeAll={navigateToIssues}>
+            <Card>
+              <SectionHeader title="Open Issues" rightActionLabel="See all" onRightAction={navigateToIssues} />
               {openIssues.length === 0 ? (
-                <Text style={styles.sectionEmpty}>No open issues.</Text>
+                <EmptyState icon="alert-circle-outline" title="No open issues" description="Issue queue is clear." />
               ) : (
-                openIssues.slice(0, 5).map((i) => (
-                  <Pressable key={i.id} style={styles.notificationRow} onPress={() => openIssue(i.id)}>
-                    <View style={styles.notificationTitleRow}>
-                      <Text style={styles.notificationTitle} numberOfLines={1}>
-                        {i.title}
-                      </Text>
-                      <StatusChip status={i.status} />
-                    </View>
-                    <Text style={styles.notificationMeta}>
-                      {i.type ? `${i.type} • ` : ''}Updated: {i.updatedAt ? new Date(i.updatedAt).toLocaleString() : 'n/a'}
-                    </Text>
-                  </Pressable>
-                ))
+                openIssues.slice(0, 5).map(renderIssueItem)
               )}
-            </SectionCard>
+            </Card>
 
-            <Text style={styles.jobsHeader}>Assigned Jobs</Text>
+            <SectionHeader title="Assigned Jobs" />
           </View>
         }
-        ListEmptyComponent={<Text style={styles.empty}>No assigned jobs.</Text>}
+        ListEmptyComponent={<EmptyState icon="briefcase-outline" title="No assigned jobs" description="You have no assigned jobs yet." />}
         renderItem={({ item }) => (
-          <Pressable style={styles.card} onPress={() => navigation.navigate('JobDetail', { jobId: item.id })}>
-            <View style={styles.row}>
-              <Text style={styles.cardTitle} numberOfLines={1}>
-                {item.jobNumber} - {item.title}
-              </Text>
-              <StatusChip status={item.status} />
-            </View>
-            <Text style={styles.meta}>{item.client?.name || 'No client'}</Text>
-            <Text style={styles.meta}>
-              {item.address?.street ? `${item.address.street}, ${item.address.city || ''} ${item.address.state || ''}` : 'No job site address'}
-            </Text>
-            <Text style={styles.meta}>{item.scheduledStart ? new Date(item.scheduledStart).toLocaleString() : 'No schedule'}</Text>
-            <View style={styles.iconRow}>
-              <Ionicons name="chatbubble-ellipses-outline" size={14} color={(unreadMessagesByJob.get(item.id) || 0) > 0 ? BRAND.primary : '#98A2B3'} />
-              <Ionicons name="images-outline" size={14} color={(todayMediaQuery.data?.get(item.id) || 0) > 0 ? BRAND.primary : '#98A2B3'} />
-              <Ionicons name="alert-circle-outline" size={14} color={openIssues.some((x) => x.jobId === item.id) ? '#B42318' : '#98A2B3'} />
-            </View>
-          </Pressable>
+          <View style={styles.stackItem}>
+            <JobCard
+              job={item}
+              onPress={() => navigation.navigate('JobDetail', { jobId: item.id })}
+              hasUnreadMessages={(unreadMessagesByJob.get(item.id) || 0) > 0}
+              hasNewMedia={(todayMediaQuery.data?.get(item.id) || 0) > 0}
+              hasOpenIssue={openIssues.some((x) => x.jobId === item.id)}
+            />
+          </View>
         )}
       />
-    </Screen>
+    </AppScreen>
   )
 }
 
-function SectionCard({ title, onSeeAll, children }: { title: string; onSeeAll?: () => void; children: React.ReactNode }) {
+function GlanceStat({ label, value }: { label: string; value: number }) {
   return (
-    <View style={styles.sectionCard}>
-      <View style={styles.sectionHeaderRow}>
-        <Text style={styles.sectionTitle}>{title}</Text>
-        {onSeeAll ? (
-          <Pressable onPress={onSeeAll} hitSlop={8}>
-            <Text style={styles.sectionLink}>See all</Text>
-          </Pressable>
-        ) : (
-          <View />
-        )}
-      </View>
-      {children}
+    <View style={styles.glanceItem}>
+      <Text style={styles.glanceValue}>{value}</Text>
+      <Text style={styles.glanceLabel}>{label}</Text>
     </View>
   )
 }
 
 const styles = StyleSheet.create({
-  screen: { padding: 14 },
-  listHeader: { gap: 10, paddingBottom: 6 },
-  header: { fontSize: 26, fontWeight: '800', color: BRAND.text },
-  jobsHeader: { fontSize: 18, fontWeight: '800', color: BRAND.text, marginTop: 2 },
-  empty: { color: BRAND.muted, textAlign: 'center', marginTop: 48 },
-  sectionCard: {
-    backgroundColor: BRAND.white,
-    borderRadius: 14,
-    padding: 12,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: '#EAECF0',
-    shadowColor: '#101828',
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
+  listHeader: { gap: spacing.sm, paddingTop: spacing.sm, paddingBottom: spacing.md },
+  hero: {
+    backgroundColor: '#EEF3F6',
+    borderColor: '#DCE6EC',
+    borderRadius: radius.lg,
   },
-  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  sectionTitle: { fontSize: 16, fontWeight: '800', color: BRAND.text },
-  sectionLink: { color: BRAND.primary, fontWeight: '700' },
-  sectionEmpty: { color: BRAND.muted },
-  notificationRow: { borderTopWidth: 1, borderTopColor: '#EAECF0', paddingTop: 10 },
-  todayJobCard: { borderWidth: 1, borderColor: '#E4E7EC', borderRadius: 12, padding: 10, backgroundColor: '#FCFCFD' },
-  notificationTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  notificationTitle: { flex: 1, color: BRAND.text, fontWeight: '700' },
-  notificationMeta: { marginTop: 4, color: BRAND.muted, fontSize: 12 },
-  card: {
-    backgroundColor: BRAND.white,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#EAECF0',
-    shadowColor: '#101828',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
+  heroGreeting: {
+    ...typography.h2,
+    color: colors.textPrimary,
   },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8 },
-  cardTitle: { fontWeight: '700', fontSize: 16, color: BRAND.text, flex: 1 },
-  meta: { fontSize: 13, color: BRAND.muted, marginBottom: 2 },
-  iconRow: { marginTop: 6, flexDirection: 'row', gap: 8, alignItems: 'center' },
+  heroDate: {
+    ...typography.sub,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  heroChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+  },
+  chip: {
+    minHeight: 30,
+    borderRadius: radius.pill,
+    backgroundColor: '#E9EFF4',
+    paddingHorizontal: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  dot: { width: 8, height: 8, borderRadius: 4 },
+  chipText: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  glanceRow: {
+    flexDirection: 'row',
+    marginTop: spacing.md,
+    gap: spacing.sm,
+  },
+  glanceItem: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.divider,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+  },
+  glanceValue: {
+    ...typography.h3,
+    color: colors.textPrimary,
+  },
+  glanceLabel: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  rowPressable: {
+    minHeight: 54,
+    borderTopWidth: 1,
+    borderColor: colors.divider,
+    paddingTop: spacing.sm,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  rowPressed: {
+    opacity: 0.88,
+  },
+  rowTextWrap: { flex: 1 },
+  rowTitle: { ...typography.sub, color: colors.textPrimary, fontWeight: '700' },
+  rowMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  stackItem: { marginBottom: spacing.sm },
 })
 

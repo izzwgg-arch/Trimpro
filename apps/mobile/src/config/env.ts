@@ -1,3 +1,5 @@
+import { colors } from '../theme/tokens'
+
 const explicitApiUrl = process.env.EXPO_PUBLIC_API_URL?.trim()
 const PROD_FALLBACK_URL = 'https://app.trimprony.com'
 const DEV_FALLBACK_URL = 'http://10.0.2.2:3000'
@@ -31,11 +33,11 @@ const resolveApiBaseUrl = (): string => {
 export const API_BASE_URL = resolveApiBaseUrl()
 
 export const BRAND = {
-  primary: '#2E4A59',
+  primary: colors.brandPrimary,
   accent: '#E6C98B',
-  bg: '#F6F7F9',
-  white: '#FFFFFF',
-  text: '#101828',
-  muted: '#667085',
+  bg: colors.background,
+  white: colors.surface,
+  text: colors.textPrimary,
+  muted: colors.textSecondary,
 }
 
