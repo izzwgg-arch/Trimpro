@@ -243,7 +243,6 @@ export async function POST(request: NextRequest) {
         } else {
           console.log('[Attachment] Job not found for entityId:', entityId, 'tenantId:', user.tenantId)
         }
-        }
       } catch (error) {
         console.error('Attachment dispatch fanout error:', error)
       }
