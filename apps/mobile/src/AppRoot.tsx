@@ -74,7 +74,6 @@ function SyncAndPushBootstrap() {
   useEffect(() => {
     if (!token || !isOnline) return
     let stopped = false
-    let lastPollTime = Date.now()
 
     const pollNotifications = async () => {
       try {
@@ -87,17 +86,11 @@ function SyncAndPushBootstrap() {
             linkId: string | null
             createdAt: string
           }>
-        }>('/api/notifications?status=UNREAD&limit=5')
+        }>('/api/notifications?status=UNREAD&limit=1')
 
-        // Check for notifications created after our last poll
-        const newNotifications = data.notifications.filter((n) => {
-          const createdAt = new Date(n.createdAt).getTime()
-          return createdAt > lastPollTime - 5000 // Include notifications from 5 seconds before last poll
-        })
-
-        // Show the most recent new notification
-        if (newNotifications.length > 0) {
-          const latest = newNotifications[0]
+        // Show the most recent unread notification if it's new
+        if (data.notifications.length > 0) {
+          const latest = data.notifications[0]
           if (latest.id !== lastNotificationIdRef.current) {
             lastNotificationIdRef.current = latest.id
 
@@ -121,18 +114,17 @@ function SyncAndPushBootstrap() {
             setCurrentNotification(notification)
           }
         }
-
-        lastPollTime = Date.now()
-      } catch {
+      } catch (error) {
+        console.warn('Notification polling error:', error)
         // Non-blocking
       }
     }
 
-    // Poll immediately, then every 5 seconds for faster updates
+    // Poll immediately, then every 3 seconds for faster updates
     void pollNotifications()
     const interval = setInterval(() => {
       if (!stopped) void pollNotifications()
-    }, 5000)
+    }, 3000) // Poll every 3 seconds for faster updates
 
     return () => {
       stopped = true
