@@ -141,6 +141,29 @@ export async function POST(request: NextRequest) {
             ? 'video'
             : 'file'
 
+          // Helper to clean up filename - remove UUIDs and show friendly text
+          const getCleanFileDescription = (fileName: string, mimeType: string): string => {
+            // Check if filename looks like a UUID (contains 8-4-4-4-12 pattern)
+            const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
+            if (uuidPattern.test(fileName)) {
+              // It's a UUID, return friendly description based on mime type
+              if (mimeType.startsWith('image/')) return 'a photo'
+              if (mimeType.startsWith('video/')) return 'a video'
+              return 'a file'
+            }
+            // Not a UUID, return the filename (but maybe truncate if too long)
+            return fileName.length > 30 ? fileName.substring(0, 27) + '...' : fileName
+          }
+
+          // Build actor name with proper fallbacks
+          let actorName = 'A team member'
+          if (uploader) {
+            const fullName = `${uploader.firstName || ''} ${uploader.lastName || ''}`.trim()
+            actorName = fullName || uploader.email || user.email || 'A team member'
+          } else if (user.email) {
+            actorName = user.email
+          }
+
           await prisma.dispatchEvent.create({
             data: {
               tenantId: user.tenantId,
@@ -178,13 +201,15 @@ export async function POST(request: NextRequest) {
             },
           })
 
+          const cleanFileDesc = getCleanFileDescription(attachment.fileName, attachment.mimeType)
+          const jobDisplayName = job.title || job.jobNumber
+
           const recipientIds = Array.from(new Set(job.assignments.map((a) => a.userId).filter((id) => id !== user.id)))
           if (recipientIds.length > 0) {
-            const actorName = `${uploader?.firstName || ''} ${uploader?.lastName || ''}`.trim() || uploader?.email || 'A team member'
             await createNotificationsForUsers(user.tenantId, recipientIds, {
               type: 'OTHER',
-              title: `New media on ${job.jobNumber}`,
-              message: `${actorName} uploaded ${attachment.fileName}`,
+              title: `${actorName} uploaded ${cleanFileDesc}`,
+              message: `${jobDisplayName} (${job.jobNumber})`,
               linkType: 'job',
               linkId: job.id,
               linkUrl: `/dashboard/dispatch?jobId=${job.id}`,
@@ -194,8 +219,9 @@ export async function POST(request: NextRequest) {
           await notifyDispatchJobActivity({
             tenantId: user.tenantId,
             jobId: job.id,
-            title: `Media uploaded on ${job.jobNumber}`,
-            message: `${attachment.fileName} was uploaded`,
+            title: `${actorName} uploaded ${cleanFileDesc}`,
+            message: `${jobDisplayName} (${job.jobNumber})`,
+            excludeUserId: user.id,
           })
         }
       } catch (error) {
