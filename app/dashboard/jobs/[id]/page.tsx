@@ -131,6 +131,7 @@ interface AssignableUser {
   firstName: string
   lastName: string
   email: string | null
+  status?: string | null
 }
 
 const statusColors: Record<string, string> = {
@@ -269,7 +270,7 @@ export default function JobDetailPage() {
         return
       }
 
-      const response = await fetch('/api/users?status=ACTIVE&limit=200', {
+      const response = await fetch('/api/users?limit=200', {
         headers: { Authorization: `Bearer ${token}` },
       })
 
@@ -292,8 +293,9 @@ export default function JobDetailPage() {
           firstName: u.firstName || '',
           lastName: u.lastName || '',
           email: u.email || null,
+          status: u.status || null,
         }))
-        .filter((u: AssignableUser) => !assignedIds.has(u.id))
+        .filter((u: AssignableUser) => !assignedIds.has(u.id) && !['INACTIVE', 'SUSPENDED'].includes(String(u.status || '').toUpperCase()))
 
       setAvailableCrew(users)
       setSelectedCrewId('')
