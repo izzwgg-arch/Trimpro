@@ -167,14 +167,22 @@ export async function sendInviteEmail(
   apkDownloadUrl: string
 ): Promise<void> {
   const emailService = new EmailService()
-
-  const safeName = firstName?.trim() || 'there'
-  const currentYear = new Date().getFullYear()
+  const subject = 'Welcome to TrimPro - Create Your Password'
+  const html = buildInviteEmailHtml(firstName, setPasswordUrl, apkDownloadUrl)
+  const text = buildInviteEmailText(firstName, setPasswordUrl, apkDownloadUrl)
 
   await emailService.sendEmail({
     to,
-    subject: 'Welcome to TrimPro - Create Your Password',
-    html: `
+    subject,
+    html,
+    text,
+  })
+}
+
+export function buildInviteEmailHtml(firstName: string, setPasswordUrl: string, apkDownloadUrl: string): string {
+  const safeName = firstName?.trim() || 'there'
+  const currentYear = new Date().getFullYear()
+  return `
       <div style="margin:0;padding:0;background:#f3f5f7;font-family:Arial,sans-serif;color:#0f172a;">
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:24px 0;">
           <tr>
@@ -224,8 +232,12 @@ export async function sendInviteEmail(
           </tr>
         </table>
       </div>
-    `,
-    text: `
+    `
+}
+
+export function buildInviteEmailText(firstName: string, setPasswordUrl: string, apkDownloadUrl: string): string {
+  const safeName = firstName?.trim() || 'there'
+  return `
 Welcome to TrimPro, ${safeName}!
 
 Your TrimPro account has been created.
@@ -236,8 +248,7 @@ After setting your password, you will be redirected to the login page.
 
 Download TrimPro Field App (Android):
 ${apkDownloadUrl}
-    `,
-  })
+  `.trim()
 }
 
 export async function sendPasswordResetEmail(to: string, resetUrl: string): Promise<void> {

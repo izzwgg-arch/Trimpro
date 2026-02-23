@@ -9,11 +9,13 @@ export async function GET(request: NextRequest) {
   const user = getAuthUser(request)
 
   try {
-    // Get all active users in tenant
+    // Show active users and invited users so admins can track invite progress.
     const teamMembers = await prisma.user.findMany({
       where: {
         tenantId: user.tenantId,
-        status: 'ACTIVE',
+        status: {
+          in: ['ACTIVE', 'INVITED'],
+        },
       },
       select: {
         id: true,
@@ -22,6 +24,7 @@ export async function GET(request: NextRequest) {
         email: true,
         phone: true,
         role: true,
+        status: true,
         _count: {
           select: {
             schedules: true,

@@ -3,7 +3,8 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { generatePasswordResetToken } from '@/lib/auth'
 import { getDefaultPermissions } from '@/lib/permissions'
-// import { sendInviteEmail } from '@/lib/email' // TODO: Implement
+import { getIntegrationSecrets } from '@/lib/integrations/status'
+import { testEmailProvider } from '@/lib/integrations/providers/email'
 
 export async function POST(request: NextRequest) {
   // Authenticate
@@ -67,8 +68,20 @@ export async function POST(request: NextRequest) {
       'https://expo.dev/artifacts/eas/2E6kirTmBvmAZXB2KAftdy.apk'
 
     try {
-      const { sendInviteEmail } = await import('@/lib/services/email')
-      await sendInviteEmail(email, firstName, setPasswordUrl, apkDownloadUrl)
+      const { sendInviteEmail, buildInviteEmailHtml } = await import('@/lib/services/email')
+      const emailSecrets = await getIntegrationSecrets(user.tenantId, 'email')
+
+      if (emailSecrets) {
+        const html = buildInviteEmailHtml(firstName, setPasswordUrl, apkDownloadUrl)
+        const subject = 'Welcome to TrimPro - Create Your Password'
+        const sendResult = await testEmailProvider(emailSecrets, email, subject, html)
+        if (!sendResult.success) {
+          throw new Error(sendResult.error || sendResult.message || 'Failed to send invite email')
+        }
+      } else {
+        // Fallback to env-based provider when tenant integration is not configured.
+        await sendInviteEmail(email, firstName, setPasswordUrl, apkDownloadUrl)
+      }
     } catch (error) {
       console.error('Failed to send invite email:', error)
       // Continue anyway - log for manual use if email fails
