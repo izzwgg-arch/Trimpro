@@ -51,6 +51,7 @@ export function CreateJobScreen({ navigation }: Props) {
   const [addressPredictions, setAddressPredictions] = useState<string[]>([])
   const [addressSelectedFromSuggestions, setAddressSelectedFromSuggestions] = useState(false)
   const [isLoadingAddressPredictions, setIsLoadingAddressPredictions] = useState(false)
+  const [addressSuggestionsWarning, setAddressSuggestionsWarning] = useState('')
   const [formData, setFormData] = useState({
     clientId: '',
     title: '',
@@ -137,12 +138,14 @@ export function CreateJobScreen({ navigation }: Props) {
     const timer = setTimeout(async () => {
       try {
         setIsLoadingAddressPredictions(true)
-        const response = await apiRequest<{ predictions: string[] }>(
+        const response = await apiRequest<{ predictions: string[]; warning?: string }>(
           `/api/mobile/places?q=${encodeURIComponent(value)}&limit=8`
         )
         setAddressPredictions(response.predictions || [])
+        setAddressSuggestionsWarning(response.warning || '')
       } catch {
         setAddressPredictions([])
+        setAddressSuggestionsWarning('Google suggestions are unavailable right now. Please try again shortly.')
       } finally {
         setIsLoadingAddressPredictions(false)
       }
@@ -463,6 +466,7 @@ export function CreateJobScreen({ navigation }: Props) {
               onChangeText={(text) => {
                 setAddressSearch(text)
                 setAddressSelectedFromSuggestions(false)
+                setAddressSuggestionsWarning('')
                 setFormData((prev) => ({
                   ...prev,
                   jobSite: {
@@ -494,7 +498,9 @@ export function CreateJobScreen({ navigation }: Props) {
               </View>
             )}
           {!isLoadingAddressPredictions && addressSearch.trim().length >= 3 && addressPredictions.length === 0 && (
-            <Text style={styles.dropdownMeta}>Searching Google suggestions... try adding city/state.</Text>
+            <Text style={styles.dropdownMeta}>
+              {addressSuggestionsWarning || 'No Google suggestions yet. Try adding city/state.'}
+            </Text>
           )}
           </Card>
         </View>
