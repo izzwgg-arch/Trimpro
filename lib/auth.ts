@@ -82,6 +82,6 @@ export function generateTemporaryPassword(): string {
   return password
 }
 
-export function generatePasswordResetToken(): string {
-  return jwt.sign({ type: 'password-reset', timestamp: Date.now() }, JWT_SECRET, { expiresIn: '1h' })
+export function generatePasswordResetToken(expiresIn: string | number = '1h'): string {
+  return jwt.sign({ type: 'password-reset', timestamp: Date.now() }, JWT_SECRET, { expiresIn })
 }

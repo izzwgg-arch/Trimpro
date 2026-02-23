@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
-import { hashPassword, generateTemporaryPassword } from '@/lib/auth'
+import { generatePasswordResetToken } from '@/lib/auth'
 import { getDefaultPermissions } from '@/lib/permissions'
 // import { sendInviteEmail } from '@/lib/email' // TODO: Implement
 
@@ -34,11 +34,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'User already exists' }, { status: 400 })
     }
 
-    // Generate temporary password
-    const tempPassword = generateTemporaryPassword()
-    const tempPasswordHash = await hashPassword(tempPassword)
-    const tempPasswordExp = new Date()
-    tempPasswordExp.setDate(tempPasswordExp.getDate() + 7) // 7 days expiry
+    // Generate password creation token for invite flow
+    const inviteToken = generatePasswordResetToken('7d')
+    const inviteExp = new Date()
+    inviteExp.setDate(inviteExp.getDate() + 7)
 
     // Get default permissions for role
     const permissions = getDefaultPermissions(role)
@@ -53,22 +52,27 @@ export async function POST(request: NextRequest) {
         phone: phone || null,
         role,
         status: 'INVITED',
-        temporaryPassword: tempPasswordHash,
-        temporaryPasswordExp: tempPasswordExp,
+        passwordResetToken: inviteToken,
+        passwordResetExp: inviteExp,
         permissions,
       },
     })
 
-    // Send invite email with temporary password
-    const loginUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/auth/login`
-    
+    // Send invite email with password creation link and APK download link.
+    const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.trimprony.com'
+    const setPasswordUrl = `${appBaseUrl}/auth/reset-password?token=${encodeURIComponent(inviteToken)}`
+    const apkDownloadUrl =
+      process.env.TRIMPRO_FIELD_APK_URL ||
+      process.env.EXPO_ANDROID_APK_URL ||
+      'https://expo.dev/artifacts/eas/2E6kirTmBvmAZXB2KAftdy.apk'
+
     try {
       const { sendInviteEmail } = await import('@/lib/services/email')
-      await sendInviteEmail(email, firstName, tempPassword, loginUrl)
+      await sendInviteEmail(email, firstName, setPasswordUrl, apkDownloadUrl)
     } catch (error) {
       console.error('Failed to send invite email:', error)
       // Continue anyway - log for manual use if email fails
-      console.log('Invite email:', { email, tempPassword, loginUrl }) // Remove in production
+      console.log('Invite email:', { email, setPasswordUrl, apkDownloadUrl }) // Remove in production
     }
 
     // Create audit log

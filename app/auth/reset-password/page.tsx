@@ -60,6 +60,9 @@ export default function ResetPasswordPage() {
 
       setSuccess(true)
       setLoading(false)
+      setTimeout(() => {
+        router.push('/auth/login')
+      }, 1200)
     } catch (err) {
       setError('An error occurred. Please try again.')
       setLoading(false)
@@ -85,7 +88,7 @@ export default function ResetPasswordPage() {
           </CardHeader>
           <CardContent>
             <Button onClick={() => router.push('/auth/login')} className="w-full">
-              Go to Login
+              Continue to Login
             </Button>
           </CardContent>
         </Card>
@@ -98,7 +101,7 @@ export default function ResetPasswordPage() {
       <Card className="w-full max-w-md">
         <CardHeader>
           <div className="mb-2 flex justify-center">
-            <TrimProMark className="text-[#2E4A59]" size={26} />
+            <TrimProLogo variant="light" size="lg" />
           </div>
           <CardTitle className="text-2xl font-bold text-center">Reset Password</CardTitle>
           <CardDescription className="text-center">

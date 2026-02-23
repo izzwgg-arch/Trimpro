@@ -42,6 +42,9 @@ export async function POST(request: NextRequest) {
         passwordHash,
         passwordResetToken: null,
         passwordResetExp: null,
+        temporaryPassword: null,
+        temporaryPasswordExp: null,
+        status: user.status === 'INVITED' ? 'ACTIVE' : user.status,
         lastPasswordChange: new Date(),
       },
     })

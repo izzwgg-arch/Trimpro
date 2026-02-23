@@ -163,38 +163,79 @@ export const emailService = new EmailService()
 export async function sendInviteEmail(
   to: string,
   firstName: string,
-  temporaryPassword: string,
-  loginUrl: string
+  setPasswordUrl: string,
+  apkDownloadUrl: string
 ): Promise<void> {
   const emailService = new EmailService()
-  
+
+  const safeName = firstName?.trim() || 'there'
+  const currentYear = new Date().getFullYear()
+
   await emailService.sendEmail({
     to,
-    subject: 'Welcome to Trim Pro - Set Your Password',
+    subject: 'Welcome to TrimPro - Create Your Password',
     html: `
-      <html>
-        <body>
-          <h2>Welcome to Trim Pro, ${firstName}!</h2>
-          <p>You have been invited to join Trim Pro. Please use the following temporary password to log in:</p>
-          <p><strong>${temporaryPassword}</strong></p>
-          <p>You will be required to set a new password when you first log in.</p>
-          <p><a href="${loginUrl}">Click here to log in</a></p>
-          <p>This temporary password expires in 7 days.</p>
-        </body>
-      </html>
+      <div style="margin:0;padding:0;background:#f3f5f7;font-family:Arial,sans-serif;color:#0f172a;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:24px 0;">
+          <tr>
+            <td align="center">
+              <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width:600px;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;">
+                <tr>
+                  <td style="background:#234054;padding:20px 24px;">
+                    <div style="font-size:28px;font-weight:700;line-height:1;color:#e6c98b;">TrimPro</div>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:28px 24px;">
+                    <h2 style="margin:0 0 12px 0;font-size:24px;line-height:1.3;color:#0f172a;">Welcome to TrimPro, ${safeName}!</h2>
+                    <p style="margin:0 0 16px 0;font-size:15px;line-height:1.6;color:#334155;">
+                      Your TrimPro account has been created. Click the button below to create your password and activate your account.
+                    </p>
+                    <p style="margin:0 0 20px 0;">
+                      <a href="${setPasswordUrl}" style="display:inline-block;background:#234054;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:700;">
+                        Create Password
+                      </a>
+                    </p>
+                    <p style="margin:0 0 12px 0;font-size:14px;line-height:1.6;color:#475569;">
+                      After setting your password, you will be redirected to the login page.
+                    </p>
+                    <hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0;" />
+                    <p style="margin:0 0 10px 0;font-size:15px;line-height:1.6;color:#0f172a;font-weight:700;">
+                      Download TrimPro Field App (Android)
+                    </p>
+                    <p style="margin:0 0 18px 0;">
+                      <a href="${apkDownloadUrl}" style="display:inline-block;background:#0f172a;color:#ffffff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:700;">
+                        Download Latest APK
+                      </a>
+                    </p>
+                    <p style="margin:0;font-size:12px;line-height:1.6;color:#64748b;">
+                      If the button does not work, copy and paste this link:<br />
+                      <a href="${setPasswordUrl}" style="color:#234054;word-break:break-all;">${setPasswordUrl}</a>
+                    </p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:16px 24px;background:#f8fafc;border-top:1px solid #e2e8f0;">
+                    <p style="margin:0;font-size:12px;color:#64748b;">&copy; ${currentYear} TrimPro. All rights reserved.</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </div>
     `,
     text: `
-      Welcome to Trim Pro, ${firstName}!
-      
-      You have been invited to join Trim Pro. Please use the following temporary password to log in:
-      
-      ${temporaryPassword}
-      
-      You will be required to set a new password when you first log in.
-      
-      Log in here: ${loginUrl}
-      
-      This temporary password expires in 7 days.
+Welcome to TrimPro, ${safeName}!
+
+Your TrimPro account has been created.
+Create your password here:
+${setPasswordUrl}
+
+After setting your password, you will be redirected to the login page.
+
+Download TrimPro Field App (Android):
+${apkDownloadUrl}
     `,
   })
 }
