@@ -34,7 +34,13 @@ export async function GET(
       return NextResponse.json({ error: 'Role not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ role })
+    // Ensure mobilePermissions is included in response
+    const roleResponse = {
+      ...role,
+      mobilePermissions: role.mobilePermissions || [],
+    }
+
+    return NextResponse.json({ role: roleResponse })
   } catch (error) {
     console.error('Get role error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -65,24 +71,27 @@ export async function PUT(
       return NextResponse.json({ error: 'Role not found' }, { status: 404 })
     }
 
-    if (role.isSystem) {
-      return NextResponse.json({ error: 'Cannot edit system roles' }, { status: 403 })
-    }
-
     const body = await request.json()
     const { name, description, permissions, mobilePermissions } = body
+
+    // For system roles, only allow editing permissions, not name/description
+    const updateData: any = {
+      mobilePermissions:
+        mobilePermissions !== undefined && Array.isArray(mobilePermissions)
+          ? mobilePermissions
+          : role.mobilePermissions,
+    }
+
+    if (!role.isSystem) {
+      // Non-system roles can have name and description changed
+      updateData.name = name || role.name
+      updateData.description = description !== undefined ? description : role.description
+    }
 
     // Update role
     const updatedRole = await prisma.role.update({
       where: { id: params.id },
-      data: {
-        name: name || role.name,
-        description: description !== undefined ? description : role.description,
-        mobilePermissions:
-          mobilePermissions !== undefined && Array.isArray(mobilePermissions)
-            ? mobilePermissions
-            : role.mobilePermissions,
-      },
+      data: updateData,
     })
 
     // Update permissions

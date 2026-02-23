@@ -367,23 +367,23 @@ export default function RolesPage() {
                   </p>
                 </div>
                 <div className="flex items-center space-x-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => openEditModal(role)}
+                    title="Edit role permissions"
+                  >
+                    <Edit className="h-4 w-4" />
+                  </Button>
                   {!role.isSystem && (
-                    <>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => openEditModal(role)}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDeleteRole(role.id)}
-                      >
-                        <Trash2 className="h-4 w-4 text-red-600" />
-                      </Button>
-                    </>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDeleteRole(role.id)}
+                      title="Delete role"
+                    >
+                      <Trash2 className="h-4 w-4 text-red-600" />
+                    </Button>
                   )}
                 </div>
               </div>
@@ -407,7 +407,12 @@ export default function RolesPage() {
                   id="edit-name"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  disabled={editingRole?.isSystem}
+                  className={editingRole?.isSystem ? 'bg-gray-100 cursor-not-allowed' : ''}
                 />
+                {editingRole?.isSystem && (
+                  <p className="text-xs text-gray-500 mt-1">System role name cannot be changed</p>
+                )}
               </div>
               <div>
                 <Label htmlFor="edit-description">Description</Label>
@@ -415,9 +420,13 @@ export default function RolesPage() {
                   id="edit-description"
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  className={`w-full px-3 py-2 border border-gray-300 rounded-md ${editingRole?.isSystem ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                   rows={3}
+                  disabled={editingRole?.isSystem}
                 />
+                {editingRole?.isSystem && (
+                  <p className="text-xs text-gray-500 mt-1">System role description cannot be changed</p>
+                )}
               </div>
               <div>
                 <Label>Web App Permissions</Label>
