@@ -19,7 +19,10 @@ export async function geocodeAddress(address: {
   zipCode: string
   country?: string
 }): Promise<GeocodeResult | null> {
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || process.env.GOOGLE_MAPS_API_KEY
+  const apiKey =
+    process.env.GOOGLE_MAPS_SERVER_API_KEY ||
+    process.env.GOOGLE_MAPS_API_KEY ||
+    process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
   if (!apiKey) {
     console.warn('Google Maps API key not configured')
     return null
@@ -146,7 +149,10 @@ export async function geocodeAddressPartsFromString(addressText: string): Promis
   const raw = String(addressText || '').trim()
   if (!raw) return null
 
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || process.env.GOOGLE_MAPS_API_KEY
+  const apiKey =
+    process.env.GOOGLE_MAPS_SERVER_API_KEY ||
+    process.env.GOOGLE_MAPS_API_KEY ||
+    process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
   if (!apiKey) return null
 
   try {
