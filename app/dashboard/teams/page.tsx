@@ -11,7 +11,7 @@ import { useViewMode } from '@/hooks/useViewMode'
 import { RowCompactItem } from '@/components/lists/RowCompactItem'
 import { RowDetailedItem } from '@/components/lists/RowDetailedItem'
 import { TableView } from '@/components/lists/TableView'
-import { Users, Plus, Search, Mail, Phone, Briefcase, X } from 'lucide-react'
+import { Users, Plus, Search, Mail, Phone, Briefcase, X, Pencil } from 'lucide-react'
 
 interface TeamMember {
   id: string
@@ -31,16 +31,30 @@ export default function TeamsPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [showInviteModal, setShowInviteModal] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
   const [inviteLoading, setInviteLoading] = useState(false)
+  const [editLoading, setEditLoading] = useState(false)
   const [inviteError, setInviteError] = useState('')
+  const [editError, setEditError] = useState('')
   const [inviteSuccess, setInviteSuccess] = useState(false)
+  const [inviteSuccessMessage, setInviteSuccessMessage] = useState('')
+  const [reinviteLoadingById, setReinviteLoadingById] = useState<Record<string, boolean>>({})
   const [viewMode, setViewMode] = useViewMode('team', 'grid')
+  const [editingUserId, setEditingUserId] = useState<string | null>(null)
   const [inviteForm, setInviteForm] = useState({
     email: '',
     firstName: '',
     lastName: '',
     phone: '',
     role: 'FIELD' as 'ADMIN' | 'OFFICE' | 'FIELD' | 'SALES' | 'ACCOUNTING',
+  })
+  const [editForm, setEditForm] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    role: 'FIELD' as 'ADMIN' | 'OFFICE' | 'FIELD' | 'SALES' | 'ACCOUNTING',
+    status: 'ACTIVE' as 'ACTIVE' | 'INACTIVE' | 'INVITED' | 'SUSPENDED',
   })
 
   useEffect(() => {
@@ -74,6 +88,7 @@ export default function TeamsPage() {
     e.preventDefault()
     setInviteError('')
     setInviteSuccess(false)
+    setInviteSuccessMessage('')
     setInviteLoading(true)
 
     try {
@@ -101,6 +116,11 @@ export default function TeamsPage() {
       }
 
       setInviteSuccess(true)
+      setInviteSuccessMessage(
+        data.emailSent === false
+          ? `User invited, but email send failed: ${data.emailError || 'Unknown email provider error'}`
+          : 'User invited successfully! The invitation email has been sent.'
+      )
       setInviteForm({
         email: '',
         firstName: '',
@@ -122,6 +142,91 @@ export default function TeamsPage() {
       setInviteError('An error occurred. Please try again.')
     } finally {
       setInviteLoading(false)
+    }
+  }
+
+  const handleReinvite = async (member: TeamMember) => {
+    setReinviteLoadingById((prev) => ({ ...prev, [member.id]: true }))
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch(`/api/users/${member.id}/reinvite`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      if (response.status === 401) {
+        window.location.href = '/auth/login'
+        return
+      }
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'Failed to resend invitation email')
+        return
+      }
+
+      alert('Invitation email sent successfully.')
+      await fetchTeam()
+    } catch (error) {
+      console.error('Error reinviting user:', error)
+      alert('Failed to resend invitation email')
+    } finally {
+      setReinviteLoadingById((prev) => ({ ...prev, [member.id]: false }))
+    }
+  }
+
+  const openEditModal = (member: TeamMember) => {
+    setEditingUserId(member.id)
+    setEditError('')
+    setEditForm({
+      firstName: member.firstName || '',
+      lastName: member.lastName || '',
+      email: member.email || '',
+      phone: member.phone || '',
+      role: member.role as any,
+      status: member.status as any,
+    })
+    setShowEditModal(true)
+  }
+
+  const handleEditUser = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingUserId) return
+
+    setEditLoading(true)
+    setEditError('')
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch(`/api/users/${editingUserId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(editForm),
+      })
+
+      if (response.status === 401) {
+        window.location.href = '/auth/login'
+        return
+      }
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        setEditError(data.error || 'Failed to update user')
+        return
+      }
+
+      setShowEditModal(false)
+      setEditingUserId(null)
+      await fetchTeam()
+    } catch (error) {
+      console.error('Error updating user:', error)
+      setEditError('Failed to update user')
+    } finally {
+      setEditLoading(false)
     }
   }
 
@@ -218,6 +323,39 @@ export default function TeamsPage() {
                   <Briefcase className="mr-2 h-4 w-4" />
                   {member._count.schedules} scheduled items
                 </div>
+                {member.status === 'INVITED' && (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleReinvite(member)}
+                      disabled={!!reinviteLoadingById[member.id]}
+                    >
+                      {reinviteLoadingById[member.id] ? 'Sending...' : 'Reinvite'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openEditModal(member)}
+                    >
+                      <Pencil className="mr-2 h-4 w-4" />
+                      Edit
+                    </Button>
+                  </div>
+                )}
+                {member.status !== 'INVITED' && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => openEditModal(member)}
+                  >
+                    <Pencil className="mr-2 h-4 w-4" />
+                    Edit
+                  </Button>
+                )}
               </CardContent>
             </Card>
           ))}
@@ -232,6 +370,11 @@ export default function TeamsPage() {
               status={<span className={`px-2 py-1 text-xs rounded-full ${roleColors[member.role] || 'bg-gray-100 text-gray-800'}`}>{member.role}</span>}
               amount={member.status}
               date={`${member._count.schedules} schedules`}
+              actions={
+                <Button type="button" variant="outline" size="sm" onClick={() => openEditModal(member)}>
+                  Edit
+                </Button>
+              }
             />
           ))}
         </div>
@@ -245,6 +388,11 @@ export default function TeamsPage() {
               line2={`${member.email}${member.phone ? ` • ${member.phone}` : ''}`}
               rightTop={member.status}
               rightBottom={`${member._count.schedules} schedules`}
+              actions={
+                <Button type="button" variant="outline" size="sm" onClick={() => openEditModal(member)}>
+                  Edit
+                </Button>
+              }
             />
           ))}
         </div>
@@ -282,6 +430,28 @@ export default function TeamsPage() {
               header: 'Schedules',
               sortValue: (member) => member._count.schedules,
               render: (member) => member._count.schedules,
+            },
+            {
+              key: 'actions',
+              header: 'Actions',
+              render: (member) => (
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={() => openEditModal(member)}>
+                    Edit
+                  </Button>
+                  {member.status === 'INVITED' && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleReinvite(member)}
+                      disabled={!!reinviteLoadingById[member.id]}
+                    >
+                      {reinviteLoadingById[member.id] ? 'Sending...' : 'Reinvite'}
+                    </Button>
+                  )}
+                </div>
+              ),
             },
           ]}
         />
@@ -336,7 +506,7 @@ export default function TeamsPage() {
                 )}
                 {inviteSuccess && (
                   <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded">
-                    User invited successfully! The invitation email has been sent.
+                    {inviteSuccessMessage || 'User invited successfully!'}
                   </div>
                 )}
                 <div className="grid grid-cols-2 gap-4">
@@ -418,6 +588,131 @@ export default function TeamsPage() {
                   </Button>
                   <Button type="submit" className="flex-1" disabled={inviteLoading}>
                     {inviteLoading ? 'Sending...' : 'Send Invitation'}
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Edit User Modal */}
+      {showEditModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-md m-4">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Edit User</CardTitle>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setShowEditModal(false)
+                    setEditingUserId(null)
+                    setEditError('')
+                  }}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              <CardDescription>Update team member details</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleEditUser} className="space-y-4">
+                {editError && (
+                  <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded">
+                    {editError}
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="editFirstName">First Name *</Label>
+                    <Input
+                      id="editFirstName"
+                      value={editForm.firstName}
+                      onChange={(e) => setEditForm({ ...editForm, firstName: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="editLastName">Last Name *</Label>
+                    <Input
+                      id="editLastName"
+                      value={editForm.lastName}
+                      onChange={(e) => setEditForm({ ...editForm, lastName: e.target.value })}
+                      required
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="editEmail">Email *</Label>
+                  <Input
+                    id="editEmail"
+                    type="email"
+                    value={editForm.email}
+                    onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="editPhone">Phone</Label>
+                  <Input
+                    id="editPhone"
+                    type="tel"
+                    value={editForm.phone}
+                    onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="editRole">Role *</Label>
+                  <Select
+                    value={editForm.role}
+                    onValueChange={(value) => setEditForm({ ...editForm, role: value as any })}
+                  >
+                    <SelectTrigger id="editRole">
+                      <SelectValue placeholder="Select role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="FIELD">Field Worker</SelectItem>
+                      <SelectItem value="OFFICE">Office Staff</SelectItem>
+                      <SelectItem value="SALES">Sales</SelectItem>
+                      <SelectItem value="ACCOUNTING">Accounting</SelectItem>
+                      <SelectItem value="ADMIN">Admin</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="editStatus">Status *</Label>
+                  <Select
+                    value={editForm.status}
+                    onValueChange={(value) => setEditForm({ ...editForm, status: value as any })}
+                  >
+                    <SelectTrigger id="editStatus">
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ACTIVE">Active</SelectItem>
+                      <SelectItem value="INACTIVE">Inactive</SelectItem>
+                      <SelectItem value="INVITED">Invited</SelectItem>
+                      <SelectItem value="SUSPENDED">Suspended</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex space-x-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => {
+                      setShowEditModal(false)
+                      setEditingUserId(null)
+                      setEditError('')
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" className="flex-1" disabled={editLoading}>
+                    {editLoading ? 'Saving...' : 'Save Changes'}
                   </Button>
                 </div>
               </form>

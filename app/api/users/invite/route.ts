@@ -59,36 +59,7 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // Send invite email with password creation link and APK download link.
-    const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.trimprony.com'
-    const setPasswordUrl = `${appBaseUrl}/auth/reset-password?token=${encodeURIComponent(inviteToken)}`
-    const apkDownloadUrl =
-      process.env.TRIMPRO_FIELD_APK_URL ||
-      process.env.EXPO_ANDROID_APK_URL ||
-      'https://expo.dev/artifacts/eas/2E6kirTmBvmAZXB2KAftdy.apk'
-
-    try {
-      const { sendInviteEmail, buildInviteEmailHtml } = await import('@/lib/services/email')
-      const emailSecrets = await getIntegrationSecrets(user.tenantId, 'email')
-
-      if (emailSecrets) {
-        const html = buildInviteEmailHtml(firstName, setPasswordUrl, apkDownloadUrl)
-        const subject = 'Welcome to TrimPro - Create Your Password'
-        const sendResult = await testEmailProvider(emailSecrets, email, subject, html)
-        if (!sendResult.success) {
-          throw new Error(sendResult.error || sendResult.message || 'Failed to send invite email')
-        }
-      } else {
-        // Fallback to env-based provider when tenant integration is not configured.
-        await sendInviteEmail(email, firstName, setPasswordUrl, apkDownloadUrl)
-      }
-    } catch (error) {
-      console.error('Failed to send invite email:', error)
-      // Continue anyway - log for manual use if email fails
-      console.log('Invite email:', { email, setPasswordUrl, apkDownloadUrl }) // Remove in production
-    }
-
-    // Create audit log
+    // Create audit log for user creation
     await prisma.auditLog.create({
       data: {
         tenantId: user.tenantId,
@@ -105,17 +76,54 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
-      message: 'User invited successfully',
-      user: {
-        id: newUser.id,
-        email: newUser.email,
-        firstName: newUser.firstName,
-        lastName: newUser.lastName,
-        role: newUser.role,
-        status: newUser.status,
+    // Send invite email with password creation link and APK download link.
+    const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.trimprony.com'
+    const setPasswordUrl = `${appBaseUrl}/auth/reset-password?token=${encodeURIComponent(inviteToken)}`
+    const apkDownloadUrl =
+      process.env.TRIMPRO_FIELD_APK_URL ||
+      process.env.EXPO_ANDROID_APK_URL ||
+      'https://expo.dev/artifacts/eas/2E6kirTmBvmAZXB2KAftdy.apk'
+    let emailSent = false
+    let emailError: string | null = null
+    try {
+      const { sendInviteEmail, buildInviteEmailHtml } = await import('@/lib/services/email')
+      const emailSecrets = await getIntegrationSecrets(user.tenantId, 'email')
+
+      if (emailSecrets) {
+        const html = buildInviteEmailHtml(firstName, setPasswordUrl, apkDownloadUrl)
+        const subject = 'Welcome to TrimPro - Create Your Password'
+        const sendResult = await testEmailProvider(emailSecrets, email, subject, html)
+        if (!sendResult.success) {
+          emailError = sendResult.error || sendResult.message || 'Failed to send invite email'
+        } else {
+          emailSent = true
+        }
+      } else {
+        // Fallback to env-based provider when tenant integration is not configured.
+        await sendInviteEmail(email, firstName, setPasswordUrl, apkDownloadUrl)
+        emailSent = true
+      }
+    } catch (error: any) {
+      console.error('Failed to send invite email:', error)
+      emailError = error?.message || 'Invitation email failed to send'
+    }
+
+    return NextResponse.json(
+      {
+        message: emailSent ? 'User invited successfully' : 'User invited, but email send failed',
+        emailSent,
+        emailError,
+        user: {
+          id: newUser.id,
+          email: newUser.email,
+          firstName: newUser.firstName,
+          lastName: newUser.lastName,
+          role: newUser.role,
+          status: newUser.status,
+        },
       },
-    })
+      { status: emailSent ? 200 : 502 }
+    )
   } catch (error) {
     console.error('Invite user error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
