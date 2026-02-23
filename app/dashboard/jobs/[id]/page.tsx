@@ -675,7 +675,7 @@ export default function JobDetailPage() {
           {/* Job Site */}
           {job.jobSite && (
             <>
-              <Card>
+              <Card className="relative z-0">
                 <CardHeader>
                   <CardTitle>Job Site</CardTitle>
                 </CardHeader>
@@ -714,13 +714,19 @@ export default function JobDetailPage() {
           )}
 
           {/* Crew Assignments */}
-          <Card>
+          <Card className="relative z-20">
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Crew Assignments</CardTitle>
                 <Button
+                  type="button"
                   variant="outline"
                   size="sm"
+                  onPointerDown={(e) => {
+                    e.preventDefault()
+                    setIsAddCrewOpen(true)
+                    loadAvailableCrew()
+                  }}
                   onClick={() => {
                     setIsAddCrewOpen(true)
                     loadAvailableCrew()
