@@ -372,6 +372,7 @@ export default function TeamsPage() {
               date={`${member._count.schedules} schedules`}
               actions={
                 <Button type="button" variant="outline" size="sm" onClick={() => openEditModal(member)}>
+                  <Pencil className="mr-2 h-4 w-4" />
                   Edit
                 </Button>
               }
@@ -390,6 +391,7 @@ export default function TeamsPage() {
               rightBottom={`${member._count.schedules} schedules`}
               actions={
                 <Button type="button" variant="outline" size="sm" onClick={() => openEditModal(member)}>
+                  <Pencil className="mr-2 h-4 w-4" />
                   Edit
                 </Button>
               }
