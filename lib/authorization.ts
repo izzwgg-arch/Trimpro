@@ -6,6 +6,7 @@
 import { prisma } from './prisma'
 import { User } from '@prisma/client'
 import { NextRequest, NextResponse } from 'next/server'
+import { PERMISSIONS } from './permissions-catalog'
 
 export interface UserWithRoles extends User {
   userRoles?: Array<{
@@ -62,6 +63,41 @@ export async function getUserPermissions(
   for (const userRole of user.userRoles || []) {
     for (const rolePermission of userRole.role.permissions) {
       permissions.add(rolePermission.permission.key)
+    }
+  }
+
+  // Include legacy per-user permissions if present.
+  if (Array.isArray(user.permissions)) {
+    for (const perm of user.permissions) {
+      if (typeof perm === 'string') permissions.add(perm)
+    }
+  }
+
+  // Fallback for tenants that still rely on enum role without user_roles links.
+  if (permissions.size === 0) {
+    const fallbackRole = await prisma.role.findFirst({
+      where: {
+        tenantId,
+        name: user.role,
+        isActive: true,
+      },
+      include: {
+        permissions: {
+          include: {
+            permission: true,
+          },
+        },
+      },
+    })
+    for (const rolePermission of fallbackRole?.permissions || []) {
+      permissions.add(rolePermission.permission.key)
+    }
+  }
+
+  // Guarantee full admin visibility on web when user enum role is ADMIN.
+  if (user.role === 'ADMIN') {
+    for (const perm of PERMISSIONS) {
+      permissions.add(perm.key)
     }
   }
 
@@ -332,6 +368,46 @@ export async function getUserMobilePermissions(
         if (typeof perm === 'string') {
           mobilePermissions.add(perm)
         }
+      }
+    }
+  }
+
+  // Support legacy user-level permission arrays that may contain mobile keys.
+  if (Array.isArray(user.permissions)) {
+    for (const perm of user.permissions) {
+      if (typeof perm === 'string' && perm.startsWith('mobile.')) {
+        mobilePermissions.add(perm)
+      }
+    }
+  }
+
+  // Fallback role lookup when user_roles assignments are missing.
+  if (mobilePermissions.size === 0) {
+    const fallbackRole = await prisma.role.findFirst({
+      where: {
+        tenantId,
+        name: user.role,
+        isActive: true,
+      },
+      select: {
+        mobilePermissions: true,
+      },
+    })
+    const fallbackMobile = Array.isArray(fallbackRole?.mobilePermissions)
+      ? (fallbackRole?.mobilePermissions as unknown[])
+      : []
+    for (const perm of fallbackMobile) {
+      if (typeof perm === 'string') {
+        mobilePermissions.add(perm)
+      }
+    }
+  }
+
+  // Guarantee full admin visibility on mobile.
+  if (user.role === 'ADMIN') {
+    for (const perm of PERMISSIONS) {
+      if (perm.key.startsWith('mobile.')) {
+        mobilePermissions.add(perm.key)
       }
     }
   }
