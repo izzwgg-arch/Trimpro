@@ -364,6 +364,14 @@ export async function hasAnyMobilePermission(
 }
 
 /**
+ * Check if request is from mobile app (based on User-Agent header)
+ */
+export function isMobileRequest(request: NextRequest): boolean {
+  const userAgent = request.headers.get('user-agent')
+  return userAgent?.includes('TrimProMobile') || false
+}
+
+/**
  * Require mobile permission middleware for API routes
  * Returns error response if user doesn't have permission
  */
