@@ -18,6 +18,7 @@ export async function apiRequest<T>(
   const token = await getAccessToken()
   const headers: Record<string, string> = {
     Accept: 'application/json',
+    'User-Agent': 'TrimProMobile',
     ...(extraHeaders || {}),
   }
 

@@ -4,12 +4,14 @@ import { prisma } from '@/lib/prisma'
 import { getPaginationParams, createPaginationResponse } from '@/lib/pagination'
 import { validateRequest, createJobSchema } from '@/lib/validation'
 import { syncJobToQuickBooksProject } from '@/lib/services/qbo-sync'
+import { isMobileRequest, requireMobilePermission, hasMobilePermission } from '@/lib/authorization'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
 
   const user = getAuthUser(request)
+  const isMobile = isMobileRequest(request)
   const { searchParams } = new URL(request.url)
   const search = searchParams.get('search') || ''
   const status = searchParams.get('status') || 'all'
@@ -17,6 +19,90 @@ export async function GET(request: NextRequest) {
   const { skip, take, page, limit } = getPaginationParams(searchParams)
 
   try {
+    // If mobile request, enforce mobile.jobs.view_all permission for viewing all jobs
+    if (isMobile) {
+      const canViewAll = await hasMobilePermission(user.id, user.tenantId, 'mobile.jobs.view_all')
+      if (!canViewAll) {
+        // If user doesn't have view_all, only show assigned jobs
+        const where: any = {
+          tenantId: user.tenantId,
+          assignments: {
+            some: {
+              userId: user.id,
+            },
+          },
+        }
+
+        if (search) {
+          where.OR = [
+            { jobNumber: { contains: search, mode: 'insensitive' } },
+            { title: { contains: search, mode: 'insensitive' } },
+            { description: { contains: search, mode: 'insensitive' } },
+          ]
+        }
+
+        if (status !== 'all') {
+          if (status === 'ACTIVE') {
+            where.status = {
+              in: [
+                'SCHEDULED',
+                'IN_PROGRESS',
+                'MEASURED',
+                'INSTALLATION_COMPLETE',
+                'FINISHING_COMPLETE',
+                'ON_HOLD',
+              ],
+            }
+          } else {
+            where.status = status
+          }
+        }
+
+        const [jobs, total] = await Promise.all([
+          prisma.job.findMany({
+            where,
+            include: {
+              client: {
+                select: {
+                  id: true,
+                  name: true,
+                  companyName: true,
+                },
+              },
+              assignments: {
+                include: {
+                  user: {
+                    select: {
+                      id: true,
+                      firstName: true,
+                      lastName: true,
+                    },
+                  },
+                },
+              },
+              _count: {
+                select: {
+                  tasks: true,
+                  issues: true,
+                },
+              },
+            },
+            orderBy: {
+              updatedAt: 'desc',
+            },
+            skip,
+            take,
+          }),
+          prisma.job.count({ where }),
+        ])
+
+        return NextResponse.json({
+          jobs,
+          pagination: createPaginationResponse(total, limit, skip),
+        })
+      }
+    }
+
     const where: any = {
       tenantId: user.tenantId,
     }
@@ -103,6 +189,13 @@ export async function POST(request: NextRequest) {
   if (authError) return authError
 
   const user = getAuthUser(request)
+  const isMobile = isMobileRequest(request)
+
+  // If mobile request, enforce mobile.jobs.create permission
+  if (isMobile) {
+    const permError = await requireMobilePermission(request, 'mobile.jobs.create')
+    if (permError) return permError
+  }
 
   // Validate request body
   const validation = await validateRequest(request, createJobSchema)
@@ -201,6 +294,7 @@ export async function POST(request: NextRequest) {
           jobNumber,
           title,
           clientId,
+          source: isMobile ? 'mobile' : 'web',
         },
       },
     })

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
+import { isMobileRequest, requireMobilePermission } from '@/lib/authorization'
 
 export async function GET(
   request: NextRequest,
@@ -55,6 +56,13 @@ export async function POST(
   if (authError) return authError
 
   const user = getAuthUser(request)
+  const isMobile = isMobileRequest(request)
+
+  // If mobile request, enforce mobile.jobs.assign permission
+  if (isMobile) {
+    const permError = await requireMobilePermission(request, 'mobile.jobs.assign')
+    if (permError) return permError
+  }
 
   try {
     const body = await request.json()
@@ -131,6 +139,22 @@ export async function POST(
         description: `${assignee.firstName} ${assignee.lastName} assigned to job "${job.title}"`,
         jobId: job.id,
         clientId: job.clientId,
+      },
+    })
+
+    // Create audit log
+    await prisma.auditLog.create({
+      data: {
+        tenantId: user.tenantId,
+        userId: user.id,
+        action: 'UPDATE',
+        entityType: 'JobAssignment',
+        entityId: assignment.id,
+        changes: {
+          jobId: job.id,
+          assignedUserId: userId,
+          source: isMobile ? 'mobile' : 'web',
+        },
       },
     })
 

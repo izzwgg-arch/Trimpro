@@ -49,6 +49,34 @@ export function useMobilePermissions() {
   }
 
   /**
+   * Check if user can create jobs
+   */
+  const canCreateJobs = (): boolean => {
+    return hasPermission('mobile.jobs.create')
+  }
+
+  /**
+   * Check if user can edit jobs
+   */
+  const canEditJobs = (): boolean => {
+    return hasPermission('mobile.jobs.edit')
+  }
+
+  /**
+   * Check if user can schedule jobs
+   */
+  const canScheduleJobs = (): boolean => {
+    return hasPermission('mobile.jobs.schedule')
+  }
+
+  /**
+   * Check if user can change job status
+   */
+  const canChangeJobStatus = (): boolean => {
+    return hasPermission('mobile.jobs.status')
+  }
+
+  /**
    * Check if user can create tasks
    */
   const canCreateTasks = (): boolean => {
@@ -119,6 +147,10 @@ export function useMobilePermissions() {
     canViewAllJobs,
     canAssignJobs,
     canCompleteJobs,
+    canCreateJobs,
+    canEditJobs,
+    canScheduleJobs,
+    canChangeJobStatus,
     canCreateTasks,
     canAssignTasksToAdmin,
     canAssignTasksToAny,

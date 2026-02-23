@@ -8,6 +8,10 @@ import { useAuth } from '../auth/AuthContext'
 import { LoginScreen } from '../screens/auth/LoginScreen'
 import { JobsScreen } from '../screens/jobs/JobsScreen'
 import { JobDetailScreen } from '../screens/jobs/JobDetailScreen'
+import { AllJobsScreen } from '../screens/jobs/AllJobsScreen'
+import { AdminJobDetailScreen } from '../screens/jobs/AdminJobDetailScreen'
+import { CreateJobScreen } from '../screens/jobs/CreateJobScreen'
+import { EditJobScreen } from '../screens/jobs/EditJobScreen'
 import { ScheduleScreen } from '../screens/schedule/ScheduleScreen'
 import { TasksScreen } from '../screens/tasks/TasksScreen'
 import { MessagesScreen } from '../screens/messages/MessagesScreen'
@@ -32,6 +36,7 @@ import {
 import { TaskDetailScreen } from '../screens/tasks/TaskDetailScreen'
 import { useOutboxCount } from '../hooks/useOutboxCount'
 import { Card } from '../components/Card'
+import { useMobilePermissions } from '../hooks/useMobilePermissions'
 
 const Drawer = createDrawerNavigator<RootDrawerParamList>()
 const JobsStack = createNativeStackNavigator<JobsStackParamList>()
@@ -86,8 +91,12 @@ const linking: LinkingOptions<RootDrawerParamList> = {
 function JobsStackNavigator() {
   return (
     <JobsStack.Navigator screenOptions={stackOptions}>
-      <JobsStack.Screen name="JobsList" component={JobsScreen} options={mainHeaderOptions('Dashboard')} />
+      <JobsStack.Screen name="JobsList" component={JobsScreen} options={mainHeaderOptions('My Jobs')} />
+      <JobsStack.Screen name="AllJobsList" component={AllJobsScreen} options={{ title: 'All Jobs' }} />
       <JobsStack.Screen name="JobDetail" component={JobDetailScreen} options={{ title: 'Job Details' }} />
+      <JobsStack.Screen name="AdminJobDetail" component={AdminJobDetailScreen} options={{ title: 'Job Details' }} />
+      <JobsStack.Screen name="CreateJob" component={CreateJobScreen} options={{ title: 'Create Job' }} />
+      <JobsStack.Screen name="EditJob" component={EditJobScreen} options={{ title: 'Edit Job' }} />
     </JobsStack.Navigator>
   )
 }
@@ -188,14 +197,20 @@ function mainHeaderOptions(title: string) {
 function DrawerContent(props: DrawerContentComponentProps) {
   const { user, signOut } = useAuth()
   const outboxCount = useOutboxCount()
+  const { canViewAllJobs } = useMobilePermissions()
 
   // Navigation items - More option removed, all items now directly in sidebar
   const items: Array<{
     key: keyof RootDrawerParamList
     label: string
     icon: keyof typeof Ionicons.glyphMap
+    screen?: string
+    params?: any
   }> = [
-    { key: 'JobsTab', label: 'Jobs', icon: 'briefcase-outline' },
+    { key: 'JobsTab', label: 'My Jobs', icon: 'briefcase-outline' },
+    ...(canViewAllJobs()
+      ? [{ key: 'JobsTab', label: 'All Jobs', icon: 'list-outline', screen: 'AllJobsList' } as const]
+      : []),
     { key: 'ScheduleTab', label: 'Schedule', icon: 'calendar-outline' },
     { key: 'TasksTab', label: 'Tasks', icon: 'checkbox-outline' },
     { key: 'MessagesTab', label: 'Messages', icon: 'chatbubble-ellipses-outline' },
@@ -221,12 +236,18 @@ function DrawerContent(props: DrawerContentComponentProps) {
         </Card>
 
         <View style={styles.navList}>
-          {items.map((item) => {
+          {items.map((item, index) => {
             const active = current === item.key
             return (
               <Pressable
-                key={item.key}
-                onPress={() => props.navigation.navigate(item.key)}
+                key={`${item.key}-${item.screen || 'default'}-${index}`}
+                onPress={() => {
+                  if (item.screen) {
+                    props.navigation.navigate(item.key as any, { screen: item.screen, params: item.params })
+                  } else {
+                    props.navigation.navigate(item.key)
+                  }
+                }}
                 android_ripple={{ color: 'rgba(15,76,92,0.12)' }}
                 style={({ pressed }) => [styles.navItem, active && styles.navItemActive, pressed && styles.navPressed]}
               >

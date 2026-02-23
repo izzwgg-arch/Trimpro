@@ -1,6 +1,14 @@
 export type JobsStackParamList = {
   JobsList: undefined
+  AllJobsList: undefined
   JobDetail: { jobId: string }
+  AdminJobDetail: { jobId: string }
+  CreateJob: undefined
+  EditJob: { jobId: string }
+}
+
+export type DashboardStackParamList = {
+  DashboardHome: undefined
 }
 
 export type TasksStackParamList = {
@@ -30,6 +38,7 @@ export type IssuesStackParamList = {
 }
 
 export type RootDrawerParamList = {
+  DashboardTab: undefined
   JobsTab: undefined
   ScheduleTab: undefined
   TasksTab: undefined

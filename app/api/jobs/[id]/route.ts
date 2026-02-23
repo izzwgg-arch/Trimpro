@@ -3,6 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { formatAddressParts, parseAddressParts } from '@/lib/address/parse'
 import { geocodeAddressPartsFromString } from '@/lib/geocoding'
+import { isMobileRequest, requireMobilePermission, hasMobilePermission } from '@/lib/authorization'
 
 export async function GET(
   request: NextRequest,
@@ -204,6 +205,7 @@ export async function PUT(
   if (authError) return authError
 
   const user = getAuthUser(request)
+  const isMobile = isMobileRequest(request)
 
   try {
     const body = await request.json()
@@ -222,6 +224,24 @@ export async function PUT(
       materialCost,
       jobSite,
     } = body
+
+    // If mobile request, enforce permissions based on what's being changed
+    if (isMobile) {
+      // Check if user has edit permission
+      const permError = await requireMobilePermission(request, 'mobile.jobs.edit')
+      if (permError) return permError
+
+      // Check specific permissions for specific fields
+      if (status !== undefined && status !== null) {
+        const statusPermError = await requireMobilePermission(request, 'mobile.jobs.status')
+        if (statusPermError) return statusPermError
+      }
+
+      if (scheduledStart !== undefined || scheduledEnd !== undefined) {
+        const schedulePermError = await requireMobilePermission(request, 'mobile.jobs.schedule')
+        if (schedulePermError) return schedulePermError
+      }
+    }
 
     // Get existing job
     const existing = await prisma.job.findFirst({
