@@ -28,8 +28,6 @@ import dynamic from 'next/dynamic'
 import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
 import { DocumentAttachments } from '@/components/common/document-attachments'
 import { buildCreateContextQuery } from '@/src/lib/create-context'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 const JobSiteMap = dynamic(() => import('@/components/maps/JobSiteMap').then(mod => ({ default: mod.JobSiteMap })), {
   ssr: false,
@@ -724,11 +722,11 @@ export default function JobDetailPage() {
                   size="sm"
                   onPointerDown={(e) => {
                     e.preventDefault()
-                    setIsAddCrewOpen(true)
+                    setIsAddCrewOpen((prev) => !prev)
                     loadAvailableCrew()
                   }}
                   onClick={() => {
-                    setIsAddCrewOpen(true)
+                    setIsAddCrewOpen((prev) => !prev)
                     loadAvailableCrew()
                   }}
                 >
@@ -738,6 +736,45 @@ export default function JobDetailPage() {
               </div>
             </CardHeader>
             <CardContent>
+              {isAddCrewOpen && (
+                <div className="mb-4 rounded-lg border p-3 space-y-3 bg-slate-50">
+                  <p className="text-sm font-medium text-slate-700">Assign crew member</p>
+                  <select
+                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                    value={selectedCrewId}
+                    onChange={(e) => setSelectedCrewId(e.target.value)}
+                    disabled={loadingCrew || assigningCrew}
+                  >
+                    <option value="">{loadingCrew ? 'Loading crew...' : 'Select crew member'}</option>
+                    {availableCrew.map((member) => (
+                      <option key={member.id} value={member.id}>
+                        {member.firstName} {member.lastName}
+                        {member.email ? ` (${member.email})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {!loadingCrew && availableCrew.length === 0 && (
+                    <p className="text-sm text-gray-500">No available crew members to assign.</p>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      onClick={handleAssignCrew}
+                      disabled={!selectedCrewId || assigningCrew || loadingCrew}
+                    >
+                      {assigningCrew ? 'Assigning...' : 'Assign Crew'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setIsAddCrewOpen(false)}
+                      disabled={assigningCrew}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
               {job.assignments.length === 0 ? (
                 <p className="text-center text-gray-500 py-4">No crew assigned</p>
               ) : (
@@ -771,41 +808,6 @@ export default function JobDetailPage() {
               )}
             </CardContent>
           </Card>
-
-          <Dialog open={isAddCrewOpen} onOpenChange={setIsAddCrewOpen}>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Add Crew</DialogTitle>
-                <DialogDescription>Select a team member to assign to this job.</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-3">
-                <Select value={selectedCrewId} onValueChange={setSelectedCrewId} disabled={loadingCrew || assigningCrew}>
-                  <SelectTrigger>
-                    <SelectValue placeholder={loadingCrew ? 'Loading crew...' : 'Select crew member'} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableCrew.map((member) => (
-                      <SelectItem key={member.id} value={member.id}>
-                        {member.firstName} {member.lastName}
-                        {member.email ? ` (${member.email})` : ''}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {!loadingCrew && availableCrew.length === 0 && (
-                  <p className="text-sm text-gray-500">No available crew members to assign.</p>
-                )}
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsAddCrewOpen(false)} disabled={assigningCrew}>
-                  Cancel
-                </Button>
-                <Button onClick={handleAssignCrew} disabled={!selectedCrewId || assigningCrew || loadingCrew}>
-                  {assigningCrew ? 'Assigning...' : 'Assign Crew'}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
 
           {/* Notes */}
           <Card>
