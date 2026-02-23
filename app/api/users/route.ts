@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
   if (authError) return authError
 
   // Allow either explicit user-list permission or dispatch access (maps is dispatch-adjacent).
-  const permError = await requireAnyPermission(request, ['users.view', 'dispatch.view'])
+  const permError = await requireAnyPermission(request, ['users.view', 'dispatch.view', 'jobs.assign'])
   if (permError) return permError
 
   const user = getAuthUser(request)

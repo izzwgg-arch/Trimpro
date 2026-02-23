@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { isMobileRequest, requireMobilePermission } from '@/lib/authorization'
+import { notifyJobAssigned } from '@/lib/notifications'
 
 export async function GET(
   request: NextRequest,
@@ -129,6 +130,8 @@ export async function POST(
         },
       },
     })
+
+    await notifyJobAssigned(user.tenantId, userId, job.id, job.title)
 
     // Create activity
     await prisma.activity.create({

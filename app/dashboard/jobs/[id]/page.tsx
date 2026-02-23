@@ -28,6 +28,8 @@ import dynamic from 'next/dynamic'
 import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
 import { DocumentAttachments } from '@/components/common/document-attachments'
 import { buildCreateContextQuery } from '@/src/lib/create-context'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 const JobSiteMap = dynamic(() => import('@/components/maps/JobSiteMap').then(mod => ({ default: mod.JobSiteMap })), {
   ssr: false,
@@ -126,6 +128,13 @@ interface JobDetail {
   }
 }
 
+interface AssignableUser {
+  id: string
+  firstName: string
+  lastName: string
+  email: string | null
+}
+
 const statusColors: Record<string, string> = {
   QUOTE: 'bg-gray-100 text-gray-800',
   SCHEDULED: 'bg-blue-100 text-blue-800',
@@ -148,6 +157,11 @@ export default function JobDetailPage() {
   const [deleting, setDeleting] = useState(false)
   const [convertingToInvoice, setConvertingToInvoice] = useState(false)
   const [duplicating, setDuplicating] = useState(false)
+  const [isAddCrewOpen, setIsAddCrewOpen] = useState(false)
+  const [availableCrew, setAvailableCrew] = useState<AssignableUser[]>([])
+  const [selectedCrewId, setSelectedCrewId] = useState('')
+  const [loadingCrew, setLoadingCrew] = useState(false)
+  const [assigningCrew, setAssigningCrew] = useState(false)
 
   useEffect(() => {
     fetchJob()
@@ -239,6 +253,93 @@ export default function JobDetailPage() {
       console.error('Error deleting job:', error)
       alert('Failed to delete job')
       setDeleting(false)
+    }
+  }
+
+  const loadAvailableCrew = async () => {
+    if (!job) return
+    setLoadingCrew(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+
+      const response = await fetch('/api/users?status=ACTIVE&limit=200', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+
+      if (response.status === 401) {
+        router.push('/auth/login')
+        return
+      }
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: 'Failed to load crew list' }))
+        alert(error.error || 'Failed to load crew list')
+        return
+      }
+
+      const data = await response.json()
+      const assignedIds = new Set(job.assignments.map((a) => a.user.id))
+      const users: AssignableUser[] = (Array.isArray(data.users) ? data.users : [])
+        .map((u: any) => ({
+          id: u.id,
+          firstName: u.firstName || '',
+          lastName: u.lastName || '',
+          email: u.email || null,
+        }))
+        .filter((u: AssignableUser) => !assignedIds.has(u.id))
+
+      setAvailableCrew(users)
+      setSelectedCrewId('')
+    } catch (error) {
+      console.error('Failed to load crew:', error)
+      alert('Failed to load crew list')
+    } finally {
+      setLoadingCrew(false)
+    }
+  }
+
+  const handleAssignCrew = async () => {
+    if (!selectedCrewId || !job) return
+    setAssigningCrew(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+
+      const response = await fetch(`/api/jobs/${job.id}/assignments`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId: selectedCrewId }),
+      })
+
+      if (response.status === 401) {
+        router.push('/auth/login')
+        return
+      }
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: 'Failed to assign crew' }))
+        alert(error.error || 'Failed to assign crew')
+        return
+      }
+
+      setIsAddCrewOpen(false)
+      setSelectedCrewId('')
+      await fetchJob()
+    } catch (error) {
+      console.error('Failed to assign crew:', error)
+      alert('Failed to assign crew')
+    } finally {
+      setAssigningCrew(false)
     }
   }
 
@@ -617,7 +718,14 @@ export default function JobDetailPage() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Crew Assignments</CardTitle>
-                <Button variant="outline" size="sm">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setIsAddCrewOpen(true)
+                    loadAvailableCrew()
+                  }}
+                >
                   <Plus className="mr-2 h-4 w-4" />
                   Add Crew
                 </Button>
@@ -657,6 +765,41 @@ export default function JobDetailPage() {
               )}
             </CardContent>
           </Card>
+
+          <Dialog open={isAddCrewOpen} onOpenChange={setIsAddCrewOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add Crew</DialogTitle>
+                <DialogDescription>Select a team member to assign to this job.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                <Select value={selectedCrewId} onValueChange={setSelectedCrewId} disabled={loadingCrew || assigningCrew}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={loadingCrew ? 'Loading crew...' : 'Select crew member'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableCrew.map((member) => (
+                      <SelectItem key={member.id} value={member.id}>
+                        {member.firstName} {member.lastName}
+                        {member.email ? ` (${member.email})` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {!loadingCrew && availableCrew.length === 0 && (
+                  <p className="text-sm text-gray-500">No available crew members to assign.</p>
+                )}
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsAddCrewOpen(false)} disabled={assigningCrew}>
+                  Cancel
+                </Button>
+                <Button onClick={handleAssignCrew} disabled={!selectedCrewId || assigningCrew || loadingCrew}>
+                  {assigningCrew ? 'Assigning...' : 'Assign Crew'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           {/* Notes */}
           <Card>
