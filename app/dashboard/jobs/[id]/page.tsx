@@ -155,7 +155,6 @@ export default function JobDetailPage() {
   const [deleting, setDeleting] = useState(false)
   const [convertingToInvoice, setConvertingToInvoice] = useState(false)
   const [duplicating, setDuplicating] = useState(false)
-  const [isAddCrewOpen, setIsAddCrewOpen] = useState(false)
   const [availableCrew, setAvailableCrew] = useState<AssignableUser[]>([])
   const [selectedCrewId, setSelectedCrewId] = useState('')
   const [loadingCrew, setLoadingCrew] = useState(false)
@@ -164,6 +163,12 @@ export default function JobDetailPage() {
   useEffect(() => {
     fetchJob()
   }, [jobId])
+
+  useEffect(() => {
+    if (job) {
+      loadAvailableCrew()
+    }
+  }, [job])
 
   const fetchJob = async () => {
     try {
@@ -720,61 +725,43 @@ export default function JobDetailPage() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  onPointerDown={(e) => {
-                    e.preventDefault()
-                    setIsAddCrewOpen((prev) => !prev)
-                    loadAvailableCrew()
-                  }}
-                  onClick={() => {
-                    setIsAddCrewOpen((prev) => !prev)
-                    loadAvailableCrew()
-                  }}
+                  onClick={() => loadAvailableCrew()}
                 >
                   <Plus className="mr-2 h-4 w-4" />
-                  Add Crew
+                  Refresh Crew
                 </Button>
               </div>
             </CardHeader>
             <CardContent>
-              {isAddCrewOpen && (
-                <div className="mb-4 rounded-lg border p-3 space-y-3 bg-slate-50">
-                  <p className="text-sm font-medium text-slate-700">Assign crew member</p>
-                  <select
-                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
-                    value={selectedCrewId}
-                    onChange={(e) => setSelectedCrewId(e.target.value)}
-                    disabled={loadingCrew || assigningCrew}
+              <div className="mb-4 rounded-lg border p-3 space-y-3 bg-slate-50">
+                <p className="text-sm font-medium text-slate-700">Assign crew member</p>
+                <select
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                  value={selectedCrewId}
+                  onChange={(e) => setSelectedCrewId(e.target.value)}
+                  disabled={loadingCrew || assigningCrew}
+                >
+                  <option value="">{loadingCrew ? 'Loading crew...' : 'Select crew member'}</option>
+                  {availableCrew.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.firstName} {member.lastName}
+                      {member.email ? ` (${member.email})` : ''}
+                    </option>
+                  ))}
+                </select>
+                {!loadingCrew && availableCrew.length === 0 && (
+                  <p className="text-sm text-gray-500">No available crew members to assign.</p>
+                )}
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    onClick={handleAssignCrew}
+                    disabled={!selectedCrewId || assigningCrew || loadingCrew}
                   >
-                    <option value="">{loadingCrew ? 'Loading crew...' : 'Select crew member'}</option>
-                    {availableCrew.map((member) => (
-                      <option key={member.id} value={member.id}>
-                        {member.firstName} {member.lastName}
-                        {member.email ? ` (${member.email})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                  {!loadingCrew && availableCrew.length === 0 && (
-                    <p className="text-sm text-gray-500">No available crew members to assign.</p>
-                  )}
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      onClick={handleAssignCrew}
-                      disabled={!selectedCrewId || assigningCrew || loadingCrew}
-                    >
-                      {assigningCrew ? 'Assigning...' : 'Assign Crew'}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setIsAddCrewOpen(false)}
-                      disabled={assigningCrew}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
+                    {assigningCrew ? 'Assigning...' : 'Assign Crew'}
+                  </Button>
                 </div>
-              )}
+              </div>
               {job.assignments.length === 0 ? (
                 <p className="text-center text-gray-500 py-4">No crew assigned</p>
               ) : (
