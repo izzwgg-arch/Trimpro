@@ -335,9 +335,9 @@ export default function JobDetailPage() {
         return
       }
 
-      setIsAddCrewOpen(false)
       setSelectedCrewId('')
       await fetchJob()
+      await loadAvailableCrew()
     } catch (error) {
       console.error('Failed to assign crew:', error)
       alert('Failed to assign crew')
