@@ -49,7 +49,7 @@ export function DashboardJobsPipelineChart() {
   }
 
   if (loading) {
-    return <div className="h-[200px] flex items-center justify-center text-gray-500">Loading...</div>
+    return <div className="min-h-[360px] flex items-center justify-center text-gray-500">Loading...</div>
   }
 
   if (data.length === 0) {
@@ -57,25 +57,31 @@ export function DashboardJobsPipelineChart() {
   }
 
   return (
-    <ResponsiveContainer width="100%" height={200}>
-      <PieChart>
-        <Pie
-          data={data}
-          cx="50%"
-          cy="50%"
-          labelLine={false}
-          label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-          outerRadius={80}
-          fill="#8884d8"
-          dataKey="value"
-        >
-          {data.map((entry, index) => (
-            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-          ))}
-        </Pie>
-        <Tooltip />
-        <Legend />
-      </PieChart>
-    </ResponsiveContainer>
+    <div className="w-full min-h-[360px] h-[380px]">
+      <ResponsiveContainer width="100%" height="100%">
+        <PieChart>
+          <Pie
+            data={data}
+            cx="50%"
+            cy="45%"
+            labelLine={false}
+            label={false}
+            outerRadius={100}
+            fill="#8884d8"
+            dataKey="value"
+          >
+            {data.map((entry, index) => (
+              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+            ))}
+          </Pie>
+          <Tooltip />
+          <Legend
+            verticalAlign="bottom"
+            align="center"
+            wrapperStyle={{ paddingTop: 24, width: '100%', position: 'relative' }}
+          />
+        </PieChart>
+      </ResponsiveContainer>
+    </div>
   )
 }
