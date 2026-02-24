@@ -44,6 +44,8 @@ export default function TaskDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [updating, setUpdating] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [noteText, setNoteText] = useState('')
+  const [addingNote, setAddingNote] = useState(false)
 
   const badgeClass = useMemo(() => {
     const s = task?.status || ''
@@ -174,6 +176,44 @@ export default function TaskDetailPage() {
     }
   }
 
+  const appendTaskNote = async () => {
+    if (!task || !noteText.trim()) return
+    setAddingNote(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+
+      const nextDescription = [task.description || '', noteText.trim()].filter(Boolean).join('\n\n')
+      const response = await fetch(`/api/tasks/${task.id}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: nextDescription }),
+      })
+
+      if (response.status === 401) {
+        router.push('/auth/login')
+        return
+      }
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({ error: 'Failed to append note' }))
+        alert(payload.error || 'Failed to append note')
+        return
+      }
+
+      const data = await response.json()
+      setTask(data.task)
+      setNoteText('')
+    } catch (e) {
+      console.error('Failed to append task note:', e)
+      alert('Failed to append note. Please try again.')
+    } finally {
+      setAddingNote(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -257,6 +297,26 @@ export default function TaskDetailPage() {
               </CardContent>
             </Card>
           )}
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Notes</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <textarea
+                rows={3}
+                value={noteText}
+                onChange={(e) => setNoteText(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Add a note to task description..."
+              />
+              <div className="flex justify-end">
+                <Button onClick={() => void appendTaskNote()} disabled={addingNote || !noteText.trim()}>
+                  {addingNote ? 'Saving...' : 'Append Note'}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
 
           {task.subtasks?.length > 0 && (
             <Card>
