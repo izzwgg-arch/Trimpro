@@ -193,28 +193,31 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Assignee not found' }, { status: 404 })
       }
 
+      // Allow self-assignment from mobile without elevated assignment permissions.
+      if (assignee.id !== user.id) {
       // Check if assigning to admin
-      const isAdmin = assignee.role === 'ADMIN' || assignee.role === 'OFFICE'
-      
-      // If assigning to admin, require mobile.tasks.assign_to_admin or mobile.tasks.assign_to_any
-      if (isAdmin) {
-        const canAssignToAdmin = await hasMobilePermission(user.id, user.tenantId, 'mobile.tasks.assign_to_admin')
-        const canAssignToAny = await hasMobilePermission(user.id, user.tenantId, 'mobile.tasks.assign_to_any')
+        const isAdmin = assignee.role === 'ADMIN' || assignee.role === 'OFFICE'
         
-        if (!canAssignToAdmin && !canAssignToAny) {
-          return NextResponse.json(
-            { error: 'You do not have permission to assign tasks to admin users' },
-            { status: 403 }
-          )
-        }
-      } else {
-        // If assigning to non-admin, require mobile.tasks.assign_to_any (admin-level)
-        const canAssignToAny = await hasMobilePermission(user.id, user.tenantId, 'mobile.tasks.assign_to_any')
-        if (!canAssignToAny) {
-          return NextResponse.json(
-            { error: 'You do not have permission to assign tasks to this user' },
-            { status: 403 }
-          )
+        // If assigning to admin, require mobile.tasks.assign_to_admin or mobile.tasks.assign_to_any
+        if (isAdmin) {
+          const canAssignToAdmin = await hasMobilePermission(user.id, user.tenantId, 'mobile.tasks.assign_to_admin')
+          const canAssignToAny = await hasMobilePermission(user.id, user.tenantId, 'mobile.tasks.assign_to_any')
+          
+          if (!canAssignToAdmin && !canAssignToAny) {
+            return NextResponse.json(
+              { error: 'You do not have permission to assign tasks to admin users' },
+              { status: 403 }
+            )
+          }
+        } else {
+          // If assigning to non-admin, require mobile.tasks.assign_to_any (admin-level)
+          const canAssignToAny = await hasMobilePermission(user.id, user.tenantId, 'mobile.tasks.assign_to_any')
+          if (!canAssignToAny) {
+            return NextResponse.json(
+              { error: 'You do not have permission to assign tasks to this user' },
+              { status: 403 }
+            )
+          }
         }
       }
     }
@@ -271,6 +274,22 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const assignee = await prisma.user.findFirst({
+      where: {
+        id: assigneeId,
+        tenantId: user.tenantId,
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+      },
+    })
+
+    if (!assignee) {
+      return NextResponse.json({ error: 'Assignee not found' }, { status: 404 })
+    }
+
     // Create task
     const task = await prisma.task.create({
       data: {
@@ -307,13 +326,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const assigneeName = task.assignee
+      ? `${task.assignee.firstName} ${task.assignee.lastName}`
+      : 'unassigned user'
+
     // Create activity
     await prisma.activity.create({
       data: {
         tenantId: user.tenantId,
         userId: user.id,
         type: 'TASK_CREATED',
-        description: `Task "${title}" assigned to ${assignee.firstName} ${assignee.lastName}`,
+        description: `Task "${title}" assigned to ${assigneeName}`,
         taskId: task.id,
         clientId: resolvedClientId || undefined,
         jobId: jobId || undefined,
