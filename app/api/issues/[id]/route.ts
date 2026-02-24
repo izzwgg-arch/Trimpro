@@ -117,7 +117,31 @@ export async function GET(
       return NextResponse.json({ error: 'Issue not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ issue })
+    const noteAuthorIds = Array.from(new Set((issue.notes || []).map((note: any) => note.createdById)))
+    const noteAuthors = noteAuthorIds.length
+      ? await prisma.user.findMany({
+          where: {
+            tenantId: user.tenantId,
+            id: { in: noteAuthorIds },
+          },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
+        })
+      : []
+    const noteAuthorMap = new Map(noteAuthors.map((a) => [a.id, `${a.firstName} ${a.lastName}`.trim()]))
+
+    return NextResponse.json({
+      issue: {
+        ...issue,
+        notes: (issue.notes || []).map((note: any) => ({
+          ...note,
+          authorName: noteAuthorMap.get(note.createdById) || 'Unknown user',
+        })),
+      },
+    })
   } catch (error) {
     console.error('Get issue error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

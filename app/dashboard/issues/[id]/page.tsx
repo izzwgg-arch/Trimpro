@@ -23,6 +23,7 @@ interface IssueDetail {
   client: { id: string; name: string; companyName: string | null } | null
   job: { id: string; jobNumber: string; title: string } | null
   tasks: Array<{ id: string; title: string; status: string }>
+  notes: Array<{ id: string; content: string; createdAt: string; authorName?: string }>
   attachments: Array<{ id: string; filename: string | null; url: string; type: string; createdAt: string }>
   _count?: { notes: number; tasks: number; watchers: number }
 }
@@ -265,6 +266,28 @@ export default function IssueDetailPage() {
               </CardContent>
             </Card>
           )}
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Notes</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {issue.notes?.length ? (
+                <div className="space-y-3">
+                  {issue.notes.map((note) => (
+                    <div key={note.id} className="rounded-md border border-gray-200 p-3">
+                      <p className="text-sm text-gray-700 whitespace-pre-wrap">{note.content}</p>
+                      <p className="mt-2 text-xs text-gray-500">
+                        {note.authorName || 'User'} • {formatDate(note.createdAt)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500">No notes yet.</p>
+              )}
+            </CardContent>
+          </Card>
 
           {issue.attachments?.length > 0 && (
             <Card>
