@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts'
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import { EmptyState } from '@/components/charts/EmptyState'
 
 const COLORS = ['#2E4A59', '#00C49F', '#FFBB28', '#FF8042', '#2E4A59']
@@ -57,31 +57,40 @@ export function DashboardJobsPipelineChart() {
   }
 
   return (
-    <div className="w-full min-h-[360px] h-[380px]">
-      <ResponsiveContainer width="100%" height="100%">
-        <PieChart>
-          <Pie
-            data={data}
-            cx="50%"
-            cy="45%"
-            labelLine={false}
-            label={false}
-            outerRadius={100}
-            fill="#8884d8"
-            dataKey="value"
-          >
-            {data.map((entry, index) => (
-              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-            ))}
-          </Pie>
-          <Tooltip />
-          <Legend
-            verticalAlign="bottom"
-            align="center"
-            wrapperStyle={{ paddingTop: 24, width: '100%', position: 'relative' }}
-          />
-        </PieChart>
-      </ResponsiveContainer>
+    <div className="w-full min-h-[360px]">
+      <div className="h-[300px] w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={data}
+              cx="50%"
+              cy="48%"
+              labelLine={false}
+              label={false}
+              outerRadius={100}
+              fill="#8884d8"
+              dataKey="value"
+            >
+              {data.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 px-2 pb-2">
+        {data.map((item, index) => (
+          <div key={`legend-${item.name}-${index}`} className="flex items-center gap-2 text-xs text-gray-600">
+            <span
+              className="inline-block h-3 w-3 rounded-sm"
+              style={{ backgroundColor: COLORS[index % COLORS.length] }}
+              aria-hidden="true"
+            />
+            <span className="whitespace-nowrap">{item.name}</span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
