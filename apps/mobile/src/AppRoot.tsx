@@ -1,13 +1,13 @@
 import 'react-native-gesture-handler'
 import React, { useEffect, useRef, useState } from 'react'
-import { View } from 'react-native'
+import { TextInput, View } from 'react-native'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import * as Notifications from 'expo-notifications'
 import * as Linking from 'expo-linking'
 import * as SplashScreen from 'expo-splash-screen'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { RootNavigator } from './navigation/RootNavigator'
-import { registerPushToken } from './notifications/registerPush'
+import { registerPushToken, setLastPushReceivedAtNow } from './notifications/registerPush'
 import { flushOutbox, loadOutbox } from './offline/outbox'
 import { useOnlineState } from './hooks/useOnlineState'
 import { apiRequest } from './api/client'
@@ -26,6 +26,11 @@ Notifications.setNotificationHandler({
 })
 
 const queryClient = new QueryClient()
+
+// Enforce readable default input text/placeholder colors across the app.
+TextInput.defaultProps = TextInput.defaultProps || {}
+TextInput.defaultProps.placeholderTextColor = '#0F172A'
+TextInput.defaultProps.selectionColor = '#0F172A'
 
 function SyncAndPushBootstrap() {
   const { token } = useAuth()
@@ -46,6 +51,9 @@ function SyncAndPushBootstrap() {
     const sub = Notifications.addNotificationReceivedListener((notification) => {
       // Show popup for foreground notifications
       setCurrentNotification(notification)
+      void setLastPushReceivedAtNow()
+      queryClient.invalidateQueries({ queryKey: ['mobile-notifications'] })
+      queryClient.invalidateQueries({ queryKey: ['mobile-notifications-unread'] })
     })
     return () => sub.remove()
   }, [])
@@ -54,6 +62,14 @@ function SyncAndPushBootstrap() {
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
       const data = (response.notification.request.content.data || {}) as Record<string, any>
+      void setLastPushReceivedAtNow()
+      queryClient.invalidateQueries({ queryKey: ['mobile-notifications'] })
+      queryClient.invalidateQueries({ queryKey: ['mobile-notifications-unread'] })
+      const deepLink = typeof data.deepLink === 'string' ? data.deepLink : null
+      if (deepLink) {
+        void Linking.openURL(deepLink)
+        return
+      }
       const directUrl = typeof data.url === 'string' ? data.url : null
       if (directUrl) {
         void Linking.openURL(directUrl)
@@ -62,10 +78,10 @@ function SyncAndPushBootstrap() {
 
       const linkType = typeof data.linkType === 'string' ? data.linkType : ''
       const linkId = typeof data.linkId === 'string' ? data.linkId : ''
-      if (linkType === 'job' && linkId) void Linking.openURL(`trimprofield://jobs/${linkId}`)
-      if (linkType === 'task' && linkId) void Linking.openURL(`trimprofield://tasks/${linkId}`)
-      if (linkType === 'issue' && linkId) void Linking.openURL(`trimprofield://issues/${linkId}`)
-      if (linkType === 'message' && linkId) void Linking.openURL(`trimprofield://messages/${linkId}`)
+      if (linkType === 'job' && linkId) void Linking.openURL(`trimpro://jobs/${linkId}`)
+      if (linkType === 'task' && linkId) void Linking.openURL(`trimpro://tasks/${linkId}`)
+      if (linkType === 'issue' && linkId) void Linking.openURL(`trimpro://issues/${linkId}`)
+      if (linkType === 'message' && linkId) void Linking.openURL(`trimpro://messages/${linkId}`)
     })
     return () => sub.remove()
   }, [])

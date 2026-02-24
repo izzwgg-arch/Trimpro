@@ -303,12 +303,14 @@ export async function POST(request: NextRequest) {
             try {
               console.log('[Attachment] Creating notifications for assigned users:', recipientIds)
               await createNotificationsForUsers(user.tenantId, recipientIds, {
-                type: 'OTHER',
+                type: 'JOB_MEDIA_ADDED',
                 title: `${actorName} uploaded ${cleanFileDesc}`,
                 message: `${jobDisplayName} (${jobNumber})`,
                 linkType: 'job',
                 linkId: job.id,
                 linkUrl: `/dashboard/dispatch?jobId=${job.id}`,
+                actorUserId: user.id,
+                action: 'media_uploaded',
               })
               console.log('[Attachment] Successfully created notifications for assigned users')
             } catch (notifError) {
@@ -325,6 +327,8 @@ export async function POST(request: NextRequest) {
               title: `${actorName} uploaded ${cleanFileDesc}`,
               message: `${jobDisplayName} (${jobNumber})`,
               excludeUserId: null, // Include uploader so they see their own uploads
+              actorUserId: user.id,
+              action: 'media_uploaded',
             })
             console.log('[Attachment] Successfully created dispatch notifications')
           } catch (dispatchNotifError) {

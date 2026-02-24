@@ -318,12 +318,14 @@ export async function PUT(
       }
 
       await createNotificationsForUsers(user.tenantId, notifyUserIds, {
-        type: 'OTHER',
+        type: 'ISSUE_UPDATED',
         title: notificationTitle,
         message: notificationMessage,
         linkType: 'issue',
         linkId: issue.id,
         linkUrl: `/dashboard/issues/${issue.id}`,
+        actorUserId: user.id,
+        action: statusChanged ? 'status_changed' : 'issue_updated',
       })
     }
 

@@ -40,7 +40,15 @@ export async function GET(request: NextRequest) {
       take: limit,
     })
 
-    return NextResponse.json({ notifications })
+    const unreadCount = await prisma.notification.count({
+      where: {
+        tenantId: user.tenantId,
+        userId: user.id,
+        status: 'UNREAD',
+      },
+    })
+
+    return NextResponse.json({ notifications, unreadCount })
   } catch (error) {
     console.error('Get notifications error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

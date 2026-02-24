@@ -1,109 +1,261 @@
 import { prisma } from '@/lib/prisma'
 
-type PushPayload = {
+const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send'
+const EXPO_RECEIPTS_URL = 'https://exp.host/--/api/v2/push/getReceipts'
+
+export type PushPayload = {
   title: string
   body?: string | null
   data?: Record<string, any>
 }
 
-type MobilePushTokenRecord = {
-  token: string
-  platform?: string
-  updatedAt?: string
+export type RegisterPushDeviceInput = {
+  tenantId: string
+  userId: string
+  expoPushToken: string
+  platform: string
+  deviceId?: string | null
+  appVersion?: string | null
+  buildNumber?: string | null
+  locale?: string | null
+  timezone?: string | null
 }
 
-function getUserPushTokens(permissions: unknown): string[] {
-  if (!permissions || typeof permissions !== 'object') return []
-  const mobilePushTokens = (permissions as Record<string, any>).mobilePushTokens
-  if (!Array.isArray(mobilePushTokens)) return []
-
-  return mobilePushTokens
-    .map((entry) => {
-      if (!entry || typeof entry !== 'object') return null
-      const record = entry as MobilePushTokenRecord
-      return typeof record.token === 'string' ? record.token.trim() : null
-    })
-    .filter((token): token is string => Boolean(token && token.startsWith('ExponentPushToken[')))
+function isExpoToken(token: string) {
+  return token.startsWith('ExponentPushToken[') || token.startsWith('ExpoPushToken[')
 }
 
-async function sendExpoPushMessages(messages: Array<Record<string, any>>) {
-  if (messages.length === 0) return
-  const chunks: Array<Array<Record<string, any>>> = []
-  for (let i = 0; i < messages.length; i += 100) {
-    chunks.push(messages.slice(i, i + 100))
+function maskedToken(token: string) {
+  if (token.length <= 12) return token
+  return `${token.slice(0, 8)}...${token.slice(-4)}`
+}
+
+function chunkArray<T>(rows: T[], size: number) {
+  const chunks: T[][] = []
+  for (let i = 0; i < rows.length; i += size) chunks.push(rows.slice(i, i + size))
+  return chunks
+}
+
+export async function registerUserPushDevice(input: RegisterPushDeviceInput) {
+  const token = String(input.expoPushToken || '').trim()
+  if (!token || !isExpoToken(token)) {
+    throw new Error('Invalid Expo push token')
   }
 
-  for (const chunk of chunks) {
-    try {
-      await fetch('https://exp.host/--/api/v2/push/send', {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(chunk),
+  return prisma.userPushDevice.upsert({
+    where: { expoPushToken: token },
+    create: {
+      tenantId: input.tenantId,
+      userId: input.userId,
+      expoPushToken: token,
+      platform: String(input.platform || 'unknown'),
+      deviceId: input.deviceId || null,
+      appVersion: input.appVersion || null,
+      buildNumber: input.buildNumber || null,
+      locale: input.locale || null,
+      timezone: input.timezone || null,
+      disabledAt: null,
+      lastSeenAt: new Date(),
+    },
+    update: {
+      tenantId: input.tenantId,
+      userId: input.userId,
+      platform: String(input.platform || 'unknown'),
+      deviceId: input.deviceId || null,
+      appVersion: input.appVersion || null,
+      buildNumber: input.buildNumber || null,
+      locale: input.locale || null,
+      timezone: input.timezone || null,
+      disabledAt: null,
+      lastSeenAt: new Date(),
+    },
+  })
+}
+
+export async function unregisterUserPushDevice(params: {
+  tenantId: string
+  userId: string
+  expoPushToken?: string | null
+  deviceId?: string | null
+}) {
+  const where: any = {
+    tenantId: params.tenantId,
+    userId: params.userId,
+    disabledAt: null,
+  }
+  if (params.expoPushToken) where.expoPushToken = String(params.expoPushToken).trim()
+  if (!params.expoPushToken && params.deviceId) where.deviceId = String(params.deviceId).trim()
+
+  return prisma.userPushDevice.updateMany({
+    where,
+    data: {
+      disabledAt: new Date(),
+      lastSeenAt: new Date(),
+    },
+  })
+}
+
+async function disableToken(token: string) {
+  await prisma.userPushDevice.updateMany({
+    where: { expoPushToken: token, disabledAt: null },
+    data: { disabledAt: new Date() },
+  })
+}
+
+type PushSendResult = {
+  tickets: Array<{ id?: string; status?: string; message?: string; details?: any }>
+  receiptErrors: Array<{ id: string; status?: string; message?: string; details?: any }>
+}
+
+export async function sendPushToDevices(params: {
+  traceId: string
+  tenantId: string
+  recipientUserId: string
+  payload: PushPayload
+}) {
+  const devices = await prisma.userPushDevice.findMany({
+    where: {
+      tenantId: params.tenantId,
+      userId: params.recipientUserId,
+      disabledAt: null,
+    },
+    select: {
+      expoPushToken: true,
+    },
+  })
+  const tokens = Array.from(new Set(devices.map((d) => d.expoPushToken).filter(Boolean)))
+  if (tokens.length === 0) {
+    console.info(
+      JSON.stringify({
+        area: 'push',
+        event: 'no_tokens',
+        traceId: params.traceId,
+        tenantId: params.tenantId,
+        recipientUserId: params.recipientUserId,
       })
-    } catch (error) {
-      console.error('Expo push send failed:', error)
+    )
+    return { sent: 0, failed: 0, tickets: [] as PushSendResult['tickets'], receiptErrors: [] as PushSendResult['receiptErrors'] }
+  }
+
+  const messages = tokens.map((token) => ({
+    to: token,
+    sound: 'default',
+    channelId: 'trimpro-default',
+    title: params.payload.title,
+    body: params.payload.body || undefined,
+    data: params.payload.data || {},
+    priority: 'high',
+  }))
+
+  const tickets: PushSendResult['tickets'] = []
+  for (const chunk of chunkArray(messages, 100)) {
+    const response = await fetch(EXPO_PUSH_URL, {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(chunk),
+    })
+    const payload = await response.json().catch(() => ({}))
+    const data = Array.isArray(payload?.data) ? payload.data : []
+    for (const ticket of data) tickets.push(ticket)
+  }
+
+  let sent = 0
+  let failed = 0
+  const ticketIds: string[] = []
+  for (const ticket of tickets) {
+    if (ticket?.status === 'ok') {
+      sent += 1
+      if (ticket?.id) ticketIds.push(String(ticket.id))
+      continue
+    }
+    failed += 1
+    const errorCode = String(ticket?.details?.error || '')
+    if (errorCode === 'DeviceNotRegistered') {
+      const target = messages.find((m) => m.to === ticket?.details?.expoPushToken)
+      if (target?.to) await disableToken(target.to)
     }
   }
+
+  const receiptErrors: PushSendResult['receiptErrors'] = []
+  if (ticketIds.length > 0) {
+    await new Promise((resolve) => setTimeout(resolve, 1300))
+    const receiptRes = await fetch(EXPO_RECEIPTS_URL, {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: ticketIds }),
+    })
+    const receiptJson = await receiptRes.json().catch(() => ({}))
+    const receiptData = receiptJson?.data && typeof receiptJson.data === 'object' ? receiptJson.data : {}
+    for (const [id, receipt] of Object.entries<any>(receiptData)) {
+      if (receipt?.status === 'ok') continue
+      receiptErrors.push({
+        id,
+        status: receipt?.status,
+        message: receipt?.message,
+        details: receipt?.details,
+      })
+      if (String(receipt?.details?.error || '') === 'DeviceNotRegistered') {
+        // We do not get token in receipt; disable all tokens for this recipient as safe fallback.
+        await prisma.userPushDevice.updateMany({
+          where: {
+            tenantId: params.tenantId,
+            userId: params.recipientUserId,
+            disabledAt: null,
+          },
+          data: { disabledAt: new Date() },
+        })
+      }
+    }
+  }
+
+  console.info(
+    JSON.stringify({
+      area: 'push',
+      event: 'send_complete',
+      traceId: params.traceId,
+      tenantId: params.tenantId,
+      recipientUserId: params.recipientUserId,
+      tokensCount: tokens.length,
+      sent,
+      failed,
+      ticketIds,
+      receiptErrorCount: receiptErrors.length,
+      tokenSample: tokens.slice(0, 3).map(maskedToken),
+    })
+  )
+
+  return { sent, failed, tickets, receiptErrors }
 }
 
 export async function sendPushToUser(userId: string, payload: PushPayload) {
-  try {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { permissions: true },
-    })
-    if (!user) return
-
-    const tokens = getUserPushTokens(user.permissions)
-    if (tokens.length === 0) return
-
-    const messages = tokens.map((token) => ({
-      to: token,
-      sound: 'default',
-      title: payload.title,
-      body: payload.body || undefined,
-      data: payload.data || {},
-    }))
-
-    await sendExpoPushMessages(messages)
-  } catch (error) {
-    console.error('sendPushToUser error:', error)
-  }
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, tenantId: true },
+  })
+  if (!user) return
+  await sendPushToDevices({
+    traceId: `legacy_${Date.now()}_${user.id}`,
+    tenantId: user.tenantId,
+    recipientUserId: user.id,
+    payload,
+  })
 }
 
 export async function sendPushToUsers(userIds: string[], payload: PushPayload) {
   if (userIds.length === 0) return
-  try {
-    const users = await prisma.user.findMany({
-      where: {
-        id: { in: userIds },
-      },
-      select: {
-        id: true,
-        permissions: true,
-      },
-    })
-
-    const messages: Array<Record<string, any>> = []
-    for (const user of users) {
-      const tokens = getUserPushTokens(user.permissions)
-      for (const token of tokens) {
-        messages.push({
-          to: token,
-          sound: 'default',
-          title: payload.title,
-          body: payload.body || undefined,
-          data: payload.data || {},
-        })
-      }
-    }
-
-    await sendExpoPushMessages(messages)
-  } catch (error) {
-    console.error('sendPushToUsers error:', error)
-  }
+  const users = await prisma.user.findMany({
+    where: { id: { in: userIds } },
+    select: { id: true, tenantId: true },
+  })
+  await Promise.all(
+    users.map((u) =>
+      sendPushToDevices({
+        traceId: `legacy_${Date.now()}_${u.id}`,
+        tenantId: u.tenantId,
+        recipientUserId: u.id,
+        payload,
+      })
+    )
+  )
 }
 

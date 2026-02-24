@@ -39,7 +39,9 @@ export type IssuesStackParamList = {
 
 export type RootDrawerParamList = {
   DashboardTab: undefined
+  NotificationsTab: undefined
   JobsTab: undefined
+  AllJobsTab: undefined
   ScheduleTab: undefined
   TasksTab: undefined
   MessagesTab: undefined

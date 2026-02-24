@@ -159,12 +159,14 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const recipientIds = Array.from(new Set(job.assignments.map((a) => a.userId).filter((id) => id !== user.id)))
     if (recipientIds.length > 0) {
       await createNotificationsForUsers(user.tenantId, recipientIds, {
-        type: 'OTHER',
+        type: 'MESSAGE_RECEIVED',
         title: `Dispatch message for ${job.jobNumber}`,
         message: text || 'Dispatch sent an attachment',
         linkType: 'job',
         linkId: job.id,
         linkUrl: `/dashboard/dispatch?jobId=${job.id}`,
+        actorUserId: user.id,
+        action: 'message_received',
       })
     }
 
@@ -187,6 +189,8 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       jobId: job.id,
       title: `New message on ${job.jobNumber}`,
       message: text || 'Dispatch sent an attachment',
+      actorUserId: user.id,
+      action: 'message_received',
     })
 
     return NextResponse.json({ success: true, messageId: msg.id })

@@ -216,12 +216,14 @@ export async function PUT(
       }
 
       await createNotificationsForUsers(user.tenantId, [task.assigneeId], {
-        type: 'OTHER',
+        type: 'TASK_UPDATED',
         title: notificationTitle,
         message: notificationMessage,
         linkType: 'task',
         linkId: task.id,
         linkUrl: `/dashboard/tasks/${task.id}`,
+        actorUserId: user.id,
+        action: statusChanged ? 'status_changed' : 'task_updated',
       })
     }
 

@@ -4,8 +4,10 @@ import { createDrawerNavigator, DrawerContentComponentProps, DrawerContentScroll
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
 import { Ionicons } from '@expo/vector-icons'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '../auth/AuthContext'
 import { LoginScreen } from '../screens/auth/LoginScreen'
+import { DashboardScreen } from '../screens/dashboard/DashboardScreen'
 import { JobsScreen } from '../screens/jobs/JobsScreen'
 import { JobDetailScreen } from '../screens/jobs/JobDetailScreen'
 import { AllJobsScreen } from '../screens/jobs/AllJobsScreen'
@@ -25,10 +27,9 @@ import { ProfileScreen } from '../screens/profile/ProfileScreen'
 import { OutboxScreen } from '../screens/outbox/OutboxScreen'
 import { colors, spacing, typography } from '../theme/tokens'
 import {
+  DashboardStackParamList,
   JobsStackParamList,
   MessagesStackParamList,
-  MoreStackParamList,
-  RootTabParamList,
   TasksStackParamList,
   IssuesStackParamList,
   RootDrawerParamList,
@@ -37,27 +38,41 @@ import { TaskDetailScreen } from '../screens/tasks/TaskDetailScreen'
 import { useOutboxCount } from '../hooks/useOutboxCount'
 import { Card } from '../components/Card'
 import { useMobilePermissions } from '../hooks/useMobilePermissions'
+import { NotificationsScreen } from '../screens/notifications/NotificationsScreen'
+import { apiRequest } from '../api/client'
 
 const Drawer = createDrawerNavigator<RootDrawerParamList>()
+const DashboardStack = createNativeStackNavigator<DashboardStackParamList>()
 const JobsStack = createNativeStackNavigator<JobsStackParamList>()
+const AllJobsStack = createNativeStackNavigator<JobsStackParamList>()
 const ScheduleStack = createNativeStackNavigator()
 const TasksStack = createNativeStackNavigator<TasksStackParamList>()
 const MessagesStack = createNativeStackNavigator<MessagesStackParamList>()
 const IssuesStack = createNativeStackNavigator<IssuesStackParamList>()
 const RequestsStack = createNativeStackNavigator()
+const NotificationsStack = createNativeStackNavigator()
 const CallsStack = createNativeStackNavigator()
 const OutboxStack = createNativeStackNavigator()
 const ProfileStack = createNativeStackNavigator()
 const AuthStack = createNativeStackNavigator()
 
 const linking: LinkingOptions<RootDrawerParamList> = {
-  prefixes: ['trimprofield://'],
+  prefixes: ['trimprofield://', 'trimpro://'],
   config: {
     screens: {
+      DashboardTab: 'dashboard',
       JobsTab: {
         screens: {
-          JobsList: 'jobs',
-          JobDetail: 'jobs/:jobId',
+          JobsList: 'my-jobs',
+          JobDetail: 'my-jobs/:jobId',
+        },
+      } as never,
+      AllJobsTab: {
+        screens: {
+          AllJobsList: 'all-jobs',
+          AdminJobDetail: 'all-jobs/:jobId',
+          CreateJob: 'all-jobs/new',
+          EditJob: 'all-jobs/:jobId/edit',
         },
       } as never,
       ScheduleTab: 'schedule',
@@ -74,6 +89,7 @@ const linking: LinkingOptions<RootDrawerParamList> = {
           TeamChat: 'messages/team',
         },
       } as never,
+      NotificationsTab: 'notifications',
       RequestsTab: 'requests',
       IssuesTab: {
         screens: {
@@ -88,16 +104,32 @@ const linking: LinkingOptions<RootDrawerParamList> = {
   },
 }
 
+function DashboardStackNavigator() {
+  return (
+    <DashboardStack.Navigator screenOptions={stackOptions}>
+      <DashboardStack.Screen name="DashboardHome" component={DashboardScreen} options={mainHeaderOptions('Dashboard')} />
+    </DashboardStack.Navigator>
+  )
+}
+
 function JobsStackNavigator() {
   return (
     <JobsStack.Navigator screenOptions={stackOptions}>
       <JobsStack.Screen name="JobsList" component={JobsScreen} options={mainHeaderOptions('My Jobs')} />
-      <JobsStack.Screen name="AllJobsList" component={AllJobsScreen} options={{ title: 'All Jobs' }} />
       <JobsStack.Screen name="JobDetail" component={JobDetailScreen} options={{ title: 'Job Details' }} />
-      <JobsStack.Screen name="AdminJobDetail" component={AdminJobDetailScreen} options={{ title: 'Job Details' }} />
-      <JobsStack.Screen name="CreateJob" component={CreateJobScreen} options={{ title: 'Create Job' }} />
-      <JobsStack.Screen name="EditJob" component={EditJobScreen} options={{ title: 'Edit Job' }} />
     </JobsStack.Navigator>
+  )
+}
+
+function AllJobsStackNavigator() {
+  return (
+    <AllJobsStack.Navigator screenOptions={stackOptions}>
+      <AllJobsStack.Screen name="AllJobsList" component={AllJobsScreen} options={mainHeaderOptions('All Jobs')} />
+      <AllJobsStack.Screen name="JobDetail" component={JobDetailScreen} options={{ title: 'Job Details' }} />
+      <AllJobsStack.Screen name="AdminJobDetail" component={AdminJobDetailScreen} options={{ title: 'Job Details' }} />
+      <AllJobsStack.Screen name="CreateJob" component={CreateJobScreen} options={{ title: 'Create Job' }} />
+      <AllJobsStack.Screen name="EditJob" component={EditJobScreen} options={{ title: 'Edit Job' }} />
+    </AllJobsStack.Navigator>
   )
 }
 
@@ -133,6 +165,18 @@ function RequestsStackNavigator() {
     <RequestsStack.Navigator screenOptions={stackOptions}>
       <RequestsStack.Screen name="RequestsHome" component={CreateRequestScreen} options={mainHeaderOptions('Requests')} />
     </RequestsStack.Navigator>
+  )
+}
+
+function NotificationsStackNavigator() {
+  return (
+    <NotificationsStack.Navigator screenOptions={stackOptions}>
+      <NotificationsStack.Screen
+        name="NotificationsHome"
+        component={NotificationsScreen}
+        options={mainHeaderOptions('Notifications')}
+      />
+    </NotificationsStack.Navigator>
   )
 }
 
@@ -198,19 +242,27 @@ function DrawerContent(props: DrawerContentComponentProps) {
   const { user, signOut } = useAuth()
   const outboxCount = useOutboxCount()
   const { canViewAllJobs } = useMobilePermissions()
+  const unreadQuery = useQuery({
+    queryKey: ['mobile-notifications-unread'],
+    queryFn: () => apiRequest<{ unreadCount: number }>('/api/mobile/notifications?limit=1'),
+    refetchInterval: 15000,
+  })
+  const unreadCount = unreadQuery.data?.unreadCount || 0
 
   // Navigation items - More option removed, all items now directly in sidebar
   const items: Array<{
     key: keyof RootDrawerParamList
     label: string
     icon: keyof typeof Ionicons.glyphMap
-    screen?: string
-    params?: any
   }> = [
+    { key: 'DashboardTab', label: 'Dashboard', icon: 'grid-outline' },
+    {
+      key: 'NotificationsTab',
+      label: unreadCount > 0 ? `Notifications (${unreadCount})` : 'Notifications',
+      icon: 'notifications-outline',
+    },
     { key: 'JobsTab', label: 'My Jobs', icon: 'briefcase-outline' },
-    ...(canViewAllJobs()
-      ? [{ key: 'JobsTab', label: 'All Jobs', icon: 'list-outline', screen: 'AllJobsList' } as const]
-      : []),
+    ...(canViewAllJobs() ? [{ key: 'AllJobsTab', label: 'All Jobs', icon: 'list-outline' } as const] : []),
     { key: 'ScheduleTab', label: 'Schedule', icon: 'calendar-outline' },
     { key: 'TasksTab', label: 'Tasks', icon: 'checkbox-outline' },
     { key: 'MessagesTab', label: 'Messages', icon: 'chatbubble-ellipses-outline' },
@@ -240,13 +292,9 @@ function DrawerContent(props: DrawerContentComponentProps) {
             const active = current === item.key
             return (
               <Pressable
-                key={`${item.key}-${item.screen || 'default'}-${index}`}
+                key={`${item.key}-${index}`}
                 onPress={() => {
-                  if (item.screen) {
-                    props.navigation.navigate(item.key as any, { screen: item.screen, params: item.params })
-                  } else {
-                    props.navigation.navigate(item.key)
-                  }
+                  props.navigation.navigate(item.key)
                 }}
                 android_ripple={{ color: 'rgba(15,76,92,0.12)' }}
                 style={({ pressed }) => [styles.navItem, active && styles.navItemActive, pressed && styles.navPressed]}
@@ -311,10 +359,21 @@ export function RootNavigator() {
           }}
         >
           <Drawer.Screen
+            name="DashboardTab"
+            component={DashboardStackNavigator}
+            options={{ title: 'Dashboard' }}
+          />
+          <Drawer.Screen
+            name="NotificationsTab"
+            component={NotificationsStackNavigator}
+            options={{ title: 'Notifications' }}
+          />
+          <Drawer.Screen
             name="JobsTab"
             component={JobsStackNavigator}
-            options={{ title: 'Jobs' }}
+            options={{ title: 'My Jobs' }}
           />
+          <Drawer.Screen name="AllJobsTab" component={AllJobsStackNavigator} options={{ title: 'All Jobs' }} />
           <Drawer.Screen name="ScheduleTab" component={ScheduleStackNavigator} options={{ title: 'Schedule' }} />
           <Drawer.Screen name="TasksTab" component={TasksStackNavigator} options={{ title: 'Tasks' }} />
           <Drawer.Screen name="MessagesTab" component={MessagesStackNavigator} options={{ title: 'Messages' }} />

@@ -255,12 +255,14 @@ export async function POST(request: NextRequest) {
         user.tenantId,
         recipients.map((r) => r.id),
         {
-          type: 'OTHER',
+          type: 'MESSAGE_RECEIVED',
           title: 'Team Chat',
           message: `${senderName}: ${messageBody || (media.length > 0 ? 'sent an attachment' : 'new message')}`,
           linkType: 'message',
           linkId: conversation.id,
           linkUrl: `/dashboard/messages?conversationId=${conversation.id}`,
+          actorUserId: user.id,
+          action: 'message_received',
         }
       )
     }

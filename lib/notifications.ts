@@ -1,11 +1,7 @@
-/**
- * Notification Service
- * Creates notifications for key events in the system
- */
-
-import { prisma } from '@/lib/prisma'
+import crypto from 'crypto'
 import { NotificationType } from '@prisma/client'
-import { sendPushToUser, sendPushToUsers } from '@/lib/services/mobile-push'
+import { prisma } from '@/lib/prisma'
+import { sendPushToDevices } from '@/lib/services/mobile-push'
 
 interface CreateNotificationParams {
   tenantId: string
@@ -17,88 +13,159 @@ interface CreateNotificationParams {
   linkType?: string | null
   linkId?: string | null
   requiresAck?: boolean
+  actorUserId?: string | null
+  dedupeKey?: string | null
+  action?: string | null
+}
+
+function makeTraceId() {
+  return crypto.randomUUID()
+}
+
+function makeDedupeKey(params: {
+  tenantId: string
+  userId: string
+  type: NotificationType
+  entityId?: string | null
+  action?: string | null
+}) {
+  const bucket = Math.floor(Date.now() / (1000 * 30)) // 30s bucket
+  return `${params.tenantId}:${params.userId}:${params.type}:${params.entityId || 'none'}:${params.action || 'update'}:${bucket}`
 }
 
 function buildMobileDeepLink(linkType?: string | null, linkId?: string | null): string | undefined {
   if (!linkType || !linkId) return undefined
-  if (linkType === 'job') return `trimprofield://jobs/${linkId}`
-  if (linkType === 'task') return `trimprofield://tasks/${linkId}`
-  if (linkType === 'issue') return `trimprofield://issues/${linkId}`
-  if (linkType === 'message' || linkType === 'conversation') return `trimprofield://messages/${linkId}`
+  if (linkType === 'job') return `trimpro://jobs/${linkId}`
+  if (linkType === 'task') return `trimpro://tasks/${linkId}`
+  if (linkType === 'issue') return `trimpro://issues/${linkId}`
+  if (linkType === 'message' || linkType === 'conversation') return `trimpro://messages/${linkId}`
   return undefined
 }
 
-/**
- * Create a notification for a user
- */
-export async function createNotification(params: CreateNotificationParams) {
+async function shouldCollapseByRateLimit(tenantId: string, userId: string) {
+  const oneMinuteAgo = new Date(Date.now() - 60_000)
+  const count = await prisma.notification.count({
+    where: {
+      tenantId,
+      userId,
+      createdAt: { gte: oneMinuteAgo },
+    },
+  })
+  return count >= 20
+}
+
+async function createAndSendNotification(params: CreateNotificationParams) {
+  const traceId = makeTraceId()
+  const deepLink = buildMobileDeepLink(params.linkType, params.linkId)
+  const rateLimited = await shouldCollapseByRateLimit(params.tenantId, params.userId)
+
+  const title = rateLimited ? 'You have new updates' : params.title
+  const message = rateLimited ? 'Open TrimPro to review your latest updates.' : params.message || null
+  const dedupeKey =
+    params.dedupeKey ||
+    makeDedupeKey({
+      tenantId: params.tenantId,
+      userId: params.userId,
+      type: params.type,
+      entityId: params.linkId,
+      action: params.action,
+    })
+
+  let notification = null as any
   try {
-    await prisma.notification.create({
+    notification = await prisma.notification.create({
       data: {
         tenantId: params.tenantId,
         userId: params.userId,
         type: params.type,
-        title: params.title,
-        message: params.message || null,
+        title,
+        message,
         linkUrl: params.linkUrl || null,
         linkType: params.linkType || null,
         linkId: params.linkId || null,
         requiresAck: params.requiresAck || false,
         status: 'UNREAD',
+        traceId,
+        dedupeKey,
+        data: {
+          entityType: params.linkType || null,
+          entityId: params.linkId || null,
+          action: params.action || 'update',
+          actorUserId: params.actorUserId || null,
+          deepLink,
+          timestamp: new Date().toISOString(),
+          traceId,
+        },
+        deliveryStatus: 'QUEUED',
       },
     })
+  } catch (error: any) {
+    if (error?.code === 'P2002') {
+      return null
+    }
+    throw error
+  }
 
-    await sendPushToUser(params.userId, {
-      title: params.title,
-      body: params.message || undefined,
+  const pushResult = await sendPushToDevices({
+    traceId,
+    tenantId: params.tenantId,
+    recipientUserId: params.userId,
+    payload: {
+      title,
+      body: message || undefined,
       data: {
+        notificationId: notification.id,
         linkType: params.linkType || undefined,
         linkId: params.linkId || undefined,
-        url: buildMobileDeepLink(params.linkType, params.linkId),
+        deepLink,
+        traceId,
       },
-    })
+    },
+  })
+
+  await prisma.notification.update({
+    where: { id: notification.id },
+    data: {
+      deliveryStatus: pushResult.failed > 0 && pushResult.sent === 0 ? 'FAILED' : 'SENT',
+      sentAt: new Date(),
+      failureReason:
+        pushResult.failed > 0
+          ? `tickets_failed=${pushResult.failed};receipts_failed=${pushResult.receiptErrors.length}`
+          : null,
+    },
+  })
+  return notification
+}
+
+export async function createNotification(params: CreateNotificationParams) {
+  try {
+    await createAndSendNotification(params)
   } catch (error) {
     console.error('Failed to create notification:', error)
-    // Don't throw - notifications are non-critical
   }
 }
 
-/**
- * Create notifications for multiple users
- */
 export async function createNotificationsForUsers(
   tenantId: string,
   userIds: string[],
   params: Omit<CreateNotificationParams, 'tenantId' | 'userId'>
 ) {
-  try {
-    await prisma.notification.createMany({
-      data: userIds.map((userId) => ({
-        tenantId,
-        userId,
-        type: params.type,
-        title: params.title,
-        message: params.message || null,
-        linkUrl: params.linkUrl || null,
-        linkType: params.linkType || null,
-        linkId: params.linkId || null,
-        requiresAck: params.requiresAck || false,
-        status: 'UNREAD',
-      })),
+  const recipients = Array.from(new Set(userIds.filter(Boolean)))
+  for (const userId of recipients) {
+    await createNotification({
+      tenantId,
+      userId,
+      ...params,
+      dedupeKey:
+        params.dedupeKey ||
+        makeDedupeKey({
+          tenantId,
+          userId,
+          type: params.type,
+          entityId: params.linkId,
+          action: params.action,
+        }),
     })
-
-    await sendPushToUsers(userIds, {
-      title: params.title,
-      body: params.message || undefined,
-      data: {
-        linkType: params.linkType || undefined,
-        linkId: params.linkId || undefined,
-        url: buildMobileDeepLink(params.linkType, params.linkId),
-      },
-    })
-  } catch (error) {
-    console.error('Failed to create notifications:', error)
-    // Don't throw - notifications are non-critical
   }
 }
 
@@ -111,6 +178,8 @@ export async function notifyDispatchJobActivity(params: {
   title: string
   message?: string | null
   excludeUserId?: string | null
+  actorUserId?: string | null
+  action?: string | null
 }) {
   const dispatchUsers = await prisma.user.findMany({
     where: {
@@ -128,12 +197,14 @@ export async function notifyDispatchJobActivity(params: {
     params.tenantId,
     dispatchUsers.map((u) => u.id),
     {
-      type: 'OTHER',
+      type: 'JOB_UPDATED',
       title: params.title,
       message: params.message || null,
       linkUrl: `/dashboard/dispatch?jobId=${params.jobId}`,
       linkType: 'job',
       linkId: params.jobId,
+      actorUserId: params.actorUserId || null,
+      action: params.action || 'job_updated',
     }
   )
 }
@@ -150,12 +221,13 @@ export async function notifyJobAssigned(
   await createNotification({
     tenantId,
     userId: techUserId,
-    type: 'TASK_ASSIGNED',
+    type: 'JOB_ASSIGNED',
     title: 'New Job Assigned',
     message: `You have been assigned to job: ${jobTitle}`,
     linkUrl: `/dashboard/jobs/${jobId}`,
     linkType: 'job',
     linkId: jobId,
+    action: 'job_assigned',
   })
 }
 
@@ -272,6 +344,7 @@ export async function notifyTaskAssigned(
     linkUrl: `/dashboard/tasks/${taskId}`,
     linkType: 'task',
     linkId: taskId,
+      action: 'task_assigned',
   })
 }
 
@@ -314,5 +387,6 @@ export async function notifyIssueAssigned(
     linkUrl: `/dashboard/issues/${issueId}`,
     linkType: 'issue',
     linkId: issueId,
+    action: 'issue_assigned',
   })
 }

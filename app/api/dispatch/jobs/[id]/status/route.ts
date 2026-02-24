@@ -115,6 +115,8 @@ export async function POST(
       jobId: job.id,
       title: `Status updated: ${job.jobNumber}`,
       message: `${job.status} -> ${status}`,
+      actorUserId: user.id,
+      action: 'status_changed',
     })
 
     // Notify assigned users about status change
@@ -126,12 +128,14 @@ export async function POST(
 
     if (assignedUserIds.length > 0) {
       await createNotificationsForUsers(user.tenantId, assignedUserIds, {
-        type: 'OTHER',
+        type: 'JOB_UPDATED',
         title: `Job Status Updated`,
         message: `${job.jobNumber || job.title}: ${job.status} → ${status}`,
         linkType: 'job',
         linkId: job.id,
         linkUrl: `/dashboard/jobs/${job.id}`,
+        actorUserId: user.id,
+        action: 'status_changed',
       })
     }
 

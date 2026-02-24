@@ -3,6 +3,7 @@ import { ActivityIndicator, View } from 'react-native'
 import { apiRequest, setUnauthorizedHandler } from '../api/client'
 import { clearAuth, getAccessToken, getStoredUser, saveAuth } from './secure-storage'
 import { AuthUser } from '../types/models'
+import { unregisterPushToken } from '../notifications/registerPush'
 
 interface AuthContextValue {
   user: AuthUser | null
@@ -29,6 +30,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [mobilePermissions, setMobilePermissions] = useState<string[]>([])
 
   const signOut = useCallback(async () => {
+    await unregisterPushToken().catch(() => null)
     setUser(null)
     setToken(null)
     await clearAuth()

@@ -2,7 +2,7 @@
   "expo": {
     "name": "TrimPro Field",
     "slug": "trimpro-field",
-    "scheme": "trimprofield",
+    "scheme": ["trimprofield", "trimpro"],
     "version": "1.0.0",
     "runtimeVersion": {
       "policy": "appVersion"
@@ -23,6 +23,7 @@
       "backgroundColor": "#2E4A59"
     },
     "ios": {
+      "bundleIdentifier": "com.trimpro.field",
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "TrimPro Field uses camera to capture job photos and videos.",
@@ -33,6 +34,10 @@
     },
     "android": {
       "package": "com.trimpro.field",
+      "notification": {
+        "icon": "./assets/adaptive-icon.png",
+        "color": "#0F4C5C"
+      },
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#2E4A59"
@@ -49,9 +54,6 @@
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE"
       ]
-    },
-    "web": {
-      "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-secure-store",

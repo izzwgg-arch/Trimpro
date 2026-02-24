@@ -1,12 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
-import { prisma } from '@/lib/prisma'
-
-type MobilePushTokenRecord = {
-  token: string
-  platform?: string
-  updatedAt: string
-}
+import { registerUserPushDevice, unregisterUserPushDevice } from '@/lib/services/mobile-push'
 
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -16,50 +10,55 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const token = String(body?.token || '').trim()
+    const token = String(body?.token || body?.expoPushToken || '').trim()
     const platform = String(body?.platform || '').trim()
+    const deviceId = body?.deviceId ? String(body.deviceId) : null
+    const appVersion = body?.appVersion ? String(body.appVersion) : null
+    const buildNumber = body?.buildNumber ? String(body.buildNumber) : null
+    const locale = body?.locale ? String(body.locale) : null
+    const timezone = body?.timezone ? String(body.timezone) : null
 
     if (!token) {
       return NextResponse.json({ error: 'token is required' }, { status: 400 })
     }
 
-    const existingUser = await prisma.user.findFirst({
-      where: { id: user.id, tenantId: user.tenantId },
-      select: { permissions: true },
+    await registerUserPushDevice({
+      tenantId: user.tenantId,
+      userId: user.id,
+      expoPushToken: token,
+      platform: platform || 'unknown',
+      deviceId,
+      appVersion,
+      buildNumber,
+      locale,
+      timezone,
     })
 
-    if (!existingUser) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
-
-    const currentPermissions =
-      typeof existingUser.permissions === 'object' && existingUser.permissions
-        ? (existingUser.permissions as Record<string, any>)
-        : {}
-
-    const currentTokens: MobilePushTokenRecord[] = Array.isArray(currentPermissions.mobilePushTokens)
-      ? currentPermissions.mobilePushTokens
-      : []
-
-    const filtered = currentTokens.filter((item) => item?.token && item.token !== token)
-    const updated: MobilePushTokenRecord[] = [
-      { token, platform: platform || undefined, updatedAt: new Date().toISOString() },
-      ...filtered,
-    ].slice(0, 10)
-
-    const permissions = {
-      ...currentPermissions,
-      mobilePushTokens: updated,
-    }
-
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { permissions },
-    })
-
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true, tokenRegistered: true })
   } catch (error) {
     console.error('Mobile push token registration error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  const authError = await authenticateRequest(request)
+  if (authError) return authError
+  const user = getAuthUser(request)
+
+  try {
+    const body = await request.json().catch(() => ({}))
+    const token = body?.token ? String(body.token) : null
+    const deviceId = body?.deviceId ? String(body.deviceId) : null
+    await unregisterUserPushDevice({
+      tenantId: user.tenantId,
+      userId: user.id,
+      expoPushToken: token,
+      deviceId,
+    })
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Mobile push token unregister error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

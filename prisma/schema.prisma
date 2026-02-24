@@ -69,6 +69,7 @@ model Tenant {
   invoicePaymentIntents  InvoicePaymentIntent[]
   paymentEvents          PaymentEvent[]
   idempotencyKeys        IdempotencyKey[]
+  pushDevices            UserPushDevice[]
   estimateApprovalTokens EstimateApprovalToken[]
   estimateItemApprovals  EstimateItemApproval[]
   invoiceLineItemSources InvoiceLineItemSource[]
@@ -151,6 +152,7 @@ model User {
   assignedConversations        Conversation[]
   conversationReadReceipts     ConversationReadReceipt[]
   createdInvoicePaymentIntents InvoicePaymentIntent[]    @relation("InvoicePaymentIntentCreatedBy")
+  pushDevices                  UserPushDevice[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1894,9 +1896,15 @@ enum NotificationType {
   PAYMENT_RECEIVED
   INCOMING_CALL
   INCOMING_SMS
+  JOB_ASSIGNED
+  JOB_UPDATED
   TASK_ASSIGNED
+  TASK_UPDATED
   TASK_OVERDUE
   ISSUE_ASSIGNED
+  ISSUE_UPDATED
+  JOB_MEDIA_ADDED
+  MESSAGE_RECEIVED
   INVOICE_OVERDUE
   SCHEDULE_REMINDER
   SYSTEM
@@ -1907,6 +1915,38 @@ enum NotificationStatus {
   UNREAD
   READ
   DISMISSED
+}
+
+enum NotificationDeliveryStatus {
+  QUEUED
+  SENT
+  FAILED
+  SKIPPED
+}
+
+model UserPushDevice {
+  id            String   @id @default(cuid())
+  tenantId      String
+  userId        String
+  expoPushToken String   @unique
+  platform      String
+  deviceId      String?
+  appVersion    String?
+  buildNumber   String?
+  locale        String?
+  timezone      String?
+  disabledAt    DateTime?
+  lastSeenAt    DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId])
+  @@index([tenantId, disabledAt])
+  @@index([userId])
+  @@map("user_push_devices")
 }
 
 model Notification {
@@ -1922,6 +1962,12 @@ model Notification {
   linkUrl  String?
   linkType String? // invoice, job, task, etc.
   linkId   String?
+  data     Json?
+  traceId  String?
+  dedupeKey String? @unique
+  deliveryStatus NotificationDeliveryStatus @default(QUEUED)
+  sentAt DateTime?
+  failureReason String? @db.Text
 
   // Forced acknowledgment (e.g., payment received)
   requiresAck    Boolean   @default(false)
@@ -1937,7 +1983,10 @@ model Notification {
 
   @@index([tenantId, userId])
   @@index([tenantId, userId, status])
+  @@index([tenantId, userId, deliveryStatus])
   @@index([createdAt])
+  @@index([traceId])
+  @@index([dedupeKey])
   @@map("notifications")
 }
 
