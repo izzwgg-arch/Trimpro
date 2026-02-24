@@ -26,6 +26,13 @@ interface TaskDetail {
   attachments: Array<{ id: string; filename: string | null; url: string; type: string; createdAt: string }>
 }
 
+interface TaskNote {
+  id: string
+  content: string
+  createdAt: string
+  authorName?: string
+}
+
 const statusBadge: Record<string, string> = {
   TODO: 'bg-gray-100 text-gray-800',
   IN_PROGRESS: 'bg-blue-100 text-blue-800',
@@ -44,6 +51,7 @@ export default function TaskDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [updating, setUpdating] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [notes, setNotes] = useState<TaskNote[]>([])
   const [noteText, setNoteText] = useState('')
   const [addingNote, setAddingNote] = useState(false)
 
@@ -94,12 +102,28 @@ export default function TaskDetailPage() {
       const data = await response.json()
       setTask(data.task)
       setError(null)
+      await fetchTaskNotes()
     } catch (e) {
       console.error('Failed to fetch task:', e)
       setError('Failed to load task. Please try again.')
       setTask(null)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchTaskNotes = async () => {
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) return
+      const response = await fetch(`/api/tasks/${taskId}/notes`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!response.ok) return
+      const data = await response.json()
+      setNotes(Array.isArray(data.notes) ? data.notes : [])
+    } catch (e) {
+      console.error('Failed to fetch task notes:', e)
     }
   }
 
@@ -186,11 +210,10 @@ export default function TaskDetailPage() {
         return
       }
 
-      const nextDescription = [task.description || '', noteText.trim()].filter(Boolean).join('\n\n')
-      const response = await fetch(`/api/tasks/${task.id}`, {
-        method: 'PUT',
+      const response = await fetch(`/api/tasks/${task.id}/notes`, {
+        method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ description: nextDescription }),
+        body: JSON.stringify({ content: noteText.trim() }),
       })
 
       if (response.status === 401) {
@@ -203,9 +226,8 @@ export default function TaskDetailPage() {
         return
       }
 
-      const data = await response.json()
-      setTask(data.task)
       setNoteText('')
+      await fetchTaskNotes()
     } catch (e) {
       console.error('Failed to append task note:', e)
       alert('Failed to append note. Please try again.')
@@ -312,9 +334,23 @@ export default function TaskDetailPage() {
               />
               <div className="flex justify-end">
                 <Button onClick={() => void appendTaskNote()} disabled={addingNote || !noteText.trim()}>
-                  {addingNote ? 'Saving...' : 'Append Note'}
+                  {addingNote ? 'Saving...' : 'Add Note'}
                 </Button>
               </div>
+              {notes.length > 0 ? (
+                <div className="space-y-3 pt-2">
+                  {notes.map((note) => (
+                    <div key={note.id} className="rounded-md border border-gray-200 p-3">
+                      <p className="text-sm text-gray-700 whitespace-pre-wrap">{note.content}</p>
+                      <p className="mt-2 text-xs text-gray-500">
+                        {note.authorName || 'User'} • {formatDate(note.createdAt)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500">No notes yet.</p>
+              )}
             </CardContent>
           </Card>
 
