@@ -22,6 +22,7 @@ import {
   Building2,
   Trash2,
   Copy,
+  Clock,
 } from 'lucide-react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
@@ -49,6 +50,11 @@ interface JobDetail {
   actualAmount: string | null
   laborCost: string | null
   materialCost: string | null
+  chargeByHour: boolean
+  hourlyRateCents: number | null
+  billableMinutesTotal: number
+  billableHours: number
+  billableAmountCents: number
   client: {
     id: string
     name: string
@@ -119,10 +125,47 @@ interface JobDetail {
       lastName: string
     }
   }>
+  activeTimers: Array<{
+    id: string
+    startedAt: string | null
+    createdAt: string
+    worker: {
+      id: string
+      firstName: string
+      lastName: string
+      email: string
+    }
+  }>
   _count: {
     tasks: number
     issues: number
     invoices: number
+  }
+}
+
+interface TimeEntryRow {
+  id: string
+  workerId: string
+  startedAt: string | null
+  endedAt: string | null
+  durationMinutes: number
+  source: 'TIMER' | 'MANUAL'
+  status: 'ACTIVE' | 'STOPPED'
+  note: string | null
+  editedReason: string | null
+  createdAt: string
+  updatedAt: string
+  worker: {
+    id: string
+    firstName: string
+    lastName: string
+    email: string
+  }
+  updatedBy: {
+    id: string
+    firstName: string
+    lastName: string
+    email: string
   }
 }
 
@@ -160,14 +203,34 @@ export default function JobDetailPage() {
   const [selectedCrewId, setSelectedCrewId] = useState('')
   const [loadingCrew, setLoadingCrew] = useState(false)
   const [assigningCrew, setAssigningCrew] = useState(false)
+  const [timeEntries, setTimeEntries] = useState<TimeEntryRow[]>([])
+  const [loadingTimeEntries, setLoadingTimeEntries] = useState(false)
+  const [billingSaving, setBillingSaving] = useState(false)
+  const [chargeByHour, setChargeByHour] = useState(false)
+  const [hourlyRate, setHourlyRate] = useState('')
+  const [currentUserRole, setCurrentUserRole] = useState<string>('')
 
   useEffect(() => {
     fetchJob()
   }, [jobId])
 
   useEffect(() => {
+    const token = localStorage.getItem('accessToken')
+    if (!token) return
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]))
+      setCurrentUserRole(String(payload?.role || ''))
+    } catch {
+      setCurrentUserRole('')
+    }
+  }, [])
+
+  useEffect(() => {
     if (job) {
       loadAvailableCrew()
+      setChargeByHour(Boolean(job.chargeByHour))
+      setHourlyRate(job.hourlyRateCents ? (job.hourlyRateCents / 100).toFixed(2) : '')
+      fetchTimeEntries()
     }
   }, [job])
 
@@ -209,6 +272,172 @@ export default function JobDetailPage() {
       setJob(null)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchTimeEntries = async () => {
+    setLoadingTimeEntries(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) return
+      const response = await fetch(`/api/jobs/${jobId}/time`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!response.ok) return
+      const data = await response.json()
+      setTimeEntries(Array.isArray(data.entries) ? data.entries : [])
+    } catch (error) {
+      console.error('Failed to fetch time entries:', error)
+    } finally {
+      setLoadingTimeEntries(false)
+    }
+  }
+
+  const saveBillingSettings = async () => {
+    if (!job) return
+    setBillingSaving(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) return
+      const cents = hourlyRate.trim() ? Math.round(Number(hourlyRate) * 100) : null
+      const response = await fetch(`/api/jobs/${job.id}`, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          chargeByHour,
+          hourlyRateCents: chargeByHour ? cents : null,
+        }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'Failed to save billing settings')
+        return
+      }
+      await fetchJob()
+      await fetchTimeEntries()
+    } catch (error) {
+      console.error('Failed to save billing settings:', error)
+      alert('Failed to save billing settings')
+    } finally {
+      setBillingSaving(false)
+    }
+  }
+
+  const addManualTime = async () => {
+    if (!job) return
+    const durationInput = window.prompt('Enter duration in minutes (or hh:mm):')
+    if (!durationInput) return
+    const note = window.prompt('Enter note for manual time entry:')
+    if (!note || !note.trim()) {
+      alert('Note is required for manual entries')
+      return
+    }
+    const parts = durationInput.trim().split(':')
+    const minutes =
+      parts.length === 2 ? Number(parts[0]) * 60 + Number(parts[1]) : Number(durationInput.trim())
+    if (!Number.isFinite(minutes) || minutes <= 0) {
+      alert('Invalid duration')
+      return
+    }
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) return
+      const response = await fetch(`/api/jobs/${job.id}/time/manual`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          durationMinutes: Math.round(minutes),
+          note: note.trim(),
+        }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'Failed to add time entry')
+        return
+      }
+      await fetchJob()
+      await fetchTimeEntries()
+    } catch (error) {
+      console.error('Failed to add manual entry:', error)
+      alert('Failed to add manual entry')
+    }
+  }
+
+  const editTimeEntry = async (entry: TimeEntryRow) => {
+    const durationInput = window.prompt('Edit duration in minutes:', String(entry.durationMinutes))
+    if (!durationInput) return
+    const editedReason = window.prompt('Reason for edit (required):')
+    if (!editedReason || !editedReason.trim()) {
+      alert('Edit reason is required')
+      return
+    }
+    const minutes = Number(durationInput)
+    if (!Number.isFinite(minutes) || minutes < 0) {
+      alert('Invalid duration')
+      return
+    }
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) return
+      const response = await fetch(`/api/time-entries/${entry.id}`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          durationMinutes: Math.round(minutes),
+          editedReason: editedReason.trim(),
+        }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'Failed to edit time entry')
+        return
+      }
+      await fetchJob()
+      await fetchTimeEntries()
+    } catch (error) {
+      console.error('Failed to edit time entry:', error)
+      alert('Failed to edit time entry')
+    }
+  }
+
+  const removeTimeEntry = async (entry: TimeEntryRow) => {
+    const editedReason = window.prompt('Reason for deleting this entry (required):')
+    if (!editedReason || !editedReason.trim()) {
+      alert('Delete reason is required')
+      return
+    }
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) return
+      const response = await fetch(`/api/time-entries/${entry.id}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          editedReason: editedReason.trim(),
+        }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'Failed to delete time entry')
+        return
+      }
+      await fetchJob()
+      await fetchTimeEntries()
+    } catch (error) {
+      console.error('Failed to delete time entry:', error)
+      alert('Failed to delete time entry')
     }
   }
 
@@ -440,7 +669,7 @@ export default function JobDetailPage() {
     return (
       <div className="text-center py-12">
         <div className="text-red-600 text-xl font-semibold mb-2">Job not found</div>
-        <p className="text-gray-600 mb-4">The job you're looking for doesn't exist or you don't have permission to view it.</p>
+        <p className="text-gray-600 mb-4">The job you&apos;re looking for doesn&apos;t exist or you don&apos;t have permission to view it.</p>
         <Button variant="outline" onClick={() => router.push('/dashboard/jobs')}>
           ← Back to Jobs
         </Button>
@@ -452,6 +681,8 @@ export default function JobDetailPage() {
   const profit = job.actualAmount && job.actualAmount && job.laborCost && job.materialCost
     ? parseFloat(job.actualAmount) - parseFloat(job.laborCost) - parseFloat(job.materialCost)
     : null
+  const canManageTimeEntries = ['ADMIN', 'MANAGER'].includes(currentUserRole)
+  const formatMinutes = (minutes: number) => `${Math.floor(minutes / 60)}h ${minutes % 60}m`
 
   return (
     <div className="space-y-6">
@@ -672,6 +903,134 @@ export default function JobDetailPage() {
                       </div>
                     )}
                   </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Clock className="h-4 w-4" />
+                Billing
+              </CardTitle>
+              <CardDescription>Configure hourly billing and review tracked time</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Charge by hour</p>
+                  <p className="text-xs text-gray-500">Toggle hourly tracking for this job.</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={chargeByHour}
+                  onChange={(e) => setChargeByHour(e.target.checked)}
+                  disabled={!canManageTimeEntries}
+                />
+              </div>
+              {chargeByHour && (
+                <div>
+                  <label className="text-sm font-medium">Hourly rate (USD)</label>
+                  <input
+                    className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={hourlyRate}
+                    onChange={(e) => setHourlyRate(e.target.value)}
+                    disabled={!canManageTimeEntries}
+                  />
+                </div>
+              )}
+              <div className="grid grid-cols-3 gap-3 rounded border p-3">
+                <div>
+                  <p className="text-xs text-gray-500">Total tracked time</p>
+                  <p className="text-sm font-semibold">{formatMinutes(job.billableMinutesTotal || 0)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Billable hours</p>
+                  <p className="text-sm font-semibold">{Number(job.billableHours || 0).toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Billable amount</p>
+                  <p className="text-sm font-semibold">{formatCurrency((job.billableAmountCents || 0) / 100)}</p>
+                </div>
+              </div>
+              {canManageTimeEntries && (
+                <div className="flex gap-2">
+                  <Button onClick={saveBillingSettings} disabled={billingSaving}>
+                    {billingSaving ? 'Saving...' : 'Save Billing'}
+                  </Button>
+                  <Button variant="outline" onClick={addManualTime}>
+                    Add Manual Time
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Time Entries</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {loadingTimeEntries ? (
+                <p className="text-sm text-gray-500">Loading time entries...</p>
+              ) : timeEntries.length === 0 ? (
+                <p className="text-sm text-gray-500">No time entries yet.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-left">
+                        <th className="py-2 pr-3">Date</th>
+                        <th className="py-2 pr-3">Worker</th>
+                        <th className="py-2 pr-3">Start</th>
+                        <th className="py-2 pr-3">End</th>
+                        <th className="py-2 pr-3">Duration</th>
+                        <th className="py-2 pr-3">Source</th>
+                        <th className="py-2 pr-3">Notes</th>
+                        <th className="py-2 pr-3">Edited By</th>
+                        <th className="py-2 pr-3">Edited At</th>
+                        {canManageTimeEntries && <th className="py-2 pr-3">Actions</th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {timeEntries.map((entry) => (
+                        <tr key={entry.id} className="border-b align-top">
+                          <td className="py-2 pr-3">{formatDate(entry.createdAt)}</td>
+                          <td className="py-2 pr-3">{entry.worker.firstName} {entry.worker.lastName}</td>
+                          <td className="py-2 pr-3">{entry.startedAt ? formatDateTime(entry.startedAt) : '-'}</td>
+                          <td className="py-2 pr-3">{entry.endedAt ? formatDateTime(entry.endedAt) : 'Active'}</td>
+                          <td className="py-2 pr-3">{formatMinutes(entry.durationMinutes)}</td>
+                          <td className="py-2 pr-3">{entry.source}</td>
+                          <td className="py-2 pr-3">{entry.note || '-'}</td>
+                          <td className="py-2 pr-3">
+                            {entry.updatedBy ? `${entry.updatedBy.firstName} ${entry.updatedBy.lastName}` : '-'}
+                          </td>
+                          <td className="py-2 pr-3">{formatDateTime(entry.updatedAt)}</td>
+                          {canManageTimeEntries && (
+                            <td className="py-2 pr-3">
+                              <div className="flex gap-2">
+                                <Button size="sm" variant="outline" onClick={() => editTimeEntry(entry)}>
+                                  Edit
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => removeTimeEntry(entry)}>
+                                  Delete
+                                </Button>
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {job.activeTimers?.length > 0 && (
+                <div className="mt-3 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+                  Active timer: {job.activeTimers.map((t) => `${t.worker.firstName} ${t.worker.lastName}`).join(', ')}
                 </div>
               )}
             </CardContent>

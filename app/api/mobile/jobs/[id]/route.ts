@@ -74,6 +74,36 @@ export async function GET(
       return NextResponse.json({ error: 'Job not found' }, { status: 404 })
     }
 
+    const activeSession = await prisma.timeEntry.findFirst({
+      where: {
+        tenantId: user.tenantId,
+        jobId: job.id,
+        workerId: user.id,
+        status: 'ACTIVE',
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        startedAt: true,
+        createdAt: true,
+      },
+    })
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
+    const todaySummary = await prisma.timeEntry.aggregate({
+      where: {
+        tenantId: user.tenantId,
+        jobId: job.id,
+        workerId: user.id,
+        status: 'STOPPED',
+        deletedAt: null,
+        createdAt: { gte: todayStart },
+      },
+      _sum: {
+        durationMinutes: true,
+      },
+    })
+
     return NextResponse.json({
       job: {
         id: job.id,
@@ -84,10 +114,20 @@ export async function GET(
         priority: job.priority,
         scheduledStart: job.scheduledStart?.toISOString() || null,
         scheduledEnd: job.scheduledEnd?.toISOString() || null,
+        chargeByHour: job.chargeByHour,
+        hourlyRateCents: job.hourlyRateCents,
+        billableMinutesTotal: job.billableMinutesTotal,
         createdAt: job.createdAt.toISOString(),
         client: job.client,
         address: job.addresses[0] || null,
         assignedTo: job.assignments[0]?.user || null,
+        currentUserActiveSession: activeSession
+          ? {
+              id: activeSession.id,
+              startedAt: activeSession.startedAt?.toISOString() || activeSession.createdAt.toISOString(),
+            }
+          : null,
+        currentUserTodayMinutes: Number(todaySummary._sum.durationMinutes || 0),
       },
     })
   } catch (error) {

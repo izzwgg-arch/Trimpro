@@ -54,6 +54,9 @@ export async function GET(request: NextRequest) {
         priority: true,
         scheduledStart: true,
         scheduledEnd: true,
+        chargeByHour: true,
+        hourlyRateCents: true,
+        billableMinutesTotal: true,
         createdAt: true,
         client: {
           select: {
@@ -82,6 +85,46 @@ export async function GET(request: NextRequest) {
 
     const total = await prisma.job.count({ where })
 
+    const jobIds = jobs.map((j) => j.id)
+    const activeByJob = jobIds.length
+      ? await prisma.timeEntry.findMany({
+          where: {
+            tenantId: user.tenantId,
+            workerId: user.id,
+            jobId: { in: jobIds },
+            status: 'ACTIVE',
+            deletedAt: null,
+          },
+          select: {
+            id: true,
+            jobId: true,
+            startedAt: true,
+            createdAt: true,
+          },
+        })
+      : []
+
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
+    const todayTotals = jobIds.length
+      ? await prisma.timeEntry.groupBy({
+          by: ['jobId'],
+          where: {
+            tenantId: user.tenantId,
+            workerId: user.id,
+            jobId: { in: jobIds },
+            deletedAt: null,
+            status: 'STOPPED',
+            createdAt: { gte: todayStart },
+          },
+          _sum: {
+            durationMinutes: true,
+          },
+        })
+      : []
+    const activeMap = new Map(activeByJob.map((row) => [row.jobId, row]))
+    const todayMap = new Map(todayTotals.map((row) => [row.jobId, Number(row._sum.durationMinutes || 0)]))
+
     return NextResponse.json({
       jobs: jobs.map((job) => ({
         id: job.id,
@@ -91,9 +134,19 @@ export async function GET(request: NextRequest) {
         priority: job.priority,
         scheduledStart: job.scheduledStart?.toISOString() || null,
         scheduledEnd: job.scheduledEnd?.toISOString() || null,
+        chargeByHour: job.chargeByHour,
+        hourlyRateCents: job.hourlyRateCents,
+        billableMinutesTotal: job.billableMinutesTotal,
         createdAt: job.createdAt.toISOString(),
         client: job.client,
         address: job.addresses[0] || null,
+        currentUserActiveSession: activeMap.get(job.id)
+          ? {
+              id: activeMap.get(job.id)!.id,
+              startedAt: activeMap.get(job.id)!.startedAt?.toISOString() || activeMap.get(job.id)!.createdAt.toISOString(),
+            }
+          : null,
+        currentUserTodayMinutes: todayMap.get(job.id) || 0,
       })),
       pagination: createPaginationResponse(total, limit, offset),
     })

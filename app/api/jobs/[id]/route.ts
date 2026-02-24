@@ -3,7 +3,8 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { formatAddressParts, parseAddressParts } from '@/lib/address/parse'
 import { geocodeAddressPartsFromString } from '@/lib/geocoding'
-import { isMobileRequest, requireMobilePermission, hasMobilePermission } from '@/lib/authorization'
+import { isMobileRequest, requireMobilePermission, hasMobilePermission, hasPermission } from '@/lib/authorization'
+import { getJobTimeSummary } from '@/lib/time-tracking'
 
 export async function GET(
   request: NextRequest,
@@ -128,6 +129,22 @@ export async function GET(
       return NextResponse.json({ error: 'Job not found' }, { status: 404 })
     }
 
+    const summary = await getJobTimeSummary(user.tenantId, job.id, job.hourlyRateCents ?? null)
+    const activeTimers = await prisma.timeEntry.findMany({
+      where: {
+        tenantId: user.tenantId,
+        jobId: job.id,
+        status: 'ACTIVE',
+        deletedAt: null,
+      },
+      include: {
+        worker: {
+          select: { id: true, firstName: true, lastName: true, email: true },
+        },
+      },
+      orderBy: { startedAt: 'asc' },
+    })
+
     // Find job site address
     const addresses = job.addresses || []
     const jobSite = addresses.find(addr => addr.type === 'job_site') || null
@@ -181,6 +198,12 @@ export async function GET(
       actualAmount: job.actualAmount ? job.actualAmount.toString() : null,
       laborCost: job.laborCost ? job.laborCost.toString() : null,
       materialCost: job.materialCost ? job.materialCost.toString() : null,
+      chargeByHour: job.chargeByHour,
+      hourlyRateCents: job.hourlyRateCents,
+      billableMinutesTotal: summary.totalMinutes,
+      billableHours: summary.billableHours,
+      billableAmountCents: summary.billableAmountCents,
+      activeTimers,
       invoices: safeJob.invoices.map(inv => ({
         id: inv.id,
         invoiceNumber: inv.invoiceNumber,
@@ -222,6 +245,8 @@ export async function PUT(
       actualAmount,
       laborCost,
       materialCost,
+      chargeByHour,
+      hourlyRateCents,
       jobSite,
     } = body
 
@@ -257,6 +282,15 @@ export async function PUT(
 
     // Track status change for activity
     const statusChanged = status && status !== existing.status
+    const hasHourlyBillingPermission =
+      user.role === 'ADMIN' || (await hasPermission(user.id, user.tenantId, 'web.jobs.set_hourly_billing'))
+    const wantsBillingUpdate = chargeByHour !== undefined || hourlyRateCents !== undefined
+    if (wantsBillingUpdate && !hasHourlyBillingPermission) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+    if (hourlyRateCents !== undefined && hourlyRateCents !== null && hourlyRateCents !== '' && Number(hourlyRateCents) < 0) {
+      return NextResponse.json({ error: 'Hourly rate cannot be negative' }, { status: 400 })
+    }
 
     // Update job
     const job = await prisma.job.update({
@@ -274,6 +308,11 @@ export async function PUT(
         actualAmount: actualAmount !== undefined ? parseFloat(actualAmount) : existing.actualAmount,
         laborCost: laborCost !== undefined ? parseFloat(laborCost) : existing.laborCost,
         materialCost: materialCost !== undefined ? parseFloat(materialCost) : existing.materialCost,
+        chargeByHour: chargeByHour !== undefined ? Boolean(chargeByHour) : existing.chargeByHour,
+        hourlyRateCents:
+          hourlyRateCents !== undefined
+            ? (hourlyRateCents === null || hourlyRateCents === '' ? null : Number(hourlyRateCents))
+            : existing.hourlyRateCents,
       },
     })
 
@@ -338,10 +377,14 @@ export async function PUT(
           before: {
             status: existing.status,
             title: existing.title,
+            chargeByHour: existing.chargeByHour,
+            hourlyRateCents: existing.hourlyRateCents,
           },
           after: {
             status: job.status,
             title: job.title,
+            chargeByHour: job.chargeByHour,
+            hourlyRateCents: job.hourlyRateCents,
           },
         },
       },

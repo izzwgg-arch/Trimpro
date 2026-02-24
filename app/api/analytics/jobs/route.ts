@@ -87,6 +87,23 @@ export async function GET(request: NextRequest) {
 
     const reworkRate = totalJobs > 0 ? (jobsWithIssues / totalJobs) * 100 : 0
 
+    const hourlyJobs = await prisma.job.findMany({
+      where: {
+        tenantId: user.tenantId,
+        chargeByHour: true,
+      },
+      select: {
+        billableMinutesTotal: true,
+        hourlyRateCents: true,
+      },
+    })
+    const billableMinutes = hourlyJobs.reduce((sum, job) => sum + Number(job.billableMinutesTotal || 0), 0)
+    const billableAmountCents = hourlyJobs.reduce((sum, job) => {
+      const rate = Number(job.hourlyRateCents || 0)
+      if (rate <= 0) return sum
+      return sum + Math.round((Number(job.billableMinutesTotal || 0) / 60) * rate)
+    }, 0)
+
     // Time series data for charts (group by day)
     const dailyJobs = await prisma.$queryRaw<Array<{ date: Date; count: bigint; status: string }>>`
       SELECT 
@@ -121,6 +138,10 @@ export async function GET(request: NextRequest) {
           distribution: completionTimes,
         },
         reworkRate: Math.round(reworkRate * 100) / 100,
+        hourlyBilling: {
+          totalBillableHours: Number((billableMinutes / 60).toFixed(2)),
+          totalBillableAmount: billableAmountCents / 100,
+        },
         dailyTimeSeries: dailyJobs.map((d) => ({
           date: d.date.toISOString().split('T')[0],
           status: d.status,

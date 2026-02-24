@@ -7,6 +7,13 @@ const OUTBOX_KEY = 'trimpro.mobile.outbox'
 export type OutboxAction =
   | { id: string; type: 'job-status'; payload: { jobId: string; status: string; notes?: string } }
   | { id: string; type: 'job-note'; payload: { jobId: string; content: string } }
+  | { id: string; type: 'time-start'; payload: { jobId: string; startedAt?: string; note?: string } }
+  | { id: string; type: 'time-stop'; payload: { jobId: string; endedAt?: string; note?: string } }
+  | {
+      id: string
+      type: 'time-manual'
+      payload: { jobId: string; durationMinutes: number; note?: string; startedAt?: string; endedAt?: string }
+    }
   | { id: string; type: 'task-status'; payload: { taskId: string; status: string } }
   | { id: string; type: 'issue-status'; payload: { issueId: string; status: string } }
   | {
@@ -161,6 +168,47 @@ export async function flushOutbox(token: string) {
           body: JSON.stringify({ content: action.payload.content }),
         })
         if (!response.ok) throw new Error('Job note sync failed')
+      } else if (action.type === 'time-start') {
+        const response = await fetch(`${API_BASE_URL}/api/jobs/${action.payload.jobId}/time/start`, {
+          method: 'POST',
+          headers: {
+            ...(await authorizedHeaders(token)),
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            startedAt: action.payload.startedAt || undefined,
+            note: action.payload.note || undefined,
+          }),
+        })
+        if (!response.ok) throw new Error('Time start sync failed')
+      } else if (action.type === 'time-stop') {
+        const response = await fetch(`${API_BASE_URL}/api/jobs/${action.payload.jobId}/time/stop`, {
+          method: 'POST',
+          headers: {
+            ...(await authorizedHeaders(token)),
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            endedAt: action.payload.endedAt || undefined,
+            note: action.payload.note || undefined,
+          }),
+        })
+        if (!response.ok) throw new Error('Time stop sync failed')
+      } else if (action.type === 'time-manual') {
+        const response = await fetch(`${API_BASE_URL}/api/jobs/${action.payload.jobId}/time/manual`, {
+          method: 'POST',
+          headers: {
+            ...(await authorizedHeaders(token)),
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            durationMinutes: action.payload.durationMinutes,
+            note: action.payload.note || undefined,
+            startedAt: action.payload.startedAt || undefined,
+            endedAt: action.payload.endedAt || undefined,
+          }),
+        })
+        if (!response.ok) throw new Error('Manual time sync failed')
       } else if (action.type === 'task-status') {
         const response = await fetch(`${API_BASE_URL}/api/tasks/${action.payload.taskId}`, {
           method: 'PUT',

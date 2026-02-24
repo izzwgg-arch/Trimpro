@@ -127,6 +127,23 @@ export async function GET(request: NextRequest) {
       },
     })
 
+    const hourlyJobs = await prisma.job.findMany({
+      where: {
+        tenantId: user.tenantId,
+        chargeByHour: true,
+      },
+      select: {
+        billableMinutesTotal: true,
+        hourlyRateCents: true,
+      },
+    })
+    const totalBillableMinutes = hourlyJobs.reduce((sum, j) => sum + Number(j.billableMinutesTotal || 0), 0)
+    const totalHourlyAmountCents = hourlyJobs.reduce((sum, j) => {
+      const cents = Number(j.hourlyRateCents || 0)
+      if (cents <= 0) return sum
+      return sum + Math.round((Number(j.billableMinutesTotal || 0) / 60) * cents)
+    }, 0)
+
     // Today's scheduled jobs
     const todaysJobs = await prisma.job.count({
       where: {
@@ -274,6 +291,8 @@ export async function GET(request: NextRequest) {
         unpaidInvoicesTotal: Number(unpaidInvoices._sum.balance || 0),
         unpaidInvoicesCount: unpaidInvoices._count.id,
         activeJobs,
+        totalBillableHours: Number((totalBillableMinutes / 60).toFixed(2)),
+        totalHourlyBilledAmount: totalHourlyAmountCents / 100,
         todaysJobs,
         overdueInvoices,
         missedCallsToday,

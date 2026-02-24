@@ -132,6 +132,18 @@ export function useMobilePermissions() {
     return hasPermission('mobile.messaging.enabled')
   }
 
+  const canTrackTime = (): boolean => {
+    return hasPermission('mobile.jobs.track_time')
+  }
+
+  const canEditOwnTimeEntries = (): boolean => {
+    return hasPermission('mobile.jobs.edit_own_time_entries')
+  }
+
+  const canEditTeamTimeEntries = (): boolean => {
+    return hasPermission('mobile.jobs.edit_team_time_entries')
+  }
+
   /**
    * Check if user has mobile app access
    */
@@ -159,6 +171,9 @@ export function useMobilePermissions() {
     canAssignIssuesToAny,
     canUploadMedia,
     canUseMessaging,
+    canTrackTime,
+    canEditOwnTimeEntries,
+    canEditTeamTimeEntries,
     hasMobileAccess,
   }
 }

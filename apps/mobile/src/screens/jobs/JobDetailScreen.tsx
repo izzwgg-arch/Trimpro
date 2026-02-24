@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, Platform } from 'react-native'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -7,7 +7,7 @@ import * as Location from 'expo-location'
 import * as FileSystem from 'expo-file-system/legacy'
 import { Screen } from '../../components/Screen'
 import { apiRequest } from '../../api/client'
-import { Attachment, Job } from '../../types/models'
+import { Attachment, Job, TimeEntry } from '../../types/models'
 import { StatusChip } from '../../components/StatusChip'
 import { API_BASE_URL, BRAND } from '../../config/env'
 import { JobsStackParamList } from '../../types/navigation'
@@ -35,15 +35,42 @@ interface AttachmentsResponse {
   attachments: Attachment[]
 }
 
+interface JobTimeResponse {
+  entries: TimeEntry[]
+  activeEntries: TimeEntry[]
+  summary: {
+    totalMinutes: number
+    billableHours: number
+    billableAmountCents: number
+  }
+  billing: {
+    chargeByHour: boolean
+    hourlyRateCents: number | null
+  }
+}
+
 export function JobDetailScreen({ route }: Props) {
-  const { token } = useAuth()
+  const { token, user } = useAuth()
   const isOnline = useOnlineState()
   const queryClient = useQueryClient()
   const jobId = route.params.jobId
   const [noteText, setNoteText] = useState('')
   const [locationSharing, setLocationSharing] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
-  const { canCompleteJobs, canUploadMedia, canCreateTasks, canCreateIssues, canAssignTasksToAdmin, canAssignIssuesToAdmin } = useMobilePermissions()
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
+  const [manualMinutes, setManualMinutes] = useState('')
+  const [manualNote, setManualNote] = useState('')
+  const [showManualEntry, setShowManualEntry] = useState(false)
+  const {
+    canCompleteJobs,
+    canUploadMedia,
+    canCreateTasks,
+    canCreateIssues,
+    canAssignTasksToAdmin,
+    canAssignIssuesToAdmin,
+    canTrackTime,
+    canEditOwnTimeEntries,
+  } = useMobilePermissions()
 
   const jobQuery = useQuery({
     queryKey: ['mobile-job', jobId],
@@ -55,6 +82,13 @@ export function JobDetailScreen({ route }: Props) {
     queryKey: ['mobile-job-attachments', jobId],
     queryFn: () => apiRequest<AttachmentsResponse>(`/api/attachments?entityType=job&entityId=${jobId}`),
     refetchInterval: 45_000,
+  })
+
+  const timeQuery = useQuery({
+    queryKey: ['job-time', jobId],
+    queryFn: () => apiRequest<JobTimeResponse>(`/api/jobs/${jobId}/time`),
+    enabled: !!jobQuery.data?.job?.chargeByHour && canTrackTime(),
+    refetchInterval: 30_000,
   })
 
   const job = jobQuery.data?.job
@@ -96,6 +130,121 @@ export function JobDetailScreen({ route }: Props) {
       await apiRequest(`/api/mobile/jobs/${jobId}/note`, 'POST', { content })
     },
     onSuccess: () => setNoteText(''),
+  })
+
+  const myActiveEntry = useMemo(
+    () => (timeQuery.data?.activeEntries || []).find((entry) => entry.workerId === user?.id) || null,
+    [timeQuery.data?.activeEntries, user?.id]
+  )
+
+  useEffect(() => {
+    if (!myActiveEntry) {
+      setElapsedSeconds(0)
+      return
+    }
+    const start = new Date(myActiveEntry.startedAt || myActiveEntry.createdAt).getTime()
+    const tick = () => {
+      const next = Math.max(0, Math.floor((Date.now() - start) / 1000))
+      setElapsedSeconds(next)
+    }
+    tick()
+    const timer = setInterval(tick, 1000)
+    return () => clearInterval(timer)
+  }, [myActiveEntry])
+
+  const startTimeMutation = useMutation({
+    mutationFn: async () => {
+      if (!job) return
+      if (!isOnline) {
+        await enqueueOutbox({
+          id: `${Date.now()}-time-start-${job.id}`,
+          type: 'time-start',
+          payload: { jobId: job.id, startedAt: new Date().toISOString() },
+        })
+        return
+      }
+      await apiRequest(`/api/jobs/${job.id}/time/start`, 'POST', {
+        startedAt: new Date().toISOString(),
+      })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['job-time', jobId] })
+      queryClient.invalidateQueries({ queryKey: ['mobile-job', jobId] })
+    },
+    onError: (error: any) => {
+      Alert.alert('Unable to start timer', error?.message || 'Try again.')
+    },
+  })
+
+  const stopTimeMutation = useMutation({
+    mutationFn: async (note?: string) => {
+      if (!job) return
+      if (!isOnline) {
+        await enqueueOutbox({
+          id: `${Date.now()}-time-stop-${job.id}`,
+          type: 'time-stop',
+          payload: { jobId: job.id, endedAt: new Date().toISOString(), note: note || undefined },
+        })
+        return
+      }
+      await apiRequest(`/api/jobs/${job.id}/time/stop`, 'POST', {
+        endedAt: new Date().toISOString(),
+        note: note || undefined,
+      })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['job-time', jobId] })
+      queryClient.invalidateQueries({ queryKey: ['mobile-job', jobId] })
+    },
+    onError: (error: any) => {
+      Alert.alert('Unable to stop timer', error?.message || 'Try again.')
+    },
+  })
+
+  const manualTimeMutation = useMutation({
+    mutationFn: async () => {
+      if (!job) return
+      const trimmed = manualMinutes.trim()
+      const parts = trimmed.split(':')
+      const minutes =
+        parts.length === 2
+          ? Math.max(0, Number(parts[0]) * 60 + Number(parts[1]))
+          : Math.max(0, Number(trimmed))
+      if (!Number.isFinite(minutes) || minutes <= 0) {
+        throw new Error('Enter minutes as mm or hh:mm')
+      }
+      if (!manualNote.trim()) {
+        throw new Error('A note is required for manual time entries')
+      }
+
+      if (!isOnline) {
+        await enqueueOutbox({
+          id: `${Date.now()}-time-manual-${job.id}`,
+          type: 'time-manual',
+          payload: {
+            jobId: job.id,
+            durationMinutes: minutes,
+            note: manualNote.trim(),
+          },
+        })
+        return
+      }
+
+      await apiRequest(`/api/jobs/${job.id}/time/manual`, 'POST', {
+        durationMinutes: minutes,
+        note: manualNote.trim(),
+      })
+    },
+    onSuccess: () => {
+      setManualMinutes('')
+      setManualNote('')
+      setShowManualEntry(false)
+      queryClient.invalidateQueries({ queryKey: ['job-time', jobId] })
+      queryClient.invalidateQueries({ queryKey: ['mobile-job', jobId] })
+    },
+    onError: (error: any) => {
+      Alert.alert('Manual time failed', error?.message || 'Try again.')
+    },
   })
 
   const onPickMedia = async (fromCamera: boolean) => {
@@ -242,10 +391,20 @@ export function JobDetailScreen({ route }: Props) {
   }
 
   const attachmentRows = useMemo(() => attachmentsQuery.data?.attachments ?? [], [attachmentsQuery.data?.attachments])
+  const formatElapsed = (seconds: number) => {
+    const h = Math.floor(seconds / 3600)
+    const m = Math.floor((seconds % 3600) / 60)
+    const s = seconds % 60
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  }
 
   return (
     <Screen>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
         {jobQuery.isError ? (
           <View style={styles.errorWrap}>
             <Text style={styles.empty}>Unable to load job details.</Text>
@@ -266,7 +425,9 @@ export function JobDetailScreen({ route }: Props) {
             {job.address?.street ? (
               <Pressable
                 onPress={() => {
-                  const address = `${job.address.street}, ${job.address.city || ''} ${job.address.state || ''} ${job.address.zipCode || ''}`.trim()
+                  const addressObj = job.address
+                  if (!addressObj) return
+                  const address = `${addressObj.street}, ${addressObj.city || ''} ${addressObj.state || ''} ${addressObj.zipCode || ''}`.trim()
                   const encodedAddress = encodeURIComponent(address)
                   
                   // Try Google Maps app first
@@ -325,6 +486,22 @@ export function JobDetailScreen({ route }: Props) {
                           Alert.alert('Permission Denied', 'You do not have permission to complete jobs.')
                           return
                         }
+                        if (status === 'COMPLETED' && myActiveEntry) {
+                          Alert.alert('Active timer', 'Stop timer and complete this job?', [
+                            { text: 'Cancel', style: 'cancel' },
+                            {
+                              text: 'Stop and Complete',
+                              onPress: async () => {
+                                try {
+                                  await stopTimeMutation.mutateAsync('Stopped automatically on completion')
+                                } finally {
+                                  statusMutation.mutate(status)
+                                }
+                              },
+                            },
+                          ])
+                          return
+                        }
                         statusMutation.mutate(status)
                       }}
                       disabled={!canChange}
@@ -338,12 +515,76 @@ export function JobDetailScreen({ route }: Props) {
               </View>
             </View>
 
+            {job.chargeByHour && canTrackTime() && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Time Tracker</Text>
+                <Text style={styles.meta}>
+                  Hourly rate: {job.hourlyRateCents ? `$${(job.hourlyRateCents / 100).toFixed(2)}/hr` : 'Not set'}
+                </Text>
+                <Text style={styles.meta}>
+                  Total tracked: {Math.floor((timeQuery.data?.summary.totalMinutes || job.billableMinutesTotal || 0) / 60)}h {(timeQuery.data?.summary.totalMinutes || job.billableMinutesTotal || 0) % 60}m
+                </Text>
+                {!!myActiveEntry && (
+                  <Text style={styles.meta}>Active timer: {formatElapsed(elapsedSeconds)}</Text>
+                )}
+
+                <View style={styles.row}>
+                  {!myActiveEntry ? (
+                    <Pressable style={styles.primaryButton} onPress={() => startTimeMutation.mutate()}>
+                      <Text style={styles.primaryButtonText}>
+                        {(timeQuery.data?.summary.totalMinutes || 0) > 0 ? 'Resume Timer' : 'Start Timer'}
+                      </Text>
+                    </Pressable>
+                  ) : (
+                    <>
+                      <Pressable style={styles.secondaryButton} onPress={() => stopTimeMutation.mutate('Paused from mobile')}>
+                        <Text style={styles.secondaryButtonText}>Pause</Text>
+                      </Pressable>
+                      <Pressable style={styles.primaryButton} onPress={() => stopTimeMutation.mutate('Stopped from mobile')}>
+                        <Text style={styles.primaryButtonText}>Stop</Text>
+                      </Pressable>
+                    </>
+                  )}
+                  {!myActiveEntry && (
+                    <Pressable style={styles.secondaryButton} onPress={() => setShowManualEntry((v) => !v)}>
+                      <Text style={styles.secondaryButtonText}>Manual Time</Text>
+                    </Pressable>
+                  )}
+                </View>
+
+                {showManualEntry && canEditOwnTimeEntries() && (
+                  <View style={styles.section}>
+                    <Text style={styles.meta}>Duration (minutes or hh:mm)</Text>
+                    <TextInput
+                      value={manualMinutes}
+                      onChangeText={setManualMinutes}
+                      placeholder="60 or 01:00"
+                      placeholderTextColor={BRAND.text}
+                      style={styles.noteInput}
+                    />
+                    <Text style={styles.meta}>Note (required)</Text>
+                    <TextInput
+                      value={manualNote}
+                      onChangeText={setManualNote}
+                      placeholder="Reason for manual entry"
+                      placeholderTextColor={BRAND.text}
+                      style={styles.noteInput}
+                    />
+                    <Pressable style={styles.primaryButton} onPress={() => manualTimeMutation.mutate()}>
+                      <Text style={styles.primaryButtonText}>Save Manual Entry</Text>
+                    </Pressable>
+                  </View>
+                )}
+              </View>
+            )}
+
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Notes</Text>
               <TextInput
                 value={noteText}
                 onChangeText={setNoteText}
                 placeholder="Add internal note..."
+                placeholderTextColor={BRAND.text}
                 multiline
                 style={styles.noteInput}
               />
@@ -482,6 +723,7 @@ const styles = StyleSheet.create({
   content: {
     padding: 14,
     gap: 10,
+    paddingBottom: 40,
   },
   empty: {
     color: BRAND.muted,
@@ -548,6 +790,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 10,
     textAlignVertical: 'top',
+    color: BRAND.text,
   },
   row: {
     flexDirection: 'row',

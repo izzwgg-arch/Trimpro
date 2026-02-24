@@ -28,6 +28,14 @@ export interface Job {
   priority: string
   scheduledStart: string | null
   scheduledEnd: string | null
+  chargeByHour?: boolean
+  hourlyRateCents?: number | null
+  billableMinutesTotal?: number
+  currentUserActiveSession?: {
+    id: string
+    startedAt: string
+  } | null
+  currentUserTodayMinutes?: number
   createdAt?: string
   client?: {
     id: string
@@ -46,6 +54,28 @@ export interface Job {
     firstName: string
     lastName: string
   } | null
+}
+
+export interface TimeEntry {
+  id: string
+  tenantId: string
+  jobId: string
+  workerId: string
+  startedAt: string | null
+  endedAt: string | null
+  durationMinutes: number
+  source: 'TIMER' | 'MANUAL'
+  status: 'ACTIVE' | 'STOPPED'
+  note: string | null
+  editedReason: string | null
+  createdAt: string
+  updatedAt: string
+  worker?: {
+    id: string
+    firstName: string
+    lastName: string
+    email: string
+  }
 }
 
 export interface Task {

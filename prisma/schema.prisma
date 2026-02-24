@@ -34,6 +34,7 @@ model Tenant {
   vendors                Vendor[]
   vendorContacts         VendorContact[]
   tasks                  Task[]
+  timeEntries            TimeEntry[]
   issues                 Issue[]
   priceBook              PriceBookItem[]
   items                  Item[]
@@ -126,6 +127,9 @@ model User {
   // Relationships
   tenant                       Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   assignedJobs                 JobAssignment[]
+  timeEntries                  TimeEntry[]               @relation("TimeEntryWorker")
+  createdTimeEntries           TimeEntry[]               @relation("TimeEntryCreatedBy")
+  updatedTimeEntries           TimeEntry[]               @relation("TimeEntryUpdatedBy")
   manager                      User?                     @relation("UserManager", fields: [managerId], references: [id], onDelete: SetNull)
   managedFieldWorkers          User[]                    @relation("UserManager")
   assignedTasks                Task[]                    @relation("TaskAssignee")
@@ -351,6 +355,16 @@ enum JobStatus {
   INVOICED
 }
 
+enum TimeEntrySource {
+  TIMER
+  MANUAL
+}
+
+enum TimeEntryStatus {
+  ACTIVE
+  STOPPED
+}
+
 model Job {
   id          String    @id @default(cuid())
   tenantId    String
@@ -366,6 +380,9 @@ model Job {
   actualAmount   Decimal? @db.Decimal(10, 2)
   laborCost      Decimal? @db.Decimal(10, 2)
   materialCost   Decimal? @db.Decimal(10, 2)
+  chargeByHour   Boolean  @default(false)
+  hourlyRateCents Int?
+  billableMinutesTotal Int @default(0)
 
   // Dates
   scheduledStart DateTime?
@@ -394,6 +411,7 @@ model Job {
   activities     Activity[]
   dispatchEvents DispatchEvent[]
   conversations  Conversation[]
+  timeEntries    TimeEntry[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -421,6 +439,38 @@ model JobAssignment {
   @@index([jobId])
   @@index([userId])
   @@map("job_assignments")
+}
+
+model TimeEntry {
+  id              String          @id @default(cuid())
+  tenantId        String
+  jobId           String
+  workerId        String
+  startedAt       DateTime?
+  endedAt         DateTime?
+  durationMinutes Int             @default(0)
+  source          TimeEntrySource @default(TIMER)
+  status          TimeEntryStatus @default(ACTIVE)
+  note            String?         @db.Text
+  editedReason    String?         @db.Text
+  deletedAt       DateTime?
+  createdById     String
+  updatedById     String
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  job        Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  worker     User   @relation("TimeEntryWorker", fields: [workerId], references: [id], onDelete: Cascade)
+  createdBy  User   @relation("TimeEntryCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy  User   @relation("TimeEntryUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, jobId])
+  @@index([tenantId, workerId])
+  @@index([jobId, createdAt])
+  @@index([tenantId, status])
+  @@index([tenantId, deletedAt])
+  @@map("time_entries")
 }
 
 // ============================================

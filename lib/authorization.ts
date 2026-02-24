@@ -412,6 +412,17 @@ export async function getUserMobilePermissions(
     }
   }
 
+  // Backward-compatible defaults for legacy role records missing newer mobile permissions.
+  if (user.role === 'FIELD') {
+    mobilePermissions.add('mobile.jobs.track_time')
+    mobilePermissions.add('mobile.jobs.edit_own_time_entries')
+  }
+  if (user.role === 'MANAGER') {
+    mobilePermissions.add('mobile.jobs.track_time')
+    mobilePermissions.add('mobile.jobs.edit_own_time_entries')
+    mobilePermissions.add('mobile.jobs.edit_team_time_entries')
+  }
+
   return Array.from(mobilePermissions)
 }
 
