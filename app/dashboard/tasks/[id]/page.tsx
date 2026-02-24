@@ -6,7 +6,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { formatDate } from '@/lib/utils'
-import { AlertCircle, Calendar, CheckSquare, Trash2, User } from 'lucide-react'
+import { AlertCircle, Calendar, CheckSquare, Pencil, Trash2, User } from 'lucide-react'
 
 interface TaskDetail {
   id: string
@@ -215,6 +215,14 @@ export default function TaskDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => router.push(`/dashboard/tasks/${task.id}/edit`)}
+            title="Edit task"
+          >
+            <Pencil className="mr-2 h-4 w-4" />
+            Edit
+          </Button>
           <Button
             variant="outline"
             disabled={updating}
