@@ -17,6 +17,9 @@ export async function DELETE(
         estimate: { select: { tenantId: true } },
         invoice: { select: { tenantId: true } },
         job: { select: { tenantId: true } },
+        task: { select: { tenantId: true } },
+        issue: { select: { tenantId: true } },
+        lead: { select: { tenantId: true } },
       },
     })
 
@@ -28,10 +31,44 @@ export async function DELETE(
       attachment.estimate?.tenantId ||
       attachment.invoice?.tenantId ||
       attachment.job?.tenantId ||
+      attachment.task?.tenantId ||
+      attachment.issue?.tenantId ||
+      attachment.lead?.tenantId ||
       null
 
     if (!tenantId || tenantId !== user.tenantId) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
+
+    if (attachment.leadId) {
+      const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown'
+      await Promise.all([
+        prisma.activity.create({
+          data: {
+            tenantId: user.tenantId,
+            userId: user.id,
+            type: 'OTHER',
+            description: `REQUEST_ATTACHMENT_REMOVED: ${attachment.fileName}`,
+            leadId: attachment.leadId,
+          },
+        }),
+        prisma.auditLog.create({
+          data: {
+            tenantId: user.tenantId,
+            userId: user.id,
+            action: 'DELETE',
+            entityType: 'RequestAttachment',
+            entityId: attachment.id,
+            ipAddress,
+            userAgent: request.headers.get('user-agent') || undefined,
+            changes: {
+              requestId: attachment.leadId,
+              fileName: attachment.fileName,
+              key: attachment.key,
+            },
+          },
+        }),
+      ])
     }
 
     await prisma.attachment.delete({ where: { id: params.id } })

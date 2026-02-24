@@ -315,6 +315,7 @@ model Lead {
   calls       Call[]
   smsMessages SmsMessage[]
   emails      Email[]
+  attachments Attachment[]
   schedules   Schedule[]
   activities  Activity[]
 
@@ -1672,6 +1673,8 @@ model Attachment {
   task            Task?          @relation(fields: [taskId], references: [id], onDelete: Cascade)
   issueId         String?
   issue           Issue?         @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  leadId          String?
+  lead            Lead?          @relation(fields: [leadId], references: [id], onDelete: Cascade)
   emailId         String?
   email           Email?         @relation(fields: [emailId], references: [id], onDelete: Cascade)
   vendorId        String?
@@ -1683,6 +1686,8 @@ model Attachment {
 
   @@index([clientId])
   @@index([jobId])
+  @@index([leadId])
+  @@index([leadId, createdAt])
   @@map("attachments")
 }
 

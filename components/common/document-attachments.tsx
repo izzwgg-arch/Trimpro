@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Paperclip, Upload, Trash2, ExternalLink } from 'lucide-react'
 import { useRef } from 'react'
 
-type EntityType = 'estimate' | 'invoice' | 'job'
+type EntityType = 'estimate' | 'invoice' | 'job' | 'request'
 
 interface Attachment {
   id: string
@@ -55,10 +55,13 @@ export function DocumentAttachments({ entityType, entityId }: Props) {
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [loading, setLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; fileName: string } | null>(null)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const load = async () => {
     setLoading(true)
+    setErrorMessage(null)
     try {
       const token = localStorage.getItem('accessToken')
       const res = await fetch(`/api/attachments?entityType=${entityType}&entityId=${entityId}`, {
@@ -67,9 +70,12 @@ export function DocumentAttachments({ entityType, entityId }: Props) {
       const data = await res.json()
       if (res.ok) {
         setAttachments(data.attachments || [])
+      } else {
+        setErrorMessage(data.error || 'Failed to load attachments')
       }
     } catch (error) {
       console.error('Failed to load attachments:', error)
+      setErrorMessage('Failed to load attachments')
     } finally {
       setLoading(false)
     }
@@ -82,13 +88,18 @@ export function DocumentAttachments({ entityType, entityId }: Props) {
   const uploadFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return
     setUploading(true)
+    setErrorMessage(null)
     try {
       const token = localStorage.getItem('accessToken')
       if (!token) {
         alert('Please sign in again and retry upload.')
         return
       }
-      for (const file of Array.from(files)) {
+      const fileList = Array.from(files)
+      const errors: string[] = []
+      for (let i = 0; i < fileList.length; i += 1) {
+        const file = fileList[i]
+        setUploadProgress({ current: i + 1, total: fileList.length, fileName: file.name })
         const fd = new FormData()
         fd.append('file', file)
         const upRes = await fetch('/api/uploads', {
@@ -98,7 +109,7 @@ export function DocumentAttachments({ entityType, entityId }: Props) {
         })
         const upData = await upRes.json()
         if (!upRes.ok) {
-          alert(upData.error || `Upload failed for ${file.name}`)
+          errors.push(upData.error || `Upload failed for ${file.name}`)
           continue
         }
 
@@ -120,16 +131,20 @@ export function DocumentAttachments({ entityType, entityId }: Props) {
         })
         if (!createRes.ok) {
           const err = await createRes.json().catch(() => ({}))
-          alert(err.error || `Failed to attach ${file.name}`)
+          errors.push(err.error || `Failed to attach ${file.name}`)
         }
+      }
+      if (errors.length > 0) {
+        setErrorMessage(errors[0])
       }
       await load()
     } catch (error) {
       console.error('Upload attachments error:', error)
-      alert('Failed to upload files')
+      setErrorMessage('Failed to upload files')
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = ''
       setUploading(false)
+      setUploadProgress(null)
     }
   }
 
@@ -143,7 +158,7 @@ export function DocumentAttachments({ entityType, entityId }: Props) {
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        alert(err.error || 'Failed to delete attachment')
+        setErrorMessage(err.error || 'Failed to delete attachment')
         return
       }
       setAttachments((prev) => prev.filter((a) => a.id !== id))
@@ -176,10 +191,18 @@ export function DocumentAttachments({ entityType, entityId }: Props) {
             onClick={() => fileInputRef.current?.click()}
           >
             <Upload className="mr-2 h-4 w-4" />
-            {uploading ? 'Uploading...' : 'Upload'}
+            {uploading && uploadProgress
+              ? `Uploading ${uploadProgress.current}/${uploadProgress.total}`
+              : 'Upload'}
           </Button>
         </label>
       </div>
+
+      {uploading && uploadProgress && (
+        <p className="text-xs text-gray-500">Uploading {uploadProgress.fileName}...</p>
+      )}
+
+      {errorMessage && <p className="text-sm text-red-600">{errorMessage}</p>}
 
       {loading ? (
         <p className="text-sm text-gray-500">Loading attachments...</p>

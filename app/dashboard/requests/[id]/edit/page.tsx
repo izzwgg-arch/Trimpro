@@ -13,6 +13,7 @@ import { parseAddressParts } from '@/lib/address/parse'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
 import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
 import { PlaceAutocompleteInput } from '@/components/maps/PlaceAutocompleteInput'
+import { DocumentAttachments } from '@/components/common/document-attachments'
 
 type RequestResponse = {
   lead: {
@@ -387,7 +388,7 @@ export default function EditRequestPage() {
         </Link>
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Edit Request</h1>
-          <p className="mt-2 text-gray-600">Update this request's information</p>
+          <p className="mt-2 text-gray-600">Update this request&apos;s information</p>
         </div>
         <Button type="button" variant="outline" onClick={handleDuplicate} disabled={duplicating}>
           <Copy className="mr-2 h-4 w-4" />
@@ -666,6 +667,18 @@ export default function EditRequestPage() {
             </div>
           </CardContent>
         </Card>
+
+        {normalizedRequestId && (
+          <Card className="mt-6">
+            <CardHeader>
+              <CardTitle>Files</CardTitle>
+              <CardDescription>Manage photos, videos, and files for this request</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <DocumentAttachments entityType="request" entityId={normalizedRequestId} />
+            </CardContent>
+          </Card>
+        )}
 
         <div className="flex justify-end space-x-4">
           <Button type="button" variant="outline" onClick={() => router.back()} disabled={saving}>

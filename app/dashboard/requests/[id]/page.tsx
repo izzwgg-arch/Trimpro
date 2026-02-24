@@ -26,6 +26,7 @@ import {
 import Link from 'next/link'
 import { parseAddressParts } from '@/lib/address/parse'
 import { buildCreateContextQuery } from '@/src/lib/create-context'
+import { DocumentAttachments } from '@/components/common/document-attachments'
 
 interface RequestDetail {
   id: string
@@ -679,6 +680,15 @@ export default function RequestDetailPage() {
 
         {/* Sidebar */}
         <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Files</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <DocumentAttachments entityType="request" entityId={requestId} />
+            </CardContent>
+          </Card>
+
           {/* Stats */}
           <Card>
             <CardHeader>

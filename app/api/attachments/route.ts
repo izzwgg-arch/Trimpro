@@ -4,10 +4,18 @@ import { prisma } from '@/lib/prisma'
 import { createNotificationsForUsers, notifyDispatchJobActivity } from '@/lib/notifications'
 import { publishDispatchRealtime } from '@/lib/dispatch-realtime'
 
-type EntityType = 'estimate' | 'invoice' | 'job' | 'task' | 'issue'
+type EntityType = 'estimate' | 'invoice' | 'job' | 'task' | 'issue' | 'request' | 'lead'
 
 function isValidEntityType(value: string): value is EntityType {
-  return value === 'estimate' || value === 'invoice' || value === 'job' || value === 'task' || value === 'issue'
+  return (
+    value === 'estimate' ||
+    value === 'invoice' ||
+    value === 'job' ||
+    value === 'task' ||
+    value === 'issue' ||
+    value === 'request' ||
+    value === 'lead'
+  )
 }
 
 async function ensureEntityAccess(entityType: EntityType, entityId: string, tenantId: string) {
@@ -26,6 +34,10 @@ async function ensureEntityAccess(entityType: EntityType, entityId: string, tena
   if (entityType === 'issue') {
     const issue = await prisma.issue.findFirst({ where: { id: entityId, tenantId }, select: { id: true } })
     return Boolean(issue)
+  }
+  if (entityType === 'request' || entityType === 'lead') {
+    const lead = await prisma.lead.findFirst({ where: { id: entityId, tenantId }, select: { id: true } })
+    return Boolean(lead)
   }
   const job = await prisma.job.findFirst({ where: { id: entityId, tenantId }, select: { id: true } })
   return Boolean(job)
@@ -57,7 +69,9 @@ export async function GET(request: NextRequest) {
             ? { taskId: entityId }
             : entityTypeRaw === 'issue'
               ? { issueId: entityId }
-          : { jobId: entityId }
+              : entityTypeRaw === 'request' || entityTypeRaw === 'lead'
+                ? { leadId: entityId }
+                : { jobId: entityId }
 
     const attachments = await prisma.attachment.findMany({
       where,
@@ -105,7 +119,9 @@ export async function POST(request: NextRequest) {
             ? { taskId: entityId }
             : entityTypeRaw === 'issue'
               ? { issueId: entityId }
-          : { jobId: entityId }
+              : entityTypeRaw === 'request' || entityTypeRaw === 'lead'
+                ? { leadId: entityId }
+                : { jobId: entityId }
 
     const attachment = await prisma.attachment.create({
       data: {
@@ -118,6 +134,40 @@ export async function POST(request: NextRequest) {
         uploadedById: user.id,
       },
     })
+
+    if (entityTypeRaw === 'request' || entityTypeRaw === 'lead') {
+      const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown'
+      await Promise.all([
+        prisma.activity.create({
+          data: {
+            tenantId: user.tenantId,
+            userId: user.id,
+            type: 'OTHER',
+            description: `REQUEST_ATTACHMENT_ADDED: ${fileName}`,
+            leadId: entityId,
+          },
+        }),
+        prisma.auditLog.create({
+          data: {
+            tenantId: user.tenantId,
+            userId: user.id,
+            action: 'CREATE',
+            entityType: 'RequestAttachment',
+            entityId: attachment.id,
+            ipAddress,
+            userAgent: request.headers.get('user-agent') || undefined,
+            changes: {
+              requestId: entityId,
+              fileName,
+              fileSize,
+              mimeType,
+              url,
+              key,
+            },
+          },
+        }),
+      ])
+    }
 
     // If attachment is for a job, also attach it to any linked invoices
     if (entityTypeRaw === 'job') {
