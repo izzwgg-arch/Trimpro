@@ -81,6 +81,7 @@ model Tenant {
 
 enum UserRole {
   ADMIN
+  MANAGER
   OFFICE
   FIELD
   SALES
@@ -104,6 +105,7 @@ model User {
   avatar    String?
   role      UserRole   @default(FIELD)
   status    UserStatus @default(INVITED)
+  managerId String?
 
   // Password management
   passwordHash         String?
@@ -124,6 +126,8 @@ model User {
   // Relationships
   tenant                       Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   assignedJobs                 JobAssignment[]
+  manager                      User?                     @relation("UserManager", fields: [managerId], references: [id], onDelete: SetNull)
+  managedFieldWorkers          User[]                    @relation("UserManager")
   assignedTasks                Task[]                    @relation("TaskAssignee")
   createdTasks                 Task[]                    @relation("TaskCreator")
   assignedIssues               Issue[]                   @relation("IssueAssignee")
@@ -150,6 +154,8 @@ model User {
   @@unique([tenantId, email])
   @@index([tenantId, email])
   @@index([tenantId, status])
+  @@index([tenantId, role])
+  @@index([tenantId, managerId])
   @@map("users")
 }
 

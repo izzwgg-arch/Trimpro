@@ -20,6 +20,14 @@ interface TeamMember {
   email: string
   phone: string | null
   role: string
+  managerId?: string | null
+  manager?: {
+    id: string
+    firstName: string
+    lastName: string
+    email: string
+    role: string
+  } | null
   status: string
   _count: {
     schedules: number
@@ -46,14 +54,15 @@ export default function TeamsPage() {
     firstName: '',
     lastName: '',
     phone: '',
-    role: 'FIELD' as 'ADMIN' | 'OFFICE' | 'FIELD' | 'SALES' | 'ACCOUNTING',
+    role: 'FIELD' as 'ADMIN' | 'MANAGER' | 'OFFICE' | 'FIELD' | 'SALES' | 'ACCOUNTING',
   })
   const [editForm, setEditForm] = useState({
     firstName: '',
     lastName: '',
     email: '',
     phone: '',
-    role: 'FIELD' as 'ADMIN' | 'OFFICE' | 'FIELD' | 'SALES' | 'ACCOUNTING',
+    role: 'FIELD' as 'ADMIN' | 'MANAGER' | 'OFFICE' | 'FIELD' | 'SALES' | 'ACCOUNTING',
+    managerId: null as string | null,
     status: 'ACTIVE' as 'ACTIVE' | 'INACTIVE' | 'INVITED' | 'SUSPENDED',
   })
 
@@ -186,6 +195,7 @@ export default function TeamsPage() {
       email: member.email || '',
       phone: member.phone || '',
       role: member.role as any,
+      managerId: member.managerId || null,
       status: member.status as any,
     })
     setShowEditModal(true)
@@ -242,11 +252,14 @@ export default function TeamsPage() {
 
   const roleColors: Record<string, string> = {
     ADMIN: 'bg-purple-100 text-purple-800',
+    MANAGER: 'bg-indigo-100 text-indigo-800',
     OFFICE: 'bg-blue-100 text-blue-800',
     FIELD: 'bg-green-100 text-green-800',
     SALES: 'bg-yellow-100 text-yellow-800',
     ACCOUNTING: 'bg-pink-100 text-pink-800',
   }
+  const managerUsers = teamMembers.filter((member) => member.role === 'MANAGER')
+  const managerOptions = managerUsers.filter((manager) => manager.id !== editingUserId)
 
   if (loading) {
     return (
@@ -323,6 +336,14 @@ export default function TeamsPage() {
                   <Briefcase className="mr-2 h-4 w-4" />
                   {member._count.schedules} scheduled items
                 </div>
+                {member.role === 'FIELD' && (
+                  <div className="text-xs text-gray-500">
+                    Manager:{' '}
+                    {member.manager
+                      ? `${member.manager.firstName} ${member.manager.lastName}`.trim() || member.manager.email
+                      : 'Unassigned'}
+                  </div>
+                )}
                 {member.status === 'INVITED' && (
                   <div className="flex items-center gap-2">
                     <Button
@@ -369,7 +390,7 @@ export default function TeamsPage() {
               secondary={member.email}
               status={<span className={`px-2 py-1 text-xs rounded-full ${roleColors[member.role] || 'bg-gray-100 text-gray-800'}`}>{member.role}</span>}
               amount={member.status}
-              date={`${member._count.schedules} schedules`}
+              date={`${member._count.schedules} schedules${member.role === 'FIELD' ? ` • Manager: ${member.manager ? `${member.manager.firstName} ${member.manager.lastName}`.trim() || member.manager.email : 'Unassigned'}` : ''}`}
               actions={
                 <Button type="button" variant="outline" size="sm" onClick={() => openEditModal(member)}>
                   <Pencil className="mr-2 h-4 w-4" />
@@ -386,7 +407,7 @@ export default function TeamsPage() {
               key={member.id}
               primary={`${member.firstName} ${member.lastName}`}
               status={<span className={`px-2 py-1 text-xs rounded-full ${roleColors[member.role] || 'bg-gray-100 text-gray-800'}`}>{member.role}</span>}
-              line2={`${member.email}${member.phone ? ` • ${member.phone}` : ''}`}
+              line2={`${member.email}${member.phone ? ` • ${member.phone}` : ''}${member.role === 'FIELD' ? ` • Manager: ${member.manager ? `${member.manager.firstName} ${member.manager.lastName}`.trim() || member.manager.email : 'Unassigned'}` : ''}`}
               rightTop={member.status}
               rightBottom={`${member._count.schedules} schedules`}
               actions={
@@ -414,6 +435,22 @@ export default function TeamsPage() {
               header: 'Role',
               sortValue: (member) => member.role,
               render: (member) => <span className={`px-2 py-1 text-xs rounded-full ${roleColors[member.role] || 'bg-gray-100 text-gray-800'}`}>{member.role}</span>,
+            },
+            {
+              key: 'manager',
+              header: 'Manager',
+              sortValue: (member) =>
+                member.role === 'FIELD'
+                  ? member.manager
+                    ? `${member.manager.firstName} ${member.manager.lastName}`.trim() || member.manager.email
+                    : 'Unassigned'
+                  : '',
+              render: (member) =>
+                member.role === 'FIELD'
+                  ? (member.manager
+                      ? `${member.manager.firstName} ${member.manager.lastName}`.trim() || member.manager.email
+                      : 'Unassigned')
+                  : '—',
             },
             {
               key: 'email',
@@ -561,6 +598,7 @@ export default function TeamsPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="FIELD">Field Worker</SelectItem>
+                      <SelectItem value="MANAGER">Manager</SelectItem>
                       <SelectItem value="OFFICE">Office Staff</SelectItem>
                       <SelectItem value="SALES">Sales</SelectItem>
                       <SelectItem value="ACCOUNTING">Accounting</SelectItem>
@@ -669,13 +707,20 @@ export default function TeamsPage() {
                   <Label htmlFor="editRole">Role *</Label>
                   <Select
                     value={editForm.role}
-                    onValueChange={(value) => setEditForm({ ...editForm, role: value as any })}
+                    onValueChange={(value) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        role: value as any,
+                        managerId: value === 'FIELD' ? prev.managerId : null,
+                      }))
+                    }
                   >
                     <SelectTrigger id="editRole">
                       <SelectValue placeholder="Select role" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="FIELD">Field Worker</SelectItem>
+                      <SelectItem value="MANAGER">Manager</SelectItem>
                       <SelectItem value="OFFICE">Office Staff</SelectItem>
                       <SelectItem value="SALES">Sales</SelectItem>
                       <SelectItem value="ACCOUNTING">Accounting</SelectItem>
@@ -683,6 +728,33 @@ export default function TeamsPage() {
                     </SelectContent>
                   </Select>
                 </div>
+                {editForm.role === 'FIELD' && (
+                  <div>
+                    <Label htmlFor="editManager">Manager</Label>
+                    <Select
+                      value={editForm.managerId || '__none__'}
+                      onValueChange={(value) =>
+                        setEditForm((prev) => ({ ...prev, managerId: value === '__none__' ? null : value }))
+                      }
+                      disabled={managerOptions.length === 0}
+                    >
+                      <SelectTrigger id="editManager">
+                        <SelectValue placeholder="Select manager" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">Unassigned</SelectItem>
+                        {managerOptions.map((manager) => (
+                          <SelectItem key={manager.id} value={manager.id}>
+                            {`${manager.firstName} ${manager.lastName}`.trim() || manager.email}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {managerOptions.length === 0 && (
+                      <p className="mt-1 text-xs text-gray-500">No managers available</p>
+                    )}
+                  </div>
+                )}
                 <div>
                   <Label htmlFor="editStatus">Status *</Label>
                   <Select

@@ -6,6 +6,8 @@ import { getDefaultPermissions } from '@/lib/permissions'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { testEmailProvider } from '@/lib/integrations/providers/email'
 
+const ALLOWED_ROLES = new Set(['ADMIN', 'MANAGER', 'OFFICE', 'FIELD', 'SALES', 'ACCOUNTING'])
+
 export async function POST(request: NextRequest) {
   // Authenticate
   const authError = await authenticateRequest(request)
@@ -21,6 +23,11 @@ export async function POST(request: NextRequest) {
 
     if (!email || !firstName || !lastName || !role) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    }
+
+    const normalizedRole = String(role).trim().toUpperCase()
+    if (!ALLOWED_ROLES.has(normalizedRole)) {
+      return NextResponse.json({ error: 'Invalid role' }, { status: 400 })
     }
 
     // Check if user already exists
@@ -41,7 +48,7 @@ export async function POST(request: NextRequest) {
     inviteExp.setDate(inviteExp.getDate() + 7)
 
     // Get default permissions for role
-    const permissions = getDefaultPermissions(role)
+    const permissions = getDefaultPermissions(normalizedRole)
 
     // Create user
     const newUser = await prisma.user.create({
@@ -51,7 +58,7 @@ export async function POST(request: NextRequest) {
         firstName,
         lastName,
         phone: phone || null,
-        role,
+        role: normalizedRole as any,
         status: 'INVITED',
         passwordResetToken: inviteToken,
         passwordResetExp: inviteExp,
@@ -71,7 +78,7 @@ export async function POST(request: NextRequest) {
           email,
           firstName,
           lastName,
-          role,
+          role: normalizedRole,
         },
       },
     })

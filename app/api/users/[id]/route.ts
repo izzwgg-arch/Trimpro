@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { hasPermission } from '@/lib/authorization'
 import { getDefaultPermissions } from '@/lib/permissions'
 
-const ALLOWED_ROLES = new Set(['ADMIN', 'OFFICE', 'FIELD', 'SALES', 'ACCOUNTING'])
+const ALLOWED_ROLES = new Set(['ADMIN', 'MANAGER', 'OFFICE', 'FIELD', 'SALES', 'ACCOUNTING'])
 const ALLOWED_STATUSES = new Set(['ACTIVE', 'INACTIVE', 'INVITED', 'SUSPENDED'])
 
 export async function PUT(
@@ -28,6 +28,8 @@ export async function PUT(
     const phone = typeof body.phone === 'string' ? body.phone.trim() : body.phone === null ? null : undefined
     const role = typeof body.role === 'string' ? body.role.trim().toUpperCase() : undefined
     const status = typeof body.status === 'string' ? body.status.trim().toUpperCase() : undefined
+    const rawManagerId = typeof body.managerId === 'string' ? body.managerId.trim() : body.managerId
+    const managerIdFromBody = rawManagerId === '' || rawManagerId === null ? null : rawManagerId
 
     if (!firstName || !lastName || !email || !role || !status) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -54,6 +56,7 @@ export async function PUT(
         phone: true,
         role: true,
         status: true,
+        managerId: true,
       },
     })
 
@@ -73,6 +76,33 @@ export async function PUT(
       return NextResponse.json({ error: 'Email already in use' }, { status: 400 })
     }
 
+    let normalizedManagerId: string | null = existingUser.managerId || null
+    if (role === 'FIELD') {
+      if (managerIdFromBody === null) {
+        normalizedManagerId = null
+      } else if (managerIdFromBody !== undefined) {
+        if (typeof managerIdFromBody !== 'string' || !managerIdFromBody) {
+          return NextResponse.json({ error: 'Invalid manager selection' }, { status: 400 })
+        }
+        if (managerIdFromBody === params.id) {
+          return NextResponse.json({ error: 'A user cannot be their own manager' }, { status: 400 })
+        }
+
+        const managerUser = await prisma.user.findFirst({
+          where: {
+            id: managerIdFromBody,
+            tenantId: actor.tenantId,
+            role: 'MANAGER',
+          },
+          select: { id: true },
+        })
+        if (!managerUser) {
+          return NextResponse.json({ error: 'Selected manager is invalid' }, { status: 400 })
+        }
+        normalizedManagerId = managerUser.id
+      }
+    }
+
     const updatedUser = await prisma.user.update({
       where: { id: params.id },
       data: {
@@ -82,6 +112,7 @@ export async function PUT(
         phone: phone || null,
         role: role as any,
         status: status as any,
+        managerId: role === 'FIELD' ? normalizedManagerId : null,
         ...(role !== existingUser.role ? { permissions: getDefaultPermissions(role as any) } : {}),
       },
       select: {
@@ -92,8 +123,22 @@ export async function PUT(
         phone: true,
         role: true,
         status: true,
+        managerId: true,
       },
     })
+
+    // Keep assignments consistent if this user is no longer a manager.
+    if (existingUser.role === 'MANAGER' && role !== 'MANAGER') {
+      await prisma.user.updateMany({
+        where: {
+          tenantId: actor.tenantId,
+          managerId: params.id,
+        },
+        data: {
+          managerId: null,
+        },
+      })
+    }
 
     await prisma.auditLog.create({
       data: {

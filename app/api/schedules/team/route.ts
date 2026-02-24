@@ -24,6 +24,16 @@ export async function GET(request: NextRequest) {
         email: true,
         phone: true,
         role: true,
+        managerId: true,
+        manager: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            role: true,
+          },
+        },
         status: true,
         _count: {
           select: {
@@ -37,7 +47,25 @@ export async function GET(request: NextRequest) {
       ],
     })
 
-    return NextResponse.json({ teamMembers })
+    const normalizedTeamMembers = teamMembers.map((member) => {
+      if (member.role !== 'FIELD') {
+        return {
+          ...member,
+          managerId: null,
+          manager: null,
+        }
+      }
+      if (!member.manager || member.manager.role !== 'MANAGER') {
+        return {
+          ...member,
+          managerId: null,
+          manager: null,
+        }
+      }
+      return member
+    })
+
+    return NextResponse.json({ teamMembers: normalizedTeamMembers })
   } catch (error) {
     console.error('Get team error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
