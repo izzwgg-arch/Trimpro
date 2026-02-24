@@ -3,6 +3,13 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { notifyIssueAssigned, createNotificationsForUsers } from '@/lib/notifications'
 
+function isMobileRequest(request: NextRequest): boolean {
+  const userAgent = request.headers.get('user-agent') || ''
+  const isMobileUA = /Mobile|Android|iPhone|iPad/i.test(userAgent)
+  const hasMobileParam = request.nextUrl.searchParams.get('mobile') === 'true'
+  return isMobileUA || hasMobileParam
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -311,6 +318,7 @@ export async function DELETE(
   if (authError) return authError
 
   const user = getAuthUser(request)
+  const isMobile = isMobileRequest(request)
 
   try {
     const issue = await prisma.issue.findFirst({
@@ -322,6 +330,14 @@ export async function DELETE(
 
     if (!issue) {
       return NextResponse.json({ error: 'Issue not found' }, { status: 404 })
+    }
+
+    // Mobile users can delete (cancel) only issues they created themselves.
+    if (isMobile && issue.createdById !== user.id) {
+      return NextResponse.json(
+        { error: 'You can only delete issues that you created' },
+        { status: 403 }
+      )
     }
 
     // Update status to cancelled instead of deleting

@@ -1,5 +1,5 @@
-import React from 'react'
-import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native'
+import React, { useState } from 'react'
+import { Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native'
 import { useQuery } from '@tanstack/react-query'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { AppScreen } from '../../components/AppScreen'
@@ -8,7 +8,6 @@ import { Issue } from '../../types/models'
 import { IssuesStackParamList } from '../../types/navigation'
 import { useMobilePermissions } from '../../hooks/useMobilePermissions'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Alert, Pressable } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { colors, spacing, typography } from '../../theme/tokens'
 import { EmptyState } from '../../components/EmptyState'
@@ -25,10 +24,14 @@ type Props = NativeStackScreenProps<IssuesStackParamList, 'IssuesList'>
 export function IssuesScreen({ navigation }: Props) {
   const { canCreateIssues, canAssignIssuesToAdmin } = useMobilePermissions()
   const queryClient = useQueryClient()
+  const [showCreateForm, setShowCreateForm] = useState(false)
+  const [issueTitle, setIssueTitle] = useState('')
+  const [issueDescription, setIssueDescription] = useState('')
+  const [issueNotes, setIssueNotes] = useState('')
 
   const query = useQuery({
     queryKey: ['mobile-issues'],
-    queryFn: () => apiRequest<IssuesResponse>('/api/issues?filter=assigned&limit=100'),
+    queryFn: () => apiRequest<IssuesResponse>('/api/issues?filter=assigned_or_created&limit=100'),
     refetchInterval: 60_000,
   })
 
@@ -45,10 +48,13 @@ export function IssuesScreen({ navigation }: Props) {
       }
 
       const assigneeId = adminUsers[0].id
+      const descriptionWithNotes = [issueDescription.trim(), issueNotes.trim() ? `Notes:\n${issueNotes.trim()}` : '']
+        .filter(Boolean)
+        .join('\n\n')
       
       return apiRequest('/api/issues?mobile=true', 'POST', {
-        title: 'New Issue',
-        description: 'Issue created from mobile app',
+        title: issueTitle.trim(),
+        description: descriptionWithNotes || null,
         assigneeId,
         type: 'OTHER',
         priority: 'MEDIUM',
@@ -58,6 +64,10 @@ export function IssuesScreen({ navigation }: Props) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mobile-issues'] })
       queryClient.invalidateQueries({ queryKey: ['mobile-assignments'] })
+      setIssueTitle('')
+      setIssueDescription('')
+      setIssueNotes('')
+      setShowCreateForm(false)
       Alert.alert('Success', 'Issue created and assigned to admin')
     },
     onError: (error: any) => {
@@ -76,7 +86,7 @@ export function IssuesScreen({ navigation }: Props) {
           {canCreateIssues() && canAssignIssuesToAdmin() && (
             <Pressable
               style={styles.createButton}
-              onPress={() => createIssueMutation.mutate()}
+              onPress={() => setShowCreateForm((prev) => !prev)}
               disabled={createIssueMutation.isPending}
             >
               <Ionicons name="add" size={24} color="#E6C98B" />
@@ -84,12 +94,66 @@ export function IssuesScreen({ navigation }: Props) {
           )}
         </View>
       </View>
+      {showCreateForm && (
+        <View style={styles.formCard}>
+          <Text style={styles.formTitle}>Create Issue</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Title"
+            placeholderTextColor={colors.textPrimary}
+            selectionColor={colors.textPrimary}
+            cursorColor={colors.textPrimary}
+            value={issueTitle}
+            onChangeText={setIssueTitle}
+          />
+          <TextInput
+            style={[styles.input, styles.multilineInput]}
+            placeholder="Description"
+            placeholderTextColor={colors.textPrimary}
+            selectionColor={colors.textPrimary}
+            cursorColor={colors.textPrimary}
+            value={issueDescription}
+            onChangeText={setIssueDescription}
+            multiline
+          />
+          <TextInput
+            style={[styles.input, styles.multilineInput]}
+            placeholder="Notes"
+            placeholderTextColor={colors.textPrimary}
+            selectionColor={colors.textPrimary}
+            cursorColor={colors.textPrimary}
+            value={issueNotes}
+            onChangeText={setIssueNotes}
+            multiline
+          />
+          <View style={styles.formActions}>
+            <Pressable
+              style={[styles.actionButton, styles.cancelButton]}
+              onPress={() => {
+                setShowCreateForm(false)
+                setIssueTitle('')
+                setIssueDescription('')
+                setIssueNotes('')
+              }}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.actionButton, styles.saveButton, (!issueTitle.trim() || createIssueMutation.isPending) && styles.disabledButton]}
+              onPress={() => createIssueMutation.mutate()}
+              disabled={!issueTitle.trim() || createIssueMutation.isPending}
+            >
+              <Text style={styles.saveButtonText}>{createIssueMutation.isPending ? 'Saving...' : 'Create'}</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
       <FlatList
         data={query.data?.issues ?? []}
         keyExtractor={(item) => item.id}
         refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => query.refetch()} />}
         ListHeaderComponent={<SectionHeader title="Active Issues" />}
-        ListEmptyComponent={<EmptyState icon="alert-circle-outline" title="No assigned issues" description="No active issues need attention." />}
+        ListEmptyComponent={<EmptyState icon="alert-circle-outline" title="No issues yet" description="Assigned and created issues will appear here." />}
         renderItem={({ item }) => (
           <PressableCard
             style={styles.card}
@@ -125,5 +189,64 @@ const styles = StyleSheet.create({
   cardTitle: { ...typography.sub, color: colors.textPrimary, fontWeight: '700', flex: 1, marginRight: 8 },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   meta: { ...typography.caption, color: colors.textSecondary },
+  formCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: '#E4E7EC',
+    gap: spacing.xs,
+  },
+  formTitle: {
+    ...typography.sub,
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#D0D5DD',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: colors.textPrimary,
+    backgroundColor: '#FFFFFF',
+  },
+  multilineInput: {
+    minHeight: 88,
+    textAlignVertical: 'top',
+  },
+  formActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: spacing.xs,
+    marginTop: 4,
+  },
+  actionButton: {
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  cancelButton: {
+    borderWidth: 1,
+    borderColor: '#D0D5DD',
+    backgroundColor: '#FFFFFF',
+  },
+  saveButton: {
+    backgroundColor: colors.brandPrimary,
+  },
+  cancelButtonText: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontWeight: '700',
+  },
+  saveButtonText: {
+    ...typography.caption,
+    color: '#E6C98B',
+    fontWeight: '700',
+  },
+  disabledButton: {
+    opacity: 0.6,
+  },
 })
 

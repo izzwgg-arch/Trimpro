@@ -1,5 +1,5 @@
 import React from 'react'
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import * as ImagePicker from 'expo-image-picker'
@@ -27,10 +27,21 @@ interface AttachmentResponse {
   }>
 }
 
-export function IssueDetailScreen({ route }: Props) {
+interface IssueNotesResponse {
+  notes: Array<{
+    id: string
+    content: string
+    createdById: string
+    createdAt: string
+    authorName?: string
+  }>
+}
+
+export function IssueDetailScreen({ route, navigation }: Props) {
   const { issueId } = route.params
   const queryClient = useQueryClient()
-  const { token } = useAuth()
+  const [noteText, setNoteText] = React.useState('')
+  const { token, user } = useAuth()
   const isOnline = useOnlineState()
   const issueQuery = useQuery({
     queryKey: ['mobile-issue-detail', issueId],
@@ -41,6 +52,12 @@ export function IssueDetailScreen({ route }: Props) {
   const attachmentsQuery = useQuery({
     queryKey: ['mobile-issue-attachments', issueId],
     queryFn: () => apiRequest<AttachmentResponse>(`/api/attachments?entityType=issue&entityId=${issueId}`),
+    refetchInterval: 45_000,
+  })
+
+  const notesQuery = useQuery({
+    queryKey: ['mobile-issue-notes', issueId],
+    queryFn: () => apiRequest<IssueNotesResponse>(`/api/issues/${issueId}/notes`),
     refetchInterval: 45_000,
   })
 
@@ -59,10 +76,47 @@ export function IssueDetailScreen({ route }: Props) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mobile-issue-detail', issueId] })
       queryClient.invalidateQueries({ queryKey: ['mobile-issues'] })
+      queryClient.invalidateQueries({ queryKey: ['mobile-assignments'] })
+    },
+  })
+
+  const addNoteMutation = useMutation({
+    mutationFn: async () => {
+      if (!noteText.trim()) return
+      if (!isOnline) {
+        throw new Error('Cannot add notes while offline. Please reconnect and try again.')
+      }
+      await apiRequest(`/api/issues/${issueId}/notes`, 'POST', {
+        content: noteText.trim(),
+        isInternal: false,
+      })
+    },
+    onSuccess: () => {
+      setNoteText('')
+      queryClient.invalidateQueries({ queryKey: ['mobile-issue-notes', issueId] })
+      queryClient.invalidateQueries({ queryKey: ['mobile-issue-detail', issueId] })
+      queryClient.invalidateQueries({ queryKey: ['mobile-issues'] })
+      queryClient.invalidateQueries({ queryKey: ['mobile-assignments'] })
+    },
+    onError: (error: any) => {
+      Alert.alert('Unable to add note', error?.message || 'Failed to add note')
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest(`/api/issues/${issueId}?mobile=true`, 'DELETE')
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mobile-issues'] })
+      queryClient.invalidateQueries({ queryKey: ['mobile-assignments'] })
+      navigation.goBack()
     },
   })
 
   const issue = issueQuery.data?.issue
+  const notes = notesQuery.data?.notes || []
+  const canDeleteOwnIssue = Boolean(user?.id && issue?.createdById === user.id)
 
   const uploadAttachment = async () => {
     if (!token) return
@@ -145,13 +199,73 @@ export function IssueDetailScreen({ route }: Props) {
                 <Pressable style={styles.secondaryButton} onPress={() => updateMutation.mutate('IN_PROGRESS')}>
                   <Text style={styles.secondaryButtonText}>Start</Text>
                 </Pressable>
-                <Pressable style={styles.secondaryButton} onPress={() => updateMutation.mutate('ESCALATED')}>
-                  <Text style={styles.secondaryButtonText}>Escalate</Text>
+                <Pressable style={styles.secondaryButton} onPress={() => updateMutation.mutate('CLOSED')}>
+                  <Text style={styles.secondaryButtonText}>Close</Text>
                 </Pressable>
                 <Pressable style={styles.primaryButton} onPress={() => updateMutation.mutate('RESOLVED')}>
                   <Text style={styles.primaryButtonText}>Resolve</Text>
                 </Pressable>
+                {canDeleteOwnIssue && (
+                  <Pressable
+                    style={styles.dangerButton}
+                    onPress={() => {
+                      Alert.alert(
+                        'Delete issue',
+                        'Only issues you created can be deleted. Continue?',
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: deleteMutation.isPending ? 'Deleting...' : 'Delete',
+                            style: 'destructive',
+                            onPress: () => {
+                              deleteMutation.mutate(undefined, {
+                                onSuccess: () => {
+                                  Alert.alert('Issue deleted', 'Issue has been removed from your queue.')
+                                },
+                                onError: (error: any) => {
+                                  Alert.alert('Unable to delete issue', error?.message || 'Delete failed')
+                                },
+                              })
+                            },
+                          },
+                        ]
+                      )
+                    }}
+                  >
+                    <Text style={styles.dangerButtonText}>Delete</Text>
+                  </Pressable>
+                )}
               </View>
+            </View>
+
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Notes</Text>
+              <TextInput
+                style={[styles.input, styles.multilineInput]}
+                placeholder="Write a note..."
+                value={noteText}
+                onChangeText={setNoteText}
+                multiline
+              />
+              <Pressable
+                style={[styles.primaryButton, (!noteText.trim() || addNoteMutation.isPending) && styles.disabledButton]}
+                onPress={() => addNoteMutation.mutate()}
+                disabled={!noteText.trim() || addNoteMutation.isPending}
+              >
+                <Text style={styles.primaryButtonText}>{addNoteMutation.isPending ? 'Saving...' : 'Add Note'}</Text>
+              </Pressable>
+              {notes.length === 0 ? (
+                <Text style={styles.meta}>No notes yet.</Text>
+              ) : (
+                notes.map((note) => (
+                  <View key={note.id} style={styles.noteRow}>
+                    <Text style={styles.noteMeta}>
+                      {note.authorName || 'User'} • {new Date(note.createdAt).toLocaleString()}
+                    </Text>
+                    <Text style={styles.body}>{note.content}</Text>
+                  </View>
+                ))
+              )}
             </View>
 
             <View style={styles.section}>
@@ -192,6 +306,42 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   secondaryButtonText: { color: BRAND.text, fontWeight: '600' },
+  dangerButton: {
+    borderColor: '#FECACA',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: '#FEF2F2',
+  },
+  dangerButtonText: { color: '#B91C1C', fontWeight: '700' },
+  input: {
+    borderColor: '#D0D5DD',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: BRAND.text,
+    backgroundColor: '#FFFFFF',
+  },
+  multilineInput: {
+    minHeight: 88,
+    textAlignVertical: 'top',
+  },
+  noteRow: {
+    borderTopWidth: 1,
+    borderColor: '#EAECF0',
+    paddingTop: 8,
+    gap: 4,
+  },
+  noteMeta: {
+    color: BRAND.muted,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  disabledButton: {
+    opacity: 0.6,
+  },
   attachmentRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

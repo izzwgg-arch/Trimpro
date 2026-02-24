@@ -29,7 +29,28 @@ export async function GET(
       orderBy: { createdAt: 'asc' },
     })
 
-    return NextResponse.json({ notes })
+    const authorIds = Array.from(new Set(notes.map((n) => n.createdById)))
+    const authors = authorIds.length
+      ? await prisma.user.findMany({
+          where: {
+            tenantId: user.tenantId,
+            id: { in: authorIds },
+          },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
+        })
+      : []
+    const authorMap = new Map(authors.map((a) => [a.id, `${a.firstName} ${a.lastName}`.trim()]))
+
+    return NextResponse.json({
+      notes: notes.map((note) => ({
+        ...note,
+        authorName: authorMap.get(note.createdById) || 'Unknown user',
+      })),
+    })
   } catch (error) {
     console.error('Get issue notes error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

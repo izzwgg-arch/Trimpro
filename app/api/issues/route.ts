@@ -33,10 +33,13 @@ export async function GET(request: NextRequest) {
     }
 
     if (search) {
-      where.OR = [
-        { title: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } },
-      ]
+      where.AND = where.AND || []
+      where.AND.push({
+        OR: [
+          { title: { contains: search, mode: 'insensitive' } },
+          { description: { contains: search, mode: 'insensitive' } },
+        ],
+      })
     }
 
     if (status !== 'all') {
@@ -51,11 +54,19 @@ export async function GET(request: NextRequest) {
       where.assigneeId = assigneeId
     }
 
-    // Filter: my issues (created by me), assigned to me, or watched
+    // Filter: my issues (created by me), assigned to me, watched, or assigned/created combined.
     if (filter === 'my') {
       where.createdById = user.id
     } else if (filter === 'assigned') {
       where.assigneeId = user.id
+    } else if (filter === 'assigned_or_created') {
+      where.AND = where.AND || []
+      where.AND.push({
+        OR: [
+          { assigneeId: user.id },
+          { createdById: user.id },
+        ],
+      })
     } else if (filter === 'watched') {
       where.watchers = {
         some: {
