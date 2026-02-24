@@ -35,16 +35,34 @@ TextInput.defaultProps.selectionColor = '#0F172A'
 function SyncAndPushBootstrap() {
   const { token } = useAuth()
   const isOnline = useOnlineState()
-  const [initializedPush, setInitializedPush] = useState(false)
+  const [pushRegistered, setPushRegistered] = useState(false)
   const assignmentSignatureRef = useRef('')
   const [currentNotification, setCurrentNotification] = useState<Notifications.Notification | null>(null)
   const lastNotificationIdRef = useRef<string | null>(null)
 
   useEffect(() => {
-    if (!token || initializedPush) return
-    setInitializedPush(true)
-    void registerPushToken()
-  }, [initializedPush, token])
+    if (!token || pushRegistered) return
+    let stopped = false
+
+    const attemptRegister = async () => {
+      try {
+        await registerPushToken()
+        if (!stopped) setPushRegistered(true)
+      } catch (error) {
+        console.warn('Push registration retry scheduled:', error)
+      }
+    }
+
+    void attemptRegister()
+    const interval = setInterval(() => {
+      if (!stopped) void attemptRegister()
+    }, 30000)
+
+    return () => {
+      stopped = true
+      clearInterval(interval)
+    }
+  }, [pushRegistered, token])
 
   // Handle foreground notifications (show popup)
   useEffect(() => {

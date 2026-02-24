@@ -3,6 +3,14 @@ import { NotificationType } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { sendPushToDevices } from '@/lib/services/mobile-push'
 
+export type CreateNotificationResult = {
+  ok: boolean
+  notificationId?: string
+  traceId?: string
+  deliveryStatus?: 'QUEUED' | 'SENT' | 'FAILED'
+  reason?: string
+}
+
 interface CreateNotificationParams {
   tenantId: string
   userId: string
@@ -54,7 +62,7 @@ async function shouldCollapseByRateLimit(tenantId: string, userId: string) {
   return count >= 20
 }
 
-async function createAndSendNotification(params: CreateNotificationParams) {
+async function createAndSendNotification(params: CreateNotificationParams): Promise<CreateNotificationResult> {
   const traceId = makeTraceId()
   const deepLink = buildMobileDeepLink(params.linkType, params.linkId)
   const rateLimited = await shouldCollapseByRateLimit(params.tenantId, params.userId)
@@ -101,7 +109,7 @@ async function createAndSendNotification(params: CreateNotificationParams) {
     })
   } catch (error: any) {
     if (error?.code === 'P2002') {
-      return null
+      return { ok: true, reason: 'duplicate_event' }
     }
     throw error
   }
@@ -123,28 +131,41 @@ async function createAndSendNotification(params: CreateNotificationParams) {
     },
   })
 
+  const deliveryStatus: 'FAILED' | 'SENT' = pushResult.failed > 0 && pushResult.sent === 0 ? 'FAILED' : 'SENT'
+  const failureReason =
+    pushResult.failed > 0
+      ? `tickets_failed=${pushResult.failed};receipts_failed=${pushResult.receiptErrors.length}`
+      : null
+
   await prisma.notification.update({
     where: { id: notification.id },
     data: {
-      deliveryStatus: pushResult.failed > 0 && pushResult.sent === 0 ? 'FAILED' : 'SENT',
+      deliveryStatus,
       sentAt: new Date(),
-      failureReason:
-        pushResult.failed > 0
-          ? `tickets_failed=${pushResult.failed};receipts_failed=${pushResult.receiptErrors.length}`
-          : null,
+      failureReason,
     },
   })
-  return notification
-}
 
-export async function createNotification(params: CreateNotificationParams) {
-  try {
-    await createAndSendNotification(params)
-  } catch (error) {
-    console.error('Failed to create notification:', error)
+  return {
+    ok: true,
+    notificationId: notification.id,
+    traceId,
+    deliveryStatus,
+    reason: failureReason || undefined,
   }
 }
 
+export async function createNotification(params: CreateNotificationParams): Promise<CreateNotificationResult> {
+  try {
+    return await createAndSendNotification(params)
+  } catch (error) {
+    console.error('Failed to create notification:', error)
+    return {
+      ok: false,
+      reason: error instanceof Error ? error.message : 'create_notification_failed',
+    }
+  }
+}
 export async function createNotificationsForUsers(
   tenantId: string,
   userIds: string[],

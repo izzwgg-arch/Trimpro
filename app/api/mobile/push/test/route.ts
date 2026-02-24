@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
   }
 
   const traceId = `test_${Date.now()}_${user.id}`
-  await createNotification({
+  const result = await createNotification({
     tenantId: user.tenantId,
     userId: user.id,
     type: 'SYSTEM',
@@ -23,5 +23,16 @@ export async function POST(request: NextRequest) {
     actorUserId: user.id,
   })
 
-  return NextResponse.json({ success: true, traceId })
+  const success = Boolean(result.ok)
+  return NextResponse.json(
+    {
+      success,
+      traceId: result.traceId || traceId,
+      notificationId: result.notificationId || null,
+      deliveryStatus: result.deliveryStatus || null,
+      reason: result.reason || null,
+    },
+    { status: success ? 200 : 500 }
+  )
+
 }
