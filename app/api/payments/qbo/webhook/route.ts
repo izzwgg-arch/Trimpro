@@ -5,8 +5,8 @@ import { rateLimitOrThrow } from '@/lib/security/rate-limit'
 import { getQboSessionForTenant } from '@/lib/qbo/session'
 import { quickBooksService } from '@/lib/services/quickbooks'
 import { notifyInvoicePaid } from '@/lib/notifications'
-import { sendPaymentReceiptEmail } from '@/lib/services/email'
-import { splitEmailList } from '@/lib/email'
+import { sendPaymentReceiptIfNeeded } from '@/lib/qbo/receipts'
+import { reconcileSingleInvoiceAchPayment } from '@/lib/qbo/reconcile-ach'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,55 +15,75 @@ function moneyToNumber(v: any): number {
   return Number.isFinite(n) ? n : 0
 }
 
+function logWebhook(event: string, payload: Record<string, unknown>) {
+  console.info(
+    JSON.stringify({
+      area: 'qbo_webhook',
+      event,
+      ...payload,
+    })
+  )
+}
+
 async function applyInvoicePayment(params: {
   tenantId: string
   invoiceId: string
   amount: number
+  providerPaymentId: string
+  providerInvoiceId?: string
+  providerRealmId?: string
   reference: string
   rawEvent: any
 }) {
   const invoice = await prisma.invoice.findFirst({
     where: { id: params.invoiceId, tenantId: params.tenantId },
     include: {
-      client: {
-        select: {
-          name: true,
-          email: true,
-          contacts: {
-            where: { email: { not: null } },
-            orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
-            take: 1,
-            select: { email: true },
-          },
-        },
-      },
-      tenant: { select: { name: true } },
+      client: { select: { name: true } },
     },
   })
   if (!invoice) return
 
-  // Idempotency: reference is unique on Payment.reference.
+  // Idempotency: provider + providerPaymentId is unique.
   const existing = await prisma.payment.findFirst({
-    where: { reference: params.reference },
+    where: {
+      provider: 'quickbooks',
+      providerPaymentId: params.providerPaymentId,
+    },
   })
-  if (existing) return
+  if (existing) {
+    logWebhook('payment_already_applied', {
+      tenantId: params.tenantId,
+      invoiceId: params.invoiceId,
+      providerPaymentId: params.providerPaymentId,
+      existingPaymentId: existing.id,
+    })
+    return existing.id
+  }
 
   const remainingBeforePayment = Math.max(0, Number(invoice.total) - Number(invoice.paidAmount))
   const amount = Math.max(0, Math.min(params.amount, remainingBeforePayment))
-  if (amount <= 0) return
+  if (amount <= 0) return null
+
+  let createdPaymentId: string | null = null
 
   await prisma.$transaction(async (tx) => {
-    await tx.payment.create({
+    const payment = await tx.payment.create({
       data: {
         invoiceId: invoice.id,
         amount,
         status: 'COMPLETED',
         method: 'ACH',
         reference: params.reference,
+        provider: 'quickbooks',
+        providerPaymentId: params.providerPaymentId,
+        providerInvoiceId: params.providerInvoiceId || null,
+        providerRealmId: params.providerRealmId || null,
+        rawPayload: params.rawEvent ?? undefined,
         processedAt: new Date(),
         notes: 'QuickBooks Payments (ACH)',
       },
     })
+    createdPaymentId = payment.id
 
     const newPaidAmount = Number(invoice.paidAmount) + amount
     const newBalance = Math.max(0, Number(invoice.total) - newPaidAmount)
@@ -87,7 +107,7 @@ async function applyInvoicePayment(params: {
         externalId: params.reference,
         invoiceId: invoice.id,
         rawEvent: params.rawEvent ?? undefined,
-        metadata: { source: 'qbo_webhook' },
+        metadata: { source: 'qbo_webhook', providerPaymentId: params.providerPaymentId },
       },
     })
   })
@@ -99,32 +119,170 @@ async function applyInvoicePayment(params: {
     amount,
     invoice.client?.name || 'Customer'
   )
+  return createdPaymentId
+}
 
-  // Customer-facing receipt email (best effort).
-  try {
-    const to =
-      splitEmailList(invoice.client?.email || '')[0] ||
-      String(invoice.client?.contacts?.[0]?.email || '').trim() ||
-      ''
-    if (to) {
-      const appUrl =
-        process.env.PUBLIC_APP_URL ||
-        process.env.NEXT_PUBLIC_APP_URL ||
-        process.env.CANONICAL_PUBLIC_APP_URL ||
-        'https://app.trimprony.com'
-      await sendPaymentReceiptEmail({
-        to,
-        invoiceNumber: invoice.invoiceNumber,
-        amount,
-        paidAt: new Date(),
-        reference: params.reference,
-        companyName: invoice.tenant?.name || null,
-        invoiceUrl: `${String(appUrl).replace(/\/+$/, '')}/portal/pay/${invoice.id}`,
+async function processPaymentEntity(params: {
+  tenantId: string
+  realmId: string
+  paymentId: string
+  providerEventId: string
+  payload: any
+}) {
+  const session = await getQboSessionForTenant(params.tenantId)
+  if (!session) throw new Error('QBO session missing for tenant')
+
+  const paymentRes = await quickBooksService.makeAPIRequest(
+    session.accessToken,
+    session.realmId,
+    `/payment/${params.paymentId}`,
+    'GET'
+  )
+  const payment = paymentRes?.Payment
+  const totalAmt = moneyToNumber(payment?.TotalAmt)
+  const lines: any[] = Array.isArray(payment?.Line) ? payment.Line : []
+  const linked = lines.flatMap((l) => (Array.isArray(l?.LinkedTxn) ? l.LinkedTxn : []))
+  const linkedInvoices = linked.filter((t) => String(t?.TxnType || '').toLowerCase() === 'invoice')
+
+  logWebhook('payment_canonical_fetched', {
+    tenantId: params.tenantId,
+    realmId: params.realmId,
+    paymentId: params.paymentId,
+    linkedInvoiceCount: linkedInvoices.length,
+  })
+
+  for (const li of linkedInvoices) {
+    const qboInvoiceId = String(li?.TxnId || '')
+    if (!qboInvoiceId) continue
+    const localInvoice = await prisma.invoice.findFirst({
+      where: { tenantId: params.tenantId, qboSyncId: qboInvoiceId },
+      select: { id: true },
+    })
+    if (!localInvoice?.id) {
+      logWebhook('payment_invoice_mapping_missing', {
+        tenantId: params.tenantId,
+        realmId: params.realmId,
+        paymentId: params.paymentId,
+        qboInvoiceId,
+      })
+      continue
+    }
+
+    const lineAmount = moneyToNumber(li?.Amount ?? totalAmt)
+    const createdPaymentId = await applyInvoicePayment({
+      tenantId: params.tenantId,
+      invoiceId: localInvoice.id,
+      amount: lineAmount,
+      providerPaymentId: params.paymentId,
+      providerInvoiceId: qboInvoiceId,
+      providerRealmId: params.realmId,
+      reference: `qbo_payment_${params.paymentId}`,
+      rawEvent: params.payload,
+    })
+
+    await prisma.invoicePaymentIntent.updateMany({
+      where: {
+        tenantId: params.tenantId,
+        invoiceId: localInvoice.id,
+        provider: 'qbo',
+        method: 'ach',
+        status: { in: ['CREATED', 'LINK_CREATED', 'PENDING'] as any },
+      },
+      data: {
+        status: 'SUCCEEDED',
+        qboPaymentId: params.paymentId,
+      },
+    })
+
+    if (createdPaymentId) {
+      const receiptResult = await sendPaymentReceiptIfNeeded(createdPaymentId)
+      logWebhook('receipt_send_attempted', {
+        tenantId: params.tenantId,
+        invoiceId: localInvoice.id,
+        paymentId: createdPaymentId,
+        providerPaymentId: params.paymentId,
+        sent: receiptResult.sent,
+        reason: receiptResult.reason,
       })
     }
-  } catch (e) {
-    console.error('[QBO ACH] Failed to send receipt email:', e)
+
+    const intent = await prisma.invoicePaymentIntent.findFirst({
+      where: {
+        tenantId: params.tenantId,
+        invoiceId: localInvoice.id,
+        provider: 'qbo',
+        method: 'ach',
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
+    })
+    if (intent?.id) {
+      await prisma.paymentEvent.create({
+        data: {
+          tenantId: params.tenantId,
+          intentId: intent.id,
+          provider: 'qbo',
+          providerEventId: params.providerEventId,
+          type: 'webhook',
+          statusFrom: 'PENDING',
+          statusTo: 'SUCCEEDED',
+          payloadHash: hashPayload(JSON.stringify(params.payload || {})),
+          rawPayload: params.payload,
+        },
+      }).catch(() => undefined)
+    }
   }
+}
+
+async function processInvoiceEntity(params: {
+  tenantId: string
+  realmId: string
+  invoiceId: string
+}) {
+  const session = await getQboSessionForTenant(params.tenantId)
+  if (!session) throw new Error('QBO session missing for tenant')
+  const invoiceRes = await quickBooksService.makeAPIRequest(
+    session.accessToken,
+    session.realmId,
+    `/invoice/${params.invoiceId}`,
+    'GET'
+  )
+  const qboInvoice = invoiceRes?.Invoice
+  const qboBalance = moneyToNumber(qboInvoice?.Balance ?? qboInvoice?.BalanceAmt)
+
+  const localInvoice = await prisma.invoice.findFirst({
+    where: { tenantId: params.tenantId, qboSyncId: params.invoiceId },
+    select: { id: true },
+  })
+  if (!localInvoice?.id) {
+    logWebhook('invoice_mapping_missing', {
+      tenantId: params.tenantId,
+      realmId: params.realmId,
+      qboInvoiceId: params.invoiceId,
+    })
+    return
+  }
+
+  if (qboBalance <= 0) {
+    await reconcileSingleInvoiceAchPayment(localInvoice.id)
+    await prisma.invoicePaymentIntent.updateMany({
+      where: {
+        tenantId: params.tenantId,
+        invoiceId: localInvoice.id,
+        provider: 'qbo',
+        method: 'ach',
+        status: { in: ['CREATED', 'LINK_CREATED', 'PENDING'] as any },
+      },
+      data: { status: 'SUCCEEDED' },
+    })
+  }
+  logWebhook('invoice_canonical_fetched', {
+    tenantId: params.tenantId,
+    realmId: params.realmId,
+    qboInvoiceId: params.invoiceId,
+    qboBalance,
+    localInvoiceId: localInvoice.id,
+  })
 }
 
 export async function POST(request: NextRequest) {
@@ -140,8 +298,10 @@ export async function POST(request: NextRequest) {
 
   const ok = verifyIntuitWebhookSignature({ rawBody, signatureHeader: signature, verifierToken })
   if (!ok) {
+    logWebhook('signature_invalid', { hasSignature: Boolean(signature) })
     return NextResponse.json({ error: 'Invalid webhook signature' }, { status: 401 })
   }
+  logWebhook('signature_valid', { hasSignature: Boolean(signature) })
 
   let payload: any
   try {
@@ -174,6 +334,14 @@ export async function POST(request: NextRequest) {
       const seq = String(e?.sequenceNumber || '')
 
       const providerEventId = `qbo:${realmId}:${name}:${id}:${operation}:${seq}`
+      logWebhook('entity_received', {
+        tenantId: qboRow.tenantId,
+        realmId,
+        providerEventId,
+        entityName: name,
+        entityId: id,
+        operation,
+      })
 
       // Store webhook event for idempotency + audit.
       const already = await prisma.webhookEvent.findUnique({
@@ -195,86 +363,43 @@ export async function POST(request: NextRequest) {
       })
 
       try {
-        // We primarily care about Payment events (ACH completion).
         if (name.toLowerCase() === 'payment' && id) {
-          const session = await getQboSessionForTenant(qboRow.tenantId)
-          if (!session) throw new Error('QBO session missing for tenant')
-
-          const paymentRes = await quickBooksService.makeAPIRequest(
-            session.accessToken,
-            session.realmId,
-            `/payment/${id}`,
-            'GET'
-          )
-          const payment = paymentRes?.Payment
-          const totalAmt = moneyToNumber(payment?.TotalAmt)
-          const lines: any[] = Array.isArray(payment?.Line) ? payment.Line : []
-          const linked = lines.flatMap((l) => (Array.isArray(l?.LinkedTxn) ? l.LinkedTxn : []))
-          const linkedInvoices = linked.filter((t) => String(t?.TxnType || '').toLowerCase() === 'invoice')
-
-          for (const li of linkedInvoices) {
-            const qboInvoiceId = String(li?.TxnId || '')
-            if (!qboInvoiceId) continue
-            const localInvoice = await prisma.invoice.findFirst({
-              where: { tenantId: qboRow.tenantId, qboSyncId: qboInvoiceId },
-              select: { id: true },
-            })
-            if (!localInvoice?.id) continue
-
-            // Update latest open ACH intent (if any).
-            const intent = await prisma.invoicePaymentIntent.findFirst({
-              where: {
-                tenantId: qboRow.tenantId,
-                invoiceId: localInvoice.id,
-                provider: 'qbo',
-                method: 'ach',
-                status: { in: ['CREATED', 'LINK_CREATED', 'PENDING'] as any },
-              },
-              orderBy: { createdAt: 'desc' },
-            })
-
-            if (intent) {
-              await prisma.invoicePaymentIntent.update({
-                where: { id: intent.id },
-                data: {
-                  status: 'SUCCEEDED',
-                  qboPaymentId: id,
-                },
-              })
-              await prisma.paymentEvent.create({
-                data: {
-                  tenantId: qboRow.tenantId,
-                  intentId: intent.id,
-                  provider: 'qbo',
-                  providerEventId,
-                  type: 'webhook',
-                  statusFrom: intent.status,
-                  statusTo: 'SUCCEEDED',
-                  payloadHash,
-                  rawPayload: payload,
-                },
-              })
-            }
-
-            // Apply to local invoice ledger.
-            await applyInvoicePayment({
-              tenantId: qboRow.tenantId,
-              invoiceId: localInvoice.id,
-              amount: totalAmt,
-              reference: `qbo_payment_${id}`,
-              rawEvent: payload,
-            })
-          }
+          await processPaymentEntity({
+            tenantId: qboRow.tenantId,
+            realmId,
+            paymentId: id,
+            providerEventId,
+            payload,
+          })
+        } else if (name.toLowerCase() === 'invoice' && id) {
+          await processInvoiceEntity({
+            tenantId: qboRow.tenantId,
+            realmId,
+            invoiceId: id,
+          })
         }
 
         await prisma.webhookEvent.update({
           where: { id: webhookRow.id },
           data: { processed: true, processedAt: new Date(), error: null },
         })
+        logWebhook('entity_processed', {
+          tenantId: qboRow.tenantId,
+          realmId,
+          providerEventId,
+          processed: true,
+        })
       } catch (err: any) {
         await prisma.webhookEvent.update({
           where: { id: webhookRow.id },
           data: { processed: false, processedAt: new Date(), error: err?.message || 'Webhook processing failed' },
+        })
+        logWebhook('entity_processed', {
+          tenantId: qboRow.tenantId,
+          realmId,
+          providerEventId,
+          processed: false,
+          error: err?.message || 'Webhook processing failed',
         })
       }
     }

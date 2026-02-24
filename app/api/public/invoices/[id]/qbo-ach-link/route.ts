@@ -20,10 +20,15 @@ function withQboReturnHints(hostedUrl: string, returnUrl?: string): string {
   const ret = String(returnUrl || '').trim()
   if (!raw || !ret) return raw
   try {
+    const cancelRet = ret.includes('result=success') ? ret.replace('result=success', 'result=cancel') : ret
+    const failedRet = ret.includes('result=success') ? ret.replace('result=success', 'result=failed') : ret
     const u = new URL(raw)
     // QBO hosted pages may honor one of these depending on product/version.
     u.searchParams.set('redirect_uri', ret)
     u.searchParams.set('return_url', ret)
+    u.searchParams.set('success_url', ret)
+    u.searchParams.set('cancel_url', cancelRet)
+    u.searchParams.set('failure_url', failedRet)
     return u.toString()
   } catch {
     return raw
@@ -139,9 +144,11 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     })
 
     return NextResponse.json({
-      hostedUrl: withQboReturnHints(result.hostedUrl, parsed.data.returnUrl),
+      hostedUrl: withQboReturnHints(result.hostedUrl, result.returnUrl || parsed.data.returnUrl),
       publicUrl: result.publicUrl,
       intentId: result.intentId,
+      attempt: result.returnToken,
+      returnUrl: result.returnUrl,
     })
   } catch (err: any) {
     console.error('[QBO ACH] Unhandled error in qbo-ach-link route:', {

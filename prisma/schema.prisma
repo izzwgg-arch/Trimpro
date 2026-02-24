@@ -875,6 +875,11 @@ model Payment {
   status    PaymentStatus @default(PENDING)
   method    PaymentMethod
   reference String?       @unique
+  provider  String?
+  providerPaymentId String?
+  providerInvoiceId String?
+  providerRealmId   String?
+  rawPayload        Json?
 
   // SOLA API
   solaTransactionId String? @unique
@@ -890,6 +895,11 @@ model Payment {
 
   // Notes
   notes String? @db.Text
+  receiptToken         String?   @unique
+  receiptTokenExpiresAt DateTime?
+  receiptEmailSentAt   DateTime?
+  receiptEmailError    String?   @db.Text
+  receiptEmailAttempts Int       @default(0)
 
   invoice    Invoice    @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
   activities Activity[]
@@ -900,6 +910,9 @@ model Payment {
   @@index([invoiceId])
   @@index([status])
   @@index([solaTransactionId])
+  @@index([provider])
+  @@index([providerPaymentId])
+  @@unique([provider, providerPaymentId], map: "payments_provider_payment_id_unique_idx")
   @@map("payments")
 }
 
@@ -2525,6 +2538,9 @@ model InvoicePaymentIntent {
   // Public, unguessable token used in our public pay page URL
   publicToken String    @unique
   expiresAt   DateTime?
+  returnToken String?   @unique
+  returnTokenExpiresAt DateTime?
+  returnTokenUsedAt DateTime?
 
   // Idempotency for session/link creation
   idempotencyKey String @unique
@@ -2549,6 +2565,7 @@ model InvoicePaymentIntent {
   @@index([qboRealmId])
   @@index([qboInvoiceId])
   @@index([qboPaymentId])
+  @@index([returnToken])
   @@map("invoice_payment_intents")
 }
 

@@ -373,6 +373,10 @@ export async function sendPaymentReceiptEmail(params: {
   reference?: string | null
   companyName?: string | null
   invoiceUrl?: string | null
+  receiptUrl?: string | null
+  paymentMethod?: string | null
+  providerPaymentId?: string | null
+  providerInvoiceId?: string | null
 }): Promise<void> {
   const emailService = new EmailService()
   const paidAtText = params.paidAt ? new Date(params.paidAt).toLocaleString() : new Date().toLocaleString()
@@ -380,6 +384,8 @@ export async function sendPaymentReceiptEmail(params: {
     Number(params.amount || 0)
   )
   const company = params.companyName || FROM_NAME
+  const method = params.paymentMethod || 'ACH'
+  const providerPaymentId = params.providerPaymentId || params.reference || ''
 
   await emailService.sendEmail({
     to: params.to,
@@ -391,8 +397,12 @@ export async function sendPaymentReceiptEmail(params: {
           <p>Thank you. We received your ACH payment.</p>
           <p><strong>Invoice:</strong> ${params.invoiceNumber}</p>
           <p><strong>Amount paid:</strong> ${amountText}</p>
+          <p><strong>Method:</strong> ${method}</p>
           <p><strong>Paid at:</strong> ${paidAtText}</p>
+          ${providerPaymentId ? `<p><strong>Payment ID:</strong> ${providerPaymentId}</p>` : ''}
+          ${params.providerInvoiceId ? `<p><strong>Provider Invoice ID:</strong> ${params.providerInvoiceId}</p>` : ''}
           ${params.reference ? `<p><strong>Reference:</strong> ${params.reference}</p>` : ''}
+          ${params.receiptUrl ? `<p><a href="${params.receiptUrl}">View receipt</a></p>` : ''}
           ${params.invoiceUrl ? `<p><a href="${params.invoiceUrl}">View invoice</a></p>` : ''}
           <p>— ${company}</p>
         </body>
@@ -404,8 +414,12 @@ Payment Receipt
 Thank you. We received your ACH payment.
 Invoice: ${params.invoiceNumber}
 Amount paid: ${amountText}
+Method: ${method}
 Paid at: ${paidAtText}
+${providerPaymentId ? `Payment ID: ${providerPaymentId}` : ''}
+${params.providerInvoiceId ? `Provider Invoice ID: ${params.providerInvoiceId}` : ''}
 ${params.reference ? `Reference: ${params.reference}` : ''}
+${params.receiptUrl ? `View receipt: ${params.receiptUrl}` : ''}
 ${params.invoiceUrl ? `View invoice: ${params.invoiceUrl}` : ''}
 
 — ${company}

@@ -12,10 +12,16 @@ function randomPublicToken(): string {
   return crypto.randomBytes(32).toString('hex')
 }
 
+function randomAttemptToken(): string {
+  return crypto.randomBytes(32).toString('hex')
+}
+
 export type AchSessionResult = {
   intentId: string
   publicUrl: string
   hostedUrl: string
+  returnToken: string
+  returnUrl: string
 }
 
 function appBaseUrl(): string {
@@ -196,10 +202,27 @@ export async function createAchPaymentSession(params: {
   const existingKey = await prisma.idempotencyKey.findUnique({
     where: { key: idempotencyKey },
   })
+  const returnToken = randomAttemptToken()
+  const returnTokenExpiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000)
   if (existingKey?.response) {
     const resp: any = existingKey.response
     if (resp?.publicUrl && resp?.hostedUrl && resp?.intentId) {
-      return { intentId: resp.intentId, publicUrl: resp.publicUrl, hostedUrl: resp.hostedUrl }
+      const updatedIntent = await prisma.invoicePaymentIntent.update({
+        where: { id: String(resp.intentId) },
+        data: {
+          returnToken,
+          returnTokenExpiresAt,
+        },
+        select: { id: true },
+      })
+      const returnUrl = `${appBaseUrl()}/pay/return?provider=quickbooks&attempt=${encodeURIComponent(returnToken)}&result=success`
+      return {
+        intentId: updatedIntent.id,
+        publicUrl: resp.publicUrl,
+        hostedUrl: resp.hostedUrl,
+        returnToken,
+        returnUrl,
+      }
     }
   }
 
@@ -224,6 +247,8 @@ export async function createAchPaymentSession(params: {
       qboInvoiceId: String(invoice.qboSyncId),
       hostedUrl,
       publicToken,
+      returnToken,
+      returnTokenExpiresAt,
       idempotencyKey,
       createdById: params.createdById || null,
       customerEmail: sendToEmail,
@@ -236,6 +261,7 @@ export async function createAchPaymentSession(params: {
   })
 
   const publicUrl = `${appBaseUrl()}/pay/invoice/${publicToken}`
+  const returnUrl = `${appBaseUrl()}/pay/return?provider=quickbooks&attempt=${encodeURIComponent(returnToken)}&result=success`
 
   await prisma.idempotencyKey.upsert({
     where: { key: idempotencyKey },
@@ -265,7 +291,7 @@ export async function createAchPaymentSession(params: {
     },
   })
 
-  return { intentId: intent.id, publicUrl, hostedUrl }
+  return { intentId: intent.id, publicUrl, hostedUrl, returnToken, returnUrl }
 }
 
 export async function getAchStatusByInvoice(params: { tenantId: string; invoiceId: string }) {

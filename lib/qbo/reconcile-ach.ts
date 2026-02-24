@@ -2,8 +2,7 @@ import { prisma } from '@/lib/prisma'
 import { getQboSessionForTenant } from '@/lib/qbo/session'
 import { quickBooksService } from '@/lib/services/quickbooks'
 import { notifyInvoicePaid } from '@/lib/notifications'
-import { sendPaymentReceiptEmail } from '@/lib/services/email'
-import { splitEmailList } from '@/lib/email'
+import { sendPaymentReceiptIfNeeded } from '@/lib/qbo/receipts'
 
 function toMoney(n: number) {
   return Math.round(n * 100) / 100
@@ -98,6 +97,10 @@ export async function reconcileSingleInvoiceAchPayment(invoiceId: string): Promi
           status: 'COMPLETED',
           method: 'ACH',
           reference,
+          provider: 'quickbooks',
+          providerPaymentId: reference,
+          providerInvoiceId: invoice.qboSyncId || null,
+          providerRealmId: session.realmId,
           processedAt: new Date(),
           notes: 'QuickBooks ACH reconcile',
         },
@@ -154,29 +157,20 @@ export async function reconcileSingleInvoiceAchPayment(invoiceId: string): Promi
     invoice.client?.name || 'Customer'
   )
 
-  try {
-    const to =
-      splitEmailList(invoice.client?.email || '')[0] ||
-      String(invoice.client?.contacts?.[0]?.email || '').trim() ||
-      ''
-    if (to) {
-      const appUrl =
-        process.env.PUBLIC_APP_URL ||
-        process.env.NEXT_PUBLIC_APP_URL ||
-        process.env.CANONICAL_PUBLIC_APP_URL ||
-        'https://app.trimprony.com'
-      await sendPaymentReceiptEmail({
-        to,
-        invoiceNumber: invoice.invoiceNumber,
-        amount: appliedAmount,
-        paidAt: new Date(),
-        reference,
-        companyName: invoice.tenant?.name || null,
-        invoiceUrl: `${String(appUrl).replace(/\/+$/, '')}/portal/pay/${invoice.id}`,
-      })
+  const payment = await prisma.payment.findFirst({
+    where: {
+      invoiceId: invoice.id,
+      provider: 'quickbooks',
+      providerPaymentId: reference,
+    },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true },
+  })
+  if (payment?.id) {
+    const result = await sendPaymentReceiptIfNeeded(payment.id)
+    if (!result.sent && result.reason !== 'already_sent' && result.reason !== 'already_processing') {
+      console.error('[QBO ACH] Reconcile receipt send failed:', result)
     }
-  } catch (e) {
-    console.error('[QBO ACH] Reconcile receipt email failed:', e)
   }
 }
 
