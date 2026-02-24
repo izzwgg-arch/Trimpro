@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -30,10 +30,12 @@ interface Client {
 
 export default function NewRequestPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const preselectedClientId = searchParams.get('clientId')?.trim() || ''
   const [loading, setLoading] = useState(false)
   const [users, setUsers] = useState<User[]>([])
   const [clients, setClients] = useState<Client[]>([])
-  const [clientMode, setClientMode] = useState<'new' | 'existing'>('new')
+  const [clientMode, setClientMode] = useState<'new' | 'existing'>('existing')
   const [jobSitePlaceId, setJobSitePlaceId] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     clientId: '',
@@ -58,6 +60,34 @@ export default function NewRequestPage() {
     fetchUsers()
     fetchClients()
   }, [])
+
+  useEffect(() => {
+    if (!preselectedClientId) return
+    setClientMode('existing')
+    setFormData((prev) => ({
+      ...prev,
+      clientId: preselectedClientId,
+    }))
+  }, [preselectedClientId])
+
+  useEffect(() => {
+    if (!preselectedClientId || clients.length === 0) return
+    const selected = clients.find((c) => c.id === preselectedClientId)
+    if (!selected) return
+    const nameParts = selected.name.trim().split(/\s+/)
+    const firstName = nameParts[0] || ''
+    const lastName = nameParts.slice(1).join(' ')
+    setClientMode('existing')
+    setFormData((prev) => ({
+      ...prev,
+      clientId: selected.id,
+      firstName,
+      lastName,
+      email: selected.email || '',
+      phone: selected.phone || '',
+      company: selected.companyName || '',
+    }))
+  }, [clients, preselectedClientId])
 
   const fetchUsers = async () => {
     try {
@@ -204,6 +234,8 @@ export default function NewRequestPage() {
                     setClientMode(nextMode)
                     if (nextMode === 'new') {
                       setFormData((prev) => ({ ...prev, clientId: '' }))
+                    } else {
+                      setFormData((prev) => ({ ...prev, clientId: preselectedClientId || '' }))
                     }
                   }}
                 >
