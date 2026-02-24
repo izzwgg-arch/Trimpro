@@ -20,14 +20,16 @@ import { DashboardStackParamList } from '../../types/navigation'
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'DashboardHome'>
 
-interface JobsResponse {
-  jobs: Job[]
-}
-
 interface AssignmentsResponse {
   jobs: Array<Pick<Job, 'id' | 'jobNumber' | 'title' | 'status' | 'priority'> & { updatedAt: string }>
   tasks: Array<Pick<Task, 'id' | 'title' | 'status' | 'priority'> & { dueDate?: string | null; updatedAt: string }>
   issues: Array<Pick<Issue, 'id' | 'title' | 'status' | 'priority' | 'type' | 'jobId'> & { updatedAt: string }>
+  jobsTodayCount: number
+  openTasksCount: number
+  openIssuesCount: number
+  todaysJobs: Job[]
+  todaysTasks: Array<Pick<Task, 'id' | 'title' | 'status' | 'priority'> & { dueDate?: string | null; updatedAt: string }>
+  openIssues: Array<Pick<Issue, 'id' | 'title' | 'status' | 'priority' | 'type' | 'jobId'> & { updatedAt: string }>
   serverTime: string
 }
 
@@ -40,22 +42,16 @@ export function DashboardScreen({ navigation }: Props) {
   const isOnline = useOnlineState()
   const outboxCount = useOutboxCount()
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null)
-  const todayKey = useMemo(() => new Date().toDateString(), [])
-
-  const jobsQuery = useQuery({
-    queryKey: ['mobile-jobs-dashboard'],
-    queryFn: async () => {
-      const data = await apiRequest<JobsResponse>('/api/mobile/jobs?limit=100')
-      setLastSyncAt(new Date())
-      return data
-    },
-    refetchInterval: 60_000,
-  })
 
   const assignmentsQuery = useQuery({
     queryKey: ['mobile-assignments'],
     queryFn: async () => {
-      const data = await apiRequest<AssignmentsResponse>('/api/mobile/assignments')
+      const now = new Date()
+      const localDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+      const tzOffsetMinutes = now.getTimezoneOffset()
+      const data = await apiRequest<AssignmentsResponse>(
+        `/api/mobile/assignments?localDate=${encodeURIComponent(localDate)}&tzOffsetMinutes=${tzOffsetMinutes}`
+      )
       setLastSyncAt(new Date())
       return data
     },
@@ -68,40 +64,12 @@ export function DashboardScreen({ navigation }: Props) {
     refetchInterval: 45_000,
   })
 
-  const jobs = useMemo(() => jobsQuery.data?.jobs ?? [], [jobsQuery.data])
-  const taskNotifications = useMemo(() => assignmentsQuery.data?.tasks ?? [], [assignmentsQuery.data])
-  const issueNotifications = useMemo(() => assignmentsQuery.data?.issues ?? [], [assignmentsQuery.data])
-
-  const todaysJobs = useMemo(
-    () =>
-      jobs.filter((job) => {
-        if (!job.scheduledStart) return false
-        return new Date(job.scheduledStart).toDateString() === todayKey
-      }),
-    [jobs, todayKey]
-  )
-
-  const todayJobIds = useMemo(() => new Set(todaysJobs.map((j) => j.id)), [todaysJobs])
-
-  const todaysTasks = useMemo(
-    () =>
-      taskNotifications.filter((task) => {
-        if (String(task.status).toUpperCase() === 'COMPLETED') return false
-        if (!task.dueDate) return false
-        return new Date(task.dueDate).toDateString() === todayKey
-      }),
-    [taskNotifications, todayKey]
-  )
-
-  const openIssues = useMemo(
-    () =>
-      issueNotifications.filter((issue) => {
-        const status = String(issue.status || '').toUpperCase()
-        if (['RESOLVED', 'CLOSED', 'CANCELLED'].includes(status)) return false
-        return !issue.jobId || todayJobIds.has(issue.jobId)
-      }),
-    [issueNotifications, todayJobIds]
-  )
+  const todaysJobs = useMemo(() => assignmentsQuery.data?.todaysJobs ?? [], [assignmentsQuery.data])
+  const todaysTasks = useMemo(() => assignmentsQuery.data?.todaysTasks ?? [], [assignmentsQuery.data])
+  const openIssues = useMemo(() => assignmentsQuery.data?.openIssues ?? [], [assignmentsQuery.data])
+  const jobsTodayCount = assignmentsQuery.data?.jobsTodayCount ?? todaysJobs.length
+  const openTasksCount = assignmentsQuery.data?.openTasksCount ?? 0
+  const openIssuesCount = assignmentsQuery.data?.openIssuesCount ?? openIssues.length
 
   const unreadMessagesByJob = useMemo(() => {
     const map = new Map<string, number>()
@@ -157,7 +125,7 @@ export function DashboardScreen({ navigation }: Props) {
   }
 
   const onRefreshAll = async () => {
-    await Promise.all([jobsQuery.refetch(), assignmentsQuery.refetch(), conversationsQuery.refetch()])
+    await Promise.all([assignmentsQuery.refetch(), conversationsQuery.refetch()])
   }
 
   const todayLabel = useMemo(
@@ -219,7 +187,7 @@ export function DashboardScreen({ navigation }: Props) {
         keyExtractor={() => 'dashboard'}
         refreshControl={
           <RefreshControl
-            refreshing={jobsQuery.isRefetching || assignmentsQuery.isRefetching || conversationsQuery.isRefetching}
+            refreshing={assignmentsQuery.isRefetching || conversationsQuery.isRefetching}
             onRefresh={() => void onRefreshAll()}
           />
         }
@@ -241,15 +209,15 @@ export function DashboardScreen({ navigation }: Props) {
                 </View>
               </View>
               <View style={styles.glanceRow}>
-                <GlanceStat label="Jobs Today" value={todaysJobs.length} />
-                <GlanceStat label="Tasks Due" value={todaysTasks.length} />
-                <GlanceStat label="Open Issues" value={openIssues.length} />
+                <GlanceStat label="Jobs Today" value={jobsTodayCount} />
+                <GlanceStat label="Tasks Due" value={openTasksCount} />
+                <GlanceStat label="Open Issues" value={openIssuesCount} />
               </View>
             </Card>
 
             <SyncBanner
               isOnline={isOnline}
-              isSyncing={jobsQuery.isFetching || assignmentsQuery.isFetching || conversationsQuery.isFetching}
+              isSyncing={assignmentsQuery.isFetching || conversationsQuery.isFetching}
               lastSyncAt={lastSyncAt}
               outboxCount={outboxCount}
             />
