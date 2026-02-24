@@ -1,6 +1,6 @@
 import 'react-native-gesture-handler'
 import React, { useEffect, useRef, useState } from 'react'
-import { TextInput, View } from 'react-native'
+import { AppState, TextInput, View } from 'react-native'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import * as Notifications from 'expo-notifications'
 import * as Linking from 'expo-linking'
@@ -62,6 +62,20 @@ function SyncAndPushBootstrap() {
       stopped = true
       clearInterval(interval)
     }
+  }, [pushRegistered, token])
+
+  // Re-attempt registration whenever app comes back to foreground.
+  useEffect(() => {
+    if (!token) return
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active' || pushRegistered) return
+      void registerPushToken()
+        .then(() => setPushRegistered(true))
+        .catch((error) => {
+          console.warn('Push registration on foreground failed:', error)
+        })
+    })
+    return () => sub.remove()
   }, [pushRegistered, token])
 
   // Handle foreground notifications (show popup)

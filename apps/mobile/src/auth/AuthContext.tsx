@@ -3,7 +3,7 @@ import { ActivityIndicator, View } from 'react-native'
 import { apiRequest, setUnauthorizedHandler } from '../api/client'
 import { clearAuth, getAccessToken, getStoredUser, saveAuth } from './secure-storage'
 import { AuthUser } from '../types/models'
-import { unregisterPushToken } from '../notifications/registerPush'
+import { registerPushToken, unregisterPushToken } from '../notifications/registerPush'
 
 interface AuthContextValue {
   user: AuthUser | null
@@ -86,7 +86,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(response.accessToken)
     setUser(response.user)
     await saveAuth(response.accessToken, response.refreshToken, JSON.stringify(response.user))
-    
+
+    // Register push immediately after login so backend always has a token.
+    await registerPushToken().catch((error) => {
+      console.warn('Push registration after login failed:', error)
+    })
+
     // Fetch permissions after login
     await fetchPermissions(response.accessToken)
   }, [fetchPermissions])

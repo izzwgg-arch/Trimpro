@@ -22,6 +22,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'token is required' }, { status: 400 })
     }
 
+    console.info(
+      JSON.stringify({
+        area: 'push',
+        event: 'register_attempt',
+        tenantId: user.tenantId,
+        userId: user.id,
+        platform: platform || 'unknown',
+        deviceId: deviceId || null,
+        tokenPrefix: token.slice(0, 12),
+      })
+    )
+
     await registerUserPushDevice({
       tenantId: user.tenantId,
       userId: user.id,
@@ -33,6 +45,18 @@ export async function POST(request: NextRequest) {
       locale,
       timezone,
     })
+
+    console.info(
+      JSON.stringify({
+        area: 'push',
+        event: 'register_success',
+        tenantId: user.tenantId,
+        userId: user.id,
+        platform: platform || 'unknown',
+        deviceId: deviceId || null,
+        tokenPrefix: token.slice(0, 12),
+      })
+    )
 
     return NextResponse.json({ success: true, tokenRegistered: true })
   } catch (error) {
