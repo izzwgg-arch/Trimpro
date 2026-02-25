@@ -22,7 +22,13 @@ async function getStableDeviceId() {
 function getProjectId(): string | null {
   const fromExpoConfig = Constants.expoConfig?.extra?.eas?.projectId
   const fromEasConfig = (Constants as any)?.easConfig?.projectId
-  const projectId = String(fromEasConfig || fromExpoConfig || '').trim()
+  const fromManifest2 = (Constants as any)?.manifest2?.extra?.eas?.projectId
+  const fromManifest = (Constants as any)?.manifest?.extra?.eas?.projectId
+  // Last-resort fallback to this app's current EAS project id.
+  const fromFallback = '5d6344e3-86ce-4e96-93e8-13893313d47f'
+  const projectId = String(
+    fromEasConfig || fromExpoConfig || fromManifest2 || fromManifest || fromFallback || ''
+  ).trim()
   return projectId || null
 }
 
@@ -78,7 +84,13 @@ export async function registerPushToken() {
   const projectId = getProjectId()
   if (!projectId) throw new Error('EAS projectId is missing for push token registration')
 
-  const tokenData = await Notifications.getExpoPushTokenAsync({ projectId })
+  let tokenData: Notifications.ExpoPushToken
+  try {
+    tokenData = await Notifications.getExpoPushTokenAsync({ projectId })
+  } catch (error) {
+    console.warn('Expo push token with projectId failed, retrying without projectId:', error)
+    tokenData = await Notifications.getExpoPushTokenAsync()
+  }
   const token = tokenData.data
   const oldToken = await getStoredPushToken()
   const deviceId = await getStableDeviceId()
