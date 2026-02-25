@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { verifyPassword, generateAccessToken, generateRefreshToken, createRefreshToken, getUserFromToken } from '@/lib/auth'
+import { verifyPassword, generateAccessToken, generateRefreshToken, createRefreshToken } from '@/lib/auth'
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, password } = await request.json()
+    const { email, password, deviceId } = await request.json()
 
     if (!email || !password) {
       return NextResponse.json({ error: 'Email and password are required' }, { status: 400 })
@@ -57,9 +57,13 @@ export async function POST(request: NextRequest) {
 
     const accessToken = generateAccessToken(payload)
     const refreshToken = generateRefreshToken(payload)
+    const normalizedDeviceId =
+      typeof deviceId === 'string' && deviceId.trim().length > 0
+        ? deviceId.trim()
+        : crypto.randomUUID()
 
     // Save refresh token
-    await createRefreshToken(user.id, refreshToken)
+    await createRefreshToken(user.id, refreshToken, normalizedDeviceId)
 
     // Update last login
     const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown'

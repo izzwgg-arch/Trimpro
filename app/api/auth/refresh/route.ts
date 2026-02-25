@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { verifyRefreshToken, generateAccessToken, deleteRefreshToken, generateRefreshToken, createRefreshToken } from '@/lib/auth'
+import {
+  verifyRefreshToken,
+  generateAccessToken,
+  deleteRefreshToken,
+  generateRefreshToken,
+  createRefreshToken,
+  getRefreshTokenRecord,
+} from '@/lib/auth'
 
 export async function POST(request: NextRequest) {
   try {
-    const { refreshToken } = await request.json()
+    const { refreshToken, deviceId } = await request.json()
 
     if (!refreshToken) {
       return NextResponse.json({ error: 'Refresh token required' }, { status: 400 })
@@ -19,12 +26,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if token exists in database
-    const tokenRecord = await prisma.refreshToken.findUnique({
-      where: { token: refreshToken },
-      include: { user: true },
-    })
+    const tokenRecord = await getRefreshTokenRecord(refreshToken)
 
-    if (!tokenRecord || tokenRecord.expiresAt < new Date()) {
+    if (!tokenRecord || tokenRecord.expiresAt < new Date() || tokenRecord.revokedAt) {
       await deleteRefreshToken(refreshToken)
       return NextResponse.json({ error: 'Refresh token expired' }, { status: 401 })
     }
@@ -45,10 +49,24 @@ export async function POST(request: NextRequest) {
 
     const newAccessToken = generateAccessToken(newPayload)
     const newRefreshToken = generateRefreshToken(newPayload)
+    const normalizedDeviceId =
+      typeof deviceId === 'string' && deviceId.trim().length > 0
+        ? deviceId.trim()
+        : tokenRecord.deviceId
 
     // Replace old refresh token with new one
     await deleteRefreshToken(refreshToken)
-    await createRefreshToken(payload.userId, newRefreshToken)
+    await createRefreshToken(payload.userId, newRefreshToken, normalizedDeviceId)
+    await prisma.refreshToken.updateMany({
+      where: {
+        userId: payload.userId,
+        deviceId: normalizedDeviceId,
+        revokedAt: null,
+      },
+      data: {
+        lastUsedAt: new Date(),
+      },
+    })
 
     return NextResponse.json({
       accessToken: newAccessToken,
