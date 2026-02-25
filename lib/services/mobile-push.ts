@@ -162,6 +162,7 @@ export async function sendPushToDevices(params: {
   let sent = 0
   let failed = 0
   const ticketIds: string[] = []
+  const failedTickets: Array<{ status?: string; message?: string; details?: any }> = []
   for (const ticket of tickets) {
     if (ticket?.status === 'ok') {
       sent += 1
@@ -169,6 +170,11 @@ export async function sendPushToDevices(params: {
       continue
     }
     failed += 1
+    failedTickets.push({
+      status: ticket?.status,
+      message: ticket?.message,
+      details: ticket?.details,
+    })
     const errorCode = String(ticket?.details?.error || '')
     if (errorCode === 'DeviceNotRegistered') {
       const target = messages.find((m) => m.to === ticket?.details?.expoPushToken)
@@ -219,7 +225,9 @@ export async function sendPushToDevices(params: {
       sent,
       failed,
       ticketIds,
+      failedTickets: failedTickets.slice(0, 3),
       receiptErrorCount: receiptErrors.length,
+      receiptErrors: receiptErrors.slice(0, 3),
       tokenSample: tokens.slice(0, 3).map(maskedToken),
     })
   )
