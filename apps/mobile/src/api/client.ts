@@ -33,7 +33,9 @@ export async function apiRequest<T>(
     body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
   })
 
-  if (response.status === 401 && unauthorizedHandler) {
+  // Only force sign-out if we actually sent an auth token.
+  // This avoids login-time races where a request can briefly run before token persistence.
+  if (response.status === 401 && unauthorizedHandler && Boolean(token)) {
     unauthorizedHandler()
   }
 
