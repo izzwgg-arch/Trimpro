@@ -34,6 +34,7 @@
     },
     "android": {
       "package": "com.trimpro.field",
+      "googleServicesFile": "./google-services.json",
       "notification": {
         "icon": "./assets/adaptive-icon.png",
         "color": "#0F4C5C"
