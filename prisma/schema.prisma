@@ -166,15 +166,22 @@ model User {
 }
 
 model RefreshToken {
-  id        String   @id @default(cuid())
-  userId    String
-  token     String   @unique
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id         String    @id @default(cuid())
+  userId     String
+  deviceId   String
+  token      String    @unique
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([token])
+  @@index([tokenHash])
   @@index([userId])
+  @@index([userId, deviceId])
+  @@index([expiresAt, revokedAt])
   @@map("refresh_tokens")
 }
 
@@ -1394,6 +1401,7 @@ model Task {
 
   @@index([tenantId])
   @@index([tenantId, assigneeId])
+  @@index([tenantId, jobId])
   @@index([tenantId, status])
   @@index([tenantId, dueDate])
   @@map("tasks")
@@ -1487,6 +1495,7 @@ model Issue {
   @@index([tenantId])
   @@index([tenantId, status])
   @@index([tenantId, assigneeId])
+  @@index([tenantId, jobId])
   @@index([tenantId, type])
   @@map("issues")
 }
@@ -2695,6 +2704,34 @@ enum ConversationStatus {
   CLOSED
 }
 
+enum ChatConversationType {
+  TEAM
+  DM
+  JOB_THREAD
+}
+
+enum ChatMessageType {
+  TEXT
+  MEDIA
+  VOICE
+  LOCATION
+  SYSTEM
+}
+
+enum ChatDeliveryStatus {
+  SENT
+  DELIVERED
+  READ
+}
+
+enum ChatAttachmentKind {
+  IMAGE
+  VIDEO
+  FILE
+  VOICE
+  LOCATION
+}
+
 model Conversation {
   id             String         @id @default(cuid())
   tenantId       String
@@ -2819,6 +2856,80 @@ model ConversationReadReceipt {
   @@index([conversationId])
   @@index([userId])
   @@map("conversation_read_receipts")
+}
+
+model ChatConversation {
+  id            String               @id @default(cuid())
+  tenantId      String
+  type          ChatConversationType
+  title         String?
+  pinned        Boolean              @default(false)
+  userAId       String?
+  userBId       String?
+  lastMessageAt DateTime?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  @@index([tenantId, type, pinned])
+  @@index([tenantId, lastMessageAt])
+  @@index([tenantId, userAId, userBId])
+  @@unique([tenantId, type, userAId, userBId])
+  @@map("chat_conversations")
+}
+
+model ChatConversationMember {
+  id             String   @id @default(cuid())
+  tenantId       String
+  conversationId String
+  userId         String
+  role           String?
+  lastReadAt     DateTime?
+  mutedUntil     DateTime?
+  createdAt      DateTime @default(now())
+
+  @@unique([conversationId, userId])
+  @@index([tenantId, userId])
+  @@index([tenantId, conversationId])
+  @@map("chat_conversation_members")
+}
+
+model ChatMessage {
+  id             String             @id @default(cuid())
+  tenantId       String
+  conversationId String
+  senderId       String
+  type           ChatMessageType    @default(TEXT)
+  text           String?            @db.Text
+  jobId          String?
+  jobNumber      String?
+  jobName        String?
+  clientTempId   String?
+  status         ChatDeliveryStatus @default(SENT)
+  createdAt      DateTime           @default(now())
+
+  @@index([tenantId, conversationId, createdAt])
+  @@index([tenantId, senderId, createdAt])
+  @@unique([conversationId, senderId, clientTempId])
+  @@map("chat_messages")
+}
+
+model ChatMessageAttachment {
+  id           String             @id @default(cuid())
+  tenantId     String
+  messageId    String
+  kind         ChatAttachmentKind
+  url          String             @db.Text
+  fileName     String?
+  mimeType     String?
+  sizeBytes    Int?
+  durationMs   Int?
+  thumbnailUrl String?            @db.Text
+  latitude     Float?
+  longitude    Float?
+  createdAt    DateTime           @default(now())
+
+  @@index([tenantId, messageId])
+  @@map("chat_message_attachments")
 }
 
 model WebhookEvent {

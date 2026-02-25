@@ -28,7 +28,14 @@ export type TasksStackParamList = {
 
 export type MessagesStackParamList = {
   MessagesList: undefined
-  MessageThread: { conversationId: string }
+  MessageThread: {
+    conversationId: string
+    jobContext?: {
+      jobId: string
+      jobNumber: string
+      jobName: string
+    }
+  }
   TeamChat: undefined
 }
 

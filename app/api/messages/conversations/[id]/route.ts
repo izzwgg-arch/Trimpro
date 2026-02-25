@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
-import { prisma } from '@/lib/prisma'
+import { getConversationForMember, listMessages } from '@/lib/chat/service'
 
 export async function GET(
   request: NextRequest,
@@ -8,65 +8,25 @@ export async function GET(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
-
   const user = getAuthUser(request)
 
   try {
-    const conversation = await prisma.conversation.findUnique({
-      where: { id: params.id },
-      include: {
-        client: true,
-        assignedUser: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-          },
-        },
-        messages: {
-          include: {
-            media: true,
-          },
-          orderBy: {
-            createdAt: 'asc',
-          },
-        },
-      },
-    })
-
-    if (!conversation || conversation.tenantId !== user.tenantId) {
+    const conversation = await getConversationForMember(user.tenantId, params.id, user.id)
+    if (!conversation) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
     }
 
-    // Mark conversation as read for this user
-    await prisma.conversationReadReceipt.upsert({
-      where: {
-        conversationId_userId: {
-          conversationId: conversation.id,
-          userId: user.id,
-        },
-      },
-      create: {
-        conversationId: conversation.id,
-        userId: user.id,
-        readAt: new Date(),
-      },
-      update: {
-        readAt: new Date(),
-      },
-    })
+    const { searchParams } = new URL(request.url)
+    const cursor = searchParams.get('cursor')
+    const limitParam = Number(searchParams.get('limit') || 40)
+    const messages = await listMessages(user.tenantId, params.id, user.id, cursor, limitParam)
 
-    // Update unread count
-    await prisma.conversation.update({
-      where: { id: conversation.id },
-      data: {
-        unreadCount: 0,
-      },
+    return NextResponse.json({
+      conversation,
+      messages,
     })
-
-    return NextResponse.json({ conversation })
   } catch (error) {
-    console.error('Get conversation error:', error)
+    console.error('messages conversation detail GET error', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

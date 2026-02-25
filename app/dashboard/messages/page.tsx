@@ -1,1080 +1,583 @@
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Card, CardContent } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import styles from './messages.module.css'
 import { refreshAccessToken } from '@/lib/auth/client'
-import {
-  Search,
-  MessageSquare,
-  Send,
-  Phone,
-  Mail,
-  Filter,
-  X,
-  Image as ImageIcon,
-  Paperclip,
-  RefreshCw,
-  Check,
-  CheckCheck,
-  AlertCircle,
-  UserPlus,
-  Plus,
-} from 'lucide-react'
-import { formatDistanceToNow } from 'date-fns'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 
-interface Conversation {
+type ConversationRow = {
   id: string
-  channel: 'SMS' | 'MMS' | 'WHATSAPP' | 'EMAIL'
-  clientId: string | null
-  assignedUserId: string | null
-  status: 'ACTIVE' | 'ARCHIVED' | 'CLOSED'
-  participants: string[]
-  lastMessageAt: string | null
+  type: 'TEAM' | 'DM' | 'JOB_THREAD'
+  title: string
+  pinned: boolean
   unreadCount: number
-  client?: {
+  lastMessageAt: string | null
+  lastMessage: {
     id: string
-    name: string
-    phone: string | null
-    email: string | null
-  } | null
-  assignedUser?: {
-    id: string
-    firstName: string
-    lastName: string
-  } | null
-  messages?: Array<{
-    id: string
-    body: string | null
-    direction: 'INBOUND' | 'OUTBOUND'
-    createdAt: string
-  }>
-}
-
-interface Message {
-  id: string
-  direction: 'INBOUND' | 'OUTBOUND'
-  body: string | null
-  fromNumber: string | null
-  toNumber: string | null
-  status: 'QUEUED' | 'SENT' | 'DELIVERED' | 'FAILED' | 'READ'
-  createdAt: string
-  sentAt: string | null
-  deliveredAt: string | null
-  readAt: string | null
-  failedAt: string | null
-  errorMessage: string | null
-  media: Array<{
-    id: string
+    text: string | null
     type: string
+    createdAt: string
+    status: 'SENT' | 'DELIVERED' | 'READ'
+    senderId: string
+    jobId: string | null
+    jobNumber: string | null
+    jobName: string | null
+  } | null
+}
+
+type ConversationMessage = {
+  id: string
+  senderId: string
+  text: string | null
+  type: 'TEXT' | 'MEDIA' | 'VOICE' | 'LOCATION' | 'SYSTEM'
+  status: 'SENT' | 'DELIVERED' | 'READ'
+  jobId: string | null
+  jobNumber: string | null
+  jobName: string | null
+  createdAt: string
+  sender: { id: string; firstName: string | null; lastName: string | null; email: string } | null
+  attachments: Array<{
+    id: string
+    kind: 'IMAGE' | 'VIDEO' | 'FILE' | 'VOICE' | 'LOCATION'
     url: string
-    thumbnailUrl: string | null
+    fileName: string | null
     mimeType: string | null
-    filename: string | null
+    durationMs: number | null
+    thumbnailUrl: string | null
+    latitude: number | null
+    longitude: number | null
+    sizeBytes: number | null
   }>
 }
 
-interface ConversationDetail extends Conversation {
-  messages: Message[]
+type UserRow = {
+  id: string
+  firstName: string | null
+  lastName: string | null
+  email: string
+}
+
+function fullName(user: { firstName: string | null; lastName: string | null; email: string } | null) {
+  if (!user) return 'Unknown'
+  const value = `${user.firstName || ''} ${user.lastName || ''}`.trim()
+  return value || user.email
+}
+
+function messageStatusSymbol(status: string) {
+  if (status === 'READ') return '✓✓'
+  if (status === 'DELIVERED') return '✓✓'
+  return '✓'
 }
 
 export default function MessagesPage() {
   const router = useRouter()
-  const [conversations, setConversations] = useState<Conversation[]>([])
-  const [selectedConversation, setSelectedConversation] = useState<ConversationDetail | null>(null)
+  const [currentUserId, setCurrentUserId] = useState<string>('')
+  const [conversations, setConversations] = useState<ConversationRow[]>([])
+  const [messages, setMessages] = useState<ConversationMessage[]>([])
+  const [users, setUsers] = useState<UserRow[]>([])
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null)
+  const [text, setText] = useState('')
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
-  const [messageText, setMessageText] = useState('')
-  const [showEmoji, setShowEmoji] = useState(false)
-  const [attachments, setAttachments] = useState<Array<{ url: string; filename?: string; mimeType?: string }>>([])
-  const [uploading, setUploading] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const [search, setSearch] = useState('')
-  const [filterStatus, setFilterStatus] = useState<string>('all')
-  const [filterChannel, setFilterChannel] = useState<string>('all')
-  const [showNewConversation, setShowNewConversation] = useState(false)
-  const [newConversationTo, setNewConversationTo] = useState('')
-  // TrimPro currently supports phone messaging via SMS/MMS providers (VoIP.ms / WebWhatis).
-  // WhatsApp is intentionally not exposed in the web UI to avoid misconfigured sends.
-  const [newConversationChannel, setNewConversationChannel] = useState<'SMS' | 'MMS'>('SMS')
-  const [newConversationClientId, setNewConversationClientId] = useState<string>('none')
-  const [clients, setClients] = useState<Array<{ id: string; name: string; phone: string | null }>>([])
-  const emojiRef = useRef<HTMLDivElement>(null)
+  const [userFilter, setUserFilter] = useState('')
+  const [selectedUserId, setSelectedUserId] = useState('')
+  const [draftAttachments, setDraftAttachments] = useState<
+    Array<{
+      kind: 'IMAGE' | 'VIDEO' | 'FILE'
+      url: string
+      fileName: string
+      mimeType: string
+    }>
+  >([])
+  const [recording, setRecording] = useState(false)
+  const [recordStartAt, setRecordStartAt] = useState<number | null>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const mediaChunksRef = useRef<Blob[]>([])
+  const bottomRef = useRef<HTMLDivElement | null>(null)
 
-  // Chat scroll behavior
-  const threadScrollRef = useRef<HTMLDivElement>(null)
-  const bottomRef = useRef<HTMLDivElement>(null)
-  const pendingScrollToBottomRef = useRef(false) // set true when user sends, so we snap even if they aren't at bottom
-  const prevMessageCountRef = useRef(0)
-  const prevLastMessageIdRef = useRef<string | null>(null)
-  const [isAtBottom, setIsAtBottom] = useState(true)
-  const [hasNewMessages, setHasNewMessages] = useState(false)
+  const selectedConversation = useMemo(
+    () => conversations.find((c) => c.id === selectedConversationId) || null,
+    [conversations, selectedConversationId]
+  )
 
-  const isNearBottom = useCallback((el: HTMLDivElement) => {
-    const distanceFromBottom = el.scrollHeight - (el.scrollTop + el.clientHeight)
-    return distanceFromBottom < 80
-  }, [])
-
-  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
-    // Prefer bottomRef for accurate "end" even when images load later.
-    const b = bottomRef.current
-    if (b) {
-      b.scrollIntoView({ behavior, block: 'end' })
-      return
-    }
-    const el = threadScrollRef.current
-    if (!el) return
-    el.scrollTo({ top: el.scrollHeight, behavior })
-  }, [])
-
-  const onThreadScroll = useCallback(() => {
-    const el = threadScrollRef.current
-    if (!el) return
-    const atBottom = isNearBottom(el)
-    setIsAtBottom(atBottom)
-    if (atBottom) setHasNewMessages(false)
-  }, [isNearBottom])
-
-  useEffect(() => {
-    const onClick = (e: MouseEvent) => {
-      if (!showEmoji) return
-      if (emojiRef.current && !emojiRef.current.contains(e.target as any)) {
-        setShowEmoji(false)
+  const fetchWithAuth = async (url: string, init?: RequestInit) => {
+    let token = localStorage.getItem('accessToken')
+    if (!token) {
+      const refreshed = await refreshAccessToken()
+      if (!refreshed) {
+        router.push('/auth/login')
+        throw new Error('Unauthorized')
       }
-    }
-    document.addEventListener('mousedown', onClick)
-    return () => document.removeEventListener('mousedown', onClick)
-  }, [showEmoji])
-
-  useEffect(() => {
-    fetchConversations()
-    fetchClients()
-    // Poll for new messages every 5 seconds
-    const interval = setInterval(fetchConversations, 5000)
-    return () => clearInterval(interval)
-  }, [search, filterStatus, filterChannel])
-
-  useEffect(() => {
-    if (selectedConversation) {
-      fetchConversationDetail(selectedConversation.id)
-      // Poll for new messages in selected conversation
-      const interval = setInterval(() => {
-        if (selectedConversation) {
-          fetchConversationDetail(selectedConversation.id)
-        }
-      }, 3000)
-      return () => clearInterval(interval)
-    }
-  }, [selectedConversation?.id])
-
-  // Initial thread open: snap to bottom once (no repeated scroll calls).
-  useEffect(() => {
-    if (!selectedConversation?.id) return
-    setHasNewMessages(false)
-    setIsAtBottom(true)
-    prevMessageCountRef.current = selectedConversation.messages?.length || 0
-    prevLastMessageIdRef.current =
-      selectedConversation.messages && selectedConversation.messages.length > 0
-        ? selectedConversation.messages[selectedConversation.messages.length - 1].id
-        : null
-
-    // Defer to allow layout to settle.
-    requestAnimationFrame(() => scrollToBottom('auto'))
-  }, [selectedConversation?.id, scrollToBottom])
-
-  // When messages change: only snap if user is at bottom OR user just sent a message.
-  useEffect(() => {
-    if (!selectedConversation) return
-    const msgs = selectedConversation.messages || []
-    const count = msgs.length
-    const lastId = count > 0 ? msgs[count - 1].id : null
-
-    const isIncrease = count > prevMessageCountRef.current
-    const isNewLast = !!lastId && lastId !== prevLastMessageIdRef.current
-
-    if (isIncrease || isNewLast) {
-      if (pendingScrollToBottomRef.current || isAtBottom) {
-        pendingScrollToBottomRef.current = false
-        setHasNewMessages(false)
-        requestAnimationFrame(() => scrollToBottom('auto'))
-      } else {
-        setHasNewMessages(true)
-      }
+      token = localStorage.getItem('accessToken')
     }
 
-    prevMessageCountRef.current = count
-    prevLastMessageIdRef.current = lastId
-  }, [selectedConversation?.messages, isAtBottom, scrollToBottom, selectedConversation])
+    let response = await fetch(url, {
+      ...init,
+      headers: {
+        ...(init?.headers || {}),
+        Authorization: `Bearer ${token}`,
+      },
+    })
 
-  const refreshToken = async (): Promise<boolean> => {
-    const ok = await refreshAccessToken()
-    if (!ok) router.push('/auth/login')
-    return ok
-  }
-
-  const fetchConversations = async () => {
-    try {
-      let token = localStorage.getItem('accessToken')
-      if (!token) {
-        const refreshed = await refreshToken()
-        if (!refreshed) return
-        token = localStorage.getItem('accessToken')
+    if (response.status === 401) {
+      const refreshed = await refreshAccessToken()
+      if (!refreshed) {
+        router.push('/auth/login')
+        throw new Error('Unauthorized')
       }
-
-      const params = new URLSearchParams()
-      if (search) params.append('search', search)
-      if (filterStatus !== 'all') params.append('status', filterStatus)
-      if (filterChannel !== 'all') params.append('channel', filterChannel)
-
-      let response = await fetch(`/api/messages/conversations?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-
-      if (response.status === 401) {
-        const refreshed = await refreshToken()
-        if (!refreshed) return
-        token = localStorage.getItem('accessToken')
-        response = await fetch(`/api/messages/conversations?${params.toString()}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-      }
-
-      if (response.ok) {
-        const data = await response.json()
-        setConversations(data.conversations || [])
-      }
-    } catch (error) {
-      console.error('Failed to fetch conversations:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const fetchConversationDetail = async (conversationId: string) => {
-    try {
-      let token = localStorage.getItem('accessToken')
-      if (!token) {
-        const refreshed = await refreshToken()
-        if (!refreshed) return
-        token = localStorage.getItem('accessToken')
-      }
-
-      let response = await fetch(`/api/messages/conversations/${conversationId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-
-      if (response.status === 401) {
-        const refreshed = await refreshToken()
-        if (!refreshed) return
-        token = localStorage.getItem('accessToken')
-        response = await fetch(`/api/messages/conversations/${conversationId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-      }
-
-      if (response.ok) {
-        const data = await response.json()
-        const incoming: ConversationDetail = data.conversation
-
-        // Avoid unnecessary rerenders: if nothing meaningful changed, keep existing state.
-        setSelectedConversation((prev) => {
-          if (!prev || prev.id !== incoming.id) return incoming
-
-          const prevMsgs = prev.messages || []
-          const incMsgs = incoming.messages || []
-          const prevLastId = prevMsgs.length > 0 ? prevMsgs[prevMsgs.length - 1].id : null
-          const incLastId = incMsgs.length > 0 ? incMsgs[incMsgs.length - 1].id : null
-
-          const same =
-            prevMsgs.length === incMsgs.length &&
-            prevLastId === incLastId &&
-            prev.unreadCount === incoming.unreadCount &&
-            prev.lastMessageAt === incoming.lastMessageAt &&
-            prev.status === incoming.status
-
-          return same ? prev : incoming
-        })
-      }
-    } catch (error) {
-      console.error('Failed to fetch conversation:', error)
-    }
-  }
-
-  const fetchClients = async () => {
-    try {
-      let token = localStorage.getItem('accessToken')
-      if (!token) {
-        const refreshed = await refreshToken()
-        if (!refreshed) return
-        token = localStorage.getItem('accessToken')
-      }
-
-      let response = await fetch('/api/clients?limit=1000', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-
-      if (response.status === 401) {
-        const refreshed = await refreshToken()
-        if (!refreshed) return
-        token = localStorage.getItem('accessToken')
-        response = await fetch('/api/clients?limit=1000', {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-      }
-
-      if (response.ok) {
-        const data = await response.json()
-        setClients(data.clients || [])
-      }
-    } catch (error) {
-      console.error('Failed to fetch clients:', error)
-    }
-  }
-
-  const handleSendMessage = async () => {
-    if ((!messageText.trim() && attachments.length === 0) || !selectedConversation || sending) {
-      console.log('Send blocked:', { hasText: !!messageText.trim(), hasAttachments: attachments.length > 0, hasConversation: !!selectedConversation, sending })
-      return
-    }
-
-    setSending(true)
-    pendingScrollToBottomRef.current = true
-    try {
-      let token = localStorage.getItem('accessToken')
-      if (!token) {
-        const refreshed = await refreshToken()
-        if (!refreshed) {
-          setSending(false)
-          return
-        }
-        token = localStorage.getItem('accessToken')
-      }
-
-      const to = selectedConversation.participants[0]
-      if (!to) {
-        alert('No recipient found')
-        setSending(false)
-        return
-      }
-
-      const channelToSend =
-        attachments.length > 0 && (selectedConversation.channel === 'SMS' || selectedConversation.channel === 'MMS')
-          ? 'MMS'
-          : selectedConversation.channel
-
-      let response = await fetch('/api/messages/send', {
-        method: 'POST',
+      token = localStorage.getItem('accessToken')
+      response = await fetch(url, {
+        ...init,
         headers: {
-          'Content-Type': 'application/json',
+          ...(init?.headers || {}),
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          conversationId: selectedConversation.id,
-          to,
-          body: messageText,
-          channel: channelToSend,
-          media:
-            attachments.length > 0
-              ? attachments.map((a) => ({
-                  type: 'image',
-                  url: a.url,
-                  filename: a.filename,
-                  mimeType: a.mimeType,
-                }))
-              : undefined,
-        }),
       })
+    }
+    return response
+  }
 
-      if (response.status === 401) {
-        const refreshed = await refreshToken()
-        if (!refreshed) {
-          setSending(false)
-          return
-        }
-        token = localStorage.getItem('accessToken')
-        response = await fetch('/api/messages/send', {
+  const loadConversations = async () => {
+    const response = await fetchWithAuth('/api/messages/conversations')
+    if (!response.ok) throw new Error('Failed to load conversations')
+    const data = await response.json()
+    const rows: ConversationRow[] = data.conversations || []
+    setConversations(rows)
+    if (!selectedConversationId && rows.length > 0) {
+      setSelectedConversationId(rows[0].id)
+    }
+  }
+
+  const loadUsers = async () => {
+    const response = await fetchWithAuth('/api/messages/users')
+    if (!response.ok) throw new Error('Failed to load users')
+    const data = await response.json()
+    setUsers(data.users || [])
+  }
+
+  const ensureTeam = async () => {
+    await fetchWithAuth('/api/messages/team/ensure', { method: 'POST' })
+  }
+
+  const loadMessages = async (conversationId: string) => {
+    const response = await fetchWithAuth(`/api/messages/conversations/${conversationId}/messages?limit=80`)
+    if (!response.ok) throw new Error('Failed to load messages')
+    const data = await response.json()
+    setMessages((data.messages || []).reverse())
+    await fetchWithAuth(`/api/messages/conversations/${conversationId}/read`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+  }
+
+  const uploadFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    const next: Array<{ kind: 'IMAGE' | 'VIDEO' | 'FILE'; url: string; fileName: string; mimeType: string }> = []
+    const maxFiles = Math.min(files.length, 8)
+    for (let i = 0; i < maxFiles; i++) {
+      const file = files[i]
+      const formData = new FormData()
+      formData.append('file', file)
+      const uploadRes = await fetchWithAuth('/api/uploads/messages', {
+        method: 'POST',
+        body: formData,
+      })
+      if (!uploadRes.ok) continue
+      const payload = await uploadRes.json()
+      const kind = file.type.startsWith('image/')
+        ? 'IMAGE'
+        : file.type.startsWith('video/')
+          ? 'VIDEO'
+          : 'FILE'
+      next.push({
+        kind,
+        url: payload.url,
+        fileName: file.name,
+        mimeType: file.type || 'application/octet-stream',
+      })
+    }
+    setDraftAttachments((prev) => [...prev, ...next])
+  }
+
+  const sendLocation = async () => {
+    if (!selectedConversationId || !navigator.geolocation) return
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        await fetchWithAuth(`/api/messages/conversations/${selectedConversationId}/messages`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            conversationId: selectedConversation.id,
-            to,
-            body: messageText,
-            channel: channelToSend,
-            media:
-              attachments.length > 0
-                ? attachments.map((a) => ({
-                    type: 'image',
-                    url: a.url,
-                    filename: a.filename,
-                    mimeType: a.mimeType,
-                  }))
-                : undefined,
+            type: 'LOCATION',
+            attachments: [
+              {
+                kind: 'LOCATION',
+                url: `https://maps.google.com/?q=${position.coords.latitude},${position.coords.longitude}`,
+                latitude: position.coords.latitude,
+                longitude: position.coords.longitude,
+              },
+            ],
           }),
         })
-      }
+        await loadMessages(selectedConversationId)
+        await loadConversations()
+      },
+      () => {}
+    )
+  }
 
-      if (response.ok) {
-        setMessageText('')
-        setAttachments([])
-        // Small delay to ensure database transaction completes
-        await new Promise(resolve => setTimeout(resolve, 300))
-        // Refresh conversation to show new message with media
-        await fetchConversationDetail(selectedConversation.id)
-      } else {
-        const error = await response.json()
-        alert(error.error || 'Failed to send message')
+  const startVoiceRecording = async () => {
+    if (!navigator.mediaDevices?.getUserMedia || recording) return
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    const recorder = new MediaRecorder(stream)
+    mediaRecorderRef.current = recorder
+    mediaChunksRef.current = []
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) mediaChunksRef.current.push(event.data)
+    }
+    recorder.start()
+    setRecording(true)
+    setRecordStartAt(Date.now())
+  }
+
+  const stopVoiceRecording = async () => {
+    if (!mediaRecorderRef.current || !selectedConversationId || !recording) return
+    const recorder = mediaRecorderRef.current
+    const durationMs = recordStartAt ? Date.now() - recordStartAt : null
+
+    await new Promise<void>((resolve) => {
+      recorder.onstop = async () => {
+        try {
+          const blob = new Blob(mediaChunksRef.current, { type: 'audio/webm' })
+          const file = new File([blob], `voice-${Date.now()}.webm`, { type: 'audio/webm' })
+          const formData = new FormData()
+          formData.append('file', file)
+          const uploadRes = await fetchWithAuth('/api/uploads/messages', {
+            method: 'POST',
+            body: formData,
+          })
+          if (uploadRes.ok) {
+            const payload = await uploadRes.json()
+            await fetchWithAuth(`/api/messages/conversations/${selectedConversationId}/messages`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                type: 'VOICE',
+                attachments: [
+                  {
+                    kind: 'VOICE',
+                    url: payload.url,
+                    mimeType: 'audio/webm',
+                    fileName: file.name,
+                    durationMs,
+                  },
+                ],
+              }),
+            })
+            await loadMessages(selectedConversationId)
+            await loadConversations()
+          }
+        } finally {
+          resolve()
+        }
       }
-    } catch (error) {
-      console.error('Failed to send message:', error)
-      alert('Failed to send message')
+      recorder.stop()
+      recorder.stream.getTracks().forEach((track) => track.stop())
+    })
+
+    setRecording(false)
+    setRecordStartAt(null)
+    mediaRecorderRef.current = null
+  }
+
+  const sendMessage = async () => {
+    if (!selectedConversationId || sending) return
+    const trimmed = text.trim()
+    if (!trimmed && draftAttachments.length === 0) return
+    setSending(true)
+    try {
+      const clientTempId = `web-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      const response = await fetchWithAuth(`/api/messages/conversations/${selectedConversationId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: trimmed,
+          clientTempId,
+          attachments: draftAttachments.map((attachment) => ({
+            kind: attachment.kind,
+            url: attachment.url,
+            fileName: attachment.fileName,
+            mimeType: attachment.mimeType,
+          })),
+        }),
+      })
+      if (!response.ok) throw new Error('Failed to send message')
+      setText('')
+      setDraftAttachments([])
+      await loadMessages(selectedConversationId)
+      await loadConversations()
     } finally {
       setSending(false)
     }
   }
 
-  const insertEmoji = (emoji: string) => {
-    setMessageText((t) => `${t}${emoji}`)
+  const createDm = async () => {
+    if (!selectedUserId) return
+    const response = await fetchWithAuth('/api/messages/dm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: selectedUserId }),
+    })
+    if (!response.ok) return
+    const data = await response.json()
+    await loadConversations()
+    setSelectedConversationId(data.conversationId)
+    setSelectedUserId('')
   }
 
-  const uploadFiles = async (files: FileList | null) => {
-    if (!files || files.length === 0) return
-    if (uploading) return
-
-    setUploading(true)
+  useEffect(() => {
+    const token = localStorage.getItem('accessToken')
+    if (!token) return
+    const parts = token.split('.')
+    if (parts.length < 2) return
     try {
-      let token = localStorage.getItem('accessToken')
-      if (!token) {
-        const refreshed = await refreshToken()
-        if (!refreshed) return
-        token = localStorage.getItem('accessToken')
-      }
-
-      const newAttachments: Array<{ url: string; filename?: string; mimeType?: string }> = []
-      const max = Math.min(files.length, 5)
-      for (let i = 0; i < max; i++) {
-        const file = files[i]
-        const form = new FormData()
-        form.append('file', file)
-
-        let res = await fetch('/api/uploads', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-          body: form,
-        })
-
-        if (res.status === 401) {
-          const refreshed = await refreshToken()
-          if (!refreshed) return
-          token = localStorage.getItem('accessToken')
-          res = await fetch('/api/uploads', {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${token}` },
-            body: form,
-          })
-        }
-
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}))
-          throw new Error(err.error || 'Upload failed')
-        }
-
-        const data = await res.json()
-        newAttachments.push({ url: data.url, filename: data.filename, mimeType: data.mimeType })
-      }
-
-      setAttachments((prev) => [...prev, ...newAttachments])
-    } catch (e: any) {
-      alert(e?.message || 'Upload failed')
-    } finally {
-      setUploading(false)
-      if (fileInputRef.current) fileInputRef.current.value = ''
-    }
-  }
-
-  const handleCreateConversation = async () => {
-    if (!newConversationTo.trim()) {
-      alert('Please enter a phone number or select a client')
-      return
-    }
-
-    try {
-      let token = localStorage.getItem('accessToken')
-      if (!token) {
-        const refreshed = await refreshToken()
-        if (!refreshed) return
-        token = localStorage.getItem('accessToken')
-      }
-
-      let response = await fetch('/api/messages/conversations', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          channel: newConversationChannel,
-          to: newConversationTo,
-        }),
-      })
-
-      if (response.status === 401) {
-        const refreshed = await refreshToken()
-        if (!refreshed) return
-        token = localStorage.getItem('accessToken')
-        response = await fetch('/api/messages/conversations', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            channel: newConversationChannel,
-            to: newConversationTo,
-          }),
-        })
-      }
-
-      if (response.ok) {
-        const data = await response.json()
-        setSelectedConversation(data.conversation)
-        setShowNewConversation(false)
-        setNewConversationTo('')
-        setNewConversationClientId('none')
-        fetchConversations()
-      } else {
-        const error = await response.json()
-        alert(error.error || 'Failed to create conversation')
-      }
-    } catch (error) {
-      console.error('Failed to create conversation:', error)
-      alert('Failed to create conversation')
-    }
-  }
-
-  const getChannelIcon = (channel: string) => {
-    switch (channel) {
-      case 'SMS':
-      case 'MMS':
-        return <Phone className="h-4 w-4" />
-      case 'WHATSAPP':
-        // Legacy/mis-labeled conversations may still exist; display as phone to match SMS provider setup.
-        return <Phone className="h-4 w-4" />
-      case 'EMAIL':
-        return <Mail className="h-4 w-4" />
-      default:
-        return <MessageSquare className="h-4 w-4" />
-    }
-  }
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'DELIVERED':
-        return <CheckCheck className="h-3 w-3 text-[#333333]" />
-      case 'READ':
-        return <CheckCheck className="h-3 w-3 text-green-500" />
-      case 'SENT':
-        return <Check className="h-3 w-3 text-gray-400" />
-      case 'FAILED':
-        return <AlertCircle className="h-3 w-3 text-red-500" />
-      default:
-        return null
-    }
-  }
-
-  const formatTime = (dateString: string | null) => {
-    if (!dateString) return ''
-    try {
-      return formatDistanceToNow(new Date(dateString), { addSuffix: true })
+      const payload = JSON.parse(atob(parts[1]))
+      if (payload?.userId) setCurrentUserId(String(payload.userId))
     } catch {
-      return ''
+      // ignore parse failures
     }
-  }
-
-  const sortedMessages = useMemo(() => {
-    const msgs = selectedConversation?.messages || []
-    if (msgs.length <= 1) return msgs
-    // Defensive stable ordering; backend already returns ASC but we avoid inline sorting in render.
-    return [...msgs].sort((a, b) => {
-      const at = new Date(a.createdAt).getTime()
-      const bt = new Date(b.createdAt).getTime()
-      if (at === bt) return a.id.localeCompare(b.id)
-      return at - bt
-    })
-  }, [selectedConversation?.messages])
-
-  const MessageBubble = useMemo(() => {
-    return React.memo(function MessageBubbleInner(props: {
-      message: Message
-      tenantId?: string | null
-      getStatusIcon: (status: string) => React.ReactNode
-      formatTime: (s: string | null) => string
-    }) {
-      const { message, tenantId, getStatusIcon, formatTime } = props
-
-      return (
-        <div className={`flex ${message.direction === 'OUTBOUND' ? 'justify-end' : 'justify-start'}`}>
-          <div
-            className={`max-w-[70%] rounded-lg p-3 ${
-              message.direction === 'OUTBOUND'
-                ? 'bg-[#333333] text-white'
-                : 'bg-gray-200 text-gray-900'
-            }`}
-          >
-            {message.body && <p className="text-sm whitespace-pre-wrap">{message.body}</p>}
-
-            {/* Media */}
-            {message.media && message.media.length > 0 ? (
-              <div className="mt-2 space-y-2">
-                {message.media.map((media) => (
-                  <div key={media.id}>
-                    {media.type === 'image' ? (
-                      <img
-                        src={media.url}
-                        alt={media.filename || 'Image'}
-                        className="max-w-full rounded"
-                        style={{ maxHeight: '200px' }}
-                        onError={(e) => {
-                          // Try relative URL if absolute fails (supports local/dev & reverse proxies).
-                          if (media.url && media.url.startsWith('https://')) {
-                            const relativeUrl = media.url.replace(/^https?:\/\/[^\/]+/, '')
-                            ;(e.target as HTMLImageElement).src = relativeUrl
-                          } else {
-                            e.currentTarget.style.display = 'none'
-                          }
-                        }}
-                      />
-                    ) : (
-                      <a
-                        href={media.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-2 text-sm underline"
-                      >
-                        <Paperclip className="h-4 w-4" />
-                        {media.filename || 'Attachment'}
-                      </a>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : message.body && message.body.match(/\.(jpg|jpeg|png|gif)$/i) ? (
-              // Fallback: if body looks like a filename, try to load it as an image
-              <div className="mt-2">
-                <img
-                  src={`/uploads/${tenantId || ''}/${message.body}`}
-                  alt={message.body}
-                  className="max-w-full rounded"
-                  style={{ maxHeight: '200px' }}
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none'
-                  }}
-                />
-              </div>
-            ) : null}
-
-            {/* Status and Time */}
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-xs opacity-70">{formatTime(message.createdAt)}</span>
-              {message.direction === 'OUTBOUND' && (
-                <span className="ml-auto">{getStatusIcon(message.status)}</span>
-              )}
-            </div>
-
-            {message.errorMessage && (
-              <p className="text-xs text-red-200 mt-1">{message.errorMessage}</p>
-            )}
-          </div>
-        </div>
-      )
-    })
   }, [])
 
+  useEffect(() => {
+    ;(async () => {
+      try {
+        setLoading(true)
+        await ensureTeam()
+        await Promise.all([loadConversations(), loadUsers()])
+      } finally {
+        setLoading(false)
+      }
+    })()
+  }, [])
+
+  useEffect(() => {
+    if (!selectedConversationId) return
+    loadMessages(selectedConversationId)
+  }, [selectedConversationId])
+
+  useEffect(() => {
+    if (!selectedConversationId) return
+    const token = localStorage.getItem('accessToken')
+    if (!token) return
+    const source = new EventSource(
+      `/api/messages/stream?token=${encodeURIComponent(token)}&since=${encodeURIComponent(new Date().toISOString())}`
+    )
+    source.addEventListener('new_message', async (event) => {
+      const payload = JSON.parse((event as MessageEvent).data)
+      if (payload.conversationId === selectedConversationId) {
+        await loadMessages(selectedConversationId)
+      }
+      await loadConversations()
+    })
+    return () => source.close()
+  }, [selectedConversationId])
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  const filteredUsers = useMemo(() => {
+    const q = userFilter.trim().toLowerCase()
+    if (!q) return users
+    return users.filter((u) => {
+      const name = `${u.firstName || ''} ${u.lastName || ''}`.toLowerCase()
+      return name.includes(q) || u.email.toLowerCase().includes(q)
+    })
+  }, [users, userFilter])
+
+  if (loading) {
+    return <div className="p-6 text-sm text-gray-600">Loading messages...</div>
+  }
+
   return (
-    <div className="flex h-[calc(100vh-4rem)]">
-      {/* Left Panel - Conversation List */}
-      <div className="w-80 border-r bg-gray-50 flex flex-col">
-        {/* Header */}
-        <div className="p-4 border-b bg-white">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold">Messages</h2>
-            <Button
-              size="sm"
-              onClick={() => setShowNewConversation(true)}
-              className="bg-[#333333] hover:bg-[#3b3b3b] text-white"
-            >
-              <Plus className="h-4 w-4 mr-1" />
-              New
-            </Button>
-          </div>
-
-          {/* Search */}
-          <div className="relative mb-3">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <Input
-              placeholder="Search conversations..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
+    <div className="flex h-[calc(100vh-4rem)] bg-[#0f1115] text-white">
+      <aside className="w-[340px] border-r border-[#252a32] bg-[#13171d] flex flex-col">
+        <div className="p-4 border-b border-[#252a32]">
+          <h1 className="text-lg font-semibold">Messages</h1>
+          <p className="text-xs text-gray-400 mt-1">Team Chat is always pinned at top.</p>
+          <div className="mt-3 space-y-2">
+            <input
+              className="w-full h-9 px-3 rounded bg-[#0f1115] border border-[#303743] text-sm"
+              placeholder="Search team member..."
+              value={userFilter}
+              onChange={(e) => setUserFilter(e.target.value)}
             />
-          </div>
-
-          {/* Filters */}
-          <div className="flex gap-2">
-            <Select value={filterChannel} onValueChange={setFilterChannel}>
-              <SelectTrigger className="flex-1 h-8 text-xs">
-                <SelectValue placeholder="Channel" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Channels</SelectItem>
-                <SelectItem value="SMS">SMS</SelectItem>
-                <SelectItem value="MMS">MMS</SelectItem>
-                <SelectItem value="EMAIL">Email</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="flex-1 h-8 text-xs">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All</SelectItem>
-                <SelectItem value="ACTIVE">Active</SelectItem>
-                <SelectItem value="ARCHIVED">Archived</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex gap-2">
+              <select
+                className="flex-1 h-9 px-2 rounded bg-[#0f1115] border border-[#303743] text-sm"
+                value={selectedUserId}
+                onChange={(e) => setSelectedUserId(e.target.value)}
+              >
+                <option value="">Start direct message...</option>
+                {filteredUsers.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {`${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email}
+                  </option>
+                ))}
+              </select>
+              <button className="h-9 px-3 rounded bg-[#2f6fed]" onClick={createDm}>
+                New
+              </button>
+            </div>
           </div>
         </div>
-
-        {/* Conversation List */}
-        <div className={`flex-1 overflow-y-auto ${styles.scrollbar}`}>
-          {loading ? (
-            <div className="p-4 text-center text-gray-500">Loading...</div>
-          ) : conversations.length === 0 ? (
-            <div className="p-4 text-center text-gray-500">
-              <MessageSquare className="h-12 w-12 mx-auto mb-2 text-gray-300" />
-              <p>No conversations found</p>
-              <Button
-                variant="link"
-                size="sm"
-                className="mt-2"
-                onClick={() => setShowNewConversation(true)}
-              >
-                Start a conversation
-              </Button>
-            </div>
-          ) : (
-            conversations.map((conv) => (
-              <div
-                key={conv.id}
-                onClick={() => {
-                  pendingScrollToBottomRef.current = true
-                  // Reset message tracking so the newly selected conversation can snap to bottom once.
-                  prevMessageCountRef.current = 0
-                  prevLastMessageIdRef.current = null
-                  setHasNewMessages(false)
-                  setIsAtBottom(true)
-                  setSelectedConversation(conv as ConversationDetail)
-                }}
-                className={`p-4 border-b cursor-pointer hover:bg-white transition-colors ${
-                  selectedConversation?.id === conv.id ? 'bg-white border-l-4 border-l-[#333333]' : ''
-                }`}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      {getChannelIcon(conv.channel)}
-                      <span className="font-semibold text-sm truncate">
-                        {conv.client?.name || conv.participants[0] || 'Unknown'}
-                      </span>
-                      {conv.unreadCount > 0 && (
-                        <span className="ml-auto bg-[#333333] text-white text-xs rounded-full px-2 py-0.5">
-                          {conv.unreadCount}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-500 truncate">
-                      {conv.messages?.[0]?.body || 'No messages yet'}
-                    </p>
-                  </div>
+        <div className="overflow-auto flex-1">
+          {conversations.map((conversation) => (
+            <button
+              key={conversation.id}
+              onClick={() => setSelectedConversationId(conversation.id)}
+              className={`w-full text-left px-4 py-3 border-b border-[#252a32] ${
+                selectedConversationId === conversation.id ? 'bg-[#1b2028]' : 'hover:bg-[#181d24]'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="font-medium text-sm truncate">
+                  {conversation.pinned ? '📌 ' : ''}
+                  {conversation.title}
                 </div>
-                {conv.lastMessageAt && (
-                  <p className="text-xs text-gray-400 mt-1">
-                    {formatTime(conv.lastMessageAt)}
-                  </p>
+                {conversation.unreadCount > 0 && (
+                  <span className="min-w-5 px-2 py-0.5 rounded-full text-xs bg-[#2f6fed]">
+                    {conversation.unreadCount}
+                  </span>
                 )}
               </div>
-            ))
-          )}
+              <div className="text-xs text-gray-400 mt-1 truncate">
+                {conversation.lastMessage?.text || (conversation.lastMessage ? `[${conversation.lastMessage.type}]` : 'No messages yet')}
+              </div>
+            </button>
+          ))}
         </div>
-      </div>
+      </aside>
 
-      {/* Right Panel - Thread View */}
-      <div className="flex-1 flex flex-col">
+      <section className="flex-1 flex flex-col">
         {selectedConversation ? (
           <>
-            {/* Thread Header */}
-            <div className="p-4 border-b bg-white">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
-                    {getChannelIcon(selectedConversation.channel)}
-                    <h3 className="font-semibold">
-                      {selectedConversation.client?.name || selectedConversation.participants[0] || 'Unknown'}
-                    </h3>
+            <header className="h-14 px-5 border-b border-[#252a32] bg-[#13171d] flex items-center justify-between">
+              <div>
+                <div className="font-semibold">{selectedConversation.title}</div>
+                <div className="text-xs text-gray-400">{selectedConversation.type === 'TEAM' ? 'Team Chat' : 'Direct Message'}</div>
+              </div>
+            </header>
+
+            <div className="flex-1 overflow-auto px-5 py-4 space-y-3 bg-[#0f1115]">
+              {messages.map((message) => {
+                const mine = message.senderId === currentUserId
+                return (
+                  <div key={message.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[70%] rounded-2xl px-3 py-2 ${mine ? 'bg-[#2f6fed]' : 'bg-[#232a33]'}`}>
+                      {selectedConversation.type === 'TEAM' && !mine && (
+                        <div className="text-[11px] text-[#9ec6ff] mb-1">{fullName(message.sender)}</div>
+                      )}
+                      {message.text && <div className="text-sm whitespace-pre-wrap">{message.text}</div>}
+                      {message.jobId && (
+                        <a href={`/dashboard/jobs/${message.jobId}`} className="block mt-2 p-2 rounded bg-black/25 text-xs">
+                          Job #{message.jobNumber || 'N/A'} - {message.jobName || 'View job'}
+                        </a>
+                      )}
+                      {message.attachments.map((attachment) => (
+                        <div key={attachment.id} className="mt-2">
+                          {attachment.kind === 'IMAGE' && (
+                            <a href={attachment.url} target="_blank" rel="noreferrer">
+                              <img src={attachment.url} alt={attachment.fileName || 'Image'} className="rounded max-h-[260px]" />
+                            </a>
+                          )}
+                          {attachment.kind === 'VIDEO' && (
+                            <video controls className="rounded max-h-[260px]" src={attachment.url} />
+                          )}
+                          {attachment.kind === 'VOICE' && <audio controls src={attachment.url} className="w-full" />}
+                          {attachment.kind === 'FILE' && (
+                            <a href={attachment.url} target="_blank" rel="noreferrer" className="underline text-sm">
+                              {attachment.fileName || 'Download file'}
+                            </a>
+                          )}
+                          {attachment.kind === 'LOCATION' && (
+                            <a
+                              href={`https://maps.google.com/?q=${attachment.latitude},${attachment.longitude}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="underline text-sm"
+                            >
+                              Open location
+                            </a>
+                          )}
+                        </div>
+                      ))}
+                      <div className="mt-1 text-[11px] text-gray-300 flex justify-end gap-2">
+                        <span>{new Date(message.createdAt).toLocaleTimeString()}</span>
+                        {mine && <span>{messageStatusSymbol(message.status)}</span>}
+                      </div>
+                    </div>
                   </div>
-                  {selectedConversation.client && (
-                    <p className="text-sm text-gray-500">
-                      {selectedConversation.client.phone || selectedConversation.client.email}
-                    </p>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  {selectedConversation.client && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => router.push(`/dashboard/clients/${selectedConversation.client!.id}`)}
-                    >
-                      View Client
-                    </Button>
-                  )}
-                </div>
-              </div>
+                )
+              })}
+              <div ref={bottomRef} />
             </div>
 
-            {/* Messages */}
-            <div className="relative flex-1">
-              <div
-                ref={threadScrollRef}
-                onScroll={onThreadScroll}
-                className={`h-full overflow-y-auto p-4 space-y-4 ${styles.scrollbar}`}
-              >
-                {sortedMessages.map((message) => (
-                  <MessageBubble
-                    key={message.id}
-                    message={message}
-                    tenantId={selectedConversation.tenantId}
-                    getStatusIcon={getStatusIcon}
-                    formatTime={formatTime}
-                  />
-                ))}
-                <div ref={bottomRef} />
-              </div>
-
-              {!isAtBottom && hasNewMessages && (
-                <div className="absolute bottom-4 right-4">
-                  <Button
-                    type="button"
-                    onClick={() => {
-                      pendingScrollToBottomRef.current = false
-                      setHasNewMessages(false)
-                      scrollToBottom('smooth')
-                    }}
-                    className="bg-[#333333] hover:bg-[#3b3b3b] text-white shadow-lg"
-                    size="sm"
-                  >
-                    New messages ↓
-                  </Button>
-                </div>
-              )}
-            </div>
-
-            {/* Compose Box */}
-            <div className="p-4 border-t bg-white">
-              {/* Attachments preview */}
-              {attachments.length > 0 && (
+            <footer className="border-t border-[#252a32] bg-[#13171d] p-3">
+              {draftAttachments.length > 0 && (
                 <div className="mb-2 flex flex-wrap gap-2">
-                  {attachments.map((a) => (
-                    <div key={a.url} className="relative">
-                      <img
-                        src={a.url}
-                        alt={a.filename || 'Attachment'}
-                        className="h-16 w-16 rounded object-cover border"
-                      />
-                      <button
-                        type="button"
-                        className="absolute -top-2 -right-2 bg-white border rounded-full p-1 shadow"
-                        onClick={() => setAttachments((prev) => prev.filter((x) => x.url !== a.url))}
-                        aria-label="Remove attachment"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
+                  {draftAttachments.map((attachment) => (
+                    <div key={attachment.url} className="text-xs px-2 py-1 rounded bg-[#232a33]">
+                      {attachment.fileName}
                     </div>
                   ))}
                 </div>
               )}
-
-              <div className="flex gap-2 items-start">
-                <div className="flex flex-col gap-2 pt-1">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    className="hidden"
-                    onChange={(e) => uploadFiles(e.target.files)}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploading}
-                    title="Attach photo"
-                  >
-                    <ImageIcon className="h-4 w-4" />
-                  </Button>
-
-                  <div className="relative" ref={emojiRef}>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      onClick={() => setShowEmoji((s) => !s)}
-                      title="Emoji"
-                    >
-                      <span className="text-lg leading-none">😊</span>
-                    </Button>
-                    {showEmoji && (
-                      <div className="absolute bottom-12 left-0 z-50 w-64 rounded-md border bg-white shadow p-2">
-                        <div className="grid grid-cols-8 gap-1 text-lg">
-                          {['😀','😁','😂','🤣','😊','😍','😘','😎','😅','👍','🙏','🔥','💯','🎉','📞','📸','✅','❗','❤️','🤝','👀','🙌','😡','😢','🤔','👏','🫡','🚗','📍','🧾','💵','🛠️'].map((em) => (
-                            <button
-                              key={em}
-                              type="button"
-                              className="hover:bg-gray-100 rounded p-1"
-                              onClick={() => insertEmoji(em)}
-                            >
-                              {em}
-                            </button>
-                          ))}
-                        </div>
-                        <p className="mt-2 text-xs text-gray-500">
-                          Tip: Windows emoji picker is <span className="font-mono">Win + .</span>
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <Textarea
-                  value={messageText}
-                  onChange={(e) => setMessageText(e.target.value)}
+              <div className="flex items-end gap-2">
+                <input type="file" multiple className="hidden" id="msg-upload-input" onChange={(e) => uploadFiles(e.target.files)} />
+                <button
+                  type="button"
+                  className="h-10 w-10 rounded bg-[#232a33]"
+                  onClick={() => document.getElementById('msg-upload-input')?.click()}
+                >
+                  +
+                </button>
+                <button type="button" className="h-10 px-3 rounded bg-[#232a33] text-xs" onClick={sendLocation}>
+                  Location
+                </button>
+                <button
+                  type="button"
+                  className={`h-10 px-3 rounded text-xs ${recording ? 'bg-red-600' : 'bg-[#232a33]'}`}
+                  onMouseDown={startVoiceRecording}
+                  onMouseUp={stopVoiceRecording}
+                  onMouseLeave={() => recording && stopVoiceRecording()}
+                  onTouchStart={startVoiceRecording}
+                  onTouchEnd={stopVoiceRecording}
+                >
+                  {recording ? 'Recording...' : 'Hold mic'}
+                </button>
+                <textarea
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault()
-                      handleSendMessage()
+                      sendMessage()
                     }
                   }}
-                  placeholder="Type a message... (Enter to send, Shift+Enter for new line)"
-                  className="min-h-[60px] resize-none"
                   rows={2}
+                  className="flex-1 min-h-10 max-h-36 rounded bg-[#0f1115] border border-[#303743] px-3 py-2 text-sm"
+                  placeholder="Type a message..."
                 />
-                <Button
-                  onClick={handleSendMessage}
-                  disabled={((!messageText.trim() && attachments.length === 0) || sending || uploading)}
-                  title={uploading ? 'Uploading...' : 'Send'}
-                  className="bg-[#333333] hover:bg-[#3b3b3b] text-white"
-                >
-                  <Send className="h-4 w-4" />
-                </Button>
+                <button className="h-10 px-4 rounded bg-[#2f6fed] disabled:opacity-60" onClick={sendMessage} disabled={sending}>
+                  Send
+                </button>
               </div>
-              <p className="text-xs text-gray-500 mt-1">
-                {selectedConversation.channel === 'SMS' && `${messageText.length} characters`}
-                {uploading && ' • Uploading...'}
-              </p>
-            </div>
+            </footer>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center bg-gray-50">
-            <div className="text-center">
-              <MessageSquare className="h-16 w-16 mx-auto mb-4 text-gray-300" />
-              <p className="text-gray-500">Select a conversation to start messaging</p>
-            </div>
-          </div>
+          <div className="flex-1 flex items-center justify-center text-gray-400">Select a conversation</div>
         )}
-      </div>
-
-      {/* New Conversation Dialog */}
-      <Dialog open={showNewConversation} onOpenChange={setShowNewConversation}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Start New Conversation</DialogTitle>
-            <DialogDescription>Create a new conversation with a client or phone number</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Channel</label>
-              <Select value={newConversationChannel} onValueChange={(v: any) => setNewConversationChannel(v)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="SMS">SMS</SelectItem>
-                  <SelectItem value="MMS">MMS</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-1">Client (Optional)</label>
-              <Select
-                value={newConversationClientId}
-                onValueChange={(clientId) => {
-                  setNewConversationClientId(clientId)
-                  if (clientId === 'none') return
-                  const client = clients.find((c) => c.id === clientId)
-                  if (client && client.phone) {
-                    setNewConversationTo(client.phone)
-                  }
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a client" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  {clients
-                    .filter((c) => c.phone)
-                    .map((client) => (
-                      <SelectItem key={client.id} value={client.id}>
-                        {client.name} - {client.phone}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-1">Phone Number</label>
-              <Input
-                value={newConversationTo}
-                onChange={(e) => setNewConversationTo(e.target.value)}
-                placeholder="+15551234567"
-                type="tel"
-              />
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowNewConversation(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handleCreateConversation} disabled={!newConversationTo.trim()}>
-                Start Conversation
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      </section>
     </div>
   )
 }

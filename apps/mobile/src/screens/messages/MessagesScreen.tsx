@@ -1,69 +1,147 @@
-import React from 'react'
-import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native'
-import { useQuery } from '@tanstack/react-query'
+import React, { useMemo, useState } from 'react'
+import { Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
+import { Picker } from '@react-native-picker/picker'
 import { AppScreen } from '../../components/AppScreen'
 import { apiRequest } from '../../api/client'
 import { Conversation } from '../../types/models'
 import { MessagesStackParamList } from '../../types/navigation'
 import { colors, spacing, typography } from '../../theme/tokens'
-import { EmptyState } from '../../components/EmptyState'
-import { PressableCard } from '../../components/Card'
-import { SectionHeader } from '../../components/SectionHeader'
 
 interface ConversationsResponse {
   conversations: Conversation[]
 }
 
-interface TeamChatSummary {
-  conversationId: string
-  unreadCount: number
-  lastMessageAt: string | null
+interface UsersResponse {
+  users: Array<{
+    id: string
+    firstName?: string | null
+    lastName?: string | null
+    email: string
+  }>
 }
 
 type Props = NativeStackScreenProps<MessagesStackParamList, 'MessagesList'>
 
+function displayName(user?: { firstName?: string | null; lastName?: string | null; email?: string | null } | null) {
+  if (!user) return 'Unknown'
+  const full = `${user.firstName || ''} ${user.lastName || ''}`.trim()
+  return full || user.email || 'Unknown'
+}
+
 export function MessagesScreen({ navigation }: Props) {
-  const query = useQuery({
-    queryKey: ['mobile-conversations'],
-    queryFn: () => apiRequest<ConversationsResponse>('/api/messages/conversations?assigned=me'),
-    refetchInterval: 45_000,
+  const queryClient = useQueryClient()
+  const [search, setSearch] = useState('')
+  const [selectedUserId, setSelectedUserId] = useState('')
+
+  const conversationsQuery = useQuery({
+    queryKey: ['mobile-chat-conversations'],
+    queryFn: () => apiRequest<ConversationsResponse>('/api/messages/conversations'),
+    refetchInterval: 20_000,
   })
-  const teamSummaryQuery = useQuery({
-    queryKey: ['mobile-team-chat-summary'],
-    queryFn: () => apiRequest<TeamChatSummary>('/api/mobile/team-chat?summary=1&markRead=0'),
-    refetchInterval: 30_000,
+
+  const usersQuery = useQuery({
+    queryKey: ['mobile-chat-users'],
+    queryFn: () => apiRequest<UsersResponse>('/api/messages/users'),
+    refetchInterval: 60_000,
   })
+
+  const createDmMutation = useMutation({
+    mutationFn: async (userId: string) => apiRequest<{ conversationId: string }>('/api/messages/dm', 'POST', { userId }),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: ['mobile-chat-conversations'] })
+      navigation.navigate('MessageThread', { conversationId: result.conversationId })
+    },
+    onError: (error: any) => {
+      Alert.alert('Error', error?.message || 'Failed to start direct message')
+    },
+  })
+
+  const teamEnsureMutation = useMutation({
+    mutationFn: async () => apiRequest<{ conversationId: string }>('/api/messages/team/ensure', 'POST', {}),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: ['mobile-chat-conversations'] })
+      navigation.navigate('MessageThread', { conversationId: result.conversationId })
+    },
+  })
+
+  const filtered = useMemo(() => {
+    const rows = conversationsQuery.data?.conversations || []
+    const q = search.trim().toLowerCase()
+    if (!q) return rows
+    return rows.filter((row) => {
+      const title = String(row.title || displayName(row.otherUser) || '').toLowerCase()
+      const preview = String(row.lastMessage?.text || '').toLowerCase()
+      return title.includes(q) || preview.includes(q)
+    })
+  }, [conversationsQuery.data?.conversations, search])
+
+  const userOptions = useMemo(() => usersQuery.data?.users || [], [usersQuery.data?.users])
 
   return (
     <AppScreen>
-      <View style={styles.headerRow}>
-        <View>
-          <Text style={styles.title}>Messages</Text>
-          <Text style={styles.subtitle}>Client and crew conversations.</Text>
+      <View style={styles.header}>
+        <Text style={styles.title}>Messages</Text>
+        <Text style={styles.subtitle}>Team and direct conversations.</Text>
+      </View>
+
+      <TextInput
+        style={styles.searchInput}
+        value={search}
+        onChangeText={setSearch}
+        placeholder="Search conversations..."
+        placeholderTextColor={colors.textSecondary}
+      />
+
+      <View style={styles.newMessageBox}>
+        <Pressable style={styles.teamButton} onPress={() => teamEnsureMutation.mutate()}>
+          <Text style={styles.teamButtonText}>Open Team Chat</Text>
+        </Pressable>
+        <View style={styles.pickerWrap}>
+          <Picker selectedValue={selectedUserId} onValueChange={(value) => setSelectedUserId(String(value || ''))} style={styles.picker}>
+            <Picker.Item label="Start direct message..." value="" />
+            {userOptions.map((user) => (
+              <Picker.Item key={user.id} label={displayName(user)} value={user.id} />
+            ))}
+          </Picker>
         </View>
         <Pressable
-          style={({ pressed }) => [styles.teamButton, pressed && styles.teamButtonPressed]}
-          android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
-          onPress={() => navigation.navigate('TeamChat')}
+          style={[styles.startDmButton, (!selectedUserId || createDmMutation.isPending) && styles.disabledButton]}
+          disabled={!selectedUserId || createDmMutation.isPending}
+          onPress={() => createDmMutation.mutate(selectedUserId)}
         >
-          <Text style={styles.teamButtonText}>
-            Team Chat
-            {teamSummaryQuery.data?.unreadCount ? ` (${teamSummaryQuery.data.unreadCount})` : ''}
-          </Text>
+          <Text style={styles.startDmButtonText}>Start DM</Text>
         </Pressable>
       </View>
+
       <FlatList
-        data={query.data?.conversations ?? []}
+        data={filtered}
         keyExtractor={(item) => item.id}
-        refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => query.refetch()} />}
-        ListHeaderComponent={<SectionHeader title="Recent Conversations" />}
-        ListEmptyComponent={<EmptyState icon="chatbubble-ellipses-outline" title="No conversations" description="Messages will show here when available." />}
+        refreshControl={
+          <RefreshControl
+            refreshing={conversationsQuery.isRefetching}
+            onRefresh={() => conversationsQuery.refetch()}
+          />
+        }
+        contentContainerStyle={styles.listContent}
         renderItem={({ item }) => (
-          <PressableCard style={styles.card} onPress={() => navigation.navigate('MessageThread', { conversationId: item.id })}>
-            <Text style={styles.cardTitle}>{item.client?.name || item.participants?.[0] || 'Conversation'}</Text>
-            <Text style={styles.meta}>{item.messages?.[0]?.body || 'No recent messages'}</Text>
-          </PressableCard>
+          <Pressable style={styles.card} onPress={() => navigation.navigate('MessageThread', { conversationId: item.id })}>
+            <View style={styles.cardRow}>
+              <Text style={styles.cardTitle} numberOfLines={1}>
+                {item.pinned ? 'Pinned • ' : ''}
+                {item.title || displayName(item.otherUser)}
+              </Text>
+              {item.unreadCount > 0 && (
+                <View style={styles.unreadBadge}>
+                  <Text style={styles.unreadBadgeText}>{item.unreadCount}</Text>
+                </View>
+              )}
+            </View>
+            <Text style={styles.cardMeta} numberOfLines={1}>
+              {item.lastMessage?.text || (item.lastMessage ? `[${item.lastMessage.type}]` : 'No messages yet')}
+            </Text>
+          </Pressable>
         )}
       />
     </AppScreen>
@@ -71,32 +149,104 @@ export function MessagesScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  screen: { padding: 14 },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  header: {
     marginTop: spacing.sm,
     marginBottom: spacing.sm,
   },
   title: { ...typography.h2, color: colors.textPrimary },
   subtitle: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
-  teamButton: {
-    backgroundColor: colors.brandPrimary,
+  searchInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
     borderRadius: 10,
-    minHeight: 44,
-    paddingVertical: spacing.sm,
     paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    color: colors.textPrimary,
+    backgroundColor: colors.surface,
+    marginBottom: spacing.sm,
+  },
+  newMessageBox: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    padding: spacing.sm,
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  teamButton: {
+    backgroundColor: colors.primary,
+    borderRadius: 10,
+    minHeight: 42,
     justifyContent: 'center',
+    alignItems: 'center',
   },
-  teamButtonPressed: { opacity: 0.9 },
   teamButtonText: {
-    color: colors.surface,
+    color: colors.white,
     fontWeight: '700',
-    fontSize: 12,
   },
-  card: { marginBottom: spacing.sm },
-  cardTitle: { ...typography.sub, color: colors.textPrimary, fontWeight: '700', marginBottom: 4 },
-  meta: { ...typography.caption, color: colors.textSecondary },
+  pickerWrap: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: colors.background,
+  },
+  picker: {
+    height: 44,
+    color: colors.textPrimary,
+  },
+  startDmButton: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+    minHeight: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  startDmButtonText: {
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  disabledButton: { opacity: 0.5 },
+  listContent: { paddingBottom: 28, gap: spacing.sm },
+  card: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    padding: spacing.sm,
+  },
+  cardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  cardTitle: {
+    ...typography.sub,
+    color: colors.textPrimary,
+    flex: 1,
+    fontWeight: '700',
+  },
+  cardMeta: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  unreadBadge: {
+    backgroundColor: colors.primary,
+    borderRadius: 999,
+    minWidth: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  unreadBadgeText: {
+    color: colors.white,
+    fontSize: 11,
+    fontWeight: '700',
+  },
 })
-

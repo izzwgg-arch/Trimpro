@@ -54,6 +54,28 @@ export interface Job {
     firstName: string
     lastName: string
   } | null
+  tasks?: Array<{
+    id: string
+    title: string
+    status: string
+    priority: string
+    dueDate: string | null
+    createdAt: string
+    updatedAt: string
+    shortDescription: string
+    assignedTo: { id: string; name: string } | null
+  }>
+  issues?: Array<{
+    id: string
+    title: string
+    status: string
+    priority: string
+    createdAt: string
+    updatedAt: string
+    shortDescription: string
+    assignedTo: { id: string; name: string } | null
+  }>
+  attachments?: Attachment[]
 }
 
 export interface TimeEntry {
@@ -105,10 +127,18 @@ export interface Issue {
 export interface ScheduleItem {
   id: string
   title: string
+  description?: string | null
   type: string
   startTime: string
   endTime: string
   allDay: boolean
+  userId?: string
+  user?: {
+    id: string
+    firstName: string
+    lastName: string
+    email?: string
+  }
   job?: {
     id: string
     jobNumber: string
@@ -118,11 +148,31 @@ export interface ScheduleItem {
 
 export interface Conversation {
   id: string
-  channel: string
-  status: string
+  type?: 'TEAM' | 'DM' | 'JOB_THREAD'
+  title?: string
+  pinned?: boolean
+  channel?: string
+  status?: string
   unreadCount: number
-  participants: string[]
+  participants?: string[]
   lastMessageAt: string | null
+  otherUser?: {
+    id: string
+    firstName?: string | null
+    lastName?: string | null
+    email: string
+  } | null
+  lastMessage?: {
+    id: string
+    text?: string | null
+    type?: string
+    createdAt: string
+    status?: string
+    senderId?: string
+    jobId?: string | null
+    jobNumber?: string | null
+    jobName?: string | null
+  } | null
   client?: {
     id: string
     name: string
@@ -134,6 +184,36 @@ export interface Conversation {
     body: string
     direction: string
     createdAt: string
+  }>
+}
+
+export interface ChatMessage {
+  id: string
+  senderId: string
+  text?: string | null
+  type: 'TEXT' | 'MEDIA' | 'VOICE' | 'LOCATION' | 'SYSTEM'
+  status: 'SENT' | 'DELIVERED' | 'READ'
+  createdAt: string
+  jobId?: string | null
+  jobNumber?: string | null
+  jobName?: string | null
+  sender?: {
+    id: string
+    firstName?: string | null
+    lastName?: string | null
+    email: string
+  } | null
+  attachments?: Array<{
+    id: string
+    kind: 'IMAGE' | 'VIDEO' | 'FILE' | 'VOICE' | 'LOCATION'
+    url: string
+    fileName?: string | null
+    mimeType?: string | null
+    durationMs?: number | null
+    thumbnailUrl?: string | null
+    latitude?: number | null
+    longitude?: number | null
+    sizeBytes?: number | null
   }>
 }
 

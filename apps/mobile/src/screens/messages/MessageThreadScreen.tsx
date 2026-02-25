@@ -1,12 +1,24 @@
-import React, { useMemo, useState } from 'react'
-import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
+import React, { useEffect, useMemo, useState } from 'react'
+import {
+  Alert,
+  FlatList,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  Linking,
+} from 'react-native'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import * as ImagePicker from 'expo-image-picker'
 import * as FileSystem from 'expo-file-system/legacy'
+import * as Location from 'expo-location'
+import { Audio } from 'expo-av'
+import { API_BASE_URL, BRAND } from '../../config/env'
 import { Screen } from '../../components/Screen'
 import { apiRequest } from '../../api/client'
-import { API_BASE_URL, BRAND } from '../../config/env'
+import { ChatMessage } from '../../types/models'
 import { MessagesStackParamList } from '../../types/navigation'
 import { useAuth } from '../../auth/AuthContext'
 import { useOnlineState } from '../../hooks/useOnlineState'
@@ -14,159 +26,148 @@ import { enqueueOutbox } from '../../offline/outbox'
 
 type Props = NativeStackScreenProps<MessagesStackParamList, 'MessageThread'>
 
-interface ConversationDetailResponse {
+interface ThreadResponse {
+  messages: ChatMessage[]
+}
+
+interface ConversationResponse {
   conversation: {
     id: string
-    channel: string
-    participants: string[]
-    messages: Array<{
-      id: string
-      body: string
-      direction: string
-      createdAt: string
-    }>
+    type: 'TEAM' | 'DM' | 'JOB_THREAD'
+    title?: string | null
   }
 }
 
+function senderName(message: ChatMessage) {
+  const sender = message.sender
+  if (!sender) return 'Unknown'
+  const value = `${sender.firstName || ''} ${sender.lastName || ''}`.trim()
+  return value || sender.email
+}
+
 export function MessageThreadScreen({ route }: Props) {
-  const { conversationId } = route.params
-  const [text, setText] = useState('')
+  const { conversationId, jobContext } = route.params
+  const { user, token } = useAuth()
+  const isOnline = useOnlineState()
+  const queryClient = useQueryClient()
+  const [text, setText] = useState(jobContext ? `Regarding Job #${jobContext.jobNumber} - ${jobContext.jobName}\n` : '')
   const [uploading, setUploading] = useState(false)
+  const [recording, setRecording] = useState<Audio.Recording | null>(null)
   const [mediaDrafts, setMediaDrafts] = useState<
     Array<{
-      type: string
-      filename?: string
-      mimeType?: string
-      size?: number
+      kind: 'IMAGE' | 'VIDEO' | 'FILE' | 'VOICE' | 'LOCATION'
       url?: string
+      fileName?: string
+      mimeType?: string
+      sizeBytes?: number
+      durationMs?: number
+      latitude?: number
+      longitude?: number
       localUri?: string
     }>
   >([])
-  const queryClient = useQueryClient()
-  const { token } = useAuth()
-  const isOnline = useOnlineState()
+
+  const conversationQuery = useQuery({
+    queryKey: ['mobile-chat-conversation', conversationId],
+    queryFn: () => apiRequest<ConversationResponse>(`/api/messages/conversations/${conversationId}`),
+    refetchInterval: 30_000,
+  })
 
   const threadQuery = useQuery({
-    queryKey: ['mobile-conversation-thread', conversationId],
-    queryFn: () => apiRequest<ConversationDetailResponse>(`/api/messages/conversations/${conversationId}`),
-    refetchInterval: 45_000,
+    queryKey: ['mobile-chat-thread', conversationId],
+    queryFn: () => apiRequest<ThreadResponse>(`/api/messages/conversations/${conversationId}/messages?limit=80`),
+    refetchInterval: 8_000,
   })
+
+  useEffect(() => {
+    apiRequest(`/api/messages/conversations/${conversationId}/read`, 'POST', {}).catch(() => {})
+  }, [conversationId])
 
   const sendMutation = useMutation({
     mutationFn: async () => {
-      const conversation = threadQuery.data?.conversation
-      if (!conversation) return
-      const recipient = conversation.participants?.[0] || ''
-      if (!text.trim() && mediaDrafts.length === 0) return
-      const localMedia = mediaDrafts.filter((m) => m.localUri)
-      const remoteMedia = mediaDrafts.filter((m) => m.url)
+      const localAttachments = mediaDrafts.filter((m) => m.localUri)
+      const readyAttachments = mediaDrafts.filter((m) => m.url)
+      const trimmed = text.trim()
+      if (!trimmed && localAttachments.length === 0 && readyAttachments.length === 0) return
+
       if (!isOnline) {
-        if (localMedia.length > 0) {
-          await enqueueOutbox({
-            id: `${Date.now()}-message-upload-${conversation.id}`,
-            type: 'message-send-with-upload',
-            payload: {
-              conversationId: conversation.id,
-              to: recipient,
-              from: 'mobile-field-app',
-              body: text.trim(),
-              channel: conversation.channel,
-              mediaFiles: localMedia.map((m) => ({
-                type: m.type,
-                uri: m.localUri as string,
-                mimeType: m.mimeType || 'application/octet-stream',
-                fileName: m.filename || `chat-${Date.now()}`,
-                fileSize: m.size || 0,
-              })),
-            },
-          })
-        }
-        if (remoteMedia.length > 0 || text.trim()) {
-          await enqueueOutbox({
-            id: `${Date.now()}-message-${conversation.id}`,
-            type: 'message-send',
-            payload: {
-              conversationId: conversation.id,
-              to: recipient,
-              from: 'mobile-field-app',
-              body: text.trim(),
-              channel: conversation.channel,
-              media: remoteMedia.map((m) => ({
-                type: m.type,
-                url: m.url as string,
-                mimeType: m.mimeType,
-                size: m.size,
-                filename: m.filename,
-              })),
-            },
-          })
-        }
+        await enqueueOutbox({
+          id: `chat-${Date.now()}-${conversationId}`,
+          type: 'message-send',
+          payload: {
+            conversationId,
+            to: '',
+            from: '',
+            body: trimmed,
+            channel: 'CHAT',
+            media: readyAttachments.map((attachment) => ({
+              type: attachment.kind.toLowerCase(),
+              url: attachment.url as string,
+              mimeType: attachment.mimeType,
+              size: attachment.sizeBytes,
+              filename: attachment.fileName,
+            })),
+          },
+        })
         return
       }
 
-      const uploadedFromLocal: Array<{ type: string; url: string; mimeType?: string; size?: number; filename?: string }> = []
-      for (const media of localMedia) {
-        if (!media.localUri || !token) continue
-        const uploadResult = await FileSystem.uploadAsync(
-          `${API_BASE_URL}/api/uploads`,
-          media.localUri,
-          {
-            fieldName: 'file',
-            httpMethod: 'POST',
-            uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-            headers: {
-              Authorization: `Bearer ${token}`,
-              Accept: 'application/json',
-            },
-            mimeType: media.mimeType || 'application/octet-stream',
-          }
-        )
+      const uploaded: typeof readyAttachments = [...readyAttachments]
+      for (const attachment of localAttachments) {
+        if (!attachment.localUri || !token) continue
+        const uploadResult = await FileSystem.uploadAsync(`${API_BASE_URL}/api/uploads/messages`, attachment.localUri, {
+          fieldName: 'file',
+          httpMethod: 'POST',
+          uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'application/json',
+          },
+          mimeType: attachment.mimeType || 'application/octet-stream',
+        })
         if (uploadResult.status < 200 || uploadResult.status >= 300) {
-          throw new Error('Failed to upload queued media')
+          throw new Error('Upload failed')
         }
         const payload = JSON.parse(uploadResult.body)
-        uploadedFromLocal.push({
-          type: media.type,
+        uploaded.push({
+          ...attachment,
           url: payload.url,
-          mimeType: media.mimeType,
-          size: media.size,
-          filename: media.filename,
         })
       }
 
-      await apiRequest('/api/messages/send', 'POST', {
-        conversationId: conversation.id,
-        to: recipient,
-        from: 'mobile-field-app',
-        body: text.trim(),
-        channel: conversation.channel,
-        media: [
-          ...remoteMedia.map((m) => ({
-            type: m.type,
-            url: m.url as string,
-            mimeType: m.mimeType,
-            size: m.size,
-            filename: m.filename,
-          })),
-          ...uploadedFromLocal,
-        ],
+      await apiRequest(`/api/messages/conversations/${conversationId}/messages`, 'POST', {
+        text: trimmed,
+        jobId: jobContext?.jobId || null,
+        clientTempId: `mobile-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        attachments: uploaded.map((attachment) => ({
+          kind: attachment.kind,
+          url: attachment.url,
+          fileName: attachment.fileName,
+          mimeType: attachment.mimeType,
+          sizeBytes: attachment.sizeBytes,
+          durationMs: attachment.durationMs,
+          latitude: attachment.latitude,
+          longitude: attachment.longitude,
+        })),
       })
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       setText('')
       setMediaDrafts([])
-      queryClient.invalidateQueries({ queryKey: ['mobile-conversation-thread', conversationId] })
-      queryClient.invalidateQueries({ queryKey: ['mobile-conversations'] })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['mobile-chat-thread', conversationId] }),
+        queryClient.invalidateQueries({ queryKey: ['mobile-chat-conversations'] }),
+      ])
+      apiRequest(`/api/messages/conversations/${conversationId}/read`, 'POST', {}).catch(() => {})
+    },
+    onError: (error: any) => {
+      Alert.alert('Error', error?.message || 'Message failed to send')
     },
   })
 
-  const messages = useMemo(() => threadQuery.data?.conversation?.messages ?? [], [threadQuery.data?.conversation?.messages])
-
-  const uploadMediaDraft = async () => {
-    if (!token && isOnline) return
+  const pickMedia = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync()
     if (!permission.granted) return
-
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images', 'videos'],
       quality: 0.72,
@@ -175,92 +176,146 @@ export function MessageThreadScreen({ route }: Props) {
     if (result.canceled || result.assets.length === 0) return
     const asset = result.assets[0]
     const mimeType = asset.mimeType || (asset.type === 'video' ? 'video/mp4' : 'image/jpeg')
-    const filename = asset.fileName || `chat-${Date.now()}`
+    setMediaDrafts((prev) => [
+      ...prev,
+      {
+        kind: mimeType.startsWith('video/') ? 'VIDEO' : 'IMAGE',
+        localUri: asset.uri,
+        mimeType,
+        fileName: asset.fileName || `chat-${Date.now()}`,
+        sizeBytes: asset.fileSize || undefined,
+      },
+    ])
+  }
 
-    if (!isOnline) {
-      const mediaType = mimeType.startsWith('video/') ? 'video' : mimeType.startsWith('image/') ? 'image' : 'file'
-      setMediaDrafts((prev) => [
-        ...prev,
-        {
-          type: mediaType,
-          localUri: asset.uri,
-          mimeType,
-          size: asset.fileSize || undefined,
-          filename,
-        },
-      ])
+  const shareLocation = async () => {
+    const permission = await Location.requestForegroundPermissionsAsync()
+    if (!permission.granted) {
+      Alert.alert('Permission required', 'Location permission is required to share your location.')
       return
     }
+    const location = await Location.getCurrentPositionAsync({})
+    setMediaDrafts((prev) => [
+      ...prev,
+      {
+        kind: 'LOCATION',
+        url: `https://maps.google.com/?q=${location.coords.latitude},${location.coords.longitude}`,
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      },
+    ])
+  }
 
-    setUploading(true)
+  const startRecording = async () => {
     try {
-      const uploadResult = await FileSystem.uploadAsync(
-        `${API_BASE_URL}/api/uploads`,
-        asset.uri,
-        {
-          fieldName: 'file',
-          httpMethod: 'POST',
-          uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: 'application/json',
-          },
-          mimeType,
-        }
-      )
-
-      if (uploadResult.status < 200 || uploadResult.status >= 300) {
-        throw new Error('Upload failed')
-      }
-      const payload = JSON.parse(uploadResult.body)
-      const mediaType = mimeType.startsWith('video/') ? 'video' : mimeType.startsWith('image/') ? 'image' : 'file'
-      setMediaDrafts((prev) => [
-        ...prev,
-        {
-          type: mediaType,
-          url: payload.url,
-          mimeType,
-          size: asset.fileSize || undefined,
-          filename,
-        },
-      ])
-    } finally {
-      setUploading(false)
+      const permission = await Audio.requestPermissionsAsync()
+      if (!permission.granted) return
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      })
+      const nextRecording = new Audio.Recording()
+      await nextRecording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY)
+      await nextRecording.startAsync()
+      setRecording(nextRecording)
+    } catch {
+      Alert.alert('Recording error', 'Unable to start voice recording.')
     }
   }
 
+  const stopRecording = async () => {
+    if (!recording) return
+    try {
+      await recording.stopAndUnloadAsync()
+      const uri = recording.getURI()
+      const status = await recording.getStatusAsync()
+      if (uri) {
+        setMediaDrafts((prev) => [
+          ...prev,
+          {
+            kind: 'VOICE',
+            localUri: uri,
+            mimeType: 'audio/m4a',
+            fileName: `voice-${Date.now()}.m4a`,
+            durationMs: status.isLoaded ? status.durationMillis || undefined : undefined,
+          },
+        ])
+      }
+    } finally {
+      setRecording(null)
+    }
+  }
+
+  const messages = useMemo(() => threadQuery.data?.messages || [], [threadQuery.data?.messages])
+
   return (
     <Screen style={styles.screen}>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>{conversationQuery.data?.conversation?.title || 'Conversation'}</Text>
+      </View>
+
       <FlatList
         data={messages}
-        inverted
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         renderItem={({ item }) => {
-          const outbound = item.direction === 'OUTBOUND'
+          const mine = item.senderId === user?.id
           return (
-            <View style={[styles.bubble, outbound ? styles.outbound : styles.inbound]}>
-              <Text style={[styles.messageText, outbound && styles.outboundText]}>{item.body || '(media)'}</Text>
-              <Text style={[styles.timeText, outbound && styles.outboundTime]}>{new Date(item.createdAt).toLocaleTimeString()}</Text>
+            <View style={[styles.bubble, mine ? styles.outbound : styles.inbound]}>
+              {!mine && (
+                <Text style={styles.senderText}>{senderName(item)}</Text>
+              )}
+              {!!item.text && <Text style={[styles.messageText, mine && styles.outboundText]}>{item.text}</Text>}
+              {item.jobId ? (
+                <Pressable onPress={() => Linking.openURL(`trimpro://jobs/${item.jobId}`)} style={styles.jobStamp}>
+                  <Text style={styles.jobStampText}>Job #{item.jobNumber} - {item.jobName}</Text>
+                </Pressable>
+              ) : null}
+              {(item.attachments || []).map((attachment) => (
+                <Pressable key={attachment.id} style={styles.attachmentRow} onPress={() => Linking.openURL(attachment.url)}>
+                  <Text style={[styles.attachmentText, mine && styles.outboundText]}>
+                    {attachment.kind === 'LOCATION'
+                      ? 'Open location'
+                      : attachment.kind === 'VOICE'
+                        ? `Voice note ${attachment.durationMs ? `(${Math.round(attachment.durationMs / 1000)}s)` : ''}`
+                        : attachment.fileName || `${attachment.kind} attachment`}
+                  </Text>
+                </Pressable>
+              ))}
+              <Text style={[styles.timeText, mine && styles.outboundTime]}>
+                {new Date(item.createdAt).toLocaleTimeString()} {mine ? (item.status === 'READ' ? '✓✓' : item.status === 'DELIVERED' ? '✓✓' : '✓') : ''}
+              </Text>
             </View>
           )
         }}
       />
+
       {mediaDrafts.length > 0 && (
-        <View style={styles.mediaPills}>
-          {mediaDrafts.map((m, idx) => (
-            <View key={`${m.url || m.localUri || 'draft'}-${idx}`} style={styles.mediaPill}>
-              <Text style={styles.mediaPillText} numberOfLines={1}>
-                {m.filename || m.type}
-                {m.localUri ? ' (queued)' : ''}
+        <View style={styles.draftRow}>
+          {mediaDrafts.map((draft, index) => (
+            <View key={`${draft.kind}-${index}`} style={styles.draftPill}>
+              <Text style={styles.draftPillText}>
+                {draft.kind}
+                {draft.kind === 'LOCATION' && draft.latitude && draft.longitude ? ` (${draft.latitude.toFixed(3)}, ${draft.longitude.toFixed(3)})` : ''}
               </Text>
             </View>
           ))}
         </View>
       )}
+
       <View style={styles.composer}>
-        <Pressable style={styles.attachButton} onPress={uploadMediaDraft} disabled={uploading}>
-          <Text style={styles.attachText}>{uploading ? '...' : '+'}</Text>
+        <Pressable style={styles.actionButton} onPress={pickMedia} disabled={uploading}>
+          <Text style={styles.actionText}>+</Text>
+        </Pressable>
+        <Pressable style={styles.actionButton} onPress={shareLocation}>
+          <Text style={styles.smallActionText}>Loc</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.actionButton, recording && styles.recordingButton]}
+          onPressIn={startRecording}
+          onPressOut={stopRecording}
+        >
+          <Text style={styles.smallActionText}>{recording ? 'Rec' : 'Mic'}</Text>
         </Pressable>
         <TextInput
           value={text}
@@ -269,8 +324,8 @@ export function MessageThreadScreen({ route }: Props) {
           style={styles.input}
           multiline
         />
-        <Pressable style={styles.sendButton} onPress={() => sendMutation.mutate()}>
-          <Text style={styles.sendText}>Send</Text>
+        <Pressable style={[styles.sendButton, sendMutation.isPending && styles.disabledButton]} onPress={() => sendMutation.mutate()} disabled={sendMutation.isPending}>
+          <Text style={styles.sendText}>{sendMutation.isPending ? '...' : 'Send'}</Text>
         </Pressable>
       </View>
     </Screen>
@@ -279,12 +334,23 @@ export function MessageThreadScreen({ route }: Props) {
 
 const styles = StyleSheet.create({
   screen: { padding: 10 },
-  listContent: { paddingTop: 12, gap: 8 },
+  header: {
+    paddingBottom: 8,
+    marginBottom: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#D0D5DD',
+  },
+  headerTitle: {
+    color: BRAND.text,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  listContent: { paddingTop: 10, gap: 8, paddingBottom: 18 },
   bubble: {
-    maxWidth: '82%',
+    maxWidth: '86%',
     borderRadius: 14,
-    paddingVertical: 10,
     paddingHorizontal: 12,
+    paddingVertical: 10,
   },
   inbound: {
     alignSelf: 'flex-start',
@@ -294,20 +360,57 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     backgroundColor: BRAND.primary,
   },
-  messageText: {
-    color: BRAND.text,
-    fontSize: 14,
+  senderText: {
+    color: '#475467',
+    fontWeight: '700',
+    fontSize: 12,
+    marginBottom: 4,
   },
-  outboundText: {
+  messageText: { color: BRAND.text, fontSize: 14 },
+  outboundText: { color: BRAND.white },
+  jobStamp: {
+    marginTop: 6,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(0,0,0,0.18)',
+  },
+  jobStampText: {
     color: BRAND.white,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  attachmentRow: {
+    marginTop: 6,
+  },
+  attachmentText: {
+    fontSize: 12,
+    textDecorationLine: 'underline',
+    color: BRAND.text,
   },
   timeText: {
     marginTop: 4,
     fontSize: 11,
     color: '#667085',
+    textAlign: 'right',
   },
-  outboundTime: {
-    color: '#D1E4EF',
+  outboundTime: { color: '#D1E4EF' },
+  draftRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 6,
+  },
+  draftPill: {
+    backgroundColor: '#EAECF0',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  draftPillText: {
+    color: BRAND.text,
+    fontSize: 11,
+    fontWeight: '600',
   },
   composer: {
     borderTopWidth: 1,
@@ -317,24 +420,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     gap: 8,
   },
-  mediaPills: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 6,
-  },
-  mediaPill: {
-    backgroundColor: '#EAECF0',
-    borderRadius: 999,
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    maxWidth: '92%',
-  },
-  mediaPillText: {
-    color: BRAND.text,
-    fontSize: 12,
-  },
-  attachButton: {
+  actionButton: {
     width: 36,
     height: 36,
     borderRadius: 18,
@@ -344,11 +430,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: BRAND.white,
   },
-  attachText: {
+  recordingButton: {
+    backgroundColor: '#FEE2E2',
+    borderColor: '#DC2626',
+  },
+  actionText: {
     fontSize: 18,
     color: BRAND.text,
     fontWeight: '700',
     lineHeight: 20,
+  },
+  smallActionText: {
+    fontSize: 11,
+    color: BRAND.text,
+    fontWeight: '700',
   },
   input: {
     flex: 1,
@@ -361,6 +456,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     textAlignVertical: 'top',
     backgroundColor: BRAND.white,
+    color: BRAND.text,
   },
   sendButton: {
     backgroundColor: BRAND.primary,
@@ -368,9 +464,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 14,
   },
-  sendText: {
-    color: BRAND.white,
-    fontWeight: '700',
-  },
+  sendText: { color: BRAND.white, fontWeight: '700' },
+  disabledButton: { opacity: 0.6 },
 })
-

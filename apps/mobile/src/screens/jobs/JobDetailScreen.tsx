@@ -1,10 +1,25 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Alert, Linking, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, Platform } from 'react-native'
+import {
+  Alert,
+  Linking,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  View,
+  Platform,
+  Modal,
+  Image,
+  RefreshControl,
+} from 'react-native'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import * as ImagePicker from 'expo-image-picker'
 import * as Location from 'expo-location'
 import * as FileSystem from 'expo-file-system/legacy'
+import { Video, ResizeMode } from 'expo-av'
 import { Screen } from '../../components/Screen'
 import { apiRequest } from '../../api/client'
 import { Attachment, Job, TimeEntry } from '../../types/models'
@@ -35,6 +50,10 @@ interface AttachmentsResponse {
   attachments: Attachment[]
 }
 
+interface AttachmentCreateResponse {
+  attachment: Attachment
+}
+
 interface JobTimeResponse {
   entries: TimeEntry[]
   activeEntries: TimeEntry[]
@@ -49,7 +68,32 @@ interface JobTimeResponse {
   }
 }
 
-export function JobDetailScreen({ route }: Props) {
+const MEDIA_BASE_URL = 'https://app.trimprony.com'
+
+function normalizeMediaUrl(rawUrl: string) {
+  const value = String(rawUrl || '').trim()
+  if (!value) return value
+  try {
+    const parsed = new URL(value, MEDIA_BASE_URL)
+    const host = parsed.hostname
+    const isInternalHost = host === 'localhost' || host === '127.0.0.1' || /^\d{1,3}(\.\d{1,3}){3}$/.test(host)
+    if (isInternalHost) {
+      return `${MEDIA_BASE_URL}${parsed.pathname}${parsed.search}`
+    }
+    if (parsed.protocol === 'http:') parsed.protocol = 'https:'
+    return parsed.toString()
+  } catch {
+    if (value.startsWith('/')) return `${MEDIA_BASE_URL}${value}`
+    return value
+  }
+}
+
+function formatCompactDate(value?: string | null) {
+  if (!value) return 'No date'
+  return new Date(value).toLocaleDateString()
+}
+
+export function JobDetailScreen({ route, navigation }: Props) {
   const { token, user } = useAuth()
   const isOnline = useOnlineState()
   const queryClient = useQueryClient()
@@ -57,6 +101,11 @@ export function JobDetailScreen({ route }: Props) {
   const [noteText, setNoteText] = useState('')
   const [locationSharing, setLocationSharing] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
+  const [localAttachments, setLocalAttachments] = useState<Attachment[]>([])
+  const [mediaViewerVisible, setMediaViewerVisible] = useState(false)
+  const [videoViewerVisible, setVideoViewerVisible] = useState(false)
+  const [activeImageIndex, setActiveImageIndex] = useState(0)
+  const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [manualMinutes, setManualMinutes] = useState('')
   const [manualNote, setManualNote] = useState('')
@@ -92,6 +141,9 @@ export function JobDetailScreen({ route }: Props) {
   })
 
   const job = jobQuery.data?.job
+  const onRefresh = async () => {
+    await Promise.all([jobQuery.refetch(), attachmentsQuery.refetch(), timeQuery.refetch()])
+  }
 
   const statusMutation = useMutation({
     mutationFn: async (status: string) => {
@@ -341,11 +393,11 @@ export function JobDetailScreen({ route }: Props) {
         // Optional metadata only.
       }
 
-      await apiRequest('/api/attachments', 'POST', {
+      const created = await apiRequest<AttachmentCreateResponse>('/api/attachments', 'POST', {
         entityType: 'job',
         entityId: jobId,
         fileName,
-        url: uploadPayload.url,
+        url: normalizeMediaUrl(uploadPayload.url),
         key: uploadPayload.filename || uploadPayload.url,
         mimeType: guessedMime,
         fileSize: persistedFileSize,
@@ -360,7 +412,14 @@ export function JobDetailScreen({ route }: Props) {
       })
 
       setUploadProgress(null)
+      if (created?.attachment) {
+        setLocalAttachments((prev) => [
+          { ...created.attachment, url: normalizeMediaUrl(created.attachment.url) },
+          ...prev.filter((x) => x.id !== created.attachment.id),
+        ])
+      }
       queryClient.invalidateQueries({ queryKey: ['mobile-job-attachments', jobId] })
+      queryClient.invalidateQueries({ queryKey: ['mobile-job', jobId] })
       Alert.alert('Uploaded', 'Attachment uploaded successfully.')
     } catch (error: any) {
       setUploadProgress(null)
@@ -390,7 +449,35 @@ export function JobDetailScreen({ route }: Props) {
     })
   }
 
-  const attachmentRows = useMemo(() => attachmentsQuery.data?.attachments ?? [], [attachmentsQuery.data?.attachments])
+  const attachmentRows = useMemo(() => {
+    const fromJob = job?.attachments || []
+    const fromAttachmentApi = attachmentsQuery.data?.attachments || []
+    const merged = [...localAttachments, ...fromAttachmentApi, ...fromJob]
+    const deduped = new Map<string, Attachment>()
+    for (const row of merged) {
+      if (!row?.id) continue
+      if (!deduped.has(row.id)) {
+        deduped.set(row.id, {
+          ...row,
+          url: normalizeMediaUrl(row.url),
+        })
+      }
+    }
+    return Array.from(deduped.values()).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+  }, [attachmentsQuery.data?.attachments, job?.attachments, localAttachments])
+
+  const imageRows = useMemo(
+    () => attachmentRows.filter((row) => String(row.mimeType || '').startsWith('image/')),
+    [attachmentRows]
+  )
+  const videoRows = useMemo(
+    () => attachmentRows.filter((row) => String(row.mimeType || '').startsWith('video/')),
+    [attachmentRows]
+  )
+  const otherRows = useMemo(
+    () => attachmentRows.filter((row) => !String(row.mimeType || '').startsWith('image/') && !String(row.mimeType || '').startsWith('video/')),
+    [attachmentRows]
+  )
   const formatElapsed = (seconds: number) => {
     const h = Math.floor(seconds / 3600)
     const m = Math.floor((seconds % 3600) / 60)
@@ -404,6 +491,7 @@ export function JobDetailScreen({ route }: Props) {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
+        refreshControl={<RefreshControl refreshing={jobQuery.isRefetching || attachmentsQuery.isRefetching} onRefresh={onRefresh} />}
       >
         {jobQuery.isError ? (
           <View style={styles.errorWrap}>
@@ -422,6 +510,7 @@ export function JobDetailScreen({ route }: Props) {
             <StatusChip status={job.status} />
             <Text style={styles.meta}>Client: {job.client?.name || 'N/A'}</Text>
             <Text style={styles.meta}>Phone: {job.client?.phone || 'N/A'}</Text>
+            {!isOnline ? <Text style={styles.offlineBadge}>Offline - showing last synced data</Text> : null}
             {job.address?.street ? (
               <Pressable
                 onPress={() => {
@@ -593,9 +682,88 @@ export function JobDetailScreen({ route }: Props) {
               </Pressable>
             </View>
 
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Tasks</Text>
+                <Text style={styles.countBadge}>{job.tasks?.length || 0}</Text>
+              </View>
+              {(job.tasks || []).length === 0 ? (
+                <Text style={styles.meta}>No tasks for this job.</Text>
+              ) : (
+                (job.tasks || []).map((task) => (
+                  <Pressable
+                    key={task.id}
+                    style={styles.linkedRow}
+                    onPress={() => {
+                      void Linking.openURL(`trimpro://tasks/${task.id}`)
+                    }}
+                  >
+                    <View style={styles.linkedRowTop}>
+                      <Text style={styles.linkedTitle} numberOfLines={1}>
+                        {task.title}
+                      </Text>
+                      <View style={styles.inlinePills}>
+                        <Text style={styles.statusPill}>{task.status.replaceAll('_', ' ')}</Text>
+                        <Text style={styles.priorityPill}>{task.priority}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.meta} numberOfLines={1}>
+                      {task.assignedTo?.name || 'Unassigned'} • Due {formatCompactDate(task.dueDate)}
+                    </Text>
+                    {task.shortDescription ? (
+                      <Text style={styles.meta} numberOfLines={2}>
+                        {task.shortDescription}
+                      </Text>
+                    ) : null}
+                  </Pressable>
+                ))
+              )}
+            </View>
+
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Issues</Text>
+                <Text style={styles.countBadge}>{job.issues?.length || 0}</Text>
+              </View>
+              {(job.issues || []).length === 0 ? (
+                <Text style={styles.meta}>No issues for this job.</Text>
+              ) : (
+                (job.issues || []).map((issue) => (
+                  <Pressable
+                    key={issue.id}
+                    style={styles.linkedRow}
+                    onPress={() => {
+                      void Linking.openURL(`trimpro://issues/${issue.id}`)
+                    }}
+                  >
+                    <View style={styles.linkedRowTop}>
+                      <Text style={styles.linkedTitle} numberOfLines={1}>
+                        {issue.title}
+                      </Text>
+                      <View style={styles.inlinePills}>
+                        <Text style={styles.statusPill}>{issue.status.replaceAll('_', ' ')}</Text>
+                        <Text style={styles.priorityPill}>{issue.priority}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.meta} numberOfLines={1}>
+                      {issue.assignedTo?.name || 'Unassigned'} • Updated {formatCompactDate(issue.updatedAt)}
+                    </Text>
+                    {issue.shortDescription ? (
+                      <Text style={styles.meta} numberOfLines={2}>
+                        {issue.shortDescription}
+                      </Text>
+                    ) : null}
+                  </Pressable>
+                ))
+              )}
+            </View>
+
             {canUploadMedia() && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Media uploads</Text>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>Files and Media</Text>
+                  <Text style={styles.countBadge}>{attachmentRows.length}</Text>
+                </View>
                 <View style={styles.row}>
                   <Pressable style={styles.secondaryButton} onPress={() => onPickMedia(false)}>
                     <Text style={styles.secondaryButtonText}>Upload from gallery</Text>
@@ -607,14 +775,68 @@ export function JobDetailScreen({ route }: Props) {
               {uploadProgress !== null && (
                 <Text style={styles.meta}>Upload progress: {Math.round(uploadProgress * 100)}%</Text>
               )}
-              {attachmentRows.map((a) => (
-                <View key={a.id} style={styles.attachmentRow}>
-                  <Text style={styles.attachmentName} numberOfLines={1}>
-                    {a.fileName}
-                  </Text>
-                  <Text style={styles.attachmentMeta}>{Math.round(a.fileSize / 1024)} KB</Text>
+              {imageRows.length > 0 && (
+                <View>
+                  <Text style={styles.meta}>Images</Text>
+                  <View style={styles.mediaGrid}>
+                    {imageRows.map((a) => (
+                      <Pressable
+                        key={a.id}
+                        onPress={() => {
+                          const idx = imageRows.findIndex((x) => x.id === a.id)
+                          setActiveImageIndex(Math.max(0, idx))
+                          setMediaViewerVisible(true)
+                        }}
+                      >
+                        <Image source={{ uri: a.url }} style={styles.imageThumb} />
+                      </Pressable>
+                    ))}
+                  </View>
                 </View>
-              ))}
+              )}
+
+              {videoRows.length > 0 && (
+                <View>
+                  <Text style={styles.meta}>Videos</Text>
+                  {videoRows.map((a) => (
+                    <Pressable
+                      key={a.id}
+                      style={styles.attachmentRow}
+                      onPress={() => {
+                        setActiveVideoUrl(a.url)
+                        setVideoViewerVisible(true)
+                      }}
+                    >
+                      <Text style={styles.attachmentName} numberOfLines={1}>
+                        Play video: {a.fileName}
+                      </Text>
+                      <Text style={styles.attachmentMeta}>{Math.round(a.fileSize / 1024)} KB</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+
+              {otherRows.length > 0 && (
+                <View>
+                  <Text style={styles.meta}>Files</Text>
+                  {otherRows.map((a) => (
+                    <Pressable
+                      key={a.id}
+                      style={styles.attachmentRow}
+                      onPress={() => {
+                        void Linking.openURL(a.url)
+                      }}
+                    >
+                      <Text style={styles.attachmentName} numberOfLines={1}>
+                        {a.fileName}
+                      </Text>
+                      <Text style={styles.attachmentMeta}>{Math.round(a.fileSize / 1024)} KB</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+
+              {attachmentRows.length === 0 && <Text style={styles.meta}>No media for this job yet.</Text>}
               </View>
             )}
 
@@ -630,6 +852,66 @@ export function JobDetailScreen({ route }: Props) {
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Quick Actions</Text>
                 <View style={styles.row}>
+                  <Pressable
+                    style={styles.secondaryButton}
+                    onPress={async () => {
+                      if (!job) return
+                      try {
+                        const team = await apiRequest<{ conversationId: string }>('/api/messages/team/ensure', 'POST', {})
+                        const parentNav: any = navigation.getParent()?.getParent() || navigation.getParent()
+                        parentNav?.navigate('MainTabs', {
+                          screen: 'MessagesTab',
+                          params: {
+                            screen: 'MessageThread',
+                            params: {
+                              conversationId: team.conversationId,
+                              jobContext: {
+                                jobId: job.id,
+                                jobNumber: job.jobNumber,
+                                jobName: job.title,
+                              },
+                            },
+                          },
+                        })
+                      } catch (error: any) {
+                        Alert.alert('Error', error?.message || 'Failed to open Team Chat')
+                      }
+                    }}
+                  >
+                    <Text style={styles.secondaryButtonText}>Send Message (Team)</Text>
+                  </Pressable>
+                  {!!job.assignedTo?.id && job.assignedTo.id !== user?.id && (
+                    <Pressable
+                      style={styles.secondaryButton}
+                      onPress={async () => {
+                        if (!job?.assignedTo?.id || !job) return
+                        try {
+                          const dm = await apiRequest<{ conversationId: string }>('/api/messages/dm', 'POST', {
+                            userId: job.assignedTo.id,
+                          })
+                          const parentNav: any = navigation.getParent()?.getParent() || navigation.getParent()
+                          parentNav?.navigate('MainTabs', {
+                            screen: 'MessagesTab',
+                            params: {
+                              screen: 'MessageThread',
+                              params: {
+                                conversationId: dm.conversationId,
+                                jobContext: {
+                                  jobId: job.id,
+                                  jobNumber: job.jobNumber,
+                                  jobName: job.title,
+                                },
+                              },
+                            },
+                          })
+                        } catch (error: any) {
+                          Alert.alert('Error', error?.message || 'Failed to open direct message')
+                        }
+                      }}
+                    >
+                      <Text style={styles.secondaryButtonText}>Send DM to Assignee</Text>
+                    </Pressable>
+                  )}
                   {canCreateTasks() && (
                     <Pressable
                       style={styles.secondaryButton}
@@ -712,6 +994,69 @@ export function JobDetailScreen({ route }: Props) {
                 </View>
               </View>
             )}
+
+            <Modal visible={mediaViewerVisible} animationType="slide" onRequestClose={() => setMediaViewerVisible(false)}>
+              <View style={styles.viewerRoot}>
+                <View style={styles.viewerHeader}>
+                  <Pressable style={styles.secondaryButton} onPress={() => setMediaViewerVisible(false)}>
+                    <Text style={styles.secondaryButtonText}>Close</Text>
+                  </Pressable>
+                  <Text style={styles.viewerTitle}>
+                    {imageRows.length > 0 ? `${activeImageIndex + 1} / ${imageRows.length}` : 'Image'}
+                  </Text>
+                  <View style={{ width: 88 }} />
+                </View>
+                {imageRows[activeImageIndex] ? (
+                  <ScrollView
+                    contentContainerStyle={styles.viewerImageWrap}
+                    minimumZoomScale={1}
+                    maximumZoomScale={4}
+                    centerContent
+                  >
+                    <Image source={{ uri: imageRows[activeImageIndex].url }} style={styles.viewerImage} resizeMode="contain" />
+                  </ScrollView>
+                ) : null}
+                <View style={styles.viewerControls}>
+                  <Pressable
+                    style={styles.secondaryButton}
+                    onPress={() => setActiveImageIndex((idx) => Math.max(0, idx - 1))}
+                    disabled={activeImageIndex <= 0}
+                  >
+                    <Text style={styles.secondaryButtonText}>Prev</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.secondaryButton}
+                    onPress={() => setActiveImageIndex((idx) => Math.min(imageRows.length - 1, idx + 1))}
+                    disabled={activeImageIndex >= imageRows.length - 1}
+                  >
+                    <Text style={styles.secondaryButtonText}>Next</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </Modal>
+
+            <Modal visible={videoViewerVisible} animationType="slide" onRequestClose={() => setVideoViewerVisible(false)}>
+              <View style={styles.viewerRoot}>
+                <View style={styles.viewerHeader}>
+                  <Pressable style={styles.secondaryButton} onPress={() => setVideoViewerVisible(false)}>
+                    <Text style={styles.secondaryButtonText}>Close</Text>
+                  </Pressable>
+                  <Text style={styles.viewerTitle}>Video</Text>
+                  <View style={{ width: 88 }} />
+                </View>
+                {activeVideoUrl ? (
+                  <Video
+                    source={{ uri: activeVideoUrl }}
+                    style={styles.videoPlayer}
+                    useNativeControls
+                    shouldPlay
+                    resizeMode={ResizeMode.CONTAIN}
+                  />
+                ) : (
+                  <Text style={styles.meta}>No video selected.</Text>
+                )}
+              </View>
+            </Modal>
           </>
         )}
       </ScrollView>
@@ -744,6 +1089,16 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: BRAND.muted,
   },
+  offlineBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FEF3C7',
+    color: '#92400E',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    fontSize: 12,
+    fontWeight: '700',
+  },
   section: {
     backgroundColor: BRAND.white,
     borderRadius: 14,
@@ -755,6 +1110,62 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: BRAND.text,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  countBadge: {
+    minWidth: 22,
+    textAlign: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: '#E2E8F0',
+    color: '#0F172A',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  linkedRow: {
+    borderTopWidth: 1,
+    borderColor: '#EAECF0',
+    paddingTop: 8,
+    gap: 4,
+  },
+  linkedRowTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  linkedTitle: {
+    color: BRAND.text,
+    fontWeight: '700',
+    flex: 1,
+  },
+  inlinePills: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  statusPill: {
+    backgroundColor: '#E0F2FE',
+    color: '#0C4A6E',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  priorityPill: {
+    backgroundColor: '#F1F5F9',
+    color: '#334155',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    fontSize: 10,
+    fontWeight: '700',
   },
   statusWrap: {
     flexDirection: 'row',
@@ -836,6 +1247,54 @@ const styles = StyleSheet.create({
   attachmentMeta: {
     color: BRAND.muted,
     fontSize: 12,
+  },
+  mediaGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 6,
+  },
+  imageThumb: {
+    width: 96,
+    height: 96,
+    borderRadius: 10,
+    backgroundColor: '#E2E8F0',
+  },
+  viewerRoot: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  viewerHeader: {
+    paddingTop: 50,
+    paddingHorizontal: 12,
+    paddingBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#0B1020',
+  },
+  viewerTitle: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+  viewerImageWrap: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  viewerImage: {
+    width: '100%',
+    height: '100%',
+  },
+  viewerControls: {
+    padding: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: '#0B1020',
+  },
+  videoPlayer: {
+    flex: 1,
+    width: '100%',
   },
   addressLink: {
     color: BRAND.primary,

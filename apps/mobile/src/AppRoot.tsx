@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import * as Notifications from 'expo-notifications'
 import * as Linking from 'expo-linking'
 import * as SplashScreen from 'expo-splash-screen'
+import * as Updates from 'expo-updates'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { RootNavigator } from './navigation/RootNavigator'
 import { registerPushToken, setLastPushReceivedAtNow } from './notifications/registerPush'
@@ -114,6 +115,7 @@ function SyncAndPushBootstrap() {
       if (linkType === 'task' && linkId) void Linking.openURL(`trimpro://tasks/${linkId}`)
       if (linkType === 'issue' && linkId) void Linking.openURL(`trimpro://issues/${linkId}`)
       if (linkType === 'message' && linkId) void Linking.openURL(`trimpro://messages/${linkId}`)
+      if (linkType === 'schedule') void Linking.openURL('trimpro://schedule')
     })
     return () => sub.remove()
   }, [])
@@ -217,7 +219,8 @@ function SyncAndPushBootstrap() {
           queryClient.invalidateQueries({ queryKey: ['mobile-tasks'] })
           queryClient.invalidateQueries({ queryKey: ['mobile-issues'] })
           queryClient.invalidateQueries({ queryKey: ['mobile-schedule'] })
-          queryClient.invalidateQueries({ queryKey: ['mobile-conversations'] })
+          queryClient.invalidateQueries({ queryKey: ['mobile-chat-conversations'] })
+          queryClient.invalidateQueries({ queryKey: ['mobile-chat-thread'] })
         }
 
         if (!stopped) assignmentSignatureRef.current = nextSignature
@@ -254,6 +257,15 @@ export default function AppRoot() {
   useEffect(() => {
     async function prepare() {
       try {
+        // Pull latest OTA on app launch to reduce stale bundle issues in the field.
+        if (!__DEV__) {
+          const update = await Updates.checkForUpdateAsync().catch(() => null)
+          if (update?.isAvailable) {
+            await Updates.fetchUpdateAsync().catch(() => null)
+            await Updates.reloadAsync()
+            return
+          }
+        }
         // Wait for app to be ready, then add a minimum delay for splash screen
         await new Promise((resolve) => setTimeout(resolve, 2500)) // 2.5 second minimum display
         setAppIsReady(true)

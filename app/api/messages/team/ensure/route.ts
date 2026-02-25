@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
-import { listConversationsForUser } from '@/lib/chat/service'
+import { ensureTeamConversationMembers } from '@/lib/chat/service'
 
-export async function GET(request: NextRequest) {
+export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
 
   const user = getAuthUser(request)
   try {
-    const conversations = await listConversationsForUser(user.tenantId, user.id)
-    return NextResponse.json({ conversations })
+    const conversation = await ensureTeamConversationMembers(user.tenantId)
+    return NextResponse.json({ conversationId: conversation.id, conversation })
   } catch (error) {
-    console.error('messages conversations GET error', error)
+    console.error('messages team ensure POST error', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

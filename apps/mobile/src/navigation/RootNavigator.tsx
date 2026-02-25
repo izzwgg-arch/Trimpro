@@ -223,11 +223,17 @@ function MainTabsNavigator() {
   })
   const messagesQuery = useQuery({
     queryKey: ['mobile-conversations-tab-counts'],
-    queryFn: () => apiRequest<{ unreadCount?: number }>('/api/messages/conversations?assigned=me&limit=1'),
+    queryFn: () =>
+      apiRequest<{
+        conversations?: Array<{ unreadCount?: number }>
+      }>('/api/messages/conversations'),
     refetchInterval: 30_000,
   })
 
-  const unreadMessages = Number(messagesQuery.data?.unreadCount || 0)
+  const unreadMessages = (messagesQuery.data?.conversations || []).reduce(
+    (total, row) => total + Number(row.unreadCount || 0),
+    0
+  )
   const openTasksCount = Number(assignmentsQuery.data?.openTasksCount || 0)
   const openIssuesCount = Number(assignmentsQuery.data?.openIssuesCount || 0)
 

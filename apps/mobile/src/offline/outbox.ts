@@ -230,13 +230,30 @@ export async function flushOutbox(token: string) {
         })
         if (!response.ok) throw new Error('Issue status sync failed')
       } else if (action.type === 'message-send') {
-        const response = await fetch(`${API_BASE_URL}/api/messages/send`, {
+        const response = await fetch(`${API_BASE_URL}/api/messages/conversations/${action.payload.conversationId}/messages`, {
           method: 'POST',
           headers: {
             ...(await authorizedHeaders(token)),
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(action.payload),
+          body: JSON.stringify({
+            text: action.payload.body,
+            attachments: (action.payload.media || []).map((media) => ({
+              kind:
+                String(media.type || '').toLowerCase() === 'image'
+                  ? 'IMAGE'
+                  : String(media.type || '').toLowerCase() === 'video'
+                    ? 'VIDEO'
+                    : String(media.type || '').toLowerCase() === 'voice'
+                      ? 'VOICE'
+                      : 'FILE',
+              url: media.url,
+              mimeType: media.mimeType,
+              sizeBytes: media.size,
+              fileName: media.filename,
+            })),
+            clientTempId: `outbox-${action.id}`,
+          }),
         })
         if (!response.ok) throw new Error('Message sync failed')
       } else if (action.type === 'message-send-with-upload') {
@@ -264,19 +281,29 @@ export async function flushOutbox(token: string) {
           })
         }
 
-        const response = await fetch(`${API_BASE_URL}/api/messages/send`, {
+        const response = await fetch(`${API_BASE_URL}/api/messages/conversations/${action.payload.conversationId}/messages`, {
           method: 'POST',
           headers: {
             ...(await authorizedHeaders(token)),
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            conversationId: action.payload.conversationId,
-            to: action.payload.to,
-            from: action.payload.from,
-            body: action.payload.body,
-            channel: action.payload.channel,
-            media,
+            text: action.payload.body,
+            attachments: media.map((m) => ({
+              kind:
+                String(m.type || '').toLowerCase() === 'image'
+                  ? 'IMAGE'
+                  : String(m.type || '').toLowerCase() === 'video'
+                    ? 'VIDEO'
+                    : String(m.type || '').toLowerCase() === 'voice'
+                      ? 'VOICE'
+                      : 'FILE',
+              url: m.url,
+              mimeType: m.mimeType,
+              sizeBytes: m.size,
+              fileName: m.filename,
+            })),
+            clientTempId: `outbox-upload-${action.id}`,
           }),
         })
         if (!response.ok) throw new Error('Message send failed after media upload')

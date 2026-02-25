@@ -1,0 +1,423 @@
+import {
+  ChatAttachmentKind,
+  ChatConversationType,
+  ChatDeliveryStatus,
+  ChatMessageType,
+  NotificationType,
+} from '@prisma/client'
+import { prisma } from '@/lib/prisma'
+import { createNotificationsForUsers } from '@/lib/notifications'
+
+type AuthLikeUser = {
+  id: string
+  tenantId: string
+  email?: string
+  firstName?: string
+  lastName?: string
+}
+
+type SendAttachmentInput = {
+  kind: ChatAttachmentKind
+  url: string
+  fileName?: string | null
+  mimeType?: string | null
+  sizeBytes?: number | null
+  durationMs?: number | null
+  thumbnailUrl?: string | null
+  latitude?: number | null
+  longitude?: number | null
+}
+
+type SendMessageInput = {
+  text?: string | null
+  type?: ChatMessageType
+  attachments?: SendAttachmentInput[]
+  clientTempId?: string | null
+  jobId?: string | null
+}
+
+function normalizeDmPair(userIdA: string, userIdB: string) {
+  return userIdA < userIdB ? { userAId: userIdA, userBId: userIdB } : { userAId: userIdB, userBId: userIdA }
+}
+
+function displayName(user: { firstName: string | null; lastName: string | null; email: string }) {
+  const full = `${user.firstName || ''} ${user.lastName || ''}`.trim()
+  return full || user.email
+}
+
+export async function ensureTeamConversation(tenantId: string) {
+  let conversation = await prisma.chatConversation.findFirst({
+    where: { tenantId, type: ChatConversationType.TEAM },
+    orderBy: { createdAt: 'asc' },
+  })
+
+  if (!conversation) {
+    conversation = await prisma.chatConversation.create({
+      data: {
+        tenantId,
+        type: ChatConversationType.TEAM,
+        title: 'Team Chat',
+        pinned: true,
+      },
+    })
+  }
+
+  return conversation
+}
+
+export async function ensureTeamConversationMembers(tenantId: string) {
+  const teamConversation = await ensureTeamConversation(tenantId)
+  const users = await prisma.user.findMany({
+    where: { tenantId, status: 'ACTIVE' },
+    select: { id: true },
+    take: 500,
+  })
+
+  if (users.length > 0) {
+    await prisma.chatConversationMember.createMany({
+      data: users.map((u) => ({
+        tenantId,
+        conversationId: teamConversation.id,
+        userId: u.id,
+      })),
+      skipDuplicates: true,
+    })
+  }
+
+  return teamConversation
+}
+
+export async function createOrGetDmConversation(tenantId: string, currentUserId: string, targetUserId: string) {
+  if (currentUserId === targetUserId) {
+    throw new Error('You cannot create a direct message with yourself')
+  }
+
+  const [currentUser, targetUser] = await Promise.all([
+    prisma.user.findFirst({
+      where: { id: currentUserId, tenantId, status: 'ACTIVE' },
+      select: { id: true },
+    }),
+    prisma.user.findFirst({
+      where: { id: targetUserId, tenantId, status: 'ACTIVE' },
+      select: { id: true },
+    }),
+  ])
+
+  if (!currentUser || !targetUser) {
+    throw new Error('User not found in your tenant')
+  }
+
+  const pair = normalizeDmPair(currentUserId, targetUserId)
+  let conversation = await prisma.chatConversation.findFirst({
+    where: {
+      tenantId,
+      type: ChatConversationType.DM,
+      userAId: pair.userAId,
+      userBId: pair.userBId,
+    },
+  })
+
+  if (!conversation) {
+    conversation = await prisma.chatConversation.create({
+      data: {
+        tenantId,
+        type: ChatConversationType.DM,
+        userAId: pair.userAId,
+        userBId: pair.userBId,
+      },
+    })
+  }
+
+  await prisma.chatConversationMember.createMany({
+    data: [
+      { tenantId, conversationId: conversation.id, userId: currentUserId },
+      { tenantId, conversationId: conversation.id, userId: targetUserId },
+    ],
+    skipDuplicates: true,
+  })
+
+  return conversation
+}
+
+export async function getConversationForMember(tenantId: string, conversationId: string, userId: string) {
+  const member = await prisma.chatConversationMember.findFirst({
+    where: { tenantId, conversationId, userId },
+  })
+  if (!member) return null
+
+  return prisma.chatConversation.findFirst({
+    where: { id: conversationId, tenantId },
+  })
+}
+
+export async function markConversationRead(tenantId: string, conversationId: string, userId: string) {
+  await prisma.chatConversationMember.updateMany({
+    where: { tenantId, conversationId, userId },
+    data: { lastReadAt: new Date() },
+  })
+}
+
+export async function listConversationsForUser(tenantId: string, userId: string) {
+  await ensureTeamConversationMembers(tenantId)
+
+  const members = await prisma.chatConversationMember.findMany({
+    where: { tenantId, userId },
+    take: 200,
+  })
+  const conversationIds = members.map((m) => m.conversationId)
+  const conversations = await prisma.chatConversation.findMany({
+    where: { tenantId, id: { in: conversationIds } },
+  })
+  const conversationMap = new Map(conversations.map((c) => [c.id, c]))
+
+  const lastMessages = await prisma.chatMessage.findMany({
+    where: { tenantId, conversationId: { in: conversationIds } },
+    orderBy: { createdAt: 'desc' },
+    distinct: ['conversationId'],
+  })
+  const lastMessageMap = new Map(lastMessages.map((m) => [m.conversationId, m]))
+
+  const dmUserIds = new Set<string>()
+  for (const m of members) {
+    const conversation = conversationMap.get(m.conversationId)
+    if (conversation?.type === ChatConversationType.DM) {
+      if (conversation.userAId && conversation.userAId !== userId) dmUserIds.add(conversation.userAId)
+      if (conversation.userBId && conversation.userBId !== userId) dmUserIds.add(conversation.userBId)
+    }
+  }
+
+  const dmUsers = await prisma.user.findMany({
+    where: { id: { in: Array.from(dmUserIds) }, tenantId },
+    select: { id: true, firstName: true, lastName: true, email: true },
+  })
+  const dmUserMap = new Map(dmUsers.map((u) => [u.id, u]))
+
+  const unreadCounts = await Promise.all(
+    members.map(async (member) => {
+      const count = await prisma.chatMessage.count({
+        where: {
+          tenantId,
+          conversationId: member.conversationId,
+          createdAt: { gt: member.lastReadAt || new Date(0) },
+          senderId: { not: userId },
+        },
+      })
+      return [member.conversationId, count] as const
+    })
+  )
+  const unreadMap = new Map(unreadCounts)
+
+  const list = members
+    .map((member) => {
+      const conversation = conversationMap.get(member.conversationId)
+      if (!conversation) return null
+    const lastMessage = lastMessageMap.get(conversation.id)
+    const isTeam = conversation.type === ChatConversationType.TEAM
+    const otherUserId = conversation.userAId === userId ? conversation.userBId : conversation.userAId
+    const otherUser = otherUserId ? dmUserMap.get(otherUserId) : null
+    const title = isTeam
+      ? conversation.title || 'Team Chat'
+      : otherUser
+        ? `${otherUser.firstName || ''} ${otherUser.lastName || ''}`.trim() || otherUser.email
+        : 'Direct Message'
+
+    return {
+      id: conversation.id,
+      type: conversation.type,
+      title,
+      pinned: isTeam || conversation.pinned,
+      lastMessageAt: conversation.lastMessageAt,
+      unreadCount: unreadMap.get(conversation.id) || 0,
+      otherUser: otherUser
+        ? {
+            id: otherUser.id,
+            firstName: otherUser.firstName,
+            lastName: otherUser.lastName,
+            email: otherUser.email,
+          }
+        : null,
+      lastMessage: lastMessage
+        ? {
+            id: lastMessage.id,
+            text: lastMessage.text,
+            type: lastMessage.type,
+            createdAt: lastMessage.createdAt,
+            senderId: lastMessage.senderId,
+            status: lastMessage.status,
+            jobId: lastMessage.jobId,
+            jobNumber: lastMessage.jobNumber,
+            jobName: lastMessage.jobName,
+          }
+        : null,
+      }
+    })
+    .filter((row): row is NonNullable<typeof row> => Boolean(row))
+
+  list.sort((a, b) => {
+    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
+    const aTime = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0
+    const bTime = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0
+    return bTime - aTime
+  })
+
+  return list
+}
+
+export async function listMessages(
+  tenantId: string,
+  conversationId: string,
+  userId: string,
+  cursor?: string | null,
+  limit = 40
+) {
+  const conversation = await getConversationForMember(tenantId, conversationId, userId)
+  if (!conversation) throw new Error('Conversation not found')
+
+  const messages = await prisma.chatMessage.findMany({
+    where: {
+      tenantId,
+      conversationId,
+      ...(cursor ? { createdAt: { lt: new Date(cursor) } } : {}),
+    },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: Math.min(Math.max(limit, 1), 100),
+  })
+
+  const messageIds = messages.map((m) => m.id)
+  const senderIds = Array.from(new Set(messages.map((m) => m.senderId)))
+  const [attachments, senders] = await Promise.all([
+    prisma.chatMessageAttachment.findMany({
+      where: { tenantId, messageId: { in: messageIds } },
+      orderBy: { createdAt: 'asc' },
+    }),
+    prisma.user.findMany({
+      where: { tenantId, id: { in: senderIds } },
+      select: { id: true, firstName: true, lastName: true, email: true },
+    }),
+  ])
+
+  const attachmentMap = new Map<string, any[]>()
+  for (const attachment of attachments) {
+    if (!attachmentMap.has(attachment.messageId)) attachmentMap.set(attachment.messageId, [])
+    attachmentMap.get(attachment.messageId)!.push(attachment)
+  }
+  const senderMap = new Map(senders.map((s) => [s.id, s]))
+
+  return messages.map((message) => ({
+    ...message,
+    sender: senderMap.get(message.senderId) || null,
+    attachments: attachmentMap.get(message.id) || [],
+  }))
+}
+
+function inferMessageType(input: SendMessageInput) {
+  if (input.type) return input.type
+  if (input.attachments?.some((a) => a.kind === ChatAttachmentKind.VOICE)) return ChatMessageType.VOICE
+  if (input.attachments?.some((a) => a.kind === ChatAttachmentKind.LOCATION)) return ChatMessageType.LOCATION
+  if ((input.attachments || []).length > 0) return ChatMessageType.MEDIA
+  return ChatMessageType.TEXT
+}
+
+export async function sendMessageToConversation(
+  sender: AuthLikeUser,
+  conversationId: string,
+  input: SendMessageInput
+) {
+  const conversation = await getConversationForMember(sender.tenantId, conversationId, sender.id)
+  if (!conversation) throw new Error('Conversation not found')
+
+  const trimmedText = typeof input.text === 'string' ? input.text.trim() : ''
+  const attachments = input.attachments || []
+  if (!trimmedText && attachments.length === 0) {
+    throw new Error('Message text or attachment is required')
+  }
+
+  let jobStamp: { jobId?: string | null; jobNumber?: string | null; jobName?: string | null } = {}
+  if (input.jobId) {
+    const job = await prisma.job.findFirst({
+      where: { id: input.jobId, tenantId: sender.tenantId },
+      select: { id: true, jobNumber: true, title: true },
+    })
+    if (!job) throw new Error('Job not found')
+    jobStamp = { jobId: job.id, jobNumber: job.jobNumber, jobName: job.title }
+  }
+
+  const message = await prisma.chatMessage.create({
+    data: {
+      tenantId: sender.tenantId,
+      conversationId,
+      senderId: sender.id,
+      type: inferMessageType(input),
+      text: trimmedText || null,
+      clientTempId: input.clientTempId || null,
+      status: ChatDeliveryStatus.SENT,
+      jobId: jobStamp.jobId || null,
+      jobNumber: jobStamp.jobNumber || null,
+      jobName: jobStamp.jobName || null,
+    },
+  })
+
+  if (attachments.length > 0) {
+    await prisma.chatMessageAttachment.createMany({
+      data: attachments.map((attachment) => ({
+        tenantId: sender.tenantId,
+        messageId: message.id,
+        kind: attachment.kind,
+        url: attachment.url,
+        fileName: attachment.fileName || null,
+        mimeType: attachment.mimeType || null,
+        sizeBytes: attachment.sizeBytes || null,
+        durationMs: attachment.durationMs || null,
+        thumbnailUrl: attachment.thumbnailUrl || null,
+        latitude: attachment.latitude || null,
+        longitude: attachment.longitude || null,
+      })),
+    })
+  }
+
+  await prisma.chatConversation.update({
+    where: { id: conversationId },
+    data: { lastMessageAt: message.createdAt, updatedAt: new Date() },
+  })
+
+  const senderProfile = await prisma.user.findFirst({
+    where: { id: sender.id, tenantId: sender.tenantId },
+    select: { firstName: true, lastName: true, email: true },
+  })
+  const senderName = senderProfile ? displayName(senderProfile) : sender.email || 'Team member'
+
+  const recipientMembers = await prisma.chatConversationMember.findMany({
+    where: {
+      tenantId: sender.tenantId,
+      conversationId,
+      userId: { not: sender.id },
+      OR: [{ mutedUntil: null }, { mutedUntil: { lt: new Date() } }],
+    },
+    select: { userId: true },
+  })
+
+  if (recipientMembers.length > 0) {
+    await createNotificationsForUsers(
+      sender.tenantId,
+      recipientMembers.map((m) => m.userId),
+      {
+        type: NotificationType.MESSAGE_RECEIVED,
+        title: conversation.type === ChatConversationType.TEAM ? 'Team Chat' : `Message from ${senderName}`,
+        message:
+          trimmedText ||
+          (attachments.some((a) => a.kind === ChatAttachmentKind.VOICE)
+            ? 'Sent a voice note'
+            : attachments.some((a) => a.kind === ChatAttachmentKind.LOCATION)
+              ? 'Shared a location'
+              : 'Sent an attachment'),
+        linkType: 'message',
+        linkId: conversationId,
+        linkUrl: `/dashboard/messages?conversationId=${conversationId}`,
+        actorUserId: sender.id,
+        action: 'chat_new_message',
+      }
+    )
+  }
+
+  return message
+}
