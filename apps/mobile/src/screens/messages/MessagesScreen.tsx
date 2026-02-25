@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react'
 import { Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
-import { Picker } from '@react-native-picker/picker'
 import { AppScreen } from '../../components/AppScreen'
 import { apiRequest } from '../../api/client'
 import { Conversation } from '../../types/models'
@@ -98,13 +97,22 @@ export function MessagesScreen({ navigation }: Props) {
         <Pressable style={styles.teamButton} onPress={() => teamEnsureMutation.mutate()}>
           <Text style={styles.teamButtonText}>Open Team Chat</Text>
         </Pressable>
-        <View style={styles.pickerWrap}>
-          <Picker selectedValue={selectedUserId} onValueChange={(value) => setSelectedUserId(String(value || ''))} style={styles.picker}>
-            <Picker.Item label="Start direct message..." value="" />
-            {userOptions.map((user) => (
-              <Picker.Item key={user.id} label={displayName(user)} value={user.id} />
-            ))}
-          </Picker>
+        <Text style={styles.inlineLabel}>Pick teammate for DM:</Text>
+        <View style={styles.userChipWrap}>
+          {userOptions.slice(0, 12).map((user) => {
+            const active = user.id === selectedUserId
+            return (
+              <Pressable
+                key={user.id}
+                style={[styles.userChip, active && styles.userChipActive]}
+                onPress={() => setSelectedUserId(user.id)}
+              >
+                <Text style={[styles.userChipText, active && styles.userChipTextActive]} numberOfLines={1}>
+                  {displayName(user)}
+                </Text>
+              </Pressable>
+            )
+          })}
         </View>
         <Pressable
           style={[styles.startDmButton, (!selectedUserId || createDmMutation.isPending) && styles.disabledButton]}
@@ -185,16 +193,35 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontWeight: '700',
   },
-  pickerWrap: {
+  inlineLabel: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  userChipWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  userChip: {
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 10,
-    overflow: 'hidden',
+    borderRadius: 999,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    maxWidth: '100%',
     backgroundColor: colors.background,
   },
-  picker: {
-    height: 44,
+  userChipActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary + '14',
+  },
+  userChipText: {
+    ...typography.caption,
     color: colors.textPrimary,
+  },
+  userChipTextActive: {
+    color: colors.primary,
+    fontWeight: '700',
   },
   startDmButton: {
     borderRadius: 10,
