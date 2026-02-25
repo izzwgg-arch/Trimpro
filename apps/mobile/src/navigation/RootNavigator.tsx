@@ -1,6 +1,7 @@
 import React from 'react'
 import { NavigationContainer, DefaultTheme, LinkingOptions } from '@react-navigation/native'
 import { createDrawerNavigator, DrawerContentComponentProps, DrawerContentScrollView } from '@react-navigation/drawer'
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
 import { Ionicons } from '@expo/vector-icons'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
@@ -15,6 +16,8 @@ import { AdminJobDetailScreen } from '../screens/jobs/AdminJobDetailScreen'
 import { CreateJobScreen } from '../screens/jobs/CreateJobScreen'
 import { EditJobScreen } from '../screens/jobs/EditJobScreen'
 import { ScheduleScreen } from '../screens/schedule/ScheduleScreen'
+import { ScheduleDetailScreen } from '../screens/schedule/ScheduleDetailScreen'
+import { ScheduleCreateScreen } from '../screens/schedule/ScheduleCreateScreen'
 import { TasksScreen } from '../screens/tasks/TasksScreen'
 import { MessagesScreen } from '../screens/messages/MessagesScreen'
 import { MessageThreadScreen } from '../screens/messages/MessageThreadScreen'
@@ -27,11 +30,12 @@ import { ProfileScreen } from '../screens/profile/ProfileScreen'
 import { OutboxScreen } from '../screens/outbox/OutboxScreen'
 import { colors, spacing, typography } from '../theme/tokens'
 import {
-  DashboardStackParamList,
   JobsStackParamList,
   MessagesStackParamList,
+  ScheduleStackParamList,
   TasksStackParamList,
   IssuesStackParamList,
+  RootMainTabParamList,
   RootDrawerParamList,
 } from '../types/navigation'
 import { TaskDetailScreen } from '../screens/tasks/TaskDetailScreen'
@@ -42,94 +46,88 @@ import { NotificationsScreen } from '../screens/notifications/NotificationsScree
 import { apiRequest } from '../api/client'
 
 const Drawer = createDrawerNavigator<RootDrawerParamList>()
-const DashboardStack = createNativeStackNavigator<DashboardStackParamList>()
+const MainTabs = createBottomTabNavigator<RootMainTabParamList>()
 const JobsStack = createNativeStackNavigator<JobsStackParamList>()
-const AllJobsStack = createNativeStackNavigator<JobsStackParamList>()
-const ScheduleStack = createNativeStackNavigator()
+const ScheduleStack = createNativeStackNavigator<ScheduleStackParamList>()
 const TasksStack = createNativeStackNavigator<TasksStackParamList>()
 const MessagesStack = createNativeStackNavigator<MessagesStackParamList>()
 const IssuesStack = createNativeStackNavigator<IssuesStackParamList>()
-const RequestsStack = createNativeStackNavigator()
-const NotificationsStack = createNativeStackNavigator()
-const CallsStack = createNativeStackNavigator()
-const OutboxStack = createNativeStackNavigator()
-const ProfileStack = createNativeStackNavigator()
 const AuthStack = createNativeStackNavigator()
 
 const linking: LinkingOptions<RootDrawerParamList> = {
   prefixes: ['trimprofield://', 'trimpro://'],
   config: {
     screens: {
-      DashboardTab: 'dashboard',
-      JobsTab: {
+      MainTabs: {
         screens: {
-          JobsList: 'my-jobs',
-          JobDetail: 'my-jobs/:jobId',
+          JobsTab: {
+            screens: {
+              DashboardHome: 'dashboard',
+              JobsList: 'jobs',
+              JobDetail: 'jobs/:jobId',
+              AllJobsList: 'all-jobs',
+              AdminJobDetail: 'all-jobs/:jobId',
+              CreateJob: 'all-jobs/new',
+              EditJob: 'all-jobs/:jobId/edit',
+              RequestsHome: 'requests',
+              CallsHome: 'calls',
+              OutboxHome: 'outbox',
+              ProfileHome: 'profile',
+              NotificationsHome: 'notifications',
+            },
+          } as never,
+          MessagesTab: {
+            screens: {
+              MessagesList: 'messages',
+              MessageThread: 'messages/:conversationId',
+              TeamChat: 'messages/team',
+            },
+          } as never,
+          TasksTab: {
+            screens: {
+              TasksList: 'tasks',
+              TaskDetail: 'tasks/:taskId',
+            },
+          } as never,
+          ScheduleTab: {
+            screens: {
+              ScheduleHome: 'schedule',
+              ScheduleDetail: 'schedule/:scheduleId',
+              ScheduleCreate: 'schedule/new',
+            },
+          } as never,
+          IssuesTab: {
+            screens: {
+              IssuesList: 'issues',
+              IssueDetail: 'issues/:issueId',
+            },
+          } as never,
         },
       } as never,
-      AllJobsTab: {
-        screens: {
-          AllJobsList: 'all-jobs',
-          AdminJobDetail: 'all-jobs/:jobId',
-          CreateJob: 'all-jobs/new',
-          EditJob: 'all-jobs/:jobId/edit',
-        },
-      } as never,
-      ScheduleTab: 'schedule',
-      TasksTab: {
-        screens: {
-          TasksList: 'tasks',
-          TaskDetail: 'tasks/:taskId',
-        },
-      } as never,
-      MessagesTab: {
-        screens: {
-          MessagesList: 'messages',
-          MessageThread: 'messages/:conversationId',
-          TeamChat: 'messages/team',
-        },
-      } as never,
-      NotificationsTab: 'notifications',
-      RequestsTab: 'requests',
-      IssuesTab: {
-        screens: {
-          IssuesList: 'issues',
-          IssueDetail: 'issues/:issueId',
-        },
-      } as never,
-      CallsTab: 'calls',
-      OutboxTab: 'outbox',
-      ProfileTab: 'profile',
     },
   },
-}
-
-function DashboardStackNavigator() {
-  return (
-    <DashboardStack.Navigator screenOptions={stackOptions}>
-      <DashboardStack.Screen name="DashboardHome" component={DashboardScreen} options={mainHeaderOptions('Dashboard')} />
-    </DashboardStack.Navigator>
-  )
 }
 
 function JobsStackNavigator() {
   return (
     <JobsStack.Navigator screenOptions={stackOptions}>
+      <JobsStack.Screen name="DashboardHome" component={DashboardScreen} options={mainHeaderOptions('Dashboard')} />
       <JobsStack.Screen name="JobsList" component={JobsScreen} options={mainHeaderOptions('My Jobs')} />
-      <JobsStack.Screen name="JobDetail" component={JobDetailScreen} options={{ title: 'Job Details' }} />
+      <JobsStack.Screen name="JobDetail" component={JobDetailScreen} options={detailsHeaderOptions('Job Details')} />
+      <JobsStack.Screen name="AllJobsList" component={AllJobsScreen} options={mainHeaderOptions('All Jobs')} />
+      <JobsStack.Screen name="AdminJobDetail" component={AdminJobDetailScreen} options={detailsHeaderOptions('Job Details')} />
+      <JobsStack.Screen name="CreateJob" component={CreateJobScreen} options={detailsHeaderOptions('Create Job')} />
+      <JobsStack.Screen name="EditJob" component={EditJobScreen} options={detailsHeaderOptions('Edit Job')} />
+      <JobsStack.Screen
+        name="NotificationsHome"
+        component={NotificationsScreen}
+        options={mainHeaderOptions('Notifications')}
+      />
+      <JobsStack.Screen name="RequestsHome" component={CreateRequestScreen} options={mainHeaderOptions('Requests')} />
+      <JobsStack.Screen name="CallsHome" component={CallsScreen} options={mainHeaderOptions('Calls')} />
+      <JobsStack.Screen name="OutboxHome" component={OutboxScreen} options={mainHeaderOptions('Outbox')} />
+      <JobsStack.Screen name="ProfileHome" component={ProfileScreen} options={mainHeaderOptions('Profile')} />
     </JobsStack.Navigator>
-  )
-}
-
-function AllJobsStackNavigator() {
-  return (
-    <AllJobsStack.Navigator screenOptions={stackOptions}>
-      <AllJobsStack.Screen name="AllJobsList" component={AllJobsScreen} options={mainHeaderOptions('All Jobs')} />
-      <AllJobsStack.Screen name="JobDetail" component={JobDetailScreen} options={{ title: 'Job Details' }} />
-      <AllJobsStack.Screen name="AdminJobDetail" component={AdminJobDetailScreen} options={{ title: 'Job Details' }} />
-      <AllJobsStack.Screen name="CreateJob" component={CreateJobScreen} options={{ title: 'Create Job' }} />
-      <AllJobsStack.Screen name="EditJob" component={EditJobScreen} options={{ title: 'Edit Job' }} />
-    </AllJobsStack.Navigator>
   )
 }
 
@@ -137,6 +135,8 @@ function ScheduleStackNavigator() {
   return (
     <ScheduleStack.Navigator screenOptions={stackOptions}>
       <ScheduleStack.Screen name="ScheduleHome" component={ScheduleScreen} options={mainHeaderOptions('Schedule')} />
+      <ScheduleStack.Screen name="ScheduleDetail" component={ScheduleDetailScreen} options={detailsHeaderOptions('Schedule')} />
+      <ScheduleStack.Screen name="ScheduleCreate" component={ScheduleCreateScreen} options={detailsHeaderOptions('New Schedule')} />
     </ScheduleStack.Navigator>
   )
 }
@@ -145,7 +145,7 @@ function TasksStackNavigator() {
   return (
     <TasksStack.Navigator screenOptions={stackOptions}>
       <TasksStack.Screen name="TasksList" component={TasksScreen} options={mainHeaderOptions('Tasks')} />
-      <TasksStack.Screen name="TaskDetail" component={TaskDetailScreen} options={{ title: 'Task Details' }} />
+      <TasksStack.Screen name="TaskDetail" component={TaskDetailScreen} options={detailsHeaderOptions('Task Details')} />
     </TasksStack.Navigator>
   )
 }
@@ -154,29 +154,9 @@ function MessagesStackNavigator() {
   return (
     <MessagesStack.Navigator screenOptions={stackOptions}>
       <MessagesStack.Screen name="MessagesList" component={MessagesScreen} options={mainHeaderOptions('Messages')} />
-      <MessagesStack.Screen name="TeamChat" component={TeamChatScreen} options={{ title: 'Team Chat' }} />
-      <MessagesStack.Screen name="MessageThread" component={MessageThreadScreen} options={{ title: 'Thread' }} />
+      <MessagesStack.Screen name="TeamChat" component={TeamChatScreen} options={detailsHeaderOptions('Team Chat')} />
+      <MessagesStack.Screen name="MessageThread" component={MessageThreadScreen} options={detailsHeaderOptions('Thread')} />
     </MessagesStack.Navigator>
-  )
-}
-
-function RequestsStackNavigator() {
-  return (
-    <RequestsStack.Navigator screenOptions={stackOptions}>
-      <RequestsStack.Screen name="RequestsHome" component={CreateRequestScreen} options={mainHeaderOptions('Requests')} />
-    </RequestsStack.Navigator>
-  )
-}
-
-function NotificationsStackNavigator() {
-  return (
-    <NotificationsStack.Navigator screenOptions={stackOptions}>
-      <NotificationsStack.Screen
-        name="NotificationsHome"
-        component={NotificationsScreen}
-        options={mainHeaderOptions('Notifications')}
-      />
-    </NotificationsStack.Navigator>
   )
 }
 
@@ -184,32 +164,8 @@ function IssuesStackNavigator() {
   return (
     <IssuesStack.Navigator screenOptions={stackOptions}>
       <IssuesStack.Screen name="IssuesList" component={IssuesScreen} options={mainHeaderOptions('Issues')} />
-      <IssuesStack.Screen name="IssueDetail" component={IssueDetailScreen} options={{ title: 'Issue Details' }} />
+      <IssuesStack.Screen name="IssueDetail" component={IssueDetailScreen} options={detailsHeaderOptions('Issue Details')} />
     </IssuesStack.Navigator>
-  )
-}
-
-function CallsStackNavigator() {
-  return (
-    <CallsStack.Navigator screenOptions={stackOptions}>
-      <CallsStack.Screen name="CallsHome" component={CallsScreen} options={mainHeaderOptions('Calls')} />
-    </CallsStack.Navigator>
-  )
-}
-
-function OutboxStackNavigator() {
-  return (
-    <OutboxStack.Navigator screenOptions={stackOptions}>
-      <OutboxStack.Screen name="OutboxHome" component={OutboxScreen} options={mainHeaderOptions('Outbox')} />
-    </OutboxStack.Navigator>
-  )
-}
-
-function ProfileStackNavigator() {
-  return (
-    <ProfileStack.Navigator screenOptions={stackOptions}>
-      <ProfileStack.Screen name="ProfileHome" component={ProfileScreen} options={mainHeaderOptions('Profile')} />
-    </ProfileStack.Navigator>
   )
 }
 
@@ -227,15 +183,102 @@ function mainHeaderOptions(title: string) {
   return ({ navigation }: any) => ({
     title,
     headerLeft: () => (
-      <Pressable
-        onPress={() => navigation.toggleDrawer()}
-        android_ripple={{ color: 'rgba(15,23,42,0.1)', borderless: true }}
-        style={styles.headerMenuButton}
-      >
-        <Ionicons name="menu" size={20} color={colors.textPrimary} />
-      </Pressable>
+      <DrawerMenuButton navigation={navigation} />
     ),
   })
+}
+
+function detailsHeaderOptions(title: string) {
+  return ({ navigation }: any) => ({
+    title,
+    headerRight: () => <DrawerMenuButton navigation={navigation} />,
+  })
+}
+
+function DrawerMenuButton({ navigation }: { navigation: any }) {
+  return (
+    <Pressable
+      onPress={() => {
+        const drawerParent = navigation.getParent?.()
+        if (drawerParent?.toggleDrawer) {
+          drawerParent.toggleDrawer()
+          return
+        }
+        if (navigation.toggleDrawer) navigation.toggleDrawer()
+      }}
+      android_ripple={{ color: 'rgba(15,23,42,0.1)', borderless: true }}
+      style={styles.headerMenuButton}
+    >
+      <Ionicons name="menu" size={20} color={colors.textPrimary} />
+    </Pressable>
+  )
+}
+
+function MainTabsNavigator() {
+  const assignmentsQuery = useQuery({
+    queryKey: ['mobile-assignments-tab-counts'],
+    queryFn: () =>
+      apiRequest<{ openTasksCount?: number; openIssuesCount?: number; jobsTodayCount?: number }>('/api/mobile/assignments'),
+    refetchInterval: 30_000,
+  })
+  const messagesQuery = useQuery({
+    queryKey: ['mobile-conversations-tab-counts'],
+    queryFn: () => apiRequest<{ unreadCount?: number }>('/api/messages/conversations?assigned=me&limit=1'),
+    refetchInterval: 30_000,
+  })
+
+  const unreadMessages = Number(messagesQuery.data?.unreadCount || 0)
+  const openTasksCount = Number(assignmentsQuery.data?.openTasksCount || 0)
+  const openIssuesCount = Number(assignmentsQuery.data?.openIssuesCount || 0)
+
+  return (
+    <MainTabs.Navigator
+      screenOptions={({ route }) => ({
+        headerShown: false,
+        tabBarStyle: styles.tabBar,
+        tabBarActiveTintColor: colors.brandPrimary,
+        tabBarInactiveTintColor: colors.textSecondary,
+        tabBarLabelStyle: styles.tabLabel,
+        tabBarIcon: ({ color, size }) => {
+          const iconByRoute: Record<keyof RootMainTabParamList, keyof typeof Ionicons.glyphMap> = {
+            JobsTab: 'briefcase-outline',
+            MessagesTab: 'chatbubble-ellipses-outline',
+            TasksTab: 'checkbox-outline',
+            ScheduleTab: 'calendar-outline',
+            IssuesTab: 'alert-circle-outline',
+          }
+          return <Ionicons name={iconByRoute[route.name as keyof RootMainTabParamList]} color={color} size={size} />
+        },
+      })}
+    >
+      <MainTabs.Screen name="JobsTab" component={JobsStackNavigator} options={{ title: 'Jobs' }} />
+      <MainTabs.Screen
+        name="MessagesTab"
+        component={MessagesStackNavigator}
+        options={{
+          title: 'Messages',
+          tabBarBadge: unreadMessages > 0 ? unreadMessages : undefined,
+        }}
+      />
+      <MainTabs.Screen
+        name="TasksTab"
+        component={TasksStackNavigator}
+        options={{
+          title: 'Tasks',
+          tabBarBadge: openTasksCount > 0 ? openTasksCount : undefined,
+        }}
+      />
+      <MainTabs.Screen name="ScheduleTab" component={ScheduleStackNavigator} options={{ title: 'Schedule' }} />
+      <MainTabs.Screen
+        name="IssuesTab"
+        component={IssuesStackNavigator}
+        options={{
+          title: 'Issues',
+          tabBarBadge: openIssuesCount > 0 ? openIssuesCount : undefined,
+        }}
+      />
+    </MainTabs.Navigator>
+  )
 }
 
 function DrawerContent(props: DrawerContentComponentProps) {
@@ -251,29 +294,33 @@ function DrawerContent(props: DrawerContentComponentProps) {
 
   // Navigation items - More option removed, all items now directly in sidebar
   const items: Array<{
-    key: keyof RootDrawerParamList
+    key: string
     label: string
     icon: keyof typeof Ionicons.glyphMap
+    target: { screen: keyof RootMainTabParamList; params?: Record<string, any> }
   }> = [
-    { key: 'DashboardTab', label: 'Dashboard', icon: 'grid-outline' },
+    { key: 'DashboardHome', label: 'Dashboard', icon: 'grid-outline', target: { screen: 'JobsTab', params: { screen: 'DashboardHome' } } },
     {
-      key: 'NotificationsTab',
+      key: 'NotificationsHome',
       label: unreadCount > 0 ? `Notifications (${unreadCount})` : 'Notifications',
       icon: 'notifications-outline',
+      target: { screen: 'JobsTab', params: { screen: 'NotificationsHome' } },
     },
-    { key: 'JobsTab', label: 'My Jobs', icon: 'briefcase-outline' },
-    ...(canViewAllJobs() ? [{ key: 'AllJobsTab', label: 'All Jobs', icon: 'list-outline' } as const] : []),
-    { key: 'ScheduleTab', label: 'Schedule', icon: 'calendar-outline' },
-    { key: 'TasksTab', label: 'Tasks', icon: 'checkbox-outline' },
-    { key: 'MessagesTab', label: 'Messages', icon: 'chatbubble-ellipses-outline' },
-    { key: 'RequestsTab', label: 'Requests', icon: 'document-text-outline' },
-    { key: 'IssuesTab', label: 'Issues', icon: 'alert-circle-outline' },
-    { key: 'CallsTab', label: 'Calls', icon: 'call-outline' },
-    { key: 'OutboxTab', label: `Outbox${outboxCount > 0 ? ` (${outboxCount})` : ''}`, icon: 'cloud-upload-outline' },
-    { key: 'ProfileTab', label: 'Profile', icon: 'person-outline' },
+    ...(canViewAllJobs()
+      ? [{ key: 'AllJobsList', label: 'All Jobs', icon: 'list-outline', target: { screen: 'JobsTab', params: { screen: 'AllJobsList' } } } as const]
+      : []),
+    { key: 'RequestsHome', label: 'Requests', icon: 'document-text-outline', target: { screen: 'JobsTab', params: { screen: 'RequestsHome' } } },
+    { key: 'CallsHome', label: 'Calls', icon: 'call-outline', target: { screen: 'JobsTab', params: { screen: 'CallsHome' } } },
+    {
+      key: 'OutboxHome',
+      label: `Outbox${outboxCount > 0 ? ` (${outboxCount})` : ''}`,
+      icon: 'cloud-upload-outline',
+      target: { screen: 'JobsTab', params: { screen: 'OutboxHome' } },
+    },
+    { key: 'ProfileHome', label: 'Profile', icon: 'person-outline', target: { screen: 'JobsTab', params: { screen: 'ProfileHome' } } },
   ]
 
-  const current = props.state.routeNames[props.state.index]
+  const currentNested = getCurrentNestedRouteName(props.state)
 
   return (
     <View style={styles.drawerRoot}>
@@ -289,19 +336,26 @@ function DrawerContent(props: DrawerContentComponentProps) {
 
         <View style={styles.navList}>
           {items.map((item, index) => {
-            const active = current === item.key
             return (
               <Pressable
                 key={`${item.key}-${index}`}
                 onPress={() => {
-                  props.navigation.navigate(item.key)
+                  props.navigation.navigate('MainTabs', item.target as never)
                 }}
                 android_ripple={{ color: 'rgba(15,76,92,0.12)' }}
-                style={({ pressed }) => [styles.navItem, active && styles.navItemActive, pressed && styles.navPressed]}
+                style={({ pressed }) => [
+                  styles.navItem,
+                  currentNested === item.key && styles.navItemActive,
+                  pressed && styles.navPressed,
+                ]}
               >
-                {active && <View style={styles.activeBar} />}
-                <Ionicons name={item.icon} size={18} color={active ? colors.brandPrimary : colors.textSecondary} />
-                <Text style={[styles.navText, active && styles.navTextActive]}>{item.label}</Text>
+                {currentNested === item.key && <View style={styles.activeBar} />}
+                <Ionicons
+                  name={item.icon}
+                  size={18}
+                  color={currentNested === item.key ? colors.brandPrimary : colors.textSecondary}
+                />
+                <Text style={[styles.navText, currentNested === item.key && styles.navTextActive]}>{item.label}</Text>
               </Pressable>
             )
           })}
@@ -310,7 +364,7 @@ function DrawerContent(props: DrawerContentComponentProps) {
 
       <View style={styles.drawerBottom}>
         <Pressable
-          onPress={() => props.navigation.navigate('ProfileTab')}
+          onPress={() => props.navigation.navigate('MainTabs', { screen: 'JobsTab', params: { screen: 'ProfileHome' } } as never)}
           android_ripple={{ color: 'rgba(15,23,42,0.1)' }}
           style={({ pressed }) => [styles.bottomBtn, pressed && styles.navPressed]}
         >
@@ -349,6 +403,7 @@ export function RootNavigator() {
         </AuthStack.Navigator>
       ) : (
         <Drawer.Navigator
+          initialRouteName="MainTabs"
           drawerContent={(props) => <DrawerContent {...props} />}
           screenOptions={{
             headerShown: false,
@@ -358,34 +413,20 @@ export function RootNavigator() {
             sceneStyle: { backgroundColor: colors.background },
           }}
         >
-          <Drawer.Screen
-            name="DashboardTab"
-            component={DashboardStackNavigator}
-            options={{ title: 'Dashboard' }}
-          />
-          <Drawer.Screen
-            name="NotificationsTab"
-            component={NotificationsStackNavigator}
-            options={{ title: 'Notifications' }}
-          />
-          <Drawer.Screen
-            name="JobsTab"
-            component={JobsStackNavigator}
-            options={{ title: 'My Jobs' }}
-          />
-          <Drawer.Screen name="AllJobsTab" component={AllJobsStackNavigator} options={{ title: 'All Jobs' }} />
-          <Drawer.Screen name="ScheduleTab" component={ScheduleStackNavigator} options={{ title: 'Schedule' }} />
-          <Drawer.Screen name="TasksTab" component={TasksStackNavigator} options={{ title: 'Tasks' }} />
-          <Drawer.Screen name="MessagesTab" component={MessagesStackNavigator} options={{ title: 'Messages' }} />
-          <Drawer.Screen name="RequestsTab" component={RequestsStackNavigator} options={{ title: 'Requests' }} />
-          <Drawer.Screen name="IssuesTab" component={IssuesStackNavigator} options={{ title: 'Issues' }} />
-          <Drawer.Screen name="CallsTab" component={CallsStackNavigator} options={{ title: 'Calls' }} />
-          <Drawer.Screen name="OutboxTab" component={OutboxStackNavigator} options={{ title: 'Outbox' }} />
-          <Drawer.Screen name="ProfileTab" component={ProfileStackNavigator} options={{ title: 'Profile' }} />
+          <Drawer.Screen name="MainTabs" component={MainTabsNavigator} options={{ title: 'TrimPro' }} />
         </Drawer.Navigator>
       )}
     </NavigationContainer>
   )
+}
+
+function getCurrentNestedRouteName(state: any): string {
+  if (!state?.routes?.length) return ''
+  let route = state.routes[state.index ?? 0]
+  while (route?.state?.routes?.length) {
+    route = route.state.routes[route.state.index ?? 0]
+  }
+  return route?.name || ''
 }
 
 const styles = StyleSheet.create({
@@ -395,6 +436,24 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  tabBar: {
+    borderTopColor: colors.divider,
+    borderTopWidth: 1,
+    backgroundColor: colors.surface,
+    height: 66,
+    paddingBottom: 8,
+    paddingTop: 6,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: -2 },
+  },
+  tabLabel: {
+    ...typography.caption,
+    fontSize: 11,
+    fontWeight: '600',
   },
   drawerRoot: {
     flex: 1,

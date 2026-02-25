@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
+import { createNotification } from '@/lib/notifications'
+import { hasMobilePermission } from '@/lib/authorization'
 
 export async function GET(
   request: NextRequest,
@@ -12,6 +14,9 @@ export async function GET(
   const user = getAuthUser(request)
 
   try {
+    const canCreateForOthers =
+      user.role === 'ADMIN' ||
+      (await hasMobilePermission(user.id, user.tenantId, 'canCreateSchedulesForOthers'))
     const schedule = await prisma.schedule.findFirst({
       where: {
         id: params.id,
@@ -44,6 +49,9 @@ export async function GET(
 
     if (!schedule) {
       return NextResponse.json({ error: 'Schedule not found' }, { status: 404 })
+    }
+    if (!canCreateForOthers && schedule.userId !== user.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     return NextResponse.json({ schedule })
@@ -88,9 +96,33 @@ export async function PUT(
       return NextResponse.json({ error: 'Schedule not found' }, { status: 404 })
     }
 
+    const targetUserId =
+      typeof userId === 'string' && userId.trim().length > 0 ? userId.trim() : existing.userId
+    const canCreateForOthers =
+      user.role === 'ADMIN' ||
+      (await hasMobilePermission(user.id, user.tenantId, 'canCreateSchedulesForOthers'))
+    if (targetUserId !== user.id && !canCreateForOthers) {
+      return NextResponse.json(
+        { error: 'Forbidden: You can only assign schedules to yourself' },
+        { status: 403 }
+      )
+    }
+    if (targetUserId !== existing.userId) {
+      const assignedUser = await prisma.user.findFirst({
+        where: {
+          id: targetUserId,
+          tenantId: user.tenantId,
+        },
+        select: { id: true },
+      })
+      if (!assignedUser) {
+        return NextResponse.json({ error: 'Assigned user not found' }, { status: 404 })
+      }
+    }
+
     // Check for conflicts if time or user changed
     if ((startTime || endTime || userId) && (userId || existing.userId)) {
-      const checkUserId = userId || existing.userId
+      const checkUserId = targetUserId
       const checkStartTime = startTime ? new Date(startTime) : existing.startTime
       const checkEndTime = endTime ? new Date(endTime) : existing.endTime
 
@@ -136,7 +168,7 @@ export async function PUT(
         startTime: startTime !== undefined ? new Date(startTime) : existing.startTime,
         endTime: endTime !== undefined ? new Date(endTime) : existing.endTime,
         allDay: allDay !== undefined ? allDay : existing.allDay,
-        userId: userId !== undefined ? userId : existing.userId,
+        userId: targetUserId,
         jobId: jobId !== undefined ? (jobId || null) : existing.jobId,
         leadId: leadId !== undefined ? (leadId || null) : existing.leadId,
       },
@@ -159,6 +191,22 @@ export async function PUT(
         lead: true,
       },
     })
+
+    // Notify assigned user when schedule is updated or reassigned.
+    if (schedule.userId !== user.id) {
+      await createNotification({
+        tenantId: user.tenantId,
+        userId: schedule.userId,
+        type: 'SCHEDULE_REMINDER',
+        title: 'Schedule Updated',
+        message: `Your schedule "${schedule.title}" was updated.`,
+        linkType: 'schedule',
+        linkId: schedule.id,
+        linkUrl: '/dashboard/schedule',
+        actorUserId: user.id,
+        action: 'schedule_updated',
+      })
+    }
 
     // Update job scheduled dates if linked
     if (jobId && (startTime || endTime)) {
@@ -197,6 +245,9 @@ export async function DELETE(
   const user = getAuthUser(request)
 
   try {
+    const canCreateForOthers =
+      user.role === 'ADMIN' ||
+      (await hasMobilePermission(user.id, user.tenantId, 'canCreateSchedulesForOthers'))
     const schedule = await prisma.schedule.findFirst({
       where: {
         id: params.id,
@@ -206,6 +257,9 @@ export async function DELETE(
 
     if (!schedule) {
       return NextResponse.json({ error: 'Schedule not found' }, { status: 404 })
+    }
+    if (!canCreateForOthers && schedule.userId !== user.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     await prisma.schedule.delete({

@@ -16,9 +16,9 @@ import { SectionHeader } from '../../components/SectionHeader'
 import { Card } from '../../components/Card'
 import { StatusBadge } from '../../components/StatusBadge'
 import { useAuth } from '../../auth/AuthContext'
-import { DashboardStackParamList } from '../../types/navigation'
+import { JobsStackParamList } from '../../types/navigation'
 
-type Props = NativeStackScreenProps<DashboardStackParamList, 'DashboardHome'>
+type Props = NativeStackScreenProps<JobsStackParamList, 'DashboardHome'>
 
 interface AssignmentsResponse {
   jobs: Array<Pick<Job, 'id' | 'jobNumber' | 'title' | 'status' | 'priority'> & { updatedAt: string }>
@@ -101,7 +101,7 @@ export function DashboardScreen({ navigation }: Props) {
 
   const navigateToJobs = () => {
     const parent: any = navigation.getParent()
-    parent?.navigate('JobsTab')
+    parent?.navigate('JobsTab', { screen: 'JobsList' })
   }
 
   const navigateToTasks = () => {
@@ -231,10 +231,7 @@ export function DashboardScreen({ navigation }: Props) {
                   <View key={job.id} style={styles.stackItem}>
                     <JobCard
                       job={job}
-                      onPress={() => {
-                        const parent: any = navigation.getParent()
-                        parent?.navigate('JobsTab', { screen: 'JobDetail', params: { jobId: job.id } })
-                      }}
+                      onPress={() => navigation.navigate('JobDetail', { jobId: job.id })}
                       hasUnreadMessages={(unreadMessagesByJob.get(job.id) || 0) > 0}
                       hasNewMedia={(todayMediaQuery.data?.get(job.id) || 0) > 0}
                       hasOpenIssue={openIssues.some((x) => x.jobId === job.id)}

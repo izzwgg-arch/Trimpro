@@ -1,14 +1,24 @@
+import { NavigatorScreenParams } from '@react-navigation/native'
+
 export type JobsStackParamList = {
+  DashboardHome: undefined
   JobsList: undefined
   AllJobsList: undefined
   JobDetail: { jobId: string }
   AdminJobDetail: { jobId: string }
   CreateJob: undefined
   EditJob: { jobId: string }
+  NotificationsHome: undefined
+  RequestsHome: undefined
+  CallsHome: undefined
+  OutboxHome: undefined
+  ProfileHome: undefined
 }
 
-export type DashboardStackParamList = {
-  DashboardHome: undefined
+export type ScheduleStackParamList = {
+  ScheduleHome: undefined
+  ScheduleDetail: { scheduleId: string }
+  ScheduleCreate: { scheduleId?: string } | undefined
 }
 
 export type TasksStackParamList = {
@@ -37,19 +47,16 @@ export type IssuesStackParamList = {
   IssueDetail: { issueId: string }
 }
 
+export type RootMainTabParamList = {
+  JobsTab: NavigatorScreenParams<JobsStackParamList> | undefined
+  MessagesTab: NavigatorScreenParams<MessagesStackParamList> | undefined
+  TasksTab: NavigatorScreenParams<TasksStackParamList> | undefined
+  ScheduleTab: NavigatorScreenParams<ScheduleStackParamList> | undefined
+  IssuesTab: NavigatorScreenParams<IssuesStackParamList> | undefined
+}
+
 export type RootDrawerParamList = {
-  DashboardTab: undefined
-  NotificationsTab: undefined
-  JobsTab: undefined
-  AllJobsTab: undefined
-  ScheduleTab: undefined
-  TasksTab: undefined
-  MessagesTab: undefined
-  RequestsTab: undefined
-  IssuesTab: undefined
-  CallsTab: undefined
-  OutboxTab: undefined
-  ProfileTab: undefined
+  MainTabs: undefined
 }
 
 // Backward-compatible alias for existing imports.
