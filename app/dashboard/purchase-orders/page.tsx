@@ -40,6 +40,13 @@ interface PurchaseOrder {
   total: number
 }
 
+function getPurchaseOrderTag(po: PurchaseOrder): string {
+  if (po.job?.jobNumber) return `JOB-${po.job.jobNumber}`
+  if (po.vendorRef?.name) return po.vendorRef.name
+  if (po.vendor) return po.vendor
+  return '-'
+}
+
 const statusColors: Record<string, string> = {
   DRAFT: 'bg-gray-100 text-gray-800',
   PENDING_APPROVAL: 'bg-yellow-100 text-yellow-800',
@@ -280,6 +287,7 @@ export default function PurchaseOrdersPage() {
                       {po.job && ` • Job ${po.job.jobNumber}`}
                       {po.expectedDate && ` • Expected: ${formatDate(po.expectedDate)}`}
                     </CardDescription>
+                    <div className="mt-1 text-xs text-gray-500">Tag: {getPurchaseOrderTag(po)}</div>
                   </div>
                   <div className="flex items-center space-x-2">
                     <input
@@ -342,7 +350,7 @@ export default function PurchaseOrdersPage() {
               secondary={po.vendorRef?.name || po.vendor}
               status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[po.status] || 'bg-gray-100 text-gray-800'}`}>{po.status}</span>}
               amount={formatCurrency(po.total)}
-              date={po.orderDate ? formatDate(po.orderDate) : '-'}
+              date={`${po.orderDate ? formatDate(po.orderDate) : '-'} • Tag: ${getPurchaseOrderTag(po)}`}
             />
           ))}
         </div>
@@ -369,7 +377,7 @@ export default function PurchaseOrdersPage() {
               status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[po.status] || 'bg-gray-100 text-gray-800'}`}>{po.status}</span>}
               line2={`${po.vendorRef?.name || po.vendor}${po.job ? ` • Job ${po.job.jobNumber}` : ''}`}
               rightTop={formatCurrency(po.total)}
-              rightBottom={po.orderDate ? formatDate(po.orderDate) : 'No order date'}
+              rightBottom={`${po.orderDate ? formatDate(po.orderDate) : 'No order date'} • Tag: ${getPurchaseOrderTag(po)}`}
             />
           ))}
         </div>
@@ -406,6 +414,12 @@ export default function PurchaseOrdersPage() {
               header: 'Vendor',
               sortValue: (po) => po.vendorRef?.name || po.vendor,
               render: (po) => po.vendorRef?.name || po.vendor,
+            },
+            {
+              key: 'tag',
+              header: 'Tag',
+              sortValue: (po) => getPurchaseOrderTag(po),
+              render: (po) => getPurchaseOrderTag(po),
             },
             {
               key: 'status',
