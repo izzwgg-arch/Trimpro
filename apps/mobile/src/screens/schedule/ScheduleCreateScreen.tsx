@@ -61,7 +61,7 @@ export function ScheduleCreateScreen({ navigation, route }: Props) {
   const prefillTitle = route.params?.title
   const isEdit = Boolean(scheduleId)
   const { user } = useAuth()
-  const { canCreateSchedulesForOthers } = useMobilePermissions()
+  const { canCreateSchedulesForOthers, canAssignJobs } = useMobilePermissions()
   const queryClient = useQueryClient()
   const insets = useSafeAreaInsets()
 
@@ -141,7 +141,7 @@ export function ScheduleCreateScreen({ navigation, route }: Props) {
   }, [assignedUserId, canCreateSchedulesForOthers, user?.id])
 
   const teamMembers = teamQuery.data?.teamMembers || []
-  const canAssignOthers = canCreateSchedulesForOthers()
+  const canAssignOthers = canCreateSchedulesForOthers() || canAssignJobs()
   const selectedMember = teamMembers.find((member) => member.id === allowedAssignedUserId)
   const selectedJob = (jobsQuery.data?.jobs || []).find((job) => job.id === jobId)
 

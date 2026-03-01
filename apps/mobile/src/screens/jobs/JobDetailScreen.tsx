@@ -829,10 +829,9 @@ export function JobDetailScreen({ route, navigation }: Props) {
               </View>
             </View>
 
-            {(canCreateTasks() || canCreateIssues() || canScheduleJobs()) && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Quick Actions</Text>
-                <View style={styles.row}>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Quick Actions</Text>
+              <View style={styles.row}>
                   <Pressable
                     style={styles.secondaryButton}
                     onPress={async () => {
@@ -972,31 +971,32 @@ export function JobDetailScreen({ route, navigation }: Props) {
                       <Text style={styles.secondaryButtonText}>Create Issue for Admin</Text>
                     </Pressable>
                   )}
-                  {canScheduleJobs() && (
-                    <Pressable
-                      style={styles.secondaryButton}
-                      onPress={() => {
-                        if (!job) return
-                        const rootNav: any = navigation.getParent()?.getParent() || navigation.getParent()
-                        rootNav?.navigate('MainTabs', {
-                          screen: 'ScheduleTab',
+                  <Pressable
+                    style={styles.secondaryButton}
+                    onPress={() => {
+                      if (!job) return
+                      if (!canScheduleJobs()) {
+                        Alert.alert('Permission denied', 'You do not have permission to schedule jobs.')
+                        return
+                      }
+                      const rootNav: any = navigation.getParent()?.getParent() || navigation.getParent()
+                      rootNav?.navigate('MainTabs', {
+                        screen: 'ScheduleTab',
+                        params: {
+                          screen: 'ScheduleCreate',
                           params: {
-                            screen: 'ScheduleCreate',
-                            params: {
-                              jobId: job.id,
-                              assignedUserId: job.assignedTo?.id,
-                              title: `${job.jobNumber} - ${job.title}`,
-                            },
+                            jobId: job.id,
+                            assignedUserId: job.assignedTo?.id,
+                            title: `${job.jobNumber} - ${job.title}`,
                           },
-                        })
-                      }}
-                    >
-                      <Text style={styles.secondaryButtonText}>Create Schedule</Text>
-                    </Pressable>
-                  )}
-                </View>
+                        },
+                      })
+                    }}
+                  >
+                    <Text style={styles.secondaryButtonText}>Create Schedule</Text>
+                  </Pressable>
               </View>
-            )}
+            </View>
 
             <Modal visible={statusPickerVisible} transparent animationType="fade" onRequestClose={() => setStatusPickerVisible(false)}>
               <View style={styles.modalBackdrop}>

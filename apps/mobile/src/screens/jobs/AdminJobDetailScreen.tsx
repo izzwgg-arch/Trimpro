@@ -192,28 +192,30 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
                 <Text style={styles.actionText}>Edit</Text>
               </Pressable>
             )}
-            {canScheduleJobs() && (
-              <Pressable
-                style={styles.actionButton}
-                onPress={() => {
-                  const rootNav: any = navigation.getParent()?.getParent() || navigation.getParent()
-                  rootNav?.navigate('MainTabs', {
-                    screen: 'ScheduleTab',
+            <Pressable
+              style={styles.actionButton}
+              onPress={() => {
+                if (!canScheduleJobs()) {
+                  Alert.alert('Permission denied', 'You do not have permission to schedule jobs.')
+                  return
+                }
+                const rootNav: any = navigation.getParent()?.getParent() || navigation.getParent()
+                rootNav?.navigate('MainTabs', {
+                  screen: 'ScheduleTab',
+                  params: {
+                    screen: 'ScheduleCreate',
                     params: {
-                      screen: 'ScheduleCreate',
-                      params: {
-                        jobId: job.id,
-                        assignedUserId: assignments[0]?.user?.id,
-                        title: `${job.jobNumber} - ${job.title}`,
-                      },
+                      jobId: job.id,
+                      assignedUserId: assignments[0]?.user?.id,
+                      title: `${job.jobNumber} - ${job.title}`,
                     },
-                  })
-                }}
-              >
-                <Ionicons name="calendar-outline" size={20} color={colors.brandPrimary} />
-                <Text style={styles.actionText}>Schedule</Text>
-              </Pressable>
-            )}
+                  },
+                })
+              }}
+            >
+              <Ionicons name="calendar-outline" size={20} color={colors.brandPrimary} />
+              <Text style={styles.actionText}>Schedule</Text>
+            </Pressable>
           </View>
         </Card>
 
