@@ -16,6 +16,11 @@ export async function GET(request: NextRequest) {
   const search = searchParams.get('search') || ''
   const status = searchParams.get('status') || 'all'
   const clientId = searchParams.get('clientId') || ''
+  const scheduled = searchParams.get('scheduled')
+  const startDate = searchParams.get('startDate')
+  const endDate = searchParams.get('endDate')
+  const crewId = searchParams.get('crewId') || ''
+  const priorityParam = searchParams.get('priority') || ''
   const { skip, take, page, limit } = getPaginationParams(searchParams)
 
   try {
@@ -58,6 +63,33 @@ export async function GET(request: NextRequest) {
           }
         }
 
+        if (scheduled === 'false') {
+          where.scheduledStart = null
+        } else if (scheduled === 'true') {
+          where.scheduledStart = { not: null }
+          if (startDate || endDate) {
+            where.scheduledStart = {
+              ...(startDate ? { gte: new Date(startDate) } : {}),
+              ...(endDate ? { lte: new Date(endDate) } : {}),
+            }
+          }
+        }
+
+        if (crewId) {
+          where.assignments = {
+            some: {
+              userId: crewId,
+            },
+          }
+        }
+
+        if (priorityParam && priorityParam !== 'all') {
+          const parsedPriority = Number(priorityParam)
+          if (!Number.isNaN(parsedPriority)) {
+            where.priority = parsedPriority
+          }
+        }
+
         const [jobs, total] = await Promise.all([
           prisma.job.findMany({
             where,
@@ -79,6 +111,17 @@ export async function GET(request: NextRequest) {
                     },
                   },
                 },
+              },
+              addresses: {
+                where: { type: 'job_site' },
+                select: {
+                  id: true,
+                  street: true,
+                  city: true,
+                  state: true,
+                  zipCode: true,
+                },
+                take: 1,
               },
               _count: {
                 select: {
@@ -136,6 +179,33 @@ export async function GET(request: NextRequest) {
       where.clientId = clientId
     }
 
+    if (scheduled === 'false') {
+      where.scheduledStart = null
+    } else if (scheduled === 'true') {
+      where.scheduledStart = { not: null }
+      if (startDate || endDate) {
+        where.scheduledStart = {
+          ...(startDate ? { gte: new Date(startDate) } : {}),
+          ...(endDate ? { lte: new Date(endDate) } : {}),
+        }
+      }
+    }
+
+    if (crewId) {
+      where.assignments = {
+        some: {
+          userId: crewId,
+        },
+      }
+    }
+
+    if (priorityParam && priorityParam !== 'all') {
+      const parsedPriority = Number(priorityParam)
+      if (!Number.isNaN(parsedPriority)) {
+        where.priority = parsedPriority
+      }
+    }
+
     const [jobs, total] = await Promise.all([
       prisma.job.findMany({
         where,
@@ -157,6 +227,17 @@ export async function GET(request: NextRequest) {
                 },
               },
             },
+          },
+          addresses: {
+            where: { type: 'job_site' },
+            select: {
+              id: true,
+              street: true,
+              city: true,
+              state: true,
+              zipCode: true,
+            },
+            take: 1,
           },
           _count: {
             select: {
