@@ -3,10 +3,14 @@ import path from 'path'
 import { promises as fs } from 'fs'
 import crypto from 'crypto'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import {
+  getMaxBytesForMimeType,
+  isAllowedUploadMimeType,
+  normalizeMimeType,
+  safeExtFromMimeType,
+} from '@/lib/uploads/policy'
 
 export const runtime = 'nodejs'
-
-const MAX_FILE_BYTES = 10 * 1024 * 1024 // 10MB per file
 
 function getPublicBaseUrl(req: NextRequest): string {
   // Prefer explicit config (recommended in production)
@@ -50,26 +54,6 @@ function getPublicBaseUrl(req: NextRequest): string {
   return 'https://app.trimprony.com'
 }
 
-function safeExtFromMime(mime: string): string {
-  if (mime === 'image/jpeg') return 'jpg'
-  if (mime === 'image/png') return 'png'
-  if (mime === 'image/webp') return 'webp'
-  if (mime === 'image/gif') return 'gif'
-  if (mime === 'video/mp4') return 'mp4'
-  if (mime === 'video/quicktime') return 'mov'
-  if (mime === 'video/webm') return 'webm'
-  if (mime === 'application/pdf') return 'pdf'
-  if (mime === 'application/msword') return 'doc'
-  if (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'docx'
-  if (mime === 'application/vnd.ms-excel') return 'xls'
-  if (mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') return 'xlsx'
-  if (mime === 'text/csv') return 'csv'
-  if (mime === 'text/plain') return 'txt'
-  if (mime === 'application/zip') return 'zip'
-  if (mime === 'application/x-rar-compressed') return 'rar'
-  return 'bin'
-}
-
 export async function POST(request: NextRequest) {
   console.log('[uploads] Upload route hit')
   const authError = await authenticateRequest(request)
@@ -86,18 +70,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing file' }, { status: 400 })
     }
 
-    const contentType = file.type || 'application/octet-stream'
-    // Only allow: PDF, JPG, PNG, DOCX
-    const allowed = [
-      /^application\/pdf$/, // PDF
-      /^image\/jpeg$/, // JPG
-      /^image\/jpg$/, // JPG (alternative)
-      /^image\/png$/, // PNG
-      /^application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document$/, // DOCX
-    ].some((re) => re.test(contentType))
-    if (!allowed) {
+    const contentType = normalizeMimeType(file.type || 'application/octet-stream')
+    if (!isAllowedUploadMimeType(contentType)) {
       console.log('Upload rejected - unsupported file type:', { contentType, fileName: file.name })
-      return NextResponse.json({ error: `Unsupported file type. Only PDF, JPG, PNG, and DOCX files are allowed.` }, { status: 400 })
+      return NextResponse.json(
+        {
+          error:
+            'Unsupported file type. Allowed: PDF, Word, Excel, CSV, PowerPoint, TXT, common images, and common videos.',
+        },
+        { status: 400 }
+      )
     }
 
     const arrayBuffer = await file.arrayBuffer()
@@ -105,12 +87,16 @@ export async function POST(request: NextRequest) {
     if (size <= 0) {
       return NextResponse.json({ error: 'Empty file' }, { status: 400 })
     }
-    if (size > MAX_FILE_BYTES) {
-      console.log('Upload rejected - file too large:', { fileName: file.name, size, maxBytes: MAX_FILE_BYTES })
-      return NextResponse.json({ error: 'File too large (max 10MB per file)' }, { status: 413 })
+    const maxBytes = getMaxBytesForMimeType(contentType)
+    if (size > maxBytes) {
+      console.log('Upload rejected - file too large:', { fileName: file.name, size, maxBytes, contentType })
+      return NextResponse.json(
+        { error: `File too large for this type (max ${Math.floor(maxBytes / (1024 * 1024))}MB).` },
+        { status: 413 }
+      )
     }
 
-    const ext = safeExtFromMime(contentType)
+    const ext = safeExtFromMimeType(contentType)
     const id = crypto.randomUUID()
     const filename = `${id}.${ext}`
 

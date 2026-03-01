@@ -16,20 +16,23 @@ import {
 } from 'react-native'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import * as ImagePicker from 'expo-image-picker'
+import { Ionicons } from '@expo/vector-icons'
 import * as Location from 'expo-location'
-import * as FileSystem from 'expo-file-system/legacy'
 import { Video, ResizeMode } from 'expo-av'
 import { Screen } from '../../components/Screen'
 import { apiRequest } from '../../api/client'
 import { Attachment, Job, TimeEntry } from '../../types/models'
 import { StatusChip } from '../../components/StatusChip'
-import { API_BASE_URL, BRAND } from '../../config/env'
+import { BRAND } from '../../config/env'
 import { JobsStackParamList } from '../../types/navigation'
 import { enqueueOutbox } from '../../offline/outbox'
 import { useOnlineState } from '../../hooks/useOnlineState'
 import { useAuth } from '../../auth/AuthContext'
 import { useMobilePermissions } from '../../hooks/useMobilePermissions'
+import { AttachmentPickerSheet } from '../../components/attachments/AttachmentPickerSheet'
+import { AttachmentUploadQueue } from '../../components/attachments/AttachmentUploadQueue'
+import { pickAttachmentsByAction, uploadFileWithProgress } from '../../services/attachment-upload'
+import { useAttachmentUploadQueue } from '../../hooks/useAttachmentUploadQueue'
 
 type Props = NativeStackScreenProps<JobsStackParamList, 'JobDetail'>
 
@@ -64,12 +67,11 @@ interface JobResponse {
   job: Job
 }
 
+type JobTaskRow = NonNullable<Job['tasks']>[number]
+type JobIssueRow = NonNullable<Job['issues']>[number]
+
 interface AttachmentsResponse {
   attachments: Attachment[]
-}
-
-interface AttachmentCreateResponse {
-  attachment: Attachment
 }
 
 interface JobTimeResponse {
@@ -118,7 +120,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
   const jobId = route.params.jobId
   const [noteText, setNoteText] = useState('')
   const [locationSharing, setLocationSharing] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState<number | null>(null)
+  const [showAttachmentPicker, setShowAttachmentPicker] = useState(false)
   const [localAttachments, setLocalAttachments] = useState<Attachment[]>([])
   const [mediaViewerVisible, setMediaViewerVisible] = useState(false)
   const [videoViewerVisible, setVideoViewerVisible] = useState(false)
@@ -163,8 +165,8 @@ export function JobDetailScreen({ route, navigation }: Props) {
 
   const job = jobQuery.data?.job
   const jobStatus = asSafeText(job?.status, 'SCHEDULED')
-  const taskRows = asArray<Job['tasks'][number]>(job?.tasks)
-  const issueRows = asArray<Job['issues'][number]>(job?.issues)
+  const taskRows = asArray<JobTaskRow>(job?.tasks)
+  const issueRows = asArray<JobIssueRow>(job?.issues)
   const onRefresh = async () => {
     await Promise.all([jobQuery.refetch(), attachmentsQuery.refetch(), timeQuery.refetch()])
   }
@@ -322,131 +324,43 @@ export function JobDetailScreen({ route, navigation }: Props) {
     },
   })
 
-  const onPickMedia = async (fromCamera: boolean) => {
-    if (!token) return
+  const jobUploadQueue = useAttachmentUploadQueue<{ attachment: Attachment }>({
+    startUpload: (file, onProgress) => {
+      const task = uploadFileWithProgress<{ attachment: Attachment }>(`/api/jobs/${jobId}/attachments`, file, onProgress)
+      return {
+        promise: task.promise.then((result) => result.raw),
+        cancel: task.cancel,
+      }
+    },
+    onUploaded: (result) => {
+      const created = result.attachment
+      if (!created) return
+      setLocalAttachments((prev) => [
+        { ...created, url: normalizeMediaUrl(created.url) },
+        ...prev.filter((x) => x.id !== created.id),
+      ])
+      void queryClient.invalidateQueries({ queryKey: ['mobile-job-attachments', jobId] })
+      void queryClient.invalidateQueries({ queryKey: ['mobile-job', jobId] })
+    },
+  })
+
+  const onSelectAttachmentAction = async (
+    action: 'take-photo' | 'record-video' | 'choose-photos' | 'choose-videos' | 'choose-document'
+  ) => {
+    if (!token) {
+      Alert.alert('Not authenticated', 'Please sign in again.')
+      return
+    }
+    if (!isOnline) {
+      Alert.alert('Offline', 'Attachments require internet connection to upload.')
+      return
+    }
     try {
-      const permissionResult = fromCamera
-        ? await ImagePicker.requestCameraPermissionsAsync()
-        : await ImagePicker.requestMediaLibraryPermissionsAsync()
-      if (!permissionResult.granted) {
-        Alert.alert('Permission required', 'Please grant media permission to upload files.')
-        return
-      }
-
-      const result = fromCamera
-        ? await ImagePicker.launchCameraAsync({
-            mediaTypes: ['images', 'videos'],
-            quality: 0.72,
-          })
-        : await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ['images', 'videos'],
-            quality: 0.72,
-          })
-
-      if (result.canceled || result.assets.length === 0) return
-
-      const asset = result.assets[0]
-      const guessedMime = asset.mimeType || (asset.type === 'video' ? 'video/mp4' : 'image/jpeg')
-      const fileName = asset.fileName || `job-${jobId}-${Date.now()}`
-      const fileSize = asset.fileSize || 0
-
-      if (!isOnline) {
-        await enqueueOutbox({
-          id: `${Date.now()}-media-${jobId}`,
-          type: 'job-media',
-          payload: {
-            jobId,
-            uri: asset.uri,
-            fileName,
-            fileSize,
-            mimeType: guessedMime,
-          },
-        })
-        Alert.alert('Queued', 'Media was added to outbox and will sync when online.')
-        return
-      }
-
-      if (guessedMime.startsWith('video/') && fileSize > 120 * 1024 * 1024) {
-        Alert.alert('Large file warning', 'This video is very large and may upload slowly in the field.')
-      }
-
-      setUploadProgress(0)
-      const uploadResult = await FileSystem.uploadAsync(`${API_BASE_URL}/api/uploads`, asset.uri, {
-        fieldName: 'file',
-        httpMethod: 'POST',
-        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-        mimeType: guessedMime,
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/json',
-        },
-      })
-      setUploadProgress(1)
-
-      if (uploadResult.status < 200 || uploadResult.status >= 300) {
-        let detail = ''
-        try {
-          const parsed = JSON.parse(uploadResult.body || '{}')
-          detail = parsed?.error ? String(parsed.error) : ''
-        } catch {
-          detail = uploadResult.body || ''
-        }
-        throw new Error(detail || `Upload failed (${uploadResult.status})`)
-      }
-      const uploadPayload = JSON.parse(uploadResult.body || '{}')
-      const persistedFileSize = Number(uploadPayload?.size || fileSize || 0)
-      if (!persistedFileSize || persistedFileSize <= 0) {
-        throw new Error('Upload completed but file size could not be determined.')
-      }
-
-      let geoMeta: any = null
-      try {
-        const perm = await Location.getForegroundPermissionsAsync()
-        if (perm.granted) {
-          const pos = await Location.getLastKnownPositionAsync()
-          if (pos?.coords) {
-            geoMeta = {
-              latitude: pos.coords.latitude,
-              longitude: pos.coords.longitude,
-              accuracy: pos.coords.accuracy,
-            }
-          }
-        }
-      } catch {
-        // Optional metadata only.
-      }
-
-      const created = await apiRequest<AttachmentCreateResponse>('/api/attachments', 'POST', {
-        entityType: 'job',
-        entityId: jobId,
-        fileName,
-        url: normalizeMediaUrl(uploadPayload.url),
-        key: uploadPayload.filename || uploadPayload.url,
-        mimeType: guessedMime,
-        fileSize: persistedFileSize,
-        metadata: {
-          uploadedAtClient: new Date().toISOString(),
-          device: {
-            os: Platform.OS,
-            osVersion: String((Platform as any).Version ?? ''),
-          },
-          geo: geoMeta,
-        },
-      })
-
-      setUploadProgress(null)
-      if (created?.attachment) {
-        setLocalAttachments((prev) => [
-          { ...created.attachment, url: normalizeMediaUrl(created.attachment.url) },
-          ...prev.filter((x) => x.id !== created.attachment.id),
-        ])
-      }
-      queryClient.invalidateQueries({ queryKey: ['mobile-job-attachments', jobId] })
-      queryClient.invalidateQueries({ queryKey: ['mobile-job', jobId] })
-      Alert.alert('Uploaded', 'Attachment uploaded successfully.')
+      const picked = await pickAttachmentsByAction(action)
+      if (!picked.length) return
+      jobUploadQueue.enqueueFiles(picked)
     } catch (error: any) {
-      setUploadProgress(null)
-      Alert.alert('Upload failed', error?.message || 'Please retry.')
+      Alert.alert('Attachment selection failed', error?.message || 'Please try again.')
     }
   }
 
@@ -756,17 +670,15 @@ export function JobDetailScreen({ route, navigation }: Props) {
                   <Text style={styles.sectionTitle}>Files and Media</Text>
                   <Text style={styles.countBadge}>{attachmentRows.length}</Text>
                 </View>
-                <View style={styles.row}>
-                  <Pressable style={styles.secondaryButton} onPress={() => onPickMedia(false)}>
-                    <Text style={styles.secondaryButtonText}>Upload from gallery</Text>
-                  </Pressable>
-                  <Pressable style={styles.secondaryButton} onPress={() => onPickMedia(true)}>
-                    <Text style={styles.secondaryButtonText}>Take photo / video</Text>
-                  </Pressable>
-                </View>
-              {uploadProgress !== null && (
-                <Text style={styles.meta}>Upload progress: {Math.round(uploadProgress * 100)}%</Text>
-              )}
+                <Pressable style={styles.secondaryButton} onPress={() => setShowAttachmentPicker(true)}>
+                  <Text style={styles.secondaryButtonText}>Add Attachment</Text>
+                </Pressable>
+                <AttachmentUploadQueue
+                  items={jobUploadQueue.items}
+                  onRetry={(item) => jobUploadQueue.retryItem(item.id)}
+                  onRemove={(item) => jobUploadQueue.removeItem(item.id)}
+                  onCancel={(item) => jobUploadQueue.cancelItem(item.id)}
+                />
               {imageRows.length > 0 && (
                 <View>
                   <Text style={styles.meta}>Images</Text>
@@ -1056,6 +968,12 @@ export function JobDetailScreen({ route, navigation }: Props) {
                 </View>
               </View>
             </Modal>
+
+            <AttachmentPickerSheet
+              visible={showAttachmentPicker}
+              onClose={() => setShowAttachmentPicker(false)}
+              onSelect={onSelectAttachmentAction}
+            />
 
             <Modal visible={mediaViewerVisible} animationType="slide" onRequestClose={() => setMediaViewerVisible(false)}>
               <View style={styles.viewerRoot}>

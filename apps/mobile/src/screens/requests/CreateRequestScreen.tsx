@@ -1,13 +1,17 @@
-import React, { useEffect, useRef, useState } from 'react'
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View, ActivityIndicator, Platform } from 'react-native'
-import * as ImagePicker from 'expo-image-picker'
-import * as FileSystem from 'expo-file-system'
-import * as SecureStore from 'expo-secure-store'
+import React, { useEffect, useMemo, useState } from 'react'
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
+import { NativeStackScreenProps } from '@react-navigation/native-stack'
+import { InfiniteData, useQueryClient } from '@tanstack/react-query'
 import { Screen } from '../../components/Screen'
 import { apiRequest } from '../../api/client'
 import { BRAND } from '../../config/env'
-import { API_BASE_URL } from '../../config/env'
+import { JobsStackParamList } from '../../types/navigation'
+import { AttachmentPickerSheet } from '../../components/attachments/AttachmentPickerSheet'
+import { AttachmentUploadQueue } from '../../components/attachments/AttachmentUploadQueue'
+import { pickAttachmentsByAction, uploadFileWithProgress } from '../../services/attachment-upload'
+import { useAttachmentUploadQueue } from '../../hooks/useAttachmentUploadQueue'
+import { extractCreatedRequestId } from './request-utils'
 
 interface ResolvedAddress {
   street: string
@@ -17,19 +21,50 @@ interface ResolvedAddress {
   country?: string
 }
 
-interface StagedAttachment {
+type Props = NativeStackScreenProps<JobsStackParamList, 'RequestCreate'>
+
+interface CreatedLead {
   id: string
-  fileName: string
-  fileSize: number
-  mimeType: string
-  uri: string
-  status: 'uploading' | 'uploaded' | 'failed'
-  error?: string
-  url?: string
-  key?: string
+  firstName?: string
+  lastName?: string
+  phone?: string | null
+  email?: string | null
+  jobSiteAddress?: string | null
+  notes?: string | null
+  status?: string
+  source?: string
+  createdAt?: string
 }
 
-export function CreateRequestScreen() {
+interface CreateLeadResponse {
+  lead?: CreatedLead
+  id?: string
+}
+
+interface RequestDetailResponse {
+  lead: CreatedLead
+}
+
+interface RequestsListResponse {
+  leads: CreatedLead[]
+  pagination: {
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+  }
+}
+
+interface UploadsApiResponse {
+  url: string
+  relativeUrl?: string
+  mimeType?: string
+  size?: number
+  filename?: string
+}
+
+export function CreateRequestScreen({ navigation }: Props) {
+  const queryClient = useQueryClient()
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [phone, setPhone] = useState('')
@@ -40,8 +75,17 @@ export function CreateRequestScreen() {
   const [notes, setNotes] = useState('')
   const [loading, setLoading] = useState(false)
   const [isLoadingPredictions, setIsLoadingPredictions] = useState(false)
-  const [stagedAttachments, setStagedAttachments] = useState<StagedAttachment[]>([])
-  const [uploadingFiles, setUploadingFiles] = useState(false)
+  const [showAttachmentPicker, setShowAttachmentPicker] = useState(false)
+
+  const stagedUploadQueue = useAttachmentUploadQueue<UploadsApiResponse>({
+    startUpload: (file, onProgress) => {
+      const task = uploadFileWithProgress<UploadsApiResponse>('/api/uploads', file, onProgress)
+      return {
+        promise: task.promise.then((result) => result.raw),
+        cancel: task.cancel,
+      }
+    },
+  })
 
   useEffect(() => {
     const value = jobSiteAddress.trim()
@@ -87,102 +131,25 @@ export function CreateRequestScreen() {
     }
   }
 
-  const pickDocuments = async () => {
+  const onSelectAttachmentAction = async (
+    action: 'take-photo' | 'record-video' | 'choose-photos' | 'choose-videos' | 'choose-document'
+  ) => {
     try {
-      // Request permission for media library
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync()
-      if (!permission.granted) {
-        Alert.alert('Permission required', 'Please grant access to your photo library to upload files.')
-        return
-      }
-      
-      // For now, use ImagePicker which supports images
-      // TODO: Install expo-document-picker for PDF/DOCX support
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsMultipleSelection: true,
-        quality: 0.9,
-      })
-      
-      if (result.canceled || !result.assets || result.assets.length === 0) return
-      
-      const maxSize = 10 * 1024 * 1024 // 10MB
-      
-      for (const asset of result.assets) {
-        if (!asset.uri) continue
-        
-        const fileName = asset.fileName || `image-${Date.now()}.jpg`
-        const fileSize = asset.fileSize || 0
-        const mimeType = asset.mimeType || 'image/jpeg'
-        
-        // Validate file size
-        if (fileSize > maxSize) {
-          Alert.alert('File too large', `File ${fileName} is too large (max 10MB per file)`)
-          continue
-        }
-        
-        // Validate file type (only images for now, PDF/DOCX requires expo-document-picker)
-        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png']
-        if (!allowedTypes.includes(mimeType.toLowerCase())) {
-          Alert.alert('Invalid file type', `Only JPG and PNG images are supported on mobile. PDF and DOCX support coming soon.`)
-          continue
-        }
-        
-        const tempId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
-        setStagedAttachments(prev => [...prev, {
-          id: tempId,
-          fileName,
-          fileSize,
-          mimeType,
-          uri: asset.uri,
-          status: 'uploading',
-        }])
-        
-        // Upload file
-        try {
-          const token = await SecureStore.getItemAsync('accessToken')
-          if (!token) {
-            throw new Error('Not authenticated')
-          }
-          
-          const uploadResult = await FileSystem.uploadAsync(`${API_BASE_URL}/api/uploads`, asset.uri, {
-            fieldName: 'file',
-            httpMethod: 'POST',
-            uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-            headers: {
-              Authorization: `Bearer ${token}`,
-              Accept: 'application/json',
-            },
-            mimeType,
-          })
-          
-          if (uploadResult.status < 200 || uploadResult.status >= 300) {
-            const errorData = uploadResult.body ? JSON.parse(uploadResult.body) : {}
-            throw new Error(errorData.error || 'Upload failed')
-          }
-          
-          const uploadData = JSON.parse(uploadResult.body)
-          setStagedAttachments(prev => prev.map(item => 
-            item.id === tempId 
-              ? { ...item, status: 'uploaded', url: uploadData.url, key: uploadData.relativeUrl || uploadData.filename || uploadData.url }
-              : item
-          ))
-        } catch (error: any) {
-          setStagedAttachments(prev => prev.map(item => 
-            item.id === tempId 
-              ? { ...item, status: 'failed', error: error?.message || 'Upload failed' }
-              : item
-          ))
-        }
-      }
+      const picked = await pickAttachmentsByAction(action)
+      if (!picked.length) return
+      stagedUploadQueue.enqueueFiles(picked)
     } catch (error: any) {
-      Alert.alert('Error', error?.message || 'Failed to pick documents')
+      Alert.alert('Attachment selection failed', error?.message || 'Please try again.')
     }
   }
-  
-  const removeStagedAttachment = (id: string) => {
-    setStagedAttachments(prev => prev.filter(item => item.id !== id))
-  }
+
+  const successfulUploads = useMemo(
+    () =>
+      stagedUploadQueue.items.filter(
+        (item) => item.status === 'success' && item.result?.url
+      ),
+    [stagedUploadQueue.items]
+  )
 
   const submit = async () => {
     if (!firstName || !lastName) {
@@ -193,21 +160,18 @@ export function CreateRequestScreen() {
       const resolved = await resolveAndSelectAddress(jobSiteAddress.trim())
       if (!resolved) return
     }
-    
-    const uploadingCount = stagedAttachments.filter(a => a.status === 'uploading').length
-    if (uploadingCount > 0) {
+    if (stagedUploadQueue.hasUploading) {
       Alert.alert('Please wait', 'Please wait for file uploads to finish before creating the request.')
       return
     }
-    const failedCount = stagedAttachments.filter(a => a.status === 'failed').length
-    if (failedCount > 0) {
-      Alert.alert('Upload errors', 'Please remove failed uploads or try uploading those files again.')
+    if (stagedUploadQueue.failedCount > 0) {
+      Alert.alert('Upload errors', 'Please retry or remove failed uploads before creating the request.')
       return
     }
 
     setLoading(true)
     try {
-      const response = await apiRequest<{ lead: { id: string } }>('/api/leads', 'POST', {
+      const response = await apiRequest<CreateLeadResponse>('/api/leads', 'POST', {
         firstName,
         lastName,
         phone: phone || null,
@@ -217,32 +181,56 @@ export function CreateRequestScreen() {
         source: 'OTHER',
         status: 'NEW',
       })
-      
-      // Attach uploaded files to the request
-      const uploadedAttachments = stagedAttachments.filter(a => a.status === 'uploaded')
-      if (uploadedAttachments.length > 0 && response.lead?.id) {
-        const token = await SecureStore.getItemAsync('accessToken')
-        const attachErrors: string[] = []
-        for (const attachment of uploadedAttachments) {
-          try {
-            await apiRequest('/api/attachments', 'POST', {
-              entityType: 'request',
-              entityId: response.lead.id,
-              fileName: attachment.fileName,
-              fileSize: attachment.fileSize,
-              mimeType: attachment.mimeType,
-              url: attachment.url,
-              key: attachment.key || attachment.url,
-            })
-          } catch (error: any) {
-            attachErrors.push(error?.message || `Failed to attach ${attachment.fileName}`)
-          }
-        }
-        if (attachErrors.length > 0) {
-          Alert.alert('Request created', `Request was created, but ${attachErrors.length} file(s) could not be attached.`)
+      const createdRequestId = extractCreatedRequestId(response)
+
+      const detailResponse =
+        response.lead?.createdAt && response.lead?.status
+          ? { lead: response.lead }
+          : await apiRequest<RequestDetailResponse>(`/api/leads/${createdRequestId}`)
+      queryClient.setQueryData(['mobile-request-detail', createdRequestId], detailResponse)
+
+      const attachErrors: string[] = []
+      for (const queued of successfulUploads) {
+        try {
+          await apiRequest('/api/attachments', 'POST', {
+            entityType: 'request',
+            entityId: createdRequestId,
+            fileName: queued.file.name,
+            fileSize: Number(queued.result?.size || queued.file.sizeBytes || 0),
+            mimeType: queued.file.mimeType,
+            url: queued.result?.url,
+            key: queued.result?.relativeUrl || queued.result?.filename || queued.result?.url,
+          })
+        } catch (error: any) {
+          attachErrors.push(error?.message || `Failed to attach ${queued.file.name}`)
         }
       }
-      
+
+      queryClient.setQueryData<InfiniteData<RequestsListResponse>>(
+        ['mobile-requests-list'],
+        (existing) => {
+          if (!existing?.pages?.length) return existing
+          const createdLead = detailResponse.lead
+          const firstPage = existing.pages[0]
+          const deduped = (firstPage.leads || []).filter((lead) => lead.id !== createdLead.id)
+          return {
+            ...existing,
+            pages: [
+              {
+                ...firstPage,
+                leads: [createdLead, ...deduped],
+                pagination: {
+                  ...firstPage.pagination,
+                  total: Number(firstPage.pagination?.total || 0) + 1,
+                },
+              },
+              ...existing.pages.slice(1),
+            ],
+          }
+        }
+      )
+      void queryClient.invalidateQueries({ queryKey: ['mobile-requests-list'] })
+
       setFirstName('')
       setLastName('')
       setPhone('')
@@ -251,8 +239,17 @@ export function CreateRequestScreen() {
       setAddressPredictions([])
       setAddressSelectedFromSuggestions(false)
       setNotes('')
-      setStagedAttachments([])
-      Alert.alert('Created', 'Request was created successfully.')
+      stagedUploadQueue.setItems([])
+
+      navigation.replace('RequestDetail', { requestId: createdRequestId })
+      if (attachErrors.length > 0) {
+        setTimeout(() => {
+          Alert.alert(
+            'Request created',
+            `Request was created, but ${attachErrors.length} file(s) could not be attached.`
+          )
+        }, 0)
+      }
     } catch (error: any) {
       Alert.alert('Failed', error?.message || 'Could not create request.')
     } finally {
@@ -262,138 +259,117 @@ export function CreateRequestScreen() {
 
   return (
     <Screen style={styles.screen}>
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-        contentContainerStyle={styles.scrollContent}
-      >
-      <Text style={styles.title}>Create Request</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="First name"
-        placeholderTextColor={BRAND.text}
-        selectionColor={BRAND.text}
-        cursorColor={BRAND.text}
-        value={firstName}
-        onChangeText={setFirstName}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Last name"
-        placeholderTextColor={BRAND.text}
-        selectionColor={BRAND.text}
-        cursorColor={BRAND.text}
-        value={lastName}
-        onChangeText={setLastName}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Phone"
-        placeholderTextColor={BRAND.text}
-        selectionColor={BRAND.text}
-        cursorColor={BRAND.text}
-        value={phone}
-        onChangeText={setPhone}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
-        placeholderTextColor={BRAND.text}
-        autoCapitalize="none"
-        keyboardType="email-address"
-        selectionColor={BRAND.text}
-        cursorColor={BRAND.text}
-        value={email}
-        onChangeText={setEmail}
-      />
-      <View>
+      <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={styles.scrollContent}>
+        <Text style={styles.title}>Create Request</Text>
         <TextInput
           style={styles.input}
-          placeholder="Job address (Google suggested)"
+          placeholder="First name"
           placeholderTextColor={BRAND.text}
           selectionColor={BRAND.text}
           cursorColor={BRAND.text}
-          value={jobSiteAddress}
-          onChangeText={(text) => {
-            setJobSiteAddress(text)
-            setAddressSelectedFromSuggestions(false)
-          }}
+          value={firstName}
+          onChangeText={setFirstName}
         />
-        {isLoadingPredictions && <Text style={styles.hint}>Loading address suggestions...</Text>}
-        {addressPredictions.length > 0 && (
-          <View style={styles.suggestionsBox}>
-            {addressPredictions.map((prediction) => (
-              <Pressable
-                key={prediction}
-                style={styles.suggestionRow}
-                onPress={async () => {
-                  await resolveAndSelectAddress(prediction)
-                }}
-              >
-                <Text style={styles.suggestionText}>{prediction}</Text>
-              </Pressable>
-            ))}
-          </View>
-        )}
-        {!isLoadingPredictions && jobSiteAddress.trim().length >= 3 && addressPredictions.length === 0 && (
-          <Text style={styles.hint}>Searching Google suggestions... try adding city/state.</Text>
-        )}
-      </View>
-      <TextInput
-        style={[styles.input, styles.notes]}
-        placeholder="Notes"
-        placeholderTextColor={BRAND.text}
-        selectionColor={BRAND.text}
-        cursorColor={BRAND.text}
-        value={notes}
-        onChangeText={setNotes}
-        multiline
-      />
-      
-      <View style={styles.uploadSection}>
-        <View style={styles.uploadHeader}>
-          <Ionicons name="attach-outline" size={18} color={BRAND.text} />
-          <Text style={styles.uploadTitle}>Attachments (before save)</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Last name"
+          placeholderTextColor={BRAND.text}
+          selectionColor={BRAND.text}
+          cursorColor={BRAND.text}
+          value={lastName}
+          onChangeText={setLastName}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Phone"
+          placeholderTextColor={BRAND.text}
+          selectionColor={BRAND.text}
+          cursorColor={BRAND.text}
+          value={phone}
+          onChangeText={setPhone}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Email"
+          placeholderTextColor={BRAND.text}
+          autoCapitalize="none"
+          keyboardType="email-address"
+          selectionColor={BRAND.text}
+          cursorColor={BRAND.text}
+          value={email}
+          onChangeText={setEmail}
+        />
+        <View>
+          <TextInput
+            style={styles.input}
+            placeholder="Job address (Google suggested)"
+            placeholderTextColor={BRAND.text}
+            selectionColor={BRAND.text}
+            cursorColor={BRAND.text}
+            value={jobSiteAddress}
+            onChangeText={(text) => {
+              setJobSiteAddress(text)
+              setAddressSelectedFromSuggestions(false)
+            }}
+          />
+          {isLoadingPredictions && <Text style={styles.hint}>Loading address suggestions...</Text>}
+          {addressPredictions.length > 0 && (
+            <View style={styles.suggestionsBox}>
+              {addressPredictions.map((prediction) => (
+                <Pressable key={prediction} style={styles.suggestionRow} onPress={async () => void resolveAndSelectAddress(prediction)}>
+                  <Text style={styles.suggestionText}>{prediction}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+          {!isLoadingPredictions && jobSiteAddress.trim().length >= 3 && addressPredictions.length === 0 && (
+            <Text style={styles.hint}>Searching Google suggestions... try adding city/state.</Text>
+          )}
         </View>
-        <Pressable style={styles.uploadButton} onPress={pickDocuments} disabled={uploadingFiles}>
-          <Ionicons name="cloud-upload-outline" size={18} color={BRAND.primary} />
-          <Text style={styles.uploadButtonText}>Upload Files</Text>
-        </Pressable>
-        <Text style={styles.uploadHint}>JPG, PNG images (max 10MB each). PDF/DOCX support coming soon.</Text>
-        
-        {stagedAttachments.length > 0 && (
-          <View style={styles.attachmentsList}>
-            {stagedAttachments.map((attachment) => (
-              <View key={attachment.id} style={styles.attachmentItem}>
-                <View style={styles.attachmentInfo}>
-                  <Text style={styles.attachmentName} numberOfLines={1}>{attachment.fileName}</Text>
-                  <Text style={styles.attachmentStatus}>
-                    {attachment.status === 'uploading' && 'Uploading...'}
-                    {attachment.status === 'uploaded' && 'Uploaded'}
-                    {attachment.status === 'failed' && `Failed: ${attachment.error || 'Upload failed'}`}
-                  </Text>
-                </View>
-                {attachment.status === 'uploading' ? (
-                  <ActivityIndicator size="small" color={BRAND.primary} />
-                ) : (
-                  <Pressable onPress={() => removeStagedAttachment(attachment.id)}>
-                    <Ionicons name="trash-outline" size={20} color="#DC2626" />
-                  </Pressable>
-                )}
-              </View>
-            ))}
+        <TextInput
+          style={[styles.input, styles.notes]}
+          placeholder="Notes"
+          placeholderTextColor={BRAND.text}
+          selectionColor={BRAND.text}
+          cursorColor={BRAND.text}
+          value={notes}
+          onChangeText={setNotes}
+          multiline
+        />
+
+        <View style={styles.uploadSection}>
+          <View style={styles.uploadHeader}>
+            <Ionicons name="attach-outline" size={18} color={BRAND.text} />
+            <Text style={styles.uploadTitle}>Attachments (before save)</Text>
           </View>
-        )}
-      </View>
-      
-      <Pressable 
-        style={[styles.button, (loading || stagedAttachments.some(a => a.status === 'uploading')) && styles.buttonDisabled]} 
-        onPress={submit} 
-        disabled={loading || stagedAttachments.some(a => a.status === 'uploading')}
-      >
-        <Text style={styles.buttonText}>{loading ? 'Creating...' : 'Create Request'}</Text>
-      </Pressable>
+          <Pressable style={styles.uploadButton} onPress={() => setShowAttachmentPicker(true)}>
+            <Ionicons name="add-circle-outline" size={18} color={BRAND.primary} />
+            <Text style={styles.uploadButtonText}>Add Attachment</Text>
+          </Pressable>
+          <Text style={styles.uploadHint}>
+            Supports photos, videos, PDF, Word, Excel, CSV, PowerPoint, and TXT.
+          </Text>
+          <AttachmentUploadQueue
+            items={stagedUploadQueue.items}
+            onRetry={(item) => stagedUploadQueue.retryItem(item.id)}
+            onRemove={(item) => stagedUploadQueue.removeItem(item.id)}
+            onCancel={(item) => stagedUploadQueue.cancelItem(item.id)}
+          />
+        </View>
+
+        <Pressable
+          style={[styles.button, (loading || stagedUploadQueue.hasUploading) && styles.buttonDisabled]}
+          onPress={submit}
+          disabled={loading || stagedUploadQueue.hasUploading}
+        >
+          <Text style={styles.buttonText}>{loading ? 'Creating...' : 'Create Request'}</Text>
+        </Pressable>
       </ScrollView>
+      <AttachmentPickerSheet
+        visible={showAttachmentPicker}
+        onClose={() => setShowAttachmentPicker(false)}
+        onSelect={onSelectAttachmentAction}
+      />
     </Screen>
   )
 }
@@ -471,34 +447,6 @@ const styles = StyleSheet.create({
   uploadHint: {
     fontSize: 11,
     color: '#6B7280',
-  },
-  attachmentsList: {
-    marginTop: 8,
-    gap: 6,
-  },
-  attachmentItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 8,
-    backgroundColor: BRAND.white,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  attachmentInfo: {
-    flex: 1,
-    marginRight: 8,
-  },
-  attachmentName: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: BRAND.text,
-  },
-  attachmentStatus: {
-    fontSize: 11,
-    color: '#6B7280',
-    marginTop: 2,
   },
   button: { backgroundColor: BRAND.primary, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
   buttonDisabled: { opacity: 0.7 },
