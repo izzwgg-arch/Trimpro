@@ -529,8 +529,17 @@ export async function getRevenueWaterfall(
   })
   const totalCollected = totalCollectedResult._sum.amount || 0
 
-  // Credits/refunds (if Payment model has refund field, otherwise 0)
-  const totalCredits = 0 // TODO: Add refund tracking if needed
+  // Credits/refunds
+  const totalCreditsResult = await prisma.payment.aggregate({
+    where: {
+      invoice: {
+        tenantId,
+      },
+      refundedAt: { gte: startDate, lte: endDate },
+    },
+    _sum: { refundedAmount: true },
+  })
+  const totalCredits = totalCreditsResult._sum.refundedAmount || 0
 
   // Outstanding
   const outstandingResult = await prisma.invoice.aggregate({

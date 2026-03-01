@@ -22,7 +22,18 @@ export async function GET(request: NextRequest) {
     const lastMonthEnd = endOfMonth(subMonths(now, 1))
 
     // Revenue metrics
-    const [totalRevenue, todayRevenue, weekRevenue, monthRevenue, lastMonthRevenue] = await Promise.all([
+    const [
+      totalRevenue,
+      todayRevenue,
+      weekRevenue,
+      monthRevenue,
+      lastMonthRevenue,
+      totalRefunds,
+      todayRefunds,
+      weekRefunds,
+      monthRefunds,
+      lastMonthRefunds,
+    ] = await Promise.all([
       // Total revenue (all time)
       prisma.payment.aggregate({
         where: {
@@ -97,6 +108,77 @@ export async function GET(request: NextRequest) {
         },
         _sum: {
           amount: true,
+        },
+      }),
+      // Total refunds (all time)
+      prisma.payment.aggregate({
+        where: {
+          invoice: {
+            tenantId: user.tenantId,
+          },
+        },
+        _sum: {
+          refundedAmount: true,
+        },
+      }),
+      // Today's refunds
+      prisma.payment.aggregate({
+        where: {
+          invoice: {
+            tenantId: user.tenantId,
+          },
+          refundedAt: {
+            gte: todayStart,
+            lte: todayEnd,
+          },
+        },
+        _sum: {
+          refundedAmount: true,
+        },
+      }),
+      // Week's refunds
+      prisma.payment.aggregate({
+        where: {
+          invoice: {
+            tenantId: user.tenantId,
+          },
+          refundedAt: {
+            gte: weekStart,
+            lte: weekEnd,
+          },
+        },
+        _sum: {
+          refundedAmount: true,
+        },
+      }),
+      // Month's refunds
+      prisma.payment.aggregate({
+        where: {
+          invoice: {
+            tenantId: user.tenantId,
+          },
+          refundedAt: {
+            gte: monthStart,
+            lte: monthEnd,
+          },
+        },
+        _sum: {
+          refundedAmount: true,
+        },
+      }),
+      // Last month's refunds
+      prisma.payment.aggregate({
+        where: {
+          invoice: {
+            tenantId: user.tenantId,
+          },
+          refundedAt: {
+            gte: lastMonthStart,
+            lte: lastMonthEnd,
+          },
+        },
+        _sum: {
+          refundedAmount: true,
         },
       }),
     ])
@@ -275,17 +357,17 @@ export async function GET(request: NextRequest) {
     })
 
     // Calculate revenue growth
-    const monthRevenueNum = Number(monthRevenue._sum.amount || 0)
-    const lastMonthRevenueNum = Number(lastMonthRevenue._sum.amount || 0)
+    const monthRevenueNum = Number(monthRevenue._sum.amount || 0) - Number(monthRefunds._sum.refundedAmount || 0)
+    const lastMonthRevenueNum = Number(lastMonthRevenue._sum.amount || 0) - Number(lastMonthRefunds._sum.refundedAmount || 0)
     const revenueGrowth = lastMonthRevenueNum > 0
       ? ((monthRevenueNum - lastMonthRevenueNum) / lastMonthRevenueNum) * 100
       : 0
 
     return NextResponse.json({
       kpis: {
-        totalRevenue: Number(totalRevenue._sum.amount || 0),
-        todayRevenue: Number(todayRevenue._sum.amount || 0),
-        weekRevenue: Number(weekRevenue._sum.amount || 0),
+        totalRevenue: Number(totalRevenue._sum.amount || 0) - Number(totalRefunds._sum.refundedAmount || 0),
+        todayRevenue: Number(todayRevenue._sum.amount || 0) - Number(todayRefunds._sum.refundedAmount || 0),
+        weekRevenue: Number(weekRevenue._sum.amount || 0) - Number(weekRefunds._sum.refundedAmount || 0),
         monthRevenue: monthRevenueNum,
         revenueGrowth: revenueGrowth.toFixed(1),
         unpaidInvoicesTotal: Number(unpaidInvoices._sum.balance || 0),

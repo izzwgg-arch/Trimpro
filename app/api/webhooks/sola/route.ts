@@ -108,6 +108,9 @@ export async function POST(request: NextRequest) {
           amount: amount || Number(invoice.balance),
           status: 'COMPLETED',
           method: 'CARD', // SOLA typically processes card payments
+          provider: 'sola',
+          providerPaymentId: String(transactionId || paymentId || ''),
+          providerInvoiceId: String(invoiceId || invoice.invoiceNumber || ''),
           reference: transactionId || paymentId,
           solaTransactionId: transactionId || paymentId,
           solaWebhookData: body,

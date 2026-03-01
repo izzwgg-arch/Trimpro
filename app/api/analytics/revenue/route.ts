@@ -44,8 +44,10 @@ export async function GET(request: NextRequest) {
         TO_CHAR(processed_at, 'YYYY-MM') as month,
         COALESCE(SUM(amount), 0)::decimal as amount
       FROM payments
-      WHERE tenant_id = ${user.tenantId}
-        AND status = 'COMPLETED'
+      WHERE status = 'COMPLETED'
+        AND invoice_id IN (
+          SELECT id FROM invoices WHERE tenant_id = ${user.tenantId}
+        )
         AND processed_at >= ${startDate}
         AND processed_at <= ${endDate}
       GROUP BY TO_CHAR(processed_at, 'YYYY-MM')
@@ -63,7 +65,9 @@ export async function GET(request: NextRequest) {
 
     const totalCollected = await prisma.payment.aggregate({
       where: {
-        tenantId: user.tenantId,
+        invoice: {
+          tenantId: user.tenantId,
+        },
         status: 'COMPLETED',
         processedAt: { gte: startDate, lte: endDate },
       },
@@ -72,14 +76,15 @@ export async function GET(request: NextRequest) {
 
     const totalCredits = await prisma.payment.aggregate({
       where: {
-        tenantId: user.tenantId,
-        status: 'REFUNDED',
-        processedAt: { gte: startDate, lte: endDate },
+        invoice: {
+          tenantId: user.tenantId,
+        },
+        refundedAt: { gte: startDate, lte: endDate },
       },
-      _sum: { amount: true },
+      _sum: { refundedAmount: true },
     })
 
-    const outstanding = (totalBilled._sum.total || 0) - (totalCollected._sum.amount || 0) - (totalCredits._sum.amount || 0)
+    const outstanding = (totalBilled._sum.total || 0) - (totalCollected._sum.amount || 0) - (totalCredits._sum.refundedAmount || 0)
 
     // AR Aging breakdown
     const now = new Date()
@@ -142,7 +147,7 @@ export async function GET(request: NextRequest) {
         waterfall: {
           totalBilled: Number(totalBilled._sum.total || 0),
           totalCollected: Number(totalCollected._sum.amount || 0),
-          totalCredits: Number(totalCredits._sum.amount || 0),
+          totalCredits: Number(totalCredits._sum.refundedAmount || 0),
           outstanding: Number(outstanding),
         },
         arAging: {

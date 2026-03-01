@@ -8,6 +8,7 @@ import { FileText, Plus, Download, Calendar, Filter, Settings } from 'lucide-rea
 import { formatDate } from '@/lib/utils'
 import { ReportBuilder } from '@/components/reports/ReportBuilder'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import Link from 'next/link'
 
 interface Report {
   id: string
@@ -189,32 +190,37 @@ export default function ReportsPage() {
           <h1 className="text-3xl font-bold text-gray-900">Reports</h1>
           <p className="text-gray-600 mt-1">Generate and manage reports</p>
         </div>
-        <Dialog open={showBuilder} onOpenChange={setShowBuilder}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Create Custom Report
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Report Builder</DialogTitle>
-              <DialogDescription>Create a custom report by selecting dataset, columns, filters, and sorting</DialogDescription>
-            </DialogHeader>
-            <ReportBuilder
-              onSave={(report) => {
-                setReports([report, ...reports])
-                setShowBuilder(false)
-                fetchReports()
-              }}
-              onRun={(report) => {
-                // Handle running the report
-                console.log('Run report:', report)
-                alert('Report execution coming soon!')
-              }}
-            />
-          </DialogContent>
-        </Dialog>
+        <div className="flex items-center gap-2">
+          <Link href="/reports/payments">
+            <Button variant="outline">Payment History</Button>
+          </Link>
+          <Dialog open={showBuilder} onOpenChange={setShowBuilder}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="mr-2 h-4 w-4" />
+                Create Custom Report
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Report Builder</DialogTitle>
+                <DialogDescription>Create a custom report by selecting dataset, columns, filters, and sorting</DialogDescription>
+              </DialogHeader>
+              <ReportBuilder
+                onSave={(report) => {
+                  setReports([report, ...reports])
+                  setShowBuilder(false)
+                  fetchReports()
+                }}
+                onRun={(report) => {
+                  // Handle running the report
+                  console.log('Run report:', report)
+                  alert('Report execution coming soon!')
+                }}
+              />
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>

@@ -877,10 +877,18 @@ enum PaymentMethod {
   OTHER
 }
 
+enum PaymentRefundStatus {
+  NOT_REFUNDED
+  PARTIALLY_REFUNDED
+  FULLY_REFUNDED
+  FAILED
+}
+
 model Payment {
   id        String        @id @default(cuid())
   invoiceId String
   amount    Decimal       @db.Decimal(10, 2)
+  currency  String        @default("USD")
   status    PaymentStatus @default(PENDING)
   method    PaymentMethod
   reference String?       @unique
@@ -901,6 +909,8 @@ model Payment {
   // Dates
   processedAt DateTime?
   refundedAt  DateTime?
+  refundedAmount Decimal @default(0) @db.Decimal(10, 2)
+  refundStatus   PaymentRefundStatus @default(NOT_REFUNDED)
 
   // Notes
   notes String? @db.Text
@@ -912,6 +922,7 @@ model Payment {
 
   invoice    Invoice    @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
   activities Activity[]
+  refunds    PaymentRefund[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -921,8 +932,37 @@ model Payment {
   @@index([solaTransactionId])
   @@index([provider])
   @@index([providerPaymentId])
+  @@index([refundStatus])
   @@unique([provider, providerPaymentId], map: "payments_provider_payment_id_unique_idx")
   @@map("payments")
+}
+
+model PaymentRefund {
+  id               String        @id @default(cuid())
+  paymentId        String
+  provider         String
+  providerRefundId String?
+  amount           Decimal       @db.Decimal(10, 2)
+  currency         String        @default("USD")
+  status           PaymentStatus @default(PENDING)
+  reason           String?       @db.Text
+  idempotencyKey   String        @unique
+  requestedById    String?
+  rawResponse      Json?
+  errorMessage     String?       @db.Text
+  refundedAt       DateTime?
+
+  payment     Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  requestedBy User?   @relation(fields: [requestedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([paymentId])
+  @@index([provider])
+  @@index([status])
+  @@index([providerRefundId])
+  @@map("payment_refunds")
 }
 
 // ============================================
@@ -2111,6 +2151,7 @@ enum AuditAction {
   CREATE
   UPDATE
   DELETE
+  REFUND
   LOGIN
   LOGOUT
   PASSWORD_RESET
