@@ -33,13 +33,23 @@ import { useMobilePermissions } from '../../hooks/useMobilePermissions'
 
 type Props = NativeStackScreenProps<JobsStackParamList, 'JobDetail'>
 
-const FIELD_STATUS_FLOW = ['ASSIGNED', 'EN_ROUTE', 'ON_SITE', 'IN_PROGRESS', 'COMPLETED']
-const FIELD_TO_BACKEND_STATUS: Record<string, string> = {
-  ASSIGNED: 'SCHEDULED',
-  EN_ROUTE: 'SCHEDULED',
-  ON_SITE: 'IN_PROGRESS',
-  IN_PROGRESS: 'IN_PROGRESS',
-  COMPLETED: 'COMPLETED',
+const JOB_STATUS_OPTIONS = [
+  'QUOTE',
+  'SCHEDULED',
+  'IN_PROGRESS',
+  'INSTALLATION_COMPLETE',
+  'FINISHING_COMPLETE',
+  'COMPLETED',
+  'ON_HOLD',
+  'CANCELLED',
+  'INVOICED',
+]
+
+function formatStatusLabel(status: string) {
+  return status
+    .replace('INSTALLATION_COMPLETE', 'INSTALLATION COMPLETED')
+    .replace('FINISHING_COMPLETE', 'FINISHING COMPLETED')
+    .replaceAll('_', ' ')
 }
 
 interface JobResponse {
@@ -104,6 +114,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
   const [localAttachments, setLocalAttachments] = useState<Attachment[]>([])
   const [mediaViewerVisible, setMediaViewerVisible] = useState(false)
   const [videoViewerVisible, setVideoViewerVisible] = useState(false)
+  const [statusPickerVisible, setStatusPickerVisible] = useState(false)
   const [activeImageIndex, setActiveImageIndex] = useState(0)
   const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
@@ -117,6 +128,8 @@ export function JobDetailScreen({ route, navigation }: Props) {
     canCreateIssues,
     canAssignTasksToAdmin,
     canAssignIssuesToAdmin,
+    canScheduleJobs,
+    canChangeJobStatus,
     canTrackTime,
     canEditOwnTimeEntries,
   } = useMobilePermissions()
@@ -147,18 +160,17 @@ export function JobDetailScreen({ route, navigation }: Props) {
 
   const statusMutation = useMutation({
     mutationFn: async (status: string) => {
-      const backendStatus = FIELD_TO_BACKEND_STATUS[status] || status
       if (!isOnline) {
         await enqueueOutbox({
           id: `${Date.now()}-status-${jobId}`,
           type: 'job-status',
-          payload: { jobId, status: backendStatus, notes: `fieldStage:${status}` },
+          payload: { jobId, status, notes: `mobileStatus:${status}` },
         })
         return
       }
       await apiRequest(`/api/mobile/jobs/${jobId}/status`, 'POST', {
-        status: backendStatus,
-        notes: `fieldStage:${status}`,
+        status,
+        notes: `mobileStatus:${status}`,
       })
     },
     onSuccess: () => {
@@ -556,52 +568,21 @@ export function JobDetailScreen({ route, navigation }: Props) {
             )}
 
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Status flow</Text>
-              <View style={styles.statusWrap}>
-                {FIELD_STATUS_FLOW.map((status) => {
-                  const isCompleted = status === 'COMPLETED'
-                  const canChange = !isCompleted || canCompleteJobs()
-                  
-                  return (
-                    <Pressable
-                      key={status}
-                      style={[
-                        styles.statusButton,
-                        job.status === status && styles.statusButtonActive,
-                        !canChange && styles.statusButtonDisabled,
-                      ]}
-                      onPress={() => {
-                        if (!canChange) {
-                          Alert.alert('Permission Denied', 'You do not have permission to complete jobs.')
-                          return
-                        }
-                        if (status === 'COMPLETED' && myActiveEntry) {
-                          Alert.alert('Active timer', 'Stop timer and complete this job?', [
-                            { text: 'Cancel', style: 'cancel' },
-                            {
-                              text: 'Stop and Complete',
-                              onPress: async () => {
-                                try {
-                                  await stopTimeMutation.mutateAsync('Stopped automatically on completion')
-                                } finally {
-                                  statusMutation.mutate(status)
-                                }
-                              },
-                            },
-                          ])
-                          return
-                        }
-                        statusMutation.mutate(status)
-                      }}
-                      disabled={!canChange}
-                    >
-                      <Text style={[styles.statusButtonText, job.status === status && styles.statusButtonTextActive]}>
-                        {status.replaceAll('_', ' ')}
-                      </Text>
-                    </Pressable>
-                  )
-                })}
-              </View>
+              <Text style={styles.sectionTitle}>Status</Text>
+              <Pressable
+                style={styles.statusSelectTrigger}
+                onPress={() => {
+                  if (!canChangeJobStatus()) {
+                    Alert.alert('Permission denied', 'You do not have permission to change job status.')
+                    return
+                  }
+                  setStatusPickerVisible(true)
+                }}
+              >
+                <Text style={styles.statusSelectValue}>{formatStatusLabel(job.status)}</Text>
+                <Ionicons name="chevron-down" size={18} color={BRAND.text} />
+              </Pressable>
+              <Text style={styles.meta}>Select a status to update this job.</Text>
             </View>
 
             {job.chargeByHour && canTrackTime() && (
@@ -848,7 +829,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
               </View>
             </View>
 
-            {(canCreateTasks() || canCreateIssues()) && (
+            {(canCreateTasks() || canCreateIssues() || canScheduleJobs()) && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Quick Actions</Text>
                 <View style={styles.row}>
@@ -991,9 +972,79 @@ export function JobDetailScreen({ route, navigation }: Props) {
                       <Text style={styles.secondaryButtonText}>Create Issue for Admin</Text>
                     </Pressable>
                   )}
+                  {canScheduleJobs() && (
+                    <Pressable
+                      style={styles.secondaryButton}
+                      onPress={() => {
+                        if (!job) return
+                        const rootNav: any = navigation.getParent()?.getParent() || navigation.getParent()
+                        rootNav?.navigate('MainTabs', {
+                          screen: 'ScheduleTab',
+                          params: {
+                            screen: 'ScheduleCreate',
+                            params: {
+                              jobId: job.id,
+                              assignedUserId: job.assignedTo?.id,
+                              title: `${job.jobNumber} - ${job.title}`,
+                            },
+                          },
+                        })
+                      }}
+                    >
+                      <Text style={styles.secondaryButtonText}>Create Schedule</Text>
+                    </Pressable>
+                  )}
                 </View>
               </View>
             )}
+
+            <Modal visible={statusPickerVisible} transparent animationType="fade" onRequestClose={() => setStatusPickerVisible(false)}>
+              <View style={styles.modalBackdrop}>
+                <Pressable style={StyleSheet.absoluteFill} onPress={() => setStatusPickerVisible(false)} />
+                <View style={styles.modalCard}>
+                  <Text style={styles.modalTitle}>Update Job Status</Text>
+                  <ScrollView style={{ maxHeight: 360 }}>
+                    {JOB_STATUS_OPTIONS.map((status) => {
+                      const active = job.status === status
+                      return (
+                        <Pressable
+                          key={status}
+                          style={[styles.modalRow, active && styles.modalRowActive]}
+                          onPress={() => {
+                            setStatusPickerVisible(false)
+                            if (active) return
+                            if (status === 'COMPLETED' && !canCompleteJobs()) {
+                              Alert.alert('Permission denied', 'You do not have permission to complete jobs.')
+                              return
+                            }
+                            if (status === 'COMPLETED' && myActiveEntry) {
+                              Alert.alert('Active timer', 'Stop timer and complete this job?', [
+                                { text: 'Cancel', style: 'cancel' },
+                                {
+                                  text: 'Stop and Complete',
+                                  onPress: async () => {
+                                    try {
+                                      await stopTimeMutation.mutateAsync('Stopped automatically on completion')
+                                    } finally {
+                                      statusMutation.mutate(status)
+                                    }
+                                  },
+                                },
+                              ])
+                              return
+                            }
+                            statusMutation.mutate(status)
+                          }}
+                        >
+                          <Text style={styles.modalRowTitle}>{formatStatusLabel(status)}</Text>
+                          {active ? <Ionicons name="checkmark" size={18} color={BRAND.primary} /> : null}
+                        </Pressable>
+                      )
+                    })}
+                  </ScrollView>
+                </View>
+              </View>
+            </Modal>
 
             <Modal visible={mediaViewerVisible} animationType="slide" onRequestClose={() => setMediaViewerVisible(false)}>
               <View style={styles.viewerRoot}>
@@ -1172,6 +1223,22 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
   },
+  statusSelectTrigger: {
+    minHeight: 44,
+    borderWidth: 1,
+    borderColor: '#D0D5DD',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: BRAND.white,
+  },
+  statusSelectValue: {
+    color: BRAND.text,
+    fontWeight: '600',
+    fontSize: 13,
+  },
   statusButton: {
     borderRadius: 999,
     borderWidth: 1,
@@ -1299,6 +1366,40 @@ const styles = StyleSheet.create({
   addressLink: {
     color: BRAND.primary,
     textDecorationLine: 'underline',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(2,6,23,0.45)',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  modalCard: {
+    borderRadius: 14,
+    backgroundColor: BRAND.white,
+    borderWidth: 1,
+    borderColor: '#D0D5DD',
+    padding: 10,
+  },
+  modalTitle: {
+    color: BRAND.text,
+    fontWeight: '700',
+    fontSize: 16,
+    marginBottom: 8,
+  },
+  modalRow: {
+    minHeight: 46,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  modalRowActive: {
+    backgroundColor: 'rgba(15,76,92,0.1)',
+  },
+  modalRowTitle: {
+    color: BRAND.text,
+    fontWeight: '600',
   },
 })
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View, Platform } from 'react-native'
+import { Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View, Platform } from 'react-native'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Ionicons } from '@expo/vector-icons'
@@ -12,6 +12,25 @@ import { JobsStackParamList } from '../../types/navigation'
 import { useMobilePermissions } from '../../hooks/useMobilePermissions'
 
 type Props = NativeStackScreenProps<JobsStackParamList, 'AdminJobDetail'>
+
+const JOB_STATUS_OPTIONS = [
+  'QUOTE',
+  'SCHEDULED',
+  'IN_PROGRESS',
+  'INSTALLATION_COMPLETE',
+  'FINISHING_COMPLETE',
+  'COMPLETED',
+  'ON_HOLD',
+  'CANCELLED',
+  'INVOICED',
+]
+
+function formatStatusLabel(status: string) {
+  return status
+    .replace('INSTALLATION_COMPLETE', 'INSTALLATION COMPLETED')
+    .replace('FINISHING_COMPLETE', 'FINISHING COMPLETED')
+    .replaceAll('_', ' ')
+}
 
 interface JobResponse {
   job: {
@@ -65,6 +84,7 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
   const { jobId } = route.params
   const queryClient = useQueryClient()
   const { canEditJobs, canAssignJobs, canScheduleJobs, canChangeJobStatus } = useMobilePermissions()
+  const [statusPickerVisible, setStatusPickerVisible] = useState(false)
 
   const jobQuery = useQuery({
     queryKey: ['admin-job', jobId],
@@ -129,7 +149,12 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
 
   return (
     <AppScreen>
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
         <Card style={styles.headerCard}>
           <View style={styles.headerRow}>
             <View style={styles.headerText}>
@@ -167,26 +192,42 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
                 <Text style={styles.actionText}>Edit</Text>
               </Pressable>
             )}
+            {canScheduleJobs() && (
+              <Pressable
+                style={styles.actionButton}
+                onPress={() => {
+                  const rootNav: any = navigation.getParent()?.getParent() || navigation.getParent()
+                  rootNav?.navigate('MainTabs', {
+                    screen: 'ScheduleTab',
+                    params: {
+                      screen: 'ScheduleCreate',
+                      params: {
+                        jobId: job.id,
+                        assignedUserId: assignments[0]?.user?.id,
+                        title: `${job.jobNumber} - ${job.title}`,
+                      },
+                    },
+                  })
+                }}
+              >
+                <Ionicons name="calendar-outline" size={20} color={colors.brandPrimary} />
+                <Text style={styles.actionText}>Schedule</Text>
+              </Pressable>
+            )}
           </View>
         </Card>
 
         {canChangeJobStatus() && (
           <Card style={styles.sectionCard}>
             <Text style={styles.sectionTitle}>Status</Text>
-            <View style={styles.statusRow}>
-              {['QUOTE', 'SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'ON_HOLD'].map((status) => (
-                <Pressable
-                  key={status}
-                  style={[styles.statusButton, job.status === status && styles.statusButtonActive]}
-                  onPress={() => statusMutation.mutate(status)}
-                  disabled={statusMutation.isPending}
-                >
-                  <Text style={[styles.statusButtonText, job.status === status && styles.statusButtonTextActive]}>
-                    {status.replace('_', ' ')}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
+            <Pressable
+              style={styles.statusSelectTrigger}
+              onPress={() => setStatusPickerVisible(true)}
+              disabled={statusMutation.isPending}
+            >
+              <Text style={styles.statusSelectValue}>{formatStatusLabel(job.status)}</Text>
+              <Ionicons name="chevron-down" size={18} color={colors.textPrimary} />
+            </Pressable>
           </Card>
         )}
 
@@ -236,6 +277,34 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
             </Text>
           </Card>
         )}
+
+        <Modal visible={statusPickerVisible} transparent animationType="fade" onRequestClose={() => setStatusPickerVisible(false)}>
+          <View style={styles.modalBackdrop}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setStatusPickerVisible(false)} />
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>Update Job Status</Text>
+              <ScrollView style={{ maxHeight: 360 }}>
+                {JOB_STATUS_OPTIONS.map((status) => {
+                  const active = status === job.status
+                  return (
+                    <Pressable
+                      key={status}
+                      style={[styles.modalRow, active && styles.modalRowActive]}
+                      onPress={() => {
+                        setStatusPickerVisible(false)
+                        if (active) return
+                        statusMutation.mutate(status)
+                      }}
+                    >
+                      <Text style={styles.modalRowTitle}>{formatStatusLabel(status)}</Text>
+                      {active ? <Ionicons name="checkmark" size={18} color={colors.brandPrimary} /> : null}
+                    </Pressable>
+                  )
+                })}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
       </ScrollView>
     </AppScreen>
   )
@@ -243,7 +312,7 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
 
 const styles = StyleSheet.create({
   scrollView: { flex: 1 },
-  scrollContent: { padding: spacing.md, gap: spacing.md },
+  scrollContent: { padding: spacing.md, gap: spacing.md, paddingBottom: spacing.xxl },
   centerContainer: {
     flex: 1,
     alignItems: 'center',
@@ -333,6 +402,22 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: spacing.xs,
   },
+  statusSelectTrigger: {
+    minHeight: 44,
+    borderWidth: 1,
+    borderColor: colors.divider,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  statusSelectValue: {
+    ...typography.sub,
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
   statusButton: {
     paddingVertical: spacing.xs,
     paddingHorizontal: spacing.sm,
@@ -397,5 +482,39 @@ const styles = StyleSheet.create({
   scheduleText: {
     ...typography.sub,
     color: colors.textPrimary,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(2,6,23,0.45)',
+    justifyContent: 'center',
+    padding: spacing.md,
+  },
+  modalCard: {
+    borderRadius: 14,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.divider,
+    padding: spacing.sm,
+  },
+  modalTitle: {
+    ...typography.h3,
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  modalRow: {
+    minHeight: 46,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  modalRowActive: {
+    backgroundColor: 'rgba(15,76,92,0.1)',
+  },
+  modalRowTitle: {
+    ...typography.sub,
+    color: colors.textPrimary,
+    fontWeight: '600',
   },
 })

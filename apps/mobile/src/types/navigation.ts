@@ -18,7 +18,14 @@ export type JobsStackParamList = {
 export type ScheduleStackParamList = {
   ScheduleHome: undefined
   ScheduleDetail: { scheduleId: string }
-  ScheduleCreate: { scheduleId?: string } | undefined
+  ScheduleCreate:
+    | {
+        scheduleId?: string
+        jobId?: string
+        assignedUserId?: string
+        title?: string
+      }
+    | undefined
 }
 
 export type TasksStackParamList = {

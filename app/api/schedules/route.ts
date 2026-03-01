@@ -2,6 +2,31 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns'
+import { createNotification } from '@/lib/notifications'
+import { hasMobilePermission, isMobileRequest, requireMobilePermission } from '@/lib/authorization'
+
+function normalizeScheduleDateTime(rawDate: unknown, rawTime: unknown, fallbackIso?: string): Date | null {
+  if (typeof fallbackIso === 'string' && fallbackIso.trim().length > 0) {
+    const parsed = new Date(fallbackIso)
+    return Number.isNaN(parsed.getTime()) ? null : parsed
+  }
+  if (typeof rawDate !== 'string' || typeof rawTime !== 'string') {
+    return null
+  }
+
+  const date = rawDate.trim()
+  const time = rawTime.trim()
+  if (!date || !time) return null
+
+  // If time already includes a date, trust it.
+  if (time.includes('T') || time.includes('-')) {
+    const parsedTime = new Date(time)
+    return Number.isNaN(parsedTime.getTime()) ? null : parsedTime
+  }
+
+  const parsed = new Date(`${date}T${time}`)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -16,6 +41,9 @@ export async function GET(request: NextRequest) {
   const jobId = searchParams.get('jobId') || ''
 
   try {
+    const canCreateForOthers =
+      user.role === 'ADMIN' ||
+      (await hasMobilePermission(user.id, user.tenantId, 'canCreateSchedulesForOthers'))
     let start: Date
     let end: Date
 
@@ -54,7 +82,9 @@ export async function GET(request: NextRequest) {
     }
 
     if (userId !== 'all') {
-      where.userId = userId
+      where.userId = canCreateForOthers || userId === user.id ? userId : user.id
+    } else if (!canCreateForOthers) {
+      where.userId = user.id
     }
 
     if (jobId) {
@@ -135,6 +165,11 @@ export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
 
+  if (isMobileRequest(request)) {
+    const mobilePermError = await requireMobilePermission(request, 'mobile.jobs.schedule')
+    if (mobilePermError) return mobilePermError
+  }
+
   const user = getAuthUser(request)
 
   try {
@@ -142,23 +177,50 @@ export async function POST(request: NextRequest) {
     const {
       title,
       description,
+      notes,
       type,
       startTime,
       endTime,
+      date,
       allDay,
       userId,
+      assignedUserId,
       jobId,
       leadId,
     } = body
 
-    if (!title || !startTime || !endTime || !userId) {
-      return NextResponse.json({ error: 'Title, start time, end time, and user are required' }, { status: 400 })
+    const targetUserId =
+      typeof assignedUserId === 'string' && assignedUserId.trim().length > 0
+        ? assignedUserId.trim()
+        : typeof userId === 'string' && userId.trim().length > 0
+          ? userId.trim()
+          : user.id
+    const resolvedStart = normalizeScheduleDateTime(date, startTime, startTime)
+    const resolvedEnd = normalizeScheduleDateTime(date, endTime, endTime)
+    const resolvedTitle =
+      typeof title === 'string' && title.trim().length > 0 ? title.trim() : 'Schedule'
+    const canCreateForOthers =
+      user.role === 'ADMIN' ||
+      (await hasMobilePermission(user.id, user.tenantId, 'canCreateSchedulesForOthers'))
+
+    if (!resolvedStart || !resolvedEnd) {
+      return NextResponse.json({ error: 'Valid start time and end time are required' }, { status: 400 })
+    }
+    if (resolvedEnd <= resolvedStart) {
+      return NextResponse.json({ error: 'End time must be after start time' }, { status: 400 })
+    }
+
+    if (targetUserId !== user.id && !canCreateForOthers) {
+      return NextResponse.json(
+        { error: 'Forbidden: You can only create schedules for yourself' },
+        { status: 403 }
+      )
     }
 
     // Verify user belongs to tenant
     const assignedUser = await prisma.user.findFirst({
       where: {
-        id: userId,
+        id: targetUserId,
         tenantId: user.tenantId,
       },
     })
@@ -171,12 +233,12 @@ export async function POST(request: NextRequest) {
     const conflictingSchedules = await prisma.schedule.findMany({
       where: {
         tenantId: user.tenantId,
-        userId,
+        userId: targetUserId,
         startTime: {
-          lte: new Date(endTime),
+          lte: resolvedEnd,
         },
         endTime: {
-          gte: new Date(startTime),
+          gte: resolvedStart,
         },
       },
     })
@@ -200,13 +262,18 @@ export async function POST(request: NextRequest) {
     const schedule = await prisma.schedule.create({
       data: {
         tenantId: user.tenantId,
-        title,
-        description: description || null,
+        title: resolvedTitle,
+        description:
+          (typeof description === 'string' && description.trim().length > 0
+            ? description
+            : typeof notes === 'string'
+              ? notes
+              : null) || null,
         type: type || 'OTHER',
-        startTime: new Date(startTime),
-        endTime: new Date(endTime),
+        startTime: resolvedStart,
+        endTime: resolvedEnd,
         allDay: allDay || false,
-        userId,
+        userId: targetUserId,
         jobId: jobId || null,
         leadId: leadId || null,
       },
@@ -243,8 +310,8 @@ export async function POST(request: NextRequest) {
         await prisma.job.update({
           where: { id: jobId },
           data: {
-            scheduledStart: new Date(startTime),
-            scheduledEnd: new Date(endTime),
+            scheduledStart: resolvedStart,
+            scheduledEnd: resolvedEnd,
             status: job.status === 'QUOTE' ? 'SCHEDULED' : job.status,
           },
         })
@@ -257,25 +324,25 @@ export async function POST(request: NextRequest) {
         tenantId: user.tenantId,
         userId: user.id,
         type: 'SCHEDULE_CREATED',
-        description: `Schedule "${title}" created for ${assignedUser.firstName} ${assignedUser.lastName}`,
+        description: `Schedule "${resolvedTitle}" created for ${assignedUser.firstName} ${assignedUser.lastName}`,
         jobId: jobId || undefined,
         leadId: leadId || undefined,
       },
     })
 
-    // Create notification for assigned user
-    if (userId !== user.id) {
-      await prisma.notification.create({
-        data: {
-          tenantId: user.tenantId,
-          userId,
-          type: 'SCHEDULE_REMINDER',
-          title: 'New Schedule',
-          message: `You have been scheduled: "${title}"`,
-          linkType: 'schedule',
-          linkId: schedule.id,
-          linkUrl: `/dashboard/schedule`,
-        },
+    // Create push-enabled notification for assigned user
+    if (targetUserId !== user.id) {
+      await createNotification({
+        tenantId: user.tenantId,
+        userId: targetUserId,
+        type: 'SCHEDULE_REMINDER',
+        title: 'New Schedule',
+        message: `You have been scheduled: "${resolvedTitle}"`,
+        linkType: 'schedule',
+        linkId: schedule.id,
+        linkUrl: '/dashboard/schedule',
+        actorUserId: user.id,
+        action: 'schedule_created',
       })
     }
 

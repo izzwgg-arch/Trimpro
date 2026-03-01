@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { createNotification } from '@/lib/notifications'
-import { hasMobilePermission } from '@/lib/authorization'
+import { hasMobilePermission, isMobileRequest, requireMobilePermission } from '@/lib/authorization'
 
 export async function GET(
   request: NextRequest,
@@ -67,6 +67,11 @@ export async function PUT(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+
+  if (isMobileRequest(request)) {
+    const mobilePermError = await requireMobilePermission(request, 'mobile.jobs.schedule')
+    if (mobilePermError) return mobilePermError
+  }
 
   const user = getAuthUser(request)
 

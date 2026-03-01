@@ -16,8 +16,8 @@ export async function POST(
   const authError = await authenticateRequest(request)
   if (authError) return authError
 
-  // Require mobile.jobs.complete permission
-  const permError = await requireMobilePermission(request, 'mobile.jobs.complete')
+  // Require mobile.jobs.status permission for status changes
+  const permError = await requireMobilePermission(request, 'mobile.jobs.status')
   if (permError) return permError
 
   const user = getAuthUser(request)
@@ -63,10 +63,12 @@ export async function POST(
       )
     }
 
-    // Special check for completing job
+    // Completing jobs requires explicit complete permission.
     if (status === 'COMPLETED') {
-      // Additional verification that user has complete permission
-      // (already checked above, but double-check for clarity)
+      const canComplete = await hasMobilePermission(user.id, user.tenantId, 'mobile.jobs.complete')
+      if (!canComplete) {
+        return NextResponse.json({ error: 'Forbidden: cannot complete jobs' }, { status: 403 })
+      }
     }
 
     // Update status
