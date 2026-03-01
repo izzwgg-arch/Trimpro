@@ -12,8 +12,8 @@ function TrimProLogo() {
       <View style={styles.logoBox}>
         <SvgUri
           uri={`${API_BASE_URL}/branding/trimpro-logo.svg`}
-          width={72}
-          height={72}
+          width={180}
+          height={54}
         />
       </View>
     </View>
@@ -139,7 +139,7 @@ const styles = StyleSheet.create({
   logoBox: {
     backgroundColor: '#2E4A59',
     borderRadius: radius.md,
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     alignItems: 'center',
   },

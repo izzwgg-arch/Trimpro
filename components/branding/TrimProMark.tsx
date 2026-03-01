@@ -10,7 +10,7 @@ export function TrimProMark({ className, size = 22, showWordmark = true }: TrimP
   return (
     <div className={cn('inline-flex items-center gap-2 leading-none', className)}>
       <img
-        src="/branding/trimpro-logo.svg"
+        src="/branding/trimpro-icon.svg"
         alt="TrimPro"
         width={size}
         height={size}

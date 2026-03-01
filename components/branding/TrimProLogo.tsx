@@ -8,7 +8,7 @@ interface TrimProMarkProps {
 export function TrimProIcon({ className, size = 28 }: { className?: string; size?: number }) {
   return (
     <img
-      src="/branding/trimpro-logo.svg"
+      src="/branding/trimpro-icon.svg"
       alt="TrimPro"
       width={size}
       height={size}
@@ -29,9 +29,9 @@ interface TrimProLogoProps {
 }
 
 const sizeMap = {
-  sm: { width: 84, height: 28 },
-  md: { width: 102, height: 34 },
-  lg: { width: 132, height: 44 },
+  sm: { width: 120, height: 36 },
+  md: { width: 160, height: 48 },
+  lg: { width: 200, height: 60 },
 }
 
 export function TrimProLogo({ variant = 'light', size = 'md', className }: TrimProLogoProps) {
