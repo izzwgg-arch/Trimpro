@@ -1,28 +1,37 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
+  AppState,
   FlatList,
+  GestureResponderEvent,
+  KeyboardAvoidingView,
+  Linking,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
-  Linking,
 } from 'react-native'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Ionicons } from '@expo/vector-icons'
 import * as ImagePicker from 'expo-image-picker'
 import * as FileSystem from 'expo-file-system/legacy'
 import * as Location from 'expo-location'
-import { Audio } from 'expo-av'
-import { API_BASE_URL, BRAND } from '../../config/env'
-import { Screen } from '../../components/Screen'
+import { SafeAreaView } from 'react-native-safe-area-context'
+import { API_BASE_URL } from '../../config/env'
 import { apiRequest } from '../../api/client'
 import { ChatMessage } from '../../types/models'
 import { MessagesStackParamList } from '../../types/navigation'
 import { useAuth } from '../../auth/AuthContext'
 import { useOnlineState } from '../../hooks/useOnlineState'
 import { enqueueOutbox } from '../../offline/outbox'
+import { MessageBubble } from '../../components/chat/MessageBubble'
+import { Composer } from '../../components/chat/Composer'
+import { DateSeparator } from '../../components/chat/DateSeparator'
+import { MediaViewer } from '../../components/chat/MediaViewer'
+import { VoiceRecorder } from '../../services/voiceRecorder'
+import { colors, spacing, typography } from '../../theme/tokens'
 
 type Props = NativeStackScreenProps<MessagesStackParamList, 'MessageThread'>
 
@@ -38,21 +47,61 @@ interface ConversationResponse {
   }
 }
 
-function senderName(message: ChatMessage) {
-  const sender = message.sender
-  if (!sender) return 'Unknown'
-  const value = `${sender.firstName || ''} ${sender.lastName || ''}`.trim()
-  return value || sender.email
+interface ConversationsResponse {
+  conversations: Array<{
+    id: string
+    type?: 'TEAM' | 'DM' | 'JOB_THREAD'
+    title?: string | null
+    otherUser?: {
+      id: string
+      firstName?: string | null
+      lastName?: string | null
+      email: string
+    } | null
+  }>
 }
 
-export function MessageThreadScreen({ route }: Props) {
+interface OptimisticMessage {
+  id: string
+  clientTempId: string
+  senderId: string
+  text?: string | null
+  type: 'TEXT' | 'MEDIA' | 'VOICE' | 'LOCATION'
+  status: 'SENT' | 'DELIVERED' | 'READ' | 'FAILED'
+  createdAt: string
+  attachments?: Array<{
+    kind: 'IMAGE' | 'VIDEO' | 'FILE' | 'VOICE' | 'LOCATION'
+    url: string
+    fileName?: string | null
+    mimeType?: string | null
+    sizeBytes?: number | null
+    durationMs?: number | null
+    latitude?: number | null
+    longitude?: number | null
+  }>
+  jobId?: string | null
+  jobNumber?: string | null
+  jobName?: string | null
+  isOptimistic: true
+}
+
+export function MessageThreadScreen({ route, navigation }: Props) {
   const { conversationId, jobContext } = route.params
   const { user, token } = useAuth()
   const isOnline = useOnlineState()
   const queryClient = useQueryClient()
+  const listRef = useRef<FlatList>(null)
   const [text, setText] = useState(jobContext ? `Regarding Job #${jobContext.jobNumber} - ${jobContext.jobName}\n` : '')
-  const [uploading, setUploading] = useState(false)
-  const [recording, setRecording] = useState<Audio.Recording | null>(null)
+  const [isRecordingUi, setIsRecordingUi] = useState(false)
+  const [recordingDurationMs, setRecordingDurationMs] = useState(0)
+  const [recordingWillCancel, setRecordingWillCancel] = useState(false)
+  const [optimisticMessages, setOptimisticMessages] = useState<OptimisticMessage[]>([])
+  const voiceRecorderRef = useRef<VoiceRecorder>(new VoiceRecorder())
+  const recordingStartedAtRef = useRef<number | null>(null)
+  const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const pressStartRef = useRef<{ x: number; y: number } | null>(null)
+  const pressSessionRef = useRef<number>(0)
+  const [viewingMedia, setViewingMedia] = useState<{ uri: string; fileName?: string | null; kind: 'IMAGE' | 'VIDEO' } | null>(null)
   const [mediaDrafts, setMediaDrafts] = useState<
     Array<{
       kind: 'IMAGE' | 'VIDEO' | 'FILE' | 'VOICE' | 'LOCATION'
@@ -64,6 +113,7 @@ export function MessageThreadScreen({ route }: Props) {
       latitude?: number
       longitude?: number
       localUri?: string
+      uploadProgress?: number
     }>
   >([])
 
@@ -71,6 +121,12 @@ export function MessageThreadScreen({ route }: Props) {
     queryKey: ['mobile-chat-conversation', conversationId],
     queryFn: () => apiRequest<ConversationResponse>(`/api/messages/conversations/${conversationId}`),
     refetchInterval: 30_000,
+  })
+
+  const conversationsQuery = useQuery({
+    queryKey: ['mobile-chat-conversations'],
+    queryFn: () => apiRequest<ConversationsResponse>('/api/messages/conversations'),
+    refetchInterval: 20_000,
   })
 
   const threadQuery = useQuery({
@@ -83,8 +139,24 @@ export function MessageThreadScreen({ route }: Props) {
     apiRequest(`/api/messages/conversations/${conversationId}/read`, 'POST', {}).catch(() => {})
   }, [conversationId])
 
+  useEffect(() => {
+    if (threadQuery.data?.messages) {
+      setOptimisticMessages((prev) => {
+        const serverIds = new Set(threadQuery.data!.messages.map((m) => m.id))
+        return prev.filter((opt) => {
+          if (serverIds.has(opt.id)) return false
+          const matched = threadQuery.data!.messages.find((m) => m.clientTempId === opt.clientTempId)
+          if (matched) {
+            return false
+          }
+          return true
+        })
+      })
+    }
+  }, [threadQuery.data?.messages])
+
   const sendMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (clientTempId: string) => {
       const localAttachments = mediaDrafts.filter((m) => m.localUri)
       const readyAttachments = mediaDrafts.filter((m) => m.url)
       const trimmed = text.trim()
@@ -93,19 +165,21 @@ export function MessageThreadScreen({ route }: Props) {
       if (!isOnline) {
         await enqueueOutbox({
           id: `chat-${Date.now()}-${conversationId}`,
-          type: 'message-send',
+          type: 'chat-message-send',
           payload: {
             conversationId,
-            to: '',
-            from: '',
-            body: trimmed,
-            channel: 'CHAT',
-            media: readyAttachments.map((attachment) => ({
-              type: attachment.kind.toLowerCase(),
-              url: attachment.url as string,
-              mimeType: attachment.mimeType,
-              size: attachment.sizeBytes,
-              filename: attachment.fileName,
+            text: trimmed,
+            clientTempId,
+            jobId: jobContext?.jobId || null,
+            attachments: readyAttachments.map((a) => ({
+              kind: a.kind,
+              url: a.url!,
+              fileName: a.fileName,
+              mimeType: a.mimeType,
+              sizeBytes: a.sizeBytes,
+              durationMs: a.durationMs,
+              latitude: a.latitude,
+              longitude: a.longitude,
             })),
           },
         })
@@ -115,30 +189,35 @@ export function MessageThreadScreen({ route }: Props) {
       const uploaded: typeof readyAttachments = [...readyAttachments]
       for (const attachment of localAttachments) {
         if (!attachment.localUri || !token) continue
-        const uploadResult = await FileSystem.uploadAsync(`${API_BASE_URL}/api/uploads/messages`, attachment.localUri, {
-          fieldName: 'file',
-          httpMethod: 'POST',
-          uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: 'application/json',
-          },
-          mimeType: attachment.mimeType || 'application/octet-stream',
-        })
-        if (uploadResult.status < 200 || uploadResult.status >= 300) {
-          throw new Error('Upload failed')
+        try {
+          const uploadResult = await FileSystem.uploadAsync(`${API_BASE_URL}/api/uploads/messages`, attachment.localUri, {
+            fieldName: 'file',
+            httpMethod: 'POST',
+            uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Accept: 'application/json',
+            },
+            mimeType: attachment.mimeType || 'application/octet-stream',
+          })
+          if (uploadResult.status < 200 || uploadResult.status >= 300) {
+            throw new Error('Upload failed')
+          }
+          const payload = JSON.parse(uploadResult.body)
+          uploaded.push({
+            ...attachment,
+            url: payload.url,
+          })
+        } catch (error) {
+          console.error('Upload error:', error)
+          throw error
         }
-        const payload = JSON.parse(uploadResult.body)
-        uploaded.push({
-          ...attachment,
-          url: payload.url,
-        })
       }
 
       await apiRequest(`/api/messages/conversations/${conversationId}/messages`, 'POST', {
         text: trimmed,
         jobId: jobContext?.jobId || null,
-        clientTempId: `mobile-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        clientTempId,
         attachments: uploaded.map((attachment) => ({
           kind: attachment.kind,
           url: attachment.url,
@@ -160,14 +239,64 @@ export function MessageThreadScreen({ route }: Props) {
       ])
       apiRequest(`/api/messages/conversations/${conversationId}/read`, 'POST', {}).catch(() => {})
     },
-    onError: (error: any) => {
+    onError: (error: any, clientTempId: string) => {
+      setOptimisticMessages((prev) =>
+        prev.map((msg) => (msg.clientTempId === clientTempId ? { ...msg, status: 'FAILED' as const } : msg))
+      )
       Alert.alert('Error', error?.message || 'Message failed to send')
     },
   })
 
+  const scrollToLatest = useCallback((animated = true) => {
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToEnd({ animated })
+    })
+  }, [])
+
+  const handleSend = () => {
+    const trimmed = text.trim()
+    if (!trimmed && mediaDrafts.length === 0) return
+
+    const clientTempId = `mobile-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const optimisticId = `opt-${clientTempId}`
+
+    const optimistic: OptimisticMessage = {
+      id: optimisticId,
+      clientTempId,
+      senderId: user?.id || '',
+      text: trimmed || null,
+      type: mediaDrafts.length > 0 ? 'MEDIA' : 'TEXT',
+      status: 'SENT',
+      createdAt: new Date().toISOString(),
+      attachments: mediaDrafts
+        .filter((m) => m.url)
+        .map((m) => ({
+          kind: m.kind,
+          url: m.url!,
+          fileName: m.fileName || null,
+          mimeType: m.mimeType || null,
+          sizeBytes: m.sizeBytes || null,
+          durationMs: m.durationMs || null,
+          latitude: m.latitude || null,
+          longitude: m.longitude || null,
+        })),
+      jobId: jobContext?.jobId || null,
+      jobNumber: jobContext?.jobNumber || null,
+      jobName: jobContext?.jobName || null,
+      isOptimistic: true,
+    }
+
+    setOptimisticMessages((prev) => [...prev, optimistic])
+    sendMutation.mutate(clientTempId)
+    scrollToLatest(true)
+  }
+
   const pickMedia = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync()
-    if (!permission.granted) return
+    if (!permission.granted) {
+      Alert.alert('Permission required', 'Please grant access to your photo library.')
+      return
+    }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images', 'videos'],
       quality: 0.72,
@@ -206,264 +335,411 @@ export function MessageThreadScreen({ route }: Props) {
     ])
   }
 
-  const startRecording = async () => {
-    try {
-      const permission = await Audio.requestPermissionsAsync()
-      if (!permission.granted) return
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      })
-      const nextRecording = new Audio.Recording()
-      await nextRecording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY)
-      await nextRecording.startAsync()
-      setRecording(nextRecording)
-    } catch {
-      Alert.alert('Recording error', 'Unable to start voice recording.')
+  const MIN_VOICE_DURATION_MS = 450
+  const CANCEL_DRAG_THRESHOLD = 72
+
+  const clearDurationTicker = () => {
+    if (durationIntervalRef.current) {
+      clearInterval(durationIntervalRef.current)
+      durationIntervalRef.current = null
     }
   }
 
-  const stopRecording = async () => {
-    if (!recording) return
+  const resetRecordingUi = () => {
+    clearDurationTicker()
+    recordingStartedAtRef.current = null
+    pressStartRef.current = null
+    setRecordingDurationMs(0)
+    setRecordingWillCancel(false)
+    setIsRecordingUi(false)
+  }
+
+  const sendVoiceMessage = async (uri: string, durationMs: number) => {
+    if (!token) {
+      Alert.alert('Error', 'Authentication required. Please log in again.')
+      return
+    }
+
+    const voiceFileName = `voice-${Date.now()}.m4a`
+    const clientTempId = `mobile-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const optimisticId = `opt-${clientTempId}`
+
+    const optimistic: OptimisticMessage = {
+      id: optimisticId,
+      clientTempId,
+      senderId: user?.id || '',
+      text: null,
+      type: 'MEDIA',
+      status: 'SENT',
+      createdAt: new Date().toISOString(),
+      attachments: [
+        {
+          kind: 'VOICE',
+          url: uri,
+          fileName: voiceFileName,
+          mimeType: 'audio/m4a',
+          sizeBytes: null,
+          durationMs,
+          latitude: null,
+          longitude: null,
+        },
+      ],
+      jobId: jobContext?.jobId || null,
+      jobNumber: jobContext?.jobNumber || null,
+      jobName: jobContext?.jobName || null,
+      isOptimistic: true,
+    }
+
+    setOptimisticMessages((prev) => [...prev, optimistic])
+    scrollToLatest(true)
+
     try {
-      await recording.stopAndUnloadAsync()
-      const uri = recording.getURI()
-      const status = await recording.getStatusAsync()
-      if (uri) {
-        setMediaDrafts((prev) => [
-          ...prev,
+      const uploadResult = await FileSystem.uploadAsync(`${API_BASE_URL}/api/uploads/messages`, uri, {
+        fieldName: 'file',
+        httpMethod: 'POST',
+        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+        },
+        mimeType: 'audio/m4a',
+      })
+
+      if (uploadResult.status < 200 || uploadResult.status >= 300) {
+        throw new Error(`Upload failed with status ${uploadResult.status}`)
+      }
+
+      const payload = JSON.parse(uploadResult.body)
+      await apiRequest(`/api/messages/conversations/${conversationId}/messages`, 'POST', {
+        text: null,
+        jobId: jobContext?.jobId || null,
+        clientTempId,
+        attachments: [
           {
             kind: 'VOICE',
-            localUri: uri,
+            url: payload.url,
+            fileName: voiceFileName,
             mimeType: 'audio/m4a',
-            fileName: `voice-${Date.now()}.m4a`,
-            durationMs: status.isLoaded ? status.durationMillis || undefined : undefined,
+            sizeBytes: null,
+            durationMs,
+            latitude: null,
+            longitude: null,
           },
-        ])
-      }
-    } finally {
-      setRecording(null)
+        ],
+      })
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['mobile-chat-thread', conversationId] }),
+        queryClient.invalidateQueries({ queryKey: ['mobile-chat-conversations'] }),
+      ])
+      apiRequest(`/api/messages/conversations/${conversationId}/read`, 'POST', {}).catch(() => {})
+    } catch (error: any) {
+      console.error('Voice send failed', error, error?.stack)
+      setOptimisticMessages((prev) =>
+        prev.map((msg) => (msg.clientTempId === clientTempId ? { ...msg, status: 'FAILED' as const } : msg))
+      )
+      Alert.alert('Upload error', error?.message || 'Failed to send voice note.')
     }
   }
 
-  const messages = useMemo(() => threadQuery.data?.messages || [], [threadQuery.data?.messages])
+  const startRecording = async (event: GestureResponderEvent) => {
+    const recorder = voiceRecorderRef.current
+    const sessionId = Date.now()
+    pressSessionRef.current = sessionId
+    pressStartRef.current = { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY }
+    setRecordingWillCancel(false)
+    setRecordingDurationMs(0)
+
+    try {
+      if (__DEV__) console.log('[voice-ui] onPressIn -> start request')
+      await recorder.start()
+
+      if (pressSessionRef.current !== sessionId) {
+        // Press ended before startup completed.
+        await recorder.cancel()
+        resetRecordingUi()
+        return
+      }
+
+      recordingStartedAtRef.current = Date.now()
+      setIsRecordingUi(true)
+      clearDurationTicker()
+      durationIntervalRef.current = setInterval(() => {
+        if (!recordingStartedAtRef.current) return
+        setRecordingDurationMs(Date.now() - recordingStartedAtRef.current)
+      }, 150)
+    } catch (error: any) {
+      console.error('startRecording error', error, error?.stack)
+      await recorder.forceCleanup()
+      resetRecordingUi()
+      Alert.alert('Recording error', error?.message || 'Unable to start voice recording.')
+    }
+  }
+
+  const moveRecording = (event: GestureResponderEvent) => {
+    if (!isRecordingUi || !pressStartRef.current) return
+    const dx = event.nativeEvent.pageX - pressStartRef.current.x
+    const dy = event.nativeEvent.pageY - pressStartRef.current.y
+    const shouldCancel = dx < -CANCEL_DRAG_THRESHOLD || dy < -CANCEL_DRAG_THRESHOLD
+    if (shouldCancel !== recordingWillCancel) {
+      setRecordingWillCancel(shouldCancel)
+    }
+  }
+
+  const cancelRecording = async () => {
+    pressSessionRef.current = 0
+    const recorder = voiceRecorderRef.current
+    try {
+      await recorder.cancel()
+    } catch (error: any) {
+      console.error('cancelRecording error', error, error?.stack)
+    } finally {
+      resetRecordingUi()
+    }
+  }
+
+  const stopRecording = async (_event: GestureResponderEvent) => {
+    const recorder = voiceRecorderRef.current
+    pressSessionRef.current = 0
+
+    // Start never completed; nothing to stop, ensure cleanup and exit.
+    if (!recorder.isRecording()) {
+      await cancelRecording()
+      return
+    }
+
+    const elapsed = recordingStartedAtRef.current ? Date.now() - recordingStartedAtRef.current : 0
+    const shouldCancel = recordingWillCancel || elapsed < MIN_VOICE_DURATION_MS
+    if (shouldCancel) {
+      await cancelRecording()
+      return
+    }
+
+    try {
+      const result = await recorder.stop()
+      resetRecordingUi()
+      await sendVoiceMessage(result.uri, result.durationMs)
+    } catch (error: any) {
+      console.error('stopRecording error', error, error?.stack)
+      await recorder.forceCleanup()
+      resetRecordingUi()
+      Alert.alert('Error', error?.message || 'Failed to stop recording.')
+    }
+  }
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active' && (isRecordingUi || voiceRecorderRef.current.isRecording())) {
+        cancelRecording().catch(() => {})
+      }
+    })
+    return () => {
+      sub.remove()
+      cancelRecording().catch(() => {})
+      clearDurationTicker()
+    }
+  }, [isRecordingUi])
+
+  const messages = useMemo(() => {
+    const server = threadQuery.data?.messages || []
+    const all = [...server, ...optimisticMessages]
+    return all.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+  }, [threadQuery.data?.messages, optimisticMessages])
+
+  const messagesWithDates = useMemo(() => {
+    const result: Array<ChatMessage | OptimisticMessage | { type: 'DATE'; date: Date }> = []
+    let lastDate: Date | null = null
+    for (const msg of messages) {
+      const msgDate = new Date(msg.createdAt)
+      const dateOnly = new Date(msgDate.getFullYear(), msgDate.getMonth(), msgDate.getDate())
+      if (!lastDate || dateOnly.getTime() !== lastDate.getTime()) {
+        result.push({ type: 'DATE', date: dateOnly })
+        lastDate = dateOnly
+      }
+      result.push(msg)
+    }
+    return result
+  }, [messages])
+
+  const conversation = conversationQuery.data?.conversation
+  const listedConversation = conversationsQuery.data?.conversations?.find((item) => item.id === conversationId)
+  const conversationType = listedConversation?.type || conversation?.type
+  const isTeamChat = conversationType === 'TEAM'
+  const threadTitle = useMemo(() => {
+    const normalizeTitle = (value?: string | null) => value?.trim() || ''
+    const isPlaceholderTitle = (value: string) =>
+      ['conversation', 'direct message', 'dm', 'message'].includes(value.toLowerCase())
+
+    if (conversationType === 'TEAM') {
+      const teamTitle = normalizeTitle(listedConversation?.title) || normalizeTitle(conversation?.title)
+      return teamTitle || 'Team Chat'
+    }
+
+    const otherUser = listedConversation?.otherUser
+    if (otherUser) {
+      const fullName = `${otherUser.firstName || ''} ${otherUser.lastName || ''}`.trim()
+      if (fullName) return fullName
+      if (otherUser.email) return otherUser.email
+    }
+
+    const preferredTitle = normalizeTitle(listedConversation?.title) || normalizeTitle(conversation?.title)
+    if (preferredTitle && !isPlaceholderTitle(preferredTitle)) return preferredTitle
+
+    if (conversationType === 'JOB_THREAD') return 'Job Thread'
+    return 'Direct Message'
+  }, [listedConversation, conversation, conversationType])
 
   return (
-    <Screen style={styles.screen}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>{conversationQuery.data?.conversation?.title || 'Conversation'}</Text>
-      </View>
-
-      <FlatList
-        data={messages}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        renderItem={({ item }) => {
-          const mine = item.senderId === user?.id
-          return (
-            <View style={[styles.bubble, mine ? styles.outbound : styles.inbound]}>
-              {!mine && (
-                <Text style={styles.senderText}>{senderName(item)}</Text>
-              )}
-              {!!item.text && <Text style={[styles.messageText, mine && styles.outboundText]}>{item.text}</Text>}
-              {item.jobId ? (
-                <Pressable onPress={() => Linking.openURL(`trimpro://jobs/${item.jobId}`)} style={styles.jobStamp}>
-                  <Text style={styles.jobStampText}>Job #{item.jobNumber} - {item.jobName}</Text>
-                </Pressable>
-              ) : null}
-              {(item.attachments || []).map((attachment) => (
-                <Pressable key={attachment.id} style={styles.attachmentRow} onPress={() => Linking.openURL(attachment.url)}>
-                  <Text style={[styles.attachmentText, mine && styles.outboundText]}>
-                    {attachment.kind === 'LOCATION'
-                      ? 'Open location'
-                      : attachment.kind === 'VOICE'
-                        ? `Voice note ${attachment.durationMs ? `(${Math.round(attachment.durationMs / 1000)}s)` : ''}`
-                        : attachment.fileName || `${attachment.kind} attachment`}
-                  </Text>
-                </Pressable>
-              ))}
-              <Text style={[styles.timeText, mine && styles.outboundTime]}>
-                {new Date(item.createdAt).toLocaleTimeString()} {mine ? (item.status === 'READ' ? '✓✓' : item.status === 'DELIVERED' ? '✓✓' : '✓') : ''}
-              </Text>
-            </View>
-          )
-        }}
-      />
-
-      {mediaDrafts.length > 0 && (
-        <View style={styles.draftRow}>
-          {mediaDrafts.map((draft, index) => (
-            <View key={`${draft.kind}-${index}`} style={styles.draftPill}>
-              <Text style={styles.draftPillText}>
-                {draft.kind}
-                {draft.kind === 'LOCATION' && draft.latitude && draft.longitude ? ` (${draft.latitude.toFixed(3)}, ${draft.longitude.toFixed(3)})` : ''}
-              </Text>
-            </View>
-          ))}
+    <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
+      <KeyboardAvoidingView
+        style={styles.content}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+        keyboardVerticalOffset={0}
+      >
+        <View style={styles.header}>
+          <Pressable onPress={() => navigation.goBack()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
+          </Pressable>
+          <View style={styles.headerContent}>
+            <Text style={styles.headerTitle}>{threadTitle}</Text>
+            <Text style={styles.headerSubtitle}>{isTeamChat ? 'Team Chat' : 'Direct Message'}</Text>
+          </View>
+          <Pressable style={styles.menuButton}>
+            <Ionicons name="ellipsis-vertical" size={20} color={colors.textPrimary} />
+          </Pressable>
         </View>
-      )}
 
-      <View style={styles.composer}>
-        <Pressable style={styles.actionButton} onPress={pickMedia} disabled={uploading}>
-          <Text style={styles.actionText}>+</Text>
-        </Pressable>
-        <Pressable style={styles.actionButton} onPress={shareLocation}>
-          <Text style={styles.smallActionText}>Loc</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.actionButton, recording && styles.recordingButton]}
-          onPressIn={startRecording}
-          onPressOut={stopRecording}
-        >
-          <Text style={styles.smallActionText}>{recording ? 'Rec' : 'Mic'}</Text>
-        </Pressable>
-        <TextInput
-          value={text}
-          onChangeText={setText}
-          placeholder="Type message..."
-          style={styles.input}
-          multiline
+        <FlatList
+          ref={listRef}
+          data={messagesWithDates}
+          keyExtractor={(item, index) => {
+            if ('type' in item && item.type === 'DATE') {
+              return `date-${item.date.toISOString()}`
+            }
+            return 'id' in item ? item.id : `opt-${index}`
+          }}
+          contentContainerStyle={styles.listContent}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          onContentSizeChange={() => scrollToLatest(false)}
+          inverted={false}
+          renderItem={({ item }) => {
+            if ('type' in item && item.type === 'DATE') {
+              return <DateSeparator date={item.date} />
+            }
+            const message = item as ChatMessage | OptimisticMessage
+            const isMine = message.senderId === user?.id
+            return (
+              <MessageBubble
+                message={message as ChatMessage}
+                isMine={isMine}
+                showSender={isTeamChat && !isMine}
+                onJobPress={(jobId) => Linking.openURL(`trimpro://jobs/${jobId}`)}
+                onImagePress={(uri, fileName) => {
+                  const attachment = message.attachments?.find((a) => a.url === uri)
+                  if (attachment?.kind === 'IMAGE') {
+                    setViewingMedia({ uri, fileName, kind: 'IMAGE' })
+                  } else if (attachment?.kind === 'VIDEO') {
+                    setViewingMedia({ uri, fileName, kind: 'VIDEO' })
+                  }
+                }}
+                onLongPress={() => {
+                  if ('isOptimistic' in message && message.status === 'FAILED') {
+                    Alert.alert('Retry', 'Would you like to retry sending this message?', [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Retry',
+                        onPress: () => {
+                          setOptimisticMessages((prev) => prev.filter((m) => m.id !== message.id))
+                          sendMutation.mutate(message.clientTempId)
+                        },
+                      },
+                    ])
+                  }
+                }}
+              />
+            )
+          }}
         />
-        <Pressable style={[styles.sendButton, sendMutation.isPending && styles.disabledButton]} onPress={() => sendMutation.mutate()} disabled={sendMutation.isPending}>
-          <Text style={styles.sendText}>{sendMutation.isPending ? '...' : 'Send'}</Text>
-        </Pressable>
-      </View>
-    </Screen>
+
+        <View style={styles.composerDock}>
+          <Composer
+            text={text}
+            onChangeText={setText}
+            onSend={handleSend}
+            onAttach={pickMedia}
+            onLocation={shareLocation}
+            onVoiceStart={startRecording}
+            onVoiceMove={moveRecording}
+            onVoiceStop={stopRecording}
+            onVoiceCancel={cancelRecording}
+            attachments={mediaDrafts}
+            onRemoveAttachment={(index) => setMediaDrafts((prev) => prev.filter((_, i) => i !== index))}
+            recording={isRecordingUi}
+            recordingDurationMs={recordingDurationMs}
+            recordingWillCancel={recordingWillCancel}
+            sending={sendMutation.isPending}
+            disabled={!isOnline}
+            bottomInset={0}
+          />
+        </View>
+      </KeyboardAvoidingView>
+
+      {viewingMedia && (
+        <MediaViewer
+          visible={!!viewingMedia}
+          uri={viewingMedia.uri}
+          fileName={viewingMedia.fileName}
+          kind={viewingMedia.kind}
+          onClose={() => setViewingMedia(null)}
+        />
+      )}
+    </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
-  screen: { padding: 10 },
+  screen: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  content: {
+    flex: 1,
+  },
   header: {
-    paddingBottom: 8,
-    marginBottom: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: '#D0D5DD',
+    borderBottomColor: colors.divider,
+    backgroundColor: colors.surface,
+  },
+  backButton: {
+    padding: spacing.xs,
+    marginRight: spacing.xs,
+  },
+  headerContent: {
+    flex: 1,
+    gap: 2,
   },
   headerTitle: {
-    color: BRAND.text,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  listContent: { paddingTop: 10, gap: 8, paddingBottom: 18 },
-  bubble: {
-    maxWidth: '86%',
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  inbound: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#EAECF0',
-  },
-  outbound: {
-    alignSelf: 'flex-end',
-    backgroundColor: BRAND.primary,
-  },
-  senderText: {
-    color: '#475467',
-    fontWeight: '700',
-    fontSize: 12,
-    marginBottom: 4,
-  },
-  messageText: { color: BRAND.text, fontSize: 14 },
-  outboundText: { color: BRAND.white },
-  jobStamp: {
-    marginTop: 6,
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    backgroundColor: 'rgba(0,0,0,0.18)',
-  },
-  jobStampText: {
-    color: BRAND.white,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  attachmentRow: {
-    marginTop: 6,
-  },
-  attachmentText: {
-    fontSize: 12,
-    textDecorationLine: 'underline',
-    color: BRAND.text,
-  },
-  timeText: {
-    marginTop: 4,
-    fontSize: 11,
-    color: '#667085',
-    textAlign: 'right',
-  },
-  outboundTime: { color: '#D1E4EF' },
-  draftRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 6,
-  },
-  draftPill: {
-    backgroundColor: '#EAECF0',
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  draftPillText: {
-    color: BRAND.text,
-    fontSize: 11,
+    ...typography.h3,
+    color: colors.textPrimary,
     fontWeight: '600',
   },
-  composer: {
-    borderTopWidth: 1,
-    borderColor: '#D0D5DD',
-    paddingTop: 8,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 8,
+  headerSubtitle: {
+    ...typography.caption,
+    color: colors.textSecondary,
   },
-  actionButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#D0D5DD',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: BRAND.white,
+  menuButton: {
+    padding: spacing.xs,
   },
-  recordingButton: {
-    backgroundColor: '#FEE2E2',
-    borderColor: '#DC2626',
+  listContent: {
+    paddingVertical: spacing.md,
+    paddingBottom: spacing.xs,
   },
-  actionText: {
-    fontSize: 18,
-    color: BRAND.text,
-    fontWeight: '700',
-    lineHeight: 20,
+  composerDock: {
+    backgroundColor: colors.surface,
   },
-  smallActionText: {
-    fontSize: 11,
-    color: BRAND.text,
-    fontWeight: '700',
-  },
-  input: {
-    flex: 1,
-    minHeight: 40,
-    maxHeight: 120,
-    borderWidth: 1,
-    borderColor: '#D0D5DD',
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    textAlignVertical: 'top',
-    backgroundColor: BRAND.white,
-    color: BRAND.text,
-  },
-  sendButton: {
-    backgroundColor: BRAND.primary,
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-  },
-  sendText: { color: BRAND.white, fontWeight: '700' },
-  disabledButton: { opacity: 0.6 },
 })

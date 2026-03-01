@@ -406,7 +406,7 @@ export async function getUserMobilePermissions(
   // Guarantee full admin visibility on mobile.
   if (user.role === 'ADMIN') {
     for (const perm of PERMISSIONS) {
-      if (perm.key.startsWith('mobile.')) {
+      if (perm.key.startsWith('mobile.') || perm.key === 'canCreateSchedulesForOthers') {
         mobilePermissions.add(perm.key)
       }
     }

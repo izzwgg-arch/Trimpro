@@ -9,6 +9,30 @@ const AWS_SES_REGION = process.env.AWS_SES_REGION || 'us-east-1'
 const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@trimpro.com'
 const FROM_NAME = process.env.FROM_NAME || 'Trim Pro'
 
+function escapeHtml(value: string) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function formatEmailDate(value: Date | number | string) {
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const datePart = new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(date)
+  const timePart = new Intl.DateTimeFormat('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date)
+  return `${datePart} • ${timePart}`
+}
+
 interface EmailRequest {
   to: string | string[]
   cc?: string | string[]
@@ -181,58 +205,97 @@ export async function sendInviteEmail(
 
 export function buildInviteEmailHtml(firstName: string, setPasswordUrl: string, apkDownloadUrl: string): string {
   const safeName = firstName?.trim() || 'there'
-  const currentYear = new Date().getFullYear()
-  return `
-      <div style="margin:0;padding:0;background:#f3f5f7;font-family:Arial,sans-serif;color:#0f172a;">
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:24px 0;">
-          <tr>
-            <td align="center">
-              <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width:600px;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;">
-                <tr>
-                  <td style="background:#234054;padding:20px 24px;">
-                    <div style="font-size:28px;font-weight:700;line-height:1;color:#e6c98b;">TrimPro</div>
-                  </td>
-                </tr>
-                <tr>
-                  <td style="padding:28px 24px;">
-                    <h2 style="margin:0 0 12px 0;font-size:24px;line-height:1.3;color:#0f172a;">Welcome to TrimPro, ${safeName}!</h2>
-                    <p style="margin:0 0 16px 0;font-size:15px;line-height:1.6;color:#334155;">
-                      Your TrimPro account has been created. Click the button below to create your password and activate your account.
-                    </p>
-                    <p style="margin:0 0 20px 0;">
-                      <a href="${setPasswordUrl}" style="display:inline-block;background:#234054;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:700;">
+  const sentDisplay = formatEmailDate(new Date())
+  const safeSetPasswordUrl = escapeHtml(setPasswordUrl)
+  const safeApkDownloadUrl = escapeHtml(apkDownloadUrl)
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light only" />
+    <meta name="supported-color-schemes" content="light only" />
+    <title>Welcome to TrimPro</title>
+    <style>
+      @media only screen and (max-width: 620px) {
+        .tp-card { border-radius: 16px !important; }
+        .tp-stack-col { display:block !important; width:100% !important; }
+        .tp-stack-gap { height:8px !important; line-height:8px !important; font-size:8px !important; }
+      }
+    </style>
+  </head>
+  <body bgcolor="#ffffff" style="margin:0; padding:0; background:#ffffff; color:rgba(255,255,255,0.92); font-family:Arial, Helvetica, sans-serif;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="#ffffff" style="width:100%; background:#ffffff;">
+      <tr>
+        <td align="center" bgcolor="#ffffff" style="padding:32px 16px; background:#ffffff;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" class="tp-card" style="width:100%; max-width:600px; background:#111827; border:1px solid rgba(255,255,255,0.08); border-radius:18px;">
+            <tr>
+              <td style="padding:28px 28px 24px 28px;">
+                <div style="font-size:22px; line-height:1.3; font-weight:700; color:rgba(255,255,255,0.92);">TrimPro</div>
+                <div style="margin-top:8px; font-size:13px; line-height:1.6; color:rgba(255,255,255,0.68);">
+                  New user invitation • ${escapeHtml(sentDisplay)}
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 28px 0 28px;">
+                <div style="font-size:32px; line-height:1.3; font-weight:700; color:rgba(255,255,255,0.92); margin:0 0 8px 0;">
+                  Welcome to TrimPro, ${escapeHtml(safeName)}
+                </div>
+                <div style="font-size:18px; line-height:1.5; color:rgba(255,255,255,0.68); margin:0 0 16px 0;">
+                  Your account is ready to activate
+                </div>
+                <div style="font-size:14px; line-height:1.65; color:rgba(255,255,255,0.68); margin:0 0 24px 0;">
+                  Create your password to activate your account, then sign in to start using TrimPro.
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 28px 24px 28px;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
+                  <tr>
+                    <td class="tp-stack-col" width="50%" valign="top" style="width:50%; padding:0;">
+                      <a href="${safeSetPasswordUrl}" style="display:block; text-decoration:none; text-align:center; background:#12344d; color:#ffffff; border-radius:12px; border:1px solid #12344d; font-size:16px; line-height:20px; font-weight:700; padding:15px 16px;">
                         Create Password
                       </a>
-                    </p>
-                    <p style="margin:0 0 12px 0;font-size:14px;line-height:1.6;color:#475569;">
-                      After setting your password, you will be redirected to the login page.
-                    </p>
-                    <hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0;" />
-                    <p style="margin:0 0 10px 0;font-size:15px;line-height:1.6;color:#0f172a;font-weight:700;">
-                      Download TrimPro Field App (Android)
-                    </p>
-                    <p style="margin:0 0 18px 0;">
-                      <a href="${apkDownloadUrl}" style="display:inline-block;background:#0f172a;color:#ffffff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:700;">
-                        Download Latest APK
+                    </td>
+                    <td class="tp-stack-col tp-stack-gap" width="12" style="width:12px; font-size:0; line-height:0;">&nbsp;</td>
+                    <td class="tp-stack-col" width="50%" valign="top" style="width:50%; padding:0;">
+                      <a href="${safeApkDownloadUrl}" style="display:block; text-decoration:none; text-align:center; background:transparent; color:rgba(255,255,255,0.92); border-radius:12px; border:1px solid rgba(255,255,255,0.18); font-size:16px; line-height:20px; font-weight:700; padding:15px 16px;">
+                        Download Field App
                       </a>
-                    </p>
-                    <p style="margin:0;font-size:12px;line-height:1.6;color:#64748b;">
-                      If the button does not work, copy and paste this link:<br />
-                      <a href="${setPasswordUrl}" style="color:#234054;word-break:break-all;">${setPasswordUrl}</a>
-                    </p>
-                  </td>
-                </tr>
-                <tr>
-                  <td style="padding:16px 24px;background:#f8fafc;border-top:1px solid #e2e8f0;">
-                    <p style="margin:0;font-size:12px;color:#64748b;">&copy; ${currentYear} TrimPro. All rights reserved.</p>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-        </table>
-      </div>
-    `
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 28px 24px 28px;">
+                <div style="font-size:13px; line-height:1.6; color:rgba(255,255,255,0.48);">
+                  If the button does not work, copy this link:
+                </div>
+                <div style="margin-top:6px; font-size:13px; line-height:1.6; color:rgba(255,255,255,0.68); word-break:break-all;">
+                  ${safeSetPasswordUrl}
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 28px 28px 28px;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%; border-top:1px solid rgba(255,255,255,0.12);">
+                  <tr>
+                    <td style="padding-top:16px; font-size:12px; line-height:1.6; color:rgba(255,255,255,0.48);">
+                      This invitation was sent by TrimPro.
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`
 }
 
 export function buildInviteEmailText(firstName: string, setPasswordUrl: string, apkDownloadUrl: string): string {
@@ -379,35 +442,131 @@ export async function sendPaymentReceiptEmail(params: {
   providerInvoiceId?: string | null
 }): Promise<void> {
   const emailService = new EmailService()
-  const paidAtText = params.paidAt ? new Date(params.paidAt).toLocaleString() : new Date().toLocaleString()
+  const paidAtText = formatEmailDate(params.paidAt || new Date())
   const amountText = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(
     Number(params.amount || 0)
   )
   const company = params.companyName || FROM_NAME
   const method = params.paymentMethod || 'ACH'
   const providerPaymentId = params.providerPaymentId || params.reference || ''
+  const safeReceiptUrl = escapeHtml(params.receiptUrl || '')
+  const safeInvoiceUrl = escapeHtml(params.invoiceUrl || '')
+  const safeCompany = escapeHtml(company)
 
   await emailService.sendEmail({
     to: params.to,
     subject: `Payment receipt for invoice ${params.invoiceNumber}`,
-    html: `
-      <html>
-        <body>
-          <h2>Payment Receipt</h2>
-          <p>Thank you. We received your ACH payment.</p>
-          <p><strong>Invoice:</strong> ${params.invoiceNumber}</p>
-          <p><strong>Amount paid:</strong> ${amountText}</p>
-          <p><strong>Method:</strong> ${method}</p>
-          <p><strong>Paid at:</strong> ${paidAtText}</p>
-          ${providerPaymentId ? `<p><strong>Payment ID:</strong> ${providerPaymentId}</p>` : ''}
-          ${params.providerInvoiceId ? `<p><strong>Provider Invoice ID:</strong> ${params.providerInvoiceId}</p>` : ''}
-          ${params.reference ? `<p><strong>Reference:</strong> ${params.reference}</p>` : ''}
-          ${params.receiptUrl ? `<p><a href="${params.receiptUrl}">View receipt</a></p>` : ''}
-          ${params.invoiceUrl ? `<p><a href="${params.invoiceUrl}">View invoice</a></p>` : ''}
-          <p>— ${company}</p>
-        </body>
-      </html>
-    `,
+    html: `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light only" />
+    <meta name="supported-color-schemes" content="light only" />
+    <title>Payment receipt</title>
+    <style>
+      @media only screen and (max-width: 620px) {
+        .tp-card { border-radius: 16px !important; }
+        .tp-stack-col { display:block !important; width:100% !important; }
+        .tp-stack-gap { height:8px !important; line-height:8px !important; font-size:8px !important; }
+      }
+    </style>
+  </head>
+  <body bgcolor="#ffffff" style="margin:0; padding:0; background:#ffffff; color:rgba(255,255,255,0.92); font-family:Arial, Helvetica, sans-serif;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="#ffffff" style="width:100%; background:#ffffff;">
+      <tr>
+        <td align="center" bgcolor="#ffffff" style="padding:32px 16px; background:#ffffff;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" class="tp-card" style="width:100%; max-width:600px; background:#111827; border:1px solid rgba(255,255,255,0.08); border-radius:18px;">
+            <tr>
+              <td style="padding:28px 28px 24px 28px;">
+                <div style="font-size:22px; line-height:1.3; font-weight:700; color:rgba(255,255,255,0.92);">TrimPro</div>
+                <div style="margin-top:8px; font-size:13px; line-height:1.6; color:rgba(255,255,255,0.68);">
+                  Receipt for invoice ${escapeHtml(params.invoiceNumber)} • ${escapeHtml(paidAtText)}
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 28px 0 28px;">
+                <div style="font-size:32px; line-height:1.3; font-weight:700; color:rgba(255,255,255,0.92); margin:0 0 8px 0;">
+                  Payment received
+                </div>
+                <div style="font-size:18px; line-height:1.5; color:rgba(255,255,255,0.68); margin:0 0 16px 0;">
+                  Thank you. Your payment has been processed.
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 28px 24px 28px;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px;">
+                  <tr>
+                    <td style="padding:16px; font-size:14px; line-height:1.5; color:rgba(255,255,255,0.68);">Amount paid</td>
+                    <td align="right" style="padding:16px; font-size:28px; line-height:1.3; font-weight:700; color:rgba(255,255,255,0.92);">${escapeHtml(amountText)}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:0 16px 16px 16px; font-size:14px; line-height:1.5; color:rgba(255,255,255,0.68);">Method</td>
+                    <td align="right" style="padding:0 16px 16px 16px; font-size:14px; line-height:1.5; color:rgba(255,255,255,0.92);">${escapeHtml(method)}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:0 16px 16px 16px; font-size:14px; line-height:1.5; color:rgba(255,255,255,0.68);">Invoice</td>
+                    <td align="right" style="padding:0 16px 16px 16px; font-size:14px; line-height:1.5; color:rgba(255,255,255,0.92);">${escapeHtml(params.invoiceNumber)}</td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 28px 24px 28px;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
+                  <tr>
+                    ${
+                      params.receiptUrl
+                        ? `<td class="tp-stack-col" width="50%" valign="top" style="width:50%; padding:0;">
+                            <a href="${safeReceiptUrl}" style="display:block; text-decoration:none; text-align:center; background:#12344d; color:#ffffff; border-radius:12px; border:1px solid #12344d; font-size:16px; line-height:20px; font-weight:700; padding:15px 16px;">
+                              View Receipt
+                            </a>
+                          </td>
+                          <td class="tp-stack-col tp-stack-gap" width="12" style="width:12px; font-size:0; line-height:0;">&nbsp;</td>`
+                        : ''
+                    }
+                    ${
+                      params.invoiceUrl
+                        ? `<td class="tp-stack-col" ${params.receiptUrl ? 'width="50%" style="width:50%; padding:0;"' : 'width="100%" style="width:100%; padding:0;"'} valign="top">
+                            <a href="${safeInvoiceUrl}" style="display:block; text-decoration:none; text-align:center; background:transparent; color:rgba(255,255,255,0.92); border-radius:12px; border:1px solid rgba(255,255,255,0.18); font-size:16px; line-height:20px; font-weight:700; padding:15px 16px;">
+                              View Invoice
+                            </a>
+                          </td>`
+                        : ''
+                    }
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 28px 24px 28px;">
+                <div style="font-size:14px; line-height:1.6; color:rgba(255,255,255,0.68);">
+                  ${providerPaymentId ? `Payment ID: ${escapeHtml(providerPaymentId)}<br />` : ''}
+                  ${params.providerInvoiceId ? `Provider Invoice ID: ${escapeHtml(params.providerInvoiceId)}<br />` : ''}
+                  ${params.reference ? `Reference: ${escapeHtml(params.reference)}<br />` : ''}
+                  Paid at: ${escapeHtml(paidAtText)}
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 28px 28px 28px;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%; border-top:1px solid rgba(255,255,255,0.12);">
+                  <tr>
+                    <td style="padding-top:16px; font-size:12px; line-height:1.6; color:rgba(255,255,255,0.48);">
+                      This receipt was sent by ${safeCompany}.
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`,
     text: `
 Payment Receipt
 

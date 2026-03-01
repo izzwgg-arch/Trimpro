@@ -431,30 +431,62 @@ export default function MessagesPage() {
           </div>
         </div>
         <div className="overflow-auto flex-1">
-          {conversations.map((conversation) => (
-            <button
-              key={conversation.id}
-              onClick={() => setSelectedConversationId(conversation.id)}
-              className={`w-full text-left px-4 py-3 border-b border-[#252a32] ${
-                selectedConversationId === conversation.id ? 'bg-[#1b2028]' : 'hover:bg-[#181d24]'
-              }`}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <div className="font-medium text-sm truncate">
-                  {conversation.pinned ? '📌 ' : ''}
-                  {conversation.title}
+          {conversations.map((conversation) => {
+            const time = conversation.lastMessageAt
+              ? (() => {
+                  const date = new Date(conversation.lastMessageAt)
+                  const now = new Date()
+                  const diffMs = now.getTime() - date.getTime()
+                  const diffMins = Math.floor(diffMs / 60000)
+                  const diffHours = Math.floor(diffMs / 3600000)
+                  const diffDays = Math.floor(diffMs / 86400000)
+                  if (diffMins < 1) return 'Just now'
+                  if (diffMins < 60) return `${diffMins}m`
+                  if (diffHours < 24) return `${diffHours}h`
+                  if (diffDays < 7) return `${diffDays}d`
+                  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                })()
+              : null
+            return (
+              <button
+                key={conversation.id}
+                onClick={() => setSelectedConversationId(conversation.id)}
+                className={`w-full text-left px-4 py-3 border-b border-[#252a32] transition-colors ${
+                  selectedConversationId === conversation.id ? 'bg-[#1b2028]' : 'hover:bg-[#181d24]'
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-full bg-[#2f6fed]/20 flex items-center justify-center flex-shrink-0">
+                    {conversation.pinned ? (
+                      <span className="text-[#2f6fed]">👥</span>
+                    ) : (
+                      <span className="text-[#2f6fed] text-sm font-semibold">
+                        {conversation.title.charAt(0).toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <div className="font-medium text-sm truncate">
+                        {conversation.pinned ? 'Team Chat' : conversation.title}
+                      </div>
+                      {time && <span className="text-xs text-gray-500 flex-shrink-0">{time}</span>}
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-xs text-gray-400 truncate">
+                        {conversation.lastMessage?.text || (conversation.lastMessage ? `[${conversation.lastMessage.type}]` : 'No messages yet')}
+                      </div>
+                      {conversation.unreadCount > 0 && (
+                        <span className="min-w-5 h-5 px-2 rounded-full text-xs bg-[#2f6fed] flex items-center justify-center flex-shrink-0">
+                          {conversation.unreadCount > 99 ? '99+' : conversation.unreadCount}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                {conversation.unreadCount > 0 && (
-                  <span className="min-w-5 px-2 py-0.5 rounded-full text-xs bg-[#2f6fed]">
-                    {conversation.unreadCount}
-                  </span>
-                )}
-              </div>
-              <div className="text-xs text-gray-400 mt-1 truncate">
-                {conversation.lastMessage?.text || (conversation.lastMessage ? `[${conversation.lastMessage.type}]` : 'No messages yet')}
-              </div>
-            </button>
-          ))}
+              </button>
+            )
+          })}
         </div>
       </aside>
 
@@ -469,54 +501,107 @@ export default function MessagesPage() {
             </header>
 
             <div className="flex-1 overflow-auto px-5 py-4 space-y-3 bg-[#0f1115]">
-              {messages.map((message) => {
+              {messages.map((message, index) => {
                 const mine = message.senderId === currentUserId
+                const prevMessage = index > 0 ? messages[index - 1] : null
+                const showDateSeparator =
+                  !prevMessage ||
+                  new Date(message.createdAt).toDateString() !== new Date(prevMessage.createdAt).toDateString()
                 return (
-                  <div key={message.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[70%] rounded-2xl px-3 py-2 ${mine ? 'bg-[#2f6fed]' : 'bg-[#232a33]'}`}>
-                      {selectedConversation.type === 'TEAM' && !mine && (
-                        <div className="text-[11px] text-[#9ec6ff] mb-1">{fullName(message.sender)}</div>
-                      )}
-                      {message.text && <div className="text-sm whitespace-pre-wrap">{message.text}</div>}
-                      {message.jobId && (
-                        <a href={`/dashboard/jobs/${message.jobId}`} className="block mt-2 p-2 rounded bg-black/25 text-xs">
-                          Job #{message.jobNumber || 'N/A'} - {message.jobName || 'View job'}
-                        </a>
-                      )}
-                      {message.attachments.map((attachment) => (
-                        <div key={attachment.id} className="mt-2">
-                          {attachment.kind === 'IMAGE' && (
-                            <a href={attachment.url} target="_blank" rel="noreferrer">
-                              <img src={attachment.url} alt={attachment.fileName || 'Image'} className="rounded max-h-[260px]" />
-                            </a>
-                          )}
-                          {attachment.kind === 'VIDEO' && (
-                            <video controls className="rounded max-h-[260px]" src={attachment.url} />
-                          )}
-                          {attachment.kind === 'VOICE' && <audio controls src={attachment.url} className="w-full" />}
-                          {attachment.kind === 'FILE' && (
-                            <a href={attachment.url} target="_blank" rel="noreferrer" className="underline text-sm">
-                              {attachment.fileName || 'Download file'}
-                            </a>
-                          )}
-                          {attachment.kind === 'LOCATION' && (
-                            <a
-                              href={`https://maps.google.com/?q=${attachment.latitude},${attachment.longitude}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="underline text-sm"
-                            >
-                              Open location
-                            </a>
-                          )}
+                  <React.Fragment key={message.id}>
+                    {showDateSeparator && (
+                      <div className="flex items-center gap-3 my-4">
+                        <div className="flex-1 h-px bg-[#252a32]" />
+                        <span className="text-xs text-gray-500">
+                          {(() => {
+                            const date = new Date(message.createdAt)
+                            const today = new Date()
+                            const yesterday = new Date(today)
+                            yesterday.setDate(yesterday.getDate() - 1)
+                            if (date.toDateString() === today.toDateString()) return 'Today'
+                            if (date.toDateString() === yesterday.toDateString()) return 'Yesterday'
+                            return date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
+                          })()}
+                        </span>
+                        <div className="flex-1 h-px bg-[#252a32]" />
+                      </div>
+                    )}
+                    <div className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-[70%] rounded-2xl px-4 py-2.5 ${mine ? 'bg-[#2f6fed]' : 'bg-[#232a33]'}`}>
+                        {selectedConversation.type === 'TEAM' && !mine && (
+                          <div className="text-[11px] text-[#9ec6ff] mb-1.5 font-semibold">{fullName(message.sender)}</div>
+                        )}
+                        {message.jobId && (
+                          <a
+                            href={`/dashboard/jobs/${message.jobId}`}
+                            className="block mb-2 p-2 rounded-lg bg-black/20 hover:bg-black/30 transition-colors text-xs border border-white/10"
+                          >
+                            <span className="font-semibold">📋 Job #{message.jobNumber || 'N/A'}</span>
+                            <span className="block mt-0.5 text-gray-300">{message.jobName || 'View job'}</span>
+                          </a>
+                        )}
+                        {message.text && <div className="text-sm whitespace-pre-wrap leading-relaxed">{message.text}</div>}
+                        {message.attachments.map((attachment) => (
+                          <div key={attachment.id} className="mt-2">
+                            {attachment.kind === 'IMAGE' && (
+                              <a href={attachment.url} target="_blank" rel="noreferrer" className="block">
+                                <img src={attachment.url} alt={attachment.fileName || 'Image'} className="rounded-lg max-h-[260px] cursor-pointer hover:opacity-90 transition-opacity" />
+                              </a>
+                            )}
+                            {attachment.kind === 'VIDEO' && (
+                              <video controls className="rounded-lg max-h-[260px]" src={attachment.url} />
+                            )}
+                            {attachment.kind === 'VOICE' && (
+                              <div className="flex items-center gap-2 p-2 rounded-lg bg-black/20">
+                                <audio controls src={attachment.url} className="flex-1" />
+                                {attachment.durationMs && (
+                                  <span className="text-xs text-gray-400">{Math.round(attachment.durationMs / 1000)}s</span>
+                                )}
+                              </div>
+                            )}
+                            {attachment.kind === 'FILE' && (
+                              <a
+                                href={attachment.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="flex items-center gap-2 p-2 rounded-lg bg-black/20 hover:bg-black/30 transition-colors"
+                              >
+                                <span className="text-lg">📄</span>
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-sm font-medium truncate">{attachment.fileName || 'Download file'}</div>
+                                  {attachment.sizeBytes && (
+                                    <div className="text-xs text-gray-400">{(attachment.sizeBytes / 1024).toFixed(1)} KB</div>
+                                  )}
+                                </div>
+                              </a>
+                            )}
+                            {attachment.kind === 'LOCATION' && (
+                              <a
+                                href={`https://maps.google.com/?q=${attachment.latitude},${attachment.longitude}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="flex items-center gap-2 p-2 rounded-lg bg-black/20 hover:bg-black/30 transition-colors"
+                              >
+                                <span className="text-lg">📍</span>
+                                <div>
+                                  <div className="text-sm font-medium">Open in Maps</div>
+                                  {attachment.latitude && attachment.longitude && (
+                                    <div className="text-xs text-gray-400">
+                                      {attachment.latitude.toFixed(4)}, {attachment.longitude.toFixed(4)}
+                                    </div>
+                                  )}
+                                </div>
+                              </a>
+                            )}
+                          </div>
+                        ))}
+                        <div className="mt-1.5 text-[11px] text-gray-300 flex justify-end gap-2 items-center">
+                          <span>{new Date(message.createdAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</span>
+                          {mine && <span className="opacity-80">{messageStatusSymbol(message.status)}</span>}
                         </div>
-                      ))}
-                      <div className="mt-1 text-[11px] text-gray-300 flex justify-end gap-2">
-                        <span>{new Date(message.createdAt).toLocaleTimeString()}</span>
-                        {mine && <span>{messageStatusSymbol(message.status)}</span>}
                       </div>
                     </div>
-                  </div>
+                  </React.Fragment>
                 )
               })}
               <div ref={bottomRef} />

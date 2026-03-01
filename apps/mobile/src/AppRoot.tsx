@@ -6,6 +6,7 @@ import * as Notifications from 'expo-notifications'
 import * as Linking from 'expo-linking'
 import * as SplashScreen from 'expo-splash-screen'
 import * as Updates from 'expo-updates'
+import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { RootNavigator } from './navigation/RootNavigator'
 import { registerPushToken, setLastPushReceivedAtNow } from './notifications/registerPush'
@@ -291,9 +292,11 @@ export default function AppRoot() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <SyncAndPushBootstrap />
-      </AuthProvider>
+      <SafeAreaProvider>
+        <AuthProvider>
+          <SyncAndPushBootstrap />
+        </AuthProvider>
+      </SafeAreaProvider>
     </QueryClientProvider>
   )
 }

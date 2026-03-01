@@ -16,6 +16,22 @@ function escapeHtml(value: string) {
     .replace(/'/g, '&#39;')
 }
 
+function formatEmailSentDate(value: Date | number | string) {
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+
+  const datePart = new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(date)
+  const timePart = new Intl.DateTimeFormat('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date)
+  return `${datePart} • ${timePart}`
+}
+
 function getPublicLinkSecret(): string {
   const secret = String(process.env.ENCRYPTION_KEY || process.env.NEXTAUTH_SECRET || '').trim()
   if (!secret) throw new Error('ENCRYPTION_KEY (or NEXTAUTH_SECRET) is required for public estimate PDF links')
@@ -104,6 +120,7 @@ export async function POST(
 
     const sentEpoch = Date.now()
     const sentIso = new Date(sentEpoch).toISOString()
+    const sentDisplay = formatEmailSentDate(sentEpoch)
     const sig = crypto
       .createHmac('sha256', getPublicLinkSecret())
       .update(`${params.id}.${sentEpoch}`)
@@ -115,7 +132,7 @@ export async function POST(
       estimateId: estimate.id,
     })
     const approveUrl = approvalToken.url
-    const effectiveSubject = `${subject || `Estimate ${estimate.estimateNumber}`} • ${sentIso}`
+    const effectiveSubject = `${subject || `Estimate ${estimate.estimateNumber}`} • ${sentDisplay || sentIso}`
     
     const emailSecrets = await getIntegrationSecrets(user.tenantId, 'email')
     if (!emailSecrets) {
@@ -134,63 +151,106 @@ export async function POST(
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light only" />
+    <meta name="supported-color-schemes" content="light only" />
     <title>Estimate ${escapeHtml(estimate.estimateNumber)}</title>
     <style>
-      body { margin:0; padding:0; background:#f3f4f6; font-family: Inter, Arial, Helvetica, sans-serif; color:#111827; }
-      .wrap { width:100%; padding:24px 12px; }
-      .card { max-width:640px; margin:0 auto; background:#ffffff; border:1px solid #e5e7eb; border-radius:16px; overflow:hidden; }
-      .top { padding:18px 20px; background:linear-gradient(135deg,#12344d 0%, #1f4b63 100%); color:#fff; }
-      .brand { font-weight:800; letter-spacing:0.02em; font-size:18px; }
-      .subtitle { margin-top:6px; opacity:0.9; font-size:13px; }
-      .content { padding:20px; }
-      .h1 { font-size:22px; font-weight:800; margin:0 0 6px; }
-      .muted { color:#6b7280; font-size:13px; }
-      .pill { display:inline-block; padding:6px 10px; border-radius:999px; background:#f3f4f6; border:1px solid #e5e7eb; font-size:12px; color:#111827; }
-      .grid { margin-top:14px; border:1px solid #e5e7eb; border-radius:12px; overflow:hidden; }
-      .row { display:flex; justify-content:space-between; padding:10px 12px; border-top:1px solid #e5e7eb; }
-      .row:first-child { border-top:none; }
-      .row:nth-child(even) { background:#f9fafb; }
-      .btn { display:inline-block; background:#12344d; color:#fff !important; text-decoration:none; padding:12px 16px; border-radius:12px; font-weight:700; }
-      .btn-secondary { background:#ffffff; color:#12344d !important; border:1px solid #cbd5e1; }
-      .btns { margin-top:16px; display:flex; gap:10px; flex-wrap:wrap; }
-      .footer { padding:14px 20px; background:#f8fafc; border-top:1px solid #e5e7eb; font-size:12px; color:#6b7280; }
-      .pre { white-space:pre-wrap; margin:12px 0 0; padding:12px; background:#f8fafc; border:1px solid #e5e7eb; border-radius:12px; color:#111827; font-size:13px; }
+      @media only screen and (max-width: 620px) {
+        .tp-card { border-radius: 16px !important; }
+        .tp-stack-col { display:block !important; width:100% !important; }
+        .tp-stack-gap { height:8px !important; line-height:8px !important; font-size:8px !important; }
+      }
     </style>
   </head>
-  <body>
-    <div class="wrap">
-      <div class="card">
-        <div class="top">
-          <div class="brand">TrimPro</div>
-          <div class="subtitle">Estimate ${escapeHtml(estimate.estimateNumber)} • Sent ${escapeHtml(sentIso)}</div>
-        </div>
-        <div class="content">
-          <div class="h1">Please review your estimate</div>
-          <div class="muted">${escapeHtml(estimate.title || '')}</div>
-          <div style="margin-top:10px;">
-            ${validUntil ? `<span class="pill">Valid until: ${escapeHtml(validUntil)}</span>` : ''}
-          </div>
-          ${safeMessage ? `<div class="pre">${safeMessage}</div>` : ''}
+  <body bgcolor="#ffffff" style="margin:0; padding:0; background:#ffffff; color:rgba(255,255,255,0.92); font-family:Arial, Helvetica, sans-serif;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="#ffffff" style="width:100%; background:#ffffff;">
+      <tr>
+        <td align="center" bgcolor="#ffffff" style="padding:32px 16px; background:#ffffff;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" class="tp-card" style="width:100%; max-width:600px; background:#111827; border:1px solid rgba(255,255,255,0.08); border-radius:18px;">
+            <tr>
+              <td style="padding:28px 28px 24px 28px;">
+                <div style="font-size:22px; line-height:1.3; font-weight:700; color:rgba(255,255,255,0.92);">TrimPro</div>
+                <div style="margin-top:8px; font-size:13px; line-height:1.6; color:rgba(255,255,255,0.68);">
+                  Estimate ${escapeHtml(estimate.estimateNumber)} • ${escapeHtml(sentDisplay || sentIso)}
+                </div>
+              </td>
+            </tr>
 
-          <div class="grid" role="presentation" aria-hidden="true">
-            <div class="row"><span class="muted">Total</span><strong>$${escapeHtml(total)}</strong></div>
-          </div>
+            <tr>
+              <td style="padding:0 28px 0 28px;">
+                <div style="font-size:32px; line-height:1.3; font-weight:700; color:rgba(255,255,255,0.92); margin:0 0 8px 0;">
+                  Please review your estimate
+                </div>
+                <div style="font-size:18px; line-height:1.5; color:rgba(255,255,255,0.68); margin:0 0 16px 0;">
+                  Estimate for ${escapeHtml(customerName)}
+                </div>
+                <div style="font-size:14px; line-height:1.65; color:rgba(255,255,255,0.68); margin:0 0 24px 0;">
+                  ${escapeHtml(estimate.title || 'Your estimate is ready to review.')}
+                  ${validUntil ? ` Valid until ${escapeHtml(validUntil)}.` : ''}
+                </div>
+                ${
+                  safeMessage
+                    ? `<div style="font-size:14px; line-height:1.65; color:rgba(255,255,255,0.92); margin:0 0 24px 0; white-space:pre-wrap;">${safeMessage}</div>`
+                    : ''
+                }
+              </td>
+            </tr>
 
-          <div class="btns">
-            <a class="btn" href="${escapeHtml(approveUrl)}" target="_blank" rel="noopener noreferrer">Approve Estimate</a>
-            <a class="btn btn-secondary" href="${escapeHtml(pdfUrl)}" target="_blank" rel="noopener noreferrer">Download PDF</a>
-          </div>
+            <tr>
+              <td style="padding:0 28px 24px 28px;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px;">
+                  <tr>
+                    <td style="padding:16px; font-size:14px; line-height:1.5; color:rgba(255,255,255,0.68);">Total</td>
+                    <td align="right" style="padding:16px; font-size:28px; line-height:1.3; font-weight:700; color:rgba(255,255,255,0.92);">$${escapeHtml(total)}</td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
 
-          <div class="muted" style="margin-top:14px;">
-            Customer: ${escapeHtml(customerName)}<br/>
-            If you have questions, reply to this email and we’ll help.
-          </div>
-        </div>
-        <div class="footer">
-          This message was sent from TrimPro. Estimate: ${escapeHtml(estimate.estimateNumber)}.
-        </div>
-      </div>
-    </div>
+            <tr>
+              <td style="padding:0 28px 24px 28px;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
+                  <tr>
+                    <td class="tp-stack-col" width="50%" valign="top" style="width:50%; padding:0;">
+                      <a href="${escapeHtml(approveUrl)}" target="_blank" rel="noopener noreferrer" style="display:block; text-decoration:none; text-align:center; background:#12344d; color:#ffffff; border-radius:12px; border:1px solid #12344d; font-size:16px; line-height:20px; font-weight:700; padding:15px 16px;">
+                        Approve Estimate
+                      </a>
+                    </td>
+                    <td class="tp-stack-col tp-stack-gap" width="12" style="width:12px; font-size:0; line-height:0;">&nbsp;</td>
+                    <td class="tp-stack-col" width="50%" valign="top" style="width:50%; padding:0;">
+                      <a href="${escapeHtml(pdfUrl)}" target="_blank" rel="noopener noreferrer" style="display:block; text-decoration:none; text-align:center; background:transparent; color:rgba(255,255,255,0.92); border-radius:12px; border:1px solid rgba(255,255,255,0.18); font-size:16px; line-height:20px; font-weight:700; padding:15px 16px;">
+                        Download PDF
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:0 28px 24px 28px;">
+                <div style="font-size:14px; line-height:1.6; color:rgba(255,255,255,0.68);">
+                  Customer: <span style="color:rgba(255,255,255,0.92);">${escapeHtml(customerName)}</span><br />
+                  Reply to this email if you have any questions.
+                </div>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:0 28px 28px 28px;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%; border-top:1px solid rgba(255,255,255,0.12);">
+                  <tr>
+                    <td style="padding-top:16px; font-size:12px; line-height:1.6; color:rgba(255,255,255,0.48);">
+                      This message was sent from TrimPro. Estimate ${escapeHtml(estimate.estimateNumber)}.
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
   </body>
 </html>`
 

@@ -24,6 +24,7 @@
     },
     "ios": {
       "bundleIdentifier": "com.trimpro.field",
+      "buildNumber": "2",
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "TrimPro Field uses camera to capture job photos and videos.",
@@ -34,6 +35,8 @@
     },
     "android": {
       "package": "com.trimpro.field",
+      "versionCode": 2,
+      "softwareKeyboardLayoutMode": "resize",
       "googleServicesFile": "./google-services.json",
       "notification": {
         "icon": "./assets/adaptive-icon.png",

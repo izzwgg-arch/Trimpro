@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react'
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { Platform } from 'react-native'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Ionicons } from '@expo/vector-icons'
-import DateTimePicker from '@react-native-community/datetimepicker'
+import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker'
 import { AppScreen } from '../../components/AppScreen'
 import { apiRequest } from '../../api/client'
 import { colors, radius, spacing, typography } from '../../theme/tokens'
@@ -64,6 +65,38 @@ export function EditJobScreen({ route, navigation }: Props) {
   })
   const [showStartPicker, setShowStartPicker] = useState(false)
   const [showEndPicker, setShowEndPicker] = useState(false)
+
+  const openStartPicker = () => {
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({
+        value: formData.scheduledStart || new Date(),
+        mode: 'date',
+        onChange: (event, date) => {
+          if (event.type === 'set' && date) {
+            setFormData((prev) => ({ ...prev, scheduledStart: date }))
+          }
+        },
+      })
+      return
+    }
+    setShowStartPicker(true)
+  }
+
+  const openEndPicker = () => {
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({
+        value: formData.scheduledEnd || new Date(),
+        mode: 'date',
+        onChange: (event, date) => {
+          if (event.type === 'set' && date) {
+            setFormData((prev) => ({ ...prev, scheduledEnd: date }))
+          }
+        },
+      })
+      return
+    }
+    setShowEndPicker(true)
+  }
 
   const jobQuery = useQuery({
     queryKey: ['edit-job', jobId],
@@ -168,7 +201,12 @@ export function EditJobScreen({ route, navigation }: Props) {
         </Pressable>
       </View>
 
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
         <Card style={styles.card}>
           <Text style={styles.label}>Client</Text>
           <View style={styles.selectContainer}>
@@ -224,13 +262,13 @@ export function EditJobScreen({ route, navigation }: Props) {
           <>
             <Card style={styles.card}>
               <Text style={styles.label}>Scheduled Start</Text>
-              <Pressable style={styles.dateButton} onPress={() => setShowStartPicker(true)}>
+              <Pressable style={styles.dateButton} onPress={openStartPicker}>
                 <Text style={styles.dateText}>
                   {formData.scheduledStart ? formData.scheduledStart.toLocaleString() : 'Select date/time'}
                 </Text>
                 <Ionicons name="calendar-outline" size={20} color={colors.textSecondary} />
               </Pressable>
-              {showStartPicker && (
+              {Platform.OS === 'ios' && showStartPicker && (
                 <DateTimePicker
                   value={formData.scheduledStart || new Date()}
                   mode="datetime"
@@ -244,13 +282,13 @@ export function EditJobScreen({ route, navigation }: Props) {
 
             <Card style={styles.card}>
               <Text style={styles.label}>Scheduled End</Text>
-              <Pressable style={styles.dateButton} onPress={() => setShowEndPicker(true)}>
+              <Pressable style={styles.dateButton} onPress={openEndPicker}>
                 <Text style={styles.dateText}>
                   {formData.scheduledEnd ? formData.scheduledEnd.toLocaleString() : 'Select date/time'}
                 </Text>
                 <Ionicons name="calendar-outline" size={20} color={colors.textSecondary} />
               </Pressable>
-              {showEndPicker && (
+              {Platform.OS === 'ios' && showEndPicker && (
                 <DateTimePicker
                   value={formData.scheduledEnd || new Date()}
                   mode="datetime"
@@ -325,7 +363,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   scrollView: { flex: 1 },
-  scrollContent: { padding: spacing.md, gap: spacing.md },
+  scrollContent: { padding: spacing.md, gap: spacing.md, paddingBottom: spacing.xxl },
   centerContainer: {
     flex: 1,
     alignItems: 'center',

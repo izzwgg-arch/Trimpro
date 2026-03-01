@@ -55,6 +55,7 @@ export function DocumentAttachments({ entityType, entityId }: Props) {
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [loading, setLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [dragActive, setDragActive] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; fileName: string } | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -148,6 +149,24 @@ export function DocumentAttachments({ entityType, entityId }: Props) {
     }
   }
 
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    if (!uploading) setDragActive(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return
+    setDragActive(false)
+  }
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setDragActive(false)
+    if (uploading) return
+    void uploadFiles(e.dataTransfer?.files || null)
+  }
+
   const deleteAttachment = async (id: string) => {
     if (!confirm('Delete this attachment?')) return
     try {
@@ -168,7 +187,14 @@ export function DocumentAttachments({ entityType, entityId }: Props) {
   }
 
   return (
-    <div className="space-y-3">
+    <div
+      className={`space-y-3 rounded-md border-2 border-dashed p-3 transition-colors ${
+        dragActive ? 'border-blue-500 bg-blue-50/40' : 'border-gray-200'
+      }`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 font-medium">
           <Paperclip className="h-4 w-4" />
@@ -197,6 +223,8 @@ export function DocumentAttachments({ entityType, entityId }: Props) {
           </Button>
         </label>
       </div>
+
+      <p className="text-xs text-gray-500">Drag and drop files here, or click Upload.</p>
 
       {uploading && uploadProgress && (
         <p className="text-xs text-gray-500">Uploading {uploadProgress.fileName}...</p>

@@ -105,7 +105,6 @@ export function AllJobsScreen({ navigation }: Props) {
     refetchInterval: 60_000,
   })
 
-  const jobs = jobsQuery.data?.jobs ?? []
   const pagination = jobsQuery.data?.pagination
 
   const handleRefresh = () => {
@@ -137,7 +136,7 @@ export function AllJobsScreen({ navigation }: Props) {
             <TextInput
               style={styles.searchInput}
               placeholder="Search jobs..."
-              placeholderTextColor={colors.textSecondary}
+              placeholderTextColor={colors.textPrimary}
               value={search}
               onChangeText={setSearch}
             />

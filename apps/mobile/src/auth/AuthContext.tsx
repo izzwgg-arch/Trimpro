@@ -1,9 +1,10 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { ActivityIndicator, View } from 'react-native'
 import { apiRequest, setUnauthorizedHandler } from '../api/client'
-import { clearAuth, getAccessToken, getStoredUser, saveAuth } from './secure-storage'
+import { clearAuth, getAccessToken, getOrCreateDeviceId, getRefreshToken, getStoredUser, saveAuth } from './secure-storage'
 import { AuthUser } from '../types/models'
 import { registerPushToken, unregisterPushToken } from '../notifications/registerPush'
+import { API_BASE_URL } from '../config/env'
 
 interface AuthContextValue {
   user: AuthUser | null
@@ -29,7 +30,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
   const [mobilePermissions, setMobilePermissions] = useState<string[]>([])
 
+  const fetchPermissions = useCallback(async () => {
+    try {
+      const meResponse = await apiRequest<{
+        user: AuthUser
+        mobilePermissions: string[]
+      }>('/api/me')
+
+      setMobilePermissions(meResponse.mobilePermissions || [])
+      return meResponse.mobilePermissions || []
+    } catch (error) {
+      console.error('Failed to fetch permissions:', error)
+      setMobilePermissions([])
+      return []
+    }
+  }, [])
+
   const signOut = useCallback(async () => {
+    const refreshToken = await getRefreshToken()
+    const deviceId = await getOrCreateDeviceId()
+    if (refreshToken) {
+      await fetch(`${API_BASE_URL}/api/auth/logout`, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'TrimProMobile',
+        },
+        body: JSON.stringify({ refreshToken, deviceId }),
+      }).catch(() => null)
+    }
     await unregisterPushToken().catch(() => null)
     setUser(null)
     setToken(null)
@@ -47,13 +77,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let mounted = true
     ;(async () => {
       try {
-        const [storedToken, storedUser] = await Promise.all([getAccessToken(), getStoredUser()])
-        if (mounted && storedToken && storedUser) {
-          setToken(storedToken)
-          setUser(JSON.parse(storedUser) as AuthUser)
-          // Fetch permissions on app load
-          await fetchPermissions(storedToken)
+        const [storedUser, refreshToken] = await Promise.all([getStoredUser(), getRefreshToken()])
+        if (!mounted) return
+
+        if (storedUser && refreshToken) {
+          // Trigger a protected request to force token refresh when access token expired.
+          const meResponse = await apiRequest<{
+            user: AuthUser
+            mobilePermissions: string[]
+          }>('/api/me')
+          const latestAccessToken = await getAccessToken()
+          if (latestAccessToken) {
+            setToken(latestAccessToken)
+          }
+          setUser(meResponse.user)
+          setMobilePermissions(meResponse.mobilePermissions || [])
+        } else {
+          await clearAuth()
         }
+      } catch (error) {
+        console.warn('[auth] session restore failed, clearing local auth state', error)
+        await clearAuth()
       } finally {
         if (mounted) setIsLoading(false)
       }
@@ -61,28 +105,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       mounted = false
     }
-  }, [fetchPermissions])
-
-  const fetchPermissions = useCallback(async (authToken: string) => {
-    try {
-      // apiRequest gets token from storage, but we need to ensure it's saved first
-      // For initial load, token should already be in storage from signIn
-      const meResponse = await apiRequest<{
-        user: AuthUser
-        mobilePermissions: string[]
-      }>('/api/me')
-      
-      setMobilePermissions(meResponse.mobilePermissions || [])
-      return meResponse.mobilePermissions || []
-    } catch (error) {
-      console.error('Failed to fetch permissions:', error)
-      setMobilePermissions([])
-      return []
-    }
   }, [])
 
   const signIn = useCallback(async (email: string, password: string) => {
-    const response = await apiRequest<LoginResponse>('/api/auth/login', 'POST', { email, password })
+    const deviceId = await getOrCreateDeviceId()
+    const response = await apiRequest<LoginResponse>('/api/auth/login', 'POST', { email, password, deviceId })
     await saveAuth(response.accessToken, response.refreshToken, JSON.stringify(response.user))
     setToken(response.accessToken)
     setUser(response.user)
@@ -93,12 +120,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })
 
     // Fetch permissions after login
-    await fetchPermissions(response.accessToken)
+    await fetchPermissions()
   }, [fetchPermissions])
 
   const refreshPermissions = useCallback(async () => {
     if (token) {
-      await fetchPermissions(token)
+      await fetchPermissions()
     }
   }, [token, fetchPermissions])
 

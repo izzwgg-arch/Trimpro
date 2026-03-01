@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
+import { hasMobilePermission, hasPermission } from '@/lib/authorization'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -9,10 +10,18 @@ export async function GET(request: NextRequest) {
   const user = getAuthUser(request)
 
   try {
+    const canViewTeamScheduleScope =
+      user.role === 'ADMIN' ||
+      (await hasMobilePermission(user.id, user.tenantId, 'mobile.schedule.view_all')) ||
+      (await hasMobilePermission(user.id, user.tenantId, 'canCreateSchedulesForOthers')) ||
+      (await hasMobilePermission(user.id, user.tenantId, 'mobile.jobs.assign')) ||
+      (await hasPermission(user.id, user.tenantId, 'schedule.view_all'))
+
     // Show active users and invited users so admins can track invite progress.
     const teamMembers = await prisma.user.findMany({
       where: {
         tenantId: user.tenantId,
+        ...(canViewTeamScheduleScope ? {} : { id: user.id }),
         status: {
           in: ['ACTIVE', 'INVITED'],
         },
@@ -34,6 +43,25 @@ export async function GET(request: NextRequest) {
             role: true,
           },
         },
+        userRoles: {
+          where: {
+            role: {
+              isActive: true,
+            },
+          },
+          orderBy: {
+            assignedAt: 'desc',
+          },
+          take: 1,
+          select: {
+            roleId: true,
+            role: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        },
         status: true,
         _count: {
           select: {
@@ -51,6 +79,8 @@ export async function GET(request: NextRequest) {
       if (member.role !== 'FIELD') {
         return {
           ...member,
+          roleId: member.userRoles[0]?.roleId || null,
+          roleName: member.userRoles[0]?.role?.name || member.role,
           managerId: null,
           manager: null,
         }
@@ -58,11 +88,17 @@ export async function GET(request: NextRequest) {
       if (!member.manager || member.manager.role !== 'MANAGER') {
         return {
           ...member,
+          roleId: member.userRoles[0]?.roleId || null,
+          roleName: member.userRoles[0]?.role?.name || member.role,
           managerId: null,
           manager: null,
         }
       }
-      return member
+      return {
+        ...member,
+        roleId: member.userRoles[0]?.roleId || null,
+        roleName: member.userRoles[0]?.role?.name || member.role,
+      }
     })
 
     return NextResponse.json({ teamMembers: normalizedTeamMembers })

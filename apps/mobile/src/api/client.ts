@@ -1,19 +1,69 @@
 import { API_BASE_URL } from '../config/env'
-import { getAccessToken } from '../auth/secure-storage'
+import { getAccessToken, getOrCreateDeviceId, getRefreshToken, saveTokens } from '../auth/secure-storage'
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
 let unauthorizedHandler: (() => void) | null = null
+let refreshInFlight: Promise<boolean> | null = null
 
 export function setUnauthorizedHandler(handler: (() => void) | null) {
   unauthorizedHandler = handler
+}
+
+async function refreshAccessTokenSilently(): Promise<boolean> {
+  if (refreshInFlight) return refreshInFlight
+
+  refreshInFlight = (async () => {
+    const refreshToken = await getRefreshToken()
+    if (!refreshToken) {
+      console.info('[auth] refresh skipped: no refresh token')
+      return false
+    }
+
+    try {
+      console.info('[auth] refresh attempt started')
+      const deviceId = await getOrCreateDeviceId()
+      const response = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'TrimProMobile',
+        },
+        body: JSON.stringify({ refreshToken, deviceId }),
+      })
+
+      if (!response.ok) {
+        console.warn(`[auth] refresh failed with status ${response.status}`)
+        return false
+      }
+
+      const payload = (await response.json()) as { accessToken?: string; refreshToken?: string }
+      if (!payload.accessToken || !payload.refreshToken) {
+        console.warn('[auth] refresh failed: missing tokens in response')
+        return false
+      }
+
+      await saveTokens(payload.accessToken, payload.refreshToken)
+      console.info('[auth] refresh success')
+      return true
+    } catch (error) {
+      console.warn('[auth] refresh error', error)
+      return false
+    } finally {
+      refreshInFlight = null
+    }
+  })()
+
+  return refreshInFlight
 }
 
 export async function apiRequest<T>(
   path: string,
   method: HttpMethod = 'GET',
   body?: unknown,
-  extraHeaders?: Record<string, string>
+  extraHeaders?: Record<string, string>,
+  hasRetried = false
 ): Promise<T> {
   const token = await getAccessToken()
   const headers: Record<string, string> = {
@@ -33,9 +83,18 @@ export async function apiRequest<T>(
     body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
   })
 
-  // Only force sign-out if we actually sent an auth token.
-  // This avoids login-time races where a request can briefly run before token persistence.
-  if (response.status === 401 && unauthorizedHandler && Boolean(token)) {
+  if (response.status === 401 && !hasRetried) {
+    const refreshToken = await getRefreshToken()
+    const shouldAttemptRefresh = Boolean(token) || Boolean(refreshToken)
+    const refreshed = shouldAttemptRefresh ? await refreshAccessTokenSilently() : false
+    if (refreshed) {
+      return apiRequest<T>(path, method, body, extraHeaders, true)
+    }
+    if (unauthorizedHandler && Boolean(token || refreshToken)) {
+      console.warn('[auth] forced logout after refresh failure')
+      unauthorizedHandler()
+    }
+  } else if (response.status === 401 && unauthorizedHandler && Boolean(token)) {
     unauthorizedHandler()
   }
 

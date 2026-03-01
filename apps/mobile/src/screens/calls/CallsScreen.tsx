@@ -106,6 +106,7 @@ const styles = StyleSheet.create({
     borderColor: '#D0D5DD',
     paddingHorizontal: 10,
     paddingVertical: 10,
+    color: BRAND.text,
   },
   button: { backgroundColor: BRAND.primary, borderRadius: 10, alignItems: 'center', paddingVertical: 10 },
   buttonText: { color: BRAND.white, fontWeight: '700' },

@@ -1,20 +1,21 @@
 import React, { useState } from 'react'
 import { Alert, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
-import { SvgUri } from 'react-native-svg'
 import { Screen } from '../../components/Screen'
 import { useAuth } from '../../auth/AuthContext'
-import { API_BASE_URL } from '../../config/env'
 import { colors, spacing, radius, shadows } from '../../theme/tokens'
 
 function TrimProLogo() {
   return (
     <View style={styles.logoContainer}>
       <View style={styles.logoBox}>
-        <SvgUri
-          uri={`${API_BASE_URL}/branding/trimpro-logo.svg`}
-          width={180}
-          height={54}
-        />
+        <Text style={styles.logoText}>TrimPro</Text>
+        <View style={styles.logoIcon}>
+          <View style={styles.iconRect1} />
+          <View style={styles.iconRect2} />
+          <View style={styles.iconRect3} />
+          <View style={styles.iconCircle1} />
+          <View style={styles.iconCircle2} />
+        </View>
       </View>
     </View>
   )
@@ -139,9 +140,68 @@ const styles = StyleSheet.create({
   logoBox: {
     backgroundColor: '#2E4A59',
     borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.xl,
     paddingVertical: spacing.sm,
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
+  },
+  logoText: {
+    fontFamily: 'System',
+    fontWeight: '700',
+    fontSize: 30,
+    letterSpacing: -0.02,
+    color: '#E6C98B',
+  },
+  logoIcon: {
+    width: 30,
+    height: 30,
+    position: 'relative',
+  },
+  iconRect1: {
+    position: 'absolute',
+    top: 3,
+    left: 5,
+    width: 22,
+    height: 5,
+    backgroundColor: '#E6C98B',
+    borderRadius: 0.75,
+  },
+  iconRect2: {
+    position: 'absolute',
+    top: 14,
+    left: 11,
+    width: 3,
+    height: 15,
+    backgroundColor: '#E6C98B',
+    borderRadius: 0.5,
+  },
+  iconRect3: {
+    position: 'absolute',
+    top: 14,
+    left: 18,
+    width: 3,
+    height: 15,
+    backgroundColor: '#E6C98B',
+    borderRadius: 0.5,
+  },
+  iconCircle1: {
+    position: 'absolute',
+    top: 12.5,
+    left: 11,
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: '#E6C98B',
+  },
+  iconCircle2: {
+    position: 'absolute',
+    top: 12.5,
+    left: 19.5,
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: '#E6C98B',
   },
   subtitle: {
     fontSize: 14,

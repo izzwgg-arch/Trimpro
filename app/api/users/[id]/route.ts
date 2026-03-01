@@ -7,6 +7,11 @@ import { getDefaultPermissions } from '@/lib/permissions'
 const ALLOWED_ROLES = new Set(['ADMIN', 'MANAGER', 'OFFICE', 'FIELD', 'SALES', 'ACCOUNTING'])
 const ALLOWED_STATUSES = new Set(['ACTIVE', 'INACTIVE', 'INVITED', 'SUSPENDED'])
 
+function deriveBaseRole(roleName: string): string {
+  const normalized = roleName.trim().toUpperCase()
+  return ALLOWED_ROLES.has(normalized) ? normalized : 'OFFICE'
+}
+
 export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -26,16 +31,45 @@ export async function PUT(
     const lastName = typeof body.lastName === 'string' ? body.lastName.trim() : undefined
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : undefined
     const phone = typeof body.phone === 'string' ? body.phone.trim() : body.phone === null ? null : undefined
-    const role = typeof body.role === 'string' ? body.role.trim().toUpperCase() : undefined
+    const requestedRole = typeof body.role === 'string' ? body.role.trim().toUpperCase() : undefined
+    const roleId = typeof body.roleId === 'string' ? body.roleId.trim() : ''
     const status = typeof body.status === 'string' ? body.status.trim().toUpperCase() : undefined
     const rawManagerId = typeof body.managerId === 'string' ? body.managerId.trim() : body.managerId
     const managerIdFromBody = rawManagerId === '' || rawManagerId === null ? null : rawManagerId
 
-    if (!firstName || !lastName || !email || !role || !status) {
+    if (!firstName || !lastName || !email || !status || (!requestedRole && !roleId)) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    if (!ALLOWED_ROLES.has(role)) {
+    let selectedRoleRecord: {
+      id: string
+      name: string
+      permissions: Array<{ permission: { key: string } }>
+    } | null = null
+    if (roleId) {
+      selectedRoleRecord = await prisma.role.findFirst({
+        where: {
+          id: roleId,
+          tenantId: actor.tenantId,
+          isActive: true,
+        },
+        include: {
+          permissions: {
+            include: {
+              permission: {
+                select: { key: true },
+              },
+            },
+          },
+        },
+      })
+      if (!selectedRoleRecord) {
+        return NextResponse.json({ error: 'Selected role not found' }, { status: 400 })
+      }
+    }
+
+    const role = selectedRoleRecord ? deriveBaseRole(selectedRoleRecord.name) : requestedRole
+    if (!role || !ALLOWED_ROLES.has(role)) {
       return NextResponse.json({ error: 'Invalid role' }, { status: 400 })
     }
 
@@ -57,6 +91,11 @@ export async function PUT(
         role: true,
         status: true,
         managerId: true,
+        userRoles: {
+          select: {
+            roleId: true,
+          },
+        },
       },
     })
 
@@ -103,28 +142,67 @@ export async function PUT(
       }
     }
 
-    const updatedUser = await prisma.user.update({
-      where: { id: params.id },
-      data: {
-        firstName,
-        lastName,
-        email,
-        phone: phone || null,
-        role: role as any,
-        status: status as any,
-        managerId: role === 'FIELD' ? normalizedManagerId : null,
-        ...(role !== existingUser.role ? { permissions: getDefaultPermissions(role as any) } : {}),
-      },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        phone: true,
-        role: true,
-        status: true,
-        managerId: true,
-      },
+    const selectedPermissionKeys =
+      selectedRoleRecord && selectedRoleRecord.permissions.length > 0
+        ? selectedRoleRecord.permissions.map((rp) => rp.permission.key)
+        : getDefaultPermissions(role)
+
+    const updatedUser = await prisma.$transaction(async (tx) => {
+      const updated = await tx.user.update({
+        where: { id: params.id },
+        data: {
+          firstName,
+          lastName,
+          email,
+          phone: phone || null,
+          role: role as any,
+          status: status as any,
+          managerId: role === 'FIELD' ? normalizedManagerId : null,
+          permissions: selectedPermissionKeys,
+        },
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          phone: true,
+          role: true,
+          status: true,
+          managerId: true,
+        },
+      })
+
+      await tx.userRoleAssignment.deleteMany({
+        where: {
+          userId: params.id,
+          user: { tenantId: actor.tenantId },
+        },
+      })
+
+      const fallbackRoleId =
+        selectedRoleRecord?.id ||
+        (
+          await tx.role.findFirst({
+            where: {
+              tenantId: actor.tenantId,
+              name: role,
+              isActive: true,
+            },
+            select: { id: true },
+          })
+        )?.id
+
+      if (fallbackRoleId) {
+        await tx.userRoleAssignment.create({
+          data: {
+            userId: params.id,
+            roleId: fallbackRoleId,
+            assignedBy: actor.id,
+          },
+        })
+      }
+
+      return updated
     })
 
     // Keep assignments consistent if this user is no longer a manager.
@@ -150,6 +228,8 @@ export async function PUT(
         changes: {
           before: existingUser,
           after: updatedUser,
+          selectedRoleId: selectedRoleRecord?.id || null,
+          selectedRoleName: selectedRoleRecord?.name || role,
         },
       },
     })
@@ -158,5 +238,84 @@ export async function PUT(
   } catch (error) {
     console.error('Update user error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const authError = await authenticateRequest(request)
+  if (authError) return authError
+
+  const actor = getAuthUser(request)
+  const canDeleteUsers = actor.role === 'ADMIN' || (await hasPermission(actor.id, actor.tenantId, 'users.edit'))
+  if (!canDeleteUsers) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  if (params.id === actor.id) {
+    return NextResponse.json({ error: 'You cannot delete your own account' }, { status: 400 })
+  }
+
+  try {
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        id: params.id,
+        tenantId: actor.tenantId,
+      },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        role: true,
+        status: true,
+      },
+    })
+
+    if (!existingUser) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.userRoleAssignment.deleteMany({
+        where: {
+          userId: params.id,
+        },
+      })
+
+      await tx.user.updateMany({
+        where: {
+          tenantId: actor.tenantId,
+          managerId: params.id,
+        },
+        data: {
+          managerId: null,
+        },
+      })
+
+      await tx.user.delete({
+        where: { id: params.id },
+      })
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: actor.tenantId,
+          userId: actor.id,
+          action: 'DELETE',
+          entityType: 'User',
+          entityId: existingUser.id,
+          changes: {
+            deletedUser: existingUser,
+          },
+        },
+      })
+    })
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Delete user error:', error)
+    return NextResponse.json({ error: 'Failed to delete user' }, { status: 500 })
   }
 }

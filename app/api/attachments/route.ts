@@ -3,6 +3,8 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { createNotificationsForUsers, notifyDispatchJobActivity } from '@/lib/notifications'
 import { publishDispatchRealtime } from '@/lib/dispatch-realtime'
+import { hasMobilePermission, isMobileRequest } from '@/lib/authorization'
+import { normalizePublicFileUrl } from '@/lib/public-url'
 
 type EntityType = 'estimate' | 'invoice' | 'job' | 'task' | 'issue' | 'request' | 'lead'
 
@@ -18,7 +20,12 @@ function isValidEntityType(value: string): value is EntityType {
   )
 }
 
-async function ensureEntityAccess(entityType: EntityType, entityId: string, tenantId: string) {
+async function ensureEntityAccess(
+  entityType: EntityType,
+  entityId: string,
+  tenantId: string,
+  options?: { enforceAssignedJobScope?: boolean; userId?: string }
+) {
   if (entityType === 'estimate') {
     const estimate = await prisma.estimate.findFirst({ where: { id: entityId, tenantId }, select: { id: true } })
     return Boolean(estimate)
@@ -39,7 +46,20 @@ async function ensureEntityAccess(entityType: EntityType, entityId: string, tena
     const lead = await prisma.lead.findFirst({ where: { id: entityId, tenantId }, select: { id: true } })
     return Boolean(lead)
   }
-  const job = await prisma.job.findFirst({ where: { id: entityId, tenantId }, select: { id: true } })
+  if (!options?.enforceAssignedJobScope || !options.userId) {
+    const job = await prisma.job.findFirst({ where: { id: entityId, tenantId }, select: { id: true } })
+    return Boolean(job)
+  }
+  const job = await prisma.job.findFirst({
+    where: {
+      id: entityId,
+      tenantId,
+      assignments: {
+        some: { userId: options.userId },
+      },
+    },
+    select: { id: true },
+  })
   return Boolean(job)
 }
 
@@ -55,7 +75,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'entityType and entityId are required' }, { status: 400 })
     }
 
-    const hasAccess = await ensureEntityAccess(entityTypeRaw, entityId, user.tenantId)
+    const mobileRequest = isMobileRequest(request)
+    const canViewAllJobs = mobileRequest
+      ? await hasMobilePermission(user.id, user.tenantId, 'mobile.jobs.view_all')
+      : true
+    const hasAccess = await ensureEntityAccess(entityTypeRaw, entityId, user.tenantId, {
+      enforceAssignedJobScope: entityTypeRaw === 'job' && mobileRequest && !canViewAllJobs,
+      userId: user.id,
+    })
     if (!hasAccess) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
@@ -73,10 +100,14 @@ export async function GET(request: NextRequest) {
                 ? { leadId: entityId }
                 : { jobId: entityId }
 
-    const attachments = await prisma.attachment.findMany({
+    const rawAttachments = await prisma.attachment.findMany({
       where,
       orderBy: { createdAt: 'desc' },
     })
+    const attachments = rawAttachments.map((item) => ({
+      ...item,
+      url: normalizePublicFileUrl(item.url, request),
+    }))
 
     return NextResponse.json({ attachments })
   } catch (error) {
@@ -105,10 +136,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required attachment fields' }, { status: 400 })
     }
 
-    const hasAccess = await ensureEntityAccess(entityTypeRaw, entityId, user.tenantId)
+    const mobileRequest = isMobileRequest(request)
+    const canViewAllJobs = mobileRequest
+      ? await hasMobilePermission(user.id, user.tenantId, 'mobile.jobs.view_all')
+      : true
+    const hasAccess = await ensureEntityAccess(entityTypeRaw, entityId, user.tenantId, {
+      enforceAssignedJobScope: entityTypeRaw === 'job' && mobileRequest && !canViewAllJobs,
+      userId: user.id,
+    })
     if (!hasAccess) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
+    const normalizedUrl = normalizePublicFileUrl(url, request)
 
     const data =
       entityTypeRaw === 'estimate'
@@ -127,7 +166,7 @@ export async function POST(request: NextRequest) {
       data: {
         ...data,
         fileName,
-        url,
+        url: normalizedUrl,
         key,
         mimeType,
         fileSize,
@@ -188,7 +227,7 @@ export async function POST(request: NextRequest) {
                 data: {
                   invoiceId: invoice.id,
                   fileName,
-                  url,
+                  url: normalizedUrl,
                   key,
                   mimeType,
                   fileSize,

@@ -5,6 +5,8 @@ import { formatAddressParts, parseAddressParts } from '@/lib/address/parse'
 import { geocodeAddressPartsFromString } from '@/lib/geocoding'
 import { isMobileRequest, requireMobilePermission, hasMobilePermission, hasPermission } from '@/lib/authorization'
 import { getJobTimeSummary } from '@/lib/time-tracking'
+import { syncAutoJobSchedules } from '@/lib/services/job-schedule-sync'
+import { createNotificationsForUsers } from '@/lib/notifications'
 
 export async function GET(
   request: NextRequest,
@@ -347,6 +349,51 @@ export async function PUT(
             type: 'job_site',
             ...data,
           },
+        })
+      }
+    }
+
+    // Keep auto-generated schedule rows in sync for assigned users.
+    const scheduleChanged = scheduledStart !== undefined || scheduledEnd !== undefined
+    if (scheduleChanged) {
+      const assignments = await prisma.jobAssignment.findMany({
+        where: {
+          jobId: job.id,
+          job: { tenantId: user.tenantId },
+        },
+        select: { userId: true },
+      })
+      const assignedUserIds = assignments.map((a) => a.userId)
+      await syncAutoJobSchedules(prisma, {
+        tenantId: user.tenantId,
+        jobId: job.id,
+        jobNumber: job.jobNumber,
+        jobTitle: job.title,
+        userIds: assignedUserIds,
+        scheduledStart: job.scheduledStart,
+        scheduledEnd: job.scheduledEnd,
+      })
+
+      const scheduleLabel = job.scheduledStart
+        ? new Date(job.scheduledStart).toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+          })
+        : null
+      if (assignedUserIds.length > 0) {
+        await createNotificationsForUsers(user.tenantId, assignedUserIds, {
+          type: 'JOB_UPDATED',
+          title: 'Job Schedule Updated',
+          message: scheduleLabel
+            ? `${job.jobNumber} is scheduled for ${scheduleLabel}.`
+            : `${job.jobNumber} schedule was updated.`,
+          linkUrl: `/dashboard/jobs/${job.id}`,
+          linkType: 'job',
+          linkId: job.id,
+          actorUserId: user.id,
+          action: 'job_schedule_updated',
         })
       }
     }

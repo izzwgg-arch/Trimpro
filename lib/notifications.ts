@@ -47,6 +47,7 @@ function buildMobileDeepLink(linkType?: string | null, linkId?: string | null): 
   if (linkType === 'task') return `trimpro://tasks/${linkId}`
   if (linkType === 'issue') return `trimpro://issues/${linkId}`
   if (linkType === 'message' || linkType === 'conversation') return `trimpro://messages/${linkId}`
+  if (linkType === 'schedule') return 'trimpro://schedule'
   return undefined
 }
 

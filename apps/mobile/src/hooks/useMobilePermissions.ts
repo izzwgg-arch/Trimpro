@@ -136,6 +136,18 @@ export function useMobilePermissions() {
     return hasPermission('mobile.jobs.track_time')
   }
 
+  const canCreateSchedulesForOthers = (): boolean => {
+    return hasPermission('canCreateSchedulesForOthers')
+  }
+
+  const canViewEntireSchedule = (): boolean => {
+    return (
+      hasPermission('mobile.schedule.view_all') ||
+      hasPermission('canCreateSchedulesForOthers') ||
+      hasPermission('mobile.jobs.assign')
+    )
+  }
+
   const canEditOwnTimeEntries = (): boolean => {
     return hasPermission('mobile.jobs.edit_own_time_entries')
   }
@@ -172,6 +184,8 @@ export function useMobilePermissions() {
     canUploadMedia,
     canUseMessaging,
     canTrackTime,
+    canCreateSchedulesForOthers,
+    canViewEntireSchedule,
     canEditOwnTimeEntries,
     canEditTeamTimeEntries,
     hasMobileAccess,

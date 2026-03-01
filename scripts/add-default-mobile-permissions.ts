@@ -11,7 +11,9 @@ const mobilePermissionsByRole: Record<string, string[]> = {
   Owner: [
     'mobile.access',
     'mobile.jobs.view_all',
+    'mobile.schedule.view_all',
     'mobile.jobs.assign',
+    'canCreateSchedulesForOthers',
     'mobile.jobs.complete',
     'mobile.tasks.create',
     'mobile.tasks.assign_to_any',
@@ -23,7 +25,9 @@ const mobilePermissionsByRole: Record<string, string[]> = {
   Admin: [
     'mobile.access',
     'mobile.jobs.view_all',
+    'mobile.schedule.view_all',
     'mobile.jobs.assign',
+    'canCreateSchedulesForOthers',
     'mobile.jobs.complete',
     'mobile.tasks.create',
     'mobile.tasks.assign_to_any',
@@ -35,6 +39,7 @@ const mobilePermissionsByRole: Record<string, string[]> = {
   Manager: [
     'mobile.access',
     'mobile.jobs.view_all',
+    'mobile.schedule.view_all',
     'mobile.jobs.assign',
     'mobile.jobs.complete',
     'mobile.tasks.create',
@@ -47,6 +52,7 @@ const mobilePermissionsByRole: Record<string, string[]> = {
   Dispatcher: [
     'mobile.access',
     'mobile.jobs.view_all',
+    'mobile.schedule.view_all',
     'mobile.jobs.assign',
     'mobile.jobs.complete',
     'mobile.tasks.create',

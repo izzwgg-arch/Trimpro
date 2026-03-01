@@ -11,7 +11,7 @@ import { useViewMode } from '@/hooks/useViewMode'
 import { RowCompactItem } from '@/components/lists/RowCompactItem'
 import { RowDetailedItem } from '@/components/lists/RowDetailedItem'
 import { TableView } from '@/components/lists/TableView'
-import { Users, Plus, Search, Mail, Phone, Briefcase, X, Pencil } from 'lucide-react'
+import { Users, Plus, Search, Mail, Phone, Briefcase, X, Pencil, Trash2 } from 'lucide-react'
 
 const ALLOWED_BASE_ROLES = new Set(['ADMIN', 'MANAGER', 'OFFICE', 'FIELD', 'SALES', 'ACCOUNTING'])
 
@@ -27,6 +27,8 @@ interface TeamMember {
   email: string
   phone: string | null
   role: string
+  roleId?: string | null
+  roleName?: string | null
   managerId?: string | null
   manager?: {
     id: string
@@ -61,6 +63,7 @@ export default function TeamsPage() {
   const [inviteSuccess, setInviteSuccess] = useState(false)
   const [inviteSuccessMessage, setInviteSuccessMessage] = useState('')
   const [reinviteLoadingById, setReinviteLoadingById] = useState<Record<string, boolean>>({})
+  const [deleteLoadingById, setDeleteLoadingById] = useState<Record<string, boolean>>({})
   const [viewMode, setViewMode] = useViewMode('team', 'grid')
   const [editingUserId, setEditingUserId] = useState<string | null>(null)
   const [availableRoles, setAvailableRoles] = useState<AvailableRole[]>([])
@@ -78,6 +81,7 @@ export default function TeamsPage() {
     email: '',
     phone: '',
     role: 'FIELD' as 'ADMIN' | 'MANAGER' | 'OFFICE' | 'FIELD' | 'SALES' | 'ACCOUNTING',
+    roleId: '',
     managerId: null as string | null,
     status: 'ACTIVE' as 'ACTIVE' | 'INACTIVE' | 'INVITED' | 'SUSPENDED',
   })
@@ -230,7 +234,50 @@ export default function TeamsPage() {
     }
   }
 
+  const handleDeleteUser = async (member: TeamMember) => {
+    const confirmed = window.confirm(
+      `Delete ${member.firstName} ${member.lastName}? This cannot be undone.`
+    )
+    if (!confirmed) return
+
+    setDeleteLoadingById((prev) => ({ ...prev, [member.id]: true }))
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch(`/api/users/${member.id}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      if (response.status === 401) {
+        window.location.href = '/auth/login'
+        return
+      }
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'Failed to delete user')
+        return
+      }
+
+      await fetchTeam()
+      alert('User deleted successfully.')
+    } catch (error) {
+      console.error('Error deleting user:', error)
+      alert('Failed to delete user')
+    } finally {
+      setDeleteLoadingById((prev) => ({ ...prev, [member.id]: false }))
+    }
+  }
+
   const openEditModal = (member: TeamMember) => {
+    const matchingRole =
+      roleOptions.find((role) => role.id === (member.roleId || '')) ||
+      roleOptions.find((role) => role.name.toUpperCase() === String(member.role || '').toUpperCase()) ||
+      roleOptions.find((role) => role.name.toUpperCase() === String(member.roleName || '').toUpperCase()) ||
+      roleOptions[0]
+
     setEditingUserId(member.id)
     setEditError('')
     setEditForm({
@@ -238,7 +285,8 @@ export default function TeamsPage() {
       lastName: member.lastName || '',
       email: member.email || '',
       phone: member.phone || '',
-      role: member.role as any,
+      role: deriveBaseRole(matchingRole?.name || member.role || 'FIELD') as any,
+      roleId: matchingRole?.id || '',
       managerId: member.managerId || null,
       status: member.status as any,
     })
@@ -313,6 +361,33 @@ export default function TeamsPage() {
     { id: 'ADMIN', name: 'ADMIN', isSystem: true, isActive: true },
   ]
   const roleOptions = availableRoles.length > 0 ? availableRoles : fallbackRoleOptions
+  const renderMemberActions = (member: TeamMember) => (
+    <div className="flex items-center gap-2">
+      <Button type="button" variant="outline" size="sm" onClick={() => openEditModal(member)}>
+        <Pencil className="mr-2 h-4 w-4" />
+        Edit
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => handleReinvite(member)}
+        disabled={!!reinviteLoadingById[member.id]}
+      >
+        {reinviteLoadingById[member.id] ? 'Sending...' : 'Reinvite'}
+      </Button>
+      <Button
+        type="button"
+        variant="destructive"
+        size="sm"
+        onClick={() => handleDeleteUser(member)}
+        disabled={!!deleteLoadingById[member.id]}
+      >
+        <Trash2 className="mr-2 h-4 w-4" />
+        {deleteLoadingById[member.id] ? 'Deleting...' : 'Delete'}
+      </Button>
+    </div>
+  )
 
   if (loading) {
     return (
@@ -397,39 +472,7 @@ export default function TeamsPage() {
                       : 'Unassigned'}
                   </div>
                 )}
-                {member.status === 'INVITED' && (
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleReinvite(member)}
-                      disabled={!!reinviteLoadingById[member.id]}
-                    >
-                      {reinviteLoadingById[member.id] ? 'Sending...' : 'Reinvite'}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => openEditModal(member)}
-                    >
-                      <Pencil className="mr-2 h-4 w-4" />
-                      Edit
-                    </Button>
-                  </div>
-                )}
-                {member.status !== 'INVITED' && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => openEditModal(member)}
-                  >
-                    <Pencil className="mr-2 h-4 w-4" />
-                    Edit
-                  </Button>
-                )}
+                {renderMemberActions(member)}
               </CardContent>
             </Card>
           ))}
@@ -444,12 +487,7 @@ export default function TeamsPage() {
               status={<span className={`px-2 py-1 text-xs rounded-full ${roleColors[member.role] || 'bg-gray-100 text-gray-800'}`}>{member.role}</span>}
               amount={member.status}
               date={`${member._count.schedules} schedules${member.role === 'FIELD' ? ` • Manager: ${member.manager ? `${member.manager.firstName} ${member.manager.lastName}`.trim() || member.manager.email : 'Unassigned'}` : ''}`}
-              actions={
-                <Button type="button" variant="outline" size="sm" onClick={() => openEditModal(member)}>
-                  <Pencil className="mr-2 h-4 w-4" />
-                  Edit
-                </Button>
-              }
+              actions={renderMemberActions(member)}
             />
           ))}
         </div>
@@ -463,12 +501,7 @@ export default function TeamsPage() {
               line2={`${member.email}${member.phone ? ` • ${member.phone}` : ''}${member.role === 'FIELD' ? ` • Manager: ${member.manager ? `${member.manager.firstName} ${member.manager.lastName}`.trim() || member.manager.email : 'Unassigned'}` : ''}`}
               rightTop={member.status}
               rightBottom={`${member._count.schedules} schedules`}
-              actions={
-                <Button type="button" variant="outline" size="sm" onClick={() => openEditModal(member)}>
-                  <Pencil className="mr-2 h-4 w-4" />
-                  Edit
-                </Button>
-              }
+              actions={renderMemberActions(member)}
             />
           ))}
         </div>
@@ -526,24 +559,7 @@ export default function TeamsPage() {
             {
               key: 'actions',
               header: 'Actions',
-              render: (member) => (
-                <div className="flex items-center gap-2">
-                  <Button type="button" variant="outline" size="sm" onClick={() => openEditModal(member)}>
-                    Edit
-                  </Button>
-                  {member.status === 'INVITED' && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleReinvite(member)}
-                      disabled={!!reinviteLoadingById[member.id]}
-                    >
-                      {reinviteLoadingById[member.id] ? 'Sending...' : 'Reinvite'}
-                    </Button>
-                  )}
-                </div>
-              ),
+              render: (member) => renderMemberActions(member),
             },
           ]}
         />
@@ -767,25 +783,27 @@ export default function TeamsPage() {
                 <div>
                   <Label htmlFor="editRole">Role *</Label>
                   <Select
-                    value={editForm.role}
-                    onValueChange={(value) =>
+                    value={editForm.roleId || roleOptions.find((role) => deriveBaseRole(role.name) === editForm.role)?.id}
+                    onValueChange={(value) => {
+                      const selectedRole = roleOptions.find((role) => role.id === value)
+                      const normalizedRole = deriveBaseRole(selectedRole?.name || 'FIELD')
                       setEditForm((prev) => ({
                         ...prev,
-                        role: value as any,
-                        managerId: value === 'FIELD' ? prev.managerId : null,
+                        roleId: value,
+                        role: normalizedRole as any,
+                        managerId: normalizedRole === 'FIELD' ? prev.managerId : null,
                       }))
-                    }
+                    }}
                   >
                     <SelectTrigger id="editRole">
                       <SelectValue placeholder="Select role" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="FIELD">Field Worker</SelectItem>
-                      <SelectItem value="MANAGER">Manager</SelectItem>
-                      <SelectItem value="OFFICE">Office Staff</SelectItem>
-                      <SelectItem value="SALES">Sales</SelectItem>
-                      <SelectItem value="ACCOUNTING">Accounting</SelectItem>
-                      <SelectItem value="ADMIN">Admin</SelectItem>
+                      {roleOptions.map((role) => (
+                        <SelectItem key={role.id} value={role.id}>
+                          {role.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>

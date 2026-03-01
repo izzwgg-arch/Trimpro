@@ -143,6 +143,11 @@ export interface ScheduleItem {
     id: string
     jobNumber: string
     title: string
+    status?: string
+    client?: {
+      id: string
+      name: string
+    } | null
   } | null
 }
 

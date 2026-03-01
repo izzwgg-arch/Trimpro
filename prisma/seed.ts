@@ -143,7 +143,9 @@ async function seedRoles(tenantId: string) {
     Owner: [
       'mobile.access',
       'mobile.jobs.view_all',
+      'mobile.schedule.view_all',
       'mobile.jobs.assign',
+      'canCreateSchedulesForOthers',
       'mobile.jobs.complete',
       'mobile.jobs.track_time',
       'mobile.jobs.edit_own_time_entries',
@@ -158,7 +160,9 @@ async function seedRoles(tenantId: string) {
     Admin: [
       'mobile.access',
       'mobile.jobs.view_all',
+      'mobile.schedule.view_all',
       'mobile.jobs.assign',
+      'canCreateSchedulesForOthers',
       'mobile.jobs.complete',
       'mobile.jobs.track_time',
       'mobile.jobs.edit_own_time_entries',
@@ -173,6 +177,7 @@ async function seedRoles(tenantId: string) {
     Manager: [
       'mobile.access',
       'mobile.jobs.view_all',
+      'mobile.schedule.view_all',
       'mobile.jobs.assign',
       'mobile.jobs.complete',
       'mobile.jobs.track_time',
@@ -188,6 +193,7 @@ async function seedRoles(tenantId: string) {
     Dispatcher: [
       'mobile.access',
       'mobile.jobs.view_all',
+      'mobile.schedule.view_all',
       'mobile.jobs.assign',
       'mobile.jobs.complete',
       'mobile.jobs.track_time',

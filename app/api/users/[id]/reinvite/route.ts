@@ -36,10 +36,6 @@ export async function POST(
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    if (targetUser.status !== 'INVITED') {
-      return NextResponse.json({ error: 'User is not in INVITED status' }, { status: 400 })
-    }
-
     const inviteToken = generatePasswordResetToken('7d')
     const inviteExp = new Date()
     inviteExp.setDate(inviteExp.getDate() + 7)
@@ -57,7 +53,7 @@ export async function POST(
     const apkDownloadUrl =
       process.env.TRIMPRO_FIELD_APK_URL ||
       process.env.EXPO_ANDROID_APK_URL ||
-      'https://expo.dev/artifacts/eas/2E6kirTmBvmAZXB2KAftdy.apk'
+      'https://expo.dev/artifacts/eas/dRcgyHyA2NeJUs6EH5RbSv.apk'
 
     let emailSent = false
     let emailError: string | null = null

@@ -3,7 +3,8 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns'
 import { createNotification } from '@/lib/notifications'
-import { hasMobilePermission, isMobileRequest, requireMobilePermission } from '@/lib/authorization'
+import { hasMobilePermission, hasPermission, isMobileRequest, requireMobilePermission } from '@/lib/authorization'
+import { resolveScheduleScope } from '@/lib/schedule/scope'
 
 function normalizeScheduleDateTime(rawDate: unknown, rawTime: unknown, fallbackIso?: string): Date | null {
   if (typeof fallbackIso === 'string' && fallbackIso.trim().length > 0) {
@@ -38,13 +39,21 @@ export async function GET(request: NextRequest) {
   const startDate = searchParams.get('startDate')
   const endDate = searchParams.get('endDate')
   const userId = searchParams.get('userId') || 'all'
+  const userIds = searchParams.get('userIds') || ''
+  const scope = searchParams.get('scope') || ''
   const jobId = searchParams.get('jobId') || ''
+  const status = searchParams.get('status') || ''
 
   try {
     const canCreateForOthers =
       user.role === 'ADMIN' ||
       (await hasMobilePermission(user.id, user.tenantId, 'canCreateSchedulesForOthers')) ||
       (await hasMobilePermission(user.id, user.tenantId, 'mobile.jobs.assign'))
+    const canViewAllSchedule =
+      user.role === 'ADMIN' ||
+      canCreateForOthers ||
+      (await hasMobilePermission(user.id, user.tenantId, 'mobile.schedule.view_all')) ||
+      (await hasPermission(user.id, user.tenantId, 'schedule.view_all'))
     let start: Date
     let end: Date
 
@@ -82,14 +91,44 @@ export async function GET(request: NextRequest) {
       },
     }
 
-    if (userId !== 'all') {
-      where.userId = canCreateForOthers || userId === user.id ? userId : user.id
-    } else if (!canCreateForOthers) {
-      where.userId = user.id
+    const scoped = resolveScheduleScope({
+      requestedScope: scope,
+      requestedUserId: userId,
+      currentUserId: user.id,
+      canViewAll: canViewAllSchedule,
+    })
+
+    const requestedUserIds = userIds
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+
+    if (requestedUserIds.length > 0) {
+      if (canViewAllSchedule) {
+        where.userId = {
+          in: requestedUserIds,
+        }
+      } else {
+        where.userId = user.id
+      }
+    } else if (scoped.effectiveUserId) {
+      where.userId = scoped.effectiveUserId
     }
 
     if (jobId) {
       where.jobId = jobId
+    }
+
+    const statuses = status
+      .split(',')
+      .map((item) => item.trim().toUpperCase())
+      .filter(Boolean)
+    if (statuses.length > 0) {
+      where.job = {
+        status: {
+          in: statuses,
+        },
+      }
     }
 
     const schedules = await prisma.schedule.findMany({
@@ -155,6 +194,7 @@ export async function GET(request: NextRequest) {
         start: start.toISOString(),
         end: end.toISOString(),
       },
+      scope: scoped.scope,
     })
   } catch (error) {
     console.error('Get schedules error:', error)

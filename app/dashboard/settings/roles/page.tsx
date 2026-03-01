@@ -282,7 +282,7 @@ export default function RolesPage() {
               <div>
                 <Label>Permissions</Label>
                 <div className="mt-2 space-y-4 max-h-96 overflow-y-auto border rounded-md p-4">
-                  {Object.entries(permissionsByCategory).map(([category, perms]) => (
+                  {Object.entries(webPermissionsByCategory).map(([category, perms]) => (
                     <div key={category} className="space-y-2">
                       <div className="flex items-center justify-between">
                         <h4 className="font-semibold text-sm">{category}</h4>
@@ -315,6 +315,48 @@ export default function RolesPage() {
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+              <div>
+                <Label>Mobile App Permissions</Label>
+                <div className="mt-2 space-y-4 max-h-96 overflow-y-auto border rounded-md p-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-semibold text-sm">Mobile App</h4>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          const allSelected = mobilePermissions.every((p) => formData.mobilePermissions.includes(p.key))
+                          setFormData((prev) => ({
+                            ...prev,
+                            mobilePermissions: allSelected ? [] : mobilePermissions.map((p) => p.key),
+                          }))
+                        }}
+                      >
+                        {mobilePermissions.every((p) => formData.mobilePermissions.includes(p.key))
+                          ? 'Deselect All'
+                          : 'Select All'}
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 ml-4">
+                      {mobilePermissions.map((perm) => (
+                        <label
+                          key={perm.key}
+                          className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={formData.mobilePermissions.includes(perm.key)}
+                            onChange={() => toggleMobilePermission(perm.key)}
+                            className="rounded"
+                          />
+                          <span className="text-sm">{perm.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

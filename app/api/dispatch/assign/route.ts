@@ -3,8 +3,9 @@ import { prisma } from '@/lib/prisma'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requireAnyPermission } from '@/lib/authorization'
 import { validateRequest, jobAssignmentSchema } from '@/lib/validation'
-import { notifyDispatchJobActivity, notifyJobAssigned } from '@/lib/notifications'
+import { createNotificationsForUsers, notifyDispatchJobActivity, notifyJobAssigned } from '@/lib/notifications'
 import { publishDispatchRealtime } from '@/lib/dispatch-realtime'
+import { syncAutoJobSchedules } from '@/lib/services/job-schedule-sync'
 
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -75,9 +76,11 @@ export async function POST(request: NextRequest) {
 
     const previousAssignees = new Set(job.assignments.map((a) => a.userId))
     const nextAssignees = new Set(normalizedUserIds)
+    const newlyAssignedUserIds = normalizedUserIds.filter((id) => !previousAssignees.has(id))
     const changed =
       previousAssignees.size !== nextAssignees.size ||
       [...previousAssignees].some((id) => !nextAssignees.has(id))
+    const scheduleChanged = Boolean(parsedStart || parsedEnd)
 
     // Update assignment and schedule atomically.
     const updatedJob = await prisma.$transaction(async (tx) => {
@@ -117,6 +120,16 @@ export async function POST(request: NextRequest) {
         },
       })
 
+      await syncAutoJobSchedules(tx, {
+        tenantId: user.tenantId,
+        jobId,
+        jobNumber: job.jobNumber,
+        jobTitle: job.title,
+        userIds: normalizedUserIds,
+        scheduledStart: parsedStart,
+        scheduledEnd: parsedEnd,
+      })
+
       await tx.dispatchEvent.create({
         data: {
           tenantId: user.tenantId,
@@ -153,9 +166,31 @@ export async function POST(request: NextRequest) {
       return jobUpdate
     })
 
-    // Notify assigned users.
-    for (const uid of normalizedUserIds) {
+    // Notify newly assigned users.
+    for (const uid of newlyAssignedUserIds) {
       await notifyJobAssigned(user.tenantId, uid, jobId, job.title)
+    }
+
+    // Notify all active assignees when schedule is set/changed.
+    if (normalizedUserIds.length > 0 && scheduleChanged) {
+      const scheduleLabel = parsedStart
+        ? parsedStart.toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+          })
+        : 'updated'
+      await createNotificationsForUsers(user.tenantId, normalizedUserIds, {
+        type: 'JOB_UPDATED',
+        title: 'Job Schedule Updated',
+        message: `${job.jobNumber} is scheduled for ${scheduleLabel}.`,
+        linkUrl: `/dashboard/jobs/${jobId}`,
+        linkType: 'job',
+        linkId: jobId,
+        actorUserId: user.id,
+        action: 'job_schedule_assigned',
+      })
     }
 
     publishDispatchRealtime(user.tenantId, {
