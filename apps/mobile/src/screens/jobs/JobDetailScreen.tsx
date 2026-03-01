@@ -52,6 +52,10 @@ function formatStatusLabel(status: string) {
     .replaceAll('_', ' ')
 }
 
+function asSafeText(value: unknown, fallback = '') {
+  return typeof value === 'string' ? value : fallback
+}
+
 interface JobResponse {
   job: Job
 }
@@ -154,6 +158,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
   })
 
   const job = jobQuery.data?.job
+  const jobStatus = asSafeText(job?.status, 'SCHEDULED')
   const onRefresh = async () => {
     await Promise.all([jobQuery.refetch(), attachmentsQuery.refetch(), timeQuery.refetch()])
   }
@@ -519,7 +524,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
             <Text style={styles.title}>
               {job.jobNumber} - {job.title}
             </Text>
-            <StatusChip status={job.status} />
+            <StatusChip status={jobStatus} />
             <Text style={styles.meta}>Client: {job.client?.name || 'N/A'}</Text>
             <Text style={styles.meta}>Phone: {job.client?.phone || 'N/A'}</Text>
             {!isOnline ? <Text style={styles.offlineBadge}>Offline - showing last synced data</Text> : null}
@@ -579,7 +584,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
                   setStatusPickerVisible(true)
                 }}
               >
-                <Text style={styles.statusSelectValue}>{formatStatusLabel(job.status)}</Text>
+                <Text style={styles.statusSelectValue}>{formatStatusLabel(jobStatus)}</Text>
                 <Ionicons name="chevron-down" size={18} color={BRAND.text} />
               </Pressable>
               <Text style={styles.meta}>Select a status to update this job.</Text>
@@ -684,7 +689,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
                         {task.title}
                       </Text>
                       <View style={styles.inlinePills}>
-                        <Text style={styles.statusPill}>{task.status.replaceAll('_', ' ')}</Text>
+                        <Text style={styles.statusPill}>{asSafeText(task.status).replaceAll('_', ' ')}</Text>
                         <Text style={styles.priorityPill}>{task.priority}</Text>
                       </View>
                     </View>
@@ -722,7 +727,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
                         {issue.title}
                       </Text>
                       <View style={styles.inlinePills}>
-                        <Text style={styles.statusPill}>{issue.status.replaceAll('_', ' ')}</Text>
+                        <Text style={styles.statusPill}>{asSafeText(issue.status).replaceAll('_', ' ')}</Text>
                         <Text style={styles.priorityPill}>{issue.priority}</Text>
                       </View>
                     </View>
@@ -1005,7 +1010,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
                   <Text style={styles.modalTitle}>Update Job Status</Text>
                   <ScrollView style={{ maxHeight: 360 }}>
                     {JOB_STATUS_OPTIONS.map((status) => {
-                      const active = job.status === status
+                      const active = jobStatus === status
                       return (
                         <Pressable
                           key={status}
