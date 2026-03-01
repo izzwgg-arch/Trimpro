@@ -153,6 +153,7 @@ model User {
   conversationReadReceipts     ConversationReadReceipt[]
   createdInvoicePaymentIntents InvoicePaymentIntent[]    @relation("InvoicePaymentIntentCreatedBy")
   pushDevices                  UserPushDevice[]
+  requestedPaymentRefunds      PaymentRefund[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
