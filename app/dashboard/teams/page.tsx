@@ -13,6 +13,13 @@ import { RowDetailedItem } from '@/components/lists/RowDetailedItem'
 import { TableView } from '@/components/lists/TableView'
 import { Users, Plus, Search, Mail, Phone, Briefcase, X, Pencil } from 'lucide-react'
 
+const ALLOWED_BASE_ROLES = new Set(['ADMIN', 'MANAGER', 'OFFICE', 'FIELD', 'SALES', 'ACCOUNTING'])
+
+function deriveBaseRole(roleName: string): string {
+  const upper = roleName.trim().toUpperCase()
+  return ALLOWED_BASE_ROLES.has(upper) ? upper : 'OFFICE'
+}
+
 interface TeamMember {
   id: string
   firstName: string
@@ -34,6 +41,13 @@ interface TeamMember {
   }
 }
 
+interface AvailableRole {
+  id: string
+  name: string
+  isSystem: boolean
+  isActive: boolean
+}
+
 export default function TeamsPage() {
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [loading, setLoading] = useState(true)
@@ -49,12 +63,14 @@ export default function TeamsPage() {
   const [reinviteLoadingById, setReinviteLoadingById] = useState<Record<string, boolean>>({})
   const [viewMode, setViewMode] = useViewMode('team', 'grid')
   const [editingUserId, setEditingUserId] = useState<string | null>(null)
+  const [availableRoles, setAvailableRoles] = useState<AvailableRole[]>([])
   const [inviteForm, setInviteForm] = useState({
     email: '',
     firstName: '',
     lastName: '',
     phone: '',
-    role: 'FIELD' as 'ADMIN' | 'MANAGER' | 'OFFICE' | 'FIELD' | 'SALES' | 'ACCOUNTING',
+    role: 'FIELD',
+    roleId: '',
   })
   const [editForm, setEditForm] = useState({
     firstName: '',
@@ -68,6 +84,7 @@ export default function TeamsPage() {
 
   useEffect(() => {
     fetchTeam()
+    fetchRoles()
   }, [])
 
   const fetchTeam = async () => {
@@ -90,6 +107,31 @@ export default function TeamsPage() {
       console.error('Error fetching team:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchRoles = async () => {
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch('/api/roles', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!response.ok) return
+      const data = await response.json()
+      const roles = Array.isArray(data.roles) ? data.roles : []
+      setAvailableRoles(
+        roles
+          .filter((role: any) => role?.isActive !== false)
+          .map((role: any) => ({
+            id: role.id,
+            name: String(role.name || '').trim(),
+            isSystem: Boolean(role.isSystem),
+            isActive: Boolean(role.isActive),
+          }))
+          .filter((role: AvailableRole) => role.name.length > 0)
+      )
+    } catch (error) {
+      console.error('Error fetching roles for invite selector:', error)
     }
   }
 
@@ -130,12 +172,14 @@ export default function TeamsPage() {
           ? `User invited, but email send failed: ${data.emailError || 'Unknown email provider error'}`
           : 'User invited successfully! The invitation email has been sent.'
       )
+      const defaultRole = roleOptions[0] || { id: '', name: 'FIELD' }
       setInviteForm({
         email: '',
         firstName: '',
         lastName: '',
         phone: '',
-        role: 'FIELD',
+        role: deriveBaseRole(defaultRole.name),
+        roleId: defaultRole.id,
       })
       
       // Refresh team list
@@ -260,6 +304,15 @@ export default function TeamsPage() {
   }
   const managerUsers = teamMembers.filter((member) => member.role === 'MANAGER')
   const managerOptions = managerUsers.filter((manager) => manager.id !== editingUserId)
+  const fallbackRoleOptions: AvailableRole[] = [
+    { id: 'FIELD', name: 'FIELD', isSystem: true, isActive: true },
+    { id: 'MANAGER', name: 'MANAGER', isSystem: true, isActive: true },
+    { id: 'OFFICE', name: 'OFFICE', isSystem: true, isActive: true },
+    { id: 'SALES', name: 'SALES', isSystem: true, isActive: true },
+    { id: 'ACCOUNTING', name: 'ACCOUNTING', isSystem: true, isActive: true },
+    { id: 'ADMIN', name: 'ADMIN', isSystem: true, isActive: true },
+  ]
+  const roleOptions = availableRoles.length > 0 ? availableRoles : fallbackRoleOptions
 
   if (loading) {
     return (
@@ -527,7 +580,8 @@ export default function TeamsPage() {
                       firstName: '',
                       lastName: '',
                       phone: '',
-                      role: 'FIELD',
+                      role: deriveBaseRole(roleOptions[0]?.name || 'FIELD'),
+                      roleId: roleOptions[0]?.id || 'FIELD',
                     })
                   }}
                 >
@@ -590,19 +644,25 @@ export default function TeamsPage() {
                 <div>
                   <Label htmlFor="role">Role *</Label>
                   <Select
-                    value={inviteForm.role}
-                    onValueChange={(value) => setInviteForm({ ...inviteForm, role: value as any })}
+                    value={inviteForm.roleId || roleOptions[0]?.id}
+                    onValueChange={(value) => {
+                      const selectedRole = roleOptions.find((role) => role.id === value)
+                      setInviteForm({
+                        ...inviteForm,
+                        roleId: value,
+                        role: deriveBaseRole(selectedRole?.name || 'FIELD'),
+                      })
+                    }}
                   >
                     <SelectTrigger id="role">
                       <SelectValue placeholder="Select role" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="FIELD">Field Worker</SelectItem>
-                      <SelectItem value="MANAGER">Manager</SelectItem>
-                      <SelectItem value="OFFICE">Office Staff</SelectItem>
-                      <SelectItem value="SALES">Sales</SelectItem>
-                      <SelectItem value="ACCOUNTING">Accounting</SelectItem>
-                      <SelectItem value="ADMIN">Admin</SelectItem>
+                      {roleOptions.map((role) => (
+                        <SelectItem key={role.id} value={role.id}>
+                          {role.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -620,7 +680,8 @@ export default function TeamsPage() {
                         firstName: '',
                         lastName: '',
                         phone: '',
-                        role: 'FIELD',
+                        role: deriveBaseRole(roleOptions[0]?.name || 'FIELD'),
+                        roleId: roleOptions[0]?.id || 'FIELD',
                       })
                     }}
                   >

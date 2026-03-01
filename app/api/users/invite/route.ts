@@ -19,13 +19,43 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { email, firstName, lastName, phone, role } = await request.json()
+    const { email, firstName, lastName, phone, role, roleId } = await request.json()
 
-    if (!email || !firstName || !lastName || !role) {
+    if (!email || !firstName || !lastName || (!role && !roleId)) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    const normalizedRole = String(role).trim().toUpperCase()
+    let selectedRoleRecord: {
+      id: string
+      name: string
+      permissions: Array<{ permission: { key: string } }>
+    } | null = null
+    if (typeof roleId === 'string' && roleId.trim()) {
+      selectedRoleRecord = await prisma.role.findFirst({
+        where: {
+          id: roleId.trim(),
+          tenantId: user.tenantId,
+          isActive: true,
+        },
+        include: {
+          permissions: {
+            include: {
+              permission: {
+                select: { key: true },
+              },
+            },
+          },
+        },
+      })
+
+      if (!selectedRoleRecord) {
+        return NextResponse.json({ error: 'Selected role not found' }, { status: 400 })
+      }
+    }
+
+    const normalizedRole = selectedRoleRecord
+      ? (ALLOWED_ROLES.has(selectedRoleRecord.name.toUpperCase()) ? selectedRoleRecord.name.toUpperCase() : 'OFFICE')
+      : String(role).trim().toUpperCase()
     if (!ALLOWED_ROLES.has(normalizedRole)) {
       return NextResponse.json({ error: 'Invalid role' }, { status: 400 })
     }
@@ -47,8 +77,11 @@ export async function POST(request: NextRequest) {
     const inviteExp = new Date()
     inviteExp.setDate(inviteExp.getDate() + 7)
 
-    // Get default permissions for role
-    const permissions = getDefaultPermissions(normalizedRole)
+    // Use selected role permissions when a role assignment is selected; fallback to enum defaults.
+    const permissions =
+      selectedRoleRecord && selectedRoleRecord.permissions.length > 0
+        ? selectedRoleRecord.permissions.map((rp) => rp.permission.key)
+        : getDefaultPermissions(normalizedRole)
 
     // Create user
     const newUser = await prisma.user.create({
@@ -66,6 +99,35 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    // Assign role record (custom or system) for RBAC-aware permission resolution.
+    if (selectedRoleRecord) {
+      await prisma.userRoleAssignment.create({
+        data: {
+          userId: newUser.id,
+          roleId: selectedRoleRecord.id,
+          assignedBy: user.id,
+        },
+      })
+    } else {
+      const fallbackRole = await prisma.role.findFirst({
+        where: {
+          tenantId: user.tenantId,
+          name: normalizedRole,
+          isActive: true,
+        },
+        select: { id: true },
+      })
+      if (fallbackRole) {
+        await prisma.userRoleAssignment.create({
+          data: {
+            userId: newUser.id,
+            roleId: fallbackRole.id,
+            assignedBy: user.id,
+          },
+        })
+      }
+    }
+
     // Create audit log for user creation
     await prisma.auditLog.create({
       data: {
@@ -79,6 +141,8 @@ export async function POST(request: NextRequest) {
           firstName,
           lastName,
           role: normalizedRole,
+          selectedRoleId: selectedRoleRecord?.id || null,
+          selectedRoleName: selectedRoleRecord?.name || normalizedRole,
         },
       },
     })
@@ -89,7 +153,7 @@ export async function POST(request: NextRequest) {
     const apkDownloadUrl =
       process.env.TRIMPRO_FIELD_APK_URL ||
       process.env.EXPO_ANDROID_APK_URL ||
-      'https://expo.dev/artifacts/eas/2E6kirTmBvmAZXB2KAftdy.apk'
+      'https://expo.dev/artifacts/eas/dRcgyHyA2NeJUs6EH5RbSv.apk'
     let emailSent = false
     let emailError: string | null = null
     try {
