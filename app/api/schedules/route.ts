@@ -43,7 +43,8 @@ export async function GET(request: NextRequest) {
   try {
     const canCreateForOthers =
       user.role === 'ADMIN' ||
-      (await hasMobilePermission(user.id, user.tenantId, 'canCreateSchedulesForOthers'))
+      (await hasMobilePermission(user.id, user.tenantId, 'canCreateSchedulesForOthers')) ||
+      (await hasMobilePermission(user.id, user.tenantId, 'mobile.jobs.assign'))
     let start: Date
     let end: Date
 

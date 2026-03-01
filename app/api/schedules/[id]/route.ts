@@ -16,7 +16,8 @@ export async function GET(
   try {
     const canCreateForOthers =
       user.role === 'ADMIN' ||
-      (await hasMobilePermission(user.id, user.tenantId, 'canCreateSchedulesForOthers'))
+      (await hasMobilePermission(user.id, user.tenantId, 'canCreateSchedulesForOthers')) ||
+      (await hasMobilePermission(user.id, user.tenantId, 'mobile.jobs.assign'))
     const schedule = await prisma.schedule.findFirst({
       where: {
         id: params.id,
@@ -105,7 +106,8 @@ export async function PUT(
       typeof userId === 'string' && userId.trim().length > 0 ? userId.trim() : existing.userId
     const canCreateForOthers =
       user.role === 'ADMIN' ||
-      (await hasMobilePermission(user.id, user.tenantId, 'canCreateSchedulesForOthers'))
+      (await hasMobilePermission(user.id, user.tenantId, 'canCreateSchedulesForOthers')) ||
+      (await hasMobilePermission(user.id, user.tenantId, 'mobile.jobs.assign'))
     if (targetUserId !== user.id && !canCreateForOthers) {
       return NextResponse.json(
         { error: 'Forbidden: You can only assign schedules to yourself' },
