@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requireAnyPermission } from '@/lib/authorization'
 import { syncAutoJobSchedules } from '@/lib/services/job-schedule-sync'
+import { createNotificationsForUsers } from '@/lib/notifications'
 
 const DEFAULT_DURATION_MINUTES = 60
 
@@ -150,6 +151,28 @@ export async function PATCH(
 
       return updatedJob
     })
+
+    if (assignmentUserIds.length > 0) {
+      const scheduleMessage = updated.scheduledStart
+        ? `${job.jobNumber} is now scheduled for ${updated.scheduledStart.toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+          })}.`
+        : `${job.jobNumber} was moved to unscheduled.`
+
+      await createNotificationsForUsers(user.tenantId, assignmentUserIds, {
+        type: 'JOB_UPDATED',
+        title: 'Job Schedule Updated',
+        message: scheduleMessage,
+        linkUrl: `/dashboard/jobs/${job.id}`,
+        linkType: 'job',
+        linkId: job.id,
+        actorUserId: user.id,
+        action: 'job_schedule_dragdrop_updated',
+      })
+    }
 
     return NextResponse.json({
       job: updated,
