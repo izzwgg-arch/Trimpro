@@ -56,6 +56,10 @@ function asSafeText(value: unknown, fallback = '') {
   return typeof value === 'string' ? value : fallback
 }
 
+function asArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : []
+}
+
 interface JobResponse {
   job: Job
 }
@@ -159,6 +163,8 @@ export function JobDetailScreen({ route, navigation }: Props) {
 
   const job = jobQuery.data?.job
   const jobStatus = asSafeText(job?.status, 'SCHEDULED')
+  const taskRows = asArray<Job['tasks'][number]>(job?.tasks)
+  const issueRows = asArray<Job['issues'][number]>(job?.issues)
   const onRefresh = async () => {
     await Promise.all([jobQuery.refetch(), attachmentsQuery.refetch(), timeQuery.refetch()])
   }
@@ -202,7 +208,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
   })
 
   const myActiveEntry = useMemo(
-    () => (timeQuery.data?.activeEntries || []).find((entry) => entry.workerId === user?.id) || null,
+    () => asArray<TimeEntry>(timeQuery.data?.activeEntries).find((entry) => entry?.workerId === user?.id) || null,
     [timeQuery.data?.activeEntries, user?.id]
   )
 
@@ -467,8 +473,8 @@ export function JobDetailScreen({ route, navigation }: Props) {
   }
 
   const attachmentRows = useMemo(() => {
-    const fromJob = job?.attachments || []
-    const fromAttachmentApi = attachmentsQuery.data?.attachments || []
+    const fromJob = asArray<Attachment>(job?.attachments)
+    const fromAttachmentApi = asArray<Attachment>(attachmentsQuery.data?.attachments)
     const merged = [...localAttachments, ...fromAttachmentApi, ...fromJob]
     const deduped = new Map<string, Attachment>()
     for (const row of merged) {
@@ -671,12 +677,12 @@ export function JobDetailScreen({ route, navigation }: Props) {
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Tasks</Text>
-                <Text style={styles.countBadge}>{job.tasks?.length || 0}</Text>
+                <Text style={styles.countBadge}>{taskRows.length}</Text>
               </View>
-              {(job.tasks || []).length === 0 ? (
+              {taskRows.length === 0 ? (
                 <Text style={styles.meta}>No tasks for this job.</Text>
               ) : (
-                (job.tasks || []).map((task) => (
+                taskRows.map((task) => (
                   <Pressable
                     key={task.id}
                     style={styles.linkedRow}
@@ -709,12 +715,12 @@ export function JobDetailScreen({ route, navigation }: Props) {
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Issues</Text>
-                <Text style={styles.countBadge}>{job.issues?.length || 0}</Text>
+                <Text style={styles.countBadge}>{issueRows.length}</Text>
               </View>
-              {(job.issues || []).length === 0 ? (
+              {issueRows.length === 0 ? (
                 <Text style={styles.meta}>No issues for this job.</Text>
               ) : (
-                (job.issues || []).map((issue) => (
+                issueRows.map((issue) => (
                   <Pressable
                     key={issue.id}
                     style={styles.linkedRow}
