@@ -133,6 +133,13 @@ function parseSlotId(slotId: string): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
+function parseDayId(dayId: string): Date | null {
+  if (!dayId.startsWith('day:')) return null
+  const raw = dayId.replace('day:', '')
+  const parsed = parse(raw, 'yyyy-MM-dd', new Date())
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
 export default function SchedulePage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -187,7 +194,7 @@ export default function SchedulePage() {
   }, [view, currentDate, selectedUserId, jobIdFilter])
 
   useEffect(() => {
-    if (view !== 'week') return
+    if (view !== 'week' && view !== 'month') return
     fetchScheduledJobs()
   }, [view, currentDate, selectedUserId, statusFilter, crewFilter, priorityFilter, debouncedSearch])
 
@@ -337,15 +344,17 @@ export default function SchedulePage() {
   const fetchScheduledJobs = async () => {
     try {
       const token = localStorage.getItem('accessToken')
-      const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 })
-      weekStart.setHours(0, 0, 0, 0)
-      const weekEnd = endOfWeek(currentDate, { weekStartsOn: 1 })
-      weekEnd.setHours(23, 59, 59, 999)
+      const rangeStart =
+        view === 'month' ? startOfMonth(currentDate) : startOfWeek(currentDate, { weekStartsOn: 1 })
+      rangeStart.setHours(0, 0, 0, 0)
+      const rangeEnd =
+        view === 'month' ? endOfMonth(currentDate) : endOfWeek(currentDate, { weekStartsOn: 1 })
+      rangeEnd.setHours(23, 59, 59, 999)
 
       const query = buildJobsQuery({
         scheduled: 'true',
-        startDate: weekStart.toISOString(),
-        endDate: weekEnd.toISOString(),
+        startDate: rangeStart.toISOString(),
+        endDate: rangeEnd.toISOString(),
         limit: '300',
       })
 
@@ -549,8 +558,14 @@ export default function SchedulePage() {
       return
     }
 
-    const targetStart = parseSlotId(overId)
-    if (!targetStart) return
+    let targetStart = parseSlotId(overId)
+    if (!targetStart) {
+      const targetDay = parseDayId(overId)
+      if (!targetDay) return
+      const sourceTime = job.scheduledStart ? new Date(job.scheduledStart) : null
+      targetStart = new Date(targetDay)
+      targetStart.setHours(sourceTime ? sourceTime.getHours() : 9, sourceTime ? sourceTime.getMinutes() : 0, 0, 0)
+    }
 
     const durationMinutes = getJobDurationMinutes(job)
     const targetEnd = addMinutes(targetStart, durationMinutes)
@@ -864,75 +879,52 @@ export default function SchedulePage() {
       )}
 
       {view === 'month' && (
-        <Card>
-          <CardContent className="pt-6">
-            <div className="mb-2 grid grid-cols-7 gap-2">
-              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
-                <div key={day} className="text-center text-sm font-medium text-gray-500">
-                  {day}
-                </div>
-              ))}
-            </div>
-            <div className="grid grid-cols-7 gap-2">
-              {generateMonthDays().map((day) => {
-                const daySchedules = getSchedulesForDate(day)
-                const inCurrentMonth = isSameMonth(day, currentDate)
-                const isCurrentDay = isToday(day)
-                const visibleSchedules = daySchedules.slice(0, 3)
-                const remaining = Math.max(0, daySchedules.length - visibleSchedules.length)
+        <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+          <Card>
+            <CardContent className="pt-6">
+              <div className="mb-2 grid grid-cols-7 gap-2">
+                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
+                  <div key={day} className="text-center text-sm font-medium text-gray-500">
+                    {day}
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-7 gap-2">
+                {generateMonthDays().map((day) => {
+                  const inCurrentMonth = isSameMonth(day, currentDate)
+                  const isCurrentDay = isToday(day)
+                  const dayJobs = scheduledJobs
+                    .filter((job) => job.scheduledStart && isSameDay(new Date(job.scheduledStart), day))
+                    .sort((a, b) => {
+                      const aStart = a.scheduledStart ? new Date(a.scheduledStart).getTime() : 0
+                      const bStart = b.scheduledStart ? new Date(b.scheduledStart).getTime() : 0
+                      return aStart - bStart
+                    })
+                  const visibleJobs = dayJobs.slice(0, 3)
+                  const remaining = Math.max(0, dayJobs.length - visibleJobs.length)
 
-                return (
-                  <div
-                    key={day.toISOString()}
-                    className={`min-h-[120px] rounded-md border p-2 transition-colors ${
-                      inCurrentMonth ? 'bg-white' : 'bg-gray-50'
-                    } ${isCurrentDay ? 'border-blue-500' : 'border-gray-200'}`}
-                  >
-                    <button
-                      type="button"
-                      className={`mb-2 text-sm font-semibold ${inCurrentMonth ? 'text-gray-900' : 'text-gray-400'} ${
-                        isCurrentDay ? 'text-blue-600' : ''
-                      }`}
-                      onClick={() => {
+                  return (
+                    <MonthDayCell
+                      key={day.toISOString()}
+                      day={day}
+                      inCurrentMonth={inCurrentMonth}
+                      isCurrentDay={isCurrentDay}
+                      jobs={visibleJobs}
+                      remaining={remaining}
+                      onOpenJob={(jobId) => router.push(`/dashboard/jobs/${jobId}`)}
+                      onOpenDay={() => {
                         setCurrentDate(day)
                         setView('day')
                       }}
-                    >
-                      {format(day, 'd')}
-                    </button>
-
-                    <div className="space-y-1">
-                      {visibleSchedules.map((schedule) => (
-                        <button
-                          key={schedule.id}
-                          type="button"
-                          className="w-full truncate rounded bg-blue-100 px-1.5 py-1 text-left text-[11px] text-blue-900"
-                          onClick={() => router.push(schedule.job?.id ? `/dashboard/jobs/${schedule.job.id}` : `/dashboard/schedule/${schedule.id}`)}
-                          title={`${schedule.title} • ${format(new Date(schedule.startTime), 'h:mm a')}`}
-                        >
-                          {format(new Date(schedule.startTime), 'h:mm a')} {schedule.title}
-                        </button>
-                      ))}
-
-                      {remaining > 0 && (
-                        <button
-                          type="button"
-                          className="text-[11px] text-blue-600 hover:underline"
-                          onClick={() => {
-                            setCurrentDate(day)
-                            setView('day')
-                          }}
-                        >
-                          +{remaining} more
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </CardContent>
-        </Card>
+                      activeDragJobId={activeDragJobId}
+                      canDragJob={canDragJob}
+                    />
+                  )
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        </DndContext>
       )}
     </div>
   )
@@ -1192,6 +1184,103 @@ function ScheduledJobCard({
       <p className="truncate font-medium">{job.jobNumber} {job.title}</p>
       <p className="truncate text-[11px] text-gray-600">{job.client.name}</p>
       {job.scheduledStart && <p className="text-[10px] text-gray-500">{format(new Date(job.scheduledStart), 'h:mm a')}</p>}
+    </button>
+  )
+}
+
+function MonthDayCell({
+  day,
+  inCurrentMonth,
+  isCurrentDay,
+  jobs,
+  remaining,
+  onOpenJob,
+  onOpenDay,
+  activeDragJobId,
+  canDragJob,
+}: {
+  day: Date
+  inCurrentMonth: boolean
+  isCurrentDay: boolean
+  jobs: JobItem[]
+  remaining: number
+  onOpenJob: (jobId: string) => void
+  onOpenDay: () => void
+  activeDragJobId: string | null
+  canDragJob: (job: JobItem) => boolean
+}) {
+  const dayId = `day:${format(day, 'yyyy-MM-dd')}`
+  const { isOver, setNodeRef } = useDroppable({ id: dayId })
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`min-h-[120px] rounded-md border p-2 transition-colors ${
+        inCurrentMonth ? 'bg-white' : 'bg-gray-50'
+      } ${isCurrentDay ? 'border-blue-500' : 'border-gray-200'} ${
+        isOver ? 'ring-2 ring-blue-400 ring-offset-1' : activeDragJobId ? 'bg-slate-50/40' : ''
+      }`}
+    >
+      <button
+        type="button"
+        className={`mb-2 text-sm font-semibold ${inCurrentMonth ? 'text-gray-900' : 'text-gray-400'} ${
+          isCurrentDay ? 'text-blue-600' : ''
+        }`}
+        onClick={onOpenDay}
+      >
+        {format(day, 'd')}
+      </button>
+
+      <div className="space-y-1">
+        {jobs.map((job) => (
+          <MonthJobChip key={job.id} job={job} onOpenJob={onOpenJob} isDraggable={canDragJob(job)} />
+        ))}
+
+        {remaining > 0 && (
+          <button type="button" className="text-[11px] text-blue-600 hover:underline" onClick={onOpenDay}>
+            +{remaining} more
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function MonthJobChip({
+  job,
+  onOpenJob,
+  isDraggable,
+}: {
+  job: JobItem
+  onOpenJob: (jobId: string) => void
+  isDraggable: boolean
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `job:${job.id}`,
+    disabled: !isDraggable,
+  })
+
+  const style = {
+    transform: CSS.Translate.toString(transform),
+    opacity: isDragging ? 0.45 : 1,
+  }
+
+  return (
+    <button
+      type="button"
+      ref={setNodeRef}
+      style={style}
+      className={`w-full truncate rounded px-1.5 py-1 text-left text-[11px] ${
+        isDraggable
+          ? 'cursor-grab bg-blue-100 text-blue-900 hover:bg-blue-200'
+          : 'cursor-not-allowed bg-gray-100 text-gray-500'
+      }`}
+      onClick={() => onOpenJob(job.id)}
+      {...listeners}
+      {...attributes}
+      title={`${job.scheduledStart ? format(new Date(job.scheduledStart), 'h:mm a') : ''} ${job.jobNumber} • ${job.title}`}
+    >
+      {job.scheduledStart ? format(new Date(job.scheduledStart), 'h:mm a') : '9:00 AM'} {job.jobNumber} {job.title}
     </button>
   )
 }
