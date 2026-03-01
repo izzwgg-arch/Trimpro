@@ -7,7 +7,22 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { formatDate, formatDateTime } from '@/lib/utils'
 import { Plus, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Users } from 'lucide-react'
-import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, format, addWeeks, subWeeks, addMonths, subMonths, addDays, subDays, isSameDay, isToday } from 'date-fns'
+import {
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
+  format,
+  addWeeks,
+  subWeeks,
+  addMonths,
+  subMonths,
+  addDays,
+  subDays,
+  isSameDay,
+  isToday,
+  isSameMonth,
+} from 'date-fns'
 
 interface Schedule {
   id: string
@@ -166,11 +181,30 @@ export default function SchedulePage() {
     return Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
   }
 
+  const generateMonthDays = () => {
+    const monthStart = startOfMonth(currentDate)
+    const monthEnd = endOfMonth(currentDate)
+    const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 })
+    const gridEnd = endOfWeek(monthEnd, { weekStartsOn: 1 })
+    const days: Date[] = []
+    let day = gridStart
+    while (day <= gridEnd) {
+      days.push(day)
+      day = addDays(day, 1)
+    }
+    return days
+  }
+
   const getSchedulesForDate = (date: Date) => {
     return schedules.filter((schedule) => {
       const scheduleDate = new Date(schedule.startTime)
       return isSameDay(scheduleDate, date)
     })
+  }
+
+  const getScheduleClickHref = (schedule: Schedule) => {
+    if (schedule.job?.id) return `/dashboard/jobs/${schedule.job.id}`
+    return `/dashboard/schedule/${schedule.id}`
   }
 
   if (loading) {
@@ -320,7 +354,7 @@ export default function SchedulePage() {
                               schedule.type === 'ESTIMATE' ? 'bg-purple-100 border-purple-300 border' :
                               'bg-gray-100 border-gray-300 border'
                             }`}
-                            onClick={() => router.push(`/dashboard/schedule/${schedule.id}`)}
+                            onClick={() => router.push(getScheduleClickHref(schedule))}
                           >
                             <p className="font-medium truncate">{schedule.title}</p>
                             <p className="text-gray-600">
@@ -361,7 +395,7 @@ export default function SchedulePage() {
                   <div
                     key={schedule.id}
                     className="p-4 border rounded-lg hover:shadow-md transition-shadow cursor-pointer"
-                    onClick={() => router.push(`/dashboard/schedule/${schedule.id}`)}
+                    onClick={() => router.push(getScheduleClickHref(schedule))}
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
@@ -393,7 +427,7 @@ export default function SchedulePage() {
         </Card>
       )}
 
-      {/* Month View - Simplified */}
+      {/* Month View */}
       {view === 'month' && (
         <Card>
           <CardContent className="pt-6">
@@ -404,8 +438,74 @@ export default function SchedulePage() {
                 </div>
               ))}
             </div>
-            <div className="text-center text-gray-500 py-8">
-              Month view grid implementation coming soon. Use week or day view for detailed scheduling.
+            <div className="grid grid-cols-7 gap-2">
+              {generateMonthDays().map((day) => {
+                const daySchedules = getSchedulesForDate(day)
+                const inCurrentMonth = isSameMonth(day, currentDate)
+                const isCurrentDay = isToday(day)
+                const visibleSchedules = daySchedules.slice(0, 3)
+                const remaining = Math.max(0, daySchedules.length - visibleSchedules.length)
+
+                return (
+                  <div
+                    key={day.toISOString()}
+                    className={`min-h-[120px] rounded-md border p-2 transition-colors ${
+                      inCurrentMonth ? 'bg-white' : 'bg-gray-50'
+                    } ${isCurrentDay ? 'border-blue-500' : 'border-gray-200'}`}
+                  >
+                    <button
+                      type="button"
+                      className={`mb-2 text-sm font-semibold ${inCurrentMonth ? 'text-gray-900' : 'text-gray-400'} ${
+                        isCurrentDay ? 'text-blue-600' : ''
+                      }`}
+                      onClick={() => {
+                        setCurrentDate(day)
+                        setView('day')
+                      }}
+                    >
+                      {format(day, 'd')}
+                    </button>
+
+                    <div className="space-y-1">
+                      {visibleSchedules.map((schedule) => {
+                        const hasConflict = conflicts.some((c) => c.includes(schedule.id))
+                        return (
+                          <button
+                            key={schedule.id}
+                            type="button"
+                            className={`w-full truncate rounded px-1.5 py-1 text-left text-[11px] ${
+                              hasConflict
+                                ? 'bg-red-100 text-red-800'
+                                : schedule.type === 'JOB'
+                                  ? 'bg-blue-100 text-blue-900'
+                                  : schedule.type === 'ESTIMATE'
+                                    ? 'bg-purple-100 text-purple-900'
+                                    : 'bg-gray-100 text-gray-800'
+                            }`}
+                            onClick={() => router.push(getScheduleClickHref(schedule))}
+                            title={`${schedule.title} • ${schedule.allDay ? 'All Day' : format(new Date(schedule.startTime), 'h:mm a')}`}
+                          >
+                            {schedule.allDay ? 'All Day' : format(new Date(schedule.startTime), 'h:mm a')} {schedule.title}
+                          </button>
+                        )
+                      })}
+
+                      {remaining > 0 && (
+                        <button
+                          type="button"
+                          className="text-[11px] text-blue-600 hover:underline"
+                          onClick={() => {
+                            setCurrentDate(day)
+                            setView('day')
+                          }}
+                        >
+                          +{remaining} more
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </CardContent>
         </Card>
