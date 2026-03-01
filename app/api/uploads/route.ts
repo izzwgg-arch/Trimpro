@@ -6,7 +6,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 
 export const runtime = 'nodejs'
 
-const MAX_FILE_BYTES = 50 * 1024 * 1024 // 50MB
+const MAX_FILE_BYTES = 10 * 1024 * 1024 // 10MB per file
 
 function getPublicBaseUrl(req: NextRequest): string {
   // Prefer explicit config (recommended in production)
@@ -71,10 +71,12 @@ function safeExtFromMime(mime: string): string {
 }
 
 export async function POST(request: NextRequest) {
+  console.log('[uploads] Upload route hit')
   const authError = await authenticateRequest(request)
   if (authError) return authError
 
   const user = getAuthUser(request)
+  console.log('[uploads] Authenticated user:', { userId: user.id, tenantId: user.tenantId })
 
   try {
     const form = await request.formData()
@@ -85,22 +87,17 @@ export async function POST(request: NextRequest) {
     }
 
     const contentType = file.type || 'application/octet-stream'
+    // Only allow: PDF, JPG, PNG, DOCX
     const allowed = [
-      /^image\//,
-      /^video\//,
-      /^application\/pdf$/,
-      /^application\/msword$/,
-      /^application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document$/,
-      /^application\/vnd\.ms-excel$/,
-      /^application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet$/,
-      /^text\/csv$/,
-      /^text\/plain$/,
-      /^application\/zip$/,
-      /^application\/x-rar-compressed$/,
-      /^application\/octet-stream$/,
+      /^application\/pdf$/, // PDF
+      /^image\/jpeg$/, // JPG
+      /^image\/jpg$/, // JPG (alternative)
+      /^image\/png$/, // PNG
+      /^application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document$/, // DOCX
     ].some((re) => re.test(contentType))
     if (!allowed) {
-      return NextResponse.json({ error: `Unsupported file type: ${contentType}` }, { status: 400 })
+      console.log('Upload rejected - unsupported file type:', { contentType, fileName: file.name })
+      return NextResponse.json({ error: `Unsupported file type. Only PDF, JPG, PNG, and DOCX files are allowed.` }, { status: 400 })
     }
 
     const arrayBuffer = await file.arrayBuffer()
@@ -109,7 +106,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Empty file' }, { status: 400 })
     }
     if (size > MAX_FILE_BYTES) {
-      return NextResponse.json({ error: 'File too large (max 50MB)' }, { status: 413 })
+      console.log('Upload rejected - file too large:', { fileName: file.name, size, maxBytes: MAX_FILE_BYTES })
+      return NextResponse.json({ error: 'File too large (max 10MB per file)' }, { status: 413 })
     }
 
     const ext = safeExtFromMime(contentType)
@@ -125,11 +123,13 @@ export async function POST(request: NextRequest) {
     
     // Verify file was written
     const fileStats = await fs.stat(absPath)
-    console.log('File uploaded successfully:', {
+    console.log('[uploads] File uploaded successfully:', {
       filename,
       path: absPath,
       size: fileStats.size,
       tenantId: user.tenantId,
+      contentType,
+      originalFileName: file.name,
     })
 
     const relUrl = `/uploads/${encodeURIComponent(user.tenantId)}/${encodeURIComponent(filename)}`

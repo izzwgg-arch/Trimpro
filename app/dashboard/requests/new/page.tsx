@@ -1,13 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ArrowLeft, Save } from 'lucide-react'
+import { ArrowLeft, ExternalLink, Paperclip, Save, Trash2, Upload } from 'lucide-react'
 import Link from 'next/link'
 import { parseAddressParts } from '@/lib/address/parse'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
@@ -28,15 +28,31 @@ interface Client {
   phone: string | null
 }
 
+interface StagedAttachment {
+  id: string
+  fileName: string
+  fileSize: number
+  mimeType: string
+  url: string
+  key: string
+  status: 'uploading' | 'uploaded' | 'failed'
+  error?: string
+}
+
 export default function NewRequestPage() {
+  console.log('[request-create] Component rendering - upload section should be visible')
   const router = useRouter()
   const searchParams = useSearchParams()
   const preselectedClientId = searchParams.get('clientId')?.trim() || ''
   const [loading, setLoading] = useState(false)
   const [users, setUsers] = useState<User[]>([])
   const [clients, setClients] = useState<Client[]>([])
+  const [stagedAttachments, setStagedAttachments] = useState<StagedAttachment[]>([])
+  const [attachmentError, setAttachmentError] = useState<string | null>(null)
+  const [dragActive, setDragActive] = useState(false)
   const [clientMode, setClientMode] = useState<'new' | 'existing'>('existing')
   const [jobSitePlaceId, setJobSitePlaceId] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [formData, setFormData] = useState({
     clientId: '',
     firstName: '',
@@ -149,6 +165,16 @@ export default function NewRequestPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    const uploadingCount = stagedAttachments.filter((a) => a.status === 'uploading').length
+    if (uploadingCount > 0) {
+      alert('Please wait for file uploads to finish before creating the request.')
+      return
+    }
+    const failedCount = stagedAttachments.filter((a) => a.status === 'failed').length
+    if (failedCount > 0) {
+      alert('Please remove failed uploads or try uploading those files again.')
+      return
+    }
     if (clientMode === 'existing' && !formData.clientId) {
       alert('Please select a valid existing client from the dropdown.')
       return
@@ -189,6 +215,35 @@ export default function NewRequestPage() {
 
       const data = await response.json()
       if (data.lead && data.lead.id) {
+        const uploadedAttachments = stagedAttachments.filter((a) => a.status === 'uploaded')
+        if (uploadedAttachments.length > 0) {
+          const attachErrors: string[] = []
+          for (const attachment of uploadedAttachments) {
+            const attachRes = await fetch('/api/attachments', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                entityType: 'request',
+                entityId: data.lead.id,
+                fileName: attachment.fileName,
+                fileSize: attachment.fileSize,
+                mimeType: attachment.mimeType,
+                url: attachment.url,
+                key: attachment.key,
+              }),
+            })
+            if (!attachRes.ok) {
+              const err = await attachRes.json().catch(() => ({}))
+              attachErrors.push(err.error || `Failed to attach ${attachment.fileName}`)
+            }
+          }
+          if (attachErrors.length > 0) {
+            alert(`Request was created, but ${attachErrors.length} file(s) could not be attached.`)
+          }
+        }
         router.push(`/dashboard/requests/${data.lead.id}`)
       } else {
         alert('Request created but unable to redirect. Please refresh the page.')
@@ -199,6 +254,139 @@ export default function NewRequestPage() {
       alert('Failed to create request')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const stageFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    console.log('[request-create] stageFiles called with', files.length, 'files')
+    setAttachmentError(null)
+    const fileList = Array.from(files)
+    
+    // Validate file types (PDF, JPG, PNG, DOCX only)
+    const allowedTypes = [
+      'application/pdf',
+      'image/jpeg',
+      'image/jpg', 
+      'image/png',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    ]
+    const allowedExtensions = ['.pdf', '.jpg', '.jpeg', '.png', '.docx']
+    
+    const invalidFiles = fileList.filter(file => {
+      const type = (file.type || '').toLowerCase()
+      const name = file.name.toLowerCase()
+      const typeMatch = allowedTypes.some(allowed => type === allowed.toLowerCase())
+      const extMatch = allowedExtensions.some(ext => name.endsWith(ext))
+      return !typeMatch && !extMatch
+    })
+    
+    if (invalidFiles.length > 0) {
+      setAttachmentError(`Invalid file types. Only PDF, JPG, PNG, and DOCX files are allowed. Rejected: ${invalidFiles.map(f => f.name).join(', ')}`)
+      return
+    }
+    
+    // Validate file sizes (10MB max)
+    const maxSize = 10 * 1024 * 1024 // 10MB
+    const oversized = fileList.filter(file => file.size > maxSize)
+    if (oversized.length > 0) {
+      setAttachmentError(`Files too large (max 10MB per file). Rejected: ${oversized.map(f => f.name).join(', ')}`)
+      return
+    }
+    
+    const token = localStorage.getItem('accessToken')
+    if (!token) {
+      setAttachmentError('Please sign in again and retry upload.')
+      return
+    }
+    for (const file of fileList) {
+      const tempId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+      setStagedAttachments((prev) => [
+        ...prev,
+        {
+          id: tempId,
+          fileName: file.name,
+          fileSize: file.size,
+          mimeType: file.type || 'application/octet-stream',
+          url: '',
+          key: '',
+          status: 'uploading',
+        },
+      ])
+
+      try {
+        const fd = new FormData()
+        fd.append('file', file)
+        const upRes = await fetch('/api/uploads', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: fd,
+        })
+        const upData = await upRes.json()
+        if (!upRes.ok) {
+          throw new Error(upData.error || `Upload failed for ${file.name}`)
+        }
+        setStagedAttachments((prev) =>
+          prev.map((item) =>
+            item.id === tempId
+              ? {
+                  ...item,
+                  status: 'uploaded',
+                  fileSize: upData.size || item.fileSize,
+                  mimeType: upData.mimeType || item.mimeType,
+                  url: upData.url,
+                  key: upData.relativeUrl || upData.filename || upData.url,
+                }
+              : item
+          )
+        )
+      } catch (error) {
+        const message = error instanceof Error ? error.message : `Upload failed for ${file.name}`
+        setStagedAttachments((prev) =>
+          prev.map((item) =>
+            item.id === tempId
+              ? {
+                  ...item,
+                  status: 'failed',
+                  error: message,
+                }
+              : item
+          )
+        )
+        setAttachmentError(message)
+      }
+    }
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const removeStagedAttachment = (id: string) => {
+    setStagedAttachments((prev) => prev.filter((item) => item.id !== id))
+  }
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setDragActive(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return
+    setDragActive(false)
+  }
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setDragActive(false)
+    void stageFiles(e.dataTransfer?.files || null)
+  }
+
+  const normalizePublicUrl = (rawUrl: string) => {
+    if (!rawUrl) return rawUrl
+    try {
+      const parsed = new URL(rawUrl, window.location.origin)
+      return parsed.toString()
+    } catch {
+      return rawUrl
     }
   }
 
@@ -478,11 +666,90 @@ export default function NewRequestPage() {
               />
             </div>
 
+            <div
+              className={`space-y-3 rounded-md border-2 border-dashed p-4 transition-colors ${
+                dragActive ? 'border-blue-500 bg-blue-50/40' : 'border-gray-200'
+              }`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              style={{ display: 'block' }}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Paperclip className="h-4 w-4" />
+                  <Label className="text-sm font-medium">Attachments (before save)</Label>
+                </div>
+                <label className="cursor-pointer">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => stageFiles(e.target.files)}
+                    accept=".pdf,.jpg,.jpeg,.png,.docx,application/pdf,image/jpeg,image/png,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  />
+                  <Button type="button" size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}>
+                    <Upload className="mr-2 h-4 w-4" />
+                    Upload Files
+                  </Button>
+                </label>
+              </div>
+              <p className="text-xs text-gray-500">Drag and drop files here, or click Upload Files.</p>
+
+              {attachmentError && <p className="text-sm text-red-600">{attachmentError}</p>}
+
+              {stagedAttachments.length === 0 ? (
+                <p className="text-sm text-gray-500">No files uploaded yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {stagedAttachments.map((attachment) => (
+                    <div key={attachment.id} className="flex items-center justify-between rounded border p-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{attachment.fileName}</p>
+                        <p className="text-xs text-gray-500">
+                          {attachment.status === 'uploading' && 'Uploading...'}
+                          {attachment.status === 'uploaded' && 'Uploaded'}
+                          {attachment.status === 'failed' && `Failed: ${attachment.error || 'Upload failed'}`}
+                        </p>
+                      </div>
+                      <div className="ml-3 flex items-center gap-1">
+                        {attachment.status === 'uploaded' && attachment.url ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            onClick={() => window.open(normalizePublicUrl(attachment.url), '_blank')}
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </Button>
+                        ) : null}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0"
+                          onClick={() => removeStagedAttachment(attachment.id)}
+                          disabled={attachment.status === 'uploading'}
+                        >
+                          <Trash2 className="h-4 w-4 text-red-600" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="flex justify-end space-x-4">
               <Button type="button" variant="outline" onClick={() => router.back()}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={loading}>
+              <Button
+                type="submit"
+                disabled={loading || stagedAttachments.some((attachment) => attachment.status === 'uploading')}
+              >
                 <Save className="mr-2 h-4 w-4" />
                 {loading ? 'Creating...' : 'Create Request'}
               </Button>
