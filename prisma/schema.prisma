@@ -139,6 +139,7 @@ model User {
   createdIssues                Issue[]                   @relation("IssueCreator")
   watchedIssues                IssueWatcher[]
   assignedLeads                Lead[]                    @relation("LeadAssignee")
+  urgentLeadsMarked            Lead[]                    @relation("LeadUrgentBy")
   sentEmails                   Email[]
   calls                        Call[]
   smsMessages                  SmsMessage[]
@@ -321,6 +322,9 @@ model Lead {
   probability    Int?       @default(50) // 0-100
   notes          String?    @db.Text
   jobSiteAddress String?    @db.Text
+  isUrgent       Boolean    @default(false)
+  urgentAt       DateTime?
+  urgentByUserId String?
 
   // Conversion
   convertedToClientId String?
@@ -341,12 +345,14 @@ model Lead {
 
   assignedToId String?
   assignedTo   User?   @relation("LeadAssignee", fields: [assignedToId], references: [id])
+  urgentBy     User?   @relation("LeadUrgentBy", fields: [urgentByUserId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([tenantId])
   @@index([tenantId, status])
+  @@index([tenantId, isUrgent])
   @@index([tenantId, assignedToId])
   @@map("leads")
 }

@@ -1,7 +1,8 @@
 import React from 'react'
 import { ActivityIndicator, Alert, FlatList, Image, Linking, Modal, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native'
+import { useFocusEffect } from '@react-navigation/native'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
-import { useQuery } from '@tanstack/react-query'
+import { InfiniteData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ResizeMode, Video } from 'expo-av'
 import { Ionicons } from '@expo/vector-icons'
 import { AppScreen } from '../../components/AppScreen'
@@ -28,6 +29,7 @@ interface RequestDetailResponse {
     jobSiteAddress?: string | null
     notes?: string | null
     status: string
+    isUrgent?: boolean
     source: string
     createdAt: string
     assignedTo?: {
@@ -60,6 +62,7 @@ function DetailRow({ label, value }: { label: string; value?: string | null }) {
 
 export function RequestDetailScreen({ route }: Props) {
   const { requestId } = route.params
+  const queryClient = useQueryClient()
   const [showAttachmentPicker, setShowAttachmentPicker] = React.useState(false)
   const [localAttachments, setLocalAttachments] = React.useState<AttachmentResponse['attachments']>([])
   const [showImageViewer, setShowImageViewer] = React.useState(false)
@@ -70,6 +73,8 @@ export function RequestDetailScreen({ route }: Props) {
   const detailQuery = useQuery({
     queryKey: ['mobile-request-detail', requestId],
     queryFn: () => apiRequest<RequestDetailResponse>(`/api/leads/${requestId}`),
+    refetchInterval: 8000,
+    refetchOnWindowFocus: true,
   })
 
   const attachmentsQuery = useQuery({
@@ -78,6 +83,67 @@ export function RequestDetailScreen({ route }: Props) {
       apiRequest<AttachmentResponse>(
         `/api/attachments?entityType=request&entityId=${encodeURIComponent(requestId)}`
       ),
+  })
+  const urgentMutation = useMutation({
+    mutationFn: (isUrgent: boolean) =>
+      apiRequest<{ lead: RequestDetailResponse['lead'] }>(`/api/requests/${requestId}/urgent`, 'PATCH', { isUrgent }),
+    onMutate: async (nextUrgent) => {
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: ['mobile-request-detail', requestId] }),
+        queryClient.cancelQueries({ queryKey: ['mobile-requests-list'] }),
+      ])
+      const previousDetail = queryClient.getQueryData<RequestDetailResponse>(['mobile-request-detail', requestId])
+      const previousList = queryClient.getQueryData<InfiniteData<{ leads: Array<{ id: string; isUrgent?: boolean }> }>>([
+        'mobile-requests-list',
+      ])
+
+      queryClient.setQueryData<RequestDetailResponse>(['mobile-request-detail', requestId], (existing) =>
+        existing?.lead ? { ...existing, lead: { ...existing.lead, isUrgent: nextUrgent } } : existing
+      )
+      queryClient.setQueryData<InfiniteData<{ leads: Array<{ id: string; isUrgent?: boolean }> }>>(
+        ['mobile-requests-list'],
+        (existing) => {
+          if (!existing) return existing
+          return {
+            ...existing,
+            pages: existing.pages.map((page) => ({
+              ...page,
+              leads: (page.leads || []).map((lead) => (lead.id === requestId ? { ...lead, isUrgent: nextUrgent } : lead)),
+            })),
+          }
+        }
+      )
+
+      return { previousDetail, previousList }
+    },
+    onError: (error: any, _nextUrgent, context) => {
+      if (context?.previousDetail) {
+        queryClient.setQueryData(['mobile-request-detail', requestId], context.previousDetail)
+      }
+      if (context?.previousList) {
+        queryClient.setQueryData(['mobile-requests-list'], context.previousList)
+      }
+      Alert.alert('Failed', error?.message || 'Unable to update urgent flag.')
+    },
+    onSuccess: (payload) => {
+      if (!payload?.lead) return
+      queryClient.setQueryData<RequestDetailResponse>(['mobile-request-detail', requestId], { lead: payload.lead })
+      queryClient.setQueryData<InfiniteData<{ leads: Array<{ id: string; isUrgent?: boolean }> }>>(
+        ['mobile-requests-list'],
+        (existing) => {
+          if (!existing) return existing
+          return {
+            ...existing,
+            pages: existing.pages.map((page) => ({
+              ...page,
+              leads: (page.leads || []).map((lead) =>
+                lead.id === requestId ? { ...lead, isUrgent: payload.lead.isUrgent } : lead
+              ),
+            })),
+          }
+        }
+      )
+    },
   })
   const requestUploadQueue = useAttachmentUploadQueue<{ attachment: AttachmentResponse['attachments'][number] }>({
     startUpload: (file, onProgress) => {
@@ -97,6 +163,13 @@ export function RequestDetailScreen({ route }: Props) {
       void attachmentsQuery.refetch()
     },
   })
+  useFocusEffect(
+    React.useCallback(() => {
+      void detailQuery.refetch()
+      void attachmentsQuery.refetch()
+      return () => {}
+    }, [detailQuery, attachmentsQuery])
+  )
 
   if (detailQuery.isLoading) {
     return (
@@ -169,6 +242,7 @@ export function RequestDetailScreen({ route }: Props) {
             <Text style={styles.meta}>
               Status: {lead.status} • Source: {lead.source}
             </Text>
+            {lead.isUrgent ? <Text style={styles.urgentBadge}>URGENT</Text> : null}
             <Text style={styles.meta}>Request ID: {lead.id}</Text>
             <Text style={styles.meta}>Created: {new Date(lead.createdAt).toLocaleString()}</Text>
             {lead.assignedTo ? (
@@ -184,6 +258,14 @@ export function RequestDetailScreen({ route }: Props) {
             <DetailRow label="Description" value={lead.notes} />
             <Pressable style={styles.addButton} onPress={() => setShowAttachmentPicker(true)}>
               <Text style={styles.addButtonText}>Add Attachment</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.urgentButton, lead.isUrgent && styles.urgentButtonActive]}
+              onPress={() => urgentMutation.mutate(!lead.isUrgent)}
+            >
+              <Text style={[styles.urgentButtonText, lead.isUrgent && styles.urgentButtonTextActive]}>
+                {lead.isUrgent ? 'Unmark Urgent' : 'Mark as Urgent'}
+              </Text>
             </Pressable>
             <AttachmentUploadQueue
               items={requestUploadQueue.items}
@@ -301,6 +383,41 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
+  },
+  urgentBadge: {
+    ...typography.caption,
+    alignSelf: 'flex-start',
+    marginTop: spacing.xs,
+    color: '#B91C1C',
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    fontWeight: '700',
+  },
+  urgentButton: {
+    marginTop: spacing.xs,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: colors.divider,
+    borderRadius: 10,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    backgroundColor: colors.surface,
+  },
+  urgentButtonActive: {
+    borderColor: '#FCA5A5',
+    backgroundColor: '#FEF2F2',
+  },
+  urgentButtonText: {
+    ...typography.sub,
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  urgentButtonTextActive: {
+    color: '#B91C1C',
   },
   addButtonText: {
     ...typography.sub,

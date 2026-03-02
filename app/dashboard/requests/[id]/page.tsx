@@ -37,6 +37,9 @@ interface RequestDetail {
   company: string | null
   source: string
   status: string
+  isUrgent?: boolean
+  urgentAt?: string | null
+  urgentByUserId?: string | null
   value: string | null
   probability: number
   notes: string | null
@@ -158,6 +161,7 @@ export default function RequestDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [urgentBusy, setUrgentBusy] = useState(false)
 
   useEffect(() => {
     if (!requestId) {
@@ -168,7 +172,24 @@ export default function RequestDetailPage() {
     fetchRequest()
   }, [requestId])
 
-  const fetchRequest = async () => {
+  useEffect(() => {
+    if (!requestId) return
+    const interval = window.setInterval(() => {
+      fetchRequest(true)
+    }, 8000)
+    const onFocus = () => {
+      fetchRequest(true)
+    }
+    window.addEventListener('focus', onFocus)
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('focus', onFocus)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestId])
+
+  const fetchRequest = async (silent = false) => {
+    if (!silent) setLoading(true)
     try {
       const token = localStorage.getItem('accessToken')
       if (!token) {
@@ -207,7 +228,7 @@ export default function RequestDetailPage() {
       console.error('Failed to fetch request:', error)
       setError('Failed to load request. Please try again.')
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
@@ -251,6 +272,46 @@ export default function RequestDetailPage() {
       alert('Failed to delete request. Please try again.')
     } finally {
       setDeleting(false)
+    }
+  }
+
+  const handleToggleUrgent = async () => {
+    if (!request) return
+    const token = localStorage.getItem('accessToken')
+    if (!token) {
+      router.push('/auth/login')
+      return
+    }
+    const nextUrgent = !request.isUrgent
+    const previous = request
+    setUrgentBusy(true)
+    setRequest((prev) => (prev ? { ...prev, isUrgent: nextUrgent } : prev))
+    try {
+      const response = await fetch(`/api/requests/${requestId}/urgent`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ isUrgent: nextUrgent }),
+      })
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Failed to update urgent flag' }))
+        setRequest(previous)
+        alert(errorData.error || 'Failed to update urgent flag')
+        return
+      }
+      const payload = await response.json().catch(() => ({}))
+      if (payload?.lead) {
+        setRequest(payload.lead)
+      } else {
+        await fetchRequest()
+      }
+    } catch {
+      setRequest(previous)
+      alert('Failed to update urgent flag. Please try again.')
+    } finally {
+      setUrgentBusy(false)
     }
   }
 
@@ -304,6 +365,11 @@ export default function RequestDetailPage() {
             <h1 className="text-3xl font-bold text-gray-900">
               {request.firstName} {request.lastName}
             </h1>
+            {request.isUrgent ? (
+              <span className="px-3 py-1 text-sm rounded-full border border-red-300 bg-red-100 text-red-700 font-bold">
+                URGENT
+              </span>
+            ) : null}
             <span className={`px-3 py-1 text-sm rounded-full ${statusColors[request.status] || 'bg-gray-100 text-gray-800'}`}>
               {request.status.replace('_', ' ')}
             </span>
@@ -319,6 +385,14 @@ export default function RequestDetailPage() {
           <Button variant="outline" onClick={() => router.push(`/dashboard/requests/${requestId}/edit`)}>
             <Edit className="mr-2 h-4 w-4" />
             Edit
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleToggleUrgent}
+            disabled={urgentBusy}
+            className={request.isUrgent ? 'text-red-600 hover:text-red-700 hover:bg-red-50' : ''}
+          >
+            {urgentBusy ? 'Saving...' : request.isUrgent ? 'Unmark Urgent' : 'Mark Urgent'}
           </Button>
           <Button
             variant="outline"

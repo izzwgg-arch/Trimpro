@@ -25,6 +25,9 @@ interface Request {
   company: string | null
   source: string
   status: string
+  isUrgent?: boolean
+  urgentAt?: string | null
+  urgentByUserId?: string | null
   value: string | null
   probability: number
   convertedToClientId: string | null
@@ -79,6 +82,7 @@ export default function RequestsPage() {
   const [convertingId, setConvertingId] = useState<string | null>(null)
   const [duplicating, setDuplicating] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [urgentBusyById, setUrgentBusyById] = useState<Record<string, boolean>>({})
   const [viewMode, setViewMode] = useViewMode('requests', 'grid')
 
   useEffect(() => {
@@ -90,7 +94,23 @@ export default function RequestsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, status, source, page])
 
-  const fetchRequests = async () => {
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      fetchRequests(true)
+    }, 8000)
+    const onFocus = () => {
+      fetchRequests(true)
+    }
+    window.addEventListener('focus', onFocus)
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('focus', onFocus)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const fetchRequests = async (silent = false) => {
+    if (!silent) setLoading(true)
     try {
       const token = localStorage.getItem('accessToken')
       const params = new URLSearchParams({
@@ -119,7 +139,7 @@ export default function RequestsPage() {
     } catch (error) {
       console.error('Failed to fetch requests:', error)
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
@@ -161,6 +181,45 @@ export default function RequestsPage() {
       alert('Failed to delete request. Please try again.')
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  const handleToggleUrgent = async (requestId: string, nextUrgent: boolean) => {
+    const token = localStorage.getItem('accessToken')
+    if (!token) {
+      router.push('/auth/login')
+      return
+    }
+
+    const previous = requests
+    setUrgentBusyById((prev) => ({ ...prev, [requestId]: true }))
+    setRequests((prev) => prev.map((request) => (request.id === requestId ? { ...request, isUrgent: nextUrgent } : request)))
+
+    try {
+      const response = await fetch(`/api/requests/${requestId}/urgent`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ isUrgent: nextUrgent }),
+      })
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Failed to update urgent flag' }))
+        setRequests(previous)
+        alert(errorData.error || 'Failed to update urgent flag')
+        return
+      }
+      const payload = await response.json().catch(() => ({}))
+      const updated = payload?.lead as Request | undefined
+      if (updated?.id) {
+        setRequests((prev) => prev.map((request) => (request.id === updated.id ? { ...request, ...updated } : request)))
+      }
+    } catch (error) {
+      setRequests(previous)
+      alert('Failed to update urgent flag')
+    } finally {
+      setUrgentBusyById((prev) => ({ ...prev, [requestId]: false }))
     }
   }
 
@@ -417,6 +476,11 @@ export default function RequestsPage() {
                           {request.firstName} {request.lastName}
                         </CardTitle>
                       </Link>
+                      {request.isUrgent ? (
+                        <span className="mt-2 inline-flex rounded-full border border-red-300 bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700">
+                          URGENT
+                        </span>
+                      ) : null}
                       {request.company && (
                         <CardDescription className="mt-1">{request.company}</CardDescription>
                       )}
@@ -506,6 +570,19 @@ export default function RequestsPage() {
                           size="sm"
                           onClick={(e) => {
                             e.stopPropagation()
+                            void handleToggleUrgent(request.id, !request.isUrgent)
+                          }}
+                          disabled={Boolean(urgentBusyById[request.id])}
+                          className={`h-7 px-2 ${request.isUrgent ? 'text-red-600 hover:text-red-700 hover:bg-red-50' : 'text-slate-600 hover:text-slate-700 hover:bg-slate-50'}`}
+                          title={request.isUrgent ? 'Unmark urgent' : 'Mark urgent'}
+                        >
+                          {request.isUrgent ? 'URGENT' : 'Mark Urgent'}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation()
                             handleConvertToEstimate(request)
                           }}
                           disabled={convertingId === request.id}
@@ -563,7 +640,7 @@ export default function RequestsPage() {
               />
               <RowCompactItem
                 href={`/dashboard/requests/${request.id}`}
-                primary={`${request.firstName} ${request.lastName}`.trim()}
+                primary={`${request.firstName} ${request.lastName}${request.isUrgent ? ' • URGENT' : ''}`.trim()}
                 secondary={request.company || request.email || request.phone || 'No contact info'}
                 status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[request.status] || 'bg-gray-100 text-gray-800'}`}>{request.status.replace('_', ' ')}</span>}
                 amount={<span>{request.probability}%</span>}
@@ -587,7 +664,7 @@ export default function RequestsPage() {
               />
               <RowDetailedItem
                 href={`/dashboard/requests/${request.id}`}
-                primary={`${request.firstName} ${request.lastName}`.trim()}
+                primary={`${request.firstName} ${request.lastName}${request.isUrgent ? ' • URGENT' : ''}`.trim()}
                 status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[request.status] || 'bg-gray-100 text-gray-800'}`}>{request.status.replace('_', ' ')}</span>}
                 line2={`${request.company || 'No company'} • ${request.email || 'No email'} • ${request.phone || 'No phone'}`}
                 rightTop={<span>{request.probability}%</span>}
@@ -623,7 +700,14 @@ export default function RequestsPage() {
               key: 'name',
               header: 'Request',
               sortValue: (request) => `${request.firstName} ${request.lastName}`,
-              render: (request) => <span className="font-medium">{request.firstName} {request.lastName}</span>,
+              render: (request) => (
+                <span className="font-medium">
+                  {request.firstName} {request.lastName}
+                  {request.isUrgent ? (
+                    <span className="ml-2 rounded-full border border-red-300 bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">URGENT</span>
+                  ) : null}
+                </span>
+              ),
             },
             {
               key: 'status',
@@ -648,6 +732,19 @@ export default function RequestsPage() {
               header: 'Actions',
               render: (request) => (
                 <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void handleToggleUrgent(request.id, !request.isUrgent)
+                    }}
+                    disabled={Boolean(urgentBusyById[request.id])}
+                    className={request.isUrgent ? 'text-red-600 hover:text-red-700 hover:bg-red-50 h-7 px-2' : 'h-7 px-2'}
+                    title={request.isUrgent ? 'Unmark urgent' : 'Mark urgent'}
+                  >
+                    {request.isUrgent ? 'URGENT' : 'Mark Urgent'}
+                  </Button>
                   <Button
                     variant="ghost"
                     size="sm"

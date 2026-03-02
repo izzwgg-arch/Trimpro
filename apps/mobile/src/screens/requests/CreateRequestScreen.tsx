@@ -32,6 +32,7 @@ interface CreatedLead {
   jobSiteAddress?: string | null
   notes?: string | null
   status?: string
+  isUrgent?: boolean
   source?: string
   createdAt?: string
 }
