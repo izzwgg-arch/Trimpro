@@ -3,6 +3,7 @@ export interface AuthUser {
   email: string
   firstName: string
   lastName: string
+  avatar?: string | null
   role: string
   tenantId: string
   tenantName?: string
@@ -166,6 +167,7 @@ export interface Conversation {
     firstName?: string | null
     lastName?: string | null
     email: string
+    avatar?: string | null
   } | null
   lastMessage?: {
     id: string
@@ -195,6 +197,7 @@ export interface Conversation {
 export interface ChatMessage {
   id: string
   senderId: string
+  clientTempId?: string | null
   text?: string | null
   type: 'TEXT' | 'MEDIA' | 'VOICE' | 'LOCATION' | 'SYSTEM'
   status: 'SENT' | 'DELIVERED' | 'READ'
@@ -207,6 +210,15 @@ export interface ChatMessage {
     firstName?: string | null
     lastName?: string | null
     email: string
+    avatar?: string | null
+  } | null
+  replyToMessageId?: string | null
+  replyTo?: {
+    messageId: string
+    senderName: string
+    textPreview: string
+    type?: 'TEXT' | 'MEDIA' | 'VOICE' | 'LOCATION' | 'SYSTEM'
+    createdAt?: string | null
   } | null
   attachments?: Array<{
     id: string

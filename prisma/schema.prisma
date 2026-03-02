@@ -2948,6 +2948,10 @@ model ChatMessage {
   jobNumber      String?
   jobName        String?
   clientTempId   String?
+  replyToMessageId String?
+  replyToSenderName String?
+  replyToText      String?
+  replyToType      ChatMessageType?
   status         ChatDeliveryStatus @default(SENT)
   createdAt      DateTime           @default(now())
 

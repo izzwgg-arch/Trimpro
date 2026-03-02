@@ -1,5 +1,5 @@
 import React from 'react'
-import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { colors, spacing, typography } from '../../theme/tokens'
 import { Conversation } from '../../types/models'
@@ -36,6 +36,7 @@ export function ConversationRow({ conversation, onPress, isSelected }: Conversat
   const title = conversation.pinned ? 'Team Chat' : conversation.title || displayName(conversation.otherUser)
   const preview = conversation.lastMessage?.text || (conversation.lastMessage ? `[${conversation.lastMessage.type}]` : 'No messages yet')
   const time = formatTime(conversation.lastMessageAt)
+  const avatarUrl = conversation.otherUser?.avatar || null
 
   return (
     <Pressable
@@ -46,6 +47,8 @@ export function ConversationRow({ conversation, onPress, isSelected }: Conversat
       <View style={styles.avatar}>
         {conversation.pinned ? (
           <Ionicons name="people" size={20} color={colors.brandPrimary} />
+        ) : avatarUrl ? (
+          <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
         ) : (
           <View style={styles.avatarInitials}>
             <Text style={styles.avatarText}>{title.charAt(0).toUpperCase()}</Text>
@@ -108,6 +111,11 @@ const styles = StyleSheet.create({
     ...typography.sub,
     color: colors.surface,
     fontWeight: '600',
+  },
+  avatarImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
   },
   content: {
     flex: 1,

@@ -6,7 +6,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import {
   getMaxBytesForMimeType,
   isAllowedUploadMimeType,
-  normalizeMimeType,
+  resolveUploadMimeType,
   safeExtFromMimeType,
 } from '@/lib/uploads/policy'
 
@@ -70,8 +70,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing file' }, { status: 400 })
     }
 
-    const contentType = normalizeMimeType(file.type || 'application/octet-stream')
-    if (!isAllowedUploadMimeType(contentType)) {
+    const contentType = resolveUploadMimeType(file.type || 'application/octet-stream', file.name)
+    if (!isAllowedUploadMimeType(contentType, file.name)) {
       console.log('Upload rejected - unsupported file type:', { contentType, fileName: file.name })
       return NextResponse.json(
         {
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
     if (size <= 0) {
       return NextResponse.json({ error: 'Empty file' }, { status: 400 })
     }
-    const maxBytes = getMaxBytesForMimeType(contentType)
+    const maxBytes = getMaxBytesForMimeType(contentType, file.name)
     if (size > maxBytes) {
       console.log('Upload rejected - file too large:', { fileName: file.name, size, maxBytes, contentType })
       return NextResponse.json(
@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const ext = safeExtFromMimeType(contentType)
+    const ext = safeExtFromMimeType(contentType, file.name)
     const id = crypto.randomUUID()
     const filename = `${id}.${ext}`
 

@@ -407,20 +407,33 @@ export function JobDetailScreen({ route, navigation }: Props) {
     () => attachmentRows.filter((row) => String(row.mimeType || '').startsWith('image/')),
     [attachmentRows]
   )
-  const videoRows = useMemo(
-    () => attachmentRows.filter((row) => String(row.mimeType || '').startsWith('video/')),
-    [attachmentRows]
-  )
-  const otherRows = useMemo(
-    () => attachmentRows.filter((row) => !String(row.mimeType || '').startsWith('image/') && !String(row.mimeType || '').startsWith('video/')),
-    [attachmentRows]
-  )
   const formatElapsed = (seconds: number) => {
     const h = Math.floor(seconds / 3600)
     const m = Math.floor((seconds % 3600) / 60)
     const s = seconds % 60
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
   }
+
+  const openAttachmentUrl = async (rawUrl: string) => {
+    const url = normalizeMediaUrl(rawUrl)
+    try {
+      const supported = await Linking.canOpenURL(url)
+      if (!supported) {
+        Alert.alert('Unable to open file', 'No app found to open this file type.')
+        return
+      }
+      await Linking.openURL(url)
+    } catch (error: any) {
+      Alert.alert('Unable to open file', error?.message || 'Please try again.')
+    }
+  }
+  const tileColumns = useMemo(() => {
+    const count = attachmentRows.length
+    if (count <= 4) return 2
+    if (count <= 9) return 3
+    if (count <= 16) return 4
+    return 5
+  }, [attachmentRows.length])
 
   return (
     <Screen>
@@ -679,64 +692,53 @@ export function JobDetailScreen({ route, navigation }: Props) {
                   onRemove={(item) => jobUploadQueue.removeItem(item.id)}
                   onCancel={(item) => jobUploadQueue.cancelItem(item.id)}
                 />
-              {imageRows.length > 0 && (
-                <View>
-                  <Text style={styles.meta}>Images</Text>
-                  <View style={styles.mediaGrid}>
-                    {imageRows.map((a) => (
-                      <Pressable
-                        key={a.id}
-                        onPress={() => {
-                          const idx = imageRows.findIndex((x) => x.id === a.id)
-                          setActiveImageIndex(Math.max(0, idx))
-                          setMediaViewerVisible(true)
-                        }}
-                      >
-                        <Image source={{ uri: a.url }} style={styles.imageThumb} />
-                      </Pressable>
-                    ))}
-                  </View>
-                </View>
-              )}
-
-              {videoRows.length > 0 && (
-                <View>
-                  <Text style={styles.meta}>Videos</Text>
-                  {videoRows.map((a) => (
-                    <Pressable
-                      key={a.id}
-                      style={styles.attachmentRow}
-                      onPress={() => {
-                        setActiveVideoUrl(a.url)
-                        setVideoViewerVisible(true)
-                      }}
-                    >
-                      <Text style={styles.attachmentName} numberOfLines={1}>
-                        Play video: {a.fileName}
-                      </Text>
-                      <Text style={styles.attachmentMeta}>{Math.round(a.fileSize / 1024)} KB</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              )}
-
-              {otherRows.length > 0 && (
-                <View>
-                  <Text style={styles.meta}>Files</Text>
-                  {otherRows.map((a) => (
-                    <Pressable
-                      key={a.id}
-                      style={styles.attachmentRow}
-                      onPress={() => {
-                        void Linking.openURL(a.url)
-                      }}
-                    >
-                      <Text style={styles.attachmentName} numberOfLines={1}>
-                        {a.fileName}
-                      </Text>
-                      <Text style={styles.attachmentMeta}>{Math.round(a.fileSize / 1024)} KB</Text>
-                    </Pressable>
-                  ))}
+              {attachmentRows.length > 0 && (
+                <View style={styles.mediaGrid}>
+                  {attachmentRows.map((a) => {
+                    const mime = String(a.mimeType || '').toLowerCase()
+                    const isImage = mime.startsWith('image/')
+                    const isVideo = mime.startsWith('video/')
+                    const tileLabel = isImage ? 'Photo' : isVideo ? 'Video' : 'File'
+                    return (
+                      <View key={a.id} style={[styles.mediaTileWrap, { width: `${100 / tileColumns}%` }]}>
+                        <Pressable
+                          style={styles.mediaTile}
+                          onPress={() => {
+                            if (isImage) {
+                              const idx = imageRows.findIndex((x) => x.id === a.id)
+                              setActiveImageIndex(Math.max(0, idx))
+                              setMediaViewerVisible(true)
+                              return
+                            }
+                            if (isVideo) {
+                              setActiveVideoUrl(a.url)
+                              setVideoViewerVisible(true)
+                              return
+                            }
+                            void openAttachmentUrl(a.url)
+                          }}
+                        >
+                          {isImage ? (
+                            <Image source={{ uri: a.url }} style={styles.mediaTileImage} />
+                          ) : (
+                            <View style={styles.mediaTileIconWrap}>
+                              <Ionicons
+                                name={isVideo ? 'videocam-outline' : 'document-text-outline'}
+                                size={22}
+                                color={BRAND.text}
+                              />
+                            </View>
+                          )}
+                          <View style={styles.mediaTileFooter}>
+                            <Text style={styles.mediaTileType}>{tileLabel}</Text>
+                            <Text style={styles.mediaTileName} numberOfLines={1}>
+                              {a.fileName}
+                            </Text>
+                          </View>
+                        </Pressable>
+                      </View>
+                    )
+                  })}
                 </View>
               )}
 
@@ -1227,34 +1229,52 @@ const styles = StyleSheet.create({
     color: BRAND.text,
     fontWeight: '600',
   },
-  attachmentRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderColor: '#EAECF0',
-    paddingTop: 8,
-  },
-  attachmentName: {
-    color: BRAND.text,
-    flex: 1,
-    marginRight: 8,
-  },
-  attachmentMeta: {
-    color: BRAND.muted,
-    fontSize: 12,
-  },
   mediaGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
     marginTop: 6,
+    marginHorizontal: -4,
   },
-  imageThumb: {
-    width: 96,
-    height: 96,
+  mediaTileWrap: {
+    paddingHorizontal: 4,
+    paddingBottom: 8,
+  },
+  mediaTile: {
+    borderWidth: 1,
+    borderColor: '#D0D5DD',
     borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: BRAND.white,
+    aspectRatio: 1,
+  },
+  mediaTileImage: {
+    width: '100%',
+    flex: 1,
     backgroundColor: '#E2E8F0',
+  },
+  mediaTileIconWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8FAFC',
+  },
+  mediaTileFooter: {
+    borderTopWidth: 1,
+    borderTopColor: '#EAECF0',
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    gap: 1,
+  },
+  mediaTileType: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: BRAND.muted,
+    textTransform: 'uppercase',
+  },
+  mediaTileName: {
+    fontSize: 11,
+    color: BRAND.text,
+    fontWeight: '600',
   },
   viewerRoot: {
     flex: 1,

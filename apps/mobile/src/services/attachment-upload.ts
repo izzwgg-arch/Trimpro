@@ -1,8 +1,9 @@
 import { Alert, Linking } from 'react-native'
 import * as DocumentPicker from 'expo-document-picker'
 import * as ImagePicker from 'expo-image-picker'
+import * as FileSystem from 'expo-file-system/legacy'
 import { API_BASE_URL } from '../config/env'
-import { getAccessToken } from '../auth/secure-storage'
+import { getValidAccessToken } from '../api/client'
 
 export type AttachmentPickAction =
   | 'take-photo'
@@ -72,12 +73,22 @@ function toLocalFile(input: {
   size?: number | null
   kind: AttachmentKind
 }): LocalAttachmentFile {
-  const name = input.name?.trim() || `${input.kind}-${Date.now()}`
+  const fallbackNameByKind: Record<AttachmentKind, string> = {
+    image: `image-${Date.now()}.jpg`,
+    video: `video-${Date.now()}.mp4`,
+    document: `document-${Date.now()}.pdf`,
+  }
+  const name = input.name?.trim() || fallbackNameByKind[input.kind]
+  const kindFallbackMime: Record<AttachmentKind, string> = {
+    image: 'image/jpeg',
+    video: 'video/mp4',
+    document: 'application/octet-stream',
+  }
   return {
     localId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     uri: input.uri,
     name,
-    mimeType: inferMimeType(name, (input.mimeType || 'application/octet-stream').toLowerCase()),
+    mimeType: inferMimeType(name, (input.mimeType || kindFallbackMime[input.kind]).toLowerCase()),
     sizeBytes: Number(input.size || 0),
     kind: input.kind,
   }
@@ -122,8 +133,11 @@ export async function pickAttachmentsByAction(action: AttachmentPickAction): Pro
       mediaTypes: ['images'],
       quality: 0.85,
     })
-    if (result.canceled) return []
-    return result.assets.map((asset) =>
+    const assets = Array.isArray(result?.assets) ? result.assets : []
+    if (result.canceled || assets.length === 0) return []
+    return assets
+      .filter((asset) => !!asset?.uri)
+      .map((asset) =>
       toLocalFile({
         uri: asset.uri,
         name: asset.fileName,
@@ -141,8 +155,11 @@ export async function pickAttachmentsByAction(action: AttachmentPickAction): Pro
       quality: 0.85,
       videoMaxDuration: 300,
     })
-    if (result.canceled) return []
-    return result.assets.map((asset) =>
+    const assets = Array.isArray(result?.assets) ? result.assets : []
+    if (result.canceled || assets.length === 0) return []
+    return assets
+      .filter((asset) => !!asset?.uri)
+      .map((asset) =>
       toLocalFile({
         uri: asset.uri,
         name: asset.fileName,
@@ -160,8 +177,11 @@ export async function pickAttachmentsByAction(action: AttachmentPickAction): Pro
       allowsMultipleSelection: true,
       quality: 0.9,
     })
-    if (result.canceled) return []
-    return result.assets.map((asset) =>
+    const assets = Array.isArray(result?.assets) ? result.assets : []
+    if (result.canceled || assets.length === 0) return []
+    return assets
+      .filter((asset) => !!asset?.uri)
+      .map((asset) =>
       toLocalFile({
         uri: asset.uri,
         name: asset.fileName,
@@ -179,8 +199,11 @@ export async function pickAttachmentsByAction(action: AttachmentPickAction): Pro
       allowsMultipleSelection: true,
       quality: 0.85,
     })
-    if (result.canceled) return []
-    return result.assets.map((asset) =>
+    const assets = Array.isArray(result?.assets) ? result.assets : []
+    if (result.canceled || assets.length === 0) return []
+    return assets
+      .filter((asset) => !!asset?.uri)
+      .map((asset) =>
       toLocalFile({
         uri: asset.uri,
         name: asset.fileName,
@@ -237,55 +260,93 @@ export function uploadFileWithProgress<T>(
   file: LocalAttachmentFile,
   onProgress?: (progress: number) => void
 ): { promise: Promise<UploadResponse<T>>; cancel: () => void } {
-  let xhr: XMLHttpRequest | null = new XMLHttpRequest()
+  let uploadTask: FileSystem.UploadTask | null = null
+  let cancelled = false
+  let copiedUploadUri: string | null = null
   const promise = new Promise<UploadResponse<T>>(async (resolve, reject) => {
     try {
-      const token = await getAccessToken()
+      const token = await getValidAccessToken()
       if (!token) {
         reject(new Error('Not authenticated'))
         return
       }
-      if (!xhr) {
+      if (cancelled) {
         reject(new Error('Upload cancelled'))
         return
       }
-
-      const formData = new FormData()
-      formData.append('file', {
-        uri: file.uri,
-        name: file.name,
-        type: file.mimeType,
-      } as any)
-
-      xhr.open('POST', `${API_BASE_URL}${endpointPath}`)
-      xhr.setRequestHeader('Authorization', `Bearer ${token}`)
-      xhr.setRequestHeader('Accept', 'application/json')
-      xhr.upload.onprogress = (event) => {
-        if (!event.lengthComputable) return
-        const progress = Math.max(0, Math.min(1, event.loaded / event.total))
-        onProgress?.(progress)
-      }
-      xhr.onerror = () => reject(new Error('Upload failed'))
-      xhr.onabort = () => reject(new Error('Upload cancelled'))
-      xhr.onload = () => {
-        const status = Number(xhr?.status || 0)
-        const bodyText = xhr?.responseText || '{}'
-        let body: any = {}
-        try {
-          body = JSON.parse(bodyText)
-        } catch {
-          body = {}
-        }
-        if (status < 200 || status >= 300) {
-          reject(new Error(body?.error || `Upload failed (${status})`))
+      let uploadUri = file.uri
+      const needsUriCopy =
+        uploadUri.startsWith('content://') ||
+        uploadUri.startsWith('ph://') ||
+        uploadUri.startsWith('assets-library://')
+      if (needsUriCopy) {
+        const baseDir = FileSystem.cacheDirectory || FileSystem.documentDirectory
+        if (!baseDir) {
+          reject(new Error('Unable to prepare file for upload'))
           return
         }
-        onProgress?.(1)
-        resolve({ raw: body as T })
+        const safeName = (file.name || `upload-${Date.now()}`).replace(/[^\w.\-]/g, '_')
+        copiedUploadUri = `${baseDir}upload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`
+        await FileSystem.copyAsync({ from: uploadUri, to: copiedUploadUri })
+        uploadUri = copiedUploadUri
+      }
+      const runUpload = async (accessToken: string) => {
+        uploadTask = FileSystem.createUploadTask(
+          `${API_BASE_URL}${endpointPath}`,
+          uploadUri,
+          {
+            fieldName: 'file',
+            httpMethod: 'POST',
+            uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+            mimeType: file.mimeType,
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              Accept: 'application/json',
+            },
+          },
+          (progressEvent) => {
+            if (!progressEvent.totalBytesExpectedToSend) return
+            const progress = Math.max(
+              0,
+              Math.min(1, progressEvent.totalBytesSent / progressEvent.totalBytesExpectedToSend)
+            )
+            onProgress?.(progress)
+          }
+        )
+        return uploadTask.uploadAsync()
       }
 
-      xhr.send(formData)
+      let result = await runUpload(token)
+      let status = Number(result?.status || 0)
+      if (status === 401) {
+        const refreshedToken = await getValidAccessToken(true)
+        if (refreshedToken) {
+          result = await runUpload(refreshedToken)
+          status = Number(result?.status || 0)
+        }
+      }
+
+      let body: any = {}
+      try {
+        body = JSON.parse(result?.body || '{}')
+      } catch {
+        body = {}
+      }
+      if (status < 200 || status >= 300) {
+        reject(new Error(body?.error || `Upload failed (${status})`))
+        return
+      }
+      onProgress?.(1)
+      resolve({ raw: body as T })
+      if (copiedUploadUri) {
+        void FileSystem.deleteAsync(copiedUploadUri, { idempotent: true }).catch(() => {})
+        copiedUploadUri = null
+      }
     } catch (error) {
+      if (copiedUploadUri) {
+        void FileSystem.deleteAsync(copiedUploadUri, { idempotent: true }).catch(() => {})
+        copiedUploadUri = null
+      }
       reject(error instanceof Error ? error : new Error('Upload failed'))
     }
   })
@@ -293,8 +354,15 @@ export function uploadFileWithProgress<T>(
   return {
     promise,
     cancel: () => {
-      if (xhr) xhr.abort()
-      xhr = null
+      cancelled = true
+      if (uploadTask) {
+        void uploadTask.cancelAsync().catch(() => {})
+      }
+      uploadTask = null
+      if (copiedUploadUri) {
+        void FileSystem.deleteAsync(copiedUploadUri, { idempotent: true }).catch(() => {})
+        copiedUploadUri = null
+      }
     },
   }
 }

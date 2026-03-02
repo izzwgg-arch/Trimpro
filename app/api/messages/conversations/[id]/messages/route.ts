@@ -78,6 +78,8 @@ export async function POST(
 
     const messageTypeRaw = typeof body?.type === 'string' ? body.type : ''
     const messageType = messageTypeRaw ? toMessageType(messageTypeRaw) : null
+    const replyToTypeRaw = typeof body?.replyToType === 'string' ? body.replyToType : ''
+    const replyToType = replyToTypeRaw ? toMessageType(replyToTypeRaw) : null
 
     const message = await sendMessageToConversation(
       {
@@ -91,6 +93,10 @@ export async function POST(
         clientTempId: typeof body?.clientTempId === 'string' ? body.clientTempId : null,
         jobId: typeof body?.jobId === 'string' ? body.jobId : null,
         type: messageType || undefined,
+        replyToMessageId: typeof body?.replyToMessageId === 'string' ? body.replyToMessageId : null,
+        replyToSenderName: typeof body?.replyToSenderName === 'string' ? body.replyToSenderName : null,
+        replyToText: typeof body?.replyToText === 'string' ? body.replyToText : null,
+        replyToType: replyToType || null,
         attachments,
       }
     )

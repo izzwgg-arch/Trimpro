@@ -7,7 +7,7 @@ import { prisma } from '@/lib/prisma'
 import {
   getMaxBytesForMimeType,
   isAllowedUploadMimeType,
-  normalizeMimeType,
+  resolveUploadMimeType,
   safeExtFromMimeType,
 } from '@/lib/uploads/policy'
 import { normalizePublicFileUrl } from '@/lib/public-url'
@@ -46,8 +46,8 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       return NextResponse.json({ error: 'Missing file' }, { status: 400 })
     }
 
-    const mimeType = normalizeMimeType(file.type || 'application/octet-stream')
-    if (!isAllowedUploadMimeType(mimeType)) {
+    const mimeType = resolveUploadMimeType(file.type || 'application/octet-stream', file.name)
+    if (!isAllowedUploadMimeType(mimeType, file.name)) {
       return NextResponse.json({ error: 'Unsupported file type' }, { status: 400 })
     }
 
@@ -55,7 +55,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const sizeBytes = arrayBuffer.byteLength
     if (sizeBytes <= 0) return NextResponse.json({ error: 'Empty file' }, { status: 400 })
 
-    const maxBytes = getMaxBytesForMimeType(mimeType)
+    const maxBytes = getMaxBytesForMimeType(mimeType, file.name)
     if (sizeBytes > maxBytes) {
       return NextResponse.json(
         { error: `File too large for this type (max ${Math.floor(maxBytes / (1024 * 1024))}MB).` },
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       )
     }
 
-    const ext = safeExtFromMimeType(mimeType)
+    const ext = safeExtFromMimeType(mimeType, file.name)
     const storedFileName = `${crypto.randomUUID()}.${ext}`
     const relDir = path.join('public', 'uploads', user.tenantId)
     const absDir = path.join(process.cwd(), relDir)

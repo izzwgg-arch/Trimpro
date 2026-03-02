@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
-import { InfiniteData, useQueryClient } from '@tanstack/react-query'
+import { InfiniteData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Screen } from '../../components/Screen'
 import { apiRequest } from '../../api/client'
 import { BRAND } from '../../config/env'
@@ -63,12 +63,25 @@ interface UploadsApiResponse {
   filename?: string
 }
 
+interface ClientListResponse {
+  clients: Array<{
+    id: string
+    name: string
+    companyName?: string | null
+    email?: string | null
+    phone?: string | null
+  }>
+}
+
+type ClientMode = 'existing' | 'new'
+
 export function CreateRequestScreen({ navigation }: Props) {
   const queryClient = useQueryClient()
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
+  const [company, setCompany] = useState('')
   const [jobSiteAddress, setJobSiteAddress] = useState('')
   const [addressPredictions, setAddressPredictions] = useState<string[]>([])
   const [addressSelectedFromSuggestions, setAddressSelectedFromSuggestions] = useState(false)
@@ -76,6 +89,10 @@ export function CreateRequestScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(false)
   const [isLoadingPredictions, setIsLoadingPredictions] = useState(false)
   const [showAttachmentPicker, setShowAttachmentPicker] = useState(false)
+  const [clientMode, setClientMode] = useState<ClientMode>('existing')
+  const [showClientPicker, setShowClientPicker] = useState(false)
+  const [clientSearch, setClientSearch] = useState('')
+  const [selectedClient, setSelectedClient] = useState<ClientListResponse['clients'][number] | null>(null)
 
   const stagedUploadQueue = useAttachmentUploadQueue<UploadsApiResponse>({
     startUpload: (file, onProgress) => {
@@ -151,7 +168,35 @@ export function CreateRequestScreen({ navigation }: Props) {
     [stagedUploadQueue.items]
   )
 
+  const clientsQuery = useQuery({
+    queryKey: ['mobile-clients-for-request', clientSearch],
+    queryFn: () =>
+      apiRequest<ClientListResponse>(
+        `/api/clients?status=active&limit=100&search=${encodeURIComponent(clientSearch.trim())}`
+      ),
+  })
+
+  const clientRows = useMemo(() => clientsQuery.data?.clients || [], [clientsQuery.data?.clients])
+
+  const selectExistingClient = (client: ClientListResponse['clients'][number]) => {
+    const nameParts = String(client.name || '').trim().split(/\s+/).filter(Boolean)
+    const inferredFirst = nameParts[0] || ''
+    const inferredLast = nameParts.slice(1).join(' ') || 'Client'
+    setSelectedClient(client)
+    setClientMode('existing')
+    setFirstName(inferredFirst)
+    setLastName(inferredLast)
+    setEmail(client.email || '')
+    setPhone(client.phone || '')
+    setCompany(client.companyName || '')
+    setShowClientPicker(false)
+  }
+
   const submit = async () => {
+    if (clientMode === 'existing' && !selectedClient?.id) {
+      Alert.alert('Select client', 'Please select an existing client or switch to Add New Client.')
+      return
+    }
     if (!firstName || !lastName) {
       Alert.alert('Missing fields', 'First name and last name are required.')
       return
@@ -176,6 +221,8 @@ export function CreateRequestScreen({ navigation }: Props) {
         lastName,
         phone: phone || null,
         email: email || null,
+        company: company || null,
+        clientId: clientMode === 'existing' ? selectedClient?.id || null : null,
         jobSiteAddress: jobSiteAddress || null,
         notes: notes || null,
         source: 'OTHER',
@@ -235,10 +282,14 @@ export function CreateRequestScreen({ navigation }: Props) {
       setLastName('')
       setPhone('')
       setEmail('')
+      setCompany('')
       setJobSiteAddress('')
       setAddressPredictions([])
       setAddressSelectedFromSuggestions(false)
       setNotes('')
+      setSelectedClient(null)
+      setClientSearch('')
+      setClientMode('existing')
       stagedUploadQueue.setItems([])
 
       navigation.replace('RequestDetail', { requestId: createdRequestId })
@@ -261,6 +312,33 @@ export function CreateRequestScreen({ navigation }: Props) {
     <Screen style={styles.screen}>
       <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={styles.scrollContent}>
         <Text style={styles.title}>Create Request</Text>
+        <View style={styles.clientModeWrap}>
+          <Pressable
+            style={[styles.clientModeButton, clientMode === 'existing' && styles.clientModeButtonActive]}
+            onPress={() => setClientMode('existing')}
+          >
+            <Text style={[styles.clientModeText, clientMode === 'existing' && styles.clientModeTextActive]}>Existing Client</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.clientModeButton, clientMode === 'new' && styles.clientModeButtonActive]}
+            onPress={() => {
+              setClientMode('new')
+              setSelectedClient(null)
+            }}
+          >
+            <Text style={[styles.clientModeText, clientMode === 'new' && styles.clientModeTextActive]}>Add New Client</Text>
+          </Pressable>
+        </View>
+        {clientMode === 'existing' ? (
+          <View>
+            <Pressable style={styles.clientSelectButton} onPress={() => setShowClientPicker(true)}>
+              <Text style={selectedClient ? styles.clientSelectValue : styles.clientSelectPlaceholder}>
+                {selectedClient ? selectedClient.name : 'Select existing client'}
+              </Text>
+              <Ionicons name="chevron-down" size={18} color={BRAND.text} />
+            </Pressable>
+          </View>
+        ) : null}
         <TextInput
           style={styles.input}
           placeholder="First name"
@@ -298,6 +376,15 @@ export function CreateRequestScreen({ navigation }: Props) {
           cursorColor={BRAND.text}
           value={email}
           onChangeText={setEmail}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Company (optional)"
+          placeholderTextColor={BRAND.text}
+          selectionColor={BRAND.text}
+          cursorColor={BRAND.text}
+          value={company}
+          onChangeText={setCompany}
         />
         <View>
           <TextInput
@@ -370,6 +457,47 @@ export function CreateRequestScreen({ navigation }: Props) {
         onClose={() => setShowAttachmentPicker(false)}
         onSelect={onSelectAttachmentAction}
       />
+      <Modal
+        visible={showClientPicker}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowClientPicker(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowClientPicker(false)} />
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Select Existing Client</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Search client"
+              placeholderTextColor={BRAND.text}
+              selectionColor={BRAND.text}
+              cursorColor={BRAND.text}
+              value={clientSearch}
+              onChangeText={setClientSearch}
+            />
+            <ScrollView style={styles.clientList}>
+              {clientRows.map((client) => (
+                <Pressable
+                  key={client.id}
+                  style={styles.clientRow}
+                  onPress={() => selectExistingClient(client)}
+                >
+                  <Text style={styles.clientRowName}>{client.name}</Text>
+                  {!!client.companyName ? <Text style={styles.clientRowMeta}>{client.companyName}</Text> : null}
+                </Pressable>
+              ))}
+              {clientsQuery.isLoading ? <Text style={styles.hint}>Loading clients...</Text> : null}
+              {!clientsQuery.isLoading && clientRows.length === 0 ? (
+                <Text style={styles.hint}>No clients found. Switch to Add New Client to create one.</Text>
+              ) : null}
+            </ScrollView>
+            <Pressable style={styles.modalCloseButton} onPress={() => setShowClientPicker(false)}>
+              <Text style={styles.modalCloseText}>Close</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </Screen>
   )
 }
@@ -378,6 +506,51 @@ const styles = StyleSheet.create({
   screen: { padding: 14 },
   scrollContent: { gap: 10, paddingBottom: 40 },
   title: { fontSize: 24, fontWeight: '800', color: BRAND.text, marginBottom: 8 },
+  clientModeWrap: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  clientModeButton: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#D0D5DD',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+    backgroundColor: BRAND.white,
+  },
+  clientModeButtonActive: {
+    borderColor: BRAND.primary,
+    backgroundColor: '#EEF4F7',
+  },
+  clientModeText: {
+    color: BRAND.text,
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  clientModeTextActive: {
+    color: BRAND.primary,
+  },
+  clientSelectButton: {
+    minHeight: 44,
+    borderWidth: 1,
+    borderColor: '#D0D5DD',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    backgroundColor: BRAND.white,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  clientSelectPlaceholder: {
+    color: '#6B7280',
+    fontSize: 14,
+  },
+  clientSelectValue: {
+    color: BRAND.text,
+    fontSize: 14,
+    fontWeight: '600',
+  },
   input: {
     backgroundColor: BRAND.white,
     borderWidth: 1,
@@ -451,5 +624,55 @@ const styles = StyleSheet.create({
   button: { backgroundColor: BRAND.primary, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
   buttonDisabled: { opacity: 0.7 },
   buttonText: { color: BRAND.white, fontWeight: '700' },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(2,6,23,0.45)',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  modalCard: {
+    backgroundColor: BRAND.white,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#D0D5DD',
+    padding: 12,
+    gap: 8,
+    maxHeight: '75%',
+  },
+  modalTitle: {
+    color: BRAND.text,
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  clientList: {
+    maxHeight: 280,
+  },
+  clientRow: {
+    borderTopWidth: 1,
+    borderTopColor: '#EAECF0',
+    paddingVertical: 10,
+  },
+  clientRowName: {
+    color: BRAND.text,
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  clientRowMeta: {
+    color: '#6B7280',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  modalCloseButton: {
+    alignSelf: 'flex-end',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#D0D5DD',
+  },
+  modalCloseText: {
+    color: BRAND.text,
+    fontWeight: '600',
+  },
 })
 

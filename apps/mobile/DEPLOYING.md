@@ -23,10 +23,19 @@ Use OTA updates for:
 - Bug fixes in app logic
 - Most feature updates that do not add/change native modules
 
-Publish OTA (Android):
+Publish OTA (guarded):
 
-- Preview/internal testers: `npm run ota:preview`
-- Production users: `npm run ota:prod`
+- Preview/internal testers: `npm run ota:preview -- "your release note"`
+- Production users: `npm run ota:prod -- "your release note"`
+
+The guarded OTA script blocks publish when:
+
+- Working tree is dirty
+- Channel config does not match `eas.json`
+- `runtimeVersion.policy` is not `appVersion`
+- `updates.url` is missing
+
+It also appends the current short commit hash to the OTA message for traceability.
 
 ## When a new APK/AAB is required
 
@@ -49,13 +58,13 @@ Build commands:
 ### Internal testers (preview)
 
 1. First install: `npm run build:apk`
-2. Ongoing JS/UI fixes: `npm run ota:preview`
+2. Ongoing JS/UI fixes: `npm run ota:preview -- "preview note"`
 3. Rebuild APK only for native/runtime changes
 
 ### Production releases
 
 1. Store binary: `npm run build:aab`
-2. Ongoing JS/UI fixes: `npm run ota:prod`
+2. Ongoing JS/UI fixes: `npm run ota:prod -- "production note"`
 3. Publish a new store binary for native/runtime changes
 
 ## Runtime/version note

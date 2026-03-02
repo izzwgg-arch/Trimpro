@@ -34,6 +34,10 @@ type SendMessageInput = {
   attachments?: SendAttachmentInput[]
   clientTempId?: string | null
   jobId?: string | null
+  replyToMessageId?: string | null
+  replyToSenderName?: string | null
+  replyToText?: string | null
+  replyToType?: ChatMessageType | null
 }
 
 function normalizeDmPair(userIdA: string, userIdB: string) {
@@ -188,7 +192,7 @@ export async function listConversationsForUser(tenantId: string, userId: string)
 
   const dmUsers = await prisma.user.findMany({
     where: { id: { in: Array.from(dmUserIds) }, tenantId },
-    select: { id: true, firstName: true, lastName: true, email: true },
+    select: { id: true, firstName: true, lastName: true, email: true, avatar: true },
   })
   const dmUserMap = new Map(dmUsers.map((u) => [u.id, u]))
 
@@ -234,6 +238,7 @@ export async function listConversationsForUser(tenantId: string, userId: string)
             firstName: otherUser.firstName,
             lastName: otherUser.lastName,
             email: otherUser.email,
+            avatar: otherUser.avatar,
           }
         : null,
       lastMessage: lastMessage
@@ -292,7 +297,7 @@ export async function listMessages(
     }),
     prisma.user.findMany({
       where: { tenantId, id: { in: senderIds } },
-      select: { id: true, firstName: true, lastName: true, email: true },
+      select: { id: true, firstName: true, lastName: true, email: true, avatar: true },
     }),
   ])
 
@@ -306,6 +311,15 @@ export async function listMessages(
   return messages.map((message) => ({
     ...message,
     sender: senderMap.get(message.senderId) || null,
+    replyTo: message.replyToMessageId
+      ? {
+          messageId: message.replyToMessageId,
+          senderName: message.replyToSenderName || 'Unknown',
+          textPreview: message.replyToText || '',
+          type: message.replyToType || undefined,
+          createdAt: null,
+        }
+      : null,
     attachments: attachmentMap.get(message.id) || [],
   }))
 }
@@ -354,6 +368,10 @@ export async function sendMessageToConversation(
       jobId: jobStamp.jobId || null,
       jobNumber: jobStamp.jobNumber || null,
       jobName: jobStamp.jobName || null,
+      replyToMessageId: input.replyToMessageId || null,
+      replyToSenderName: input.replyToSenderName || null,
+      replyToText: input.replyToText || null,
+      replyToType: input.replyToType || null,
     },
   })
 

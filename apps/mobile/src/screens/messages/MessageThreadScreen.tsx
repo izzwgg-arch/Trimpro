@@ -4,23 +4,29 @@ import {
   AppState,
   FlatList,
   GestureResponderEvent,
+  Image,
   KeyboardAvoidingView,
   Linking,
+  Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
+  Vibration,
   View,
 } from 'react-native'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Ionicons } from '@expo/vector-icons'
 import * as ImagePicker from 'expo-image-picker'
+import * as DocumentPicker from 'expo-document-picker'
 import * as FileSystem from 'expo-file-system/legacy'
 import * as Location from 'expo-location'
+import * as Contacts from 'expo-contacts'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { API_BASE_URL } from '../../config/env'
-import { apiRequest } from '../../api/client'
+import { apiRequest, getValidAccessToken } from '../../api/client'
 import { ChatMessage } from '../../types/models'
 import { MessagesStackParamList } from '../../types/navigation'
 import { useAuth } from '../../auth/AuthContext'
@@ -31,6 +37,7 @@ import { Composer } from '../../components/chat/Composer'
 import { DateSeparator } from '../../components/chat/DateSeparator'
 import { MediaViewer } from '../../components/chat/MediaViewer'
 import { VoiceRecorder } from '../../services/voiceRecorder'
+import { buildSendDraftSnapshot, toInvertedThreadItems } from './message-thread-utils'
 import { colors, spacing, typography } from '../../theme/tokens'
 
 type Props = NativeStackScreenProps<MessagesStackParamList, 'MessageThread'>
@@ -57,6 +64,7 @@ interface ConversationsResponse {
       firstName?: string | null
       lastName?: string | null
       email: string
+      avatar?: string | null
     } | null
   }>
 }
@@ -79,10 +87,99 @@ interface OptimisticMessage {
     latitude?: number | null
     longitude?: number | null
   }>
+  replyToMessageId?: string | null
+  replyTo?: {
+    messageId: string
+    senderName: string
+    textPreview: string
+    type?: 'TEXT' | 'MEDIA' | 'VOICE' | 'LOCATION' | 'SYSTEM'
+    createdAt?: string | null
+  } | null
   jobId?: string | null
   jobNumber?: string | null
   jobName?: string | null
   isOptimistic: true
+}
+
+interface SendMutationInput {
+  clientTempId: string
+  outgoingText: string
+  outgoingDrafts: Array<{
+    kind: 'IMAGE' | 'VIDEO' | 'FILE' | 'VOICE' | 'LOCATION'
+    url?: string
+    fileName?: string
+    mimeType?: string
+    sizeBytes?: number
+    durationMs?: number
+    latitude?: number
+    longitude?: number
+    localUri?: string
+  }>
+  outgoingReplyTo: ChatMessage | null
+}
+
+const MIME_BY_EXTENSION: Record<string, string> = {
+  pdf: 'application/pdf',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  csv: 'text/csv',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  txt: 'text/plain',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  heic: 'image/heic',
+  heif: 'image/heif',
+  webp: 'image/webp',
+  mp4: 'video/mp4',
+  mov: 'video/quicktime',
+  m4v: 'video/x-m4v',
+  webm: 'video/webm',
+  '3gp': 'video/3gpp',
+  '3g2': 'video/3gpp2',
+}
+
+function inferMimeTypeFromName(fileName?: string | null, fallback = 'application/octet-stream'): string {
+  const ext = String(fileName || '')
+    .split('.')
+    .pop()
+    ?.trim()
+    .toLowerCase()
+  if (!ext) return fallback
+  return MIME_BY_EXTENSION[ext] || fallback
+}
+
+function extFromMimeType(mimeType: string): string {
+  const normalized = String(mimeType || '').toLowerCase()
+  if (normalized === 'image/jpeg') return 'jpg'
+  if (normalized === 'image/png') return 'png'
+  if (normalized === 'image/heic') return 'heic'
+  if (normalized === 'image/heif') return 'heif'
+  if (normalized === 'video/mp4') return 'mp4'
+  if (normalized === 'video/quicktime') return 'mov'
+  if (normalized === 'video/x-m4v') return 'm4v'
+  if (normalized === 'video/webm') return 'webm'
+  if (normalized === 'video/3gpp') return '3gp'
+  if (normalized === 'video/3gpp2') return '3g2'
+  if (normalized === 'application/pdf') return 'pdf'
+  if (normalized === 'application/msword') return 'doc'
+  if (normalized === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'docx'
+  if (normalized === 'application/vnd.ms-excel') return 'xls'
+  if (normalized === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') return 'xlsx'
+  if (normalized === 'text/csv') return 'csv'
+  if (normalized === 'application/vnd.ms-powerpoint') return 'ppt'
+  if (normalized === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') return 'pptx'
+  if (normalized === 'text/plain') return 'txt'
+  return 'bin'
+}
+
+function ensureFileName(fileName: string | null | undefined, mimeType: string, prefix: string): string {
+  const name = String(fileName || '').trim()
+  if (name && name.includes('.')) return name
+  return `${prefix}-${Date.now()}.${extFromMimeType(mimeType)}`
 }
 
 export function MessageThreadScreen({ route, navigation }: Props) {
@@ -96,11 +193,15 @@ export function MessageThreadScreen({ route, navigation }: Props) {
   const [recordingDurationMs, setRecordingDurationMs] = useState(0)
   const [recordingWillCancel, setRecordingWillCancel] = useState(false)
   const [optimisticMessages, setOptimisticMessages] = useState<OptimisticMessage[]>([])
+  const [replyFallbackByMessageId, setReplyFallbackByMessageId] = useState<Record<string, NonNullable<ChatMessage['replyTo']>>>({})
+  const [showAttachMenu, setShowAttachMenu] = useState(false)
+  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
   const voiceRecorderRef = useRef<VoiceRecorder>(new VoiceRecorder())
   const recordingStartedAtRef = useRef<number | null>(null)
   const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pressStartRef = useRef<{ x: number; y: number } | null>(null)
   const pressSessionRef = useRef<number>(0)
+  const stopInFlightRef = useRef(false)
   const [viewingMedia, setViewingMedia] = useState<{ uri: string; fileName?: string | null; kind: 'IMAGE' | 'VIDEO' } | null>(null)
   const [mediaDrafts, setMediaDrafts] = useState<
     Array<{
@@ -116,6 +217,49 @@ export function MessageThreadScreen({ route, navigation }: Props) {
       uploadProgress?: number
     }>
   >([])
+
+  const uploadToMessages = useCallback(
+    async (uri: string, mimeType: string) => {
+      const token = await getValidAccessToken()
+      if (!token) throw new Error('Authentication required')
+
+      const runUpload = async (accessToken: string) => {
+        const task = FileSystem.createUploadTask(
+          `${API_BASE_URL}/api/uploads/messages`,
+          uri,
+          {
+            fieldName: 'file',
+            httpMethod: 'POST',
+            uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+            mimeType,
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              Accept: 'application/json',
+            },
+          },
+          () => {}
+        )
+        return task.uploadAsync()
+      }
+
+      let uploadResult = await runUpload(token)
+      if (uploadResult?.status === 401) {
+        const refreshedToken = await getValidAccessToken(true)
+        if (refreshedToken) {
+          uploadResult = await runUpload(refreshedToken)
+        }
+      }
+      if (!uploadResult || uploadResult.status < 200 || uploadResult.status >= 300) {
+        throw new Error(`Upload failed with status ${uploadResult?.status || 0}`)
+      }
+      const payload = JSON.parse(uploadResult.body || '{}')
+      if (!payload?.url) {
+        throw new Error('Upload failed: missing URL')
+      }
+      return payload as { url: string }
+    },
+    []
+  )
 
   const conversationQuery = useQuery({
     queryKey: ['mobile-chat-conversation', conversationId],
@@ -140,46 +284,80 @@ export function MessageThreadScreen({ route, navigation }: Props) {
   }, [conversationId])
 
   useEffect(() => {
+    voiceRecorderRef.current.ensurePermission(true).catch(() => {})
+  }, [])
+
+  useEffect(() => {
     if (threadQuery.data?.messages) {
+      const fallbackFromMatched: Record<string, NonNullable<ChatMessage['replyTo']>> = {}
       setOptimisticMessages((prev) => {
         const serverIds = new Set(threadQuery.data!.messages.map((m) => m.id))
-        return prev.filter((opt) => {
+        const remaining = prev.filter((opt) => {
           if (serverIds.has(opt.id)) return false
           const matched = threadQuery.data!.messages.find((m) => m.clientTempId === opt.clientTempId)
           if (matched) {
+            if (!matched.replyTo && opt.replyTo) {
+              fallbackFromMatched[matched.id] = opt.replyTo
+            }
             return false
           }
           return true
         })
+        return remaining
+      })
+      setReplyFallbackByMessageId((prev) => {
+        const next = { ...prev }
+        for (const [messageId, reply] of Object.entries(fallbackFromMatched)) {
+          next[messageId] = reply
+        }
+        for (const message of threadQuery.data!.messages) {
+          if (message.replyTo) {
+            next[message.id] = message.replyTo
+          }
+        }
+        return next
       })
     }
   }, [threadQuery.data?.messages])
 
+  useEffect(() => {
+    if (!threadQuery.data?.messages || optimisticMessages.length === 0) return
+    const nextFallback: Record<string, NonNullable<ChatMessage['replyTo']>> = {}
+    for (const optimistic of optimisticMessages) {
+      if (!optimistic.replyTo) continue
+      const matched = threadQuery.data.messages.find((message) => message.clientTempId === optimistic.clientTempId)
+      if (matched && !matched.replyTo) {
+        nextFallback[matched.id] = optimistic.replyTo
+      }
+    }
+    if (Object.keys(nextFallback).length > 0) {
+      setReplyFallbackByMessageId((prev) => ({ ...prev, ...nextFallback }))
+    }
+  }, [threadQuery.data?.messages, optimisticMessages])
+
   const sendMutation = useMutation({
-    mutationFn: async (clientTempId: string) => {
-      const localAttachments = mediaDrafts.filter((m) => m.localUri)
-      const readyAttachments = mediaDrafts.filter((m) => m.url)
-      const trimmed = text.trim()
+    mutationFn: async ({ clientTempId, outgoingText, outgoingDrafts, outgoingReplyTo }: SendMutationInput) => {
+      const localAttachments = outgoingDrafts.filter((m) => m.localUri)
+      const readyAttachments = outgoingDrafts.filter((m) => m.url)
+      const trimmed = outgoingText.trim()
       if (!trimmed && localAttachments.length === 0 && readyAttachments.length === 0) return
 
       if (!isOnline) {
         await enqueueOutbox({
           id: `chat-${Date.now()}-${conversationId}`,
-          type: 'chat-message-send',
+          type: 'message-send',
           payload: {
             conversationId,
-            text: trimmed,
-            clientTempId,
-            jobId: jobContext?.jobId || null,
-            attachments: readyAttachments.map((a) => ({
-              kind: a.kind,
+            to: '',
+            from: user?.id || '',
+            body: trimmed,
+            channel: conversationType === 'TEAM' ? 'TEAM' : 'DM',
+            media: readyAttachments.map((a) => ({
+              type: a.kind.toLowerCase(),
               url: a.url!,
-              fileName: a.fileName,
               mimeType: a.mimeType,
-              sizeBytes: a.sizeBytes,
-              durationMs: a.durationMs,
-              latitude: a.latitude,
-              longitude: a.longitude,
+              size: a.sizeBytes,
+              filename: a.fileName,
             })),
           },
         })
@@ -190,20 +368,11 @@ export function MessageThreadScreen({ route, navigation }: Props) {
       for (const attachment of localAttachments) {
         if (!attachment.localUri || !token) continue
         try {
-          const uploadResult = await FileSystem.uploadAsync(`${API_BASE_URL}/api/uploads/messages`, attachment.localUri, {
-            fieldName: 'file',
-            httpMethod: 'POST',
-            uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-            headers: {
-              Authorization: `Bearer ${token}`,
-              Accept: 'application/json',
-            },
-            mimeType: attachment.mimeType || 'application/octet-stream',
-          })
-          if (uploadResult.status < 200 || uploadResult.status >= 300) {
-            throw new Error('Upload failed')
-          }
-          const payload = JSON.parse(uploadResult.body)
+          const uploadMimeType =
+            attachment.kind === 'VOICE'
+              ? 'audio/mp4'
+              : attachment.mimeType || inferMimeTypeFromName(attachment.fileName, 'application/octet-stream')
+          const payload = await uploadToMessages(attachment.localUri, uploadMimeType)
           uploaded.push({
             ...attachment,
             url: payload.url,
@@ -218,6 +387,24 @@ export function MessageThreadScreen({ route, navigation }: Props) {
         text: trimmed,
         jobId: jobContext?.jobId || null,
         clientTempId,
+        replyToMessageId: outgoingReplyTo?.id || null,
+        replyToSenderName: outgoingReplyTo
+          ? `${outgoingReplyTo.sender?.firstName || ''} ${outgoingReplyTo.sender?.lastName || ''}`.trim() ||
+            outgoingReplyTo.sender?.email ||
+            'Unknown'
+          : null,
+        replyToText:
+          outgoingReplyTo?.text ||
+          (outgoingReplyTo?.attachments?.[0]?.kind === 'VOICE'
+            ? 'Voice note'
+            : outgoingReplyTo?.attachments?.[0]?.kind === 'IMAGE'
+              ? 'Photo'
+              : outgoingReplyTo?.attachments?.[0]?.kind === 'VIDEO'
+                ? 'Video'
+                : outgoingReplyTo?.attachments?.[0]?.kind === 'LOCATION'
+                  ? 'Location'
+                  : outgoingReplyTo?.attachments?.[0]?.fileName || ''),
+        replyToType: outgoingReplyTo?.type || null,
         attachments: uploaded.map((attachment) => ({
           kind: attachment.kind,
           url: attachment.url,
@@ -233,15 +420,16 @@ export function MessageThreadScreen({ route, navigation }: Props) {
     onSuccess: async () => {
       setText('')
       setMediaDrafts([])
+      setReplyTo(null)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['mobile-chat-thread', conversationId] }),
         queryClient.invalidateQueries({ queryKey: ['mobile-chat-conversations'] }),
       ])
       apiRequest(`/api/messages/conversations/${conversationId}/read`, 'POST', {}).catch(() => {})
     },
-    onError: (error: any, clientTempId: string) => {
+    onError: (error: any, variables: SendMutationInput) => {
       setOptimisticMessages((prev) =>
-        prev.map((msg) => (msg.clientTempId === clientTempId ? { ...msg, status: 'FAILED' as const } : msg))
+        prev.map((msg) => (msg.clientTempId === variables.clientTempId ? { ...msg, status: 'FAILED' as const } : msg))
       )
       Alert.alert('Error', error?.message || 'Message failed to send')
     },
@@ -249,13 +437,18 @@ export function MessageThreadScreen({ route, navigation }: Props) {
 
   const scrollToLatest = useCallback((animated = true) => {
     requestAnimationFrame(() => {
-      listRef.current?.scrollToEnd({ animated })
+      listRef.current?.scrollToOffset({ offset: 0, animated })
     })
   }, [])
 
   const handleSend = () => {
-    const trimmed = text.trim()
-    if (!trimmed && mediaDrafts.length === 0) return
+    const { outgoingText, outgoingDrafts, outgoingReplyTo, trimmedText, nextText } = buildSendDraftSnapshot({
+      text,
+      mediaDrafts,
+      replyTo,
+    })
+    const trimmed = trimmedText
+    if (!trimmed && outgoingDrafts.length === 0) return
 
     const clientTempId = `mobile-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const optimisticId = `opt-${clientTempId}`
@@ -265,10 +458,10 @@ export function MessageThreadScreen({ route, navigation }: Props) {
       clientTempId,
       senderId: user?.id || '',
       text: trimmed || null,
-      type: mediaDrafts.length > 0 ? 'MEDIA' : 'TEXT',
+      type: outgoingDrafts.length > 0 ? 'MEDIA' : 'TEXT',
       status: 'SENT',
       createdAt: new Date().toISOString(),
-      attachments: mediaDrafts
+      attachments: outgoingDrafts
         .filter((m) => m.url)
         .map((m) => ({
           kind: m.kind,
@@ -283,15 +476,39 @@ export function MessageThreadScreen({ route, navigation }: Props) {
       jobId: jobContext?.jobId || null,
       jobNumber: jobContext?.jobNumber || null,
       jobName: jobContext?.jobName || null,
+      replyToMessageId: outgoingReplyTo?.id || null,
+      replyTo: outgoingReplyTo
+        ? {
+            messageId: outgoingReplyTo.id,
+            senderName:
+              `${outgoingReplyTo.sender?.firstName || ''} ${outgoingReplyTo.sender?.lastName || ''}`.trim() ||
+              outgoingReplyTo.sender?.email ||
+              'Unknown',
+            textPreview:
+              outgoingReplyTo.text ||
+              (outgoingReplyTo.attachments?.[0]?.kind === 'VOICE'
+                ? 'Voice note'
+                : outgoingReplyTo.attachments?.[0]?.kind === 'IMAGE'
+                  ? 'Photo'
+                  : outgoingReplyTo.attachments?.[0]?.kind === 'VIDEO'
+                    ? 'Video'
+                    : outgoingReplyTo.attachments?.[0]?.kind === 'LOCATION'
+                      ? 'Location'
+                      : outgoingReplyTo.attachments?.[0]?.fileName || ''),
+            type: outgoingReplyTo.type,
+            createdAt: outgoingReplyTo.createdAt,
+          }
+        : null,
       isOptimistic: true,
     }
 
+    setText(nextText)
     setOptimisticMessages((prev) => [...prev, optimistic])
-    sendMutation.mutate(clientTempId)
+    sendMutation.mutate({ clientTempId, outgoingText, outgoingDrafts, outgoingReplyTo })
     scrollToLatest(true)
   }
 
-  const pickMedia = async () => {
+  const pickFromLibrary = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync()
     if (!permission.granted) {
       Alert.alert('Permission required', 'Please grant access to your photo library.')
@@ -304,17 +521,129 @@ export function MessageThreadScreen({ route, navigation }: Props) {
     })
     if (result.canceled || result.assets.length === 0) return
     const asset = result.assets[0]
-    const mimeType = asset.mimeType || (asset.type === 'video' ? 'video/mp4' : 'image/jpeg')
+    const mimeType =
+      asset.mimeType ||
+      inferMimeTypeFromName(asset.fileName, asset.type === 'video' ? 'video/mp4' : 'image/jpeg')
     setMediaDrafts((prev) => [
       ...prev,
       {
         kind: mimeType.startsWith('video/') ? 'VIDEO' : 'IMAGE',
         localUri: asset.uri,
         mimeType,
-        fileName: asset.fileName || `chat-${Date.now()}`,
+        fileName: ensureFileName(asset.fileName, mimeType, 'chat'),
         sizeBytes: asset.fileSize || undefined,
       },
     ])
+  }
+
+  const pickFromCamera = async () => {
+    const permission = await ImagePicker.requestCameraPermissionsAsync()
+    if (!permission.granted) {
+      Alert.alert('Permission required', 'Please grant camera access.')
+      return
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images', 'videos'],
+      quality: 0.75,
+      videoQuality: ImagePicker.UIImagePickerControllerQualityType.Medium,
+    })
+    if (result.canceled || result.assets.length === 0) return
+    const asset = result.assets[0]
+    const mimeType =
+      asset.mimeType ||
+      inferMimeTypeFromName(asset.fileName, asset.type === 'video' ? 'video/mp4' : 'image/jpeg')
+    setMediaDrafts((prev) => [
+      ...prev,
+      {
+        kind: mimeType.startsWith('video/') ? 'VIDEO' : 'IMAGE',
+        localUri: asset.uri,
+        mimeType,
+        fileName: ensureFileName(asset.fileName, mimeType, 'camera'),
+        sizeBytes: asset.fileSize || undefined,
+      },
+    ])
+  }
+
+  const recordVideoFromCamera = async () => {
+    const permission = await ImagePicker.requestCameraPermissionsAsync()
+    if (!permission.granted) {
+      Alert.alert('Permission required', 'Please grant camera access.')
+      return
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['videos'],
+      quality: 0.75,
+      videoQuality: ImagePicker.UIImagePickerControllerQualityType.Medium,
+      videoMaxDuration: 300,
+    })
+    if (result.canceled || result.assets.length === 0) return
+    const asset = result.assets[0]
+    const mimeType =
+      asset.mimeType ||
+      inferMimeTypeFromName(asset.fileName, asset.type === 'video' ? 'video/mp4' : 'image/jpeg')
+    setMediaDrafts((prev) => [
+      ...prev,
+      {
+        kind: 'VIDEO',
+        localUri: asset.uri,
+        mimeType,
+        fileName: ensureFileName(asset.fileName, mimeType, 'camera-video'),
+        sizeBytes: asset.fileSize || undefined,
+      },
+    ])
+  }
+
+  const pickDocument = async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: [
+        'application/pdf',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'text/csv',
+        'application/vnd.ms-powerpoint',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'text/plain',
+        'image/*',
+        'video/*',
+      ],
+      multiple: false,
+      copyToCacheDirectory: true,
+    })
+    if (result.canceled || result.assets.length === 0) return
+    const file = result.assets[0]
+    const mimeType = inferMimeTypeFromName(file.name, file.mimeType || 'application/octet-stream')
+    setMediaDrafts((prev) => [
+      ...prev,
+      {
+        kind: mimeType.startsWith('image/') ? 'IMAGE' : mimeType.startsWith('video/') ? 'VIDEO' : 'FILE',
+        localUri: file.uri,
+        mimeType,
+        fileName: ensureFileName(file.name, mimeType, 'file'),
+        sizeBytes: file.size || undefined,
+      },
+    ])
+  }
+
+  const pickContact = async () => {
+    const permission = await Contacts.requestPermissionsAsync()
+    if (!permission.granted) {
+      Alert.alert('Permission required', 'Please grant contacts access.')
+      return
+    }
+    const picked = await Contacts.presentContactPickerAsync()
+    if (!picked) return
+    const phone = picked.phoneNumbers?.[0]?.number || ''
+    const email = picked.emails?.[0]?.email || ''
+    const name = [picked.firstName, picked.lastName].filter(Boolean).join(' ').trim() || 'Contact'
+    const cardLines = [`Contact: ${name}`]
+    if (phone) cardLines.push(`Phone: ${phone}`)
+    if (email) cardLines.push(`Email: ${email}`)
+    setText((prev) => {
+      const prefix = prev.trim().length > 0 ? `${prev.trim()}\n` : ''
+      return `${prefix}${cardLines.join('\n')}`
+    })
   }
 
   const shareLocation = async () => {
@@ -335,8 +664,11 @@ export function MessageThreadScreen({ route, navigation }: Props) {
     ])
   }
 
+  const openAttachMenu = () => setShowAttachMenu(true)
+  const closeAttachMenu = () => setShowAttachMenu(false)
+
   const MIN_VOICE_DURATION_MS = 450
-  const CANCEL_DRAG_THRESHOLD = 72
+  const CANCEL_DRAG_THRESHOLD = 56
 
   const clearDurationTicker = () => {
     if (durationIntervalRef.current) {
@@ -387,6 +719,16 @@ export function MessageThreadScreen({ route, navigation }: Props) {
       jobId: jobContext?.jobId || null,
       jobNumber: jobContext?.jobNumber || null,
       jobName: jobContext?.jobName || null,
+      replyToMessageId: replyTo?.id || null,
+      replyTo: replyTo
+        ? {
+            messageId: replyTo.id,
+            senderName: `${replyTo.sender?.firstName || ''} ${replyTo.sender?.lastName || ''}`.trim() || replyTo.sender?.email || 'Unknown',
+            textPreview: replyTo.text || replyTo.attachments?.[0]?.fileName || 'Attachment',
+            type: replyTo.type,
+            createdAt: replyTo.createdAt,
+          }
+        : null,
       isOptimistic: true,
     }
 
@@ -394,26 +736,15 @@ export function MessageThreadScreen({ route, navigation }: Props) {
     scrollToLatest(true)
 
     try {
-      const uploadResult = await FileSystem.uploadAsync(`${API_BASE_URL}/api/uploads/messages`, uri, {
-        fieldName: 'file',
-        httpMethod: 'POST',
-        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/json',
-        },
-        mimeType: 'audio/m4a',
-      })
-
-      if (uploadResult.status < 200 || uploadResult.status >= 300) {
-        throw new Error(`Upload failed with status ${uploadResult.status}`)
-      }
-
-      const payload = JSON.parse(uploadResult.body)
+      const payload = await uploadToMessages(uri, 'audio/mp4')
       await apiRequest(`/api/messages/conversations/${conversationId}/messages`, 'POST', {
         text: null,
         jobId: jobContext?.jobId || null,
         clientTempId,
+        replyToMessageId: replyTo?.id || null,
+        replyToSenderName: replyTo ? `${replyTo.sender?.firstName || ''} ${replyTo.sender?.lastName || ''}`.trim() || replyTo.sender?.email || 'Unknown' : null,
+        replyToText: replyTo?.text || replyTo?.attachments?.[0]?.fileName || 'Attachment',
+        replyToType: replyTo?.type || null,
         attachments: [
           {
             kind: 'VOICE',
@@ -432,6 +763,7 @@ export function MessageThreadScreen({ route, navigation }: Props) {
         queryClient.invalidateQueries({ queryKey: ['mobile-chat-thread', conversationId] }),
         queryClient.invalidateQueries({ queryKey: ['mobile-chat-conversations'] }),
       ])
+      setReplyTo(null)
       apiRequest(`/api/messages/conversations/${conversationId}/read`, 'POST', {}).catch(() => {})
     } catch (error: any) {
       console.error('Voice send failed', error, error?.stack)
@@ -449,9 +781,9 @@ export function MessageThreadScreen({ route, navigation }: Props) {
     pressStartRef.current = { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY }
     setRecordingWillCancel(false)
     setRecordingDurationMs(0)
+    setIsRecordingUi(true)
 
     try {
-      if (__DEV__) console.log('[voice-ui] onPressIn -> start request')
       await recorder.start()
 
       if (pressSessionRef.current !== sessionId) {
@@ -469,7 +801,6 @@ export function MessageThreadScreen({ route, navigation }: Props) {
         setRecordingDurationMs(Date.now() - recordingStartedAtRef.current)
       }, 150)
     } catch (error: any) {
-      console.error('startRecording error', error, error?.stack)
       await recorder.forceCleanup()
       resetRecordingUi()
       Alert.alert('Recording error', error?.message || 'Unable to start voice recording.')
@@ -477,10 +808,9 @@ export function MessageThreadScreen({ route, navigation }: Props) {
   }
 
   const moveRecording = (event: GestureResponderEvent) => {
-    if (!isRecordingUi || !pressStartRef.current) return
+    if (!pressStartRef.current) return
     const dx = event.nativeEvent.pageX - pressStartRef.current.x
-    const dy = event.nativeEvent.pageY - pressStartRef.current.y
-    const shouldCancel = dx < -CANCEL_DRAG_THRESHOLD || dy < -CANCEL_DRAG_THRESHOLD
+    const shouldCancel = dx < -CANCEL_DRAG_THRESHOLD
     if (shouldCancel !== recordingWillCancel) {
       setRecordingWillCancel(shouldCancel)
     }
@@ -490,28 +820,40 @@ export function MessageThreadScreen({ route, navigation }: Props) {
     pressSessionRef.current = 0
     const recorder = voiceRecorderRef.current
     try {
-      await recorder.cancel()
-    } catch (error: any) {
-      console.error('cancelRecording error', error, error?.stack)
+      if (recorder.isRecording() || recorder.getPhase() === 'starting') {
+        await recorder.cancel()
+      }
+    } catch {
     } finally {
       resetRecordingUi()
     }
   }
 
-  const stopRecording = async (_event: GestureResponderEvent) => {
+  const stopRecording = async (event: GestureResponderEvent) => {
+    if (stopInFlightRef.current) return
+    stopInFlightRef.current = true
     const recorder = voiceRecorderRef.current
     pressSessionRef.current = 0
 
     // Start never completed; nothing to stop, ensure cleanup and exit.
     if (!recorder.isRecording()) {
-      await cancelRecording()
+      resetRecordingUi()
+      stopInFlightRef.current = false
       return
     }
 
     const elapsed = recordingStartedAtRef.current ? Date.now() - recordingStartedAtRef.current : 0
-    const shouldCancel = recordingWillCancel || elapsed < MIN_VOICE_DURATION_MS
+    // Some Android devices can emit an early synthetic release while still holding.
+    // Ignore very short non-cancel releases so hold-to-record remains stable.
+    if (!recordingWillCancel && elapsed < MIN_VOICE_DURATION_MS) {
+      stopInFlightRef.current = false
+      return
+    }
+    const dragDx = pressStartRef.current ? event.nativeEvent.pageX - pressStartRef.current.x : 0
+    const shouldCancel = recordingWillCancel || dragDx < -CANCEL_DRAG_THRESHOLD
     if (shouldCancel) {
       await cancelRecording()
+      stopInFlightRef.current = false
       return
     }
 
@@ -520,16 +862,19 @@ export function MessageThreadScreen({ route, navigation }: Props) {
       resetRecordingUi()
       await sendVoiceMessage(result.uri, result.durationMs)
     } catch (error: any) {
-      console.error('stopRecording error', error, error?.stack)
       await recorder.forceCleanup()
       resetRecordingUi()
       Alert.alert('Error', error?.message || 'Failed to stop recording.')
+    } finally {
+      stopInFlightRef.current = false
     }
   }
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
-      if (state !== 'active' && (isRecordingUi || voiceRecorderRef.current.isRecording())) {
+      // Android can emit transient inactive/pause events during touch interactions.
+      // Only force-cancel when app truly goes to background.
+      if (state === 'background' && voiceRecorderRef.current.isRecording()) {
         cancelRecording().catch(() => {})
       }
     })
@@ -538,7 +883,7 @@ export function MessageThreadScreen({ route, navigation }: Props) {
       cancelRecording().catch(() => {})
       clearDurationTicker()
     }
-  }, [isRecordingUi])
+  }, [])
 
   const messages = useMemo(() => {
     const server = threadQuery.data?.messages || []
@@ -560,6 +905,17 @@ export function MessageThreadScreen({ route, navigation }: Props) {
     }
     return result
   }, [messages])
+  const renderItems = useMemo(() => toInvertedThreadItems(messagesWithDates), [messagesWithDates])
+  const messageIndexMap = useMemo(() => {
+    const map = new Map<string, number>()
+    renderItems.forEach((item, index) => {
+      if ('type' in item && item.type === 'DATE') return
+      if ('id' in item) {
+        map.set(String(item.id), index)
+      }
+    })
+    return map
+  }, [renderItems])
 
   const conversation = conversationQuery.data?.conversation
   const listedConversation = conversationsQuery.data?.conversations?.find((item) => item.id === conversationId)
@@ -588,6 +944,7 @@ export function MessageThreadScreen({ route, navigation }: Props) {
     if (conversationType === 'JOB_THREAD') return 'Job Thread'
     return 'Direct Message'
   }, [listedConversation, conversation, conversationType])
+  const otherUserAvatar = listedConversation?.otherUser?.avatar || null
 
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
@@ -600,18 +957,26 @@ export function MessageThreadScreen({ route, navigation }: Props) {
           <Pressable onPress={() => navigation.goBack()} style={styles.backButton}>
             <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
           </Pressable>
+          {!isTeamChat && otherUserAvatar ? <Image source={{ uri: otherUserAvatar }} style={styles.headerAvatar} /> : null}
           <View style={styles.headerContent}>
             <Text style={styles.headerTitle}>{threadTitle}</Text>
-            <Text style={styles.headerSubtitle}>{isTeamChat ? 'Team Chat' : 'Direct Message'}</Text>
           </View>
-          <Pressable style={styles.menuButton}>
-            <Ionicons name="ellipsis-vertical" size={20} color={colors.textPrimary} />
-          </Pressable>
+          <View style={styles.headerActions}>
+            <Pressable style={styles.headerIconButton}>
+              <Ionicons name="videocam-outline" size={20} color={colors.textPrimary} />
+            </Pressable>
+            <Pressable style={styles.headerIconButton}>
+              <Ionicons name="call-outline" size={19} color={colors.textPrimary} />
+            </Pressable>
+            <Pressable style={styles.headerIconButton}>
+              <Ionicons name="ellipsis-vertical" size={18} color={colors.textPrimary} />
+            </Pressable>
+          </View>
         </View>
 
         <FlatList
           ref={listRef}
-          data={messagesWithDates}
+          data={renderItems}
           keyExtractor={(item, index) => {
             if ('type' in item && item.type === 'DATE') {
               return `date-${item.date.toISOString()}`
@@ -621,19 +986,30 @@ export function MessageThreadScreen({ route, navigation }: Props) {
           contentContainerStyle={styles.listContent}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-          onContentSizeChange={() => scrollToLatest(false)}
-          inverted={false}
+          inverted
+          showsVerticalScrollIndicator={false}
           renderItem={({ item }) => {
             if ('type' in item && item.type === 'DATE') {
               return <DateSeparator date={item.date} />
             }
             const message = item as ChatMessage | OptimisticMessage
             const isMine = message.senderId === user?.id
+            const resolvedReplyTo = message.replyTo || replyFallbackByMessageId[message.id]
             return (
               <MessageBubble
-                message={message as ChatMessage}
+                message={{ ...(message as ChatMessage), replyTo: resolvedReplyTo } as ChatMessage}
                 isMine={isMine}
                 showSender={isTeamChat && !isMine}
+                onSwipeReply={(swipedMessage) => {
+                  setReplyTo(swipedMessage)
+                  Vibration.vibrate(10)
+                }}
+                onReplyPress={(messageId) => {
+                  const targetIndex = messageIndexMap.get(messageId)
+                  if (typeof targetIndex === 'number') {
+                    listRef.current?.scrollToIndex({ index: targetIndex, animated: true, viewPosition: 0.2 })
+                  }
+                }}
                 onJobPress={(jobId) => Linking.openURL(`trimpro://jobs/${jobId}`)}
                 onImagePress={(uri, fileName) => {
                   const attachment = message.attachments?.find((a) => a.url === uri)
@@ -651,7 +1027,21 @@ export function MessageThreadScreen({ route, navigation }: Props) {
                         text: 'Retry',
                         onPress: () => {
                           setOptimisticMessages((prev) => prev.filter((m) => m.id !== message.id))
-                          sendMutation.mutate(message.clientTempId)
+                          sendMutation.mutate({
+                            clientTempId: message.clientTempId,
+                            outgoingText: message.text || '',
+                            outgoingDrafts: (message.attachments || []).map((attachment) => ({
+                              kind: attachment.kind,
+                              url: attachment.url,
+                              fileName: attachment.fileName || undefined,
+                              mimeType: attachment.mimeType || undefined,
+                              sizeBytes: attachment.sizeBytes || undefined,
+                              durationMs: attachment.durationMs || undefined,
+                              latitude: attachment.latitude || undefined,
+                              longitude: attachment.longitude || undefined,
+                            })),
+                            outgoingReplyTo: null,
+                          })
                         },
                       },
                     ])
@@ -667,8 +1057,7 @@ export function MessageThreadScreen({ route, navigation }: Props) {
             text={text}
             onChangeText={setText}
             onSend={handleSend}
-            onAttach={pickMedia}
-            onLocation={shareLocation}
+            onOpenMenu={openAttachMenu}
             onVoiceStart={startRecording}
             onVoiceMove={moveRecording}
             onVoiceStop={stopRecording}
@@ -678,6 +1067,15 @@ export function MessageThreadScreen({ route, navigation }: Props) {
             recording={isRecordingUi}
             recordingDurationMs={recordingDurationMs}
             recordingWillCancel={recordingWillCancel}
+            replyPreview={
+              replyTo
+                ? {
+                    senderName: `${replyTo.sender?.firstName || ''} ${replyTo.sender?.lastName || ''}`.trim() || replyTo.sender?.email || 'Unknown',
+                    textPreview: replyTo.text || replyTo.attachments?.[0]?.fileName || replyTo.attachments?.[0]?.kind || '',
+                  }
+                : null
+            }
+            onClearReply={() => setReplyTo(null)}
             sending={sendMutation.isPending}
             disabled={!isOnline}
             bottomInset={0}
@@ -694,6 +1092,39 @@ export function MessageThreadScreen({ route, navigation }: Props) {
           onClose={() => setViewingMedia(null)}
         />
       )}
+      <Modal visible={showAttachMenu} transparent animationType="slide" onRequestClose={closeAttachMenu}>
+        <Pressable style={styles.menuBackdrop} onPress={closeAttachMenu}>
+          <Pressable style={styles.menuSheet} onPress={(event) => event.stopPropagation()}>
+            <Text style={styles.menuTitle}>Share</Text>
+            <ScrollView>
+              <Pressable style={styles.menuItem} onPress={() => { closeAttachMenu(); pickFromCamera().catch(() => null) }}>
+                <Ionicons name="camera-outline" size={18} color={colors.textPrimary} />
+                <Text style={styles.menuItemText}>Camera</Text>
+              </Pressable>
+              <Pressable style={styles.menuItem} onPress={() => { closeAttachMenu(); recordVideoFromCamera().catch(() => null) }}>
+                <Ionicons name="videocam-outline" size={18} color={colors.textPrimary} />
+                <Text style={styles.menuItemText}>Record Video</Text>
+              </Pressable>
+              <Pressable style={styles.menuItem} onPress={() => { closeAttachMenu(); pickFromLibrary().catch(() => null) }}>
+                <Ionicons name="images-outline" size={18} color={colors.textPrimary} />
+                <Text style={styles.menuItemText}>Photo & Video Library</Text>
+              </Pressable>
+              <Pressable style={styles.menuItem} onPress={() => { closeAttachMenu(); pickDocument().catch(() => null) }}>
+                <Ionicons name="document-outline" size={18} color={colors.textPrimary} />
+                <Text style={styles.menuItemText}>Document</Text>
+              </Pressable>
+              <Pressable style={styles.menuItem} onPress={() => { closeAttachMenu(); pickContact().catch(() => null) }}>
+                <Ionicons name="person-outline" size={18} color={colors.textPrimary} />
+                <Text style={styles.menuItemText}>Contact</Text>
+              </Pressable>
+              <Pressable style={styles.menuItem} onPress={() => { closeAttachMenu(); shareLocation().catch(() => null) }}>
+                <Ionicons name="location-outline" size={18} color={colors.textPrimary} />
+                <Text style={styles.menuItemText}>Location</Text>
+              </Pressable>
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   )
 }
@@ -710,7 +1141,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: colors.divider,
     backgroundColor: colors.surface,
@@ -719,27 +1150,68 @@ const styles = StyleSheet.create({
     padding: spacing.xs,
     marginRight: spacing.xs,
   },
+  headerAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    marginRight: spacing.xs,
+  },
   headerContent: {
     flex: 1,
-    gap: 2,
+    justifyContent: 'center',
   },
   headerTitle: {
-    ...typography.h3,
+    ...typography.sub,
     color: colors.textPrimary,
-    fontWeight: '600',
+    fontWeight: '700',
   },
-  headerSubtitle: {
-    ...typography.caption,
-    color: colors.textSecondary,
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
-  menuButton: {
-    padding: spacing.xs,
+  headerIconButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   listContent: {
-    paddingVertical: spacing.md,
-    paddingBottom: spacing.xs,
+    paddingTop: spacing.sm,
+    paddingBottom: 4,
   },
   composerDock: {
     backgroundColor: colors.surface,
+  },
+  menuBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'flex-end',
+  },
+  menuSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
+    maxHeight: '70%',
+  },
+  menuTitle: {
+    ...typography.sub,
+    color: colors.textPrimary,
+    fontWeight: '700',
+    marginBottom: spacing.sm,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: 13,
+  },
+  menuItemText: {
+    ...typography.body,
+    color: colors.textPrimary,
   },
 })

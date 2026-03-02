@@ -17,8 +17,7 @@ interface ComposerProps {
   text: string
   onChangeText: (text: string) => void
   onSend: () => void
-  onAttach: () => void
-  onLocation: () => void
+  onOpenMenu: () => void
   onVoiceStart: (event: GestureResponderEvent) => void
   onVoiceMove: (event: GestureResponderEvent) => void
   onVoiceStop: (event: GestureResponderEvent) => void
@@ -28,6 +27,11 @@ interface ComposerProps {
   recording: boolean
   recordingDurationMs?: number
   recordingWillCancel?: boolean
+  replyPreview?: {
+    senderName: string
+    textPreview: string
+  } | null
+  onClearReply?: () => void
   sending: boolean
   disabled?: boolean
   bottomInset?: number
@@ -37,8 +41,7 @@ export function Composer({
   text,
   onChangeText,
   onSend,
-  onAttach,
-  onLocation,
+  onOpenMenu,
   onVoiceStart,
   onVoiceMove,
   onVoiceStop,
@@ -48,11 +51,14 @@ export function Composer({
   recording,
   recordingDurationMs,
   recordingWillCancel,
+  replyPreview,
+  onClearReply,
   sending,
   disabled,
   bottomInset = 0,
 }: ComposerProps) {
   const canSend = (text.trim().length > 0 || attachments.length > 0) && !sending && !disabled
+  const showMic = text.trim().length === 0 && attachments.length === 0
 
   return (
     <View
@@ -63,6 +69,23 @@ export function Composer({
         },
       ]}
     >
+      {replyPreview ? (
+        <View style={styles.replyPreview}>
+          <View style={styles.replyAccent} />
+          <View style={styles.replyBody}>
+            <Text style={styles.replySender} numberOfLines={1}>
+              {replyPreview.senderName}
+            </Text>
+            <Text style={styles.replyText} numberOfLines={1}>
+              {replyPreview.textPreview || 'Attachment'}
+            </Text>
+          </View>
+          <Pressable onPress={onClearReply} style={styles.replyClose}>
+            <Ionicons name="close" size={16} color={colors.textSecondary} />
+          </Pressable>
+        </View>
+      ) : null}
+
       {attachments.length > 0 && (
         <View style={styles.attachmentsRow}>
           {attachments.map((attachment, index) => (
@@ -90,65 +113,52 @@ export function Composer({
       <View style={styles.inputRow}>
         <Pressable
           style={[styles.actionButton, disabled && styles.disabledButton]}
-          onPress={onAttach}
+          onPress={onOpenMenu}
           disabled={disabled}
         >
-          <Ionicons name="add" size={22} color={colors.brandPrimary} />
-        </Pressable>
-
-        <Pressable
-          style={[styles.actionButton, disabled && styles.disabledButton]}
-          onPress={onLocation}
-          disabled={disabled}
-        >
-          <Ionicons name="location-outline" size={20} color={colors.brandPrimary} />
-        </Pressable>
-
-        <Pressable
-          style={[styles.actionButton, recording && styles.recordingButton, disabled && styles.disabledButton]}
-          onPressIn={onVoiceStart}
-          onPressMove={onVoiceMove}
-          onPressOut={onVoiceStop}
-          delayLongPress={250}
-          hitSlop={8}
-          disabled={disabled}
-        >
-          <Ionicons
-            name={recording ? 'mic' : 'mic-outline'}
-            size={20}
-            color={recording ? colors.surface : colors.brandPrimary}
-          />
+          <Ionicons name="add" size={22} color={colors.textSecondary} />
         </Pressable>
 
         <TextInput
           style={styles.input}
           value={text}
           onChangeText={onChangeText}
-          placeholder="Type a message..."
+          onSubmitEditing={onSend}
+          placeholder="Message"
           placeholderTextColor={colors.textSecondary}
           multiline
+          blurOnSubmit={false}
+          returnKeyType="send"
           maxLength={2000}
-          editable={!disabled}
+          editable={!disabled && !recording}
         />
 
-        <Pressable
-          style={[styles.sendButton, !canSend && styles.sendButtonDisabled]}
-          onPress={onSend}
-          disabled={!canSend}
-        >
-          {sending ? (
-            <ActivityIndicator size="small" color={colors.surface} />
-          ) : (
-            <Ionicons name="send" size={20} color={colors.surface} />
-          )}
-        </Pressable>
+        {showMic ? (
+          <Pressable
+            style={[styles.actionButton, styles.rightActionButton, recording && styles.recordingButton, disabled && styles.disabledButton]}
+            onPressIn={onVoiceStart}
+            onPressMove={recording ? onVoiceMove : undefined}
+            onTouchMove={recording ? onVoiceMove : undefined}
+            onPressOut={recording ? onVoiceStop : undefined}
+            hitSlop={8}
+            disabled={disabled}
+          >
+            <Ionicons name={recording ? 'mic' : 'mic-outline'} size={20} color={recording ? colors.surface : colors.brandPrimary} />
+          </Pressable>
+        ) : (
+          <Pressable style={[styles.sendButton, !canSend && styles.sendButtonDisabled]} onPress={onSend} disabled={!canSend}>
+            {sending ? <ActivityIndicator size="small" color={colors.surface} /> : <Ionicons name="send" size={18} color={colors.surface} />}
+          </Pressable>
+        )}
       </View>
       {recording ? (
         <View style={styles.recordingHintRow}>
-          <Text style={[styles.recordingHint, recordingWillCancel && styles.recordingHintCancel]}>
-            {recordingWillCancel
-              ? 'Release to cancel'
-              : `Recording... ${Math.max(0, Math.round((recordingDurationMs || 0) / 1000))}s`}
+          <View style={[styles.recordingDot, recordingWillCancel && styles.recordingDotCancel]} />
+          <Text style={[styles.recordingTimer, recordingWillCancel && styles.recordingTimerCancel]}>
+            {`${Math.max(0, Math.round((recordingDurationMs || 0) / 1000))}s`}
+          </Text>
+          <Text style={[styles.recordingSlideHint, recordingWillCancel && styles.recordingSlideHintCancel]}>
+            {recordingWillCancel ? 'Release to cancel' : 'Slide left to cancel'}
           </Text>
           <Pressable onPress={onVoiceCancel}>
             <Text style={styles.cancelText}>Cancel</Text>
@@ -167,6 +177,37 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xs,
     paddingBottom: spacing.sm,
     paddingHorizontal: spacing.md,
+  },
+  replyPreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderRadius: 10,
+    padding: 8,
+    marginBottom: spacing.xs,
+  },
+  replyAccent: {
+    width: 3,
+    alignSelf: 'stretch',
+    borderRadius: 2,
+    backgroundColor: colors.brandPrimary,
+    marginRight: 8,
+  },
+  replyBody: {
+    flex: 1,
+  },
+  replySender: {
+    ...typography.caption,
+    color: colors.brandPrimary,
+    fontWeight: '700',
+  },
+  replyText: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 1,
+  },
+  replyClose: {
+    padding: 4,
   },
   attachmentsRow: {
     flexDirection: 'row',
@@ -209,12 +250,15 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   actionButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.background,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  rightActionButton: {
+    backgroundColor: colors.background,
     borderWidth: 1,
     borderColor: colors.divider,
   },
@@ -227,13 +271,13 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    minHeight: 36,
+    minHeight: 40,
     maxHeight: 100,
-    borderRadius: 18,
-    backgroundColor: colors.background,
+    borderRadius: 20,
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.divider,
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
     ...typography.body,
     color: colors.textPrimary,
@@ -241,9 +285,9 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   sendButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: colors.brandPrimary,
     alignItems: 'center',
     justifyContent: 'center',
@@ -255,16 +299,36 @@ const styles = StyleSheet.create({
   recordingHintRow: {
     marginTop: spacing.xs,
     flexDirection: 'row',
+    alignItems: 'flex-end',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    gap: spacing.xs,
   },
-  recordingHint: {
+  recordingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.danger,
+  },
+  recordingDotCancel: {
+    backgroundColor: colors.warning,
+  },
+  recordingTimer: {
     ...typography.caption,
     color: colors.brandPrimary,
     fontSize: 12,
+    fontWeight: '700',
   },
-  recordingHintCancel: {
-    color: colors.danger,
+  recordingTimerCancel: {
+    color: colors.warning,
+  },
+  recordingSlideHint: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontSize: 12,
+    flex: 1,
+  },
+  recordingSlideHintCancel: {
+    color: colors.warning,
   },
   cancelText: {
     ...typography.caption,

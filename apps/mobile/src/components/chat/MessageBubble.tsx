@@ -1,10 +1,10 @@
-import React, { useState } from 'react'
-import { Image, Linking, Pressable, StyleSheet, Text, View } from 'react-native'
+import React, { useMemo, useRef } from 'react'
+import { Animated, Dimensions, Image, Linking, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
-import { Audio } from 'expo-av'
 import { colors, spacing, typography } from '../../theme/tokens'
 import { ChatMessage } from '../../types/models'
-import { BRAND } from '../../config/env'
+import { VoiceNoteBubble } from './VoiceNoteBubble'
+import { ReplyPreview } from './ReplyPreview'
 
 interface MessageBubbleProps {
   message: ChatMessage | { sender?: ChatMessage['sender'] | null; [key: string]: any }
@@ -13,6 +13,8 @@ interface MessageBubbleProps {
   onJobPress?: (jobId: string) => void
   onLongPress?: () => void
   onImagePress?: (uri: string, fileName?: string | null) => void
+  onSwipeReply?: (message: ChatMessage) => void
+  onReplyPress?: (messageId: string) => void
 }
 
 function senderName(message: ChatMessage | { sender?: ChatMessage['sender'] | null }) {
@@ -41,55 +43,100 @@ function statusIcon(status: string) {
   return '✓'
 }
 
-export function MessageBubble({ message, isMine, showSender, onJobPress, onLongPress, onImagePress }: MessageBubbleProps) {
-  const [sound, setSound] = useState<Audio.Sound | null>(null)
-  const [playing, setPlaying] = useState(false)
+const SCREEN_WIDTH = Dimensions.get('window').width
+const VOICE_BUBBLE_MAX_WIDTH = Math.round(SCREEN_WIDTH * 0.86)
+const VOICE_BUBBLE_MIN_WIDTH = Math.round(Math.min(SCREEN_WIDTH * 0.7, 320))
 
-  const playVoiceNote = async (url: string) => {
-    try {
-      if (sound) {
-        await sound.unloadAsync()
-      }
-      const { sound: newSound } = await Audio.Sound.createAsync({ uri: url })
-      setSound(newSound)
-      await newSound.playAsync()
-      setPlaying(true)
-      newSound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) {
-          setPlaying(false)
-        }
-      })
-    } catch (error) {
-      console.error('Error playing voice note:', error)
-    }
-  }
+export function MessageBubble({
+  message,
+  isMine,
+  showSender,
+  onJobPress,
+  onLongPress,
+  onImagePress,
+  onSwipeReply,
+  onReplyPress,
+}: MessageBubbleProps) {
+  const translateX = useRef(new Animated.Value(0)).current
+  const hasTriggeredReply = useRef(false)
+  const SWIPE_THRESHOLD = 60
 
-  const stopVoiceNote = async () => {
-    if (sound) {
-      await sound.stopAsync()
-      await sound.unloadAsync()
-      setSound(null)
-      setPlaying(false)
-    }
-  }
+  const bubblePanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) > 10 && Math.abs(gesture.dx) > Math.abs(gesture.dy),
+        onPanResponderMove: (_, gesture) => {
+          if (gesture.dx > 0) {
+            translateX.setValue(Math.min(gesture.dx, 84))
+            if (!hasTriggeredReply.current && gesture.dx > SWIPE_THRESHOLD && onSwipeReply) {
+              hasTriggeredReply.current = true
+              onSwipeReply(message as ChatMessage)
+            }
+          }
+        },
+        onPanResponderRelease: () => {
+          hasTriggeredReply.current = false
+          Animated.spring(translateX, {
+            toValue: 0,
+            useNativeDriver: true,
+            speed: 24,
+            bounciness: 4,
+          }).start()
+        },
+        onPanResponderTerminate: () => {
+          hasTriggeredReply.current = false
+          Animated.spring(translateX, {
+            toValue: 0,
+            useNativeDriver: true,
+            speed: 24,
+            bounciness: 4,
+          }).start()
+        },
+      }),
+    [isMine, message, onSwipeReply, translateX]
+  )
 
-  React.useEffect(() => {
-    return () => {
-      if (sound) {
-        sound.unloadAsync()
-      }
-    }
-  }, [sound])
+  const hasOnlyVoiceAttachment =
+    !message.text &&
+    !!message.attachments?.length &&
+    message.attachments.every((attachment: any) => attachment.kind === 'VOICE')
 
   return (
-    <Pressable
-      style={[styles.container, isMine ? styles.mineContainer : styles.otherContainer]}
-      onLongPress={onLongPress}
-    >
-      <View style={[styles.bubble, isMine ? styles.mineBubble : styles.otherBubble]}>
+    <Animated.View style={[styles.container, isMine ? styles.mineContainer : styles.otherContainer, { transform: [{ translateX }] }]}>
+      {!isMine && !hasOnlyVoiceAttachment ? (
+        <View style={styles.sideAvatar}>
+          {message.sender?.avatar ? (
+            <Image source={{ uri: message.sender.avatar }} style={styles.sideAvatarImage} />
+          ) : (
+            <Text style={styles.sideAvatarInitial}>{senderName(message).slice(0, 1).toUpperCase()}</Text>
+          )}
+        </View>
+      ) : null}
+      <View style={styles.bubbleGestureWrap} {...bubblePanResponder.panHandlers}>
+      <Pressable
+        style={[
+          styles.bubble,
+          isMine ? styles.mineBubble : styles.otherBubble,
+          hasOnlyVoiceAttachment && styles.voiceOnlyBubble,
+        ]}
+        onLongPress={onLongPress}
+      >
         {showSender && !isMine && (
-          <Text style={styles.senderName}>{senderName(message)}</Text>
+          <View style={styles.senderRow}>
+            {message.sender?.avatar ? <Image source={{ uri: message.sender.avatar }} style={styles.senderAvatar} /> : null}
+            <Text style={styles.senderName}>{senderName(message)}</Text>
+          </View>
         )}
+        {message.replyTo ? (
+          <ReplyPreview
+            isOutgoing={isMine}
+            senderName={message.replyTo.senderName}
+            textPreview={message.replyTo.textPreview || 'Attachment'}
+            onPress={() => {
+              if (message.replyTo?.messageId && onReplyPress) onReplyPress(message.replyTo.messageId)
+            }}
+          />
+        ) : null}
         {message.jobId && (
           <Pressable
             style={[styles.jobBadge, isMine && styles.jobBadgeMine]}
@@ -102,7 +149,7 @@ export function MessageBubble({ message, isMine, showSender, onJobPress, onLongP
           </Pressable>
         )}
         {message.text ? <Text style={[styles.text, isMine && styles.textMine]}>{message.text}</Text> : null}
-        {message.attachments?.map((attachment, idx) => {
+        {message.attachments?.map((attachment: any, idx: number) => {
           const attachmentId = 'id' in attachment ? attachment.id : `att-${idx}`
           if (attachment.kind === 'IMAGE') {
             return (
@@ -139,23 +186,17 @@ export function MessageBubble({ message, isMine, showSender, onJobPress, onLongP
           }
           if (attachment.kind === 'VOICE') {
             return (
-              <Pressable
+              <VoiceNoteBubble
                 key={attachmentId}
-                style={[styles.voiceContainer, isMine && styles.voiceContainerMine]}
-                onPress={() => (playing ? stopVoiceNote() : playVoiceNote(attachment.url))}
-              >
-                <Ionicons
-                  name={playing ? 'pause-circle' : 'play-circle'}
-                  size={24}
-                  color={isMine ? colors.surface : colors.brandPrimary}
-                />
-                <View style={styles.voiceInfo}>
-                  <View style={styles.voiceWaveform} />
-                  <Text style={[styles.voiceDuration, isMine && styles.voiceDurationMine]}>
-                    {attachment.durationMs ? `${Math.round(attachment.durationMs / 1000)}s` : 'Voice note'}
-                  </Text>
-                </View>
-              </Pressable>
+                messageId={String(message.id || attachmentId)}
+                audioUrl={attachment.url}
+                durationMs={attachment.durationMs || null}
+                isOutgoing={isMine}
+                timestamp={formatMessageTime(message.createdAt)}
+                deliveryStatus={message.status}
+                senderAvatarUrl={message.sender?.avatar || null}
+                senderInitials={senderName(message).slice(0, 1).toUpperCase()}
+              />
             )
           }
           if (attachment.kind === 'LOCATION') {
@@ -199,51 +240,99 @@ export function MessageBubble({ message, isMine, showSender, onJobPress, onLongP
           }
           return null
         })}
-        <View style={styles.footer}>
-          <Text style={[styles.time, isMine && styles.timeMine]}>
-            {formatMessageTime(message.createdAt)}
-          </Text>
-          {isMine && (
-            <Text style={[styles.status, isMine && styles.statusMine]}>
-              {statusIcon(message.status)}
+        {!hasOnlyVoiceAttachment ? (
+          <View style={styles.footer}>
+            <Text style={[styles.time, isMine && styles.timeMine]}>
+              {formatMessageTime(message.createdAt)}
             </Text>
-          )}
-        </View>
+            {isMine && (
+              <Text style={[styles.status, isMine && styles.statusMine]}>
+                {statusIcon(message.status)}
+              </Text>
+            )}
+          </View>
+        ) : null}
+      </Pressable>
       </View>
-    </Pressable>
+    </Animated.View>
   )
 }
 
 const styles = StyleSheet.create({
   container: {
-    marginVertical: 2,
+    marginVertical: 1,
     paddingHorizontal: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
   },
   mineContainer: {
     alignItems: 'flex-end',
+    justifyContent: 'flex-end',
   },
   otherContainer: {
     alignItems: 'flex-start',
+    justifyContent: 'flex-start',
+  },
+  sideAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#dbe7ef',
+    marginRight: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sideAvatarImage: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+  },
+  sideAvatarInitial: {
+    ...typography.caption,
+    color: '#27485a',
+    fontWeight: '700',
   },
   bubble: {
-    maxWidth: '80%',
-    borderRadius: 16,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs + 2,
+    maxWidth: '86%',
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  bubbleGestureWrap: {
+    maxWidth: '86%',
+  },
+  voiceOnlyBubble: {
+    maxWidth: VOICE_BUBBLE_MAX_WIDTH,
+    minWidth: VOICE_BUBBLE_MIN_WIDTH,
+    paddingRight: 16,
+    paddingBottom: 8,
   },
   mineBubble: {
     backgroundColor: colors.brandPrimary,
-    borderBottomRightRadius: 4,
+    borderBottomRightRadius: 3,
   },
   otherBubble: {
-    backgroundColor: colors.divider,
-    borderBottomLeftRadius: 4,
+    backgroundColor: colors.surface,
+    borderBottomLeftRadius: 3,
+    borderWidth: 1,
+    borderColor: colors.divider,
   },
   senderName: {
     ...typography.caption,
     color: colors.textSecondary,
     fontWeight: '600',
     marginBottom: 2,
+  },
+  senderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 2,
+  },
+  senderAvatar: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
   },
   jobBadge: {
     flexDirection: 'row',
@@ -300,39 +389,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(0,0,0,0.3)',
-  },
-  voiceContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    marginTop: 4,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.divider,
-  },
-  voiceContainerMine: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderColor: 'rgba(255,255,255,0.3)',
-  },
-  voiceInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  voiceWaveform: {
-    height: 4,
-    backgroundColor: colors.divider,
-    borderRadius: 2,
-  },
-  voiceDuration: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    fontSize: 11,
-  },
-  voiceDurationMine: {
-    color: colors.surface,
   },
   locationContainer: {
     flexDirection: 'row',
@@ -407,7 +463,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-end',
     gap: 4,
-    marginTop: 4,
+    marginTop: 3,
   },
   time: {
     ...typography.caption,

@@ -1,5 +1,5 @@
 import React from 'react'
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native'
+import { InteractionManager, Modal, Pressable, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { colors, spacing, typography } from '../../theme/tokens'
 import { AttachmentPickAction } from '../../services/attachment-upload'
@@ -32,8 +32,11 @@ export function AttachmentPickerSheet({
               key={option.action}
               style={styles.optionRow}
               onPress={() => {
-                onSelect(option.action)
                 onClose()
+                // Let modal fully close before invoking camera/document intents on Android.
+                InteractionManager.runAfterInteractions(() => {
+                  setTimeout(() => onSelect(option.action), 220)
+                })
               }}
             >
               <Ionicons name={option.icon} size={20} color={colors.textPrimary} />

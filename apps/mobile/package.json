@@ -10,8 +10,8 @@
     "web": "expo start --web",
     "build:apk": "eas build -p android --profile preview --non-interactive",
     "build:aab": "eas build -p android --profile production --non-interactive",
-    "ota:preview": "eas update --channel preview --message \"preview update\" --non-interactive",
-    "ota:prod": "eas update --channel production --message \"production update\" --non-interactive"
+    "ota:preview": "node ./scripts/publish-ota.mjs preview",
+    "ota:prod": "node ./scripts/publish-ota.mjs production"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -29,6 +29,7 @@
     "expo-av": "~15.0.2",
     "expo-camera": "~17.0.10",
     "expo-constants": "~18.0.13",
+    "expo-contacts": "~15.0.11",
     "expo-device": "~8.0.10",
     "expo-document-picker": "^55.0.8",
     "expo-file-system": "~19.0.21",

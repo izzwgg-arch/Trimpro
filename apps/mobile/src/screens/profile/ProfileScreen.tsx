@@ -1,19 +1,24 @@
 import React, { useMemo, useState } from 'react'
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native'
 import Constants from 'expo-constants'
 import * as Updates from 'expo-updates'
 import * as Notifications from 'expo-notifications'
+import * as ImagePicker from 'expo-image-picker'
+import * as FileSystem from 'expo-file-system/legacy'
 import { useQuery } from '@tanstack/react-query'
 import { Screen } from '../../components/Screen'
 import { BRAND } from '../../config/env'
 import { useAuth } from '../../auth/AuthContext'
 import { apiRequest } from '../../api/client'
 import { getLastPushReceivedAt, getStoredPushToken, registerPushToken } from '../../notifications/registerPush'
+import { API_BASE_URL } from '../../config/env'
 
 export function ProfileScreen() {
-  const { user, signOut } = useAuth()
+  const { user, signOut, token } = useAuth()
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
   const [isRegisteringPush, setIsRegisteringPush] = useState(false)
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(user?.avatar || null)
 
   const appVersion = useMemo(() => {
     return Constants.expoConfig?.version ?? Constants.nativeAppVersion ?? 'unknown'
@@ -108,10 +113,66 @@ export function ProfileScreen() {
     }
   }
 
+  const onChangeAvatar = async () => {
+    const mediaPermission = await ImagePicker.requestMediaLibraryPermissionsAsync()
+    if (!mediaPermission.granted) {
+      Alert.alert('Permission required', 'Please allow photo library access to update your avatar.')
+      return
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85,
+    })
+    if (result.canceled || result.assets.length === 0) return
+    const image = result.assets[0]
+    if (!token) {
+      Alert.alert('Error', 'You are not authenticated. Please sign in again.')
+      return
+    }
+
+    setIsUploadingAvatar(true)
+    try {
+      const uploadResult = await FileSystem.uploadAsync(`${API_BASE_URL}/api/users/me/avatar`, image.uri, {
+        fieldName: 'file',
+        httpMethod: 'POST',
+        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+        },
+        mimeType: image.mimeType || 'image/jpeg',
+      })
+      if (uploadResult.status < 200 || uploadResult.status >= 300) {
+        throw new Error(`Upload failed with status ${uploadResult.status}`)
+      }
+      const payload = JSON.parse(uploadResult.body)
+      setAvatarUrl(payload.avatarUrl || null)
+      Alert.alert('Updated', 'Profile photo updated.')
+    } catch (error: any) {
+      Alert.alert('Upload failed', error?.message || 'Could not update profile photo.')
+    } finally {
+      setIsUploadingAvatar(false)
+    }
+  }
+
   return (
     <Screen style={styles.screen}>
       <Text style={styles.title}>Profile</Text>
       <View style={styles.card}>
+        <Pressable style={styles.avatarWrap} onPress={() => onChangeAvatar()} disabled={isUploadingAvatar}>
+          {avatarUrl ? (
+            <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+          ) : (
+            <View style={styles.avatarFallback}>
+              <Text style={styles.avatarFallbackText}>{(user?.firstName?.[0] || user?.email?.[0] || 'U').toUpperCase()}</Text>
+            </View>
+          )}
+        </Pressable>
+        <Pressable style={styles.secondaryButton} onPress={() => onChangeAvatar()} disabled={isUploadingAvatar}>
+          <Text style={styles.secondaryButtonText}>{isUploadingAvatar ? 'Uploading...' : 'Change photo'}</Text>
+        </Pressable>
         <Text style={styles.row}>Name: {user?.firstName} {user?.lastName}</Text>
         <Text style={styles.row}>Email: {user?.email}</Text>
         <Text style={styles.row}>Role: {user?.role}</Text>
@@ -181,5 +242,16 @@ const styles = StyleSheet.create({
   },
   secondaryButtonDisabled: { opacity: 0.6 },
   secondaryButtonText: { color: BRAND.white, fontWeight: '700' },
+  avatarWrap: { alignSelf: 'center', marginBottom: 6 },
+  avatarImage: { width: 88, height: 88, borderRadius: 44 },
+  avatarFallback: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: BRAND.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarFallbackText: { color: BRAND.white, fontSize: 30, fontWeight: '800' },
 })
 

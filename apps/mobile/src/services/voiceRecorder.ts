@@ -12,6 +12,52 @@ export class VoiceRecorder {
   private recording: Audio.Recording | null = null
   private phase: RecorderPhase = 'idle'
   private activeOperation: Promise<void> | null = null
+  private permissionGranted: boolean | null = null
+  private recordingStartedAt: number | null = null
+  private didObserveRecordingStart = false
+
+  private async sleep(ms: number) {
+    await new Promise((resolve) => setTimeout(resolve, ms))
+  }
+
+  private async safeStopAndUnload(current: Audio.Recording): Promise<void> {
+    try {
+      const status = await current.getStatusAsync()
+      if (!('isRecording' in status) || !status.isRecording) {
+        return
+      }
+      await current.stopAndUnloadAsync()
+    } catch {
+    }
+  }
+
+  private getRecordingOptions(): Audio.RecordingOptions {
+    return {
+      isMeteringEnabled: false,
+      android: {
+        extension: '.m4a',
+        outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+        audioEncoder: Audio.AndroidAudioEncoder.AAC,
+        sampleRate: 44100,
+        numberOfChannels: 1,
+        bitRate: 128000,
+      },
+      ios: {
+        extension: '.m4a',
+        audioQuality: Audio.IOSAudioQuality.HIGH,
+        sampleRate: 44100,
+        numberOfChannels: 1,
+        bitRate: 128000,
+        linearPCMBitDepth: 16,
+        linearPCMIsBigEndian: false,
+        linearPCMIsFloat: false,
+      },
+      web: {
+        mimeType: 'audio/webm',
+        bitsPerSecond: 128000,
+      },
+    }
+  }
 
   isRecording() {
     return this.phase === 'recording'
@@ -31,9 +77,24 @@ export class VoiceRecorder {
     }
   }
 
+  async ensurePermission(interactive: boolean): Promise<boolean> {
+    if (this.permissionGranted === true) return true
+    const current = await Audio.getPermissionsAsync()
+    if (current.granted) {
+      this.permissionGranted = true
+      return true
+    }
+    if (!interactive) {
+      this.permissionGranted = false
+      return false
+    }
+    const requested = await Audio.requestPermissionsAsync()
+    this.permissionGranted = requested.granted
+    return requested.granted
+  }
+
   async start(): Promise<void> {
     if (this.phase === 'starting' || this.phase === 'recording' || this.phase === 'stopping' || this.phase === 'canceling') {
-      this.devLog('start ignored', { phase: this.phase })
       return
     }
 
@@ -41,19 +102,33 @@ export class VoiceRecorder {
       this.transition('starting')
       try {
         await this.forceCleanup()
-
-        const permission = await Audio.requestPermissionsAsync()
-        if (!permission.granted) {
+        const granted = await this.ensurePermission(false)
+        if (!granted) {
           throw new Error('Microphone permission denied')
         }
 
         await Audio.setAudioModeAsync(this.getAudioModeOptions(true))
 
-        const created = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY)
-        this.recording = created.recording
+        const recording = new Audio.Recording()
+        await recording.prepareToRecordAsync(this.getRecordingOptions())
+        await recording.startAsync()
+        this.recording = recording
+        this.didObserveRecordingStart = false
+        const bootWaitUntil = Date.now() + 1200
+        while (Date.now() < bootWaitUntil) {
+          const status = await this.recording.getStatusAsync()
+          if ('isRecording' in status && status.isRecording) {
+            this.didObserveRecordingStart = true
+            break
+          }
+          await this.sleep(60)
+        }
+        if (!this.didObserveRecordingStart) {
+          throw new Error('Recorder failed to start')
+        }
+        this.recordingStartedAt = Date.now()
         this.transition('recording')
       } catch (error: any) {
-        console.error('[voice-recorder] start failed', error, error?.stack)
         await this.forceCleanup()
         this.transition('idle')
         throw error
@@ -81,12 +156,33 @@ export class VoiceRecorder {
       this.transition('stopping')
       try {
         const current = this.recording
+        if (!current) throw new Error('No active recording')
+        const minRecordingMs = 650
+        const elapsed = this.recordingStartedAt ? Date.now() - this.recordingStartedAt : 0
+        if (elapsed < minRecordingMs) {
+          await new Promise((resolve) => setTimeout(resolve, minRecordingMs - elapsed))
+        }
         const status = await current.getStatusAsync()
+        if (!('isRecording' in status) || !status.isRecording || !this.didObserveRecordingStart) {
+          throw new Error('Recorder is not in recording state')
+        }
         const uri = current.getURI()
-        const durationMs = status.isLoaded ? status.durationMillis || 0 : 0
-
-        await current.stopAndUnloadAsync()
+        const durationMs = 'durationMillis' in status ? status.durationMillis || 0 : 0
+        try {
+          await current.stopAndUnloadAsync()
+        } catch {
+          // Some Android devices briefly report recording=true while recorder is transitioning.
+          await this.sleep(120)
+          const retryStatus = await current.getStatusAsync()
+          if ('isRecording' in retryStatus && retryStatus.isRecording) {
+            await current.stopAndUnloadAsync()
+          } else {
+            throw new Error('Recorder stop failed')
+          }
+        }
         this.recording = null
+        this.recordingStartedAt = null
+        this.didObserveRecordingStart = false
 
         await this.resetAudioMode()
         this.transition('idle')
@@ -94,7 +190,6 @@ export class VoiceRecorder {
         if (!uri) throw new Error('Recording URI is unavailable')
         return { uri, durationMs, mime: 'audio/m4a' }
       } catch (error: any) {
-        console.error('[voice-recorder] stop failed', error, error?.stack)
         await this.forceCleanup()
         this.transition('idle')
         throw error
@@ -119,8 +214,7 @@ export class VoiceRecorder {
       this.transition('canceling')
       try {
         await this.forceCleanup()
-      } catch (error: any) {
-        console.error('[voice-recorder] cancel failed', error, error?.stack)
+      } catch {
       } finally {
         this.transition('idle')
         this.activeOperation = null
@@ -139,23 +233,11 @@ export class VoiceRecorder {
 
     const current = this.recording
     this.recording = null
+    this.recordingStartedAt = null
+    this.didObserveRecordingStart = false
     try {
-      const status = await current.getStatusAsync()
-      if (status.isLoaded && status.isRecording) {
-        await current.stopAndUnloadAsync()
-      } else if (status.isLoaded) {
-        await current.unloadAsync()
-      }
-    } catch (error) {
-      try {
-        await current.stopAndUnloadAsync()
-      } catch {
-        try {
-          await current.unloadAsync()
-        } catch {
-          // no-op
-        }
-      }
+      await this.safeStopAndUnload(current)
+    } catch {
     } finally {
       await this.resetAudioMode()
     }
@@ -164,21 +246,11 @@ export class VoiceRecorder {
   private async resetAudioMode() {
     try {
       await Audio.setAudioModeAsync(this.getAudioModeOptions(false))
-    } catch (error) {
-      this.devLog('resetAudioMode failed', error)
+    } catch {
     }
   }
 
   private transition(next: RecorderPhase) {
-    if (__DEV__) {
-      console.log(`[voice-recorder] ${this.phase} -> ${next}`)
-    }
     this.phase = next
-  }
-
-  private devLog(message: string, payload?: unknown) {
-    if (__DEV__) {
-      console.log(`[voice-recorder] ${message}`, payload ?? '')
-    }
   }
 }

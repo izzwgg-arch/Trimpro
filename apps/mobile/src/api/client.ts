@@ -58,6 +58,17 @@ async function refreshAccessTokenSilently(): Promise<boolean> {
   return refreshInFlight
 }
 
+export async function getValidAccessToken(forceRefresh = false): Promise<string | null> {
+  const current = await getAccessToken()
+  if (current && !forceRefresh) return current
+
+  const refreshed = await refreshAccessTokenSilently()
+  if (!refreshed) {
+    return forceRefresh ? null : current || null
+  }
+  return (await getAccessToken()) || null
+}
+
 export async function apiRequest<T>(
   path: string,
   method: HttpMethod = 'GET',
