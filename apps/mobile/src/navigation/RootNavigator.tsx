@@ -22,6 +22,7 @@ import { ScheduleCreateScreen } from '../screens/schedule/ScheduleCreateScreen'
 import { TasksScreen } from '../screens/tasks/TasksScreen'
 import { MessagesScreen } from '../screens/messages/MessagesScreen'
 import { MessageThreadScreen } from '../screens/messages/MessageThreadScreen'
+import { MessageThreadScreenV2 } from '../screens/messages/MessageThreadScreenV2'
 import { TeamChatScreen } from '../screens/messages/TeamChatScreen'
 import { CreateRequestScreen } from '../screens/requests/CreateRequestScreen'
 import { RequestsListScreen } from '../screens/requests/RequestsListScreen'
@@ -89,6 +90,7 @@ const linking: LinkingOptions<RootDrawerParamList> = {
             screens: {
               MessagesList: 'messages',
               MessageThread: 'messages/:conversationId',
+              MessageThreadV2: 'messages-v2/:conversationId',
               TeamChat: 'messages/team',
             },
           } as never,
@@ -167,6 +169,7 @@ function MessagesStackNavigator() {
       <MessagesStack.Screen name="MessagesList" component={MessagesScreen} options={mainHeaderOptions('Messages')} />
       <MessagesStack.Screen name="TeamChat" component={TeamChatScreen} options={detailsHeaderOptions('Team Chat')} />
       <MessagesStack.Screen name="MessageThread" component={MessageThreadScreen} options={{ headerShown: false }} />
+      <MessagesStack.Screen name="MessageThreadV2" component={MessageThreadScreenV2} options={{ headerShown: false }} />
     </MessagesStack.Navigator>
   )
 }
