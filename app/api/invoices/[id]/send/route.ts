@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
-import { getIntegrationSecrets } from '@/lib/integrations/status'
-import { testEmailProvider } from '@/lib/integrations/providers/email'
+import { sendDocumentEmailWithResolvedSender } from '@/lib/email-integrations/sender'
 
 function escapeHtml(value: string) {
   return String(value || '')
@@ -127,14 +126,6 @@ export async function POST(
       paymentLink,
     })
     
-    const emailSecrets = await getIntegrationSecrets(user.tenantId, 'email')
-    if (!emailSecrets) {
-      return NextResponse.json(
-        { error: 'Email integration is not configured. Please configure Email Provider first.' },
-        { status: 400 }
-      )
-    }
-
     const safeMessage = message ? escapeHtml(String(message)) : ''
     const total = Number(invoice.total || 0).toFixed(2)
     const balance = Number(invoice.balance || 0).toFixed(2)
@@ -270,15 +261,19 @@ export async function POST(
   </body>
 </html>`
 
-    for (const recipientEmail of uniqueRecipientEmails) {
-      const sendResult = await testEmailProvider(emailSecrets, recipientEmail, effectiveSubject, html)
-      if (!sendResult.success) {
-        console.error('Failed to send invoice email:', sendResult.error || sendResult.message)
-        return NextResponse.json(
-          { error: sendResult.error || sendResult.message || `Failed to send invoice email to ${recipientEmail}` },
-          { status: 502 }
-        )
-      }
+    const sendResult = await sendDocumentEmailWithResolvedSender({
+      tenantId: user.tenantId,
+      userId: user.id,
+      to: uniqueRecipientEmails,
+      subject: effectiveSubject,
+      html,
+      text: safeMessage || `Invoice ${invoice.invoiceNumber} is ready.`,
+    })
+    if (!sendResult.success) {
+      return NextResponse.json(
+        { error: sendResult.error || 'Failed to send invoice email' },
+        { status: 502 }
+      )
     }
 
     // Update invoice status
@@ -299,8 +294,13 @@ export async function POST(
         status: 'SENT',
         subject: effectiveSubject,
         body: message || `Please find attached invoice ${invoice.invoiceNumber}.`,
-        fromEmail: user.email,
+        fromEmail: sendResult.sender.fromEmail,
         toEmails: uniqueRecipientEmails,
+        providerData: {
+          senderSource: sendResult.sender.source,
+          senderName: sendResult.sender.fromName,
+          replyTo: sendResult.sender.replyTo || null,
+        },
         invoiceId: invoice.id,
         clientId: invoice.clientId,
         sentAt: new Date(),

@@ -56,12 +56,15 @@ export function FastPicker({
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [filteredItems, setFilteredItems] = useState<FastPickerItem[]>([])
+  const [remoteItems, setRemoteItems] = useState<FastPickerItem[]>([])
+  const [remoteBundles, setRemoteBundles] = useState<FastPickerItem[]>([])
   
   const inputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const itemRefs = useRef<(HTMLDivElement | null)[]>([])
   const isSelectingRef = useRef(false) // Prevent race conditions
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Expose input ref to parent
   useEffect(() => {
@@ -75,13 +78,54 @@ export function FastPicker({
     }
   }, [inputRefCallback])
 
-  // Combine items and bundles from props (stable, render-driven source of truth)
+  // Live-sync picker data from API so new items appear immediately
+  useEffect(() => {
+    if (!isOpen) return
+
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current)
+    }
+
+    searchDebounceRef.current = setTimeout(async () => {
+      try {
+        const token = localStorage.getItem('accessToken')
+        if (!token) return
+
+        const query = searchQuery.trim()
+        const url = `/api/items/picker${query ? `?search=${encodeURIComponent(query)}` : ''}`
+        const response = await fetch(url, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+
+        if (!response.ok) return
+        const data = await response.json()
+        setRemoteItems(Array.isArray(data.items) ? data.items : [])
+        setRemoteBundles(Array.isArray(data.bundles) ? data.bundles : [])
+      } catch (error) {
+        console.error('FastPicker live sync failed:', error)
+      }
+    }, 180)
+
+    return () => {
+      if (searchDebounceRef.current) {
+        clearTimeout(searchDebounceRef.current)
+      }
+    }
+  }, [isOpen, searchQuery])
+
+  // Prefer fresh server data while picker is open; fallback to props.
+  const sourceItems =
+    isOpen && (remoteItems.length > 0 || remoteBundles.length > 0) ? remoteItems : items
+  const sourceBundles =
+    isOpen && (remoteItems.length > 0 || remoteBundles.length > 0) ? remoteBundles : bundles
+
+  // Combine items and bundles from current source (stable, render-driven source of truth)
   const allItems = useMemo(
     () => [
-      ...items.map(item => ({ ...item, kind: 'SINGLE' as const })),
-      ...bundles.map(bundle => ({ ...bundle, kind: 'BUNDLE' as const })),
+      ...sourceItems.map(item => ({ ...item, kind: 'SINGLE' as const })),
+      ...sourceBundles.map(bundle => ({ ...bundle, kind: 'BUNDLE' as const })),
     ],
-    [items, bundles]
+    [sourceItems, sourceBundles]
   )
 
   // Query-driven filtering: only recalculates when query/items change,

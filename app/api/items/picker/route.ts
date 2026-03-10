@@ -32,12 +32,11 @@ export async function GET(request: NextRequest) {
       ]
     }
 
-    // Fetch items (SINGLE kind)
-    const items = await prisma.item.findMany({
-      where: {
-        ...where,
-        kind: 'SINGLE',
-      },
+    // Fetch all items first, then split by kind.
+    // This is resilient to legacy rows where kind may be null/unknown:
+    // anything not explicitly BUNDLE is treated as a regular selectable item.
+    const allItems = await prisma.item.findMany({
+      where,
       include: {
         vendor: {
           select: {
@@ -45,20 +44,6 @@ export async function GET(request: NextRequest) {
             name: true,
           },
         },
-      },
-      orderBy: {
-        name: 'asc',
-      },
-      take: 1000, // Reasonable limit for picker
-    })
-
-    // Fetch bundles (BUNDLE kind)
-    const bundleItems = await prisma.item.findMany({
-      where: {
-        ...where,
-        kind: 'BUNDLE',
-      },
-      include: {
         bundleDefinition: {
           include: {
             components: {
@@ -86,8 +71,11 @@ export async function GET(request: NextRequest) {
       orderBy: {
         name: 'asc',
       },
-      take: 1000,
+      take: 1000, // Reasonable limit for picker
     })
+
+    const items = allItems.filter((item) => item.kind !== 'BUNDLE')
+    const bundleItems = allItems.filter((item) => item.kind === 'BUNDLE')
 
     // Format items for FastPicker
     const formattedItems = items.map(item => ({

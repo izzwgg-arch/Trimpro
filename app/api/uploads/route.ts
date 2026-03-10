@@ -12,46 +12,10 @@ import {
 
 export const runtime = 'nodejs'
 
-function getPublicBaseUrl(req: NextRequest): string {
-  // Prefer explicit config (recommended in production)
-  const envUrl =
-    process.env.PUBLIC_APP_URL ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.APP_URL
-
-  if (envUrl && typeof envUrl === 'string' && envUrl.trim()) {
-    let url = envUrl.trim().replace(/\/+$/, '')
-
-    const host = (() => {
-      try {
-        return new URL(url).hostname
-      } catch {
-        return ''
-      }
-    })()
-    const isIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(host)
-    const isLocal = host === 'localhost' || host === '127.0.0.1'
-
-    // Ignore internal/local env URLs; fall through to request host/public default.
-    if (!isIp && !isLocal) {
-      url = url.replace('http://', 'https://')
-      return url
-    }
-  }
-
-  // Fall back to request headers (works when directly accessed by public users)
-  const proto = req.headers.get('x-forwarded-proto') || 'http'
-  const host = req.headers.get('x-forwarded-host') || req.headers.get('host')
-  if (!host) return ''
-  
-  // Force HTTPS for production domains (not localhost)
-  const isIpHost = /^\d{1,3}(\.\d{1,3}){3}(:\d+)?$/.test(host)
-  const isLocalhost = host.includes('localhost') || host.includes('127.0.0.1')
-  if (!isLocalhost && !isIpHost) {
-    return `https://${host}`
-  }
-
-  return 'https://app.trimprony.com'
+// Returns empty string intentionally — upload URLs are always relative (/uploads/...).
+// Relative URLs resolve correctly on any hostname without hardcoded domain assumptions.
+function getPublicBaseUrl(_req: NextRequest): string {
+  return ''
 }
 
 export async function POST(request: NextRequest) {

@@ -160,12 +160,20 @@ export default function IntegrationsPage() {
           <h1 className="text-3xl font-bold text-gray-900">Integrations</h1>
           <p className="mt-1 text-gray-600">Connect external services to enhance Trim Pro</p>
         </div>
-        <Link href="/dashboard/settings">
-          <Button variant="outline">
-            <ArrowRight className="mr-2 h-4 w-4" />
-            Back to Settings
-          </Button>
-        </Link>
+        <div className="flex gap-2">
+          <Link href="/dashboard/settings/email-integrations">
+            <Button>
+              <Mail className="mr-2 h-4 w-4" />
+              Email Integrations
+            </Button>
+          </Link>
+          <Link href="/dashboard/settings">
+            <Button variant="outline">
+              <ArrowRight className="mr-2 h-4 w-4" />
+              Back to Settings
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {integrations.length === 0 && !loading && (

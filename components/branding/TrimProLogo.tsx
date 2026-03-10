@@ -1,4 +1,8 @@
+'use client'
+
+import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
+import { useBranding } from '@/components/branding/BrandingProvider'
 
 interface TrimProMarkProps {
   size?: number
@@ -34,18 +38,30 @@ const sizeMap = {
   lg: { width: 200, height: 60 },
 }
 
+const DEFAULT_LOGO = '/branding/trimpro-logo.svg'
+
 export function TrimProLogo({ variant = 'light', size = 'md', className }: TrimProLogoProps) {
   const dimensions = sizeMap[size]
+  const { webLogoUrl } = useBranding()
+  const [errored, setErrored] = useState(false)
+
+  // Reset error flag whenever a new logo URL is supplied
+  useEffect(() => {
+    setErrored(false)
+  }, [webLogoUrl])
+
+  const src = !errored && webLogoUrl ? webLogoUrl : DEFAULT_LOGO
 
   return (
     <div className={cn('inline-flex items-center', className)}>
       <img
-        src="/branding/trimpro-logo.svg"
+        src={src}
         alt="TrimPro"
         width={dimensions.width}
         height={dimensions.height}
         className="block"
         style={{ width: dimensions.width, height: dimensions.height, objectFit: 'contain' }}
+        onError={() => setErrored(true)}
       />
     </div>
   )

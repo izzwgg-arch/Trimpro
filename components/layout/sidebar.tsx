@@ -74,8 +74,14 @@ export function Sidebar() {
   }
 
   return (
-    <div className="flex h-full w-64 flex-col bg-[#2E4A59] text-white">
-      <div className="flex h-16 flex-shrink-0 items-center justify-between px-4 border-b border-[#3A5C70]">
+    <div
+      className="flex h-full w-64 flex-col text-white"
+      style={{ backgroundColor: 'var(--brand-sidebar-color)' }}
+    >
+      <div
+        className="flex h-16 flex-shrink-0 items-center justify-between px-4 border-b"
+        style={{ borderColor: 'var(--brand-sidebar-border-color)' }}
+      >
         <Link
           href="/dashboard"
           aria-label="Go to dashboard"
@@ -97,7 +103,7 @@ export function Sidebar() {
               href={item.href}
               className={cn(
                 'group flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors duration-200 ease-in-out !bg-transparent hover:!bg-transparent active:!bg-transparent focus:!bg-transparent',
-                isActive ? 'text-[#E6C98B]' : 'text-[#FFFFFF] hover:text-[#E6C98B]'
+                isActive ? 'text-[var(--brand-menu-color)]' : 'text-white hover:text-[var(--brand-menu-color)]'
               )}
             >
               <item.icon className="mr-3 h-5 w-5 flex-shrink-0" />
@@ -117,10 +123,13 @@ export function Sidebar() {
           return navItem
         })}
       </nav>
-      <div className="flex-shrink-0 border-t border-[#3A5C70] p-4">
+      <div
+        className="flex-shrink-0 border-t p-4"
+        style={{ borderColor: 'var(--brand-sidebar-border-color)' }}
+      >
         <button
           onClick={handleLogout}
-          className="flex w-full items-center rounded-md px-3 py-2 text-sm font-medium text-[#FFFFFF] transition-colors duration-200 ease-in-out !bg-transparent hover:!bg-transparent hover:text-[#E6C98B]"
+          className="flex w-full items-center rounded-md px-3 py-2 text-sm font-medium text-white transition-colors duration-200 ease-in-out !bg-transparent hover:!bg-transparent hover:text-[var(--brand-menu-color)]"
         >
           <LogOut className="mr-3 h-5 w-5" />
           Logout

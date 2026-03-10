@@ -5,6 +5,63 @@ import { normalizeEmailList, splitEmailList } from '@/lib/email'
  * Common validation schemas for API endpoints
  */
 
+const nullableString = z.preprocess(
+  (val) => (val === '' || val === undefined ? null : val),
+  z.string().nullable().optional()
+)
+
+// Branding settings payload (partial updates are allowed).
+export const brandingSettingsSchema = z
+  .object({
+    primaryColor: nullableString,
+    secondaryColor: nullableString,
+    backgroundColor: nullableString,
+    sidebarColor: nullableString,
+    menuColor: nullableString,
+    buttonColor: nullableString,
+    buttonTextColor: nullableString,
+    textPrimaryColor: nullableString,
+    textSecondaryColor: nullableString,
+    linkColor: nullableString,
+    borderColor: nullableString,
+    successColor: nullableString,
+    warningColor: nullableString,
+    dangerColor: nullableString,
+    webLogoUrl: nullableString,
+    faviconUrl: nullableString,
+    mobileAppIconUrl: nullableString,
+    mobileAppSplashLogoUrl: nullableString,
+    invoicePdfTemplateId: nullableString,
+    invoiceStyle: nullableString,
+    invoiceBusinessName: nullableString,
+    invoicePhone: nullableString,
+    invoiceEmail: nullableString,
+    invoiceAddress: nullableString,
+    invoiceFooterText: nullableString,
+    invoiceLogoUrl: nullableString,
+    emailPrimaryColor: nullableString,
+    emailButtonColor: nullableString,
+    emailButtonTextColor: nullableString,
+    emailBackgroundColor: nullableString,
+    emailCardBackgroundColor: nullableString,
+    emailHeaderBackgroundColor: nullableString,
+    emailFooterBackgroundColor: nullableString,
+    emailTextPrimaryColor: nullableString,
+    emailTextSecondaryColor: nullableString,
+    emailLinkColor: nullableString,
+    emailBorderColor: nullableString,
+    emailLogoUrl: nullableString,
+    emailFooterText: nullableString,
+    emailSignature: nullableString,
+    emailCustomHeaderHTML: nullableString,
+    emailCustomFooterHTML: nullableString,
+  })
+  .passthrough()
+
+export const brandingResetSchema = z.object({
+  section: z.enum(['ui', 'logos', 'invoice', 'email']),
+})
+
 // Pagination
 export const paginationSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),

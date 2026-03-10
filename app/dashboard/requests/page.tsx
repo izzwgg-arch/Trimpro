@@ -229,7 +229,12 @@ export default function RequestsPage() {
 
     // Important business rule: do NOT convert/create an Estimate just by clicking this button.
     // Instead, open the New Estimate page prefilled; conversion happens only on Save.
-    router.push(`/dashboard/estimates/new?requestId=${encodeURIComponent(request.id)}`)
+    const attachedClientId = request.convertedToClientId || request.client?.id || ''
+    const query = new URLSearchParams({
+      requestId: request.id,
+      ...(attachedClientId ? { clientId: attachedClientId } : {}),
+    })
+    router.push(`/dashboard/estimates/new?${query.toString()}`)
   }
 
   const handleConvertToJob = async (request: Request) => {

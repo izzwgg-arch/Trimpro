@@ -45,14 +45,6 @@ export type MessagesStackParamList = {
       jobName: string
     }
   }
-  MessageThreadV2: {
-    conversationId: string
-    jobContext?: {
-      jobId: string
-      jobNumber: string
-      jobName: string
-    }
-  }
   TeamChat: undefined
 }
 

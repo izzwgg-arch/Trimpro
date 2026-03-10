@@ -14,10 +14,18 @@ const ENCRYPTED_POSITION = TAG_POSITION + TAG_LENGTH
 
 function getEncryptionKeySource(): string | undefined {
   // Use bracket notation to avoid static env inlining issues in bundled server code.
-  const key = process.env['ENCRYPTION_KEY'] || process.env['NEXTAUTH_SECRET']
+  // Keep compatibility with multiple secret names used across deployments.
+  const key =
+    process.env['ENCRYPTION_KEY'] ||
+    process.env['INTEGRATION_ENCRYPTION_KEY'] ||
+    process.env['NEXTAUTH_SECRET'] ||
+    process.env['AUTH_SECRET'] ||
+    process.env['JWT_SECRET'] ||
+    process.env['DATABASE_URL']
+
   if (!key || key.length < 32) {
     console.warn(
-      'WARNING: ENCRYPTION_KEY not set or too short. Set a 32+ byte key in .env for production.'
+      'WARNING: Integration encryption key source missing/short. Set ENCRYPTION_KEY (32+ chars) for production.'
     )
   }
   return key

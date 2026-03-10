@@ -439,3 +439,58 @@ export async function sendMessageToConversation(
 
   return message
 }
+
+type DeleteMode = 'ME' | 'EVERYONE'
+
+export async function editMessageInConversation(
+  actor: AuthLikeUser,
+  conversationId: string,
+  messageId: string,
+  text: string
+) {
+  const conversation = await getConversationForMember(actor.tenantId, conversationId, actor.id)
+  if (!conversation) throw new Error('Conversation not found')
+
+  const nextText = (text || '').trim()
+  if (!nextText) throw new Error('Message text is required')
+
+  const message = await prisma.chatMessage.findFirst({
+    where: { id: messageId, tenantId: actor.tenantId, conversationId },
+  })
+  if (!message) throw new Error('Message not found')
+  if (message.senderId !== actor.id) throw new Error('Only the sender can edit this message')
+
+  return prisma.chatMessage.update({
+    where: { id: messageId },
+    data: { text: nextText, type: ChatMessageType.TEXT },
+  })
+}
+
+export async function deleteMessageInConversation(
+  actor: AuthLikeUser,
+  conversationId: string,
+  messageId: string,
+  mode: DeleteMode = 'ME'
+) {
+  const conversation = await getConversationForMember(actor.tenantId, conversationId, actor.id)
+  if (!conversation) throw new Error('Conversation not found')
+
+  const message = await prisma.chatMessage.findFirst({
+    where: { id: messageId, tenantId: actor.tenantId, conversationId },
+  })
+  if (!message) throw new Error('Message not found')
+  if (message.senderId !== actor.id) throw new Error('Only the sender can delete this message')
+
+  // Current schema does not support per-user soft delete state.
+  // Treat both modes as a sender-authorized message removal.
+  if (mode !== 'ME' && mode !== 'EVERYONE') throw new Error('Invalid delete mode')
+
+  await prisma.$transaction([
+    prisma.chatMessageAttachment.deleteMany({
+      where: { tenantId: actor.tenantId, messageId },
+    }),
+    prisma.chatMessage.delete({
+      where: { id: messageId },
+    }),
+  ])
+}

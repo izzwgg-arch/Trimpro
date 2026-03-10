@@ -2,10 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
-import { getIntegrationSecrets } from '@/lib/integrations/status'
-import { testEmailProvider } from '@/lib/integrations/providers/email'
 import { isValidEmail } from '@/lib/email'
 import { getOrCreateEstimateApprovalToken } from '@/lib/estimate-approval'
+import { sendDocumentEmailWithResolvedSender } from '@/lib/email-integrations/sender'
 
 function escapeHtml(value: string) {
   return String(value || '')
@@ -134,14 +133,6 @@ export async function POST(
     const approveUrl = approvalToken.url
     const effectiveSubject = `${subject || `Estimate ${estimate.estimateNumber}`} • ${sentDisplay || sentIso}`
     
-    const emailSecrets = await getIntegrationSecrets(user.tenantId, 'email')
-    if (!emailSecrets) {
-      return NextResponse.json(
-        { error: 'Email integration is not configured. Please configure Email Provider first.' },
-        { status: 400 }
-      )
-    }
-
     const total = Number(estimate.total || 0).toFixed(2)
     const validUntil = estimate.validUntil ? new Date(estimate.validUntil).toLocaleDateString() : ''
     const safeMessage = message ? escapeHtml(String(message)) : ''
@@ -254,30 +245,19 @@ export async function POST(
   </body>
 </html>`
 
-    const results: Array<{
-      recipient: string
-      success: boolean
-      message?: string
-      error?: string
-    }> = []
-
-    for (const recipientEmail of uniqueRecipientEmails) {
-      const sendResult = await testEmailProvider(emailSecrets, recipientEmail, effectiveSubject, html)
-      results.push({
-        recipient: recipientEmail,
-        success: !!sendResult.success,
-        message: sendResult.message,
-        error: sendResult.error,
-      })
-    }
-
-    const sentRecipients = results.filter((r) => r.success).map((r) => r.recipient)
-    const failedRecipients = results.filter((r) => !r.success)
-
-    if (sentRecipients.length === 0) {
-      const firstError = failedRecipients[0]?.error || failedRecipients[0]?.message || 'Failed to send estimate email'
-      console.error('Failed to send estimate email:', firstError)
-      return NextResponse.json({ error: firstError, failedRecipients }, { status: 502 })
+    const sendResult = await sendDocumentEmailWithResolvedSender({
+      tenantId: user.tenantId,
+      userId: user.id,
+      to: uniqueRecipientEmails,
+      subject: effectiveSubject,
+      html,
+      text: safeMessage || `Estimate ${estimate.estimateNumber} is ready.`,
+    })
+    if (!sendResult.success) {
+      return NextResponse.json(
+        { error: sendResult.error || 'Failed to send estimate email' },
+        { status: 502 }
+      )
     }
 
     // Update estimate status
@@ -295,13 +275,15 @@ export async function POST(
         tenantId: user.tenantId,
         userId: user.id,
         direction: 'OUTBOUND',
-        status: failedRecipients.length ? 'FAILED' : 'SENT',
+        status: 'SENT',
         subject: effectiveSubject,
         body: message || `Please find attached estimate ${estimate.estimateNumber}.`,
-        fromEmail: user.email,
-        toEmails: sentRecipients,
+        fromEmail: sendResult.sender.fromEmail,
+        toEmails: uniqueRecipientEmails,
         providerData: {
-          recipients: results,
+          senderSource: sendResult.sender.source,
+          senderName: sendResult.sender.fromName,
+          replyTo: sendResult.sender.replyTo || null,
         },
         estimateId: estimate.id,
         clientId: estimate.clientId || undefined,
@@ -315,20 +297,16 @@ export async function POST(
         tenantId: user.tenantId,
         userId: user.id,
         type: 'ESTIMATE_SENT',
-        description: failedRecipients.length
-          ? `Estimate "${estimate.title}" sent to ${sentRecipients.join(', ')} (failed: ${failedRecipients
-              .map((r) => r.recipient)
-              .join(', ')})`
-          : `Estimate "${estimate.title}" sent to ${sentRecipients.join(', ')}`,
+        description: `Estimate "${estimate.title}" sent to ${uniqueRecipientEmails.join(', ')}`,
         estimateId: estimate.id,
         clientId: estimate.clientId || undefined,
       },
     })
 
     return NextResponse.json({
-      message: failedRecipients.length ? 'Estimate sent (some recipients failed)' : 'Estimate sent successfully',
-      sentRecipients,
-      failedRecipients: failedRecipients.map((r) => ({ recipient: r.recipient, error: r.error || r.message || '' })),
+      message: 'Estimate sent successfully',
+      sentRecipients: uniqueRecipientEmails,
+      failedRecipients: [],
     })
   } catch (error) {
     console.error('Send estimate error:', error)
