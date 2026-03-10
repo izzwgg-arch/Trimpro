@@ -167,7 +167,7 @@ export async function POST(
       to: uniqueRecipientEmails,
       subject: effectiveSubject,
       html,
-      text: safeMessage || `Estimate ${estimate.estimateNumber} is ready.`,
+      text: (message ? String(message) : null) || `Estimate ${estimate.estimateNumber} is ready.`,
     })
     if (!sendResult.success) {
       return NextResponse.json(
