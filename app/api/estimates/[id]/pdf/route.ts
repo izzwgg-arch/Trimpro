@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { renderPdfFromHtml } from '@/lib/pdf/render-html-to-pdf'
-import { getOrCreateEstimateApprovalToken } from '@/lib/estimate-approval'
 
 export const runtime = 'nodejs'
 
@@ -84,12 +83,6 @@ export async function GET(
     const clientName = estimate.client?.companyName || estimate.client?.name || 'N/A'
     const validUntil = estimate.validUntil ? new Date(estimate.validUntil).toLocaleDateString() : 'N/A'
     const estimateDate = new Date(estimate.createdAt).toLocaleDateString()
-    const approvalToken = await getOrCreateEstimateApprovalToken({
-      tenantId: user.tenantId,
-      estimateId: estimate.id,
-    })
-    const approveUrl = approvalToken.url
-
     const html = `
       <!DOCTYPE html>
       <html>
@@ -231,16 +224,6 @@ export async function GET(
               line-height: 1.5;
             }
             .section { margin-top: 20px; }
-            .approve {
-              margin: 0 0 18px;
-              padding: 12px;
-              border: 1px solid #cbd5e1;
-              border-radius: 10px;
-              background: #f8fafc;
-              font-size: 13px;
-              color: #111827;
-            }
-            .approve a { color: #1d4ed8; text-decoration: underline; }
             @media print {
               body { background: #fff; padding: 0; }
               .page { border: none; border-radius: 0; }
@@ -267,11 +250,6 @@ export async function GET(
                 <div><strong>Status:</strong> ${escapeHtml(estimate.status)}</div>
                 <div><strong>Valid Until:</strong> ${escapeHtml(validUntil)}</div>
               </div>
-            </div>
-
-            <div class="approve">
-              <strong>Approve this estimate:</strong>
-              <a href="${escapeHtml(approveUrl)}">${escapeHtml(approveUrl)}</a>
             </div>
 
             <div class="grid">
