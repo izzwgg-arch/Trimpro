@@ -60,7 +60,7 @@ function LoginForm() {
         <CardHeader className="pt-10 pb-3 space-y-2">
           <CardTitle className="text-center">
             <div className="flex justify-center">
-              <div className="inline-flex items-center rounded-md bg-[#2E4A59] px-4 py-2">
+              <div className="inline-flex items-center rounded-md px-4 py-2" style={{ backgroundColor: 'var(--brand-sidebar-color)' }}>
                 <TrimProLogo variant="light" size="lg" />
               </div>
             </div>
@@ -100,7 +100,8 @@ function LoginForm() {
             </div>
             <Button
               type="submit"
-              className="w-full bg-[#2E4A59] text-[#E6C98B] hover:bg-[#243b47]"
+              className="w-full"
+              style={{ backgroundColor: 'var(--brand-button-color)', color: 'var(--brand-button-text-color)' }}
               disabled={loading}
             >
               {loading ? 'Signing in...' : 'Sign in'}
@@ -108,7 +109,8 @@ function LoginForm() {
             <div className="text-center">
               <a
                 href="/auth/forgot-password"
-                className="text-sm text-[#2E4A59] hover:underline"
+                className="text-sm hover:underline"
+                style={{ color: 'var(--brand-link-color)' }}
               >
                 Forgot password?
               </a>
@@ -116,11 +118,11 @@ function LoginForm() {
           </form>
           <div className="mt-6 border-t pt-4 text-center text-xs text-muted-foreground">
             <span>By signing in, you agree to our </span>
-            <Link href="/terms" className="text-[#2E4A59] hover:underline">
+            <Link href="/terms" className="hover:underline" style={{ color: 'var(--brand-link-color)' }}>
               Terms
             </Link>
             <span> and </span>
-            <Link href="/privacy" className="text-[#2E4A59] hover:underline">
+            <Link href="/privacy" className="hover:underline" style={{ color: 'var(--brand-link-color)' }}>
               Privacy Policy
             </Link>
             <span>.</span>

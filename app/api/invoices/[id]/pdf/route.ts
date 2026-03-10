@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { solaService } from '@/lib/services/sola'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { renderPdfFromHtml } from '@/lib/pdf/render-html-to-pdf'
+import { getPdfBranding } from '@/lib/branding/pdf'
 
 export const runtime = 'nodejs'
 
@@ -29,12 +30,6 @@ function formatAddress(address: {
   return parts.length ? parts.join(', ') : null
 }
 
-function defaultLogoDataUri() {
-  const svg =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360"><rect width="1200" height="360" fill="#12344d"/><g fill="#f5e7b8" font-family="Inter,Arial,Helvetica,sans-serif"><text x="78" y="238" font-size="182" font-weight="700" letter-spacing="1">TrimPro</text></g><g fill="#ffffff" transform="translate(900,78)"><rect x="0" y="0" width="220" height="24" rx="4"/><rect x="42" y="54" width="36" height="170" rx="3"/><rect x="102" y="54" width="36" height="170" rx="3"/><circle cx="20" cy="84" r="22"/><circle cx="200" cy="84" r="22"/></g></svg>'
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
-}
-
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -50,7 +45,10 @@ export async function GET(
     const format = request.nextUrl.searchParams.get('format') || 'pdf'
     const wantsHtml = format === 'html'
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || request.nextUrl.origin
-    const logoUrl = process.env.PDF_LOGO_URL || process.env.NEXT_PUBLIC_PDF_LOGO_URL || defaultLogoDataUri()
+    const brand = await getPdfBranding(user.tenantId)
+    const logoUrl = brand.logoUrl
+    const accentColor = brand.accentColor
+    const accentTextColor = brand.accentTextColor
 
     const invoice = await prisma.invoice.findFirst({
       where: {
@@ -182,8 +180,8 @@ export async function GET(
               height: 56px;
               min-width: 160px;
               border-radius: 10px;
-              background: #12344d;
-              color: #f5e7b8;
+              background: ${accentColor};
+              color: ${accentTextColor};
               display: flex;
               align-items: center;
               justify-content: center;
@@ -274,22 +272,22 @@ export async function GET(
             }
             .pay-online {
               margin-top: 24px;
-              border: 1px solid #dbeafe;
-              background: #eff6ff;
+              border: 1px solid rgba(0,0,0,0.1);
+              background: rgba(0,0,0,0.03);
               border-radius: 10px;
               padding: 14px;
             }
             .pay-online h4 {
               margin: 0 0 8px;
-              color: #1d4ed8;
+              color: ${accentColor};
               font-size: 14px;
             }
             .pay-button {
               display: inline-block;
               margin-top: 10px;
               text-decoration: none;
-              background: #2563eb;
-              color: #fff;
+              background: ${accentColor};
+              color: ${accentTextColor};
               border-radius: 8px;
               padding: 10px 14px;
               font-size: 13px;
@@ -338,7 +336,11 @@ export async function GET(
                 <div class="muted">Generated on ${generatedAt}</div>
               </div>
               <div class="meta">
-                <div><strong>No.</strong> ${escapeHtml(invoice.invoiceNumber)}</div>
+                <div style="font-weight:700;font-size:14px;margin-bottom:4px;">${escapeHtml(brand.businessName)}</div>
+                ${brand.businessPhone ? `<div>${escapeHtml(brand.businessPhone)}</div>` : ''}
+                ${brand.businessEmail ? `<div>${escapeHtml(brand.businessEmail)}</div>` : ''}
+                ${brand.businessAddress ? `<div>${escapeHtml(brand.businessAddress)}</div>` : ''}
+                <div style="margin-top:8px;"><strong>No.</strong> ${escapeHtml(invoice.invoiceNumber)}</div>
                 <div><strong>Invoice Date:</strong> ${escapeHtml(invoiceDate)}</div>
                 <div><strong>Due Date:</strong> ${escapeHtml(dueDate)}</div>
                 <div><strong>Status:</strong> ${escapeHtml(invoice.status)}</div>
@@ -443,6 +445,8 @@ export async function GET(
             </div>
 
             ${showNotes ? `<div class="notes">${escapeHtml(invoice.notes!)}</div>` : ''}
+
+            ${brand.footerText ? `<div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:12px;color:#6b7280;text-align:center;">${escapeHtml(brand.footerText)}</div>` : ''}
 
             <div class="pay-online">
               <h4>Pay Online</h4>

@@ -78,8 +78,9 @@ async function writeBrandingToFile(tenantId: string, next: Record<string, unknow
   const filePath = getBrandingFilePath(tenantId)
   const dir = path.dirname(filePath)
   await fs.mkdir(dir, { recursive: true })
-  await fs.writeFile(filePath, JSON.stringify(next, null, 2), 'utf8')
-  return next
+  const withTimestamp = { ...next, updatedAt: new Date().toISOString() }
+  await fs.writeFile(filePath, JSON.stringify(withTimestamp, null, 2), 'utf8')
+  return withTimestamp
 }
 
 function getBrandingModel() {

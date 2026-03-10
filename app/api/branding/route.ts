@@ -31,8 +31,9 @@ async function readBrandingFile(tenantId: string) {
 async function writeBrandingFile(tenantId: string, payload: Record<string, unknown>) {
   const filePath = getBrandingFilePath(tenantId)
   await fs.mkdir(path.dirname(filePath), { recursive: true })
-  await fs.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf8')
-  return payload
+  const withTimestamp = { ...payload, updatedAt: new Date().toISOString() }
+  await fs.writeFile(filePath, JSON.stringify(withTimestamp, null, 2), 'utf8')
+  return withTimestamp
 }
 
 async function getBrandingSettings(tenantId: string) {

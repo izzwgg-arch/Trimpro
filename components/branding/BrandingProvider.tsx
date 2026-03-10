@@ -180,13 +180,15 @@ export function BrandingProvider({ children }: { children: React.ReactNode }) {
     applyBrandingIcons(branding)
   }, [branding])
 
-  const value = useMemo(
-    () => ({
-      branding,
-      webLogoUrl: branding?.webLogoUrl || null,
-    }),
-    [branding]
-  )
+  const value = useMemo(() => {
+    const rawLogoUrl = branding?.webLogoUrl || null
+    const version = String((branding as any)?.updatedAt || '')
+    const webLogoUrl =
+      rawLogoUrl && version
+        ? `${rawLogoUrl}${rawLogoUrl.includes('?') ? '&' : '?'}v=${encodeURIComponent(version)}`
+        : rawLogoUrl
+    return { branding, webLogoUrl }
+  }, [branding])
 
   return <BrandingContext.Provider value={value}>{children}</BrandingContext.Provider>
 }

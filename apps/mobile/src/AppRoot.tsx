@@ -3,17 +3,18 @@ import React, { useEffect, useRef, useState } from 'react'
 import { AppState, TextInput, View } from 'react-native'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import * as Notifications from 'expo-notifications'
-import * as Linking from 'expo-linking'
 import * as SplashScreen from 'expo-splash-screen'
 import * as Updates from 'expo-updates'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { AuthProvider, useAuth } from './auth/AuthContext'
+import { BrandingProvider } from './branding/BrandingContext'
 import { RootNavigator } from './navigation/RootNavigator'
 import { registerPushToken, setLastPushReceivedAtNow } from './notifications/registerPush'
 import { flushOutbox, loadOutbox } from './offline/outbox'
 import { useOnlineState } from './hooks/useOnlineState'
 import { apiRequest } from './api/client'
 import { NotificationPopup } from './components/NotificationPopup'
+import { openFromNotificationPayload } from './notifications/openFromNotification'
 
 // Keep splash screen visible until we explicitly hide it
 SplashScreen.preventAutoHideAsync()
@@ -99,24 +100,11 @@ function SyncAndPushBootstrap() {
       void setLastPushReceivedAtNow()
       queryClient.invalidateQueries({ queryKey: ['mobile-notifications'] })
       queryClient.invalidateQueries({ queryKey: ['mobile-notifications-unread'] })
-      const deepLink = typeof data.deepLink === 'string' ? data.deepLink : null
-      if (deepLink) {
-        void Linking.openURL(deepLink)
-        return
+      const notificationId = typeof data.notificationId === 'string' ? data.notificationId : ''
+      if (notificationId) {
+        void apiRequest('/api/mobile/notifications/read', 'POST', { notificationId }).catch(() => null)
       }
-      const directUrl = typeof data.url === 'string' ? data.url : null
-      if (directUrl) {
-        void Linking.openURL(directUrl)
-        return
-      }
-
-      const linkType = typeof data.linkType === 'string' ? data.linkType : ''
-      const linkId = typeof data.linkId === 'string' ? data.linkId : ''
-      if (linkType === 'job' && linkId) void Linking.openURL(`trimpro://jobs/${linkId}`)
-      if (linkType === 'task' && linkId) void Linking.openURL(`trimpro://tasks/${linkId}`)
-      if (linkType === 'issue' && linkId) void Linking.openURL(`trimpro://issues/${linkId}`)
-      if (linkType === 'message' && linkId) void Linking.openURL(`trimpro://messages/${linkId}`)
-      if (linkType === 'schedule') void Linking.openURL('trimpro://schedule')
+      void openFromNotificationPayload(data).catch(() => null)
     })
     return () => sub.remove()
   }, [])
@@ -293,9 +281,11 @@ export default function AppRoot() {
   return (
     <QueryClientProvider client={queryClient}>
       <SafeAreaProvider>
-        <AuthProvider>
-          <SyncAndPushBootstrap />
-        </AuthProvider>
+        <BrandingProvider>
+          <AuthProvider>
+            <SyncAndPushBootstrap />
+          </AuthProvider>
+        </BrandingProvider>
       </SafeAreaProvider>
     </QueryClientProvider>
   )

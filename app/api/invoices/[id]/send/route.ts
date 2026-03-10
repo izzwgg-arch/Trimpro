@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { sendDocumentEmailWithResolvedSender } from '@/lib/email-integrations/sender'
+import { getEmailBranding, applyEmailBrandingHtml } from '@/lib/email/branding'
 
 function escapeHtml(value: string) {
   return String(value || '')
@@ -130,8 +131,10 @@ export async function POST(
     const total = Number(invoice.total || 0).toFixed(2)
     const balance = Number(invoice.balance || 0).toFixed(2)
     const dueDate = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : ''
+    const emailBranding = await getEmailBranding(user.tenantId)
+    const brandName = (emailBranding as any)?.invoiceBusinessName || 'TrimPro'
 
-    const html = `<!doctype html>
+    const rawHtml = `<!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
@@ -154,7 +157,7 @@ export async function POST(
           <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" class="tp-card" style="width:100%; max-width:600px; background:#111827; border:1px solid rgba(255,255,255,0.08); border-radius:18px;">
             <tr>
               <td style="padding:28px 28px 24px 28px;">
-                <div style="font-size:22px; line-height:1.3; font-weight:700; color:rgba(255,255,255,0.92);">TrimPro</div>
+                <div style="font-size:22px; line-height:1.3; font-weight:700; color:rgba(255,255,255,0.92);">${escapeHtml(brandName)}</div>
                 <div style="margin-top:8px; font-size:13px; line-height:1.6; color:rgba(255,255,255,0.68);">
                   Invoice ${escapeHtml(invoice.invoiceNumber)} • ${escapeHtml(sentDisplay || sentIso)}
                 </div>
@@ -248,7 +251,7 @@ export async function POST(
                 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%; border-top:1px solid rgba(255,255,255,0.12);">
                   <tr>
                     <td style="padding-top:16px; font-size:12px; line-height:1.6; color:rgba(255,255,255,0.48);">
-                      This message was sent from TrimPro. Invoice ${escapeHtml(invoice.invoiceNumber)}.
+                      This message was sent from ${escapeHtml(brandName)}. Invoice ${escapeHtml(invoice.invoiceNumber)}.
                     </td>
                   </tr>
                 </table>
@@ -260,6 +263,8 @@ export async function POST(
     </table>
   </body>
 </html>`
+
+    const html = applyEmailBrandingHtml(rawHtml, emailBranding)
 
     const sendResult = await sendDocumentEmailWithResolvedSender({
       tenantId: user.tenantId,

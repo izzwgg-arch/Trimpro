@@ -1,21 +1,30 @@
 import React, { useState } from 'react'
-import { Alert, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
+import { Alert, Image, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import { Screen } from '../../components/Screen'
 import { useAuth } from '../../auth/AuthContext'
 import { colors, spacing, radius, shadows } from '../../theme/tokens'
+import { useBranding } from '../../branding/BrandingContext'
 
-function TrimProLogo() {
+function BrandLogo() {
+  const { branding } = useBranding()
+  const [imgError, setImgError] = useState(false)
+  const logoUrl = (!imgError && branding.loginLogoUrl) ? branding.loginLogoUrl : null
+  const bgColor = branding.sidebarColor || colors.brandPrimary
+  const textColor = branding.menuColor || '#E6C98B'
+  const displayName = branding.appDisplayName || 'TrimPro'
+
   return (
-    <View style={styles.logoContainer}>
-      <View style={styles.logoBox}>
-        <Text style={styles.logoText}>TrimPro</Text>
-        <View style={styles.logoIcon}>
-          <View style={styles.iconRect1} />
-          <View style={styles.iconRect2} />
-          <View style={styles.iconRect3} />
-          <View style={styles.iconCircle1} />
-          <View style={styles.iconCircle2} />
-        </View>
+    <View style={[styles.logoContainer]}>
+      <View style={[styles.logoBox, { backgroundColor: bgColor }]}>
+        {logoUrl ? (
+          <Image
+            source={{ uri: `${logoUrl}?v=${branding.brandingVersion}` }}
+            style={{ height: 36, width: 140, resizeMode: 'contain' }}
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <Text style={[styles.logoText, { color: textColor }]}>{displayName}</Text>
+        )}
       </View>
     </View>
   )
@@ -23,6 +32,7 @@ function TrimProLogo() {
 
 export function LoginScreen() {
   const { signIn } = useAuth()
+  const { branding } = useBranding()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -47,7 +57,7 @@ export function LoginScreen() {
       <View style={styles.container}>
         <View style={styles.card}>
           <View style={styles.header}>
-            <TrimProLogo />
+            <BrandLogo />
             <Text style={styles.subtitle}>Sign in to your account</Text>
           </View>
 
@@ -78,26 +88,26 @@ export function LoginScreen() {
             </View>
 
             <Pressable
-              style={[styles.button, loading && styles.buttonDisabled]}
+              style={[styles.button, { backgroundColor: branding.buttonColor || '#2E4A59' }, loading && styles.buttonDisabled]}
               onPress={onSubmit}
               disabled={loading}
             >
-              <Text style={styles.buttonText}>{loading ? 'Signing in...' : 'Sign in'}</Text>
+              <Text style={[styles.buttonText, { color: branding.buttonTextColor || '#E6C98B' }]}>{loading ? 'Signing in...' : 'Sign in'}</Text>
             </Pressable>
 
             <Pressable style={styles.forgotLink}>
-              <Text style={styles.forgotText}>Forgot password?</Text>
+              <Text style={[styles.forgotText, { color: branding.primaryColor || '#2E4A59' }]}>Forgot password?</Text>
             </Pressable>
           </View>
 
           <View style={styles.footer}>
             <Text style={styles.footerText}>
               By signing in, you agree to our{' '}
-              <Text style={styles.footerLink} onPress={() => Linking.openURL('https://app.trimprony.com/terms')}>
+              <Text style={[styles.footerLink, { color: branding.primaryColor || '#2E4A59' }]} onPress={() => Linking.openURL('https://app.trimprony.com/terms')}>
                 Terms
               </Text>{' '}
               and{' '}
-              <Text style={styles.footerLink} onPress={() => Linking.openURL('https://app.trimprony.com/privacy')}>
+              <Text style={[styles.footerLink, { color: branding.primaryColor || '#2E4A59' }]} onPress={() => Linking.openURL('https://app.trimprony.com/privacy')}>
                 Privacy Policy
               </Text>
               .
@@ -138,7 +148,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   logoBox: {
-    backgroundColor: '#2E4A59',
     borderRadius: radius.md,
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.sm,
@@ -151,57 +160,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 30,
     letterSpacing: -0.02,
-    color: '#E6C98B',
-  },
-  logoIcon: {
-    width: 30,
-    height: 30,
-    position: 'relative',
-  },
-  iconRect1: {
-    position: 'absolute',
-    top: 3,
-    left: 5,
-    width: 22,
-    height: 5,
-    backgroundColor: '#E6C98B',
-    borderRadius: 0.75,
-  },
-  iconRect2: {
-    position: 'absolute',
-    top: 14,
-    left: 11,
-    width: 3,
-    height: 15,
-    backgroundColor: '#E6C98B',
-    borderRadius: 0.5,
-  },
-  iconRect3: {
-    position: 'absolute',
-    top: 14,
-    left: 18,
-    width: 3,
-    height: 15,
-    backgroundColor: '#E6C98B',
-    borderRadius: 0.5,
-  },
-  iconCircle1: {
-    position: 'absolute',
-    top: 12.5,
-    left: 11,
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: '#E6C98B',
-  },
-  iconCircle2: {
-    position: 'absolute',
-    top: 12.5,
-    left: 19.5,
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: '#E6C98B',
   },
   subtitle: {
     fontSize: 14,
@@ -232,7 +190,6 @@ const styles = StyleSheet.create({
   },
   button: {
     marginTop: spacing.sm,
-    backgroundColor: '#2E4A59',
     borderRadius: radius.sm,
     paddingVertical: spacing.md,
     alignItems: 'center',
@@ -241,7 +198,6 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   buttonText: {
-    color: '#E6C98B',
     fontWeight: '700',
     fontSize: 16,
   },
@@ -251,7 +207,6 @@ const styles = StyleSheet.create({
   },
   forgotText: {
     fontSize: 14,
-    color: '#2E4A59',
     textDecorationLine: 'underline',
   },
   footer: {
@@ -268,7 +223,6 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   footerLink: {
-    color: '#2E4A59',
     textDecorationLine: 'underline',
   },
 })

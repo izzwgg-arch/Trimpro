@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { renderPdfFromHtml } from '@/lib/pdf/render-html-to-pdf'
+import { getPdfBranding } from '@/lib/branding/pdf'
 
 export const runtime = 'nodejs'
 
@@ -12,12 +13,6 @@ function escapeHtml(value: string) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
-}
-
-function defaultLogoDataUri() {
-  const svg =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360"><rect width="1200" height="360" fill="#12344d"/><g fill="#f5e7b8" font-family="Inter,Arial,Helvetica,sans-serif"><text x="78" y="238" font-size="182" font-weight="700" letter-spacing="1">TrimPro</text></g><g fill="#ffffff" transform="translate(900,78)"><rect x="0" y="0" width="220" height="24" rx="4"/><rect x="42" y="54" width="36" height="170" rx="3"/><rect x="102" y="54" width="36" height="170" rx="3"/><circle cx="20" cy="84" r="22"/><circle cx="200" cy="84" r="22"/></g></svg>'
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
 }
 
 export async function GET(
@@ -34,7 +29,10 @@ export async function GET(
     const shouldDownload = request.nextUrl.searchParams.get('download') === '1'
     const format = request.nextUrl.searchParams.get('format') || 'pdf'
     const wantsHtml = format === 'html'
-    const logoUrl = process.env.PDF_LOGO_URL || process.env.NEXT_PUBLIC_PDF_LOGO_URL || defaultLogoDataUri()
+    const brand = await getPdfBranding(user.tenantId)
+    const logoUrl = brand.logoUrl
+    const accentColor = brand.accentColor
+    const accentTextColor = brand.accentTextColor
 
     const estimate = await prisma.estimate.findFirst({
       where: {
@@ -125,8 +123,8 @@ export async function GET(
               height: 56px;
               min-width: 160px;
               border-radius: 10px;
-              background: #12344d;
-              color: #f5e7b8;
+              background: ${accentColor};
+              color: ${accentTextColor};
               display: flex;
               align-items: center;
               justify-content: center;
@@ -246,7 +244,11 @@ export async function GET(
                 <div class="muted">Generated on ${generatedAt}</div>
               </div>
               <div class="meta">
-                <div><strong>No.</strong> ${escapeHtml(estimate.estimateNumber)}</div>
+                <div style="font-weight:700;font-size:14px;margin-bottom:4px;">${escapeHtml(brand.businessName)}</div>
+                ${brand.businessPhone ? `<div>${escapeHtml(brand.businessPhone)}</div>` : ''}
+                ${brand.businessEmail ? `<div>${escapeHtml(brand.businessEmail)}</div>` : ''}
+                ${brand.businessAddress ? `<div>${escapeHtml(brand.businessAddress)}</div>` : ''}
+                <div style="margin-top:8px;"><strong>No.</strong> ${escapeHtml(estimate.estimateNumber)}</div>
                 <div><strong>Status:</strong> ${escapeHtml(estimate.status)}</div>
                 <div><strong>Valid Until:</strong> ${escapeHtml(validUntil)}</div>
               </div>
@@ -356,6 +358,8 @@ export async function GET(
                 <div class="notes">${escapeHtml(estimate.terms)}</div>
               </div>
             ` : ''}
+
+            ${brand.footerText ? `<div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:12px;color:#6b7280;text-align:center;">${escapeHtml(brand.footerText)}</div>` : ''}
           </div>
         </body>
       </html>
