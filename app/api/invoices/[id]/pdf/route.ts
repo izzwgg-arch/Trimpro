@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
-import { solaService } from '@/lib/services/sola'
-import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { renderPdfFromHtml } from '@/lib/pdf/render-html-to-pdf'
 import { getPdfBranding } from '@/lib/branding/pdf'
 
@@ -44,7 +42,6 @@ export async function GET(
     const shouldDownload = request.nextUrl.searchParams.get('download') === '1'
     const format = request.nextUrl.searchParams.get('format') || 'pdf'
     const wantsHtml = format === 'html'
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || request.nextUrl.origin
     const brand = await getPdfBranding(user.tenantId)
     const logoUrl = brand.logoUrl
     const accentColor = brand.accentColor
@@ -115,28 +112,6 @@ export async function GET(
       formatAddress(invoice.job?.addresses?.[0]) ||
       (invoice.estimate?.jobSiteAddress ? String(invoice.estimate.jobSiteAddress) : null)
 
-    let paymentLink = `${appUrl}/portal/pay/${invoice.id}?token=${invoice.paymentToken || ''}`
-    if (balance > 0) {
-      try {
-        const solaSecrets = await getIntegrationSecrets(user.tenantId, 'sola')
-        if (!solaSecrets?.secretKey) {
-          throw new Error('Sola integration is not configured (missing secret key).')
-        }
-        const link = await solaService.createPaymentLink({
-          invoiceId: invoice.id,
-          amount: balance,
-          description: `Invoice ${invoice.invoiceNumber} - ${invoice.title}`,
-          clientEmail: invoice.client?.email || primaryContact?.email || undefined,
-          clientName: invoice.client?.name || undefined,
-          returnUrl: `${appUrl}/portal/pay/${invoice.id}?token=${invoice.paymentToken || ''}`,
-          webhookUrl: `${appUrl}/api/webhooks/sola-payment`,
-          apiKey: solaSecrets.secretKey,
-        })
-        paymentLink = link.url || `${appUrl}/portal/pay/${invoice.id}?token=${invoice.paymentToken || ''}`
-      } catch (error) {
-        console.error('Invoice PDF payment link error:', error)
-      }
-    }
 
     const html = `
       <!DOCTYPE html>
@@ -269,41 +244,6 @@ export async function GET(
               border-top: 1px solid #cbd5e1;
               font-size: 18px;
               font-weight: 700;
-            }
-            .pay-online {
-              margin-top: 24px;
-              border: 1px solid rgba(0,0,0,0.1);
-              background: rgba(0,0,0,0.03);
-              border-radius: 10px;
-              padding: 14px;
-            }
-            .pay-online h4 {
-              margin: 0 0 8px;
-              color: ${accentColor};
-              font-size: 14px;
-            }
-            .pay-button {
-              display: inline-block;
-              margin-top: 10px;
-              text-decoration: none;
-              background: ${accentColor};
-              color: ${accentTextColor};
-              border-radius: 8px;
-              padding: 10px 14px;
-              font-size: 13px;
-              font-weight: 600;
-            }
-            .qr-placeholder {
-              margin-top: 10px;
-              width: 72px;
-              height: 72px;
-              border: 1px dashed #93c5fd;
-              border-radius: 8px;
-              color: #60a5fa;
-              font-size: 10px;
-              display: flex;
-              align-items: center;
-              justify-content: center;
             }
             .notes {
               white-space: pre-wrap;
@@ -448,13 +388,6 @@ export async function GET(
 
             ${brand.footerText ? `<div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:12px;color:#6b7280;text-align:center;">${escapeHtml(brand.footerText)}</div>` : ''}
 
-            <div class="pay-online">
-              <h4>Pay Online</h4>
-              <div class="muted">Use the secure payment link below to pay this invoice online.</div>
-              <a class="pay-button" href="${escapeHtml(paymentLink)}">Pay Now</a>
-              <div class="muted" style="margin-top:8px; word-break: break-all;">${escapeHtml(paymentLink)}</div>
-              <div class="qr-placeholder">QR</div>
-            </div>
           </div>
         </body>
       </html>

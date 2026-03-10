@@ -270,6 +270,11 @@ export default function BrandingSettingsPage() {
   }
 
   const startCropUpload = async (file: File, fieldKey: string) => {
+    // SVGs are vectors — skip the canvas cropper and upload directly
+    if (file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg')) {
+      await uploadAsset(file, fieldKey)
+      return
+    }
     const reader = new FileReader()
     reader.onload = () => {
       setCropFieldKey(fieldKey)
@@ -439,16 +444,25 @@ export default function BrandingSettingsPage() {
                 </div>
                 <Button variant="outline" onClick={() => setField(field.key, null)}>Remove</Button>
               </div>
-              <div className="mt-2 flex items-center gap-2">
+              <div className="mt-2 space-y-2">
                 <Input
                   value={draft[field.key] || ''}
                   onChange={(e) => setField(field.key, e.target.value || null)}
-                  placeholder="https://..."
+                  placeholder="https://... or upload below"
                 />
-                <Input type="file" onChange={(e) => {
-                  const file = e.target.files?.[0]
-                  if (file) void startCropUpload(file, field.key)
-                }} />
+                <label className="flex cursor-pointer items-center gap-2 rounded border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-600 hover:border-gray-400 hover:bg-gray-50">
+                  <span>Choose file (JPEG, PNG, SVG)</span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/jpg,image/png,image/svg+xml,image/webp"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) void startCropUpload(file, field.key)
+                      e.target.value = ''
+                    }}
+                  />
+                </label>
               </div>
               {draft[field.key] ? (
                 <img
@@ -493,7 +507,37 @@ export default function BrandingSettingsPage() {
             <Input placeholder="Email" value={draft.invoiceEmail || ''} onChange={(e) => setField('invoiceEmail', e.target.value || null)} />
             <Input placeholder="Address" value={draft.invoiceAddress || ''} onChange={(e) => setField('invoiceAddress', e.target.value || null)} />
             <Input placeholder="Footer Text" value={draft.invoiceFooterText || ''} onChange={(e) => setField('invoiceFooterText', e.target.value || null)} />
-            <Input placeholder="Invoice Logo URL" value={draft.invoiceLogoUrl || ''} onChange={(e) => setField('invoiceLogoUrl', e.target.value || null)} />
+            <div className="space-y-1">
+              <Label className="text-xs text-gray-600">Invoice Logo</Label>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="https://... or upload"
+                  value={draft.invoiceLogoUrl || ''}
+                  onChange={(e) => setField('invoiceLogoUrl', e.target.value || null)}
+                />
+                <label className="flex shrink-0 cursor-pointer items-center rounded border px-3 py-2 text-sm text-gray-600 hover:bg-gray-50">
+                  Upload
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/jpg,image/png,image/svg+xml,image/webp"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) void startCropUpload(file, 'invoiceLogoUrl')
+                      e.target.value = ''
+                    }}
+                  />
+                </label>
+              </div>
+              {draft.invoiceLogoUrl ? (
+                <img
+                  src={draft.invoiceLogoUrl}
+                  alt="Invoice logo preview"
+                  className="mt-1 h-10 max-w-xs rounded border object-contain"
+                  onError={(e) => { e.currentTarget.style.display = 'none' }}
+                />
+              ) : null}
+            </div>
           </div>
 
           <div className="rounded border p-4">
@@ -551,7 +595,37 @@ export default function BrandingSettingsPage() {
               </div>
             ))}
           </div>
-          <Input placeholder="Email Logo URL" value={draft.emailLogoUrl || ''} onChange={(e) => setField('emailLogoUrl', e.target.value || null)} />
+          <div className="space-y-1">
+            <Label className="text-xs text-gray-600">Email Logo</Label>
+            <div className="flex gap-2">
+              <Input
+                placeholder="https://... or upload"
+                value={draft.emailLogoUrl || ''}
+                onChange={(e) => setField('emailLogoUrl', e.target.value || null)}
+              />
+              <label className="flex shrink-0 cursor-pointer items-center rounded border px-3 py-2 text-sm text-gray-600 hover:bg-gray-50">
+                Upload
+                <input
+                  type="file"
+                  accept="image/jpeg,image/jpg,image/png,image/svg+xml,image/webp"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) void startCropUpload(file, 'emailLogoUrl')
+                    e.target.value = ''
+                  }}
+                />
+              </label>
+            </div>
+            {draft.emailLogoUrl ? (
+              <img
+                src={draft.emailLogoUrl}
+                alt="Email logo preview"
+                className="mt-1 h-10 max-w-xs rounded border object-contain"
+                onError={(e) => { e.currentTarget.style.display = 'none' }}
+              />
+            ) : null}
+          </div>
           <textarea className="w-full rounded border p-2" rows={3} placeholder="Footer text" value={draft.emailFooterText || ''} onChange={(e) => setField('emailFooterText', e.target.value || null)} />
           <textarea className="w-full rounded border p-2" rows={3} placeholder="Email signature" value={draft.emailSignature || ''} onChange={(e) => setField('emailSignature', e.target.value || null)} />
           <textarea className="w-full rounded border p-2" rows={4} placeholder="Custom header HTML (sanitized)" value={draft.emailCustomHeaderHTML || ''} onChange={(e) => setField('emailCustomHeaderHTML', e.target.value || null)} />
