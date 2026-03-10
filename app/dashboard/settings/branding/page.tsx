@@ -313,8 +313,10 @@ export default function BrandingSettingsPage() {
   }
 
   const cropAspect = useMemo(() => {
-    if (cropFieldKey === 'webLogoUrl') return 200 / 60
-    return 1
+    // favicon is square; all logo fields use free-form (undefined = no constraint)
+    if (cropFieldKey === 'faviconUrl') return 1
+    if (cropFieldKey === 'mobileAppIconUrl') return 1
+    return undefined
   }, [cropFieldKey])
 
   const exportJson = () => {
@@ -671,10 +673,17 @@ export default function BrandingSettingsPage() {
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4">
           <div className="w-full max-w-3xl rounded-lg bg-white p-4">
             <div className="mb-3 flex items-center justify-between">
-              <div className="text-sm font-semibold">Crop Image</div>
+              <div>
+                <div className="text-sm font-semibold">Crop Image</div>
+                <div className="text-xs text-gray-500">
+                  {cropFieldKey === 'faviconUrl' || cropFieldKey === 'mobileAppIconUrl'
+                    ? 'Square crop enforced'
+                    : 'Drag to reposition · scroll/pinch to zoom · crop freely'}
+                </div>
+              </div>
               <Button variant="outline" onClick={closeCropper}>Cancel</Button>
             </div>
-            <div className="relative h-[420px] w-full overflow-hidden rounded border bg-black">
+            <div className="relative h-[520px] w-full overflow-hidden rounded border bg-black">
               <Cropper
                 image={cropImageSrc}
                 crop={{ x: cropX, y: cropY }}

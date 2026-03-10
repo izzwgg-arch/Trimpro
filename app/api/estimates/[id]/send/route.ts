@@ -6,15 +6,7 @@ import { isValidEmail } from '@/lib/email'
 import { getOrCreateEstimateApprovalToken } from '@/lib/estimate-approval'
 import { sendDocumentEmailWithResolvedSender } from '@/lib/email-integrations/sender'
 import { getEmailBranding, applyEmailBrandingHtml } from '@/lib/email/branding'
-
-function escapeHtml(value: string) {
-  return String(value || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
+import { buildEstimateApprovalEmail } from '@/lib/email/templates/estimate-approval'
 
 function formatEmailSentDate(value: Date | number | string) {
   const date = value instanceof Date ? value : new Date(value)
@@ -134,119 +126,38 @@ export async function POST(
     const approveUrl = approvalToken.url
     const effectiveSubject = `${subject || `Estimate ${estimate.estimateNumber}`} • ${sentDisplay || sentIso}`
     
-    const total = Number(estimate.total || 0).toFixed(2)
-    const validUntil = estimate.validUntil ? new Date(estimate.validUntil).toLocaleDateString() : ''
-    const safeMessage = message ? escapeHtml(String(message)) : ''
+    const total = `$${Number(estimate.total || 0).toFixed(2)}`
+    const validUntil = estimate.validUntil
+      ? new Date(estimate.validUntil).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+      : ''
     const customerName = estimate.client?.companyName || estimate.client?.name || `${estimate.title || ''}`.trim() || 'Customer'
+    const recipientName =
+      estimate.client?.contacts?.[0]
+        ? `${estimate.client.contacts[0].firstName || ''} ${estimate.client.contacts[0].lastName || ''}`.trim() ||
+          customerName
+        : customerName
     const emailBranding = await getEmailBranding(user.tenantId)
     const brandName = (emailBranding as any)?.invoiceBusinessName || (emailBranding as any)?.emailFooterText?.split('\n')[0] || 'TrimPro'
-    const rawHtml = `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="color-scheme" content="light only" />
-    <meta name="supported-color-schemes" content="light only" />
-    <title>Estimate ${escapeHtml(estimate.estimateNumber)}</title>
-    <style>
-      @media only screen and (max-width: 620px) {
-        .tp-card { border-radius: 16px !important; }
-        .tp-stack-col { display:block !important; width:100% !important; }
-        .tp-stack-gap { height:8px !important; line-height:8px !important; font-size:8px !important; }
-      }
-    </style>
-  </head>
-  <body bgcolor="#ffffff" style="margin:0; padding:0; background:#ffffff; color:rgba(255,255,255,0.92); font-family:Arial, Helvetica, sans-serif;">
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="#ffffff" style="width:100%; background:#ffffff;">
-      <tr>
-        <td align="center" bgcolor="#ffffff" style="padding:32px 16px; background:#ffffff;">
-          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" class="tp-card" style="width:100%; max-width:600px; background:#111827; border:1px solid rgba(255,255,255,0.08); border-radius:18px;">
-            <tr>
-              <td style="padding:28px 28px 24px 28px;">
-                <div style="font-size:22px; line-height:1.3; font-weight:700; color:rgba(255,255,255,0.92);">${escapeHtml(brandName)}</div>
-                <div style="margin-top:8px; font-size:13px; line-height:1.6; color:rgba(255,255,255,0.68);">
-                  Estimate ${escapeHtml(estimate.estimateNumber)} • ${escapeHtml(sentDisplay || sentIso)}
-                </div>
-              </td>
-            </tr>
+    const logoUrl = (emailBranding as any)?.emailLogoUrl || (emailBranding as any)?.webLogoUrl || undefined
+    const primaryColor = (emailBranding as any)?.sidebarColor || '#243f53'
+    const accentColor = (emailBranding as any)?.buttonColor || '#f8dea4'
 
-            <tr>
-              <td style="padding:0 28px 0 28px;">
-                <div style="font-size:32px; line-height:1.3; font-weight:700; color:rgba(255,255,255,0.92); margin:0 0 8px 0;">
-                  Please review your estimate
-                </div>
-                <div style="font-size:18px; line-height:1.5; color:rgba(255,255,255,0.68); margin:0 0 16px 0;">
-                  Estimate for ${escapeHtml(customerName)}
-                </div>
-                <div style="font-size:14px; line-height:1.65; color:rgba(255,255,255,0.68); margin:0 0 24px 0;">
-                  ${escapeHtml(estimate.title || 'Your estimate is ready to review.')}
-                  ${validUntil ? ` Valid until ${escapeHtml(validUntil)}.` : ''}
-                </div>
-                ${
-                  safeMessage
-                    ? `<div style="font-size:14px; line-height:1.65; color:rgba(255,255,255,0.92); margin:0 0 24px 0; white-space:pre-wrap;">${safeMessage}</div>`
-                    : ''
-                }
-              </td>
-            </tr>
-
-            <tr>
-              <td style="padding:0 28px 24px 28px;">
-                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px;">
-                  <tr>
-                    <td style="padding:16px; font-size:14px; line-height:1.5; color:rgba(255,255,255,0.68);">Total</td>
-                    <td align="right" style="padding:16px; font-size:28px; line-height:1.3; font-weight:700; color:rgba(255,255,255,0.92);">$${escapeHtml(total)}</td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-
-            <tr>
-              <td style="padding:0 28px 24px 28px;">
-                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
-                  <tr>
-                    <td class="tp-stack-col" width="50%" valign="top" style="width:50%; padding:0;">
-                      <a href="${escapeHtml(approveUrl)}" target="_blank" rel="noopener noreferrer" style="display:block; text-decoration:none; text-align:center; background:#12344d; color:#ffffff; border-radius:12px; border:1px solid #12344d; font-size:16px; line-height:20px; font-weight:700; padding:15px 16px;">
-                        Approve Estimate
-                      </a>
-                    </td>
-                    <td class="tp-stack-col tp-stack-gap" width="12" style="width:12px; font-size:0; line-height:0;">&nbsp;</td>
-                    <td class="tp-stack-col" width="50%" valign="top" style="width:50%; padding:0;">
-                      <a href="${escapeHtml(pdfUrl)}" target="_blank" rel="noopener noreferrer" style="display:block; text-decoration:none; text-align:center; background:transparent; color:rgba(255,255,255,0.92); border-radius:12px; border:1px solid rgba(255,255,255,0.18); font-size:16px; line-height:20px; font-weight:700; padding:15px 16px;">
-                        Download PDF
-                      </a>
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-
-            <tr>
-              <td style="padding:0 28px 24px 28px;">
-                <div style="font-size:14px; line-height:1.6; color:rgba(255,255,255,0.68);">
-                  Customer: <span style="color:rgba(255,255,255,0.92);">${escapeHtml(customerName)}</span><br />
-                  Reply to this email if you have any questions.
-                </div>
-              </td>
-            </tr>
-
-            <tr>
-              <td style="padding:0 28px 28px 28px;">
-                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%; border-top:1px solid rgba(255,255,255,0.12);">
-                  <tr>
-                    <td style="padding-top:16px; font-size:12px; line-height:1.6; color:rgba(255,255,255,0.48);">
-                      This message was sent from ${escapeHtml(brandName)}. Estimate ${escapeHtml(estimate.estimateNumber)}.
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>`
+    const rawHtml = buildEstimateApprovalEmail({
+      recipientName,
+      customerName,
+      estimateNumber: estimate.estimateNumber,
+      total,
+      sentDisplay: sentDisplay || sentIso,
+      approveUrl,
+      pdfUrl,
+      message: message ? String(message) : undefined,
+      validUntil: validUntil || undefined,
+      logoUrl,
+      companyName: brandName,
+      supportEmail: (emailBranding as any)?.invoiceEmail || undefined,
+      primaryColor,
+      accentColor,
+    })
 
     const html = applyEmailBrandingHtml(rawHtml, emailBranding)
 
