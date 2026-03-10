@@ -13,38 +13,56 @@ const saveSchema = z.object({
   isActive: z.boolean().optional(),
 })
 
+function hasModel(db: any, model: string): boolean {
+  return typeof db[model]?.findUnique === 'function'
+}
+
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
   const user = getAuthUser(request)
   const db = prisma as any
 
-  const profile = await db.userEmailSenderProfile.findUnique({
-    where: { userId: user.id },
-  })
-
-  if (!profile) {
+  if (!hasModel(db, 'userEmailSenderProfile')) {
     return NextResponse.json({
       profile: null,
       fallbackNote: 'System/main email is used when your profile sender is not configured.',
     })
   }
 
-  return NextResponse.json({
-    profile: {
-      id: profile.id,
-      provider: profile.provider,
-      status: profile.status,
-      fromEmail: profile.fromEmail,
-      fromName: profile.fromName,
-      replyToEmail: profile.replyToEmail,
-      isActive: profile.isActive,
-      lastTestedAt: profile.lastTestedAt?.toISOString() || null,
-      lastError: profile.lastError,
-      hasAppPassword: true,
-    },
-    fallbackNote: 'System/main email is used when your profile sender is disabled or unavailable.',
-  })
+  try {
+    const profile = await db.userEmailSenderProfile.findUnique({
+      where: { userId: user.id },
+    })
+
+    if (!profile) {
+      return NextResponse.json({
+        profile: null,
+        fallbackNote: 'System/main email is used when your profile sender is not configured.',
+      })
+    }
+
+    return NextResponse.json({
+      profile: {
+        id: profile.id,
+        provider: profile.provider,
+        status: profile.status,
+        fromEmail: profile.fromEmail,
+        fromName: profile.fromName,
+        replyToEmail: profile.replyToEmail,
+        isActive: profile.isActive,
+        lastTestedAt: profile.lastTestedAt?.toISOString() || null,
+        lastError: profile.lastError,
+        hasAppPassword: true,
+      },
+      fallbackNote: 'System/main email is used when your profile sender is disabled or unavailable.',
+    })
+  } catch {
+    return NextResponse.json({
+      profile: null,
+      fallbackNote: 'System/main email is used when your profile sender is not configured.',
+    })
+  }
 }
 
 export async function PUT(request: NextRequest) {
@@ -52,6 +70,13 @@ export async function PUT(request: NextRequest) {
   if (authError) return authError
   const user = getAuthUser(request)
   const db = prisma as any
+
+  if (!hasModel(db, 'userEmailSenderProfile')) {
+    return NextResponse.json(
+      { error: 'Personal email sender profiles are not available in this deployment.' },
+      { status: 501 }
+    )
+  }
 
   try {
     const body = await request.json()
@@ -134,6 +159,10 @@ export async function DELETE(request: NextRequest) {
   if (authError) return authError
   const user = getAuthUser(request)
   const db = prisma as any
+
+  if (!hasModel(db, 'userEmailSenderProfile')) {
+    return NextResponse.json({ success: true })
+  }
 
   await db.userEmailSenderProfile.deleteMany({
     where: { userId: user.id, tenantId: user.tenantId },

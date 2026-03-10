@@ -41,48 +41,58 @@ function normalizeRecipients(to: string | string[]) {
 }
 
 async function getAssignedIntegrationSender(tenantId: string, userId: string): Promise<ResolvedSender | null> {
-  const db = prisma as any
-  const assignment = await db.userEmailIntegrationAssignment.findUnique({
-    where: {
-      tenantId_userId: {
-        tenantId,
-        userId,
+  try {
+    const db = prisma as any
+    if (typeof db.userEmailIntegrationAssignment?.findUnique !== 'function') return null
+    const assignment = await db.userEmailIntegrationAssignment.findUnique({
+      where: {
+        tenantId_userId: {
+          tenantId,
+          userId,
+        },
       },
-    },
-    include: {
-      integration: true,
-    },
-  })
+      include: {
+        integration: true,
+      },
+    })
 
-  if (!assignment || !assignment.isActive) return null
-  const integration = assignment.integration
-  if (!integration || integration.tenantId !== tenantId) return null
-  if (!integration.isActive || integration.status !== 'ACTIVE') return null
+    if (!assignment || !assignment.isActive) return null
+    const integration = assignment.integration
+    if (!integration || integration.tenantId !== tenantId) return null
+    if (!integration.isActive || integration.status !== 'ACTIVE') return null
 
-  return {
-    source: 'assigned_integration',
-    fromEmail: integration.fromEmail,
-    fromName: integration.fromName || integration.displayName || SYSTEM_FROM_NAME,
-    replyTo: integration.replyToEmail || null,
-    integrationId: integration.id,
+    return {
+      source: 'assigned_integration',
+      fromEmail: integration.fromEmail,
+      fromName: integration.fromName || integration.displayName || SYSTEM_FROM_NAME,
+      replyTo: integration.replyToEmail || null,
+      integrationId: integration.id,
+    }
+  } catch {
+    return null
   }
 }
 
 async function getUserProfileSender(tenantId: string, userId: string): Promise<ResolvedSender | null> {
-  const db = prisma as any
-  const profile = await db.userEmailSenderProfile.findUnique({
-    where: { userId },
-  })
-  if (!profile) return null
-  if (profile.tenantId !== tenantId) return null
-  if (!profile.isActive || profile.status !== 'ACTIVE') return null
+  try {
+    const db = prisma as any
+    if (typeof db.userEmailSenderProfile?.findUnique !== 'function') return null
+    const profile = await db.userEmailSenderProfile.findUnique({
+      where: { userId },
+    })
+    if (!profile) return null
+    if (profile.tenantId !== tenantId) return null
+    if (!profile.isActive || profile.status !== 'ACTIVE') return null
 
-  return {
-    source: 'user_profile_google_workspace',
-    fromEmail: profile.fromEmail,
-    fromName: profile.fromName || 'Trim Pro',
-    replyTo: profile.replyToEmail || null,
-    userProfileId: profile.id,
+    return {
+      source: 'user_profile_google_workspace',
+      fromEmail: profile.fromEmail,
+      fromName: profile.fromName || 'Trim Pro',
+      replyTo: profile.replyToEmail || null,
+      userProfileId: profile.id,
+    }
+  } catch {
+    return null
   }
 }
 
@@ -130,6 +140,9 @@ async function sendViaUserProfile(
   text?: string
 ) {
   const db = prisma as any
+  if (typeof db.userEmailSenderProfile?.findUnique !== 'function') {
+    throw new Error('userEmailSenderProfile model not available')
+  }
   const profile = await db.userEmailSenderProfile.findUnique({
     where: { id: userProfileId },
   })
@@ -175,6 +188,9 @@ async function sendViaAssignedIntegration(
   text?: string
 ) {
   const db = prisma as any
+  if (typeof db.emailIntegration?.findUnique !== 'function') {
+    throw new Error('emailIntegration model not available')
+  }
   const integration = await db.emailIntegration.findUnique({
     where: { id: integrationId },
   })
@@ -235,14 +251,16 @@ export async function sendDocumentEmailWithResolvedSender(input: SendDocumentEma
       return { success: true, sender, messageId }
     } catch (error: any) {
       const db = prisma as any
-      await db.userEmailSenderProfile.updateMany({
-        where: { id: sender.userProfileId },
-        data: {
-          status: 'ERROR',
-          lastError: error?.message || 'Failed to send via profile sender',
-          lastTestedAt: new Date(),
-        },
-      })
+      if (typeof db.userEmailSenderProfile?.updateMany === 'function') {
+        await db.userEmailSenderProfile.updateMany({
+          where: { id: sender.userProfileId },
+          data: {
+            status: 'ERROR',
+            lastError: error?.message || 'Failed to send via profile sender',
+            lastTestedAt: new Date(),
+          },
+        })
+      }
     }
   }
 
@@ -260,7 +278,7 @@ export async function sendDocumentEmailWithResolvedSender(input: SendDocumentEma
     } catch (error: any) {
       // Do not fail hard on custom sender; fall back to system path.
       const db = prisma as any
-      await db.emailIntegration.updateMany({
+      await (db.emailIntegration?.updateMany ?? (() => Promise.resolve()))({
         where: { id: sender.integrationId },
         data: {
           status: 'ERROR',
