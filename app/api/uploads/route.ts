@@ -70,7 +70,11 @@ export async function POST(request: NextRequest) {
 
     const absPath = path.join(absDir, filename)
     await fs.writeFile(absPath, Buffer.from(arrayBuffer))
-    
+
+    // Ensure nginx (www-data) can read newly created directories and files
+    await fs.chmod(absDir, 0o755).catch(() => {})
+    await fs.chmod(absPath, 0o644).catch(() => {})
+
     // Verify file was written
     const fileStats = await fs.stat(absPath)
     console.log('[uploads] File uploaded successfully:', {
