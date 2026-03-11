@@ -145,7 +145,8 @@ export function FastPicker({
     return allItems.filter(item => {
       const nameMatch = item.name.toLowerCase().includes(lowerQuery)
       const skuMatch = item.sku?.toLowerCase().includes(lowerQuery)
-      return nameMatch || skuMatch
+      const descriptionMatch = item.description?.toLowerCase().includes(lowerQuery)
+      return nameMatch || skuMatch || Boolean(descriptionMatch)
     })
   }, [searchQuery, allItems])
 
