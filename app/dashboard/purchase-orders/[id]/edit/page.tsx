@@ -728,9 +728,9 @@ export default function EditPurchaseOrderPage() {
                               <Label className="text-xs text-gray-500 mb-1 block">Tag</Label>
                               <Input
                                 value={item.tag || ''}
-                                readOnly
                                 placeholder="-"
-                                className="bg-gray-50 text-gray-600"
+                                className="bg-white text-gray-700"
+                                onChange={(e) => updateLineItem(index, 'tag', e.target.value)}
                               />
                             </div>
 
