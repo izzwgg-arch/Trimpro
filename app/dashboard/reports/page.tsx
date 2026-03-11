@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { FileText, Plus, Download, Calendar, Filter, Settings } from 'lucide-react'
+import { FileText, Plus, Download, Calendar, Filter, Settings, Eye, Printer } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { ReportBuilder } from '@/components/reports/ReportBuilder'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
@@ -63,7 +63,55 @@ export default function ReportsPage() {
     { id: 'dispatch-performance', name: 'Dispatch Performance', description: 'Dispatch efficiency metrics', type: 'DISPATCH', dataset: 'dispatch' },
   ]
 
-  const handleDownloadTemplate = async (template: typeof templateReports[0]) => {
+  const openPdfBlob = (blob: Blob, mode: 'view' | 'print' | 'download', filename: string) => {
+    const pdfUrl = window.URL.createObjectURL(blob)
+    if (mode === 'download') {
+      const link = document.createElement('a')
+      link.href = pdfUrl
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      setTimeout(() => window.URL.revokeObjectURL(pdfUrl), 1000)
+      return
+    }
+
+    const win = window.open(pdfUrl, '_blank')
+    if (!win) {
+      alert('Popup blocked. Please allow popups for this site.')
+      return
+    }
+    if (mode === 'print') {
+      setTimeout(() => {
+        try {
+          win.focus()
+          win.print()
+        } catch {}
+      }, 800)
+    }
+  }
+
+  const runReportPdf = async (reportId: string) => {
+    const token = localStorage.getItem('accessToken')
+    const response = await fetch(`/api/reports/${reportId}/run`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ format: 'pdf' }),
+    })
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to generate report PDF' }))
+      throw new Error(error.error || 'Failed to generate report PDF')
+    }
+    return response.blob()
+  }
+
+  const handleTemplateAction = async (
+    template: typeof templateReports[0],
+    mode: 'view' | 'print' | 'download'
+  ) => {
     try {
       const token = localStorage.getItem('accessToken')
       if (!token) {
@@ -89,38 +137,16 @@ export default function ReportsPage() {
 
       if (reportResponse.ok) {
         const { report } = await reportResponse.json()
-        
-        // Now run and download the report
-        const runResponse = await fetch(`/api/reports/${report.id}/run`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ format: 'csv' }),
-        })
 
-        if (runResponse.ok) {
-          const blob = await runResponse.blob()
-          const downloadUrl = window.URL.createObjectURL(blob)
-          const link = document.createElement('a')
-          link.href = downloadUrl
-          link.download = `${template.id}-${new Date().toISOString().split('T')[0]}.csv`
-          document.body.appendChild(link)
-          link.click()
-          document.body.removeChild(link)
-          window.URL.revokeObjectURL(downloadUrl)
-        } else {
-          const error = await runResponse.json()
-          alert(error.error || 'Failed to generate report')
-        }
+        const blob = await runReportPdf(report.id)
+        openPdfBlob(blob, mode, `${template.id}-${new Date().toISOString().split('T')[0]}.pdf`)
       } else {
         const error = await reportResponse.json()
         alert(error.error || 'Failed to create report')
       }
     } catch (error) {
-      console.error('Failed to download template:', error)
-      alert('Failed to download report')
+      console.error('Failed to run template report:', error)
+      alert('Failed to generate report PDF')
     }
   }
 
@@ -129,40 +155,13 @@ export default function ReportsPage() {
     setShowBuilder(true)
   }
 
-  const handleDownloadCustom = async (report: Report) => {
+  const handleCustomAction = async (report: Report, mode: 'view' | 'print' | 'download') => {
     try {
-      const token = localStorage.getItem('accessToken')
-      if (!token) {
-        window.location.href = '/auth/login'
-        return
-      }
-
-      const response = await fetch(`/api/reports/${report.id}/run`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ format: 'csv' }),
-      })
-
-      if (response.ok) {
-        const blob = await response.blob()
-        const downloadUrl = window.URL.createObjectURL(blob)
-        const link = document.createElement('a')
-        link.href = downloadUrl
-        link.download = `${report.name}-${new Date().toISOString().split('T')[0]}.csv`
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-        window.URL.revokeObjectURL(downloadUrl)
-      } else {
-        const error = await response.json()
-        alert(error.error || 'Failed to generate report')
-      }
+      const blob = await runReportPdf(report.id)
+      openPdfBlob(blob, mode, `${report.name}-${new Date().toISOString().split('T')[0]}.pdf`)
     } catch (error) {
-      console.error('Failed to download report:', error)
-      alert('Failed to download report')
+      console.error('Failed to run report:', error)
+      alert('Failed to generate report PDF')
     }
   }
 
@@ -262,9 +261,23 @@ export default function ReportsPage() {
                         <Button 
                           variant="outline" 
                           size="sm"
-                          onClick={() => handleDownloadTemplate(template)}
+                          onClick={() => handleTemplateAction(template, 'view')}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleTemplateAction(template, 'download')}
                         >
                           <Download className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleTemplateAction(template, 'print')}
+                        >
+                          <Printer className="h-4 w-4" />
                         </Button>
                       </div>
                     </CardContent>
@@ -330,9 +343,23 @@ export default function ReportsPage() {
                         <Button 
                           variant="outline" 
                           size="sm"
-                          onClick={() => handleDownloadCustom(report)}
+                          onClick={() => handleCustomAction(report, 'view')}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleCustomAction(report, 'download')}
                         >
                           <Download className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleCustomAction(report, 'print')}
+                        >
+                          <Printer className="h-4 w-4" />
                         </Button>
                       </div>
                     </div>
