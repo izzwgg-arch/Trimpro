@@ -40,6 +40,7 @@ interface LineItem {
   isGroupHeader?: boolean
   sourceItemId?: string
   sourceBundleId?: string
+  tag?: string
 }
 
 export default function NewPurchaseOrderPage() {
@@ -221,6 +222,7 @@ export default function NewPurchaseOrderPage() {
             vendorId: item.vendorId || null,
             vendorName: item.vendorName || null,
             sourceBundleId: bundleDefId,
+            tag: item.tag || '',
           }
         }
       } catch (error) {
@@ -234,6 +236,7 @@ export default function NewPurchaseOrderPage() {
           vendorId: item.vendorId || null,
           vendorName: item.vendorName || null,
           sourceBundleId: item.bundleId || undefined,
+          tag: item.tag || '',
         }
       }
     } else {
@@ -251,6 +254,7 @@ export default function NewPurchaseOrderPage() {
         vendorId: item.vendorId || null,
         vendorName: item.vendorName || null,
         sourceItemId: item.id,
+        tag: item.tag || '',
       }
     }
 
@@ -566,6 +570,16 @@ export default function NewPurchaseOrderPage() {
                                 value={item.quantity}
                                 onChange={(e) => updateLineItem(index, 'quantity', e.target.value)}
                                 required
+                              />
+                            </div>
+
+                            <div className="w-36">
+                              <Label className="text-xs text-gray-500 mb-1 block">Tag</Label>
+                              <Input
+                                value={item.tag || ''}
+                                readOnly
+                                placeholder="-"
+                                className="bg-gray-50 text-gray-600"
                               />
                             </div>
 
