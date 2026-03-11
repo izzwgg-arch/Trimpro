@@ -4,6 +4,10 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import {
   ArrowLeft,
@@ -22,6 +26,7 @@ import {
   AlertCircle,
   Plus,
   Trash2,
+  Ruler,
 } from 'lucide-react'
 import Link from 'next/link'
 import { parseAddressParts } from '@/lib/address/parse'
@@ -134,6 +139,14 @@ interface RequestDetail {
   }
 }
 
+interface AssignableUser {
+  id: string
+  firstName: string
+  lastName: string
+  email: string | null
+  role: string
+}
+
 const statusColors: Record<string, string> = {
   NEW: 'bg-blue-100 text-blue-800',
   CONTACTED: 'bg-yellow-100 text-yellow-800',
@@ -162,6 +175,13 @@ export default function RequestDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [urgentBusy, setUrgentBusy] = useState(false)
+  const [measuringDialogOpen, setMeasuringDialogOpen] = useState(false)
+  const [assignableUsers, setAssignableUsers] = useState<AssignableUser[]>([])
+  const [usersLoading, setUsersLoading] = useState(false)
+  const [selectedMeasuringUserId, setSelectedMeasuringUserId] = useState('')
+  const [measuringNotes, setMeasuringNotes] = useState('')
+  const [measuringSearch, setMeasuringSearch] = useState('')
+  const [sendingMeasuringRequest, setSendingMeasuringRequest] = useState(false)
 
   useEffect(() => {
     if (!requestId) {
@@ -315,6 +335,90 @@ export default function RequestDetailPage() {
     }
   }
 
+  const loadAssignableUsers = async () => {
+    setUsersLoading(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+      const response = await fetch('/api/measuring-requests/assignable-users', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({ error: 'Failed to load users' }))
+        alert(payload.error || 'Failed to load assignable users')
+        return
+      }
+      const data = await response.json()
+      setAssignableUsers(Array.isArray(data.users) ? data.users : [])
+    } catch (error) {
+      console.error('Failed to load assignable users:', error)
+      alert('Failed to load assignable users')
+    } finally {
+      setUsersLoading(false)
+    }
+  }
+
+  const handleOpenMeasuringDialog = async () => {
+    setMeasuringDialogOpen(true)
+    setSelectedMeasuringUserId('')
+    setMeasuringNotes('')
+    setMeasuringSearch('')
+    await loadAssignableUsers()
+  }
+
+  const handleSendMeasuringRequest = async () => {
+    if (!selectedMeasuringUserId) {
+      alert('Please select a user')
+      return
+    }
+    setSendingMeasuringRequest(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+      const response = await fetch('/api/measuring-requests', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          requestId,
+          assignedUserId: selectedMeasuringUserId,
+          notes: measuringNotes || undefined,
+        }),
+      })
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({ error: 'Failed to send measuring request' }))
+        alert(payload.error || 'Failed to send measuring request')
+        return
+      }
+      setMeasuringDialogOpen(false)
+      alert('Measuring request sent')
+    } catch (error) {
+      console.error('Failed to send measuring request:', error)
+      alert('Failed to send measuring request')
+    } finally {
+      setSendingMeasuringRequest(false)
+    }
+  }
+
+  const filteredAssignableUsers = assignableUsers.filter((u) => {
+    const query = measuringSearch.trim().toLowerCase()
+    if (!query) return true
+    const fullName = `${u.firstName} ${u.lastName}`.toLowerCase()
+    return (
+      fullName.includes(query) ||
+      (u.email || '').toLowerCase().includes(query) ||
+      (u.role || '').toLowerCase().includes(query)
+    )
+  })
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -386,6 +490,10 @@ export default function RequestDetailPage() {
             <Edit className="mr-2 h-4 w-4" />
             Edit
           </Button>
+          <Button variant="outline" onClick={handleOpenMeasuringDialog}>
+            <Ruler className="mr-2 h-4 w-4" />
+            Measuring Request
+          </Button>
           <Button
             variant="outline"
             onClick={handleToggleUrgent}
@@ -406,6 +514,60 @@ export default function RequestDetailPage() {
           </Button>
         </div>
       </div>
+
+      <Dialog open={measuringDialogOpen} onOpenChange={setMeasuringDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Send Measuring Request</DialogTitle>
+            <DialogDescription>
+              Select a user to assign this measuring request. They will receive it in the mobile app and get a notification.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Search user</label>
+              <Input
+                value={measuringSearch}
+                onChange={(e) => setMeasuringSearch(e.target.value)}
+                placeholder="Search by name, email, or role"
+                disabled={usersLoading}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Assign to user *</label>
+              <Select value={selectedMeasuringUserId || undefined} onValueChange={setSelectedMeasuringUserId}>
+                <SelectTrigger>
+                  <SelectValue placeholder={usersLoading ? 'Loading users...' : 'Select a user'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {filteredAssignableUsers.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.firstName} {u.lastName}{u.email ? ` (${u.email})` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Notes (optional)</label>
+              <Textarea
+                value={measuringNotes}
+                onChange={(e) => setMeasuringNotes(e.target.value)}
+                placeholder="Add notes for the assignee..."
+                rows={4}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setMeasuringDialogOpen(false)} disabled={sendingMeasuringRequest}>
+                Cancel
+              </Button>
+              <Button onClick={handleSendMeasuringRequest} disabled={sendingMeasuringRequest || usersLoading}>
+                {sendingMeasuringRequest ? 'Sending...' : 'Send Request'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Quick Actions */}
       <Card>
