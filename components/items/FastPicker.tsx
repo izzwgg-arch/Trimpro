@@ -481,6 +481,11 @@ export function FastPicker({
                     </div>
                   </div>
                 )}
+                {item.description && item.description.trim() && (
+                  <div className="text-xs text-gray-500 mt-1 ml-6 line-clamp-1">
+                    {item.description}
+                  </div>
+                )}
                 {item.sku && (
                   <div className="text-xs text-gray-500 mt-1 ml-6">
                     SKU: {item.sku}
