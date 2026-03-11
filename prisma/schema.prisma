@@ -59,6 +59,7 @@ model Tenant {
   roles                  Role[]
   reports                Report[]
   reportSchedules        ReportSchedule[]
+  measuringRequests      MeasuringRequest[]
   dailyStats             DailyStats[]
   dispatchEvents         DispatchEvent[]
   techAvailability       TechAvailability[]
