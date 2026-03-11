@@ -312,12 +312,15 @@ export function ReportBuilder({ onSave, onRun }: ReportBuilderProps) {
           {dataset && (
             <div>
               <Label htmlFor="groupBy">Group By</Label>
-              <Select value={groupBy} onValueChange={setGroupBy}>
+              <Select
+                value={groupBy || '__none__'}
+                onValueChange={(value) => setGroupBy(value === '__none__' ? '' : value)}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="None" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value="__none__">None</SelectItem>
                   {availableColumns.map((col) => (
                     <SelectItem key={col.value} value={col.value}>
                       {col.label}
@@ -333,12 +336,15 @@ export function ReportBuilder({ onSave, onRun }: ReportBuilderProps) {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="sortBy">Sort By</Label>
-                <Select value={sortBy} onValueChange={setSortBy}>
+                <Select
+                  value={sortBy || '__none__'}
+                  onValueChange={(value) => setSortBy(value === '__none__' ? '' : value)}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="None" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="__none__">None</SelectItem>
                     {availableColumns.map((col) => (
                       <SelectItem key={col.value} value={col.value}>
                         {col.label}
