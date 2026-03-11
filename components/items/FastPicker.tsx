@@ -22,6 +22,8 @@ export interface FastPickerItem {
   notes: string | null
   // For bundles
   bundleId?: string
+  // Tag(s) for display — shown in picker only when showTagColumn is true (e.g. purchase orders)
+  tag?: string | null
 }
 
 interface FastPickerProps {
@@ -35,6 +37,8 @@ interface FastPickerProps {
   disabled?: boolean
   className?: string
   inputRef?: (el: HTMLInputElement | null) => void // Callback to expose input ref
+  /** When true, show a "Tag" column in the dropdown (e.g. for purchase orders) */
+  showTagColumn?: boolean
 }
 
 const ITEM_HEIGHT = 48 // Height of each item in pixels
@@ -51,6 +55,7 @@ export function FastPicker({
   disabled = false,
   className = '',
   inputRef: inputRefCallback,
+  showTagColumn = false,
 }: FastPickerProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -409,6 +414,13 @@ export function FastPicker({
           className="absolute z-[100] w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-[400px] overflow-y-auto mt-1"
           style={{ maxHeight: `${VISIBLE_ITEMS * ITEM_HEIGHT}px` }}
         >
+          {showTagColumn && (
+            <div className="grid grid-cols-[1fr_120px_64px] gap-2 px-4 py-2 text-xs font-semibold text-gray-500 border-b bg-gray-50">
+              <span>Item</span>
+              <span className="text-right">Tag</span>
+              <span className="text-right">Price</span>
+            </div>
+          )}
           {filteredItems.map((item, index) => {
             const isSelected = index === selectedIndex
             const isBundle = item.kind === 'BUNDLE'
@@ -430,22 +442,44 @@ export function FastPicker({
                   handleItemClick(item)
                 }}
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2 flex-1 min-w-0">
-                    <Package className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                    <span className="font-medium truncate">{item.name}</span>
-                    {isBundle && (
-                      <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded flex-shrink-0">
-                        Bundle
-                      </span>
-                    )}
+                {showTagColumn ? (
+                  <div className="grid grid-cols-[1fr_120px_64px] gap-2 items-center">
+                    <div className="flex items-center space-x-2 min-w-0">
+                      <Package className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                      <span className="font-medium truncate">{item.name}</span>
+                      {isBundle && (
+                        <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded flex-shrink-0">
+                          Bundle
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs text-gray-500 truncate text-right" title={item.tag || undefined}>
+                      {item.tag != null && item.tag !== '' ? item.tag : '—'}
+                    </span>
+                    <span className="text-sm text-gray-600 text-right">
+                      {!isBundle && item.defaultUnitPrice != null
+                        ? `$${Number(item.defaultUnitPrice).toFixed(2)}`
+                        : '—'}
+                    </span>
                   </div>
-                  <div className="text-sm text-gray-600 flex-shrink-0 ml-2">
-                    {!isBundle && item.defaultUnitPrice != null && (
-                      <span>${Number(item.defaultUnitPrice).toFixed(2)}</span>
-                    )}
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2 flex-1 min-w-0">
+                      <Package className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                      <span className="font-medium truncate">{item.name}</span>
+                      {isBundle && (
+                        <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded flex-shrink-0">
+                          Bundle
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-sm text-gray-600 flex-shrink-0 ml-2">
+                      {!isBundle && item.defaultUnitPrice != null && (
+                        <span>${Number(item.defaultUnitPrice).toFixed(2)}</span>
+                      )}
+                    </div>
                   </div>
-                </div>
+                )}
                 {item.sku && (
                   <div className="text-xs text-gray-500 mt-1 ml-6">
                     SKU: {item.sku}

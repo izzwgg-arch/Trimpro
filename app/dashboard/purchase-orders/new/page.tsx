@@ -547,6 +547,7 @@ export default function NewPurchaseOrderPage() {
                               bundles={pickerBundles}
                               placeholder="Type to search items..."
                               className="w-full"
+                              showTagColumn
                               inputRef={(el) => {
                                 pickerInputRefs.current[index] = el
                               }}

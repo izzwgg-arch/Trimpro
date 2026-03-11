@@ -92,6 +92,7 @@ export async function GET(request: NextRequest) {
       taxRate: item.taxRate ? Number(item.taxRate) : null,
       description: item.description,
       notes: item.notes,
+      tag: Array.isArray(item.tags) && item.tags.length > 0 ? item.tags.join(', ') : null,
     }))
 
     // Format bundles for FastPicker
@@ -110,6 +111,7 @@ export async function GET(request: NextRequest) {
       description: item.description,
       notes: item.notes,
       bundleId: item.bundleDefinition?.id || null, // BundleDefinition ID (for API calls)
+      tag: Array.isArray(item.tags) && item.tags.length > 0 ? item.tags.join(', ') : null,
     }))
 
     return NextResponse.json({
