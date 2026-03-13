@@ -57,4 +57,19 @@ Thumbs.db
 # Archive files
 *.tar
 *.tar.gz
+*.tgz
 *.zip
+
+# Deployment artifacts & local logs
+trimpro-deploy-*.tgz
+trimpro-hotfix-deploy.tgz
+trimpro-job-attach-hotfix.tgz
+restore-latest-local-state.tgz
+mobile-crash-live.log
+mobile-live-logcat.txt
+mobile-logcat.txt
+kbd-*.txt
+kbd-*.png
+kbd-live.png
+tmp-login.html
+trimpro-gap.png

@@ -954,11 +954,46 @@ export async function syncPaymentToQuickBooks(tenantId: string, paymentId: strin
     const amount = toNumber(payment.amount)
     const invoiceNumber = payment.invoice.invoiceNumber || payment.invoice.id
     const paymentNote = payment.reference || payment.notes || `Payment for Invoice ${invoiceNumber}`
-    const payload = {
+
+    // Determine if this is a card payment and get the transaction ID for "Conf ID"
+    const isCardPayment =
+      (payment as any).method === 'CARD' ||
+      (payment as any).provider === 'sola' ||
+      !!(payment as any).solaTransactionId
+    const transactionId =
+      (payment as any).providerPaymentId ||
+      (payment as any).solaTransactionId ||
+      payment.reference ||
+      ''
+
+    // For card payments, look up the QBO Credit Card payment method
+    let paymentMethodRef: { value: string } | undefined
+    if (isCardPayment) {
+      try {
+        const pmQuery = encodeURIComponent("select * from PaymentMethod where Name = 'Credit Card'")
+        const pmRes = await quickBooksService.makeAPIRequest(
+          session.accessToken,
+          session.realmId,
+          `/query?query=${pmQuery}&minorversion=65`,
+          'GET'
+        )
+        const pmId = pmRes?.QueryResponse?.PaymentMethod?.[0]?.Id
+        if (pmId) {
+          paymentMethodRef = { value: String(pmId) }
+        }
+      } catch {
+        // Non-fatal: proceed without PaymentMethodRef
+      }
+    }
+
+    const payload: Record<string, unknown> = {
       CustomerRef: { value: customerQboId },
       TotalAmt: amount,
       TxnDate: qboDate(payment.processedAt || payment.createdAt),
       PrivateNote: paymentNote,
+      // RefNumber maps to "Conf ID" in QuickBooks for card transaction reference
+      ...(isCardPayment && transactionId ? { RefNumber: transactionId } : {}),
+      ...(paymentMethodRef ? { PaymentMethodRef: paymentMethodRef } : {}),
       Line: [
         {
           Amount: amount,

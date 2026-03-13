@@ -202,6 +202,9 @@ export interface ChatMessage {
   type: 'TEXT' | 'MEDIA' | 'VOICE' | 'LOCATION' | 'SYSTEM'
   status: 'SENT' | 'DELIVERED' | 'READ'
   createdAt: string
+  editedAt?: string | null
+  deletedForEveryoneAt?: string | null
+  isDeletedForEveryone?: boolean
   jobId?: string | null
   jobNumber?: string | null
   jobName?: string | null

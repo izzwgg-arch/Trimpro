@@ -7,7 +7,7 @@ import {
   Image,
   KeyboardAvoidingView,
   Linking,
-  Modal,
+  Modal as RNModal,
   Platform,
   Pressable,
   ScrollView,
@@ -24,7 +24,9 @@ import * as DocumentPicker from 'expo-document-picker'
 import * as FileSystem from 'expo-file-system/legacy'
 import * as Location from 'expo-location'
 import * as Contacts from 'expo-contacts'
+import * as Clipboard from 'expo-clipboard'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import ReactNativeModal from 'react-native-modal'
 import { API_BASE_URL } from '../../config/env'
 import { apiRequest, getValidAccessToken } from '../../api/client'
 import { ChatMessage } from '../../types/models'
@@ -196,6 +198,9 @@ export function MessageThreadScreen({ route, navigation }: Props) {
   const [replyFallbackByMessageId, setReplyFallbackByMessageId] = useState<Record<string, NonNullable<ChatMessage['replyTo']>>>({})
   const [showAttachMenu, setShowAttachMenu] = useState(false)
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
+  const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null)
+  const [showMessageOptions, setShowMessageOptions] = useState(false)
+  const [messageActionTarget, setMessageActionTarget] = useState<ChatMessage | OptimisticMessage | null>(null)
   const voiceRecorderRef = useRef<VoiceRecorder>(new VoiceRecorder())
   const recordingStartedAtRef = useRef<number | null>(null)
   const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -222,11 +227,27 @@ export function MessageThreadScreen({ route, navigation }: Props) {
     async (uri: string, mimeType: string) => {
       const token = await getValidAccessToken()
       if (!token) throw new Error('Authentication required')
+      let copiedUploadUri: string | null = null
+
+      let uploadUri = uri
+      const needsUriCopy =
+        uploadUri.startsWith('content://') ||
+        uploadUri.startsWith('ph://') ||
+        uploadUri.startsWith('assets-library://')
+      if (needsUriCopy) {
+        const baseDir = FileSystem.cacheDirectory || FileSystem.documentDirectory
+        if (!baseDir) {
+          throw new Error('Unable to prepare file for upload')
+        }
+        copiedUploadUri = `${baseDir}chat-upload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        await FileSystem.copyAsync({ from: uploadUri, to: copiedUploadUri })
+        uploadUri = copiedUploadUri
+      }
 
       const runUpload = async (accessToken: string) => {
         const task = FileSystem.createUploadTask(
           `${API_BASE_URL}/api/uploads/messages`,
-          uri,
+          uploadUri,
           {
             fieldName: 'file',
             httpMethod: 'POST',
@@ -255,6 +276,9 @@ export function MessageThreadScreen({ route, navigation }: Props) {
       const payload = JSON.parse(uploadResult.body || '{}')
       if (!payload?.url) {
         throw new Error('Upload failed: missing URL')
+      }
+      if (copiedUploadUri) {
+        void FileSystem.deleteAsync(copiedUploadUri, { idempotent: true }).catch(() => {})
       }
       return payload as { url: string }
     },
@@ -366,7 +390,7 @@ export function MessageThreadScreen({ route, navigation }: Props) {
 
       const uploaded: typeof readyAttachments = [...readyAttachments]
       for (const attachment of localAttachments) {
-        if (!attachment.localUri || !token) continue
+        if (!attachment.localUri) continue
         try {
           const uploadMimeType =
             attachment.kind === 'VOICE'
@@ -435,13 +459,133 @@ export function MessageThreadScreen({ route, navigation }: Props) {
     },
   })
 
+  const editMutation = useMutation({
+    mutationFn: async ({ messageId, text }: { messageId: string; text: string }) =>
+      apiRequest(`/api/messages/conversations/${conversationId}/messages/${messageId}`, 'PATCH', { text }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['mobile-chat-thread', conversationId] }),
+        queryClient.invalidateQueries({ queryKey: ['mobile-chat-conversations'] }),
+      ])
+      setEditingMessage(null)
+    },
+    onError: (error: any) => {
+      Alert.alert('Edit failed', error?.message || 'Unable to edit this message.')
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: async ({ messageId, mode }: { messageId: string; mode: 'ME' | 'EVERYONE' }) =>
+      apiRequest(`/api/messages/conversations/${conversationId}/messages/${messageId}`, 'DELETE', { mode }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['mobile-chat-thread', conversationId] }),
+        queryClient.invalidateQueries({ queryKey: ['mobile-chat-conversations'] }),
+      ])
+    },
+    onError: (error: any) => {
+      Alert.alert('Delete failed', error?.message || 'Unable to delete this message.')
+    },
+  })
+
   const scrollToLatest = useCallback((animated = true) => {
     requestAnimationFrame(() => {
       listRef.current?.scrollToOffset({ offset: 0, animated })
     })
   }, [])
 
+  const closeMessageOptions = useCallback(() => {
+    setShowMessageOptions(false)
+    setMessageActionTarget(null)
+  }, [])
+
+  const openDeleteActions = useCallback(
+    (message: ChatMessage | OptimisticMessage) => {
+      const isMine = message.senderId === user?.id
+      const isOptimistic = 'isOptimistic' in message
+
+      const deleteForMe = () => {
+        if (isOptimistic) {
+          setOptimisticMessages((prev) => prev.filter((m) => m.id !== message.id))
+          return
+        }
+        deleteMutation.mutate({ messageId: message.id, mode: 'ME' })
+      }
+
+      if (isMine && !isOptimistic) {
+        Alert.alert('Delete message', 'Choose delete option', [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Delete for me', style: 'destructive', onPress: deleteForMe },
+          {
+            text: 'Delete for everyone',
+            style: 'destructive',
+            onPress: () => deleteMutation.mutate({ messageId: message.id, mode: 'EVERYONE' }),
+          },
+        ])
+        return
+      }
+
+      Alert.alert('Delete message', 'Are you sure you want to delete this message?', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: deleteForMe },
+      ])
+    },
+    [deleteMutation, user?.id]
+  )
+
+  const openMessageActions = useCallback((message: ChatMessage | OptimisticMessage) => {
+    setMessageActionTarget(message)
+    setShowMessageOptions(true)
+  }, [])
+
+  const canCopyAction = Boolean(typeof messageActionTarget?.text === 'string' && messageActionTarget.text.trim())
+  const canEditAction = Boolean(
+    messageActionTarget &&
+      messageActionTarget.senderId === user?.id &&
+      !('isOptimistic' in messageActionTarget) &&
+      !messageActionTarget.attachments?.length &&
+      typeof messageActionTarget.text === 'string' &&
+      !messageActionTarget.isDeletedForEveryone &&
+      !messageActionTarget.deletedForEveryoneAt
+  )
+
+  const handleCopyAction = useCallback(() => {
+    if (!messageActionTarget || !canCopyAction) return
+    void Clipboard.setStringAsync(messageActionTarget.text || '')
+    closeMessageOptions()
+  }, [canCopyAction, closeMessageOptions, messageActionTarget])
+
+  const handleEditAction = useCallback(() => {
+    if (!messageActionTarget || !canEditAction) return
+    setReplyTo(null)
+    setEditingMessage(messageActionTarget as ChatMessage)
+    setText(messageActionTarget.text || '')
+    closeMessageOptions()
+  }, [canEditAction, closeMessageOptions, messageActionTarget])
+
+  const handleDeleteAction = useCallback(() => {
+    if (!messageActionTarget) return
+    const target = messageActionTarget
+    closeMessageOptions()
+    openDeleteActions(target)
+  }, [closeMessageOptions, messageActionTarget, openDeleteActions])
+
   const handleSend = () => {
+    if (sendMutation.isPending || editMutation.isPending) return
+    if (editingMessage) {
+      if (mediaDrafts.length > 0) {
+        Alert.alert('Edit message', 'Remove attachments before editing this message.')
+        return
+      }
+      const trimmedEditText = text.trim()
+      if (!trimmedEditText) {
+        Alert.alert('Edit message', 'Message text cannot be empty.')
+        return
+      }
+      editMutation.mutate({ messageId: editingMessage.id, text: trimmedEditText })
+      setText('')
+      return
+    }
     const { outgoingText, outgoingDrafts, outgoingReplyTo, trimmedText, nextText } = buildSendDraftSnapshot({
       text,
       mediaDrafts,
@@ -502,95 +646,119 @@ export function MessageThreadScreen({ route, navigation }: Props) {
       isOptimistic: true,
     }
 
+    // Clear composer immediately so text never lingers after tapping send.
     setText(nextText)
+    setMediaDrafts([])
+    setReplyTo(null)
     setOptimisticMessages((prev) => [...prev, optimistic])
     sendMutation.mutate({ clientTempId, outgoingText, outgoingDrafts, outgoingReplyTo })
     scrollToLatest(true)
   }
 
   const pickFromLibrary = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync()
-    if (!permission.granted) {
-      Alert.alert('Permission required', 'Please grant access to your photo library.')
-      return
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync()
+      if (!permission.granted) {
+        Alert.alert('Permission required', 'Please grant access to your photo library.')
+        return
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images', 'videos'],
+        quality: 0.72,
+        allowsMultipleSelection: false,
+      })
+      if (result.canceled || result.assets.length === 0) return
+      const asset = result.assets[0]
+      const mimeType =
+        asset.mimeType ||
+        inferMimeTypeFromName(asset.fileName, asset.type === 'video' ? 'video/mp4' : 'image/jpeg')
+      setMediaDrafts((prev) => [
+        ...prev,
+        {
+          kind: mimeType.startsWith('video/') ? 'VIDEO' : 'IMAGE',
+          localUri: asset.uri,
+          mimeType,
+          fileName: ensureFileName(asset.fileName, mimeType, 'chat'),
+          sizeBytes: asset.fileSize || undefined,
+        },
+      ])
+    } catch (error: any) {
+      Alert.alert('Media error', error?.message || 'Unable to pick media.')
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images', 'videos'],
-      quality: 0.72,
-      allowsMultipleSelection: false,
-    })
-    if (result.canceled || result.assets.length === 0) return
-    const asset = result.assets[0]
-    const mimeType =
-      asset.mimeType ||
-      inferMimeTypeFromName(asset.fileName, asset.type === 'video' ? 'video/mp4' : 'image/jpeg')
-    setMediaDrafts((prev) => [
-      ...prev,
-      {
-        kind: mimeType.startsWith('video/') ? 'VIDEO' : 'IMAGE',
-        localUri: asset.uri,
-        mimeType,
-        fileName: ensureFileName(asset.fileName, mimeType, 'chat'),
-        sizeBytes: asset.fileSize || undefined,
-      },
-    ])
   }
 
   const pickFromCamera = async () => {
-    const permission = await ImagePicker.requestCameraPermissionsAsync()
-    if (!permission.granted) {
-      Alert.alert('Permission required', 'Please grant camera access.')
-      return
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync()
+      if (!permission.granted) {
+        Alert.alert('Permission required', 'Please grant camera access.')
+        return
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['images', 'videos'],
+        quality: 0.75,
+        videoQuality: ImagePicker.UIImagePickerControllerQualityType.Medium,
+      })
+      if (result.canceled || result.assets.length === 0) return
+      const asset = result.assets[0]
+      const mimeType =
+        asset.mimeType ||
+        inferMimeTypeFromName(asset.fileName, asset.type === 'video' ? 'video/mp4' : 'image/jpeg')
+      setMediaDrafts((prev) => [
+        ...prev,
+        {
+          kind: mimeType.startsWith('video/') ? 'VIDEO' : 'IMAGE',
+          localUri: asset.uri,
+          mimeType,
+          fileName: ensureFileName(asset.fileName, mimeType, 'camera'),
+          sizeBytes: asset.fileSize || undefined,
+        },
+      ])
+    } catch (error: any) {
+      Alert.alert('Camera error', error?.message || 'Unable to open camera.')
     }
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images', 'videos'],
-      quality: 0.75,
-      videoQuality: ImagePicker.UIImagePickerControllerQualityType.Medium,
-    })
-    if (result.canceled || result.assets.length === 0) return
-    const asset = result.assets[0]
-    const mimeType =
-      asset.mimeType ||
-      inferMimeTypeFromName(asset.fileName, asset.type === 'video' ? 'video/mp4' : 'image/jpeg')
-    setMediaDrafts((prev) => [
-      ...prev,
-      {
-        kind: mimeType.startsWith('video/') ? 'VIDEO' : 'IMAGE',
-        localUri: asset.uri,
-        mimeType,
-        fileName: ensureFileName(asset.fileName, mimeType, 'camera'),
-        sizeBytes: asset.fileSize || undefined,
-      },
-    ])
   }
 
   const recordVideoFromCamera = async () => {
-    const permission = await ImagePicker.requestCameraPermissionsAsync()
-    if (!permission.granted) {
-      Alert.alert('Permission required', 'Please grant camera access.')
-      return
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync()
+      if (!permission.granted) {
+        Alert.alert('Permission required', 'Please grant camera access.')
+        return
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['videos'],
+        quality: 0.75,
+        videoQuality: ImagePicker.UIImagePickerControllerQualityType.Medium,
+        videoMaxDuration: 300,
+      })
+      if (result.canceled || result.assets.length === 0) return
+      const asset = result.assets[0]
+      const mimeType =
+        asset.mimeType ||
+        inferMimeTypeFromName(asset.fileName, asset.type === 'video' ? 'video/mp4' : 'image/jpeg')
+      setMediaDrafts((prev) => [
+        ...prev,
+        {
+          kind: 'VIDEO',
+          localUri: asset.uri,
+          mimeType,
+          fileName: ensureFileName(asset.fileName, mimeType, 'camera-video'),
+          sizeBytes: asset.fileSize || undefined,
+        },
+      ])
+    } catch (error: any) {
+      Alert.alert('Video error', error?.message || 'Unable to record video.')
     }
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['videos'],
-      quality: 0.75,
-      videoQuality: ImagePicker.UIImagePickerControllerQualityType.Medium,
-      videoMaxDuration: 300,
-    })
-    if (result.canceled || result.assets.length === 0) return
-    const asset = result.assets[0]
-    const mimeType =
-      asset.mimeType ||
-      inferMimeTypeFromName(asset.fileName, asset.type === 'video' ? 'video/mp4' : 'image/jpeg')
-    setMediaDrafts((prev) => [
-      ...prev,
-      {
-        kind: 'VIDEO',
-        localUri: asset.uri,
-        mimeType,
-        fileName: ensureFileName(asset.fileName, mimeType, 'camera-video'),
-        sizeBytes: asset.fileSize || undefined,
-      },
-    ])
+  }
+
+  const runAttachMenuAction = (action: () => Promise<void>) => {
+    closeAttachMenu()
+    setTimeout(() => {
+      void action().catch((error: any) => {
+        Alert.alert('Attachment error', error?.message || 'Unable to add attachment.')
+      })
+    }, 180)
   }
 
   const pickDocument = async () => {
@@ -961,17 +1129,6 @@ export function MessageThreadScreen({ route, navigation }: Props) {
           <View style={styles.headerContent}>
             <Text style={styles.headerTitle}>{threadTitle}</Text>
           </View>
-          <View style={styles.headerActions}>
-            <Pressable style={styles.headerIconButton}>
-              <Ionicons name="videocam-outline" size={20} color={colors.textPrimary} />
-            </Pressable>
-            <Pressable style={styles.headerIconButton}>
-              <Ionicons name="call-outline" size={19} color={colors.textPrimary} />
-            </Pressable>
-            <Pressable style={styles.headerIconButton}>
-              <Ionicons name="ellipsis-vertical" size={18} color={colors.textPrimary} />
-            </Pressable>
-          </View>
         </View>
 
         <FlatList
@@ -1001,6 +1158,7 @@ export function MessageThreadScreen({ route, navigation }: Props) {
                 isMine={isMine}
                 showSender={isTeamChat && !isMine}
                 onSwipeReply={(swipedMessage) => {
+                  setEditingMessage(null)
                   setReplyTo(swipedMessage)
                   Vibration.vibrate(10)
                 }}
@@ -1019,38 +1177,31 @@ export function MessageThreadScreen({ route, navigation }: Props) {
                     setViewingMedia({ uri, fileName, kind: 'VIDEO' })
                   }
                 }}
-                onLongPress={() => {
-                  if ('isOptimistic' in message && message.status === 'FAILED') {
-                    Alert.alert('Retry', 'Would you like to retry sending this message?', [
-                      { text: 'Cancel', style: 'cancel' },
-                      {
-                        text: 'Retry',
-                        onPress: () => {
-                          setOptimisticMessages((prev) => prev.filter((m) => m.id !== message.id))
-                          sendMutation.mutate({
-                            clientTempId: message.clientTempId,
-                            outgoingText: message.text || '',
-                            outgoingDrafts: (message.attachments || []).map((attachment) => ({
-                              kind: attachment.kind,
-                              url: attachment.url,
-                              fileName: attachment.fileName || undefined,
-                              mimeType: attachment.mimeType || undefined,
-                              sizeBytes: attachment.sizeBytes || undefined,
-                              durationMs: attachment.durationMs || undefined,
-                              latitude: attachment.latitude || undefined,
-                              longitude: attachment.longitude || undefined,
-                            })),
-                            outgoingReplyTo: null,
-                          })
-                        },
-                      },
-                    ])
-                  }
-                }}
+                onLongPress={() => openMessageActions(message)}
               />
             )
           }}
         />
+
+        {editingMessage ? (
+          <View style={styles.editingBar}>
+            <View style={styles.editingBarTextWrap}>
+              <Text style={styles.editingLabel}>Editing message</Text>
+              <Text numberOfLines={1} style={styles.editingPreview}>
+                {editingMessage.text || ''}
+              </Text>
+            </View>
+            <Pressable
+              style={styles.editingCancelButton}
+              onPress={() => {
+                setEditingMessage(null)
+                setText('')
+              }}
+            >
+              <Text style={styles.editingCancelText}>Cancel</Text>
+            </Pressable>
+          </View>
+        ) : null}
 
         <View style={styles.composerDock}>
           <Composer
@@ -1092,39 +1243,87 @@ export function MessageThreadScreen({ route, navigation }: Props) {
           onClose={() => setViewingMedia(null)}
         />
       )}
-      <Modal visible={showAttachMenu} transparent animationType="slide" onRequestClose={closeAttachMenu}>
+      <ReactNativeModal
+        isVisible={showMessageOptions}
+        onBackdropPress={closeMessageOptions}
+        onBackButtonPress={closeMessageOptions}
+        animationIn="slideInUp"
+        animationOut="slideOutDown"
+        backdropOpacity={0.35}
+        style={styles.messageOptionsModal}
+        useNativeDriver
+        hideModalContentWhileAnimating
+      >
+        <View style={styles.messageOptionsSheet}>
+          <Text style={styles.messageOptionsTitle}>Message Options</Text>
+          <Pressable
+            style={({ pressed }) => [styles.messageActionRow, pressed && styles.messageActionRowPressed, !canCopyAction && styles.messageActionRowDisabled]}
+            onPress={handleCopyAction}
+            disabled={!canCopyAction}
+            android_ripple={{ color: 'rgba(0,0,0,0.06)' }}
+          >
+            <Ionicons name="copy-outline" size={20} color="#222222" style={styles.messageActionIcon} />
+            <Text style={styles.messageActionText}>Copy</Text>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [styles.messageActionRow, pressed && styles.messageActionRowPressed, !canEditAction && styles.messageActionRowDisabled]}
+            onPress={handleEditAction}
+            disabled={!canEditAction}
+            android_ripple={{ color: 'rgba(0,0,0,0.06)' }}
+          >
+            <Ionicons name="create-outline" size={20} color="#222222" style={styles.messageActionIcon} />
+            <Text style={styles.messageActionText}>Edit</Text>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [styles.messageActionRow, pressed && styles.messageActionRowPressed]}
+            onPress={handleDeleteAction}
+            android_ripple={{ color: 'rgba(229,57,53,0.1)' }}
+          >
+            <Ionicons name="trash-outline" size={20} color="#E53935" style={styles.messageActionIcon} />
+            <Text style={styles.messageActionTextDelete}>Delete</Text>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [styles.messageActionCancelRow, pressed && styles.messageActionRowPressed]}
+            onPress={closeMessageOptions}
+            android_ripple={{ color: 'rgba(0,0,0,0.06)' }}
+          >
+            <Text style={styles.messageActionText}>Cancel</Text>
+          </Pressable>
+        </View>
+      </ReactNativeModal>
+      <RNModal visible={showAttachMenu} transparent animationType="slide" onRequestClose={closeAttachMenu}>
         <Pressable style={styles.menuBackdrop} onPress={closeAttachMenu}>
           <Pressable style={styles.menuSheet} onPress={(event) => event.stopPropagation()}>
             <Text style={styles.menuTitle}>Share</Text>
             <ScrollView>
-              <Pressable style={styles.menuItem} onPress={() => { closeAttachMenu(); pickFromCamera().catch(() => null) }}>
+              <Pressable style={styles.menuItem} onPress={() => runAttachMenuAction(pickFromCamera)}>
                 <Ionicons name="camera-outline" size={18} color={colors.textPrimary} />
                 <Text style={styles.menuItemText}>Camera</Text>
               </Pressable>
-              <Pressable style={styles.menuItem} onPress={() => { closeAttachMenu(); recordVideoFromCamera().catch(() => null) }}>
+              <Pressable style={styles.menuItem} onPress={() => runAttachMenuAction(recordVideoFromCamera)}>
                 <Ionicons name="videocam-outline" size={18} color={colors.textPrimary} />
                 <Text style={styles.menuItemText}>Record Video</Text>
               </Pressable>
-              <Pressable style={styles.menuItem} onPress={() => { closeAttachMenu(); pickFromLibrary().catch(() => null) }}>
+              <Pressable style={styles.menuItem} onPress={() => runAttachMenuAction(pickFromLibrary)}>
                 <Ionicons name="images-outline" size={18} color={colors.textPrimary} />
                 <Text style={styles.menuItemText}>Photo & Video Library</Text>
               </Pressable>
-              <Pressable style={styles.menuItem} onPress={() => { closeAttachMenu(); pickDocument().catch(() => null) }}>
+              <Pressable style={styles.menuItem} onPress={() => runAttachMenuAction(pickDocument)}>
                 <Ionicons name="document-outline" size={18} color={colors.textPrimary} />
                 <Text style={styles.menuItemText}>Document</Text>
               </Pressable>
-              <Pressable style={styles.menuItem} onPress={() => { closeAttachMenu(); pickContact().catch(() => null) }}>
+              <Pressable style={styles.menuItem} onPress={() => runAttachMenuAction(pickContact)}>
                 <Ionicons name="person-outline" size={18} color={colors.textPrimary} />
                 <Text style={styles.menuItemText}>Contact</Text>
               </Pressable>
-              <Pressable style={styles.menuItem} onPress={() => { closeAttachMenu(); shareLocation().catch(() => null) }}>
+              <Pressable style={styles.menuItem} onPress={() => runAttachMenuAction(shareLocation)}>
                 <Ionicons name="location-outline" size={18} color={colors.textPrimary} />
                 <Text style={styles.menuItemText}>Location</Text>
               </Pressable>
             </ScrollView>
           </Pressable>
         </Pressable>
-      </Modal>
+      </RNModal>
     </SafeAreaView>
   )
 }
@@ -1184,10 +1383,96 @@ const styles = StyleSheet.create({
   composerDock: {
     backgroundColor: colors.surface,
   },
+  editingBar: {
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.divider,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  editingBarTextWrap: {
+    flex: 1,
+  },
+  editingLabel: {
+    ...typography.caption,
+    color: colors.brandPrimary,
+    fontWeight: '700',
+  },
+  editingPreview: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  editingCancelButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: '#EEF2F7',
+  },
+  editingCancelText: {
+    ...typography.caption,
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
   menuBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.35)',
     justifyContent: 'flex-end',
+  },
+  messageOptionsModal: {
+    justifyContent: 'flex-end',
+    margin: 0,
+  },
+  messageOptionsSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
+  },
+  messageOptionsTitle: {
+    ...typography.sub,
+    color: '#222222',
+    fontWeight: '700',
+    marginBottom: spacing.sm,
+  },
+  messageActionRow: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    borderRadius: 12,
+  },
+  messageActionRowPressed: {
+    backgroundColor: 'rgba(0,0,0,0.05)',
+  },
+  messageActionRowDisabled: {
+    opacity: 0.45,
+  },
+  messageActionIcon: {
+    marginRight: 12,
+  },
+  messageActionText: {
+    ...typography.body,
+    color: '#222222',
+  },
+  messageActionTextDelete: {
+    ...typography.body,
+    color: '#E53935',
+  },
+  messageActionCancelRow: {
+    minHeight: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E7E7E7',
+    marginTop: spacing.xs,
+    borderRadius: 12,
   },
   menuSheet: {
     backgroundColor: colors.surface,

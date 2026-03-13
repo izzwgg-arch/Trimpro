@@ -153,6 +153,14 @@ export default function InvoiceDetailPage() {
   const [sendSubject, setSendSubject] = useState('')
   const [sendMessage, setSendMessage] = useState('')
 
+  // Add Payment modal state
+  const [showAddPayment, setShowAddPayment] = useState(false)
+  const [addPaymentAmount, setAddPaymentAmount] = useState('')
+  const [addPaymentMethod, setAddPaymentMethod] = useState<'CHECK' | 'QUICK_PAY' | 'OTHER'>('CHECK')
+  const [addPaymentOtherLabel, setAddPaymentOtherLabel] = useState('')
+  const [addPaymentSaving, setAddPaymentSaving] = useState(false)
+  const [addPaymentError, setAddPaymentError] = useState('')
+
   // QuickBooks ACH (hosted) UI state
   const [qboAchLoading, setQboAchLoading] = useState<boolean>(false)
   const [qboAchPublicUrl, setQboAchPublicUrl] = useState<string>('')
@@ -548,6 +556,52 @@ export default function InvoiceDetailPage() {
     }
   }
 
+  const handleAddPaymentSubmit = async () => {
+    if (!invoice) return
+    setAddPaymentError('')
+    const amount = parseFloat(addPaymentAmount)
+    if (!addPaymentAmount || isNaN(amount) || amount <= 0) {
+      setAddPaymentError('Please enter a valid amount.')
+      return
+    }
+    const balance = parseFloat(invoice.balance)
+    if (amount > balance) {
+      setAddPaymentError(`Amount cannot exceed the balance of $${balance.toFixed(2)}.`)
+      return
+    }
+    if (addPaymentMethod === 'OTHER' && !addPaymentOtherLabel.trim()) {
+      setAddPaymentError('Please enter a payment type name.')
+      return
+    }
+    setAddPaymentSaving(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const res = await fetch(`/api/invoices/${invoice.id}/mark-paid`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          method: addPaymentMethod,
+          methodLabel: addPaymentMethod === 'OTHER' ? addPaymentOtherLabel.trim() : undefined,
+          amount,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setAddPaymentError(data.error || 'Failed to record payment.')
+        return
+      }
+      setShowAddPayment(false)
+      setAddPaymentAmount('')
+      setAddPaymentMethod('CHECK')
+      setAddPaymentOtherLabel('')
+      await fetchInvoice()
+    } catch {
+      setAddPaymentError('Failed to record payment. Please try again.')
+    } finally {
+      setAddPaymentSaving(false)
+    }
+  }
+
   const handleSendInvoice = async () => {
     if (!invoice || sending) return
     const emailsOnFile = Array.from(
@@ -658,7 +712,7 @@ export default function InvoiceDetailPage() {
           <div>
             <h1 className="text-3xl font-bold text-gray-900">{invoice.title}</h1>
             <p className="mt-1 text-gray-600">
-              {invoice.invoiceNumber} • Created {formatDate(invoice.createdAt)}
+              {invoice.invoiceNumber}{' \u2022 '}Created {formatDate(invoice.createdAt)}
               {isOverdue && (
                 <span className="ml-2 text-red-600 font-semibold flex items-center">
                   <AlertCircle className="h-4 w-4 mr-1" />
@@ -684,22 +738,110 @@ export default function InvoiceDetailPage() {
             <Copy className="mr-2 h-4 w-4" />
             {duplicating ? 'Duplicating...' : 'Duplicate'}
           </Button>
-          {parseFloat(invoice.balance) > 0 && (
-            <Button onClick={handlePayNow} disabled={creatingPaymentLink}>
-              <CreditCard className="mr-2 h-4 w-4" />
-              {creatingPaymentLink ? 'Preparing...' : 'Pay Now'}
-            </Button>
-          )}
           <Button variant="outline" onClick={() => router.push(`/dashboard/invoices/${invoiceId}/edit`)}>
             <Edit className="mr-2 h-4 w-4" />
             Edit
           </Button>
+          {parseFloat(invoice.balance) > 0 && (
+            <>
+              <Button onClick={handlePayNow} disabled={creatingPaymentLink}>
+                <CreditCard className="mr-2 h-4 w-4" />
+                {creatingPaymentLink ? 'Preparing...' : 'Pay Now'}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setAddPaymentAmount(invoice.balance)
+                  setAddPaymentMethod('CHECK')
+                  setAddPaymentOtherLabel('')
+                  setAddPaymentError('')
+                  setShowAddPayment(true)
+                }}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Add Payment
+              </Button>
+            </>
+          )}
           <Button onClick={handleSendInvoice} disabled={sending}>
             <Send className="mr-2 h-4 w-4" />
             {sending ? 'Sending...' : 'Send'}
           </Button>
         </div>
       </div>
+
+      {/* Add Payment Modal */}
+      <Dialog open={showAddPayment} onOpenChange={setShowAddPayment}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add Payment</DialogTitle>
+            <DialogDescription>
+              Record a manual payment for invoice {invoice?.invoiceNumber}. This will update the invoice and sync to QuickBooks.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1">
+              <Label htmlFor="add-payment-amount">Amount</Label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
+                <Input
+                  id="add-payment-amount"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  className="pl-7"
+                  placeholder="0.00"
+                  value={addPaymentAmount}
+                  onChange={(e) => setAddPaymentAmount(e.target.value)}
+                />
+              </div>
+              {invoice && (
+                <p className="text-xs text-gray-500">Balance due: ${parseFloat(invoice.balance).toFixed(2)}</p>
+              )}
+            </div>
+            <div className="space-y-1">
+              <Label>Payment Type</Label>
+              <div className="flex flex-col gap-2">
+                {(['CHECK', 'QUICK_PAY', 'OTHER'] as const).map((m) => (
+                  <label key={m} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      checked={addPaymentMethod === m}
+                      onChange={() => setAddPaymentMethod(m)}
+                      className="accent-blue-600"
+                    />
+                    <span className="text-sm font-medium">
+                      {m === 'CHECK' ? 'Check' : m === 'QUICK_PAY' ? 'QuickPay' : 'Other'}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            {addPaymentMethod === 'OTHER' && (
+              <div className="space-y-1">
+                <Label htmlFor="add-payment-other">Payment Type Name</Label>
+                <Input
+                  id="add-payment-other"
+                  placeholder="e.g. Cash, Zelle, Venmo..."
+                  value={addPaymentOtherLabel}
+                  onChange={(e) => setAddPaymentOtherLabel(e.target.value)}
+                />
+              </div>
+            )}
+            {addPaymentError && (
+              <p className="text-sm text-red-600">{addPaymentError}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddPayment(false)} disabled={addPaymentSaving}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddPaymentSubmit} disabled={addPaymentSaving}>
+              {addPaymentSaving ? 'Saving...' : 'Save Payment'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showSendModal} onOpenChange={setShowSendModal}>
         <DialogContent>
@@ -1010,8 +1152,8 @@ export default function InvoiceDetailPage() {
                       <div>
                         <div className="font-semibold">{formatCurrency(parseFloat(payment.amount))}</div>
                         <div className="text-sm text-gray-600">
-                          {payment.method} • {payment.status}
-                          {payment.processedAt && ` • ${formatDate(payment.processedAt)}`}
+                          {payment.method}{' \u2022 '}{payment.status}
+                          {payment.processedAt && ` \u2022 ${formatDate(payment.processedAt)}`}
                         </div>
                         {payment.referenceNumber && (
                           <div className="text-xs text-gray-500">Ref: {payment.referenceNumber}</div>

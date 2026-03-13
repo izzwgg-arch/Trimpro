@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { hexToHslCssValue } from '@/lib/branding/theme'
 
 type BrandingRecord = Record<string, string | null> | null
@@ -136,25 +136,70 @@ function applyBrandingIcons(branding: BrandingRecord) {
   }
 }
 
+const BRANDING_CACHE_KEY = 'trimpro_branding_cache'
+
+function readCachedBranding(): BrandingRecord {
+  try {
+    if (typeof window === 'undefined') return null
+    const raw = localStorage.getItem(BRANDING_CACHE_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as BrandingRecord
+  } catch {
+    return null
+  }
+}
+
+function writeCachedBranding(branding: BrandingRecord) {
+  try {
+    if (typeof window === 'undefined') return
+    if (branding) {
+      localStorage.setItem(BRANDING_CACHE_KEY, JSON.stringify(branding))
+    } else {
+      localStorage.removeItem(BRANDING_CACHE_KEY)
+    }
+  } catch {
+    // ignore storage errors (private browsing, quota exceeded, etc.)
+  }
+}
+
 export function BrandingProvider({ children }: { children: React.ReactNode }) {
+  // Start null for SSR compatibility (window not available on server).
+  // useLayoutEffect below immediately reads the localStorage cache on the client
+  // before the browser paints, eliminating the flash of the default logo.
   const [branding, setBranding] = useState<BrandingRecord>(null)
+
+  useLayoutEffect(() => {
+    const cached = readCachedBranding()
+    if (cached) {
+      setBranding(cached)
+      applyBrandingVariables(cached)
+      applyBrandingIcons(cached)
+    }
+  }, [])
 
   useEffect(() => {
     let mounted = true
 
     const loadBranding = async () => {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
-      if (!token) return
       try {
+        const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
+        const headers: HeadersInit = {}
+        if (token) headers['Authorization'] = `Bearer ${token}`
+
         const response = await fetch('/api/branding', {
-          headers: { Authorization: `Bearer ${token}` },
+          headers,
           cache: 'no-store',
+          credentials: 'include',
         })
         if (!response.ok) return
         const payload = await response.json()
-        if (mounted) setBranding(payload?.branding || null)
+        const fresh = payload?.branding || null
+        if (mounted) {
+          setBranding(fresh)
+          writeCachedBranding(fresh)
+        }
       } catch {
-        // Keep baseline defaults unchanged when branding cannot be loaded.
+        // Keep cached/baseline defaults unchanged when branding cannot be loaded.
       }
     }
 

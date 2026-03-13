@@ -20,6 +20,9 @@ import {
   Edit,
   Plus,
   Trash2,
+  Download,
+  Printer,
+  X,
 } from 'lucide-react'
 import Link from 'next/link'
 import { AddressMapSection } from './map-section'
@@ -117,6 +120,7 @@ interface ClientDetail {
     smsMessages: number
     emails: number
   }
+  openInvoiceBalance?: string
   parent?: {
     id: string
     name: string
@@ -141,6 +145,13 @@ export default function ClientDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [showStatement, setShowStatement] = useState(false)
+  const [statementHtml, setStatementHtml] = useState<string | null>(null)
+  const [statementLoading, setStatementLoading] = useState(false)
+  const [showEmailDialog, setShowEmailDialog] = useState(false)
+  const [emailTo, setEmailTo] = useState('')
+  const [emailSending, setEmailSending] = useState(false)
+  const [emailResult, setEmailResult] = useState<{ ok: boolean; message: string } | null>(null)
 
   // Defensive: Validate params before using
   const clientId = params?.id as string | undefined
@@ -236,6 +247,85 @@ export default function ClientDetailPage() {
     }
   }
 
+  const generateStatement = async () => {
+    if (!clientId) return
+    setStatementLoading(true)
+    setShowStatement(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const res = await fetch(`/api/clients/${clientId}/statement?format=html`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) {
+        setStatementHtml('<p style="padding:20px;color:red">Failed to generate statement.</p>')
+        return
+      }
+      const html = await res.text()
+      setStatementHtml(html)
+    } catch {
+      setStatementHtml('<p style="padding:20px;color:red">Error generating statement.</p>')
+    } finally {
+      setStatementLoading(false)
+    }
+  }
+
+  const downloadStatementPdf = () => {
+    if (!clientId) return
+    const token = localStorage.getItem('accessToken')
+    const url = `/api/clients/${clientId}/statement?format=pdf&download=1`
+    const a = document.createElement('a')
+    a.href = url
+    a.target = '_blank'
+    // Pass token via header isn't possible for direct download links; open in new tab
+    window.open(url + `&t=${encodeURIComponent(token || '')}`, '_blank')
+  }
+
+  const printStatement = () => {
+    if (!statementHtml) return
+    const win = window.open('', '_blank')
+    if (win) {
+      win.document.write(statementHtml)
+      win.document.close()
+      win.onload = () => win.print()
+    }
+  }
+
+  const openEmailDialog = () => {
+    // Pre-fill with the client's email on file
+    setEmailTo(client?.email || '')
+    setEmailResult(null)
+    setShowEmailDialog(true)
+  }
+
+  const sendStatementEmail = async () => {
+    if (!clientId || !emailTo.trim()) return
+    setEmailSending(true)
+    setEmailResult(null)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const res = await fetch(`/api/clients/${clientId}/statement`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: emailTo.trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setEmailResult({ ok: false, message: data.error || 'Failed to send email' })
+      } else {
+        setEmailResult({ ok: true, message: `Statement sent to ${data.sentTo}` })
+        // Auto-close dialog after 2 seconds on success
+        setTimeout(() => setShowEmailDialog(false), 2000)
+      }
+    } catch {
+      setEmailResult({ ok: false, message: 'Network error — please try again' })
+    } finally {
+      setEmailSending(false)
+    }
+  }
+
   const handleDelete = async () => {
     if (!client) return
 
@@ -328,13 +418,14 @@ export default function ClientDetailPage() {
   const subClients = (client.subClients && Array.isArray(client.subClients)) ? client.subClients : []
 
   return (
+    <>
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center space-x-3">
             <Link href="/dashboard/clients" className="text-gray-500 hover:text-gray-700">
-              ← Back to Clients
+              Back to Clients
             </Link>
           </div>
           <h1 className="text-3xl font-bold text-gray-900 mt-2">{client.name}</h1>
@@ -349,6 +440,9 @@ export default function ClientDetailPage() {
           {client.companyName && (
             <p className="text-gray-600 mt-1">{client.companyName}</p>
           )}
+          <p className="text-sm font-semibold text-amber-700 mt-2">
+            Open Balance: {formatCurrency(parseFloat(client.openInvoiceBalance || '0'))}
+          </p>
         </div>
         <div className="flex items-center space-x-2">
           {client.phone && (
@@ -397,6 +491,10 @@ export default function ClientDetailPage() {
             <Button variant="outline" onClick={() => router.push(`/dashboard/tasks/new?clientId=${clientId}`)}>
               <CheckSquare className="mr-2 h-4 w-4" />
               New Task
+            </Button>
+            <Button variant="outline" onClick={generateStatement} disabled={statementLoading}>
+              <FileText className="mr-2 h-4 w-4" />
+              {statementLoading ? 'Generating...' : 'Generate Statement'}
             </Button>
           </div>
         </CardContent>
@@ -479,7 +577,7 @@ export default function ClientDetailPage() {
                         <div>
                           <p className="font-medium">{subClient.name}</p>
                           <div className="text-xs text-gray-600">
-                            {subClient.companyName || 'No company'} {subClient.email ? `• ${subClient.email}` : ''}
+                            {subClient.companyName || 'No company'} {subClient.email ? `| ${subClient.email}` : ''}
                           </div>
                         </div>
                         <span className={`px-2 py-1 text-xs rounded-full ${
@@ -544,10 +642,10 @@ export default function ClientDetailPage() {
                         {call.direction === 'INBOUND' ? 'Inbound' : 'Outbound'} Call
                       </p>
                       <p className="text-xs text-gray-500">
-                        {formatPhoneNumber(call.fromNumber)} → {formatPhoneNumber(call.toNumber)}
+                        {formatPhoneNumber(call.fromNumber)} {'->'} {formatPhoneNumber(call.toNumber)}
                       </p>
                       <p className="text-xs text-gray-400">
-                        {formatDate(call.startedAt)} • {call.duration ? `${Math.floor(call.duration / 60)}:${(call.duration % 60).toString().padStart(2, '0')}` : 'N/A'}
+                        {formatDate(call.startedAt)} | {call.duration ? `${Math.floor(call.duration / 60)}:${(call.duration % 60).toString().padStart(2, '0')}` : 'N/A'}
                       </p>
                     </div>
                     <span className={`px-2 py-1 text-xs rounded ${
@@ -644,6 +742,12 @@ export default function ClientDetailPage() {
                 <p className="text-2xl font-bold">{client._count?.invoices || 0}</p>
               </div>
               <div>
+                <p className="text-sm text-gray-500">Open Balance</p>
+                <p className="text-2xl font-bold text-amber-700">
+                  {formatCurrency(parseFloat(client.openInvoiceBalance || '0'))}
+                </p>
+              </div>
+              <div>
                 <p className="text-sm text-gray-500">Calls</p>
                 <p className="text-2xl font-bold">{client._count?.calls || 0}</p>
               </div>
@@ -673,7 +777,7 @@ export default function ClientDetailPage() {
                       <p className="text-sm font-medium">{job.jobNumber}</p>
                       <p className="text-xs text-gray-600">{job.title}</p>
                       <p className="text-xs text-gray-400 mt-1">
-                        {job.status} • {job.scheduledStart ? formatDate(job.scheduledStart) : 'Not scheduled'}
+                        {job.status} | {job.scheduledStart ? formatDate(job.scheduledStart) : 'Not scheduled'}
                       </p>
                     </Link>
                   ))
@@ -757,5 +861,146 @@ export default function ClientDetailPage() {
         </div>
       </div>
     </div>
+
+    {/* Statement Modal */}
+    {showStatement && (
+
+      <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 overflow-auto p-4">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl">
+          <div className="flex items-center justify-between p-4 border-b">
+            <h2 className="text-lg font-semibold text-gray-900">Account Statement</h2>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={printStatement}
+                disabled={!statementHtml}
+              >
+                <Printer className="h-4 w-4 mr-1" />
+                Print
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  const token = localStorage.getItem('accessToken') || ''
+                  window.open(
+                    `/api/clients/${clientId}/statement?format=pdf&download=1&t=${encodeURIComponent(token)}`,
+                    '_blank'
+                  )
+                }}
+              >
+                <Download className="h-4 w-4 mr-1" />
+                Download PDF
+              </Button>
+              <Button
+                size="sm"
+                className="bg-[#1e4d6e] hover:bg-[#163a54] text-white"
+                onClick={openEmailDialog}
+                disabled={!statementHtml}
+              >
+                <Mail className="h-4 w-4 mr-1" />
+                Email Statement
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => { setShowStatement(false); setStatementHtml(null) }}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+          <div className="p-4">
+            {statementLoading ? (
+              <div className="flex items-center justify-center py-16">
+                <div className="text-gray-500">Generating statement...</div>
+              </div>
+            ) : statementHtml ? (
+              <iframe
+                srcDoc={statementHtml}
+                className="w-full rounded border"
+                style={{ height: '70vh' }}
+                title="Account Statement"
+              />
+            ) : null}
+          </div>
+        </div>
+      </div>
+    )}
+    {/* Email Statement Dialog */}
+    {showEmailDialog && (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+          <div className="flex items-center justify-between p-5 border-b">
+            <div>
+              <h3 className="text-base font-semibold text-gray-900">Email Account Statement</h3>
+              <p className="text-xs text-gray-500 mt-0.5">The statement PDF will be attached to the email.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => { setShowEmailDialog(false); setEmailResult(null) }}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="p-5 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Send To
+              </label>
+              <input
+                type="email"
+                value={emailTo}
+                onChange={(e) => setEmailTo(e.target.value)}
+                placeholder="client@example.com"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1e4d6e] focus:border-transparent"
+                onKeyDown={(e) => { if (e.key === 'Enter') sendStatementEmail() }}
+                autoFocus
+              />
+              {client?.email && emailTo !== client.email && (
+                <button
+                  type="button"
+                  className="mt-1 text-xs text-blue-600 hover:underline"
+                  onClick={() => setEmailTo(client.email || '')}
+                >
+                  Use {client.email}
+                </button>
+              )}
+            </div>
+
+            {emailResult && (
+              <div className={`rounded-lg px-4 py-3 text-sm font-medium ${
+                emailResult.ok
+                  ? 'bg-green-50 text-green-800 border border-green-200'
+                  : 'bg-red-50 text-red-800 border border-red-200'
+              }`}>
+                {emailResult.message}
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 p-5 pt-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { setShowEmailDialog(false); setEmailResult(null) }}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="bg-[#1e4d6e] hover:bg-[#163a54] text-white"
+              onClick={sendStatementEmail}
+              disabled={emailSending || !emailTo.trim()}
+            >
+              <Mail className="h-4 w-4 mr-1" />
+              {emailSending ? 'Sending...' : 'Send Statement'}
+            </Button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   )
 }

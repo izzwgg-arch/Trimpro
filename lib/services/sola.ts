@@ -13,6 +13,8 @@ const SOLA_API_SECRET = process.env.SOLA_API_SECRET
 interface SolaPaymentLinkRequest {
   invoiceId: string
   invoiceNumber?: string
+  /** Internal intent key (TPINTENT:xxx) — passed in a hidden field so xInvoice can show human-readable numbers */
+  intentRef?: string
   amount: number
   description: string
   clientEmail?: string
@@ -52,31 +54,54 @@ export class SolaService {
     const amountStr = Number(request.amount || 0).toFixed(2)
     const invoiceRef = request.invoiceNumber || request.invoiceId
 
-    // Send both Cardknox-style and generic keys to maximize merchant-form compatibility.
+    // Send Cardknox billing field names (xBill*), generic xField names, and
+    // plain names — to maximize pre-fill compatibility across Cardknox form templates.
     const params: Record<string, string> = {
+      // Invoice / amount
       xInvoice: invoiceRef,
       xAmount: amountStr,
       xDescription: request.description || '',
-      xName: request.clientName || '',
-      xEmail: request.clientEmail || '',
-      xPhone: request.clientPhone || '',
-      xAddress: request.billingStreet || '',
-      xStreet: request.billingStreet || '',
-      xJobAddress: request.billingStreet || '',
-      xCity: request.billingCity || '',
-      xJobCity: request.billingCity || '',
-      xState: request.billingState || '',
-      xJobState: request.billingState || '',
-      xZip: request.billingZip || '',
-      xPostalCode: request.billingZip || '',
-      xJobZip: request.billingZip || '',
-      xCountry: request.billingCountry || 'US',
       invoice: invoiceRef,
       estimate_invoice: invoiceRef,
       amount: amountStr,
+      // Hidden intent key — sent back by Cardknox in webhook so we can reconcile multi-invoice payments
+      // without showing the ugly internal key to the customer in xInvoice.
+      ...(request.intentRef ? { xCustom1: request.intentRef } : {}),
+
+      // Customer identity
+      xName: request.clientName || '',
+      xEmail: request.clientEmail || '',
+      xPhone: request.clientPhone || '',
       customer_name: request.clientName || '',
       customer_email: request.clientEmail || '',
       customer_phone: request.clientPhone || '',
+
+      // Cardknox standard billing block (xBill* — primary pre-fill keys)
+      xBillStreet: request.billingStreet || '',
+      xBillCity: request.billingCity || '',
+      xBillState: request.billingState || '',
+      xBillZip: request.billingZip || '',
+      xBillCountry: request.billingCountry || 'US',
+      xBillPhone: request.clientPhone || '',
+
+      // Cardknox xBilling* variants used by some form templates
+      xBillingStreet: request.billingStreet || '',
+      xBillingAddress: request.billingStreet || '',
+      xBillingCity: request.billingCity || '',
+      xBillingState: request.billingState || '',
+      xBillingZip: request.billingZip || '',
+      xBillingPhone: request.clientPhone || '',
+
+      // Generic / legacy aliases
+      xAddress: request.billingStreet || '',
+      xStreet: request.billingStreet || '',
+      xCity: request.billingCity || '',
+      xState: request.billingState || '',
+      xZip: request.billingZip || '',
+      xPostalCode: request.billingZip || '',
+      xCountry: request.billingCountry || 'US',
+
+      // Plain keys for older templates
       address: request.billingStreet || '',
       city: request.billingCity || '',
       state: request.billingState || '',
@@ -141,6 +166,7 @@ export class SolaService {
     const v2Payload = {
       xCommand: 'cc:sale',
       xInvoice: request.invoiceNumber || request.invoiceId,
+      ...(request.intentRef ? { xCustom1: request.intentRef } : {}),
       xAmount: (amountCents / 100).toFixed(2),
       amountCents,
       description: request.description,

@@ -21,6 +21,7 @@ interface Estimate {
   estimateNumber: string
   title: string
   status: string
+  convertedPercent?: number | null
   total: string
   validUntil: string | null
   sentAt: string | null
@@ -42,6 +43,17 @@ interface Estimate {
   _count: {
     lineItems: number
   }
+}
+
+function StatusBadge({ estimate }: { estimate: Estimate }) {
+  const label = estimate.status === 'CONVERTED' && estimate.convertedPercent
+    ? `CONVERTED (${estimate.convertedPercent}%)`
+    : estimate.status
+  return (
+    <span className={`px-2 py-1 text-xs rounded-full ${statusColors[estimate.status] || 'bg-gray-100 text-gray-800'}`}>
+      {label}
+    </span>
+  )
 }
 
 const statusColors: Record<string, string> = {
@@ -333,8 +345,8 @@ export default function EstimatesPage() {
                     </Link>
                     <CardDescription className="mt-1">
                       {estimate.estimateNumber}
-                      {estimate.client && ` • ${estimate.client.name}`}
-                      {estimate.lead && ` • ${estimate.lead.firstName} ${estimate.lead.lastName}`}
+                      {estimate.client && ` \u2022 ${estimate.client.name}`}
+                      {estimate.lead && ` \u2022 ${estimate.lead.firstName} ${estimate.lead.lastName}`}
                     </CardDescription>
                   </div>
                   <div className="flex flex-col items-end gap-1">
@@ -351,9 +363,7 @@ export default function EstimatesPage() {
                       className="h-4 w-4"
                       title="Select for duplicate"
                     />
-                    <span className={`px-2 py-1 text-xs rounded-full ${statusColors[estimate.status] || 'bg-gray-100 text-gray-800'}`}>
-                      {estimate.status}
-                    </span>
+                    <StatusBadge estimate={estimate} />
                   </div>
                 </div>
               </CardHeader>
@@ -442,9 +452,9 @@ export default function EstimatesPage() {
                   title="Select for duplicate"
                 />
               }
-              primary={`${estimate.estimateNumber} • ${estimate.title}`}
+              primary={`${estimate.estimateNumber} \u2022 ${estimate.title}`}
               secondary={estimate.client?.name || (estimate.lead ? `${estimate.lead.firstName} ${estimate.lead.lastName}` : 'No client')}
-              status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[estimate.status] || 'bg-gray-100 text-gray-800'}`}>{estimate.status}</span>}
+              status={<StatusBadge estimate={estimate} />}
               amount={formatCurrency(parseFloat(estimate.total))}
               date={estimate.validUntil ? formatDate(estimate.validUntil) : '-'}
             />
@@ -469,9 +479,9 @@ export default function EstimatesPage() {
                   title="Select for duplicate"
                 />
               }
-              primary={`${estimate.estimateNumber} • ${estimate.title}`}
-              status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[estimate.status] || 'bg-gray-100 text-gray-800'}`}>{estimate.status}</span>}
-              line2={`${estimate.client?.name || (estimate.lead ? `${estimate.lead.firstName} ${estimate.lead.lastName}` : 'No client')} • ${estimate._count.lineItems} line items`}
+              primary={`${estimate.estimateNumber} \u2022 ${estimate.title}`}
+              status={<StatusBadge estimate={estimate} />}
+              line2={`${estimate.client?.name || (estimate.lead ? `${estimate.lead.firstName} ${estimate.lead.lastName}` : 'No client')} \u2022 ${estimate._count.lineItems} line items`}
               rightTop={formatCurrency(parseFloat(estimate.total))}
               rightBottom={estimate.validUntil ? formatDate(estimate.validUntil) : 'No expiry'}
             />
@@ -503,13 +513,13 @@ export default function EstimatesPage() {
               key: 'estimate',
               header: 'Estimate',
               sortValue: (estimate) => `${estimate.estimateNumber} ${estimate.title}`,
-              render: (estimate) => <span className="font-medium">{estimate.estimateNumber} • {estimate.title}</span>,
+              render: (estimate) => <span className="font-medium">{estimate.estimateNumber}{' \u2022 '}{estimate.title}</span>,
             },
             {
               key: 'status',
               header: 'Status',
               sortValue: (estimate) => estimate.status,
-              render: (estimate) => <span className={`px-2 py-1 text-xs rounded-full ${statusColors[estimate.status] || 'bg-gray-100 text-gray-800'}`}>{estimate.status}</span>,
+              render: (estimate) => <StatusBadge estimate={estimate} />,
             },
             {
               key: 'client',

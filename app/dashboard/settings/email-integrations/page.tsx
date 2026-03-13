@@ -322,7 +322,7 @@ export default function EmailIntegrationsPage() {
                 <div>
                   <p className="font-medium">{integration.displayName}</p>
                   <p className="text-sm text-gray-600">{integration.fromEmail}</p>
-                  <p className="text-xs text-gray-500">Assigned users: {integration.assignmentsCount} • Status: {integration.status}</p>
+                  <p className="text-xs text-gray-500">Assigned users: {integration.assignmentsCount}{' \u2022 '}Status: {integration.status}</p>
                   {integration.lastError && <p className="text-xs text-red-600 mt-1">{integration.lastError}</p>}
                 </div>
                 <div className="flex gap-2">
@@ -370,7 +370,7 @@ export default function EmailIntegrationsPage() {
             <div key={user.id} className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center border rounded-md p-3">
               <div>
                 <p className="font-medium">{user.fullName}</p>
-                <p className="text-xs text-gray-600">{user.email} • {user.role}</p>
+                <p className="text-xs text-gray-600">{user.email}{' \u2022 '}{user.role}</p>
               </div>
               <div className="md:col-span-2">
                 <Select

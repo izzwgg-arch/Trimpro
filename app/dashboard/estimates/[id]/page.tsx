@@ -42,6 +42,7 @@ interface EstimateDetail {
   title: string
   jobSiteAddress: string | null
   status: string
+  convertedPercent?: number | null
   subtotal: string
   taxRate: string
   taxAmount: string
@@ -552,13 +553,15 @@ export default function EstimateDetailPage() {
           <div>
             <h1 className="text-3xl font-bold text-gray-900">{estimate.title}</h1>
             <p className="mt-1 text-gray-600">
-              {estimate.estimateNumber} • Created {formatDate(estimate.createdAt)}
+              {estimate.estimateNumber}{' \u2022 '}Created {formatDate(estimate.createdAt)}
             </p>
           </div>
         </div>
         <div className="flex items-center space-x-2">
           <span className={`px-3 py-1 text-sm rounded-full ${statusColors[estimate.status] || 'bg-gray-100 text-gray-800'}`}>
-            {estimate.status}
+            {estimate.status === 'CONVERTED' && estimate.convertedPercent
+              ? `CONVERTED (${estimate.convertedPercent}%)`
+              : estimate.status}
           </span>
           <Button
             variant="outline"
@@ -602,115 +605,6 @@ export default function EstimateDetailPage() {
           </Button>
         </div>
       </div>
-
-      <Dialog open={showBillingModal} onOpenChange={setShowBillingModal}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Convert To Invoice</DialogTitle>
-            <DialogDescription>
-              Choose what to bill from this estimate. This opens a new invoice draft; it is not created until you Save.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Billing Mode</Label>
-              <Select value={billingMode} onValueChange={(v) => setBillingMode(v as any)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select billing mode" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="FULL">Full - bill entire estimate</SelectItem>
-                  <SelectItem value="PERCENTAGE">Percentage - progress billing</SelectItem>
-                  <SelectItem value="MANUAL">Manual - select line items</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {billingMode === 'PERCENTAGE' && (
-              <div className="space-y-2">
-                <Label>Percent to bill</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.01"
-                  value={billingPercent}
-                  onChange={(e) => setBillingPercent(e.target.value)}
-                  placeholder="50"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Creates a single invoice line: Progress Billing (x%) - Estimate {estimate.estimateNumber}
-                </p>
-              </div>
-            )}
-
-            {billingMode === 'MANUAL' && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label>Select items to bill</Label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setSelectedLineItemIds(estimate.lineItems.map((li) => li.id))}
-                  >
-                    Select All
-                  </Button>
-                </div>
-                <div className="max-h-72 overflow-auto rounded border">
-                  <table className="w-full text-sm">
-                    <thead className="sticky top-0 bg-white">
-                      <tr className="border-b">
-                        <th className="w-10 px-3 py-2"></th>
-                        <th className="px-3 py-2 text-left">Item</th>
-                        <th className="px-3 py-2 text-right">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {estimate.lineItems.map((li) => {
-                        const checked = selectedLineItemIds.includes(li.id)
-                        const label = li.group?.name ? `${li.description} (${li.group.name})` : li.description
-                        return (
-                          <tr key={li.id} className="border-b last:border-b-0">
-                            <td className="px-3 py-2">
-                              <Checkbox
-                                checked={checked}
-                                onCheckedChange={(val) => {
-                                  const on = Boolean(val)
-                                  setSelectedLineItemIds((prev) => {
-                                    if (on) return Array.from(new Set([...prev, li.id]))
-                                    return prev.filter((id) => id !== li.id)
-                                  })
-                                }}
-                              />
-                            </td>
-                            <td className="px-3 py-2">{label}</td>
-                            <td className="px-3 py-2 text-right">{formatCurrency(parseFloat(li.total || '0'))}</td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowBillingModal(false)}
-              disabled={convertingInvoice}
-            >
-              Cancel
-            </Button>
-            <Button onClick={handleConvertToInvoice} disabled={convertingInvoice}>
-              {convertingInvoice ? 'Opening...' : 'Continue'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={showSendModal} onOpenChange={setShowSendModal}>
         <DialogContent>
@@ -1155,7 +1049,7 @@ export default function EstimateDetailPage() {
                       <div className="font-medium">{a.item?.description || a.estimateLineItemId}</div>
                       <div className="text-gray-600">
                         {a.approvedByName ? `Approved by ${a.approvedByName}` : 'Approved'}{' '}
-                        {a.approvedAt ? `• ${new Date(a.approvedAt).toLocaleString()}` : ''}
+                        {a.approvedAt ? `\u2022 ${new Date(a.approvedAt).toLocaleString()}` : ''}
                       </div>
                     </div>
                   ))}
@@ -1338,7 +1232,7 @@ export default function EstimateDetailPage() {
               />
               <Label htmlFor="bill-full">Full Amount (100%)</Label>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <input
                 type="radio"
                 id="bill-percentage"
@@ -1357,6 +1251,15 @@ export default function EstimateDetailPage() {
                 disabled={billingMode !== 'PERCENTAGE'}
               />
               <span className="text-sm text-gray-600">%</span>
+              {billingMode === 'PERCENTAGE' && (() => {
+                const pct = Number(billingPercent || 0)
+                const estimateTotal = Number(estimate?.total || 0)
+                if (pct > 0 && pct <= 100 && estimateTotal > 0) {
+                  const invoiceAmt = (estimateTotal * pct / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+                  return <span className="text-sm font-semibold text-green-700">&rarr; Invoice for {invoiceAmt}</span>
+                }
+                return null
+              })()}
             </div>
             <div className="flex items-center gap-2">
               <input
@@ -1375,7 +1278,7 @@ export default function EstimateDetailPage() {
                     <div className="text-sm">
                       <div className="font-medium">{li.description}</div>
                       <div className="text-gray-500">
-                        Qty {li.quantity} • ${Number(li.unitPrice).toFixed(2)}
+                        Qty {li.quantity}{' \u2022 '}${Number(li.unitPrice).toFixed(2)}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">

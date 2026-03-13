@@ -5,6 +5,7 @@ import { generatePasswordResetToken } from '@/lib/auth'
 import { getDefaultPermissions } from '@/lib/permissions'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { testEmailProvider } from '@/lib/integrations/providers/email'
+import { getEmailBranding } from '@/lib/email/branding'
 
 const ALLOWED_ROLES = new Set(['ADMIN', 'MANAGER', 'OFFICE', 'FIELD', 'SALES', 'ACCOUNTING'])
 
@@ -156,12 +157,14 @@ export async function POST(request: NextRequest) {
       'https://expo.dev/artifacts/eas/dRcgyHyA2NeJUs6EH5RbSv.apk'
     let emailSent = false
     let emailError: string | null = null
+    const emailBranding = await getEmailBranding(user.tenantId)
+    const brandLogoUrl = emailBranding?.emailLogoUrl || emailBranding?.webLogoUrl || null
     try {
       const { sendInviteEmail, buildInviteEmailHtml } = await import('@/lib/services/email')
       const emailSecrets = await getIntegrationSecrets(user.tenantId, 'email')
 
       if (emailSecrets) {
-        const html = buildInviteEmailHtml(firstName, setPasswordUrl, apkDownloadUrl)
+        const html = buildInviteEmailHtml(firstName, setPasswordUrl, apkDownloadUrl, brandLogoUrl)
         const subject = 'Welcome to TrimPro - Create Your Password'
         const sendResult = await testEmailProvider(emailSecrets, email, subject, html)
         if (!sendResult.success) {
@@ -171,7 +174,7 @@ export async function POST(request: NextRequest) {
         }
       } else {
         // Fallback to env-based provider when tenant integration is not configured.
-        await sendInviteEmail(email, firstName, setPasswordUrl, apkDownloadUrl)
+        await sendInviteEmail(email, firstName, setPasswordUrl, apkDownloadUrl, brandLogoUrl)
         emailSent = true
       }
     } catch (error: any) {

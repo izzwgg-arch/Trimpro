@@ -55,12 +55,12 @@ export function VoiceNoteBubble({
   senderAvatarUrl,
   senderInitials,
 }: VoiceNoteBubbleProps) {
-  const { isPlaying, play, pause, positionMs, durationMs: liveDurationMs } = useVoicePlaybackController(messageId)
+  const { isPlaying, play, pause, seek, positionMs, durationMs: liveDurationMs } = useVoicePlaybackController(messageId)
   const bars = useMemo(() => seededWaveform(messageId), [messageId])
   const [waveformWidth, setWaveformWidth] = useState(0)
 
   const effectiveDurationMs = Math.max(1, liveDurationMs || durationMs || 1000)
-  const { activeBars: activeBarCount, dotX } = computeWaveformPlaybackFrame({
+  const { activeBars: activeBarCount } = computeWaveformPlaybackFrame({
     positionMs,
     durationMs: effectiveDurationMs,
     barsCount: bars.length,
@@ -68,6 +68,12 @@ export function VoiceNoteBubble({
   })
 
   const avatarLabel = (senderInitials || '?').slice(0, 1).toUpperCase()
+
+  const seekFromTouch = (locationX: number) => {
+    if (waveformWidth <= 0) return
+    const ratio = locationX / waveformWidth
+    void seek(ratio)
+  }
 
   return (
     <View style={styles.root}>
@@ -94,7 +100,14 @@ export function VoiceNoteBubble({
         </Pressable>
 
         <View style={styles.waveBlock}>
-          <View style={styles.waveTrack} onLayout={(event) => setWaveformWidth(event.nativeEvent.layout.width)}>
+          <View
+            style={styles.waveTrack}
+            onLayout={(event) => setWaveformWidth(event.nativeEvent.layout.width)}
+            onStartShouldSetResponder={() => true}
+            onMoveShouldSetResponder={() => true}
+            onResponderGrant={(event) => seekFromTouch(event.nativeEvent.locationX)}
+            onResponderMove={(event) => seekFromTouch(event.nativeEvent.locationX)}
+          >
             {bars.map((amp, index) => (
               <View
                 key={`${messageId}-bar-${index}`}
@@ -114,13 +127,6 @@ export function VoiceNoteBubble({
                 ]}
               />
             ))}
-            <View
-              style={[
-                styles.progressDot,
-                { left: dotX },
-                isOutgoing && styles.progressDotOutgoing,
-              ]}
-            />
           </View>
         </View>
       </View>
@@ -200,19 +206,6 @@ const styles = StyleSheet.create({
   waveBar: {
     width: 2,
     borderRadius: 1,
-  },
-  progressDot: {
-    position: 'absolute',
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#2D8CFF',
-    left: 0,
-    top: 8,
-    marginLeft: -2,
-  },
-  progressDotOutgoing: {
-    backgroundColor: '#A7D3FF',
   },
   metaRow: {
     marginTop: 2,

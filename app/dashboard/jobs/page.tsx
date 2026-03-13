@@ -26,6 +26,10 @@ interface Job {
   scheduledStart: string | null
   scheduledEnd: string | null
   estimateAmount: string | null
+  totalCost?: string | null
+  openInvoiceBalance?: string
+  openInvoiceCount?: number
+  clientOpenInvoiceBalance?: string
   client: {
     id: string
     name: string
@@ -363,7 +367,7 @@ export default function JobsPage() {
                       </CardTitle>
                     </Link>
                     <CardDescription className="mt-1">
-                      {job.jobNumber} • {job.client.name}
+                      {job.jobNumber} - {job.client.name}
                     </CardDescription>
                   </div>
                   <div className="flex items-center space-x-2">
@@ -412,6 +416,27 @@ export default function JobsPage() {
                     <div>
                       <p className="text-xs text-gray-500">Crew</p>
                       <p className="font-medium text-gray-700">{job.assignments.length} assigned</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                    <div>
+                      <p className="text-xs text-gray-500">Total Cost</p>
+                      <p className="font-semibold text-gray-900">
+                        {job.totalCost ? formatCurrency(parseFloat(job.totalCost)) : (job.estimateAmount ? formatCurrency(parseFloat(job.estimateAmount)) : '-')}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Job Open Invoices</p>
+                      <p className="font-semibold text-amber-700">
+                        {formatCurrency(parseFloat(job.openInvoiceBalance || '0'))}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Client Open Balance</p>
+                      <p className="font-semibold text-amber-700">
+                        {formatCurrency(parseFloat(job.clientOpenInvoiceBalance || '0'))}
+                      </p>
                     </div>
                   </div>
 
@@ -498,11 +523,11 @@ export default function JobsPage() {
               />
               <RowCompactItem
                 href={`/dashboard/jobs/${job.id}`}
-                primary={`${job.jobNumber} • ${job.title}`}
-                secondary={job.client.name}
+                primary={`${job.jobNumber} - ${job.title}`}
+                secondary={`${job.client.name} | Client Open: ${formatCurrency(parseFloat(job.clientOpenInvoiceBalance || '0'))}`}
                 status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[job.status] || 'bg-gray-100 text-gray-800'}`}>{job.status.replace('_', ' ')}</span>}
-                amount={job.estimateAmount ? formatCurrency(parseFloat(job.estimateAmount)) : '-'}
-                date={job.scheduledStart ? formatDate(job.scheduledStart) : '-'}
+                amount={job.totalCost ? formatCurrency(parseFloat(job.totalCost)) : (job.estimateAmount ? formatCurrency(parseFloat(job.estimateAmount)) : '-')}
+                date={`Open: ${formatCurrency(parseFloat(job.openInvoiceBalance || '0'))}`}
                 className="pl-10"
               />
             </div>
@@ -522,11 +547,11 @@ export default function JobsPage() {
               />
               <RowDetailedItem
                 href={`/dashboard/jobs/${job.id}`}
-                primary={`${job.jobNumber} • ${job.title}`}
+                primary={`${job.jobNumber} - ${job.title}`}
                 status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[job.status] || 'bg-gray-100 text-gray-800'}`}>{job.status.replace('_', ' ')}</span>}
-                line2={`${job.client.name} • Priority ${priorityLabels[job.priority] || 'Medium'} • ${job.assignments.length} assigned`}
-                rightTop={job.estimateAmount ? formatCurrency(parseFloat(job.estimateAmount)) : '-'}
-                rightBottom={job.scheduledStart ? formatDate(job.scheduledStart) : 'No schedule'}
+                line2={`${job.client.name} | Priority ${priorityLabels[job.priority] || 'Medium'} | Client Open ${formatCurrency(parseFloat(job.clientOpenInvoiceBalance || '0'))}`}
+                rightTop={job.totalCost ? formatCurrency(parseFloat(job.totalCost)) : (job.estimateAmount ? formatCurrency(parseFloat(job.estimateAmount)) : '-')}
+                rightBottom={`Job Open ${formatCurrency(parseFloat(job.openInvoiceBalance || '0'))}`}
                 className="pl-10"
               />
             </div>
@@ -558,7 +583,7 @@ export default function JobsPage() {
               key: 'job',
               header: 'Job',
               sortValue: (job) => `${job.jobNumber} ${job.title}`,
-              render: (job) => <span className="font-medium">{job.jobNumber} • {job.title}</span>,
+              render: (job) => <span className="font-medium">{job.jobNumber} - {job.title}</span>,
             },
             {
               key: 'client',
@@ -574,9 +599,21 @@ export default function JobsPage() {
             },
             {
               key: 'estimate',
-              header: 'Estimate',
-              sortValue: (job) => Number(job.estimateAmount || 0),
-              render: (job) => (job.estimateAmount ? formatCurrency(parseFloat(job.estimateAmount)) : '-'),
+              header: 'Total Cost',
+              sortValue: (job) => Number(job.totalCost || job.estimateAmount || 0),
+              render: (job) => (job.totalCost ? formatCurrency(parseFloat(job.totalCost)) : (job.estimateAmount ? formatCurrency(parseFloat(job.estimateAmount)) : '-')),
+            },
+            {
+              key: 'jobOpen',
+              header: 'Job Open',
+              sortValue: (job) => Number(job.openInvoiceBalance || 0),
+              render: (job) => <span className="font-medium text-amber-700">{formatCurrency(parseFloat(job.openInvoiceBalance || '0'))}</span>,
+            },
+            {
+              key: 'clientOpen',
+              header: 'Client Open',
+              sortValue: (job) => Number(job.clientOpenInvoiceBalance || 0),
+              render: (job) => <span className="font-medium text-amber-700">{formatCurrency(parseFloat(job.clientOpenInvoiceBalance || '0'))}</span>,
             },
             {
               key: 'actions',

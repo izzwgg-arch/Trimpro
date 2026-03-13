@@ -216,6 +216,9 @@ export async function PUT(
       isNotesVisibleToClient,
       terms,
       memo,
+      documentTemplateKey,
+      documentTemplateVersion,
+      documentSnapshotJson,
     } = body
 
     // Get existing invoice
@@ -411,6 +414,14 @@ export async function PUT(
           isNotesVisibleToClient !== undefined ? Boolean(isNotesVisibleToClient) : existing.isNotesVisibleToClient,
         terms: terms !== undefined ? terms : existing.terms,
         memo: memo !== undefined ? memo : existing.memo,
+        renderTemplateKey:
+          documentTemplateKey !== undefined ? documentTemplateKey : existing.renderTemplateKey,
+        renderTemplateVersion:
+          documentTemplateVersion !== undefined
+            ? documentTemplateVersion
+            : existing.renderTemplateVersion,
+        renderSnapshot:
+          documentSnapshotJson !== undefined ? documentSnapshotJson : existing.renderSnapshot,
         },
         include: {
           lineItems: {

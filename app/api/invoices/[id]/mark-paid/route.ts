@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { notifyInvoicePaid } from '@/lib/notifications'
 import { syncPaymentToQuickBooks } from '@/lib/services/qbo-sync'
 
-const ALLOWED_METHODS = new Set(['CHECK', 'QUICK_PAY'])
+const ALLOWED_METHODS = new Set(['CHECK', 'QUICK_PAY', 'OTHER'])
 
 function toNumber(value: unknown): number {
   const n = Number(value)
@@ -23,6 +23,7 @@ export async function POST(
   try {
     const body = await request.json().catch(() => ({}))
     const method = String(body?.method || '').trim().toUpperCase()
+    const methodLabel = String(body?.methodLabel || '').trim() // custom label for OTHER
     const amountRaw = body?.amount
     const reference = String(body?.reference || '').trim()
     const paidAtRaw = body?.paidAt ? new Date(String(body.paidAt)) : null
@@ -31,7 +32,13 @@ export async function POST(
 
     if (!ALLOWED_METHODS.has(method)) {
       return NextResponse.json(
-        { error: 'Payment method must be CHECK or QUICK_PAY' },
+        { error: 'Payment method must be CHECK, QUICK_PAY, or OTHER' },
+        { status: 400 }
+      )
+    }
+    if (method === 'OTHER' && !methodLabel) {
+      return NextResponse.json(
+        { error: 'Please enter a payment type name.' },
         { status: 400 }
       )
     }
@@ -76,19 +83,23 @@ export async function POST(
     const newBalance = Math.max(0, toNumber(invoice.total) - newPaidAmount)
     const nextStatus = newBalance <= 0 ? 'PAID' : 'PARTIAL'
 
+    const paymentNotes =
+      method === 'CHECK'
+        ? 'Manually marked as paid by check'
+        : method === 'QUICK_PAY'
+          ? 'Manually marked as paid by Quick Pay'
+          : `Manually marked as paid — ${methodLabel}`
+
     const createdPayment = await prisma.payment.create({
       data: {
         invoiceId: invoice.id,
         amount,
         status: 'COMPLETED',
         method: method === 'CHECK' ? 'CHECK' : 'OTHER',
-        provider: method === 'QUICK_PAY' ? 'quick_pay' : 'manual',
+        provider: method === 'QUICK_PAY' ? 'quick_pay' : method === 'OTHER' ? methodLabel.toLowerCase().replace(/\s+/g, '_') : 'manual',
         reference: reference || null,
         processedAt,
-        notes:
-          method === 'QUICK_PAY'
-            ? 'Manually marked as paid by Quick Pay'
-            : 'Manually marked as paid by check',
+        notes: paymentNotes,
       },
     })
 

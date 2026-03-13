@@ -1,10 +1,10 @@
 import React from 'react'
 import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import * as Linking from 'expo-linking'
 import { Screen } from '../../components/Screen'
 import { apiRequest } from '../../api/client'
 import { BRAND } from '../../config/env'
+import { openFromNotificationPayload } from '../../notifications/openFromNotification'
 
 type MobileNotification = {
   id: string
@@ -43,17 +43,12 @@ export function NotificationsScreen() {
 
   const openNotification = async (item: MobileNotification) => {
     await markRead(item.id).catch(() => null)
-    const deepLink = item?.data?.deepLink
-    if (deepLink) {
-      await Linking.openURL(deepLink).catch(() => null)
-      return
-    }
-    if (item.linkType === 'job' && item.linkId) await Linking.openURL(`trimpro://jobs/${item.linkId}`).catch(() => null)
-    if (item.linkType === 'task' && item.linkId) await Linking.openURL(`trimpro://tasks/${item.linkId}`).catch(() => null)
-    if (item.linkType === 'issue' && item.linkId) await Linking.openURL(`trimpro://issues/${item.linkId}`).catch(() => null)
-    if ((item.linkType === 'message' || item.linkType === 'conversation') && item.linkId) {
-      await Linking.openURL(`trimpro://messages/${item.linkId}`).catch(() => null)
-    }
+    await openFromNotificationPayload({
+      deepLink: item?.data?.deepLink || undefined,
+      url: item.linkUrl || undefined,
+      linkType: item.linkType || undefined,
+      linkId: item.linkId || undefined,
+    }).catch(() => null)
   }
 
   const markAllRead = async () => {

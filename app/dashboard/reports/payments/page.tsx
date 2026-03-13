@@ -394,7 +394,7 @@ export default function PaymentHistoryPage() {
           <div className="w-full max-w-lg rounded-lg bg-white p-5 shadow-xl">
             <h2 className="text-lg font-semibold">Refund Payment</h2>
             <p className="mt-1 text-sm text-gray-600">
-              Payment: {refundModal.payment.id} • Remaining refundable: ${refundableRemaining.toFixed(2)}
+              Payment: {refundModal.payment.id}{' \u2022 '}Remaining refundable: ${refundableRemaining.toFixed(2)}
             </p>
 
             <div className="mt-4 space-y-3">

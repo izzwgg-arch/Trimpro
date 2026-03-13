@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
-import { sendDocumentEmailWithResolvedSender } from '@/lib/email-integrations/sender'
-import { getEmailBranding, applyEmailBrandingHtml } from '@/lib/email/branding'
+import { getIntegrationSecrets } from '@/lib/integrations/status'
+import { testEmailProvider } from '@/lib/integrations/providers/email'
+import { getEmailBranding } from '@/lib/email/branding'
 
 function escapeHtml(value: string) {
   return String(value || '')
@@ -127,15 +128,28 @@ export async function POST(
       paymentLink,
     })
     
+    const emailSecrets = await getIntegrationSecrets(user.tenantId, 'email')
+    if (!emailSecrets) {
+      return NextResponse.json(
+        { error: 'Email integration is not configured. Please configure Email Provider first.' },
+        { status: 400 }
+      )
+    }
+
     const safeMessage = message ? escapeHtml(String(message)) : ''
     const total = Number(invoice.total || 0).toFixed(2)
     const balance = Number(invoice.balance || 0).toFixed(2)
     const dueDate = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : ''
     const emailBranding = await getEmailBranding(user.tenantId)
-    const brandName = (emailBranding as any)?.invoiceBusinessName || 'TrimPro'
+    const logoUrl = emailBranding?.emailLogoUrl || emailBranding?.webLogoUrl || ''
+    const logoBlock = logoUrl
+      ? `<img src="${escapeHtml(logoUrl)}" alt="Brand logo" width="200"
+           style="display:inline-block;height:auto;max-height:72px;width:auto;max-width:220px;border:0;margin-bottom:6px;"
+           onerror="this.style.display='none'" />`
+      : `<div style="font-size:22px;font-weight:800;letter-spacing:-0.3px;color:#f8dea4;margin-bottom:10px;">TrimPro</div>`
 
-    const rawHtml = `<!doctype html>
-<html>
+    const html = `<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" data-tp-lock-colors="1">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -143,118 +157,120 @@ export async function POST(
     <meta name="supported-color-schemes" content="light only" />
     <title>Invoice ${escapeHtml(invoice.invoiceNumber)}</title>
     <style>
-      @media only screen and (max-width: 620px) {
-        .tp-card { border-radius: 16px !important; }
-        .tp-stack-col { display:block !important; width:100% !important; }
-        .tp-stack-gap { height:8px !important; line-height:8px !important; font-size:8px !important; }
+      :root { color-scheme: dark; supported-color-schemes: dark; }
+      @media only screen and (max-width:600px){
+        .main-card{ border-radius:12px !important; }
+        .hero-pad{ padding:28px 20px 20px !important; }
+        .body-pad{ padding:22px 20px !important; }
+        .btn-cell{ display:block !important; width:100% !important; padding:0 0 10px !important; }
+        .btn-main{ padding:14px 20px !important; font-size:15px !important; }
+      }
+      @media (prefers-color-scheme: light){
+        :root { color-scheme: light; supported-color-schemes: light; }
+        .email-body { background-color:#f8f9fc !important; }
+        .main-card { background-color:#ffffff !important; box-shadow:0 8px 24px rgba(15,23,42,0.08),0 2px 8px rgba(15,23,42,0.05) !important; }
+        .headline { color:#1f2937 !important; }
+        .hero-meta { color:#475569 !important; }
+        .body-text { color:#1f2937 !important; }
+        .status-badge { background-color:#e5e7eb !important; color:#111827 !important; border-color:#f8dea4 !important; }
+        .support-card { background-color:#f1f5f9 !important; border-color:#d5dee8 !important; }
+        .support-text, .support-strong { color:#111827 !important; }
+        .foot-cell { background-color:#f8fafc !important; border-top-color:#e5e7eb !important; }
+        .foot-copy { color:#475569 !important; }
       }
     </style>
   </head>
-  <body bgcolor="#ffffff" style="margin:0; padding:0; background:#ffffff; color:rgba(255,255,255,0.92); font-family:Arial, Helvetica, sans-serif;">
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="#ffffff" style="width:100%; background:#ffffff;">
+  <body class="email-body" style="margin:0;padding:0;background-color:#0f172a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#0f172a;padding:24px 12px 40px;">
       <tr>
-        <td align="center" bgcolor="#ffffff" style="padding:32px 16px; background:#ffffff;">
-          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" class="tp-card" style="width:100%; max-width:600px; background:#111827; border:1px solid rgba(255,255,255,0.08); border-radius:18px;">
+        <td align="center" valign="top">
+          <table role="presentation" class="main-card" cellpadding="0" cellspacing="0" border="0"
+            style="max-width:580px;width:100%;background-color:#243f53;border-radius:16px;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,0.4),0 2px 8px rgba(0,0,0,0.25);">
             <tr>
-              <td style="padding:28px 28px 24px 28px;">
-                <div style="font-size:22px; line-height:1.3; font-weight:700; color:rgba(255,255,255,0.92);">${escapeHtml(brandName)}</div>
-                <div style="margin-top:8px; font-size:13px; line-height:1.6; color:rgba(255,255,255,0.68);">
-                  Invoice ${escapeHtml(invoice.invoiceNumber)} • ${escapeHtml(sentDisplay || sentIso)}
-                </div>
+              <td style="background-color:#243f53;padding:34px 36px 26px;text-align:center;border-bottom:1px solid rgba(255,255,255,0.07);">
+                ${logoBlock}
               </td>
             </tr>
-
             <tr>
-              <td style="padding:0 28px 0 28px;">
-                <div style="font-size:32px; line-height:1.3; font-weight:700; color:rgba(255,255,255,0.92); margin:0 0 8px 0;">
-                  Your invoice is ready
-                </div>
-                <div style="font-size:18px; line-height:1.5; color:rgba(255,255,255,0.68); margin:0 0 16px 0;">
-                  Invoice for ${escapeHtml(invoice.client?.companyName || invoice.client?.name || 'Customer')}
-                </div>
-                <div style="font-size:14px; line-height:1.65; color:rgba(255,255,255,0.68); margin:0 0 24px 0;">
+              <td class="hero-pad" style="padding:30px 40px 22px;text-align:center;border-bottom:1px solid rgba(255,255,255,0.07);">
+                <div class="status-badge" style="display:inline-block;background-color:#334155;border:1px solid #f8dea4;border-radius:999px;padding:5px 16px;margin-bottom:18px;color:#ffffff;font-size:12px;font-weight:700;letter-spacing:0.3px;">Invoice Ready</div>
+                <h1 class="headline" style="margin:0 0 10px;font-size:28px;font-weight:800;line-height:1.2;letter-spacing:-0.4px;color:#f8dea4;">Your Invoice Is Ready</h1>
+                <p class="hero-meta" style="margin:0;font-size:13px;font-weight:600;color:#c4d5e9;">
+                  Invoice ${escapeHtml(invoice.invoiceNumber)} &ensp;&bull;&ensp; ${escapeHtml(sentDisplay || sentIso)}
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td class="body-pad" style="padding:26px 40px;">
+                <p class="body-text" style="margin:0 0 4px;font-size:16px;font-weight:600;color:#f1f5f9;">
+                  ${escapeHtml(invoice.client?.companyName || invoice.client?.name || 'Customer')},
+                </p>
+                <p class="body-text" style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#d5e1f1;">
                   ${escapeHtml(invoice.title || 'Your invoice is now available.')}
                   ${dueDate ? ` Due date ${escapeHtml(dueDate)}.` : ''}
-                </div>
+                </p>
                 ${
                   safeMessage
-                    ? `<div style="font-size:14px; line-height:1.65; color:rgba(255,255,255,0.92); margin:0 0 24px 0; white-space:pre-wrap;">${safeMessage}</div>`
+                    ? `<p class="body-text" style="margin:0 0 18px;font-size:14px;line-height:1.7;color:#e3edf9;white-space:pre-wrap;">${safeMessage}</p>`
                     : ''
                 }
-              </td>
-            </tr>
-
-            <tr>
-              <td style="padding:0 28px 24px 28px;">
-                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:14px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                  style="background-color:#1e3345;border:1px solid #46627f;border-radius:12px;overflow:hidden;margin-bottom:22px;">
                   <tr>
-                    <td style="padding:16px; font-size:14px; line-height:1.5; color:rgba(255,255,255,0.68);">Total</td>
-                    <td align="right" style="padding:16px; font-size:28px; line-height:1.3; font-weight:700; color:rgba(255,255,255,0.92);">$${escapeHtml(total)}</td>
+                    <td style="padding:11px 18px;border-bottom:1px solid #46627f;background-color:#1e3345;">
+                      <p style="margin:0;font-size:10px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:#c2d1e3;">Invoice Details</p>
+                    </td>
                   </tr>
                   <tr>
-                    <td style="padding:0 16px 16px 16px; font-size:14px; line-height:1.5; color:rgba(255,255,255,0.68);">Balance</td>
-                    <td align="right" style="padding:0 16px 16px 16px; font-size:20px; line-height:1.3; font-weight:700; color:rgba(255,255,255,0.92);">$${escapeHtml(balance)}</td>
+                    <td style="padding:12px 18px 0;">
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                        <tr><td style="font-size:13px;color:#c2d1e3;font-weight:600;padding-bottom:12px;width:44%;">Invoice</td><td style="font-size:13px;color:#eff6ff;font-weight:700;text-align:right;padding-bottom:12px;">${escapeHtml(invoice.invoiceNumber)}</td></tr>
+                      </table>
+                    </td>
+                  </tr>
+                  <tr><td style="padding:0 18px;"><div style="height:1px;background:#46627f;"></div></td></tr>
+                  <tr>
+                    <td style="padding:12px 18px 0;">
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                        <tr><td style="font-size:13px;color:#c2d1e3;font-weight:600;padding-bottom:12px;width:44%;">Balance</td><td style="font-size:13px;color:#eff6ff;font-weight:700;text-align:right;padding-bottom:12px;">$${escapeHtml(balance)}</td></tr>
+                      </table>
+                    </td>
+                  </tr>
+                  <tr><td style="padding:0 18px;"><div style="height:1px;background:#46627f;"></div></td></tr>
+                  <tr>
+                    <td style="padding:16px 18px 18px;background:#30495f;">
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                        <tr>
+                          <td style="font-size:11px;color:#cdd9e8;font-weight:700;letter-spacing:1px;text-transform:uppercase;vertical-align:middle;">Total Amount</td>
+                          <td style="font-size:38px;font-weight:800;color:#ffffff;text-align:right;line-height:1;letter-spacing:-1.5px;vertical-align:middle;">$${escapeHtml(total)}</td>
+                        </tr>
+                      </table>
+                    </td>
                   </tr>
                 </table>
-              </td>
-            </tr>
-
-            <tr>
-              <td style="padding:0 28px 24px 28px;">
-                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:22px;">
                   <tr>
-                    ${
-                      paymentLink
-                        ? `<td class="tp-stack-col" width="50%" valign="top" style="width:50%; padding:0;">
-                            <a href="${escapeHtml(paymentLink)}" target="_blank" rel="noopener noreferrer" style="display:block; text-decoration:none; text-align:center; background:#12344d; color:#ffffff; border-radius:12px; border:1px solid #12344d; font-size:16px; line-height:20px; font-weight:700; padding:15px 16px;">
-                              Pay Now
-                            </a>
-                          </td>
-                          <td class="tp-stack-col tp-stack-gap" width="12" style="width:12px; font-size:0; line-height:0;">&nbsp;</td>`
-                        : ''
-                    }
-                    <td class="tp-stack-col" ${paymentLink ? 'width="50%" style="width:50%; padding:0;"' : 'width="100%" style="width:100%; padding:0;"'} valign="top">
-                      <a href="${escapeHtml(pdfUrl)}" target="_blank" rel="noopener noreferrer" style="display:block; text-decoration:none; text-align:center; background:transparent; color:rgba(255,255,255,0.92); border-radius:12px; border:1px solid rgba(255,255,255,0.18); font-size:16px; line-height:20px; font-weight:700; padding:15px 16px;">
-                        View / Download Invoice
-                      </a>
+                    <td align="center">
+                      ${paymentLink ? `<a href="${escapeHtml(paymentLink)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:16px 48px;font-size:17px;font-weight:700;letter-spacing:0.2px;line-height:1.2;text-decoration:none;text-align:center;border-radius:12px;background:linear-gradient(135deg,#2a5f82 0%,#f0c974 100%);color:#1e2937;margin:0 6px 10px 0;">Pay Now</a>` : ''}
+                      <a href="${escapeHtml(pdfUrl)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:16px 48px;font-size:17px;font-weight:700;letter-spacing:0.2px;line-height:1.2;text-decoration:none;text-align:center;border-radius:12px;background:linear-gradient(135deg,#2a5f82 0%,#f0c974 100%);color:#1e2937;">View / Download Invoice</a>
+                    </td>
+                  </tr>
+                </table>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="support-card" style="background-color:#263f56;border:1px solid #46627f;border-radius:10px;">
+                  <tr>
+                    <td style="padding:13px 18px;text-align:center;">
+                      <p class="support-text" style="margin:0;font-size:13px;line-height:1.65;color:#d6e3f2;">
+                        Questions about this invoice? <strong class="support-strong" style="color:#ffffff;">Reply to this email</strong>.
+                      </p>
                     </td>
                   </tr>
                 </table>
               </td>
             </tr>
-
-            ${
-              paymentLink
-                ? `<tr>
-                    <td style="padding:0 28px 24px 28px;">
-                      <div style="font-size:13px; line-height:1.6; color:rgba(255,255,255,0.48);">
-                        If the payment button does not work, copy this link:
-                      </div>
-                      <div style="margin-top:6px; font-size:13px; line-height:1.6; color:rgba(255,255,255,0.68); word-break:break-all;">
-                        ${escapeHtml(paymentLink)}
-                      </div>
-                    </td>
-                  </tr>`
-                : ''
-            }
-
             <tr>
-              <td style="padding:0 28px 24px 28px;">
-                <div style="font-size:14px; line-height:1.6; color:rgba(255,255,255,0.68);">
-                  Reply to this email if you have any questions.
-                </div>
-              </td>
-            </tr>
-
-            <tr>
-              <td style="padding:0 28px 28px 28px;">
-                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%; border-top:1px solid rgba(255,255,255,0.12);">
-                  <tr>
-                    <td style="padding-top:16px; font-size:12px; line-height:1.6; color:rgba(255,255,255,0.48);">
-                      This message was sent from ${escapeHtml(brandName)}. Invoice ${escapeHtml(invoice.invoiceNumber)}.
-                    </td>
-                  </tr>
-                </table>
+              <td class="foot-cell" style="background-color:#223347;padding:22px 40px 24px;border-top:1px solid #46627f;text-align:center;">
+                <p style="margin:0 0 5px;font-size:13px;font-weight:700;color:#f8dea4;letter-spacing:0.2px;">TrimPro</p>
+                <p class="foot-copy" style="margin:0;font-size:11px;line-height:1.6;color:#93a9c2;">Invoice ${escapeHtml(invoice.invoiceNumber)} sent to ${escapeHtml(invoice.client?.companyName || invoice.client?.name || 'Customer')}.</p>
               </td>
             </tr>
           </table>
@@ -264,21 +280,15 @@ export async function POST(
   </body>
 </html>`
 
-    const html = applyEmailBrandingHtml(rawHtml, emailBranding)
-
-    const sendResult = await sendDocumentEmailWithResolvedSender({
-      tenantId: user.tenantId,
-      userId: user.id,
-      to: uniqueRecipientEmails,
-      subject: effectiveSubject,
-      html,
-      text: safeMessage || `Invoice ${invoice.invoiceNumber} is ready.`,
-    })
-    if (!sendResult.success) {
-      return NextResponse.json(
-        { error: sendResult.error || 'Failed to send invoice email' },
-        { status: 502 }
-      )
+    for (const recipientEmail of uniqueRecipientEmails) {
+      const sendResult = await testEmailProvider(emailSecrets, recipientEmail, effectiveSubject, html)
+      if (!sendResult.success) {
+        console.error('Failed to send invoice email:', sendResult.error || sendResult.message)
+        return NextResponse.json(
+          { error: sendResult.error || sendResult.message || `Failed to send invoice email to ${recipientEmail}` },
+          { status: 502 }
+        )
+      }
     }
 
     // Update invoice status
@@ -299,13 +309,8 @@ export async function POST(
         status: 'SENT',
         subject: effectiveSubject,
         body: message || `Please find attached invoice ${invoice.invoiceNumber}.`,
-        fromEmail: sendResult.sender.fromEmail,
+        fromEmail: user.email,
         toEmails: uniqueRecipientEmails,
-        providerData: {
-          senderSource: sendResult.sender.source,
-          senderName: sendResult.sender.fromName,
-          replyTo: sendResult.sender.replyTo || null,
-        },
         invoiceId: invoice.id,
         clientId: invoice.clientId,
         sentAt: new Date(),

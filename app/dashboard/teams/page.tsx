@@ -486,7 +486,7 @@ export default function TeamsPage() {
               secondary={member.email}
               status={<span className={`px-2 py-1 text-xs rounded-full ${roleColors[member.role] || 'bg-gray-100 text-gray-800'}`}>{member.role}</span>}
               amount={member.status}
-              date={`${member._count.schedules} schedules${member.role === 'FIELD' ? ` • Manager: ${member.manager ? `${member.manager.firstName} ${member.manager.lastName}`.trim() || member.manager.email : 'Unassigned'}` : ''}`}
+              date={`${member._count.schedules} schedules${member.role === 'FIELD' ? ` \u2022 Manager: ${member.manager ? `${member.manager.firstName} ${member.manager.lastName}`.trim() || member.manager.email : 'Unassigned'}` : ''}`}
               actions={renderMemberActions(member)}
             />
           ))}
@@ -498,7 +498,7 @@ export default function TeamsPage() {
               key={member.id}
               primary={`${member.firstName} ${member.lastName}`}
               status={<span className={`px-2 py-1 text-xs rounded-full ${roleColors[member.role] || 'bg-gray-100 text-gray-800'}`}>{member.role}</span>}
-              line2={`${member.email}${member.phone ? ` • ${member.phone}` : ''}${member.role === 'FIELD' ? ` • Manager: ${member.manager ? `${member.manager.firstName} ${member.manager.lastName}`.trim() || member.manager.email : 'Unassigned'}` : ''}`}
+              line2={`${member.email}${member.phone ? ` \u2022 ${member.phone}` : ''}${member.role === 'FIELD' ? ` \u2022 Manager: ${member.manager ? `${member.manager.firstName} ${member.manager.lastName}`.trim() || member.manager.email : 'Unassigned'}` : ''}`}
               rightTop={member.status}
               rightBottom={`${member._count.schedules} schedules`}
               actions={renderMemberActions(member)}

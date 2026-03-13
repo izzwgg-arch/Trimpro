@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import React, { useMemo, useState } from 'react'
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native'
 import { useFocusEffect } from '@react-navigation/native'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
@@ -33,6 +33,7 @@ interface RequestsListResponse {
 
 export function RequestsListScreen({ navigation }: Props) {
   const queryClient = useQueryClient()
+  const [isPullRefreshing, setIsPullRefreshing] = useState(false)
   const query = useInfiniteQuery({
     queryKey: ['mobile-requests-list'],
     initialPageParam: 1,
@@ -81,8 +82,17 @@ export function RequestsListScreen({ navigation }: Props) {
     React.useCallback(() => {
       void query.refetch()
       return () => {}
-    }, [query])
+    }, [query.refetch])
   )
+
+  const handlePullRefresh = React.useCallback(async () => {
+    setIsPullRefreshing(true)
+    try {
+      await query.refetch()
+    } finally {
+      setIsPullRefreshing(false)
+    }
+  }, [query.refetch])
 
   const requests = useMemo(
     () => (query.data?.pages || []).flatMap((page) => page.leads || []),
@@ -125,8 +135,8 @@ export function RequestsListScreen({ navigation }: Props) {
         contentContainerStyle={styles.content}
         refreshControl={
           <RefreshControl
-            refreshing={query.isRefetching}
-            onRefresh={() => void query.refetch()}
+            refreshing={isPullRefreshing}
+            onRefresh={() => void handlePullRefresh()}
           />
         }
         ListHeaderComponent={

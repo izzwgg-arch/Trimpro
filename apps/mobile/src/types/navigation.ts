@@ -10,6 +10,8 @@ export type JobsStackParamList = {
   EditJob: { jobId: string }
   NotificationsHome: undefined
   RequestsHome: undefined
+  MeasuringRequestsHome: undefined
+  MeasuringRequestDetail: { measuringRequestId: string }
   RequestCreate: undefined
   RequestDetail: { requestId: string }
   CallsHome: undefined

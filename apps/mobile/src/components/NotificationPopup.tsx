@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react'
 import { View, Text, StyleSheet, Pressable, Animated } from 'react-native'
 import * as Notifications from 'expo-notifications'
-import * as Linking from 'expo-linking'
 import { colors, spacing, typography } from '../theme/tokens'
 import { Ionicons } from '@expo/vector-icons'
+import { openFromNotificationPayload } from '../notifications/openFromNotification'
 
 interface NotificationPopupProps {
   notification: Notifications.Notification | null
@@ -75,24 +75,7 @@ export function NotificationPopup({ notification, onDismiss }: NotificationPopup
     if (!notification) return
 
     const data = notification.request.content.data as Record<string, any>
-    const directUrl = typeof data.url === 'string' ? data.url : null
-    if (directUrl) {
-      void Linking.openURL(directUrl)
-      handleDismiss()
-      return
-    }
-
-    const linkType = typeof data.linkType === 'string' ? data.linkType : ''
-    const linkId = typeof data.linkId === 'string' ? data.linkId : ''
-    if (linkType === 'job' && linkId) {
-      void Linking.openURL(`trimprofield://jobs/${linkId}`)
-    } else if (linkType === 'task' && linkId) {
-      void Linking.openURL(`trimprofield://tasks/${linkId}`)
-    } else if (linkType === 'issue' && linkId) {
-      void Linking.openURL(`trimprofield://issues/${linkId}`)
-    } else if (linkType === 'message' && linkId) {
-      void Linking.openURL(`trimprofield://messages/${linkId}`)
-    }
+    void openFromNotificationPayload(data).catch(() => null)
     handleDismiss()
   }
 

@@ -5,6 +5,183 @@
 
 import { IntegrationTestResult } from '../types'
 
+export interface EmailAttachment {
+  filename: string
+  content: Buffer | string   // Buffer for binary (PDF), string for base64/text
+  contentType?: string
+}
+
+export interface SendEmailWithAttachmentsInput {
+  secrets: Record<string, any>
+  to: string
+  subject: string
+  html: string
+  text?: string
+  attachments?: EmailAttachment[]
+}
+
+/**
+ * Send an email through the tenant's configured provider, with optional attachments.
+ * Mirrors testEmailProvider but adds full attachment support.
+ */
+export async function sendEmailWithAttachments(
+  input: SendEmailWithAttachmentsInput
+): Promise<IntegrationTestResult> {
+  const { secrets, to, subject, html, text, attachments } = input
+  try {
+    const provider = secrets.provider || 'resend'
+    switch (provider) {
+      case 'sendgrid':
+        return await sendViaSendGrid({ secrets, to, subject, html, text, attachments })
+      case 'mailgun':
+        return await sendViaMailgun({ secrets, to, subject, html, text, attachments })
+      case 'google':
+        return await sendViaGoogle({ secrets, to, subject, html, text, attachments })
+      case 'resend':
+      default:
+        return await sendViaResend({ secrets, to, subject, html, text, attachments })
+    }
+  } catch (error: any) {
+    return { success: false, message: 'Email send failed', error: error.message || 'Unknown error' }
+  }
+}
+
+function toBase64(content: Buffer | string) {
+  return Buffer.isBuffer(content) ? content.toString('base64') : Buffer.from(content).toString('base64')
+}
+
+async function sendViaSendGrid(input: Omit<SendEmailWithAttachmentsInput, 'secrets'> & { secrets: Record<string, any> }): Promise<IntegrationTestResult> {
+  const { secrets, to, subject, html, text, attachments } = input
+  const apiKey = secrets.apiKey
+  if (!apiKey) return { success: false, message: 'SendGrid API key not configured', error: 'Missing apiKey' }
+
+  const fromName = getFromName(secrets)
+  const fromEmail = getFromEmail(secrets, 'noreply@trimpro.com')
+
+  const body: Record<string, any> = {
+    personalizations: [{ to: [{ email: to }] }],
+    from: { email: fromEmail, name: fromName },
+    subject,
+    content: [{ type: 'text/html', value: html }],
+  }
+  if (text) body.content.unshift({ type: 'text/plain', value: text })
+  if (attachments?.length) {
+    body.attachments = attachments.map((a) => ({
+      content: toBase64(a.content),
+      filename: a.filename,
+      type: a.contentType || 'application/octet-stream',
+      disposition: 'attachment',
+    }))
+  }
+
+  const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const err = await response.text()
+    return { success: false, message: 'SendGrid send failed', error: `${response.status} - ${err}` }
+  }
+  return { success: true, message: `Email sent to ${to} via SendGrid` }
+}
+
+async function sendViaMailgun(input: Omit<SendEmailWithAttachmentsInput, 'secrets'> & { secrets: Record<string, any> }): Promise<IntegrationTestResult> {
+  const { secrets, to, subject, html, text, attachments } = input
+  const apiKey = secrets.apiKey
+  const domain = secrets.mailgunDomain
+  if (!apiKey || !domain) return { success: false, message: 'Mailgun not configured', error: 'Missing apiKey or domain' }
+
+  const region = secrets.mailgunRegion || 'us'
+  const apiBase = region === 'eu' ? 'https://api.eu.mailgun.net' : 'https://api.mailgun.net'
+  const fromName = getFromName(secrets)
+  const fromEmail = getFromEmail(secrets, `noreply@${domain}`)
+
+  const formData = new FormData()
+  formData.append('from', formatFromHeader(fromName, fromEmail))
+  formData.append('to', to)
+  formData.append('subject', subject)
+  formData.append('html', html)
+  if (text) formData.append('text', text)
+  if (attachments?.length) {
+    for (const att of attachments) {
+      const buf = Buffer.isBuffer(att.content) ? att.content : Buffer.from(att.content)
+      formData.append('attachment', new Blob([buf], { type: att.contentType || 'application/octet-stream' }), att.filename)
+    }
+  }
+
+  const response = await fetch(`${apiBase}/v3/${domain}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Basic ${Buffer.from(`api:${apiKey}`).toString('base64')}` },
+    body: formData,
+  })
+  if (!response.ok) {
+    const err = await response.text()
+    return { success: false, message: 'Mailgun send failed', error: `${response.status} - ${err}` }
+  }
+  return { success: true, message: `Email sent to ${to} via Mailgun` }
+}
+
+async function sendViaResend(input: Omit<SendEmailWithAttachmentsInput, 'secrets'> & { secrets: Record<string, any> }): Promise<IntegrationTestResult> {
+  const { secrets, to, subject, html, text, attachments } = input
+  const apiKey = secrets.apiKey
+  if (!apiKey) return { success: false, message: 'Resend API key not configured', error: 'Missing apiKey' }
+
+  const fromName = getFromName(secrets)
+  const fromEmail = getFromEmail(secrets, 'noreply@trimpro.com')
+
+  const body: Record<string, any> = {
+    from: formatFromHeader(fromName, fromEmail),
+    to: [to],
+    subject,
+    html,
+  }
+  if (text) body.text = text
+  if (attachments?.length) {
+    body.attachments = attachments.map((a) => ({
+      filename: a.filename,
+      content: toBase64(a.content),
+    }))
+  }
+
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ message: response.statusText }))
+    return { success: false, message: 'Resend send failed', error: (err as any).message || `${response.status}` }
+  }
+  return { success: true, message: `Email sent to ${to} via Resend` }
+}
+
+async function sendViaGoogle(input: Omit<SendEmailWithAttachmentsInput, 'secrets'> & { secrets: Record<string, any> }): Promise<IntegrationTestResult> {
+  const { secrets, to, subject, html, text, attachments } = input
+  const user = (secrets.googleEmail || secrets.fromEmail || '').trim()
+  const pass = (secrets.googleAppPassword || '').trim()
+  if (!user || !pass) return { success: false, message: 'Google credentials not configured', error: 'Missing credentials' }
+
+  const nodemailer = await import('nodemailer')
+  const fromName = getFromName(secrets)
+  const fromEmail = getFromEmail(secrets, user)
+  const transporter = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user, pass } })
+
+  await transporter.sendMail({
+    from: formatFromHeader(fromName, fromEmail),
+    to,
+    subject,
+    html,
+    text,
+    attachments: attachments?.map((a) => ({
+      filename: a.filename,
+      content: Buffer.isBuffer(a.content) ? a.content : Buffer.from(a.content),
+      contentType: a.contentType,
+    })),
+  })
+  return { success: true, message: `Email sent to ${to} via Google` }
+}
+
 function getFromName(secrets: Record<string, any>) {
   return String(secrets.fromName || secrets.senderName || secrets.brandName || 'TrimPro').trim() || 'TrimPro'
 }

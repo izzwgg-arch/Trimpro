@@ -2,11 +2,21 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
+import { getIntegrationSecrets } from '@/lib/integrations/status'
+import { testEmailProvider } from '@/lib/integrations/providers/email'
 import { isValidEmail } from '@/lib/email'
 import { getOrCreateEstimateApprovalToken } from '@/lib/estimate-approval'
-import { sendDocumentEmailWithResolvedSender } from '@/lib/email-integrations/sender'
-import { getEmailBranding, applyEmailBrandingHtml } from '@/lib/email/branding'
+import { getEmailBranding } from '@/lib/email/branding'
 import { buildEstimateApprovalEmail } from '@/lib/email/templates/estimate-approval'
+
+function escapeHtml(value: string) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
 
 function formatEmailSentDate(value: Date | number | string) {
   const date = value instanceof Date ? value : new Date(value)
@@ -21,7 +31,7 @@ function formatEmailSentDate(value: Date | number | string) {
     hour: 'numeric',
     minute: '2-digit',
   }).format(date)
-  return `${datePart} • ${timePart}`
+  return `${datePart} \u2022 ${timePart}`
 }
 
 function getPublicLinkSecret(): string {
@@ -124,56 +134,61 @@ export async function POST(
       estimateId: estimate.id,
     })
     const approveUrl = approvalToken.url
-    const effectiveSubject = `${subject || `Estimate ${estimate.estimateNumber}`} • ${sentDisplay || sentIso}`
+    const effectiveSubject = `${subject || `Estimate ${estimate.estimateNumber}`} - ${sentDisplay || sentIso}`
     
-    const total = `$${Number(estimate.total || 0).toFixed(2)}`
-    const validUntil = estimate.validUntil
-      ? new Date(estimate.validUntil).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-      : ''
-    const customerName = estimate.client?.companyName || estimate.client?.name || `${estimate.title || ''}`.trim() || 'Customer'
-    const recipientName =
-      estimate.client?.contacts?.[0]
-        ? `${estimate.client.contacts[0].firstName || ''} ${estimate.client.contacts[0].lastName || ''}`.trim() ||
-          customerName
-        : customerName
-    const emailBranding = await getEmailBranding(user.tenantId)
-    const brandName = (emailBranding as any)?.invoiceBusinessName || (emailBranding as any)?.emailFooterText?.split('\n')[0] || 'TrimPro'
-    const logoUrl = (emailBranding as any)?.emailLogoUrl || (emailBranding as any)?.webLogoUrl || undefined
-    const primaryColor = (emailBranding as any)?.sidebarColor || '#243f53'
-    const accentColor = (emailBranding as any)?.buttonColor || '#f8dea4'
+    const emailSecrets = await getIntegrationSecrets(user.tenantId, 'email')
+    if (!emailSecrets) {
+      return NextResponse.json(
+        { error: 'Email integration is not configured. Please configure Email Provider first.' },
+        { status: 400 }
+      )
+    }
 
-    const rawHtml = buildEstimateApprovalEmail({
-      recipientName,
+    const customerName = estimate.client?.companyName || estimate.client?.name || `${estimate.title || ''}`.trim() || 'Customer'
+    const validUntil = estimate.validUntil ? new Date(estimate.validUntil).toLocaleDateString() : ''
+    const emailBranding = await getEmailBranding(user.tenantId)
+    // Use the public URL directly — Gmail/Outlook block data: URIs in emails.
+    const logoUrl = emailBranding?.emailLogoUrl || emailBranding?.webLogoUrl || undefined
+
+    const html = buildEstimateApprovalEmail({
+      recipientName: customerName,
       customerName,
       estimateNumber: estimate.estimateNumber,
-      total,
+      total: `$${Number(estimate.total || 0).toFixed(2)}`,
       sentDisplay: sentDisplay || sentIso,
       approveUrl,
       pdfUrl,
       message: message ? String(message) : undefined,
       validUntil: validUntil || undefined,
-      logoUrl,
-      companyName: brandName,
-      supportEmail: (emailBranding as any)?.invoiceEmail || undefined,
-      primaryColor,
-      accentColor,
+      logoUrl: logoUrl || undefined,
+      companyName: (emailBranding as any)?.businessName || (emailBranding as any)?.companyName || 'TrimPro',
+      supportEmail: (emailBranding as any)?.supportEmail || (emailBranding as any)?.businessEmail || undefined,
     })
 
-    const html = applyEmailBrandingHtml(rawHtml, emailBranding)
+    const results: Array<{
+      recipient: string
+      success: boolean
+      message?: string
+      error?: string
+    }> = []
 
-    const sendResult = await sendDocumentEmailWithResolvedSender({
-      tenantId: user.tenantId,
-      userId: user.id,
-      to: uniqueRecipientEmails,
-      subject: effectiveSubject,
-      html,
-      text: (message ? String(message) : null) || `Estimate ${estimate.estimateNumber} is ready.`,
-    })
-    if (!sendResult.success) {
-      return NextResponse.json(
-        { error: sendResult.error || 'Failed to send estimate email' },
-        { status: 502 }
-      )
+    for (const recipientEmail of uniqueRecipientEmails) {
+      const sendResult = await testEmailProvider(emailSecrets, recipientEmail, effectiveSubject, html)
+      results.push({
+        recipient: recipientEmail,
+        success: !!sendResult.success,
+        message: sendResult.message,
+        error: sendResult.error,
+      })
+    }
+
+    const sentRecipients = results.filter((r) => r.success).map((r) => r.recipient)
+    const failedRecipients = results.filter((r) => !r.success)
+
+    if (sentRecipients.length === 0) {
+      const firstError = failedRecipients[0]?.error || failedRecipients[0]?.message || 'Failed to send estimate email'
+      console.error('Failed to send estimate email:', firstError)
+      return NextResponse.json({ error: firstError, failedRecipients }, { status: 502 })
     }
 
     // Update estimate status
@@ -191,15 +206,13 @@ export async function POST(
         tenantId: user.tenantId,
         userId: user.id,
         direction: 'OUTBOUND',
-        status: 'SENT',
+        status: failedRecipients.length ? 'FAILED' : 'SENT',
         subject: effectiveSubject,
         body: message || `Please find attached estimate ${estimate.estimateNumber}.`,
-        fromEmail: sendResult.sender.fromEmail,
-        toEmails: uniqueRecipientEmails,
+        fromEmail: user.email,
+        toEmails: sentRecipients,
         providerData: {
-          senderSource: sendResult.sender.source,
-          senderName: sendResult.sender.fromName,
-          replyTo: sendResult.sender.replyTo || null,
+          recipients: results,
         },
         estimateId: estimate.id,
         clientId: estimate.clientId || undefined,
@@ -213,16 +226,20 @@ export async function POST(
         tenantId: user.tenantId,
         userId: user.id,
         type: 'ESTIMATE_SENT',
-        description: `Estimate "${estimate.title}" sent to ${uniqueRecipientEmails.join(', ')}`,
+        description: failedRecipients.length
+          ? `Estimate "${estimate.title}" sent to ${sentRecipients.join(', ')} (failed: ${failedRecipients
+              .map((r) => r.recipient)
+              .join(', ')})`
+          : `Estimate "${estimate.title}" sent to ${sentRecipients.join(', ')}`,
         estimateId: estimate.id,
         clientId: estimate.clientId || undefined,
       },
     })
 
     return NextResponse.json({
-      message: 'Estimate sent successfully',
-      sentRecipients: uniqueRecipientEmails,
-      failedRecipients: [],
+      message: failedRecipients.length ? 'Estimate sent (some recipients failed)' : 'Estimate sent successfully',
+      sentRecipients,
+      failedRecipients: failedRecipients.map((r) => ({ recipient: r.recipient, error: r.error || r.message || '' })),
     })
   } catch (error) {
     console.error('Send estimate error:', error)

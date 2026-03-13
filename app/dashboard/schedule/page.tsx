@@ -863,7 +863,7 @@ export default function SchedulePage() {
                         </p>
                         {schedule.job && (
                           <p className="mt-1 text-sm text-blue-600">
-                            Job {schedule.job.jobNumber} • {schedule.job.client.name}
+                            Job {schedule.job.jobNumber}{' \u2022 '}{schedule.job.client.name}
                           </p>
                         )}
                         {schedule.description && <p className="mt-2 text-sm text-gray-600">{schedule.description}</p>}
@@ -1179,7 +1179,7 @@ function ScheduledJobCard({
       onClick={() => onOpenJob(job.id)}
       {...listeners}
       {...attributes}
-      title={`${job.jobNumber} • ${job.client.name}`}
+      title={`${job.jobNumber} \u2022 ${job.client.name}`}
     >
       <p className="truncate font-medium">{job.jobNumber} {job.title}</p>
       <p className="truncate text-[11px] text-gray-600">{job.client.name}</p>

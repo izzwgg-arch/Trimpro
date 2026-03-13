@@ -5,6 +5,7 @@ import { generatePasswordResetToken } from '@/lib/auth'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { testEmailProvider } from '@/lib/integrations/providers/email'
 import { buildInviteEmailHtml, sendInviteEmail } from '@/lib/services/email'
+import { getEmailBranding } from '@/lib/email/branding'
 
 export async function POST(
   request: NextRequest,
@@ -58,9 +59,11 @@ export async function POST(
     let emailSent = false
     let emailError: string | null = null
     const emailSecrets = await getIntegrationSecrets(actor.tenantId, 'email')
+    const emailBranding = await getEmailBranding(actor.tenantId)
+    const brandLogoUrl = emailBranding?.emailLogoUrl || emailBranding?.webLogoUrl || null
 
     if (emailSecrets) {
-      const html = buildInviteEmailHtml(targetUser.firstName, setPasswordUrl, apkDownloadUrl)
+      const html = buildInviteEmailHtml(targetUser.firstName, setPasswordUrl, apkDownloadUrl, brandLogoUrl)
       const sendResult = await testEmailProvider(
         emailSecrets,
         targetUser.email,
@@ -77,7 +80,7 @@ export async function POST(
     // Fallback to env/provider-based sender when integration is missing or integration send fails.
     if (!emailSent) {
       try {
-        await sendInviteEmail(targetUser.email, targetUser.firstName, setPasswordUrl, apkDownloadUrl)
+        await sendInviteEmail(targetUser.email, targetUser.firstName, setPasswordUrl, apkDownloadUrl, brandLogoUrl)
         emailSent = true
       } catch (fallbackError: any) {
         if (!emailError) {

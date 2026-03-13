@@ -84,6 +84,7 @@ export async function sendPaymentReceiptIfNeeded(paymentId: string) {
   try {
     await sendPaymentReceiptEmail({
       to,
+      tenantId: payment.invoice.tenantId,
       invoiceNumber: payment.invoice.invoiceNumber,
       amount: Number(payment.amount || 0),
       paidAt: payment.processedAt || payment.updatedAt || new Date(),

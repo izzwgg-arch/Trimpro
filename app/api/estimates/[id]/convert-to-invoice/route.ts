@@ -252,6 +252,13 @@ export async function POST(
             },
           })
 
+          // Mark estimate as CONVERTED with percentage
+          const pct = billingMode === 'PERCENTAGE' ? Math.round(percentage) : billingMode === 'FULL' ? 100 : Math.round((subtotal / Number(estimate.total)) * 100)
+          await tx.estimate.update({
+            where: { id: estimate.id },
+            data: { status: 'CONVERTED', convertedPercent: pct },
+          })
+
           return invoice
         })
         break

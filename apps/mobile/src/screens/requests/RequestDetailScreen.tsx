@@ -47,7 +47,15 @@ interface AttachmentResponse {
     mimeType: string
     fileSize: number
     createdAt: string
+    thumbnailUrl?: string | null
+    previewUrl?: string | null
   }>
+}
+
+function isPdfAttachment(mimeType?: string | null, fileName?: string | null) {
+  const mime = String(mimeType || '').toLowerCase()
+  const name = String(fileName || '').toLowerCase()
+  return mime.includes('pdf') || name.endsWith('.pdf')
 }
 
 function DetailRow({ label, value }: { label: string; value?: string | null }) {
@@ -63,6 +71,7 @@ function DetailRow({ label, value }: { label: string; value?: string | null }) {
 export function RequestDetailScreen({ route }: Props) {
   const { requestId } = route.params
   const queryClient = useQueryClient()
+  const [isPullRefreshing, setIsPullRefreshing] = React.useState(false)
   const [showAttachmentPicker, setShowAttachmentPicker] = React.useState(false)
   const [localAttachments, setLocalAttachments] = React.useState<AttachmentResponse['attachments']>([])
   const [showImageViewer, setShowImageViewer] = React.useState(false)
@@ -168,8 +177,17 @@ export function RequestDetailScreen({ route }: Props) {
       void detailQuery.refetch()
       void attachmentsQuery.refetch()
       return () => {}
-    }, [detailQuery, attachmentsQuery])
+    }, [detailQuery.refetch, attachmentsQuery.refetch])
   )
+
+  const handlePullRefresh = React.useCallback(async () => {
+    setIsPullRefreshing(true)
+    try {
+      await Promise.all([detailQuery.refetch(), attachmentsQuery.refetch()])
+    } finally {
+      setIsPullRefreshing(false)
+    }
+  }, [detailQuery.refetch, attachmentsQuery.refetch])
 
   if (detailQuery.isLoading) {
     return (
@@ -224,13 +242,12 @@ export function RequestDetailScreen({ route }: Props) {
       <FlatList
         data={attachments}
         keyExtractor={(item) => item.id}
+        numColumns={2}
+        columnWrapperStyle={styles.attachmentRow}
         refreshControl={
           <RefreshControl
-            refreshing={detailQuery.isRefetching || attachmentsQuery.isRefetching}
-            onRefresh={() => {
-              void detailQuery.refetch()
-              void attachmentsQuery.refetch()
-            }}
+            refreshing={isPullRefreshing}
+            onRefresh={() => void handlePullRefresh()}
           />
         }
         contentContainerStyle={styles.content}
@@ -297,25 +314,30 @@ export function RequestDetailScreen({ route }: Props) {
               void Linking.openURL(item.url)
             }}
           >
-            <View style={styles.attachmentTop}>
-              <Ionicons
-                name={
-                  String(item.mimeType || '').startsWith('image/')
-                    ? 'image-outline'
-                    : String(item.mimeType || '').startsWith('video/')
+            {String(item.mimeType || '').toLowerCase().startsWith('image/') ? (
+              <Image source={{ uri: item.url }} style={styles.attachmentImage} resizeMode="cover" />
+            ) : isPdfAttachment(item.mimeType, item.fileName) && String(item.thumbnailUrl || item.previewUrl || '').trim() ? (
+              <Image source={{ uri: String(item.thumbnailUrl || item.previewUrl) }} style={styles.attachmentImage} resizeMode="cover" />
+            ) : (
+              <View style={styles.attachmentIconWrap}>
+                <Ionicons
+                  name={
+                    String(item.mimeType || '').toLowerCase().startsWith('video/')
                       ? 'videocam-outline'
-                      : 'document-text-outline'
-                }
-                size={18}
-                color={colors.textSecondary}
-              />
-              <Text style={styles.attachmentName} numberOfLines={1}>
-                {item.fileName}
-              </Text>
-            </View>
-            <Text style={styles.attachmentMeta}>
-              {(item.fileSize / 1024).toFixed(1)} KB • {item.mimeType}
-            </Text>
+                      : isPdfAttachment(item.mimeType, item.fileName)
+                        ? 'document-outline'
+                        : 'document-text-outline'
+                  }
+                  size={22}
+                  color={colors.textSecondary}
+                />
+                {!String(item.mimeType || '').toLowerCase().startsWith('video/') ? (
+                  <Text style={styles.attachmentFileBadge}>
+                    {isPdfAttachment(item.mimeType, item.fileName) ? 'PDF FILE' : 'FILE'}
+                  </Text>
+                ) : null}
+              </View>
+            )}
           </Pressable>
         )}
       />
@@ -468,27 +490,39 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing.sm,
   },
+  attachmentRow: {
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
   attachmentCard: {
+    flex: 1,
+    aspectRatio: 1,
     backgroundColor: colors.surface,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: colors.divider,
-    padding: spacing.sm,
+    overflow: 'hidden',
+    justifyContent: 'center',
   },
-  attachmentTop: {
-    flexDirection: 'row',
+  attachmentImage: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#E5E7EB',
+  },
+  attachmentIconWrap: {
+    flex: 1,
     alignItems: 'center',
-    gap: spacing.xs,
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#F8FAFC',
   },
-  attachmentName: {
-    ...typography.sub,
-    color: colors.textPrimary,
-    fontWeight: '600',
-  },
-  attachmentMeta: {
+  attachmentFileBadge: {
     ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: 2,
+    color: colors.textPrimary,
+    fontWeight: '700',
+    textTransform: 'uppercase',
   },
   viewerRoot: {
     flex: 1,

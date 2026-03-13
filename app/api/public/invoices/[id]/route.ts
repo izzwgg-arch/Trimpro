@@ -121,6 +121,7 @@ async function reconcileFromQboIfNeeded(invoiceId: string) {
         'https://app.trimprony.com'
       await sendPaymentReceiptEmail({
         to,
+        tenantId: invoice.tenantId,
         invoiceNumber: invoice.invoiceNumber,
         amount,
         paidAt: new Date(),
@@ -226,13 +227,19 @@ export async function GET(
           name: freshInvoice.client.name,
           companyName: freshInvoice.client.companyName,
         },
-        lineItems: freshInvoice.lineItems.map((li) => ({
-          id: li.id,
-          description: li.description,
-          quantity: li.quantity.toString(),
-          unitPrice: li.unitPrice.toString(),
-          total: li.total.toString(),
-        })),
+        lineItems: freshInvoice.lineItems
+          .filter((li) => li.isVisibleToClient !== false)
+          .map((li) => ({
+            id: li.id,
+            description: li.showDescriptionToCustomer !== false ? li.description : '',
+            notes: li.showNotesToCustomer !== false ? (li.notes || '') : '',
+            quantity: li.quantity.toString(),
+            unitPrice: li.showPriceToCustomer !== false ? li.unitPrice.toString() : '0',
+            unitCost: li.showCostToCustomer === true ? li.unitCost?.toString() || '0' : null,
+            total: li.total.toString(),
+            showPriceToCustomer: li.showPriceToCustomer !== false,
+            showCostToCustomer: li.showCostToCustomer === true,
+          })),
         outstanding: {
           count: outstandingCount,
           total: Number((outstandingAgg as any)?._sum?.balance ?? 0),

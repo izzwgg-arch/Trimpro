@@ -59,7 +59,6 @@ model Tenant {
   roles                  Role[]
   reports                Report[]
   reportSchedules        ReportSchedule[]
-  measuringRequests      MeasuringRequest[]
   dailyStats             DailyStats[]
   dispatchEvents         DispatchEvent[]
   techAvailability       TechAvailability[]
@@ -74,9 +73,6 @@ model Tenant {
   estimateApprovalTokens EstimateApprovalToken[]
   estimateItemApprovals  EstimateItemApproval[]
   invoiceLineItemSources InvoiceLineItemSource[]
-  emailIntegrations      EmailIntegration[]
-  emailIntegrationAssignments UserEmailIntegrationAssignment[]
-  userEmailSenderProfiles UserEmailSenderProfile[]
 
   @@map("tenants")
 }
@@ -159,10 +155,6 @@ model User {
   createdInvoicePaymentIntents InvoicePaymentIntent[]    @relation("InvoicePaymentIntentCreatedBy")
   pushDevices                  UserPushDevice[]
   requestedPaymentRefunds      PaymentRefund[]
-  emailIntegrationAssignments  UserEmailIntegrationAssignment[]
-  emailSenderProfile           UserEmailSenderProfile?
-  assignedMeasuringRequests    MeasuringRequest[]            @relation("MeasuringRequestAssignee")
-  createdMeasuringRequests     MeasuringRequest[]            @relation("MeasuringRequestCreator")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -350,7 +342,6 @@ model Lead {
   attachments Attachment[]
   schedules   Schedule[]
   activities  Activity[]
-  measuringRequests MeasuringRequest[]
 
   assignedToId String?
   assignedTo   User?   @relation("LeadAssignee", fields: [assignedToId], references: [id])
@@ -528,7 +519,8 @@ model Estimate {
   estimateNumber String         @unique
   title          String
   jobSiteAddress String?        @db.Text
-  status         EstimateStatus @default(DRAFT)
+  status           EstimateStatus @default(DRAFT)
+  convertedPercent Int?
 
   // Financials
   subtotal  Decimal  @db.Decimal(10, 2)
@@ -2444,41 +2436,6 @@ enum DispatchEventType {
   CANCELED
 }
 
-enum MeasuringRequestStatus {
-  PENDING
-  OPENED
-  COMPLETED
-}
-
-model MeasuringRequest {
-  id                   String                 @id @default(cuid())
-  tenantId             String
-  requestId            String
-  assignedUserId       String
-  createdByUserId      String
-  status               MeasuringRequestStatus @default(PENDING)
-  notes                String?                @db.Text
-  openedAt             DateTime?
-  completedAt          DateTime?
-  lastNotificationAt   DateTime?
-  notificationAttempts Int                    @default(0)
-  createdAt            DateTime               @default(now())
-  updatedAt            DateTime               @updatedAt
-
-  tenant        Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  request       Lead   @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  assignedUser  User   @relation("MeasuringRequestAssignee", fields: [assignedUserId], references: [id], onDelete: Cascade)
-  createdByUser User   @relation("MeasuringRequestCreator", fields: [createdByUserId], references: [id], onDelete: Cascade)
-
-  @@index([tenantId])
-  @@index([tenantId, status])
-  @@index([tenantId, assignedUserId, status])
-  @@index([requestId])
-  @@index([assignedUserId])
-  @@index([createdByUserId])
-  @@map("measuring_requests")
-}
-
 model DispatchEvent {
   id          String            @id @default(cuid())
   tenantId    String
@@ -2624,103 +2581,6 @@ model IntegrationConnection {
   @@index([tenantId, provider])
   @@index([status])
   @@map("integration_connections")
-}
-
-enum EmailIntegrationProvider {
-  GOOGLE_WORKSPACE
-}
-
-enum EmailIntegrationStatus {
-  ACTIVE
-  ERROR
-  DISABLED
-}
-
-model EmailIntegration {
-  id                 String                   @id @default(cuid())
-  tenantId           String
-  provider           EmailIntegrationProvider @default(GOOGLE_WORKSPACE)
-  status             EmailIntegrationStatus   @default(ACTIVE)
-  displayName        String
-  fromEmail          String
-  fromName           String?
-  replyToEmail       String?
-  encryptedCredentials String                 @db.Text
-  isActive           Boolean                  @default(true)
-  lastTestedAt       DateTime?
-  lastError          String?                  @db.Text
-  createdById        String?
-  updatedById        String?
-
-  tenant             Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  assignments        UserEmailIntegrationAssignment[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([tenantId])
-  @@index([tenantId, isActive])
-  @@index([tenantId, status])
-  @@unique([tenantId, fromEmail])
-  @@map("email_integrations")
-}
-
-model UserEmailIntegrationAssignment {
-  id            String           @id @default(cuid())
-  tenantId      String
-  userId        String
-  integrationId String
-  isActive      Boolean          @default(true)
-  assignedById  String?
-  updatedById   String?
-
-  tenant        Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  integration   EmailIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([tenantId])
-  @@index([tenantId, integrationId])
-  @@unique([tenantId, userId])
-  @@map("user_email_integration_assignments")
-}
-
-enum UserEmailSenderProvider {
-  GOOGLE_WORKSPACE
-}
-
-enum UserEmailSenderStatus {
-  ACTIVE
-  ERROR
-  DISABLED
-}
-
-model UserEmailSenderProfile {
-  id                   String                 @id @default(cuid())
-  tenantId             String
-  userId               String                 @unique
-  provider             UserEmailSenderProvider @default(GOOGLE_WORKSPACE)
-  status               UserEmailSenderStatus  @default(ACTIVE)
-  fromEmail            String
-  fromName             String?
-  replyToEmail         String?
-  encryptedCredentials String                 @db.Text
-  isActive             Boolean                @default(true)
-  lastTestedAt         DateTime?
-  lastError            String?                @db.Text
-
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([tenantId])
-  @@index([tenantId, isActive])
-  @@index([tenantId, status])
-  @@map("user_email_sender_profiles")
 }
 
 model PaymentTransaction {

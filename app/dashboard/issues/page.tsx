@@ -310,8 +310,8 @@ export default function IssuesPage() {
                     </div>
                     <CardDescription className="mt-1">
                       Created by {issue.creator.firstName} {issue.creator.lastName}
-                      {issue.client && ` • ${issue.client.name}`}
-                      {issue.job && ` • Job ${issue.job.jobNumber}`}
+                      {issue.client && ` \u2022 ${issue.client.name}`}
+                      {issue.job && ` \u2022 Job ${issue.job.jobNumber}`}
                     </CardDescription>
                   </div>
                   <div className="flex items-center space-x-2">
@@ -393,7 +393,7 @@ export default function IssuesPage() {
               href={`/dashboard/issues/${issue.id}`}
               primary={issue.title}
               status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[issue.status] || 'bg-gray-100 text-gray-800'}`}>{issue.status.replace('_', ' ')}</span>}
-              line2={`${issue.type} • ${issue.assignee ? `${issue.assignee.firstName} ${issue.assignee.lastName}` : 'Unassigned'} • ${issue._count.notes} notes`}
+              line2={`${issue.type} \u2022 ${issue.assignee ? `${issue.assignee.firstName} ${issue.assignee.lastName}` : 'Unassigned'} \u2022 ${issue._count.notes} notes`}
               rightTop={issue.priority}
               rightBottom={issue.firstResponseAt ? formatDate(issue.firstResponseAt) : 'No response'}
             />

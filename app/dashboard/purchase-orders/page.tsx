@@ -284,8 +284,8 @@ export default function PurchaseOrdersPage() {
                     </Link>
                     <CardDescription className="mt-1">
                       Vendor: {po.vendorRef?.name || po.vendor}
-                      {po.job && ` • Job ${po.job.jobNumber}`}
-                      {po.expectedDate && ` • Expected: ${formatDate(po.expectedDate)}`}
+                      {po.job && ` \u2022 Job ${po.job.jobNumber}`}
+                      {po.expectedDate && ` \u2022 Expected: ${formatDate(po.expectedDate)}`}
                     </CardDescription>
                     <div className="mt-1 text-xs text-gray-500">Tag: {getPurchaseOrderTag(po)}</div>
                   </div>
@@ -350,7 +350,7 @@ export default function PurchaseOrdersPage() {
               secondary={po.vendorRef?.name || po.vendor}
               status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[po.status] || 'bg-gray-100 text-gray-800'}`}>{po.status}</span>}
               amount={formatCurrency(po.total)}
-              date={`${po.orderDate ? formatDate(po.orderDate) : '-'} • Tag: ${getPurchaseOrderTag(po)}`}
+              date={`${po.orderDate ? formatDate(po.orderDate) : '-'} \u2022 Tag: ${getPurchaseOrderTag(po)}`}
             />
           ))}
         </div>
@@ -375,9 +375,9 @@ export default function PurchaseOrdersPage() {
               }
               primary={po.poNumber}
               status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[po.status] || 'bg-gray-100 text-gray-800'}`}>{po.status}</span>}
-              line2={`${po.vendorRef?.name || po.vendor}${po.job ? ` • Job ${po.job.jobNumber}` : ''}`}
+              line2={`${po.vendorRef?.name || po.vendor}${po.job ? ` \u2022 Job ${po.job.jobNumber}` : ''}`}
               rightTop={formatCurrency(po.total)}
-              rightBottom={`${po.orderDate ? formatDate(po.orderDate) : 'No order date'} • Tag: ${getPurchaseOrderTag(po)}`}
+              rightBottom={`${po.orderDate ? formatDate(po.orderDate) : 'No order date'} \u2022 Tag: ${getPurchaseOrderTag(po)}`}
             />
           ))}
         </div>

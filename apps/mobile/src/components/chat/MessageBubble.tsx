@@ -46,6 +46,42 @@ function statusIcon(status: string) {
 const SCREEN_WIDTH = Dimensions.get('window').width
 const VOICE_BUBBLE_MAX_WIDTH = Math.round(SCREEN_WIDTH * 0.86)
 const VOICE_BUBBLE_MIN_WIDTH = Math.round(Math.min(SCREEN_WIDTH * 0.7, 320))
+const STANDARD_BUBBLE_MAX_WIDTH = Math.round(SCREEN_WIDTH * 0.82)
+const REPLY_BUBBLE_MIN_WIDTH_MINE = Math.round(Math.max(270, Math.min(SCREEN_WIDTH * 0.74, 390)))
+const REPLY_BUBBLE_MIN_WIDTH_OTHER = Math.round(Math.max(250, Math.min(SCREEN_WIDTH * 0.7, 370)))
+const URL_SPLIT_REGEX = /((?:https?:\/\/|www\.)[^\s]+)/gi
+const URL_PART_REGEX = /^(?:https?:\/\/|www\.)[^\s]+$/i
+
+function normalizeUrl(raw: string) {
+  const value = raw.trim()
+  if (!value) return ''
+  if (/^https?:\/\//i.test(value)) return value
+  return `https://${value}`
+}
+
+function renderMessageText(textValue: string, isMine: boolean) {
+  const parts = textValue.split(URL_SPLIT_REGEX)
+  return parts.map((part, index) => {
+    if (!part) return null
+    if (URL_PART_REGEX.test(part)) {
+      const url = normalizeUrl(part)
+      return (
+        <Text
+          key={`link-${index}`}
+          style={[styles.linkText, isMine && styles.linkTextMine]}
+          onPress={() => Linking.openURL(url).catch(() => null)}
+        >
+          {part}
+        </Text>
+      )
+    }
+    return (
+      <Text key={`text-${index}`} style={[styles.text, isMine && styles.textMine]}>
+        {part}
+      </Text>
+    )
+  })
+}
 
 export function MessageBubble({
   message,
@@ -103,8 +139,8 @@ export function MessageBubble({
 
   return (
     <Animated.View style={[styles.container, isMine ? styles.mineContainer : styles.otherContainer, { transform: [{ translateX }] }]}>
-      {!isMine && !hasOnlyVoiceAttachment ? (
-        <View style={styles.sideAvatar}>
+      {!isMine ? (
+        <View style={[styles.sideAvatar, hasOnlyVoiceAttachment && styles.sideAvatarHidden]}>
           {message.sender?.avatar ? (
             <Image source={{ uri: message.sender.avatar }} style={styles.sideAvatarImage} />
           ) : (
@@ -112,12 +148,19 @@ export function MessageBubble({
           )}
         </View>
       ) : null}
-      <View style={styles.bubbleGestureWrap} {...bubblePanResponder.panHandlers}>
+      <View
+        style={[
+          styles.bubbleGestureWrap,
+          isMine ? styles.bubbleGestureWrapMine : styles.bubbleGestureWrapOther,
+        ]}
+        {...bubblePanResponder.panHandlers}
+      >
       <Pressable
         style={[
           styles.bubble,
           isMine ? styles.mineBubble : styles.otherBubble,
           hasOnlyVoiceAttachment && styles.voiceOnlyBubble,
+          message.replyTo && (isMine ? styles.replyBubbleMine : styles.replyBubbleOther),
         ]}
         onLongPress={onLongPress}
       >
@@ -148,7 +191,7 @@ export function MessageBubble({
             </Text>
           </Pressable>
         )}
-        {message.text ? <Text style={[styles.text, isMine && styles.textMine]}>{message.text}</Text> : null}
+        {message.text ? <Text style={[styles.text, isMine && styles.textMine]}>{renderMessageText(message.text, isMine)}</Text> : null}
         {message.attachments?.map((attachment: any, idx: number) => {
           const attachmentId = 'id' in attachment ? attachment.id : `att-${idx}`
           if (attachment.kind === 'IMAGE') {
@@ -260,7 +303,7 @@ export function MessageBubble({
 
 const styles = StyleSheet.create({
   container: {
-    marginVertical: 1,
+    marginVertical: 2,
     paddingHorizontal: spacing.md,
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -282,6 +325,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  sideAvatarHidden: {
+    opacity: 0,
+  },
   sideAvatarImage: {
     width: 28,
     height: 28,
@@ -293,13 +339,20 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   bubble: {
-    maxWidth: '86%',
+    maxWidth: STANDARD_BUBBLE_MAX_WIDTH,
     borderRadius: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
   },
   bubbleGestureWrap: {
-    maxWidth: '86%',
+    flex: 1,
+    flexDirection: 'row',
+  },
+  bubbleGestureWrapMine: {
+    justifyContent: 'flex-end',
+  },
+  bubbleGestureWrapOther: {
+    justifyContent: 'flex-start',
   },
   voiceOnlyBubble: {
     maxWidth: VOICE_BUBBLE_MAX_WIDTH,
@@ -307,15 +360,23 @@ const styles = StyleSheet.create({
     paddingRight: 16,
     paddingBottom: 8,
   },
+  replyBubbleMine: {
+    minWidth: REPLY_BUBBLE_MIN_WIDTH_MINE,
+  },
+  replyBubbleOther: {
+    minWidth: REPLY_BUBBLE_MIN_WIDTH_OTHER,
+  },
   mineBubble: {
     backgroundColor: colors.brandPrimary,
     borderBottomRightRadius: 3,
+    alignSelf: 'flex-end',
   },
   otherBubble: {
     backgroundColor: colors.surface,
     borderBottomLeftRadius: 3,
     borderWidth: 1,
     borderColor: colors.divider,
+    alignSelf: 'flex-start',
   },
   senderName: {
     ...typography.caption,
@@ -360,9 +421,18 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.textPrimary,
     fontSize: 15,
+    lineHeight: 20,
   },
   textMine: {
     color: colors.surface,
+  },
+  linkText: {
+    ...typography.body,
+    color: '#1D4ED8',
+    textDecorationLine: 'underline',
+  },
+  linkTextMine: {
+    color: '#BFE0FF',
   },
   imageContainer: {
     marginTop: 4,
@@ -463,7 +533,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-end',
     gap: 4,
-    marginTop: 3,
+    marginTop: 6,
   },
   time: {
     ...typography.caption,

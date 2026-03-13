@@ -5,7 +5,7 @@ $ErrorActionPreference = "Stop"
 
 $SERVER_IP = "154.12.235.86"
 $SERVER_USER = "root"
-$SSH_KEY = "$env:USERPROFILE\.ssh\contabo_trimpro"
+$SSH_KEY = "$env:USERPROFILE\.ssh\trimpro_ed25519"
 $APP_DIR = "~/apps/trimpro"
 
 Write-Host "==========================================" -ForegroundColor Cyan
@@ -34,7 +34,7 @@ Write-Host ""
 # Test SSH connection
 Write-Host "🔐 Testing SSH connection..." -ForegroundColor Yellow
 try {
-    $testResult = ssh -i $SSH_KEY -o ConnectTimeout=5 "$SERVER_USER@$SERVER_IP" "echo 'SSH_OK' && hostname" 2>&1
+    $testResult = ssh -i $SSH_KEY -o ConnectTimeout=5 "$SERVER_USER@$SERVER_IP" "echo SSH_OK" 2>&1
     if ($testResult -match "SSH_OK") {
         Write-Host "✅ SSH connection successful" -ForegroundColor Green
     } else {
@@ -123,29 +123,7 @@ Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host "✅ File Upload Complete!" -ForegroundColor Green
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "📝 Next steps:" -ForegroundColor Yellow
-Write-Host ""
-Write-Host "1. SSH into the server:" -ForegroundColor White
-Write-Host "   ssh -i $SSH_KEY $SERVER_USER@$SERVER_IP" -ForegroundColor Gray
-Write-Host ""
-Write-Host "2. Navigate to app directory:" -ForegroundColor White
-Write-Host "   cd $APP_DIR" -ForegroundColor Gray
-Write-Host ""
-Write-Host "3. Set up database (if not done):" -ForegroundColor White
-Write-Host "   sudo -u postgres psql" -ForegroundColor Gray
-Write-Host "   CREATE DATABASE trimpro;" -ForegroundColor Gray
-Write-Host "   CREATE USER trimpro_user WITH ENCRYPTED PASSWORD 'your-password';" -ForegroundColor Gray
-Write-Host "   GRANT ALL PRIVILEGES ON DATABASE trimpro TO trimpro_user;" -ForegroundColor Gray
-Write-Host ""
-Write-Host "4. Create .env file:" -ForegroundColor White
-Write-Host "   nano .env" -ForegroundColor Gray
-Write-Host "   (Copy from .env.example and fill in values)" -ForegroundColor Gray
-Write-Host ""
-Write-Host "5. Run deployment script:" -ForegroundColor White
-Write-Host "   chmod +x deploy-production.sh" -ForegroundColor Gray
-Write-Host "   ./deploy-production.sh" -ForegroundColor Gray
-Write-Host ""
-Write-Host "6. Configure NGINX (see DEPLOY-NOW.md)" -ForegroundColor White
-Write-Host ""
-Write-Host "📖 For detailed instructions, see: DEPLOY-NOW.md" -ForegroundColor Cyan
+Write-Host "Use SSH to run deploy-production.sh on the server." -ForegroundColor Yellow
+Write-Host "Server: $SERVER_USER@$SERVER_IP" -ForegroundColor Gray
+Write-Host "App Dir: $APP_DIR" -ForegroundColor Gray
 Write-Host ""

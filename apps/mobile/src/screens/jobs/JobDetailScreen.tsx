@@ -113,6 +113,12 @@ function formatCompactDate(value?: string | null) {
   return new Date(value).toLocaleDateString()
 }
 
+function isPdfAttachment(mimeType?: string | null, fileName?: string | null) {
+  const mime = String(mimeType || '').toLowerCase()
+  const name = String(fileName || '').toLowerCase()
+  return mime.includes('pdf') || name.endsWith('.pdf')
+}
+
 export function JobDetailScreen({ route, navigation }: Props) {
   const { token, user } = useAuth()
   const isOnline = useOnlineState()
@@ -427,13 +433,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
       Alert.alert('Unable to open file', error?.message || 'Please try again.')
     }
   }
-  const tileColumns = useMemo(() => {
-    const count = attachmentRows.length
-    if (count <= 4) return 2
-    if (count <= 9) return 3
-    if (count <= 16) return 4
-    return 5
-  }, [attachmentRows.length])
+  const tileColumns = 2
 
   return (
     <Screen>
@@ -698,7 +698,9 @@ export function JobDetailScreen({ route, navigation }: Props) {
                     const mime = String(a.mimeType || '').toLowerCase()
                     const isImage = mime.startsWith('image/')
                     const isVideo = mime.startsWith('video/')
-                    const tileLabel = isImage ? 'Photo' : isVideo ? 'Video' : 'File'
+                    const isPdf = isPdfAttachment(a.mimeType, a.fileName)
+                    const previewUrl =
+                      String((a as any).thumbnailUrl || (a as any).previewUrl || '').trim() || null
                     return (
                       <View key={a.id} style={[styles.mediaTileWrap, { width: `${100 / tileColumns}%` }]}>
                         <Pressable
@@ -720,21 +722,20 @@ export function JobDetailScreen({ route, navigation }: Props) {
                         >
                           {isImage ? (
                             <Image source={{ uri: a.url }} style={styles.mediaTileImage} />
+                          ) : isPdf && previewUrl ? (
+                            <Image source={{ uri: previewUrl }} style={styles.mediaTileImage} />
                           ) : (
                             <View style={styles.mediaTileIconWrap}>
                               <Ionicons
-                                name={isVideo ? 'videocam-outline' : 'document-text-outline'}
+                                name={isVideo ? 'videocam-outline' : isPdf ? 'document-outline' : 'document-text-outline'}
                                 size={22}
                                 color={BRAND.text}
                               />
+                              {!isVideo ? (
+                                <Text style={styles.mediaFileBadge}>{isPdf ? 'PDF FILE' : 'FILE'}</Text>
+                              ) : null}
                             </View>
                           )}
-                          <View style={styles.mediaTileFooter}>
-                            <Text style={styles.mediaTileType}>{tileLabel}</Text>
-                            <Text style={styles.mediaTileName} numberOfLines={1}>
-                              {a.fileName}
-                            </Text>
-                          </View>
                         </Pressable>
                       </View>
                     )
@@ -1257,24 +1258,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#F8FAFC',
+    gap: 6,
   },
-  mediaTileFooter: {
-    borderTopWidth: 1,
-    borderTopColor: '#EAECF0',
-    paddingHorizontal: 6,
-    paddingVertical: 4,
-    gap: 1,
-  },
-  mediaTileType: {
+  mediaFileBadge: {
     fontSize: 10,
     fontWeight: '700',
-    color: BRAND.muted,
-    textTransform: 'uppercase',
-  },
-  mediaTileName: {
-    fontSize: 11,
     color: BRAND.text,
-    fontWeight: '600',
+    textTransform: 'uppercase',
   },
   viewerRoot: {
     flex: 1,

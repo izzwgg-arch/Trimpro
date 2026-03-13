@@ -328,7 +328,7 @@ export default function ReportsPage() {
                           <p className="text-sm text-gray-600 mt-1">{report.description}</p>
                         )}
                         <p className="text-xs text-gray-500 mt-2">
-                          Created {formatDate(report.createdAt)} • Updated {formatDate(report.updatedAt)}
+                          Created {formatDate(report.createdAt)}{' \u2022 '}Updated {formatDate(report.updatedAt)}
                         </p>
                       </div>
                       <div className="flex gap-2">

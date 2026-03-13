@@ -114,7 +114,7 @@ export async function POST(
                 </tfoot>
               </table>
               ${purchaseOrder.expectedDate ? `<p><strong>Expected Delivery Date:</strong> ${new Date(purchaseOrder.expectedDate).toLocaleDateString()}</p>` : ''}
-              <p><a href="${pdfUrl}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin-top: 20px;">Download Purchase Order PDF</a></p>
+              <p><a href="${pdfUrl}" style="display:inline-block;padding:16px 48px;font-size:17px;font-weight:700;letter-spacing:0.2px;line-height:1.2;text-decoration:none;text-align:center;border-radius:12px;background:linear-gradient(135deg,#2a5f82 0%,#f0c974 100%);color:#1e2937;margin-top:20px;">Download Purchase Order PDF</a></p>
               <p>Thank you for your business.</p>
             </body>
           </html>

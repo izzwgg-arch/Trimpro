@@ -410,6 +410,46 @@ export default function DashboardPage() {
           View Full Analytics →
         </Button>
       </div>
+
+      {/* Smart Steps ABA Tracker Promo Card */}
+      <Card className="border-2 border-purple-200 bg-gradient-to-r from-slate-900 via-purple-950 to-slate-900 text-white overflow-hidden relative">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-cyan-500/20 via-purple-500/10 to-transparent pointer-events-none" />
+        <CardHeader className="relative">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-400 to-purple-600 flex items-center justify-center">
+                  <span className="text-sm">🧠</span>
+                </div>
+                <CardTitle className="text-white text-lg">Smart Steps ABA Tracker</CardTitle>
+                <span className="text-xs bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 rounded-full px-2 py-0.5 font-semibold">NEW</span>
+              </div>
+              <CardDescription className="text-slate-300">
+                Professional ABA data collection — sessions, targets, behaviors, and clinical analytics for RBTs &amp; BCBAs.
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="text-center">
+                <div className="text-xl font-bold text-cyan-400">4</div>
+                <div className="text-[10px] text-slate-400">Sessions today</div>
+              </div>
+              <div className="text-center">
+                <div className="text-xl font-bold text-amber-400">🔥 92%</div>
+                <div className="text-[10px] text-slate-400">Mastery rate</div>
+              </div>
+              <div className="text-center">
+                <div className="text-xl font-bold text-purple-400">187</div>
+                <div className="text-[10px] text-slate-400">Behaviors logged</div>
+              </div>
+              <Link href="/smart-steps">
+                <Button className="bg-gradient-to-r from-cyan-500 to-purple-600 hover:from-cyan-400 hover:to-purple-500 text-white font-bold border-0 shadow-lg shadow-cyan-500/30 min-w-[140px]">
+                  Open ABA Tracker →
+                </Button>
+              </Link>
+            </div>
+          </div>
+        </CardHeader>
+      </Card>
     </div>
   )
 }

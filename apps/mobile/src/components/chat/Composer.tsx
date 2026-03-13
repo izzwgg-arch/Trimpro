@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useRef } from 'react'
 import { ActivityIndicator, GestureResponderEvent, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { colors, spacing, typography } from '../../theme/tokens'
@@ -57,8 +57,15 @@ export function Composer({
   disabled,
   bottomInset = 0,
 }: ComposerProps) {
+  const inputRef = useRef<TextInput>(null)
   const canSend = (text.trim().length > 0 || attachments.length > 0) && !sending && !disabled
   const showMic = text.trim().length === 0 && attachments.length === 0
+  const triggerSend = () => {
+    // Force immediate visual clear to avoid stale text rendering on Android.
+    inputRef.current?.clear()
+    onChangeText('')
+    onSend()
+  }
 
   return (
     <View
@@ -120,10 +127,11 @@ export function Composer({
         </Pressable>
 
         <TextInput
+          ref={inputRef}
           style={styles.input}
           value={text}
           onChangeText={onChangeText}
-          onSubmitEditing={onSend}
+          onSubmitEditing={triggerSend}
           placeholder="Message"
           placeholderTextColor={colors.textSecondary}
           multiline
@@ -146,7 +154,7 @@ export function Composer({
             <Ionicons name={recording ? 'mic' : 'mic-outline'} size={20} color={recording ? colors.surface : colors.brandPrimary} />
           </Pressable>
         ) : (
-          <Pressable style={[styles.sendButton, !canSend && styles.sendButtonDisabled]} onPress={onSend} disabled={!canSend}>
+          <Pressable style={[styles.sendButton, !canSend && styles.sendButtonDisabled]} onPress={triggerSend} disabled={!canSend}>
             {sending ? <ActivityIndicator size="small" color={colors.surface} /> : <Ionicons name="send" size={18} color={colors.surface} />}
           </Pressable>
         )}

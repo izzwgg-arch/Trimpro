@@ -153,8 +153,8 @@ export async function POST(
       if (!Number.isFinite(customPrevAmount) || customPrevAmount <= 0) {
         return NextResponse.json({ error: 'Custom amount must be greater than 0.' }, { status: 400 })
       }
-      // Previous invoices only: exclude the "current" invoice on this page.
-      invoicesToPay = await prisma.invoice.findMany({
+      // Waterfall order: current invoice first, then older invoices by due date asc.
+      const otherInvoices = await prisma.invoice.findMany({
         where: {
           ...(openWhere as any),
           id: { not: invoice.id },
@@ -162,12 +162,21 @@ export async function POST(
         select: { id: true, balance: true, dueDate: true, invoiceDate: true, invoiceNumber: true, qboSyncId: true },
         orderBy: [{ dueDate: 'asc' }, { invoiceDate: 'asc' }],
       })
-      invoicesToPay = invoicesToPay.filter((i) => Number(i.balance) > 0)
-      const totalOutstandingPrev = invoicesToPay.reduce((sum, i) => sum + Math.max(0, Number(i.balance || 0)), 0)
-      if (totalOutstandingPrev <= 0) {
-        return NextResponse.json({ error: 'No previous invoices with a balance due.' }, { status: 400 })
+      // Put current invoice at the front so it gets paid first
+      const currentInvoice = {
+        id: invoice.id,
+        balance: invoice.balance,
+        dueDate: invoice.dueDate,
+        invoiceDate: invoice.invoiceDate,
+        invoiceNumber: invoice.invoiceNumber,
+        qboSyncId: invoice.qboSyncId,
       }
-      maxTotalAmount = Math.min(customPrevAmount, totalOutstandingPrev)
+      invoicesToPay = [currentInvoice, ...otherInvoices].filter((i) => Number(i.balance) > 0)
+      const totalOutstanding = invoicesToPay.reduce((sum, i) => sum + Math.max(0, Number(i.balance || 0)), 0)
+      if (totalOutstanding <= 0) {
+        return NextResponse.json({ error: 'No open invoices with a balance due.' }, { status: 400 })
+      }
+      maxTotalAmount = Math.min(customPrevAmount, totalOutstanding)
       allocationMode = 'waterfall'
     } else if (selectedInvoiceIds.length) {
       invoicesToPay = await prisma.invoice.findMany({
@@ -202,9 +211,13 @@ export async function POST(
 
     const appUrl = resolvePublicAppUrl()
 
-    const billingAddress = invoice.client.addresses?.find((a) => a.type === 'billing') || invoice.client.addresses?.[0]
+    // Address priority: job site → estimate job site → client billing → any client address
     const jobAddress = invoice.job?.addresses?.[0]
     const estimateAddress = parseAddressParts(invoice.estimate?.jobSiteAddress)
+    const billingAddress =
+      invoice.client.addresses?.find((a) => a.type?.toUpperCase() === 'BILLING') ||
+      invoice.client.addresses?.find((a) => a.isDefault) ||
+      invoice.client.addresses?.[0]
 
     // Store selected invoice ids server-side (no URL bloat); reference is what comes back in xInvoice.
     const intentKey = `pp_${crypto.randomBytes(16).toString('hex')}`
@@ -231,6 +244,23 @@ export async function POST(
     })
 
     const ref = `TPINTENT:${intentKey}`
+
+    // xInvoice shown to the customer on the Cardknox form:
+    //   - Single full invoice  → real invoice number (webhook finds by number directly)
+    //   - Multiple invoices    → comma-separated invoice numbers
+    //   - Partial/line-item    → single invoice number
+    // The intent key travels separately in xCustom1 so the webhook can always reconcile.
+    const isSingleFullInvoice =
+      invoicesToPay.length === 1 &&
+      !plannedAmountsByInvoice &&
+      allocationMode === null &&
+      maxTotalAmount === null
+
+    const xInvoiceRef =
+      invoicesToPay.length > 1 && invoiceNumbers.length > 0
+        ? invoiceNumbers.join(', ')
+        : invoice.invoiceNumber
+
     const displayRef =
       invoicesToPay.length > 1
         ? invoiceNumbers.length > 0
@@ -245,19 +275,21 @@ export async function POST(
         : `Invoice ${invoice.invoiceNumber} - ${invoice.title}`
 
     const paymentLink = await solaService.createPaymentLink({
-      // Keep invoiceId in metadata; use invoiceNumber as the payment reference that comes back via hosted forms.
       invoiceId: invoice.id,
-      invoiceNumber: ref,
+      invoiceNumber: xInvoiceRef,          // human-readable, shown on Cardknox form
+      intentRef: isSingleFullInvoice ? undefined : ref,  // hidden field; webhook uses this for multi-invoice reconciliation
       amount: amountToPay,
       description: description,
       clientEmail: invoice.client.email || invoice.client.contacts?.[0]?.email || undefined,
       clientName: invoice.client.name,
+      // Phone always from client profile
       clientPhone: invoice.client.phone || invoice.client.contacts?.[0]?.phone || undefined,
-      billingStreet: billingAddress?.street || jobAddress?.street || estimateAddress?.street || undefined,
-      billingCity: billingAddress?.city || jobAddress?.city || estimateAddress?.city || undefined,
-      billingState: billingAddress?.state || jobAddress?.state || estimateAddress?.state || undefined,
-      billingZip: billingAddress?.zipCode || jobAddress?.zipCode || estimateAddress?.zipCode || undefined,
-      billingCountry: billingAddress?.country || jobAddress?.country || 'US',
+      // Address from job site first, then estimate job site, then client billing address
+      billingStreet: jobAddress?.street || estimateAddress?.street || billingAddress?.street || undefined,
+      billingCity: jobAddress?.city || estimateAddress?.city || billingAddress?.city || undefined,
+      billingState: jobAddress?.state || estimateAddress?.state || billingAddress?.state || undefined,
+      billingZip: jobAddress?.zipCode || estimateAddress?.zipCode || billingAddress?.zipCode || undefined,
+      billingCountry: jobAddress?.country || billingAddress?.country || 'US',
       returnUrl: `${appUrl}/portal/pay/${invoice.id}?token=${invoice.paymentToken || ''}`,
       webhookUrl: `${appUrl}/api/webhooks/sola-payment`,
       apiKey: solaSecrets.secretKey,

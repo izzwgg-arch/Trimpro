@@ -386,7 +386,7 @@ export default function CallsPage() {
                         <div className="flex items-center space-x-3 text-xs text-gray-500 mt-1">
                           <span>{formatDate(call.startedAt)}</span>
                           {call.user && (
-                            <span>• {call.user.firstName} {call.user.lastName}</span>
+                            <span>{'\u2022'} {call.user.firstName} {call.user.lastName}</span>
                           )}
                           {call.duration && (
                             <span className="flex items-center">

@@ -158,6 +158,19 @@ export async function GET(
       return NextResponse.json({ error: 'Client not found' }, { status: 404 })
     }
 
+    // Compute client-level open invoice balance for clear visibility on detail page.
+    const openInvoiceAgg = await prisma.invoice.aggregate({
+      where: {
+        tenantId: user.tenantId,
+        clientId: client.id,
+        balance: { gt: 0 },
+        status: { notIn: ['PAID', 'CANCELLED', 'REFUNDED'] as any },
+      } as any,
+      _sum: {
+        balance: true,
+      },
+    })
+
     // Ensure all arrays are present (defensive)
     const safeClient = {
       ...client,
@@ -184,6 +197,7 @@ export async function GET(
         smsMessages: 0,
         emails: 0,
       },
+      openInvoiceBalance: openInvoiceAgg._sum.balance?.toString() || '0',
     }
 
     return NextResponse.json({ client: safeClient })

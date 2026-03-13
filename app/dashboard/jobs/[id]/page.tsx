@@ -55,6 +55,11 @@ interface JobDetail {
   billableMinutesTotal: number
   billableHours: number
   billableAmountCents: number
+  totalCost?: string | null
+  totalInvoicedAmount?: string
+  openInvoiceBalance?: string
+  openInvoiceCount?: number
+  clientOpenInvoiceBalance?: string
   client: {
     id: string
     name: string
@@ -671,7 +676,7 @@ export default function JobDetailPage() {
         <div className="text-red-600 text-xl font-semibold mb-2">Job not found</div>
         <p className="text-gray-600 mb-4">The job you&apos;re looking for doesn&apos;t exist or you don&apos;t have permission to view it.</p>
         <Button variant="outline" onClick={() => router.push('/dashboard/jobs')}>
-          ← Back to Jobs
+          Back to Jobs
         </Button>
       </div>
     )
@@ -691,7 +696,7 @@ export default function JobDetailPage() {
         <div>
           <div className="flex items-center space-x-3">
             <Link href="/dashboard/jobs" className="text-gray-500 hover:text-gray-700">
-              ← Back to Jobs
+              Back to Jobs
             </Link>
           </div>
           <div className="flex items-center space-x-3 mt-2">
@@ -701,7 +706,11 @@ export default function JobDetailPage() {
             </span>
           </div>
           <p className="text-gray-600 mt-1">
-            {job.jobNumber} • <Link href={`/dashboard/clients/${job.client.id}`} className="text-primary hover:underline">{job.client.name}</Link>
+            {job.jobNumber} - <Link href={`/dashboard/clients/${job.client.id}`} className="text-primary hover:underline">{job.client.name}</Link>
+          </p>
+          <p className="text-sm font-semibold text-amber-700 mt-2">
+            Job Open Invoices: {formatCurrency(parseFloat(job.openInvoiceBalance || '0'))} ({job.openInvoiceCount || 0})
+            {' '}| Client Open Balance: {formatCurrency(parseFloat(job.clientOpenInvoiceBalance || '0'))}
           </p>
         </div>
         <div className="flex items-center space-x-2">
@@ -870,6 +879,12 @@ export default function JobDetailPage() {
                 <div className="pt-4 border-t">
                   <p className="text-sm font-medium text-gray-500 mb-3">Financials</p>
                   <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs text-gray-500">Total Cost</p>
+                      <p className="text-lg font-semibold">
+                        {job.totalCost ? formatCurrency(parseFloat(job.totalCost)) : '-'}
+                      </p>
+                    </div>
                     {job.estimateAmount && (
                       <div>
                         <p className="text-xs text-gray-500">Estimate</p>
@@ -902,6 +917,16 @@ export default function JobDetailPage() {
                         </p>
                       </div>
                     )}
+                    <div>
+                      <p className="text-xs text-gray-500">Total Invoiced</p>
+                      <p className="text-sm font-semibold">{formatCurrency(parseFloat(job.totalInvoicedAmount || '0'))}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Open Invoices</p>
+                      <p className="text-sm font-semibold text-amber-700">
+                        {formatCurrency(parseFloat(job.openInvoiceBalance || '0'))}
+                      </p>
+                    </div>
                   </div>
                 </div>
               )}
@@ -1274,6 +1299,9 @@ export default function JobDetailPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Invoices</CardTitle>
+                <CardDescription>
+                  Open: {formatCurrency(parseFloat(job.openInvoiceBalance || '0'))} | Total invoiced: {formatCurrency(parseFloat(job.totalInvoicedAmount || '0'))}
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">

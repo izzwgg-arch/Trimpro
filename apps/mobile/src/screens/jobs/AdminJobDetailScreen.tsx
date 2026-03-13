@@ -85,6 +85,7 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
   const queryClient = useQueryClient()
   const { canEditJobs, canAssignJobs, canScheduleJobs, canChangeJobStatus } = useMobilePermissions()
   const [statusPickerVisible, setStatusPickerVisible] = useState(false)
+  const [assignPickerVisible, setAssignPickerVisible] = useState(false)
 
   const jobQuery = useQuery({
     queryKey: ['admin-job', jobId],
@@ -95,6 +96,20 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
   const assignmentsQuery = useQuery({
     queryKey: ['job-assignments', jobId],
     queryFn: () => apiRequest<AssignmentsResponse>(`/api/jobs/${jobId}/assignments`),
+  })
+  const usersQuery = useQuery({
+    queryKey: ['assignable-users', jobId],
+    queryFn: () =>
+      apiRequest<{
+        users: Array<{
+          id: string
+          firstName: string
+          lastName: string
+          role: string
+          status?: string | null
+        }>
+      }>('/api/users?limit=200'),
+    enabled: assignPickerVisible,
   })
 
   const job = jobQuery.data?.job
@@ -111,6 +126,23 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
     },
     onError: (error: any) => {
       Alert.alert('Error', error?.message || 'Failed to update status')
+    },
+  })
+  const assignMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      await apiRequest(`/api/jobs/${jobId}/assignments`, 'POST', { userId })
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['job-assignments', jobId] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-job', jobId] }),
+        queryClient.invalidateQueries({ queryKey: ['all-jobs'] }),
+        queryClient.invalidateQueries({ queryKey: ['mobile-assignments'] }),
+      ])
+      Alert.alert('Success', 'Crew member assigned to job.')
+    },
+    onError: (error: any) => {
+      Alert.alert('Assignment failed', error?.message || 'Unable to assign crew member.')
     },
   })
 
@@ -146,6 +178,14 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
     }
     Linking.openURL(`tel:${job.client.phone}`)
   }
+  const assignedUserIds = new Set(assignments.map((entry) => entry.user.id))
+  const assignableUsers = (usersQuery.data?.users || []).filter((entry) => {
+    if (assignedUserIds.has(entry.id)) return false
+    const status = String(entry.status || '').toUpperCase()
+    if (status && status !== 'ACTIVE') return false
+    const role = String(entry.role || '').toUpperCase()
+    return role === 'ADMIN' || role === 'OFFICE' || role === 'FIELD'
+  })
 
   return (
     <AppScreen>
@@ -240,8 +280,7 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
               <Pressable
                 style={styles.assignButton}
                 onPress={() => {
-                  // Navigate to assignment screen (to be implemented)
-                  Alert.alert('Assign Crew', 'Assignment screen coming soon')
+                  setAssignPickerVisible(true)
                 }}
               >
                 <Ionicons name="person-add-outline" size={18} color={colors.brandPrimary} />
@@ -304,6 +343,42 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
                   )
                 })}
               </ScrollView>
+            </View>
+          </View>
+        </Modal>
+        <Modal visible={assignPickerVisible} transparent animationType="fade" onRequestClose={() => setAssignPickerVisible(false)}>
+          <View style={styles.modalBackdrop}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setAssignPickerVisible(false)} />
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>Assign Crew</Text>
+              <ScrollView style={{ maxHeight: 360 }}>
+                {usersQuery.isLoading ? <Text style={styles.emptyText}>Loading users...</Text> : null}
+                {!usersQuery.isLoading && assignableUsers.length === 0 ? (
+                  <Text style={styles.emptyText}>No available users to assign.</Text>
+                ) : null}
+                {assignableUsers.map((member) => (
+                  <Pressable
+                    key={member.id}
+                    style={styles.modalRow}
+                    disabled={assignMutation.isPending}
+                    onPress={() => {
+                      setAssignPickerVisible(false)
+                      assignMutation.mutate(member.id)
+                    }}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.modalRowTitle}>
+                        {member.firstName} {member.lastName}
+                      </Text>
+                      <Text style={styles.modalRowMeta}>{member.role}</Text>
+                    </View>
+                    <Ionicons name="person-add-outline" size={18} color={colors.brandPrimary} />
+                  </Pressable>
+                ))}
+              </ScrollView>
+              <Pressable style={styles.modalCloseButton} onPress={() => setAssignPickerVisible(false)}>
+                <Text style={styles.modalCloseText}>Close</Text>
+              </Pressable>
             </View>
           </View>
         </Modal>
@@ -515,6 +590,25 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(15,76,92,0.1)',
   },
   modalRowTitle: {
+    ...typography.sub,
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  modalRowMeta: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  modalCloseButton: {
+    marginTop: spacing.md,
+    alignSelf: 'flex-end',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.divider,
+  },
+  modalCloseText: {
     ...typography.sub,
     color: colors.textPrimary,
     fontWeight: '600',

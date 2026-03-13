@@ -43,6 +43,7 @@ export async function GET(request: NextRequest, ctx: { params: { token: string }
       include: {
         client: { select: { id: true, name: true, companyName: true } },
         lineItems: { orderBy: { sortOrder: 'asc' } },
+        optionalItems: { orderBy: { sortOrder: 'asc' } },
       },
     })
     if (!estimate) {
@@ -50,6 +51,7 @@ export async function GET(request: NextRequest, ctx: { params: { token: string }
     }
 
     const visibleLineItems = estimate.lineItems.filter((li) => li.isVisibleToClient !== false)
+    const visibleOptionalItems = (estimate.optionalItems || []).filter((li) => li.isVisibleToClient !== false)
 
     const approvals = await prisma.estimateItemApproval.findMany({
       where: {
@@ -103,11 +105,29 @@ export async function GET(request: NextRequest, ctx: { params: { token: string }
           quantity: String(li.quantity),
           unitPrice: String(li.unitPrice),
           total: String(li.total),
+          isOptional: false,
           approved: Boolean(approved),
           approvedAt: approved?.approvedAt || null,
           approvedByName: approved?.approvedByName || null,
           invoiced: Boolean(invoiced),
           invoicedAt: invoiced?.createdAt || null,
+        }
+      }),
+      optionalItems: visibleOptionalItems.map((li) => {
+        const approved = approvedMap.get(li.id) || null
+        return {
+          id: li.id,
+          description: li.description,
+          notes: li.showDescriptionToCustomer === false ? '' : li.notes || '',
+          quantity: String(li.quantity),
+          unitPrice: String(li.unitPrice),
+          total: String(li.total),
+          isOptional: true,
+          approved: Boolean(approved),
+          approvedAt: approved?.approvedAt || null,
+          approvedByName: approved?.approvedByName || null,
+          invoiced: false,
+          invoicedAt: null,
         }
       }),
     })

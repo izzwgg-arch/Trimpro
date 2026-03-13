@@ -605,7 +605,7 @@ export default function VendorDetailPage() {
                           <div>
                             <div className="font-medium">{attachment.fileName}</div>
                             <div className="text-sm text-gray-500">
-                              {(attachment.fileSize / 1024).toFixed(2)} KB • {formatDate(attachment.createdAt)}
+                              {(attachment.fileSize / 1024).toFixed(2)} KB{' \u2022 '}{formatDate(attachment.createdAt)}
                             </div>
                           </div>
                         </div>

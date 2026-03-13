@@ -417,7 +417,7 @@ export default function PurchaseOrderDetailPage() {
           </div>
           <p className="mt-2 text-gray-600">
             Vendor: {po.vendorRef?.name || po.vendor}
-            {po.job && ` • Job: ${po.job.jobNumber}`}
+            {po.job && ` \u2022 Job: ${po.job.jobNumber}`}
           </p>
         </div>
         <div className="flex items-center space-x-2">
@@ -561,7 +561,7 @@ export default function PurchaseOrderDetailPage() {
                       <div className="flex-1">
                         <p className="text-sm font-medium">{activity.description}</p>
                         <p className="text-xs text-gray-500">
-                          {activity.user.firstName} {activity.user.lastName} • {formatDate(activity.createdAt)}
+                          {activity.user.firstName} {activity.user.lastName}{' \u2022 '}{formatDate(activity.createdAt)}
                         </p>
                       </div>
                     </div>

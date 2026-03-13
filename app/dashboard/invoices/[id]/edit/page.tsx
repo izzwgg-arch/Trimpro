@@ -1013,8 +1013,59 @@ export default function EditInvoicePage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Line Items</CardTitle>
-                <CardDescription>Click in Item field to search and add items</CardDescription>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <CardTitle>Line Items</CardTitle>
+                    <CardDescription>Click in Item field to search and add items</CardDescription>
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-xs shrink-0">
+                    <span className="text-gray-500 font-medium self-center">Show to customer:</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const allHidden = lineItems.every((li) => !li.isGroupHeader && li.showPriceToCustomer === false)
+                        const newVal = allHidden
+                        setLineItems((prev) => prev.map((li) => ({ ...li, showPriceToCustomer: newVal ? true : false })))
+                        setOptionalItems((prev) => prev.map((li) => ({ ...li, showPriceToCustomer: newVal ? true : false })))
+                      }}
+                      className={`px-2 py-1 rounded border text-xs font-medium ${
+                        lineItems.some((li) => !li.isGroupHeader && li.showPriceToCustomer !== false)
+                          ? 'bg-blue-50 border-blue-300 text-blue-700'
+                          : 'bg-gray-50 border-gray-300 text-gray-500'
+                      }`}
+                      title="Toggle unit price visibility for all items"
+                    >
+                      {lineItems.some((li) => !li.isGroupHeader && li.showPriceToCustomer !== false) ? (
+                        <Eye className="h-3 w-3 inline mr-1" />
+                      ) : (
+                        <EyeOff className="h-3 w-3 inline mr-1" />
+                      )}
+                      Price
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const allShown = lineItems.every((li) => !li.isGroupHeader && li.showCostToCustomer === true)
+                        const newVal = !allShown
+                        setLineItems((prev) => prev.map((li) => ({ ...li, showCostToCustomer: newVal })))
+                        setOptionalItems((prev) => prev.map((li) => ({ ...li, showCostToCustomer: newVal })))
+                      }}
+                      className={`px-2 py-1 rounded border text-xs font-medium ${
+                        lineItems.some((li) => !li.isGroupHeader && li.showCostToCustomer === true)
+                          ? 'bg-blue-50 border-blue-300 text-blue-700'
+                          : 'bg-gray-50 border-gray-300 text-gray-500'
+                      }`}
+                      title="Toggle unit cost visibility for all items"
+                    >
+                      {lineItems.some((li) => !li.isGroupHeader && li.showCostToCustomer === true) ? (
+                        <Eye className="h-3 w-3 inline mr-1" />
+                      ) : (
+                        <EyeOff className="h-3 w-3 inline mr-1" />
+                      )}
+                      Cost
+                    </button>
+                  </div>
+                </div>
               </CardHeader>
               <CardContent className="space-y-2">
                 <div className="space-y-2">

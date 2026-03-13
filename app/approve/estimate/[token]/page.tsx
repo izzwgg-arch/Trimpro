@@ -15,6 +15,7 @@ type ApprovalItem = {
   quantity: string
   unitPrice: string
   total: string
+  isOptional: boolean
   approved: boolean
   approvedAt: string | null
   approvedByName: string | null
@@ -31,6 +32,7 @@ export default function PublicEstimateApprovalPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [estimate, setEstimate] = useState<any>(null)
   const [items, setItems] = useState<ApprovalItem[]>([])
+  const [optionalItems, setOptionalItems] = useState<ApprovalItem[]>([])
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [signerName, setSignerName] = useState('')
@@ -39,12 +41,14 @@ export default function PublicEstimateApprovalPage() {
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
   const [createdInvoice, setCreatedInvoice] = useState<{ invoiceNumber: string; portalPayUrl?: string } | null>(null)
 
-  const selectableIds = useMemo(() => {
-    return items.filter((i) => !i.approved).map((i) => i.id)
-  }, [items])
+  // Items that can still be selected (not yet approved)
+  const selectableRegularIds = useMemo(() => items.filter((i) => !i.approved).map((i) => i.id), [items])
+  const selectableOptionalIds = useMemo(() => optionalItems.filter((i) => !i.approved).map((i) => i.id), [optionalItems])
+  const allSelectableIds = useMemo(() => [...selectableRegularIds, ...selectableOptionalIds], [selectableRegularIds, selectableOptionalIds])
 
   const selectedTotal = useMemo(() => {
-    const map = new Map(items.map((i) => [i.id, i]))
+    const allItems = [...items, ...optionalItems]
+    const map = new Map(allItems.map((i) => [i.id, i]))
     let sum = 0
     for (const id of selectedIds) {
       const it = map.get(id)
@@ -52,7 +56,11 @@ export default function PublicEstimateApprovalPage() {
       sum += Number(it.total || 0)
     }
     return sum
-  }, [items, selectedIds])
+  }, [items, optionalItems, selectedIds])
+
+  // Approved optional items show in the "Items" section
+  const approvedOptionalAsItems = useMemo(() => optionalItems.filter((i) => i.approved), [optionalItems])
+  const pendingOptionalItems = useMemo(() => optionalItems.filter((i) => !i.approved), [optionalItems])
 
   const refresh = async () => {
     setLoading(true)
@@ -67,16 +75,19 @@ export default function PublicEstimateApprovalPage() {
         setLoadError(data?.error || 'Unable to load estimate approval.')
         setEstimate(null)
         setItems([])
+        setOptionalItems([])
         return
       }
 
       setEstimate(data.estimate)
       setItems(data.items || [])
+      setOptionalItems(data.optionalItems || [])
 
-      // Remove any selections that are no longer selectable.
+      // Remove any selections that are no longer selectable
       setSelectedIds((prev) => {
+        const allItems = [...(data.items || []), ...(data.optionalItems || [])]
+        const allowed = new Set(allItems.filter((i: any) => !i.approved).map((i: any) => i.id))
         const next = new Set<string>()
-        const allowed = new Set((data.items || []).filter((i: any) => !i.approved).map((i: any) => i.id))
         for (const id of prev) {
           if (allowed.has(id)) next.add(id)
         }
@@ -104,13 +115,8 @@ export default function PublicEstimateApprovalPage() {
     })
   }
 
-  const selectAll = () => {
-    setSelectedIds(new Set(selectableIds))
-  }
-
-  const clearAll = () => {
-    setSelectedIds(new Set())
-  }
+  const selectAll = () => setSelectedIds(new Set(allSelectableIds))
+  const clearAll = () => setSelectedIds(new Set())
 
   const describeApiError = (data: any, fallback: string) => {
     const err = data?.error
@@ -123,13 +129,9 @@ export default function PublicEstimateApprovalPage() {
       for (const [k, v] of Object.entries(err.fieldErrors)) {
         if (Array.isArray(v) && v.length) parts.push(`${k}: ${v.join(', ')}`)
       }
-      if (parts.length) return parts.join(' • ')
+      if (parts.length) return parts.join(' \u2022 ')
     }
-    try {
-      return JSON.stringify(err)
-    } catch {
-      return fallback
-    }
+    try { return JSON.stringify(err) } catch { return fallback }
   }
 
   const approve = async (approveAll: boolean) => {
@@ -137,18 +139,9 @@ export default function PublicEstimateApprovalPage() {
     setSuccessMsg(null)
     setCreatedInvoice(null)
     try {
-      if (!signerName.trim()) {
-        setActionError('Signer name is required.')
-        return
-      }
-      if (!eSign) {
-        setActionError('Please confirm you approve this estimate.')
-        return
-      }
-      if (!approveAll && selectedIds.size === 0) {
-        setActionError('Select at least one item to approve.')
-        return
-      }
+      if (!signerName.trim()) { setActionError('Signer name is required.'); return }
+      if (!eSign) { setActionError('Please confirm you approve this estimate.'); return }
+      if (!approveAll && selectedIds.size === 0) { setActionError('Select at least one item to approve.'); return }
 
       setActionError(null)
       const res = await fetch(`/api/public/estimate-approval/${encodeURIComponent(token)}/approve`, {
@@ -162,8 +155,14 @@ export default function PublicEstimateApprovalPage() {
         }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        setActionError(describeApiError(data, 'Approval failed.'))
+      if (!res.ok) { setActionError(describeApiError(data, 'Approval failed.')); return }
+
+      // If a 50% invoice was auto-created and we have a payment URL, redirect to it
+      if (data.paymentUrl) {
+        setSuccessMsg(`Approved ${data.approvedCount || 0} item(s). Redirecting to payment...`)
+        setTimeout(() => {
+          window.location.href = data.paymentUrl
+        }, 1500)
         return
       }
 
@@ -187,10 +186,7 @@ export default function PublicEstimateApprovalPage() {
         headers: { 'Content-Type': 'application/json' },
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        setActionError(describeApiError(data, 'Unable to create invoice.'))
-        return
-      }
+      if (!res.ok) { setActionError(describeApiError(data, 'Unable to create invoice.')); return }
 
       setCreatedInvoice({
         invoiceNumber: data?.invoice?.invoiceNumber || 'Invoice',
@@ -204,27 +200,64 @@ export default function PublicEstimateApprovalPage() {
     }
   }
 
-  if (loading) {
-    return <div className="p-6 text-gray-600">Loading...</div>
-  }
+  if (loading) return <div className="p-6 text-gray-600">Loading...</div>
 
   if (loadError) {
     return (
       <div className="p-6 max-w-3xl mx-auto">
         <Card>
-          <CardHeader>
-            <CardTitle>Estimate Approval</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Estimate Approval</CardTitle></CardHeader>
           <CardContent>
             <div className="text-red-600">{loadError}</div>
             <div className="mt-3">
-              <Button type="button" variant="outline" onClick={refresh}>
-                Try Again
-              </Button>
+              <Button type="button" variant="outline" onClick={refresh}>Try Again</Button>
             </div>
           </CardContent>
         </Card>
       </div>
+    )
+  }
+
+  const renderItemRow = (it: ApprovalItem, showOptionalBadge = false) => {
+    const canSelect = !it.approved
+    const checked = it.approved || selectedIds.has(it.id)
+    return (
+      <tr key={it.id} className="border-t">
+        <td className="p-3">
+          <Checkbox
+            checked={checked}
+            disabled={!canSelect || busy}
+            onCheckedChange={() => toggle(it.id)}
+          />
+        </td>
+        <td className="p-3 font-medium">
+          {it.description}
+          {showOptionalBadge && (
+            <span className="ml-2 text-xs rounded bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-amber-700">
+              Add-on
+            </span>
+          )}
+        </td>
+        <td className="p-3 text-gray-600">{it.notes || '-'}</td>
+        <td className="p-3 text-right">{Number(it.quantity || 0).toFixed(2)}</td>
+        <td className="p-3 text-right">{formatCurrency(Number(it.unitPrice || 0))}</td>
+        <td className="p-3 text-right font-semibold">{formatCurrency(Number(it.total || 0))}</td>
+        <td className="p-3">
+          {it.invoiced ? (
+            <span className="text-xs rounded bg-green-50 border border-green-200 px-2 py-1 text-green-800">
+              Already invoiced
+            </span>
+          ) : it.approved ? (
+            <span className="text-xs rounded bg-blue-50 border border-blue-200 px-2 py-1 text-blue-800">
+              Approved
+            </span>
+          ) : (
+            <span className="text-xs rounded bg-gray-50 border border-gray-200 px-2 py-1 text-gray-700">
+              Not approved
+            </span>
+          )}
+        </td>
+      </tr>
     )
   }
 
@@ -233,7 +266,7 @@ export default function PublicEstimateApprovalPage() {
       <Card>
         <CardHeader>
           <CardTitle>
-            Approve Estimate {estimate?.estimateNumber ? `• ${estimate.estimateNumber}` : ''}
+            Approve Estimate {estimate?.estimateNumber ? `\u2022 ${estimate.estimateNumber}` : ''}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-gray-700">
@@ -253,7 +286,7 @@ export default function PublicEstimateApprovalPage() {
           )}
 
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" onClick={selectAll} disabled={busy || selectableIds.length === 0}>
+            <Button type="button" variant="outline" onClick={selectAll} disabled={busy || allSelectableIds.length === 0}>
               Select All
             </Button>
             <Button type="button" variant="outline" onClick={clearAll} disabled={busy || selectedIds.size === 0}>
@@ -264,6 +297,7 @@ export default function PublicEstimateApprovalPage() {
             </div>
           </div>
 
+          {/* Regular items + approved optional items (shown as regular once approved) */}
           <div className="overflow-x-auto border rounded-md">
             <table className="min-w-full text-sm">
               <thead className="bg-gray-50">
@@ -278,44 +312,61 @@ export default function PublicEstimateApprovalPage() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((it) => {
-                  const canSelect = !it.approved
-                  const checked = it.approved || selectedIds.has(it.id)
-                  return (
-                    <tr key={it.id} className="border-t">
-                      <td className="p-3">
-                        <Checkbox
-                          checked={checked}
-                          disabled={!canSelect || busy}
-                          onCheckedChange={() => toggle(it.id)}
-                        />
-                      </td>
-                      <td className="p-3 font-medium">{it.description}</td>
-                      <td className="p-3 text-gray-600">{it.notes || '-'}</td>
-                      <td className="p-3 text-right">{Number(it.quantity || 0).toFixed(2)}</td>
-                      <td className="p-3 text-right">{formatCurrency(Number(it.unitPrice || 0))}</td>
-                      <td className="p-3 text-right font-semibold">{formatCurrency(Number(it.total || 0))}</td>
-                      <td className="p-3">
-                        {it.invoiced ? (
-                          <span className="text-xs rounded bg-green-50 border border-green-200 px-2 py-1 text-green-800">
-                            Already invoiced
-                          </span>
-                        ) : it.approved ? (
-                          <span className="text-xs rounded bg-blue-50 border border-blue-200 px-2 py-1 text-blue-800">
-                            Approved
-                          </span>
-                        ) : (
-                          <span className="text-xs rounded bg-gray-50 border border-gray-200 px-2 py-1 text-gray-700">
-                            Not approved
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
+                {items.map((it) => renderItemRow(it, false))}
+                {approvedOptionalAsItems.map((it) => renderItemRow(it, true))}
+                {items.length === 0 && approvedOptionalAsItems.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="p-4 text-center text-gray-400 text-sm">No items</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
+
+          {/* Optional items section — only shown if there are unapproved optional items */}
+          {pendingOptionalItems.length > 0 && (
+            <div className="mt-4">
+              <div className="flex items-center gap-2 mb-2">
+                <h3 className="text-sm font-semibold text-gray-700">Optional Add-ons</h3>
+                <span className="text-xs text-gray-500">Select any you would like to add</span>
+              </div>
+              <div className="overflow-x-auto border border-amber-200 rounded-md bg-amber-50/30">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-amber-50">
+                    <tr className="text-left">
+                      <th className="p-3 w-10"> </th>
+                      <th className="p-3">Item</th>
+                      <th className="p-3">Description</th>
+                      <th className="p-3 text-right">Qty</th>
+                      <th className="p-3 text-right">Unit</th>
+                      <th className="p-3 text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pendingOptionalItems.map((it) => {
+                      const checked = selectedIds.has(it.id)
+                      return (
+                        <tr key={it.id} className="border-t border-amber-200">
+                          <td className="p-3">
+                            <Checkbox
+                              checked={checked}
+                              disabled={busy}
+                              onCheckedChange={() => toggle(it.id)}
+                            />
+                          </td>
+                          <td className="p-3 font-medium">{it.description}</td>
+                          <td className="p-3 text-gray-600">{it.notes || '-'}</td>
+                          <td className="p-3 text-right">{Number(it.quantity || 0).toFixed(2)}</td>
+                          <td className="p-3 text-right">{formatCurrency(Number(it.unitPrice || 0))}</td>
+                          <td className="p-3 text-right font-semibold">{formatCurrency(Number(it.total || 0))}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-2">
@@ -331,7 +382,7 @@ export default function PublicEstimateApprovalPage() {
           {successMsg && <div className="text-green-700 text-sm">{successMsg}</div>}
 
           <div className="flex flex-wrap gap-2">
-            <Button type="button" onClick={() => approve(true)} disabled={busy || selectableIds.length === 0}>
+            <Button type="button" onClick={() => approve(true)} disabled={busy || allSelectableIds.length === 0}>
               Approve All
             </Button>
             <Button type="button" variant="outline" onClick={() => approve(false)} disabled={busy || selectedIds.size === 0}>
@@ -347,9 +398,7 @@ export default function PublicEstimateApprovalPage() {
               Invoice created: <strong>{createdInvoice.invoiceNumber}</strong>
               {createdInvoice.portalPayUrl && (
                 <div className="mt-1">
-                  <a className="underline" href={createdInvoice.portalPayUrl}>
-                    Pay / View Invoice
-                  </a>
+                  <a className="underline" href={createdInvoice.portalPayUrl}>Pay / View Invoice</a>
                 </div>
               )}
             </div>
@@ -359,4 +408,3 @@ export default function PublicEstimateApprovalPage() {
     </div>
   )
 }
-

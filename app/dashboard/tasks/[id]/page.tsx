@@ -343,7 +343,7 @@ export default function TaskDetailPage() {
                     <div key={note.id} className="rounded-md border border-gray-200 p-3">
                       <p className="text-sm text-gray-700 whitespace-pre-wrap">{note.content}</p>
                       <p className="mt-2 text-xs text-gray-500">
-                        {note.authorName || 'User'} • {formatDate(note.createdAt)}
+                        {note.authorName || 'User'}{' \u2022 '}{formatDate(note.createdAt)}
                       </p>
                     </div>
                   ))}

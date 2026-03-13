@@ -18,6 +18,7 @@ interface Notification {
   status: string
   createdAt: string
   readAt: string | null
+  requiresAck?: boolean
 }
 
 export function NotificationBell() {
@@ -43,11 +44,13 @@ export function NotificationBell() {
       window.clearTimeout(toastTimerRef.current)
       toastTimerRef.current = null
     }
-    const isPayment =
+    const isPersistent =
+      notification.requiresAck === true ||
       notification.type === 'PAYMENT_RECEIVED' ||
-      /payment received|invoice paid/i.test(`${notification.title} ${notification.message || ''}`)
-    // Keep payment toasts visible until the user explicitly closes them.
-    if (!isPayment) {
+      notification.linkType === 'job' ||
+      /payment received|invoice paid|job created/i.test(`${notification.title} ${notification.message || ''}`)
+    // Keep payment and job-created toasts visible until the user explicitly closes them.
+    if (!isPersistent) {
       toastTimerRef.current = window.setTimeout(() => {
         setToastNotification(null)
       }, 5000)
@@ -361,21 +364,48 @@ export function NotificationBell() {
   return (
     <>
       {toastNotification && (
-        <div className="fixed right-4 top-4 z-[120] w-96 rounded-md border border-green-200 bg-green-50 p-3 shadow-lg">
+        <div className="fixed right-4 top-4 z-[120] w-96 rounded-md border border-green-200 bg-green-50 p-4 shadow-xl">
           <div className="flex items-start justify-between gap-3">
-            <div>
+            <div className="flex-1">
               <p className="text-sm font-semibold text-green-900">{toastNotification.title}</p>
               {toastNotification.message && (
-                <p className="mt-1 text-xs text-green-800">{toastNotification.message}</p>
+                <p className="mt-1 text-xs text-green-800 leading-relaxed">{toastNotification.message}</p>
+              )}
+              {(toastNotification.linkUrl && toastNotification.linkType === 'job') && (
+                <div className="mt-3 flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="rounded bg-green-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-800"
+                    onClick={() => {
+                      markAsRead(toastNotification.id)
+                      window.location.href = toastNotification.linkUrl!
+                      setToastNotification(null)
+                    }}
+                  >
+                    View Job
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded border border-green-600 px-3 py-1.5 text-xs font-semibold text-green-800 hover:bg-green-100"
+                    onClick={() => {
+                      markAsRead(toastNotification.id)
+                      setToastNotification(null)
+                    }}
+                  >
+                    Dismiss
+                  </button>
+                </div>
               )}
             </div>
-            <button
-              type="button"
-              className="text-green-800 hover:text-green-900 text-xs"
-              onClick={() => setToastNotification(null)}
-            >
-              Close
-            </button>
+            {!(toastNotification.linkType === 'job') && (
+              <button
+                type="button"
+                className="shrink-0 text-green-800 hover:text-green-900 text-xs"
+                onClick={() => setToastNotification(null)}
+              >
+                Close
+              </button>
+            )}
           </div>
         </div>
       )}

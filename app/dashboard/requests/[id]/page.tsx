@@ -838,7 +838,7 @@ export default function RequestDetailPage() {
                         {call.fromNumber} → {call.toNumber}
                       </p>
                       <p className="text-xs text-gray-400">
-                        {formatDate(call.startedAt)} • {call.duration ? `${Math.floor(call.duration / 60)}:${(call.duration % 60).toString().padStart(2, '0')}` : 'N/A'}
+                        {formatDate(call.startedAt)}{' \u2022 '}{call.duration ? `${Math.floor(call.duration / 60)}:${(call.duration % 60).toString().padStart(2, '0')}` : 'N/A'}
                       </p>
                     </div>
                     <span className={`px-2 py-1 text-xs rounded ${
@@ -903,7 +903,7 @@ export default function RequestDetailPage() {
                       <div className="flex-1">
                         <p className="text-sm text-gray-700">{activity.description}</p>
                         <p className="text-xs text-gray-400 mt-1">
-                          {activity.user ? `${activity.user.firstName} ${activity.user.lastName}` : 'System'} • {formatDate(activity.createdAt)}
+                          {activity.user ? `${activity.user.firstName} ${activity.user.lastName}` : 'System'}{' \u2022 '}{formatDate(activity.createdAt)}
                         </p>
                       </div>
                     </div>

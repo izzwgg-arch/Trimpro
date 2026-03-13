@@ -24,6 +24,70 @@ export async function GET(request: NextRequest) {
   const { skip, take, page, limit } = getPaginationParams(searchParams)
 
   try {
+    const enrichJobsWithFinancials = async (jobs: any[]) => {
+      if (!Array.isArray(jobs) || jobs.length === 0) return jobs
+
+      const jobIds = jobs.map((j) => String(j.id))
+      const clientIds = Array.from(new Set(jobs.map((j) => String(j.clientId || j.client?.id || '')).filter(Boolean)))
+
+      const [jobInvoiceAgg, clientInvoiceAgg] = await Promise.all([
+        prisma.invoice.groupBy({
+          by: ['jobId'],
+          where: {
+            tenantId: user.tenantId,
+            jobId: { in: jobIds },
+            status: { notIn: ['CANCELLED', 'REFUNDED'] as any },
+          } as any,
+          _sum: { total: true, balance: true },
+          _count: { _all: true },
+        }),
+        clientIds.length
+          ? prisma.invoice.groupBy({
+              by: ['clientId'],
+              where: {
+                tenantId: user.tenantId,
+                clientId: { in: clientIds },
+                balance: { gt: 0 },
+                status: { notIn: ['PAID', 'CANCELLED', 'REFUNDED'] as any },
+              } as any,
+              _sum: { balance: true },
+            })
+          : Promise.resolve([] as any[]),
+      ])
+
+      const byJobId = new Map(
+        jobInvoiceAgg.map((row) => [
+          String(row.jobId),
+          {
+            totalInvoicedAmount: row._sum.total?.toString() || '0',
+            openInvoiceBalance: row._sum.balance?.toString() || '0',
+            openInvoiceCount: Number(row._count?._all || 0),
+          },
+        ])
+      )
+      const byClientId = new Map(
+        clientInvoiceAgg.map((row) => [String(row.clientId), row._sum.balance?.toString() || '0'])
+      )
+
+      return jobs.map((job) => {
+        const jobTotals = byJobId.get(String(job.id)) || {
+          totalInvoicedAmount: '0',
+          openInvoiceBalance: '0',
+          openInvoiceCount: 0,
+        }
+        const clientOpenInvoiceBalance = byClientId.get(String(job.clientId || job.client?.id || '')) || '0'
+        const totalCost = job.actualAmount ?? job.estimateAmount ?? null
+        return {
+          ...job,
+          totalCost: totalCost != null ? totalCost.toString() : null,
+          totalInvoicedAmount: jobTotals.totalInvoicedAmount,
+          openInvoiceBalance: jobTotals.openInvoiceBalance,
+          openInvoiceCount: jobTotals.openInvoiceCount,
+          clientOpenInvoiceBalance,
+        }
+      })
+    }
+
     // If mobile request, enforce mobile.jobs.view_all permission for viewing all jobs
     if (isMobile) {
       const canViewAll = await hasMobilePermission(user.id, user.tenantId, 'mobile.jobs.view_all')
@@ -139,8 +203,9 @@ export async function GET(request: NextRequest) {
           prisma.job.count({ where }),
         ])
 
+        const enrichedJobs = await enrichJobsWithFinancials(jobs as any[])
         return NextResponse.json({
-          jobs,
+          jobs: enrichedJobs,
           pagination: createPaginationResponse(total, limit, skip),
         })
       }
@@ -255,8 +320,9 @@ export async function GET(request: NextRequest) {
       prisma.job.count({ where }),
     ])
 
+    const enrichedJobs = await enrichJobsWithFinancials(jobs as any[])
     return NextResponse.json({
-      jobs,
+      jobs: enrichedJobs,
       pagination: createPaginationResponse(total, limit, skip),
     })
   } catch (error) {

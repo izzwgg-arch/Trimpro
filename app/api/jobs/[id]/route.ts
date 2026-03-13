@@ -147,6 +147,35 @@ export async function GET(
       orderBy: { startedAt: 'asc' },
     })
 
+    // Financial aggregates for visibility on job detail and related screens.
+    const [jobInvoiceAgg, clientOpenAgg] = await Promise.all([
+      prisma.invoice.aggregate({
+        where: {
+          tenantId: user.tenantId,
+          jobId: job.id,
+          status: { notIn: ['CANCELLED', 'REFUNDED'] as any },
+        } as any,
+        _sum: {
+          total: true,
+          balance: true,
+        },
+        _count: {
+          id: true,
+        },
+      }),
+      prisma.invoice.aggregate({
+        where: {
+          tenantId: user.tenantId,
+          clientId: job.clientId,
+          balance: { gt: 0 },
+          status: { notIn: ['PAID', 'CANCELLED', 'REFUNDED'] as any },
+        } as any,
+        _sum: {
+          balance: true,
+        },
+      }),
+    ])
+
     // Find job site address
     const addresses = job.addresses || []
     const jobSite = addresses.find(addr => addr.type === 'job_site') || null
@@ -206,6 +235,11 @@ export async function GET(
       billableHours: summary.billableHours,
       billableAmountCents: summary.billableAmountCents,
       activeTimers,
+      totalCost: job.actualAmount ? job.actualAmount.toString() : (job.estimateAmount ? job.estimateAmount.toString() : null),
+      totalInvoicedAmount: jobInvoiceAgg._sum.total?.toString() || '0',
+      openInvoiceBalance: jobInvoiceAgg._sum.balance?.toString() || '0',
+      openInvoiceCount: Number(jobInvoiceAgg._count?.id || 0),
+      clientOpenInvoiceBalance: clientOpenAgg._sum.balance?.toString() || '0',
       invoices: safeJob.invoices.map(inv => ({
         id: inv.id,
         invoiceNumber: inv.invoiceNumber,

@@ -37,6 +37,12 @@ interface ConversationsResponse {
   conversations: Conversation[]
 }
 
+interface MeasuringRequestsCountResponse {
+  counts?: {
+    pending?: number
+  }
+}
+
 export function DashboardScreen({ navigation }: Props) {
   const { user } = useAuth()
   const isOnline = useOnlineState()
@@ -63,6 +69,11 @@ export function DashboardScreen({ navigation }: Props) {
     queryFn: () => apiRequest<ConversationsResponse>('/api/messages/conversations?assigned=me'),
     refetchInterval: 45_000,
   })
+  const measuringCountQuery = useQuery({
+    queryKey: ['mobile-measuring-request-count'],
+    queryFn: () => apiRequest<MeasuringRequestsCountResponse>('/api/measuring-requests/my?status=PENDING'),
+    refetchInterval: 45_000,
+  })
 
   const todaysJobs = useMemo(() => assignmentsQuery.data?.todaysJobs ?? [], [assignmentsQuery.data])
   const todaysTasks = useMemo(() => assignmentsQuery.data?.todaysTasks ?? [], [assignmentsQuery.data])
@@ -70,6 +81,7 @@ export function DashboardScreen({ navigation }: Props) {
   const jobsTodayCount = assignmentsQuery.data?.jobsTodayCount ?? todaysJobs.length
   const openTasksCount = assignmentsQuery.data?.openTasksCount ?? 0
   const openIssuesCount = assignmentsQuery.data?.openIssuesCount ?? openIssues.length
+  const pendingMeasuringCount = Number(measuringCountQuery.data?.counts?.pending || 0)
 
   const unreadMessagesByJob = useMemo(() => {
     const map = new Map<string, number>()
@@ -112,6 +124,11 @@ export function DashboardScreen({ navigation }: Props) {
   const navigateToIssues = () => {
     const parent: any = navigation.getParent()
     parent?.navigate('IssuesTab')
+  }
+
+  const navigateToMeasuringRequests = () => {
+    const parent: any = navigation.getParent()
+    parent?.navigate('JobsTab', { screen: 'MeasuringRequestsHome' })
   }
 
   const openTask = (taskId: string) => {
@@ -221,6 +238,16 @@ export function DashboardScreen({ navigation }: Props) {
               lastSyncAt={lastSyncAt}
               outboxCount={outboxCount}
             />
+
+            <Pressable style={styles.measuringTile} onPress={navigateToMeasuringRequests}>
+              <View>
+                <Text style={styles.measuringTitle}>Measuring Requests</Text>
+                <Text style={styles.measuringSubtitle}>Pending requests assigned to you</Text>
+              </View>
+              <View style={styles.measuringCountWrap}>
+                <Text style={styles.measuringCount}>{pendingMeasuringCount}</Text>
+              </View>
+            </Pressable>
 
             <Card>
               <SectionHeader title="Today's Jobs" rightActionLabel="See all" onRightAction={navigateToJobs} />
@@ -350,4 +377,38 @@ const styles = StyleSheet.create({
   rowTitle: { ...typography.sub, color: colors.textPrimary, fontWeight: '700' },
   rowMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
   stackItem: { marginBottom: spacing.sm },
+  measuringTile: {
+    borderWidth: 1,
+    borderColor: colors.divider,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  measuringTitle: {
+    ...typography.sub,
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+  measuringSubtitle: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  measuringCountWrap: {
+    minWidth: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(46,74,89,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  measuringCount: {
+    ...typography.sub,
+    color: colors.brandPrimary,
+    fontWeight: '800',
+  },
 })

@@ -45,7 +45,7 @@ export function TrimProLogo({ variant = 'light', size = 'md', className }: TrimP
   const { webLogoUrl } = useBranding()
   const [errored, setErrored] = useState(false)
 
-  // Reset error flag whenever a new logo URL is supplied
+  // Reset error flag whenever a new logo URL is supplied (e.g. after branding API fetch)
   useEffect(() => {
     setErrored(false)
   }, [webLogoUrl])

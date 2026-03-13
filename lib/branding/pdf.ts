@@ -4,6 +4,7 @@
  * All PDF/estimate/invoice routes must use this instead of env vars or hardcoded values.
  */
 import { getBrandingSettingsForTenant } from './settings'
+import { embedLogoAsDataUri } from '@/lib/email/embed-logo'
 
 export interface PdfBranding {
   /** Logo URL to embed in the document header — may be an absolute URL or data URI. */
@@ -68,7 +69,15 @@ export async function getPdfBranding(tenantId: string): Promise<PdfBranding> {
     process.env.NEXT_PUBLIC_PDF_LOGO_URL ||
     null
 
-  const logoUrl = rawLogoUrl || buildDefaultLogoDataUri(accentColor, accentTextColor)
+  let logoUrl: string
+  if (rawLogoUrl) {
+    // Normalize: strip /api/public prefix that older uploads may have
+    const normalizedUrl = rawLogoUrl.replace(/^\/api\/public(\/uploads\/)/, '$1')
+    const embedded = await embedLogoAsDataUri(normalizedUrl)
+    logoUrl = embedded || rawLogoUrl
+  } else {
+    logoUrl = buildDefaultLogoDataUri(accentColor, accentTextColor)
+  }
 
   return {
     logoUrl,

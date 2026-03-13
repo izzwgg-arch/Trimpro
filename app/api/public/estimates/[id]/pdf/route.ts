@@ -88,33 +88,42 @@ export async function GET(
       0
     )
 
-    const rows = visibleLineItems
-      .map(
-        (li) => `
-          <tr>
-            <td>${escapeHtml(li.description)}</td>
-            <td>${escapeHtml(li.showDescriptionToCustomer === false ? '' : (li.notes || ''))}</td>
-            <td style="text-align:right">${Number(li.quantity).toFixed(2)}</td>
-            <td style="text-align:right">$${Number(li.unitPrice).toFixed(2)}</td>
-            <td style="text-align:right">$${Number(li.total).toFixed(2)}</td>
-          </tr>
-        `
-      )
-      .join('')
+    // Determine column visibility based on per-item flags
+    const showPriceCol = visibleLineItems.some((li) => li.showPriceToCustomer !== false) ||
+      visibleOptionalItems.some((li) => li.showPriceToCustomer !== false)
+    const showCostCol = visibleLineItems.some((li) => li.showCostToCustomer === true) ||
+      visibleOptionalItems.some((li) => li.showCostToCustomer === true)
+    const showNotesCol = visibleLineItems.some((li) => li.showDescriptionToCustomer !== false) ||
+      visibleOptionalItems.some((li) => li.showDescriptionToCustomer !== false)
 
-    const optionalRows = visibleOptionalItems
-      .map(
-        (li) => `
-          <tr>
-            <td>${escapeHtml(li.description)}</td>
-            <td>${escapeHtml(li.showDescriptionToCustomer === false ? '' : (li.notes || ''))}</td>
-            <td style="text-align:right">${Number(li.quantity).toFixed(2)}</td>
-            <td style="text-align:right">$${Number(li.unitPrice).toFixed(2)}</td>
-            <td style="text-align:right">$${Number(li.total).toFixed(2)}</td>
-          </tr>
-        `
-      )
-      .join('')
+    function buildEstRow(li: (typeof visibleLineItems)[0]) {
+      return `
+        <tr>
+          <td>${escapeHtml(li.description)}</td>
+          ${showNotesCol ? `<td>${escapeHtml(li.showDescriptionToCustomer === false ? '' : (li.notes || ''))}</td>` : ''}
+          <td style="text-align:right">${Number(li.quantity).toFixed(2)}</td>
+          ${showCostCol ? `<td style="text-align:right">${li.showCostToCustomer === true ? '$' + Number((li as any).unitCost || 0).toFixed(2) : ''}</td>` : ''}
+          ${showPriceCol ? `<td style="text-align:right">${li.showPriceToCustomer !== false ? '$' + Number(li.unitPrice).toFixed(2) : ''}</td>` : ''}
+          <td style="text-align:right">$${Number(li.total).toFixed(2)}</td>
+        </tr>
+      `
+    }
+
+    const rows = visibleLineItems.map(buildEstRow).join('')
+    const optionalRows = visibleOptionalItems.map(buildEstRow).join('')
+
+    function tableHeader() {
+      return `
+        <tr>
+          <th>Item</th>
+          ${showNotesCol ? '<th>Description</th>' : ''}
+          <th style="text-align:right">Qty</th>
+          ${showCostCol ? '<th style="text-align:right">Cost</th>' : ''}
+          ${showPriceCol ? '<th style="text-align:right">Unit</th>' : ''}
+          <th style="text-align:right">Total</th>
+        </tr>
+      `
+    }
 
     const html = `<!doctype html>
 <html>
@@ -251,15 +260,7 @@ export async function GET(
       </div>
 
       <table>
-        <thead>
-          <tr>
-            <th>Item</th>
-            <th>Description</th>
-            <th style="text-align:right">Qty</th>
-            <th style="text-align:right">Unit</th>
-            <th style="text-align:right">Total</th>
-          </tr>
-        </thead>
+        <thead>${tableHeader()}</thead>
         <tbody>${rows}</tbody>
       </table>
 
@@ -269,15 +270,7 @@ export async function GET(
             <div style="margin-top: 20px;">
               <h3 style="margin: 0 0 8px; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: #6b7280;">Optional Items</h3>
               <table>
-                <thead>
-                  <tr>
-                    <th>Item</th>
-                    <th>Description</th>
-                    <th style="text-align:right">Qty</th>
-                    <th style="text-align:right">Unit</th>
-                    <th style="text-align:right">Total</th>
-                  </tr>
-                </thead>
+                <thead>${tableHeader()}</thead>
                 <tbody>${optionalRows}</tbody>
               </table>
               <div class="summary">
