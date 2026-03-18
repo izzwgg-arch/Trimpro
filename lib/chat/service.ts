@@ -290,7 +290,7 @@ export async function listMessages(
 
   const messageIds = messages.map((m) => m.id)
   const senderIds = Array.from(new Set(messages.map((m) => m.senderId)))
-  const [attachments, senders] = await Promise.all([
+  const [attachments, senders, reactions] = await Promise.all([
     prisma.chatMessageAttachment.findMany({
       where: { tenantId, messageId: { in: messageIds } },
       orderBy: { createdAt: 'asc' },
@@ -298,6 +298,10 @@ export async function listMessages(
     prisma.user.findMany({
       where: { tenantId, id: { in: senderIds } },
       select: { id: true, firstName: true, lastName: true, email: true, avatar: true },
+    }),
+    prisma.chatMessageReaction.findMany({
+      where: { messageId: { in: messageIds } },
+      select: { messageId: true, userId: true, emoji: true },
     }),
   ])
 
@@ -307,6 +311,24 @@ export async function listMessages(
     attachmentMap.get(attachment.messageId)!.push(attachment)
   }
   const senderMap = new Map(senders.map((s) => [s.id, s]))
+
+  // Build reaction user name map
+  const reactionUserIds = [...new Set(reactions.map((r) => r.userId))]
+  const reactionUsers = reactionUserIds.length > 0
+    ? await prisma.user.findMany({
+        where: { id: { in: reactionUserIds } },
+        select: { id: true, firstName: true, lastName: true, email: true },
+      })
+    : []
+  const reactionUserMap = new Map(reactionUsers.map((u) => [u.id, u]))
+
+  const reactionMap = new Map<string, Array<{ emoji: string; userId: string; userName: string }>>()
+  for (const r of reactions) {
+    if (!reactionMap.has(r.messageId)) reactionMap.set(r.messageId, [])
+    const u = reactionUserMap.get(r.userId)
+    const name = u ? `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email : 'Unknown'
+    reactionMap.get(r.messageId)!.push({ emoji: r.emoji, userId: r.userId, userName: name })
+  }
 
   return messages.map((message) => ({
     ...message,
@@ -321,6 +343,7 @@ export async function listMessages(
         }
       : null,
     attachments: attachmentMap.get(message.id) || [],
+    reactions: reactionMap.get(message.id) || [],
   }))
 }
 

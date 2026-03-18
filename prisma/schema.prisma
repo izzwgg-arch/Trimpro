@@ -2998,6 +2998,19 @@ model ChatMessage {
   @@map("chat_messages")
 }
 
+model ChatMessageReaction {
+  id        String   @id @default(cuid())
+  tenantId  String
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
+  @@map("chat_message_reactions")
+}
+
 model ChatMessageAttachment {
   id           String             @id @default(cuid())
   tenantId     String

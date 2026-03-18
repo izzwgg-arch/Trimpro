@@ -10,8 +10,10 @@ interface MessageBubbleProps {
   message: ChatMessage | { sender?: ChatMessage['sender'] | null; [key: string]: any }
   isMine: boolean
   showSender?: boolean
+  currentUserId?: string
   onJobPress?: (jobId: string) => void
   onLongPress?: () => void
+  onReact?: (emoji: string) => void
   onImagePress?: (uri: string, fileName?: string | null) => void
   onSwipeReply?: (message: ChatMessage) => void
   onReplyPress?: (messageId: string) => void
@@ -87,8 +89,10 @@ export function MessageBubble({
   message,
   isMine,
   showSender,
+  currentUserId,
   onJobPress,
   onLongPress,
+  onReact,
   onImagePress,
   onSwipeReply,
   onReplyPress,
@@ -296,10 +300,102 @@ export function MessageBubble({
           </View>
         ) : null}
       </Pressable>
+
+      {/* Reaction chips */}
+      {message.reactions && message.reactions.length > 0 ? (
+        <ReactionChips
+          reactions={message.reactions}
+          isMine={isMine}
+          currentUserId={currentUserId}
+          onReact={onReact}
+        />
+      ) : null}
       </View>
     </Animated.View>
   )
 }
+
+interface ReactionChipsProps {
+  reactions: Array<{ emoji: string; userId: string; userName: string }>
+  isMine: boolean
+  currentUserId?: string
+  onReact?: (emoji: string) => void
+}
+
+function ReactionChips({ reactions, isMine, currentUserId, onReact }: ReactionChipsProps) {
+  // Group by emoji
+  const groups = reactions.reduce<Record<string, { count: number; hasMine: boolean; names: string[] }>>(
+    (acc, r) => {
+      if (!acc[r.emoji]) acc[r.emoji] = { count: 0, hasMine: false, names: [] }
+      acc[r.emoji].count += 1
+      if (r.userId === currentUserId) acc[r.emoji].hasMine = true
+      acc[r.emoji].names.push(r.userName)
+      return acc
+    },
+    {}
+  )
+
+  return (
+    <View style={[reactionStyles.row, isMine ? reactionStyles.rowMine : reactionStyles.rowOther]}>
+      {Object.entries(groups).map(([emoji, data]) => (
+        <Pressable
+          key={emoji}
+          style={[reactionStyles.chip, data.hasMine && reactionStyles.chipMine]}
+          onPress={() => onReact?.(emoji)}
+          hitSlop={4}
+        >
+          <Text style={reactionStyles.chipEmoji}>{emoji}</Text>
+          {data.count > 1 && <Text style={[reactionStyles.chipCount, data.hasMine && reactionStyles.chipCountMine]}>{data.count}</Text>}
+        </Pressable>
+      ))}
+    </View>
+  )
+}
+
+const reactionStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: 3,
+    paddingHorizontal: 2,
+  },
+  rowMine: {
+    justifyContent: 'flex-end',
+  },
+  rowOther: {
+    justifyContent: 'flex-start',
+    paddingLeft: 4,
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.divider,
+    borderRadius: 12,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  chipMine: {
+    backgroundColor: colors.brandPrimary + '22',
+    borderColor: colors.brandPrimary + '66',
+  },
+  chipEmoji: {
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  chipCount: {
+    ...typography.caption,
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  chipCountMine: {
+    color: colors.brandPrimary,
+  },
+})
 
 const styles = StyleSheet.create({
   container: {

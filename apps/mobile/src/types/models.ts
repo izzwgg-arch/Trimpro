@@ -235,6 +235,11 @@ export interface ChatMessage {
     longitude?: number | null
     sizeBytes?: number | null
   }>
+  reactions?: Array<{
+    emoji: string
+    userId: string
+    userName: string
+  }>
 }
 
 export interface Attachment {
