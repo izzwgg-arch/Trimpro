@@ -3,7 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { getPaginationParams, createPaginationResponse } from '@/lib/pagination'
 import { validateRequest, createClientSchema } from '@/lib/validation'
-import { syncClientToQuickBooks } from '@/lib/services/qbo-sync'
+import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -226,7 +226,7 @@ export async function POST(request: NextRequest) {
 
     // Creating a client from Clients page should create/sync the customer in QuickBooks.
     try {
-      await syncClientToQuickBooks(user.tenantId, client.id)
+      await enqueueQboSync(user.tenantId, 'client', client.id)
     } catch (error) {
       console.error('QuickBooks client sync trigger error:', error)
     }

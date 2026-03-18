@@ -110,12 +110,12 @@ async function ensureQboInvoiceAchHostedLink(params: {
   )
 
   // QBO sometimes generates InvoiceLink asynchronously (especially for freshly-created invoices).
-  // Poll a few times before giving up.
-  for (let attempt = 0; attempt < 5; attempt++) {
+  // Poll up to 3 times (reduced from 5) before attempting the send fallback.
+  for (let attempt = 0; attempt < 3; attempt++) {
     const updated = await getInvoice()
     const updatedLink = extractLink(updated)
     if (updatedLink) return updatedLink
-    await new Promise((r) => setTimeout(r, 400 + attempt * 250))
+    await new Promise((r) => setTimeout(r, 600 + attempt * 400))
   }
 
   // If ACH works for imported invoices but not for freshly-created ones, QBO often requires the invoice to be "sent"
@@ -137,11 +137,12 @@ async function ensureQboInvoiceAchHostedLink(params: {
       // If sending fails, fall back to the generic error below.
     }
 
-    for (let attempt = 0; attempt < 5; attempt++) {
+    // Poll up to 3 times after the send (reduced from 5).
+    for (let attempt = 0; attempt < 3; attempt++) {
       const afterSend = await getInvoice()
       const linkAfterSend = extractLink(afterSend)
       if (linkAfterSend) return linkAfterSend
-      await new Promise((r) => setTimeout(r, 500 + attempt * 300))
+      await new Promise((r) => setTimeout(r, 700 + attempt * 400))
     }
   }
 
@@ -271,11 +272,11 @@ export async function createAchPaymentSession(params: {
       scope: 'qbo_ach_create_session',
       requestHash: idempotencyKey,
       response: { intentId: intent.id, publicUrl, hostedUrl },
-      expiresAt: new Date(Date.now() + 1000 * 60 * 60), // 1 hour
+      expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24), // 24 hours
     },
     update: {
       response: { intentId: intent.id, publicUrl, hostedUrl },
-      expiresAt: new Date(Date.now() + 1000 * 60 * 60),
+      expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
     },
   })
 

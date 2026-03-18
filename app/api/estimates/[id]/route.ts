@@ -3,7 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { parseAddressParts } from '@/lib/address/parse'
 import { geocodeAddressPartsFromString } from '@/lib/geocoding'
-import { syncEstimateToQuickBooks } from '@/lib/services/qbo-sync'
+import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 
 export async function GET(
   request: NextRequest,
@@ -379,7 +379,7 @@ export async function PUT(
 
     // Best-effort: if this estimate is connected to QBO, push edits over as an update.
     try {
-      await syncEstimateToQuickBooks(user.tenantId, estimateRecord.id)
+      await enqueueQboSync(user.tenantId, 'estimate', estimateRecord.id)
     } catch (error) {
       console.error('QuickBooks estimate sync trigger error (estimate update):', error)
     }

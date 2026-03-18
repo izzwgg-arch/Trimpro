@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
-import { syncPurchaseOrderToQuickBooks } from '@/lib/services/qbo-sync'
+import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 
 export async function GET(
   request: NextRequest,
@@ -319,7 +319,7 @@ export async function PUT(
     const shippingAmount = parseFloat(shipping || 0)
 
     try {
-      await syncPurchaseOrderToQuickBooks(user.tenantId, params.id)
+      await enqueueQboSync(user.tenantId, 'purchase_order', params.id)
     } catch (error) {
       console.error('QuickBooks purchase order sync trigger error (update):', error)
     }

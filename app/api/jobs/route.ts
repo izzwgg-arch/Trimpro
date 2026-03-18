@@ -3,7 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { getPaginationParams, createPaginationResponse } from '@/lib/pagination'
 import { validateRequest, createJobSchema } from '@/lib/validation'
-import { syncJobToQuickBooksProject } from '@/lib/services/qbo-sync'
+import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { isMobileRequest, requireMobilePermission, hasMobilePermission } from '@/lib/authorization'
 
 export async function GET(request: NextRequest) {
@@ -447,7 +447,7 @@ export async function POST(request: NextRequest) {
     })
 
     try {
-      await syncJobToQuickBooksProject(user.tenantId, job.id)
+      await enqueueQboSync(user.tenantId, 'job', job.id)
     } catch (error) {
       console.error('QuickBooks job/project sync trigger error:', error)
     }

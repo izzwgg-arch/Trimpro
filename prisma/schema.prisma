@@ -1865,6 +1865,11 @@ model QuickBooksIntegration {
   clearingAccountId String?
   discountAccountId String?
 
+  // Cached QBO reference IDs (avoids repeated "query by name" API calls)
+  serviceItemId          String? // "Trim Pro Service" item ID in QBO
+  cachedExpenseAccountId String? // expense/COGS account ID in QBO
+  reconcileLastAt        DateTime? // rate guard for the ACH reconcile cron
+
   // Sync settings
   autoSync       Boolean   @default(false)
   lastSyncAt     DateTime?
@@ -1874,11 +1879,36 @@ model QuickBooksIntegration {
   // Relationships
   tenant   Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   syncLogs QuickBooksSyncLog[]
+  syncJobs QboSyncJob[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@map("quickbooks_integrations")
+}
+
+model QboSyncJob {
+  id          String    @id @default(cuid())
+  tenantId    String
+  entityType  String    // invoice, client, estimate, payment, vendor, purchase_order, job, lead
+  entityId    String
+  actionType  String    @default("sync")
+  status      String    @default("pending") // pending, processing, synced, failed, skipped
+  retryCount  Int       @default(0)
+  maxRetries  Int       @default(3)
+  nextRetryAt DateTime  @default(now())
+  lastError   String?   @db.Text
+  payloadHash String?   // deduplication: hash of the record data at enqueue time
+  processedAt DateTime?
+
+  integration QuickBooksIntegration @relation(fields: [tenantId], references: [tenantId], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, nextRetryAt])
+  @@index([tenantId, entityType, entityId, status])
+  @@map("qbo_sync_jobs")
 }
 
 model QuickBooksSyncLog {

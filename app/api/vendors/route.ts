@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
-import { syncVendorToQuickBooks } from '@/lib/services/qbo-sync'
+import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -219,7 +219,7 @@ export async function POST(request: NextRequest) {
     })
 
     try {
-      await syncVendorToQuickBooks(user.tenantId, vendor.id)
+      await enqueueQboSync(user.tenantId, 'vendor', vendor.id)
     } catch (error) {
       console.error('QuickBooks vendor sync trigger error:', error)
     }

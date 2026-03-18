@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
-import { syncClientToQuickBooks } from '@/lib/services/qbo-sync'
+import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { parseAddressParts } from '@/lib/address/parse'
 import { geocodeAddressPartsFromString } from '@/lib/geocoding'
 
@@ -241,7 +241,7 @@ export async function PUT(
       })
 
       try {
-        await syncClientToQuickBooks(user.tenantId, client.id)
+        await enqueueQboSync(user.tenantId, 'client', client.id)
       } catch (error) {
         console.error('QuickBooks client sync trigger error (lead convert):', error)
       }

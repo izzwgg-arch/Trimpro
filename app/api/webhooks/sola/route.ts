@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { verifySolaWebhookSignature } from '@/lib/integrations/providers/sola'
 import { notifyInvoicePaid } from '@/lib/notifications'
-import { syncPaymentToQuickBooks } from '@/lib/services/qbo-sync'
+import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 
 export async function POST(request: NextRequest) {
   try {
@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
       })
 
       try {
-        await syncPaymentToQuickBooks(invoice.tenantId, payment.id)
+        await enqueueQboSync(invoice.tenantId, 'payment', payment.id, { processImmediately: false })
       } catch (error) {
         console.error('QuickBooks payment sync trigger error (legacy webhook):', error)
       }

@@ -28,6 +28,12 @@ export async function POST(request: NextRequest) {
   }
 
   const recentWindow = new Date(Date.now() - 1000 * 60 * 60 * 24 * 30)
+
+  // Rate guard: skip tenants whose reconcile ran within the last 90 minutes.
+  // This prevents repeated cron runs from multiplying QBO API calls.
+  const RECONCILE_COOLDOWN_MS = 90 * 60 * 1000
+  const cooldownCutoff = new Date(Date.now() - RECONCILE_COOLDOWN_MS)
+
   const pending = await prisma.invoicePaymentIntent.findMany({
     where: {
       provider: 'qbo',
@@ -40,10 +46,34 @@ export async function POST(request: NextRequest) {
     take: 200,
   })
 
+  // Filter out tenants reconciled recently.
+  const integrations = await prisma.quickBooksIntegration.findMany({
+    where: {
+      tenantId: { in: pending.map((r) => r.tenantId) },
+      OR: [
+        { reconcileLastAt: null },
+        { reconcileLastAt: { lte: cooldownCutoff } },
+      ],
+    },
+    select: { tenantId: true },
+  })
+  const eligibleTenants = new Set(integrations.map((i) => i.tenantId))
+
   let ok = 0
+  let skipped = 0
   let failed = 0
   for (const row of pending) {
+    if (!eligibleTenants.has(row.tenantId)) {
+      skipped++
+      continue
+    }
     try {
+      // Stamp before running so concurrent cron invocations see the guard.
+      await prisma.quickBooksIntegration.update({
+        where: { tenantId: row.tenantId },
+        data: { reconcileLastAt: new Date() },
+      }).catch(() => {})
+
       await reconcileTenantRecentAchPayments(row.tenantId)
       ok += 1
     } catch (e) {
@@ -55,6 +85,8 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     ok: true,
     tenantsScanned: pending.length,
+    tenantsEligible: eligibleTenants.size,
+    tenantsSkipped: skipped,
     tenantsSucceeded: ok,
     tenantsFailed: failed,
   })

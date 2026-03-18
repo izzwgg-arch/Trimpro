@@ -1,21 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
-import {
-  syncClientToQuickBooks,
-  syncEstimateToQuickBooks,
-  syncInvoiceToQuickBooks,
-  syncJobToQuickBooksProject,
-  syncLeadToQuickBooksProject,
-  syncPaymentToQuickBooks,
-} from '@/lib/services/qbo-sync'
+import { enqueueQboSync, type QboEntityType } from '@/lib/qbo/sync-queue'
 
-type TriggerEvent =
-  | 'client.created'
-  | 'request.created'
-  | 'job.created'
-  | 'estimate.created'
-  | 'invoice.created'
-  | 'payment.recorded'
+const EVENT_TO_ENTITY: Record<string, QboEntityType> = {
+  'client.created': 'client',
+  'request.created': 'lead',
+  'job.created': 'job',
+  'estimate.created': 'estimate',
+  'invoice.created': 'invoice',
+  'payment.recorded': 'payment',
+}
 
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -24,34 +18,19 @@ export async function POST(request: NextRequest) {
   const user = getAuthUser(request)
   try {
     const body = await request.json().catch(() => ({}))
-    const event = String(body?.event || '') as TriggerEvent
+    const event = String(body?.event || '')
     const entityId = String(body?.entityId || '')
     if (!event || !entityId) {
       return NextResponse.json({ error: 'event and entityId are required' }, { status: 400 })
     }
 
-    switch (event) {
-      case 'client.created':
-        await syncClientToQuickBooks(user.tenantId, entityId)
-        break
-      case 'request.created':
-        await syncLeadToQuickBooksProject(user.tenantId, entityId)
-        break
-      case 'job.created':
-        await syncJobToQuickBooksProject(user.tenantId, entityId)
-        break
-      case 'estimate.created':
-        await syncEstimateToQuickBooks(user.tenantId, entityId)
-        break
-      case 'invoice.created':
-        await syncInvoiceToQuickBooks(user.tenantId, entityId)
-        break
-      case 'payment.recorded':
-        await syncPaymentToQuickBooks(user.tenantId, entityId)
-        break
-      default:
-        return NextResponse.json({ error: 'Unsupported event type' }, { status: 400 })
+    const entityType = EVENT_TO_ENTITY[event]
+    if (!entityType) {
+      return NextResponse.json({ error: 'Unsupported event type' }, { status: 400 })
     }
+
+    // Admin-triggered syncs run immediately (synchronous) so the caller sees the result.
+    await enqueueQboSync(user.tenantId, entityType, entityId, { processImmediately: true })
 
     return NextResponse.json({ success: true })
   } catch (error: any) {
@@ -59,4 +38,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error?.message || 'Trigger sync failed' }, { status: 500 })
   }
 }
-

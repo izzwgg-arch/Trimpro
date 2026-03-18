@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import crypto from 'crypto'
-import { syncInvoiceToQuickBooks } from '@/lib/services/qbo-sync'
+import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 
 export async function POST(
   request: NextRequest,
@@ -139,7 +139,7 @@ export async function POST(
     })
 
     try {
-      await syncInvoiceToQuickBooks(user.tenantId, invoice.id)
+      await enqueueQboSync(user.tenantId, 'invoice', invoice.id)
     } catch (error) {
       console.error('QuickBooks invoice sync trigger error (job convert):', error)
     }

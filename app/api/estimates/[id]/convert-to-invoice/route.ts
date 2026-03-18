@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { solaService } from '@/lib/services/sola'
 import crypto from 'crypto'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
-import { syncInvoiceToQuickBooks } from '@/lib/services/qbo-sync'
+import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 
 type BillingMode = 'FULL' | 'PERCENTAGE' | 'MANUAL'
 
@@ -307,7 +307,7 @@ export async function POST(
     }
 
     try {
-      await syncInvoiceToQuickBooks(user.tenantId, result.id)
+      await enqueueQboSync(user.tenantId, 'invoice', result.id)
     } catch (error) {
       console.error('QuickBooks invoice sync trigger error (estimate convert):', error)
     }

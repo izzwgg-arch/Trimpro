@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { notifyInvoicePaid, createNotificationsForUsers } from '@/lib/notifications'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { testEmailProvider } from '@/lib/integrations/providers/email'
-import { syncJobToQuickBooksProject, syncPaymentToQuickBooks } from '@/lib/services/qbo-sync'
+import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { getEmailBranding } from '@/lib/email/branding'
 
 function normalizePhone(value: string | null | undefined) {
@@ -523,7 +523,7 @@ export async function POST(request: NextRequest) {
         })
 
         try {
-          await syncPaymentToQuickBooks(client.tenantId, createdPayment.id)
+          await enqueueQboSync(client.tenantId, 'payment', createdPayment.id, { processImmediately: false })
         } catch (error) {
           console.error('QuickBooks payment sync trigger error (bulk):', error)
         }
@@ -662,7 +662,7 @@ export async function POST(request: NextRequest) {
       })
 
       try {
-        await syncPaymentToQuickBooks(invoice.tenantId, createdPayment.id)
+        await enqueueQboSync(invoice.tenantId, 'payment', createdPayment.id, { processImmediately: false })
       } catch (error) {
         console.error('QuickBooks payment sync trigger error:', error)
       }
@@ -746,7 +746,7 @@ export async function POST(request: NextRequest) {
           )
         }
         try {
-          await syncJobToQuickBooksProject(invoice.tenantId, job.id)
+          await enqueueQboSync(invoice.tenantId, 'job', job.id, { processImmediately: false })
         } catch (error) {
           console.error('QuickBooks job/project sync trigger error (payment lifecycle):', error)
         }

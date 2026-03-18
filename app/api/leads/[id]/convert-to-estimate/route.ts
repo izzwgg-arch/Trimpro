@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
-import { syncClientToQuickBooks, syncEstimateToQuickBooks } from '@/lib/services/qbo-sync'
+import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 
 function normalizePhone(value: string | null | undefined) {
   return (value || '').replace(/\D/g, '')
@@ -170,14 +170,14 @@ export async function POST(
 
     if (createdClientIdForSync) {
       try {
-        await syncClientToQuickBooks(user.tenantId, createdClientIdForSync)
+        await enqueueQboSync(user.tenantId, 'client', createdClientIdForSync)
       } catch (error) {
         console.error('QuickBooks client sync trigger error (request convert):', error)
       }
     }
 
     try {
-      await syncEstimateToQuickBooks(user.tenantId, estimate.id)
+      await enqueueQboSync(user.tenantId, 'estimate', estimate.id)
     } catch (error) {
       console.error('QuickBooks estimate sync trigger error (lead convert):', error)
     }

@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { getPaginationParams, createPaginationResponse } from '@/lib/pagination'
 import { validateRequest, createInvoiceSchema } from '@/lib/validation'
 import crypto from 'crypto'
-import { syncInvoiceToQuickBooks } from '@/lib/services/qbo-sync'
+import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { createAchPaymentSession } from '@/lib/qbo/payments-ach'
 
 export async function GET(request: NextRequest) {
@@ -399,7 +399,7 @@ export async function POST(request: NextRequest) {
     })
 
     try {
-      await syncInvoiceToQuickBooks(user.tenantId, invoice.id)
+      await enqueueQboSync(user.tenantId, 'invoice', invoice.id)
     } catch (error) {
       console.error('QuickBooks invoice sync trigger error:', error)
     }

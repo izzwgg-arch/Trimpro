@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { notifyNewLead } from '@/lib/notifications'
-import { syncClientToQuickBooks } from '@/lib/services/qbo-sync'
+import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -199,7 +199,7 @@ export async function POST(request: NextRequest) {
     // Sync QBO customer ONLY when this request created a new client.
     if (createdClientIdForSync) {
       try {
-        await syncClientToQuickBooks(user.tenantId, createdClientIdForSync)
+        await enqueueQboSync(user.tenantId, 'client', createdClientIdForSync)
       } catch (error) {
         console.error('QuickBooks client sync trigger error (new client from request):', error)
       }

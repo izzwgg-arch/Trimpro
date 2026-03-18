@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { normalizeEmailList, splitEmailList, isValidEmail } from '@/lib/email'
-import { syncClientToQuickBooks } from '@/lib/services/qbo-sync'
+import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 
 export async function GET(
   request: NextRequest,
@@ -329,7 +329,7 @@ export async function PUT(
 
     // Best-effort: keep QBO customer in sync after every client edit.
     try {
-      await syncClientToQuickBooks(user.tenantId, client.id)
+      await enqueueQboSync(user.tenantId, 'client', client.id)
     } catch (error) {
       console.error('QuickBooks client sync trigger error (client update):', error)
     }

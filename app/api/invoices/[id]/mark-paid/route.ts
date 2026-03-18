@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { notifyInvoicePaid } from '@/lib/notifications'
-import { syncPaymentToQuickBooks } from '@/lib/services/qbo-sync'
+import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 
 const ALLOWED_METHODS = new Set(['CHECK', 'QUICK_PAY', 'OTHER'])
 
@@ -114,7 +114,7 @@ export async function POST(
     })
 
     try {
-      await syncPaymentToQuickBooks(user.tenantId, createdPayment.id)
+      await enqueueQboSync(user.tenantId, 'payment', createdPayment.id)
     } catch (error) {
       console.error('QuickBooks payment sync trigger error (manual mark paid):', error)
     }

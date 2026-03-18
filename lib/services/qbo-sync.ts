@@ -135,6 +135,10 @@ async function getQboSession(tenantId: string) {
     realmId,
     accessToken,
     incomeAccountId: integration.incomeAccountId || null,
+    // Cached QBO reference IDs — populated lazily and persisted to avoid
+    // repeated "query by name" API calls on every sync.
+    serviceItemId: integration.serviceItemId || null,
+    cachedExpenseAccountId: integration.cachedExpenseAccountId || null,
   }
 }
 
@@ -203,7 +207,12 @@ async function findVendorByDisplayName(
   return res?.QueryResponse?.Vendor?.[0] || null
 }
 
-async function ensureIncomeAccount(accessToken: string, realmId: string) {
+async function ensureIncomeAccount(
+  accessToken: string,
+  realmId: string,
+  cached?: string | null
+): Promise<string | null> {
+  if (cached) return cached
   const res = await quickBooksService.query(
     accessToken,
     realmId,
@@ -213,52 +222,93 @@ async function ensureIncomeAccount(accessToken: string, realmId: string) {
   return account?.Id ? String(account.Id) : null
 }
 
-async function ensureExpenseAccount(accessToken: string, realmId: string) {
+async function ensureExpenseAccount(
+  accessToken: string,
+  realmId: string,
+  tenantId: string,
+  cached?: string | null
+): Promise<string | null> {
+  if (cached) return cached
+
   const cogs = await quickBooksService.query(
     accessToken,
     realmId,
     "select * from Account where AccountType='Cost of Goods Sold' maxresults 1"
   )
   const cogsAccount = cogs?.QueryResponse?.Account?.[0]
-  if (cogsAccount?.Id) return String(cogsAccount.Id)
+  const accountId = cogsAccount?.Id
+    ? String(cogsAccount.Id)
+    : await (async () => {
+        const expense = await quickBooksService.query(
+          accessToken,
+          realmId,
+          "select * from Account where AccountType='Expense' maxresults 1"
+        )
+        const expenseAccount = expense?.QueryResponse?.Account?.[0]
+        return expenseAccount?.Id ? String(expenseAccount.Id) : null
+      })()
 
-  const expense = await quickBooksService.query(
-    accessToken,
-    realmId,
-    "select * from Account where AccountType='Expense' maxresults 1"
-  )
-  const expenseAccount = expense?.QueryResponse?.Account?.[0]
-  return expenseAccount?.Id ? String(expenseAccount.Id) : null
+  // Persist so future PO syncs don't need to query again.
+  if (accountId) {
+    try {
+      await prisma.quickBooksIntegration.update({
+        where: { tenantId },
+        data: { cachedExpenseAccountId: accountId },
+      })
+    } catch {}
+  }
+
+  return accountId
 }
 
 async function ensureDefaultServiceItem(params: {
   accessToken: string
   realmId: string
+  tenantId: string
   incomeAccountId: string | null
-}) {
+  /** Cached serviceItemId stored on the integration row — skip the QBO query if present. */
+  serviceItemId?: string | null
+}): Promise<string> {
+  // Fast path: return the cached ID immediately (zero QBO calls).
+  if (params.serviceItemId) return params.serviceItemId
+
   const found = await quickBooksService.query(
     params.accessToken,
     params.realmId,
     "select * from Item where Name='Trim Pro Service' maxresults 1"
   )
   const existing = found?.QueryResponse?.Item?.[0]
-  if (existing?.Id) return String(existing.Id)
+  let itemId = existing?.Id ? String(existing.Id) : null
 
-  let incomeAccountId = params.incomeAccountId
-  if (!incomeAccountId) {
-    incomeAccountId = await ensureIncomeAccount(params.accessToken, params.realmId)
-  }
-  if (!incomeAccountId) {
-    throw new Error('Unable to resolve QuickBooks income account for service item.')
+  if (!itemId) {
+    let incomeAccountId = params.incomeAccountId
+    if (!incomeAccountId) {
+      incomeAccountId = await ensureIncomeAccount(params.accessToken, params.realmId)
+    }
+    if (!incomeAccountId) {
+      throw new Error('Unable to resolve QuickBooks income account for service item.')
+    }
+
+    const created = await quickBooksService.createItem(params.accessToken, params.realmId, {
+      Name: 'Trim Pro Service',
+      Type: 'Service',
+      IncomeAccountRef: { value: incomeAccountId },
+      Active: true,
+    })
+    itemId = String(created?.Item?.Id || '')
   }
 
-  const created = await quickBooksService.createItem(params.accessToken, params.realmId, {
-    Name: 'Trim Pro Service',
-    Type: 'Service',
-    IncomeAccountRef: { value: incomeAccountId },
-    Active: true,
-  })
-  return String(created?.Item?.Id || '')
+  if (!itemId) throw new Error('QuickBooks did not return service item id')
+
+  // Persist so every future invoice/estimate sync is one QBO call lighter.
+  try {
+    await prisma.quickBooksIntegration.update({
+      where: { tenantId: params.tenantId },
+      data: { serviceItemId: itemId },
+    })
+  } catch {}
+
+  return itemId
 }
 
 async function ensureClientCustomer(params: {
@@ -301,8 +351,43 @@ async function ensureClientCustomer(params: {
       : undefined,
   }
 
+  // Hash the fields that matter to QBO.  If the hash matches the last
+  // successful sync we skip the GET + PUT entirely (saves 2 QBO calls per
+  // invoice/estimate sync when the client hasn't changed).
+  const dataHash = crypto
+    .createHash('sha256')
+    .update(JSON.stringify({
+      name: client.name,
+      companyName: client.companyName,
+      email: primaryEmail,
+      phone: client.phone,
+      billing: billing
+        ? `${billing.street}|${billing.city}|${billing.state}|${billing.zipCode}`
+        : null,
+    }))
+    .digest('hex')
+    .slice(0, 16)
+
   try {
     if (mappedId) {
+      // Check whether the last successful sync used the same data hash.
+      const lastSync = await prisma.quickBooksSyncLog.findFirst({
+        where: {
+          integrationId: params.integrationId,
+          type: 'client',
+          entityId: client.id,
+          status: 'success',
+          qboId: { not: null },
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { data: true, qboId: true },
+      })
+      const lastHash = (lastSync?.data as any)?.dataHash
+      if (lastHash && lastHash === dataHash && lastSync?.qboId) {
+        // Nothing changed — skip the QBO update entirely.
+        return String(lastSync.qboId)
+      }
+
       const current = await quickBooksService.makeAPIRequest(
         params.accessToken,
         params.realmId,
@@ -323,6 +408,7 @@ async function ensureClientCustomer(params: {
         status: 'success',
         entityId: client.id,
         qboId,
+        data: { dataHash },
       })
       return qboId
     }
@@ -382,6 +468,7 @@ async function ensureClientCustomer(params: {
     status: 'success',
     entityId: client.id,
     qboId,
+    data: { dataHash },
   })
   return qboId
 }
@@ -621,7 +708,9 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
     const serviceItemId = await ensureDefaultServiceItem({
       accessToken: session.accessToken,
       realmId: session.realmId,
+      tenantId: session.tenantId,
       incomeAccountId: session.incomeAccountId,
+      serviceItemId: session.serviceItemId,
     })
 
     const lineItems = estimate.lineItems.length
@@ -773,7 +862,9 @@ export async function syncInvoiceToQuickBooks(tenantId: string, invoiceId: strin
     const serviceItemId = await ensureDefaultServiceItem({
       accessToken: session.accessToken,
       realmId: session.realmId,
+      tenantId: session.tenantId,
       incomeAccountId: session.incomeAccountId,
+      serviceItemId: session.serviceItemId,
     })
 
     const lineItems = invoice.lineItems.length
@@ -1155,7 +1246,12 @@ export async function syncPurchaseOrderToQuickBooks(tenantId: string, purchaseOr
     const vendorQboId = await getMappedQboId(session.integrationId, 'vendor', po.vendorId)
     if (!vendorQboId) throw new Error('Unable to resolve QuickBooks vendor id for purchase order')
 
-    const expenseAccountId = await ensureExpenseAccount(session.accessToken, session.realmId)
+    const expenseAccountId = await ensureExpenseAccount(
+      session.accessToken,
+      session.realmId,
+      session.tenantId,
+      session.cachedExpenseAccountId,
+    )
     if (!expenseAccountId) throw new Error('Unable to resolve QuickBooks expense account')
 
     const lines = po.lineItems.length
@@ -1783,7 +1879,7 @@ export async function importQuickBooksCustomersAndPayments(
             unitCost: null,
             total: l.total,
             sortOrder: l.sortOrder,
-            notes: l.notes || null,
+            notes: (l as any).notes || null,
             vendorId: null,
             taxable: l.taxable,
             taxRate: null,
