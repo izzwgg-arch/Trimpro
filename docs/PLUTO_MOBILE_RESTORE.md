@@ -38,9 +38,9 @@ This snapshot captures the full current state of the TrimPro Field mobile app (`
 
 ## Commit Hash
 
-> **Populated after commit** — see tag `pluto-mobile` or branch `snapshot/pluto-mobile` for the exact SHA.
+> **`c8fef5eac73786be7f7f926b547506f970229530`**
 
-To find it at any time:
+To verify at any time:
 ```bash
 git rev-parse pluto-mobile
 ```
