@@ -26,6 +26,8 @@ import { TeamChatScreen } from '../screens/messages/TeamChatScreen'
 import { CreateRequestScreen } from '../screens/requests/CreateRequestScreen'
 import { RequestsListScreen } from '../screens/requests/RequestsListScreen'
 import { RequestDetailScreen } from '../screens/requests/RequestDetailScreen'
+import { MeasuringRequestsScreen } from '../screens/requests/MeasuringRequestsScreen'
+import { MeasuringRequestDetailScreen } from '../screens/requests/MeasuringRequestDetailScreen'
 import { IssuesScreen } from '../screens/issues/IssuesScreen'
 import { IssueDetailScreen } from '../screens/issues/IssueDetailScreen'
 import { CallsScreen } from '../screens/calls/CallsScreen'
@@ -79,6 +81,8 @@ const linking: LinkingOptions<RootDrawerParamList> = {
               RequestsHome: 'requests',
               RequestCreate: 'requests/new',
               RequestDetail: 'requests/:requestId',
+              MeasuringRequestsHome: 'measuring-requests',
+              MeasuringRequestDetail: 'measuring-requests/:measuringRequestId',
               CallsHome: 'calls',
               OutboxHome: 'outbox',
               ProfileHome: 'profile',
@@ -133,6 +137,16 @@ function JobsStackNavigator() {
         options={mainHeaderOptions('Notifications')}
       />
       <JobsStack.Screen name="RequestsHome" component={RequestsListScreen} options={mainHeaderOptions('Requests')} />
+      <JobsStack.Screen
+        name="MeasuringRequestsHome"
+        component={MeasuringRequestsScreen}
+        options={mainHeaderOptions('Measuring Requests')}
+      />
+      <JobsStack.Screen
+        name="MeasuringRequestDetail"
+        component={MeasuringRequestDetailScreen}
+        options={detailsHeaderOptions('Measuring Request')}
+      />
       <JobsStack.Screen name="RequestCreate" component={CreateRequestScreen} options={detailsHeaderOptions('Create Request')} />
       <JobsStack.Screen name="RequestDetail" component={RequestDetailScreen} options={detailsHeaderOptions('Request')} />
       <JobsStack.Screen name="CallsHome" component={CallsScreen} options={mainHeaderOptions('Calls')} />
@@ -312,6 +326,12 @@ function MainTabsNavigator() {
           title: 'Messages',
           tabBarBadge: unreadMessages > 0 ? unreadMessages : undefined,
         }}
+        listeners={({ navigation }) => ({
+          tabPress: (event) => {
+            event.preventDefault()
+            navigation.navigate('MessagesTab', { screen: 'MessagesList' } as never)
+          },
+        })}
       />
       <MainTabs.Screen
         name="TasksTab"
@@ -363,6 +383,12 @@ function DrawerContent(props: DrawerContentComponentProps) {
       ? [{ key: 'AllJobsList', label: 'All Jobs', icon: 'list-outline', target: { screen: 'JobsTab', params: { screen: 'AllJobsList' } } } as const]
       : []),
     { key: 'RequestsHome', label: 'Requests', icon: 'document-text-outline', target: { screen: 'JobsTab', params: { screen: 'RequestsHome' } } },
+    {
+      key: 'MeasuringRequestsHome',
+      label: 'Measuring Requests',
+      icon: 'resize-outline',
+      target: { screen: 'JobsTab', params: { screen: 'MeasuringRequestsHome' } },
+    },
     { key: 'CallsHome', label: 'Calls', icon: 'call-outline', target: { screen: 'JobsTab', params: { screen: 'CallsHome' } } },
     {
       key: 'OutboxHome',

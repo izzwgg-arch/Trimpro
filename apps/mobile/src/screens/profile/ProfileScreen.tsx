@@ -254,3 +254,4 @@ const styles = StyleSheet.create({
   },
   avatarFallbackText: { color: BRAND.white, fontSize: 30, fontWeight: '800' },
 })
+
