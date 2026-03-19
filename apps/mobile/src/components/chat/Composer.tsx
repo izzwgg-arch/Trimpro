@@ -1,7 +1,6 @@
-import React, { useRef, useState } from 'react'
+import React, { useRef } from 'react'
 import { ActivityIndicator, GestureResponderEvent, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
-import EmojiKeyboard, { type EmojiType } from 'rn-emoji-keyboard'
 import { colors, spacing, typography } from '../../theme/tokens'
 
 interface AttachmentDraft {
@@ -59,30 +58,13 @@ export function Composer({
   bottomInset = 0,
 }: ComposerProps) {
   const inputRef = useRef<TextInput>(null)
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const canSend = (text.trim().length > 0 || attachments.length > 0) && !sending && !disabled
   const showMic = text.trim().length === 0 && attachments.length === 0
-
   const triggerSend = () => {
     // Force immediate visual clear to avoid stale text rendering on Android.
     inputRef.current?.clear()
     onChangeText('')
     onSend()
-  }
-
-  const handleEmojiSelected = (emoji: EmojiType) => {
-    onChangeText(text + emoji.emoji)
-  }
-
-  const toggleEmojiPicker = () => {
-    if (!showEmojiPicker) {
-      inputRef.current?.blur()
-    }
-    setShowEmojiPicker((v) => !v)
-  }
-
-  const handleTextFocus = () => {
-    if (showEmojiPicker) setShowEmojiPicker(false)
   }
 
   return (
@@ -136,48 +118,29 @@ export function Composer({
       )}
 
       <View style={styles.inputRow}>
-        {/* Emoji toggle button */}
         <Pressable
           style={[styles.actionButton, disabled && styles.disabledButton]}
-          onPress={toggleEmojiPicker}
+          onPress={onOpenMenu}
           disabled={disabled}
-          hitSlop={4}
         >
-          <Ionicons
-            name={showEmojiPicker ? 'happy' : 'happy-outline'}
-            size={24}
-            color={showEmojiPicker ? colors.brandPrimary : colors.textSecondary}
-          />
+          <Ionicons name="add" size={22} color={colors.textSecondary} />
         </Pressable>
 
-        {/* Input + attachment paperclip */}
-        <View style={styles.inputWrap}>
-          <TextInput
-            ref={inputRef}
-            style={styles.input}
-            value={text}
-            onChangeText={onChangeText}
-            onSubmitEditing={triggerSend}
-            onFocus={handleTextFocus}
-            placeholder="Message"
-            placeholderTextColor={colors.textSecondary}
-            multiline
-            blurOnSubmit={false}
-            returnKeyType="send"
-            maxLength={2000}
-            editable={!disabled && !recording}
-          />
-          <Pressable
-            style={[styles.attachButton, disabled && styles.disabledButton]}
-            onPress={onOpenMenu}
-            disabled={disabled}
-            hitSlop={4}
-          >
-            <Ionicons name="attach-outline" size={20} color={colors.textSecondary} />
-          </Pressable>
-        </View>
+        <TextInput
+          ref={inputRef}
+          style={styles.input}
+          value={text}
+          onChangeText={onChangeText}
+          onSubmitEditing={triggerSend}
+          placeholder="Message"
+          placeholderTextColor={colors.textSecondary}
+          multiline
+          blurOnSubmit={false}
+          returnKeyType="send"
+          maxLength={2000}
+          editable={!disabled && !recording}
+        />
 
-        {/* Mic / Send */}
         {showMic ? (
           <Pressable
             style={[styles.actionButton, styles.rightActionButton, recording && styles.recordingButton, disabled && styles.disabledButton]}
@@ -196,34 +159,6 @@ export function Composer({
           </Pressable>
         )}
       </View>
-
-      {/* Emoji keyboard panel — rendered inline when toggled */}
-      {showEmojiPicker && (
-        <EmojiKeyboard
-          onEmojiSelected={handleEmojiSelected}
-          expandable={false}
-          defaultHeight={280}
-          enableSearchBar
-          theme={{
-            knob: colors.divider,
-            container: colors.surface,
-            header: colors.textPrimary,
-            skinTonesContainer: colors.background,
-            category: {
-              icon: colors.textSecondary,
-              iconActive: colors.brandPrimary,
-              container: colors.surface,
-              containerActive: colors.background,
-            },
-            search: {
-              text: colors.textPrimary,
-              placeholder: colors.textSecondary,
-              icon: colors.textSecondary,
-              background: colors.background,
-            },
-          }}
-        />
-      )}
       {recording ? (
         <View style={styles.recordingHintRow}>
           <View style={[styles.recordingDot, recordingWillCancel && styles.recordingDotCancel]} />
@@ -322,22 +257,6 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     gap: spacing.xs,
   },
-  inputWrap: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: colors.divider,
-    backgroundColor: colors.surface,
-    paddingRight: spacing.xs,
-  },
-  attachButton: {
-    width: 34,
-    height: 38,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   actionButton: {
     width: 38,
     height: 38,
@@ -362,6 +281,10 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 40,
     maxHeight: 100,
+    borderRadius: 20,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.divider,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
     ...typography.body,

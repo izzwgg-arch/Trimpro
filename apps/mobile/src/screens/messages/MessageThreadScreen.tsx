@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { EmojiKeyboard, type EmojiType } from 'rn-emoji-keyboard'
 import {
   Alert,
   AppState,
@@ -202,7 +201,6 @@ export function MessageThreadScreen({ route, navigation }: Props) {
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null)
   const [showMessageOptions, setShowMessageOptions] = useState(false)
   const [messageActionTarget, setMessageActionTarget] = useState<ChatMessage | OptimisticMessage | null>(null)
-  const [showReactionEmojiPicker, setShowReactionEmojiPicker] = useState(false)
   const voiceRecorderRef = useRef<VoiceRecorder>(new VoiceRecorder())
   const recordingStartedAtRef = useRef<number | null>(null)
   const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -490,45 +488,6 @@ export function MessageThreadScreen({ route, navigation }: Props) {
     },
   })
 
-  const reactMutation = useMutation({
-    mutationFn: async ({ messageId, emoji }: { messageId: string; emoji: string }) =>
-      apiRequest(`/api/messages/conversations/${conversationId}/messages/${messageId}/react`, 'POST', { emoji }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['mobile-chat-thread', conversationId] })
-    },
-    onError: (error: any) => {
-      Alert.alert('Reaction failed', error?.message || 'Could not add reaction.')
-    },
-  })
-
-  const handleReact = useCallback(
-    (messageId: string, emoji: string) => {
-      reactMutation.mutate({ messageId, emoji })
-    },
-    [reactMutation]
-  )
-
-  const handleReactionFromPicker = useCallback(
-    (emojiItem: EmojiType) => {
-      if (!messageActionTarget || 'isOptimistic' in messageActionTarget) return
-      setShowReactionEmojiPicker(false)
-      setShowMessageOptions(false)
-      setMessageActionTarget(null)
-      handleReact(messageActionTarget.id, emojiItem.emoji)
-    },
-    [messageActionTarget, handleReact]
-  )
-
-  const handleQuickReact = useCallback(
-    (emoji: string) => {
-      if (!messageActionTarget || 'isOptimistic' in messageActionTarget) return
-      setShowMessageOptions(false)
-      setMessageActionTarget(null)
-      handleReact(messageActionTarget.id, emoji)
-    },
-    [messageActionTarget, handleReact]
-  )
-
   const scrollToLatest = useCallback((animated = true) => {
     requestAnimationFrame(() => {
       listRef.current?.scrollToOffset({ offset: 0, animated })
@@ -538,7 +497,6 @@ export function MessageThreadScreen({ route, navigation }: Props) {
   const closeMessageOptions = useCallback(() => {
     setShowMessageOptions(false)
     setMessageActionTarget(null)
-    setShowReactionEmojiPicker(false)
   }, [])
 
   const openDeleteActions = useCallback(
@@ -1220,10 +1178,6 @@ export function MessageThreadScreen({ route, navigation }: Props) {
                   }
                 }}
                 onLongPress={() => openMessageActions(message)}
-                currentUserId={user?.id}
-                onReact={(emoji) => {
-                  if (!('isOptimistic' in message)) handleReact(message.id, emoji)
-                }}
               />
             )
           }}
@@ -1301,64 +1255,6 @@ export function MessageThreadScreen({ route, navigation }: Props) {
         hideModalContentWhileAnimating
       >
         <View style={styles.messageOptionsSheet}>
-          {/* Quick emoji reactions bar */}
-          {messageActionTarget && !('isOptimistic' in messageActionTarget) ? (
-            <View style={styles.reactionBar}>
-              {['👍', '❤️', '😂', '😮', '😢', '🙏', '👏'].map((emoji) => {
-                const alreadyReacted = (messageActionTarget as ChatMessage).reactions?.some(
-                  (r) => r.emoji === emoji && r.userId === user?.id
-                )
-                return (
-                  <Pressable
-                    key={emoji}
-                    style={[styles.reactionBarChip, alreadyReacted && styles.reactionBarChipActive]}
-                    onPress={() => handleQuickReact(emoji)}
-                    hitSlop={4}
-                  >
-                    <Text style={styles.reactionBarEmoji}>{emoji}</Text>
-                  </Pressable>
-                )
-              })}
-              <Pressable
-                style={styles.reactionBarChip}
-                onPress={() => setShowReactionEmojiPicker(true)}
-                hitSlop={4}
-              >
-                <Ionicons name="add" size={18} color={colors.textSecondary} />
-              </Pressable>
-            </View>
-          ) : null}
-
-          {/* Full emoji keyboard (shown when + tapped) */}
-          {showReactionEmojiPicker && (
-            <EmojiKeyboard
-              onEmojiSelected={handleReactionFromPicker}
-              expandable={false}
-              defaultHeight={260}
-              enableSearchBar
-              theme={{
-                knob: colors.divider,
-                container: colors.surface,
-                header: colors.textPrimary,
-                skinTonesContainer: colors.background,
-                category: {
-                  icon: colors.textSecondary,
-                  iconActive: colors.brandPrimary,
-                  container: colors.surface,
-                  containerActive: colors.background,
-                },
-                search: {
-                  text: colors.textPrimary,
-                  placeholder: colors.textSecondary,
-                  icon: colors.textSecondary,
-                  background: colors.background,
-                },
-              }}
-            />
-          )}
-
-          <View style={styles.reactionDivider} />
-
           <Text style={styles.messageOptionsTitle}>Message Options</Text>
           <Pressable
             style={({ pressed }) => [styles.messageActionRow, pressed && styles.messageActionRowPressed, !canCopyAction && styles.messageActionRowDisabled]}
@@ -1568,38 +1464,6 @@ const styles = StyleSheet.create({
   messageActionTextDelete: {
     ...typography.body,
     color: '#E53935',
-  },
-  reactionBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.xs,
-    paddingVertical: spacing.sm,
-    gap: 4,
-  },
-  reactionBarChip: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.divider,
-    minHeight: 38,
-  },
-  reactionBarChipActive: {
-    backgroundColor: colors.brandPrimary + '22',
-    borderColor: colors.brandPrimary + '88',
-  },
-  reactionBarEmoji: {
-    fontSize: 20,
-    lineHeight: 24,
-  },
-  reactionDivider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: '#E7E7E7',
-    marginBottom: spacing.xs,
   },
   messageActionCancelRow: {
     minHeight: 52,
