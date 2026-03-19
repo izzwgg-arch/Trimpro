@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useCallback, useMemo, useState } from 'react'
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { colors, typography } from '../../theme/tokens'
@@ -14,6 +14,7 @@ interface VoiceNoteBubbleProps {
   deliveryStatus?: string
   senderAvatarUrl?: string | null
   senderInitials?: string
+  onLongPress?: () => void
 }
 
 function seededWaveform(messageId: string, bars = 48): number[] {
@@ -54,6 +55,7 @@ export function VoiceNoteBubble({
   deliveryStatus,
   senderAvatarUrl,
   senderInitials,
+  onLongPress,
 }: VoiceNoteBubbleProps) {
   const { isPlaying, play, pause, seek, positionMs, durationMs: liveDurationMs } = useVoicePlaybackController(messageId)
   const bars = useMemo(() => seededWaveform(messageId), [messageId])
@@ -76,7 +78,7 @@ export function VoiceNoteBubble({
   }
 
   return (
-    <View style={styles.root}>
+    <Pressable style={styles.root} onLongPress={onLongPress}>
       <View style={styles.topRow}>
         {!isOutgoing ? (
           <View style={styles.avatarWrap}>
@@ -144,7 +146,7 @@ export function VoiceNoteBubble({
           ) : null}
         </View>
       </View>
-    </View>
+    </Pressable>
   )
 }
 
