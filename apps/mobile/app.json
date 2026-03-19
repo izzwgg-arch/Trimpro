@@ -3,7 +3,7 @@
     "name": "TrimPro Field",
     "slug": "trimpro-field",
     "scheme": ["trimprofield", "trimpro"],
-    "version": "1.0.1",
+    "version": "1.0.2",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -24,7 +24,7 @@
     },
     "ios": {
       "bundleIdentifier": "com.trimpro.field",
-      "buildNumber": "3",
+      "buildNumber": "4",
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "TrimPro Field uses camera to capture job photos and videos.",
@@ -35,7 +35,7 @@
     },
     "android": {
       "package": "com.trimpro.field",
-      "versionCode": 3,
+      "versionCode": 4,
       "softwareKeyboardLayoutMode": "resize",
       "googleServicesFile": "./google-services.json",
       "notification": {
