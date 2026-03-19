@@ -4,7 +4,6 @@ import { AppState, TextInput, View } from 'react-native'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import * as Notifications from 'expo-notifications'
 import * as SplashScreen from 'expo-splash-screen'
-import * as Updates from 'expo-updates'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { BrandingProvider } from './branding/BrandingContext'
@@ -246,16 +245,10 @@ export default function AppRoot() {
   useEffect(() => {
     async function prepare() {
       try {
-        // Pull latest OTA on app launch to reduce stale bundle issues in the field.
-        if (!__DEV__) {
-          const update = await Updates.checkForUpdateAsync().catch(() => null)
-          if (update?.isAvailable) {
-            await Updates.fetchUpdateAsync().catch(() => null)
-            await Updates.reloadAsync()
-            return
-          }
-        }
-        // Wait for app to be ready, then add a minimum delay for splash screen
+        // Do NOT call checkForUpdateAsync + reloadAsync here.
+        // That immediately replaces the native APK's embedded JS with whatever is newest on EAS Update.
+        // A stale or "restore" OTA can override a good APK and make the app look like an old build.
+        // OTA delivery is handled by app.json "updates.checkAutomatically": "ON_LOAD" instead.
         await new Promise((resolve) => setTimeout(resolve, 2500)) // 2.5 second minimum display
         setAppIsReady(true)
       } catch (e) {
