@@ -216,13 +216,7 @@ export function MessageBubble({
               <Pressable
                 key={attachmentId}
                 style={styles.videoContainer}
-                onPress={() => {
-                  if (onImagePress) {
-                    onImagePress(attachment.url, attachment.fileName || null)
-                  } else {
-                    Linking.openURL(attachment.url)
-                  }
-                }}
+                onPress={() => Linking.openURL(attachment.url)}
               >
                 {attachment.thumbnailUrl ? (
                   <Image source={{ uri: attachment.thumbnailUrl }} style={styles.image} resizeMode="cover" />
@@ -245,7 +239,6 @@ export function MessageBubble({
                 deliveryStatus={message.status}
                 senderAvatarUrl={message.sender?.avatar || null}
                 senderInitials={senderName(message).slice(0, 1).toUpperCase()}
-                onLongPress={onLongPress}
               />
             )
           }

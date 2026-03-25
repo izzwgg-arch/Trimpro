@@ -13,9 +13,9 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  Vibration,
   View,
 } from 'react-native'
-import * as Haptics from 'expo-haptics'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Ionicons } from '@expo/vector-icons'
@@ -207,7 +207,6 @@ export function MessageThreadScreen({ route, navigation }: Props) {
   const pressStartRef = useRef<{ x: number; y: number } | null>(null)
   const pressSessionRef = useRef<number>(0)
   const stopInFlightRef = useRef(false)
-  const pendingScrollAfterSendRef = useRef(false)
   const [viewingMedia, setViewingMedia] = useState<{ uri: string; fileName?: string | null; kind: 'IMAGE' | 'VIDEO' } | null>(null)
   const [mediaDrafts, setMediaDrafts] = useState<
     Array<{
@@ -652,7 +651,6 @@ export function MessageThreadScreen({ route, navigation }: Props) {
     setMediaDrafts([])
     setReplyTo(null)
     setOptimisticMessages((prev) => [...prev, optimistic])
-    pendingScrollAfterSendRef.current = true
     sendMutation.mutate({ clientTempId, outgoingText, outgoingDrafts, outgoingReplyTo })
     scrollToLatest(true)
   }
@@ -903,7 +901,6 @@ export function MessageThreadScreen({ route, navigation }: Props) {
     }
 
     setOptimisticMessages((prev) => [...prev, optimistic])
-    pendingScrollAfterSendRef.current = true
     scrollToLatest(true)
 
     try {
@@ -1051,9 +1048,7 @@ export function MessageThreadScreen({ route, navigation }: Props) {
     })
     return () => {
       sub.remove()
-      if (voiceRecorderRef.current.isRecording() || voiceRecorderRef.current.getPhase() === 'starting') {
-        cancelRecording().catch(() => {})
-      }
+      cancelRecording().catch(() => {})
       clearDurationTicker()
     }
   }, [])
@@ -1078,16 +1073,6 @@ export function MessageThreadScreen({ route, navigation }: Props) {
     }
     return result
   }, [messages])
-  useEffect(() => {
-    if (!pendingScrollAfterSendRef.current) return
-    pendingScrollAfterSendRef.current = false
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        listRef.current?.scrollToOffset({ offset: 0, animated: true })
-      })
-    })
-  }, [messages.length])
-
   const renderItems = useMemo(() => toInvertedThreadItems(messagesWithDates), [messagesWithDates])
   const messageIndexMap = useMemo(() => {
     const map = new Map<string, number>()
@@ -1133,23 +1118,16 @@ export function MessageThreadScreen({ route, navigation }: Props) {
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
       <KeyboardAvoidingView
         style={styles.content}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
         keyboardVerticalOffset={0}
       >
         <View style={styles.header}>
           <Pressable onPress={() => navigation.goBack()} style={styles.backButton}>
             <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
           </Pressable>
-          {isTeamChat ? (
-            <View style={styles.teamAvatarCircle}>
-              <Text style={styles.teamAvatarLetter}>{threadTitle.slice(0, 1).toUpperCase()}</Text>
-            </View>
-          ) : otherUserAvatar ? (
-            <Image source={{ uri: otherUserAvatar }} style={styles.headerAvatar} />
-          ) : null}
+          {!isTeamChat && otherUserAvatar ? <Image source={{ uri: otherUserAvatar }} style={styles.headerAvatar} /> : null}
           <View style={styles.headerContent}>
             <Text style={styles.headerTitle}>{threadTitle}</Text>
-            {isTeamChat ? <Text style={styles.headerSubtitle}>Group</Text> : null}
           </View>
         </View>
 
@@ -1182,7 +1160,7 @@ export function MessageThreadScreen({ route, navigation }: Props) {
                 onSwipeReply={(swipedMessage) => {
                   setEditingMessage(null)
                   setReplyTo(swipedMessage)
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {})
+                  Vibration.vibrate(10)
                 }}
                 onReplyPress={(messageId) => {
                   const targetIndex = messageIndexMap.get(messageId)
@@ -1377,20 +1355,6 @@ const styles = StyleSheet.create({
     borderRadius: 17,
     marginRight: spacing.xs,
   },
-  teamAvatarCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: colors.brandPrimary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.xs,
-  },
-  teamAvatarLetter: {
-    color: colors.surface,
-    fontSize: 15,
-    fontWeight: '700',
-  },
   headerContent: {
     flex: 1,
     justifyContent: 'center',
@@ -1399,11 +1363,6 @@ const styles = StyleSheet.create({
     ...typography.sub,
     color: colors.textPrimary,
     fontWeight: '700',
-  },
-  headerSubtitle: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: 1,
   },
   headerActions: {
     flexDirection: 'row',

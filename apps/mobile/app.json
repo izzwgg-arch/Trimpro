@@ -3,12 +3,15 @@
     "name": "TrimPro Field",
     "slug": "trimpro-field",
     "scheme": ["trimprofield", "trimpro"],
-    "version": "1.0.3",
+    "version": "1.0.0",
     "runtimeVersion": {
       "policy": "appVersion"
     },
     "updates": {
-      "enabled": false
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0,
+      "url": "https://u.expo.dev/5d6344e3-86ce-4e96-93e8-13893313d47f"
     },
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -21,7 +24,7 @@
     },
     "ios": {
       "bundleIdentifier": "com.trimpro.field",
-      "buildNumber": "5",
+      "buildNumber": "2",
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "TrimPro Field uses camera to capture job photos and videos.",
@@ -32,7 +35,7 @@
     },
     "android": {
       "package": "com.trimpro.field",
-      "versionCode": 5,
+      "versionCode": 2,
       "softwareKeyboardLayoutMode": "resize",
       "googleServicesFile": "./google-services.json",
       "notification": {

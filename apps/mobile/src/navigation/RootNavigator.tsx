@@ -254,7 +254,7 @@ function MainTabsNavigator() {
     <MainTabs.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarHideOnKeyboard: false,
+        tabBarHideOnKeyboard: true,
         tabBarStyle: [
           styles.tabBar,
           {

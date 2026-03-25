@@ -1,7 +1,6 @@
-import React, { useRef, useState } from 'react'
-import { ActivityIndicator, Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native'
+import React from 'react'
+import { Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
-import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av'
 import { colors, spacing } from '../../theme/tokens'
 
 interface MediaViewerProps {
@@ -13,22 +12,6 @@ interface MediaViewerProps {
 }
 
 export function MediaViewer({ visible, uri, fileName, kind, onClose }: MediaViewerProps) {
-  const videoRef = useRef<Video>(null)
-  const [videoLoading, setVideoLoading] = useState(true)
-  const [videoError, setVideoError] = useState(false)
-
-  const handlePlaybackStatusUpdate = (status: AVPlaybackStatus) => {
-    if (status.isLoaded) {
-      setVideoLoading(false)
-      setVideoError(false)
-    }
-  }
-
-  const handleVideoError = () => {
-    setVideoLoading(false)
-    setVideoError(true)
-  }
-
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.container}>
@@ -37,28 +20,10 @@ export function MediaViewer({ visible, uri, fileName, kind, onClose }: MediaView
         </Pressable>
         {kind === 'IMAGE' ? (
           <Image source={{ uri }} style={styles.image} resizeMode="contain" />
-        ) : videoError ? (
-          <View style={styles.videoPlaceholder}>
-            <Ionicons name="alert-circle-outline" size={48} color={colors.surface + 'AA'} />
-            <Text style={styles.videoText}>Unable to play video</Text>
-          </View>
         ) : (
-          <View style={styles.videoWrap}>
-            {videoLoading && (
-              <View style={styles.videoLoadingOverlay}>
-                <ActivityIndicator size="large" color={colors.surface} />
-              </View>
-            )}
-            <Video
-              ref={videoRef}
-              source={{ uri }}
-              style={styles.video}
-              resizeMode={ResizeMode.CONTAIN}
-              useNativeControls
-              shouldPlay
-              onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
-              onError={handleVideoError}
-            />
+          <View style={styles.videoPlaceholder}>
+            <Text style={styles.videoText}>Video playback not implemented</Text>
+            <Text style={styles.videoSubtext}>Tap to open in browser</Text>
           </View>
         )}
         {fileName && (
@@ -91,22 +56,6 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  videoWrap: {
-    width: '100%',
-    height: '80%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  video: {
-    width: '100%',
-    height: '100%',
-  },
-  videoLoadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 2,
-  },
   videoPlaceholder: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -115,6 +64,10 @@ const styles = StyleSheet.create({
   videoText: {
     color: colors.surface,
     fontSize: 16,
+  },
+  videoSubtext: {
+    color: colors.surface + 'CC',
+    fontSize: 12,
   },
   footer: {
     position: 'absolute',
