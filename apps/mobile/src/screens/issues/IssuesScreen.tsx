@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
-import { Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native'
+import { Alert, FlatList, Platform, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native'
+import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker'
 import { useQuery } from '@tanstack/react-query'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { AppScreen } from '../../components/AppScreen'
@@ -28,6 +29,10 @@ export function IssuesScreen({ navigation }: Props) {
   const [issueTitle, setIssueTitle] = useState('')
   const [issueDescription, setIssueDescription] = useState('')
   const [issueNotes, setIssueNotes] = useState('')
+  const [issueDueDate, setIssueDueDate] = useState<Date | null>(null)
+  const [issueReminder, setIssueReminder] = useState<Date | null>(null)
+  const [showDueDatePicker, setShowDueDatePicker] = useState(false)
+  const [showReminderPicker, setShowReminderPicker] = useState(false)
 
   const query = useQuery({
     queryKey: ['mobile-issues'],
@@ -59,9 +64,15 @@ export function IssuesScreen({ navigation }: Props) {
         type: 'OTHER',
         priority: 'MEDIUM',
         status: 'OPEN',
+        dueDate: issueDueDate ? issueDueDate.toISOString() : null,
+        reminderAt: issueReminder ? issueReminder.toISOString() : null,
       })
     },
     onSuccess: () => {
+      setIssueDueDate(null)
+      setIssueReminder(null)
+      setShowDueDatePicker(false)
+      setShowReminderPicker(false)
       queryClient.invalidateQueries({ queryKey: ['mobile-issues'] })
       queryClient.invalidateQueries({ queryKey: ['mobile-assignments'] })
       setIssueTitle('')
@@ -126,7 +137,71 @@ export function IssuesScreen({ navigation }: Props) {
             onChangeText={setIssueNotes}
             multiline
           />
-          <View style={styles.formActions}>
+
+          <Pressable
+            style={styles.datePickerButton}
+            onPress={() => {
+              if (Platform.OS === 'android') {
+                DateTimePickerAndroid.open({
+                  value: issueDueDate ?? new Date(),
+                  mode: 'date',
+                  onChange: (_e, d) => { if (d) setIssueDueDate(d) },
+                })
+              } else {
+                setShowDueDatePicker(!showDueDatePicker)
+              }
+            }}
+          >
+            <Ionicons name="calendar-outline" size={16} color={colors.textSecondary} />
+            <Text style={styles.datePickerText}>
+              {issueDueDate ? issueDueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Set due date'}
+            </Text>
+            {issueDueDate ? (
+              <Pressable onPress={() => setIssueDueDate(null)} hitSlop={8}>
+                <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
+              </Pressable>
+            ) : null}
+          </Pressable>
+          {Platform.OS === 'ios' && showDueDatePicker ? (
+            <DateTimePicker
+              value={issueDueDate ?? new Date()}
+              mode="date"
+              display="spinner"
+              onChange={(_e, d) => { if (d) setIssueDueDate(d) }}
+            />
+          ) : null}
+          <Pressable
+            style={styles.datePickerButton}
+            onPress={() => {
+              if (Platform.OS === 'android') {
+                DateTimePickerAndroid.open({
+                  value: issueReminder ?? new Date(),
+                  mode: 'time',
+                  onChange: (_e, d) => { if (d) setIssueReminder(d) },
+                })
+              } else {
+                setShowReminderPicker(!showReminderPicker)
+              }
+            }}
+          >
+            <Ionicons name="notifications-outline" size={16} color={colors.textSecondary} />
+            <Text style={styles.datePickerText}>
+              {issueReminder ? issueReminder.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Set reminder'}
+            </Text>
+            {issueReminder ? (
+              <Pressable onPress={() => setIssueReminder(null)} hitSlop={8}>
+                <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
+              </Pressable>
+            ) : null}
+          </Pressable>
+          {Platform.OS === 'ios' && showReminderPicker ? (
+            <DateTimePicker
+              value={issueReminder ?? new Date()}
+              mode="time"
+              display="spinner"
+              onChange={(_e, d) => { if (d) setIssueReminder(d) }}
+            />
+          ) : null}          <View style={styles.formActions}>
             <Pressable
               style={[styles.actionButton, styles.cancelButton]}
               onPress={() => {
@@ -247,6 +322,23 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.6,
+  },
+  datePickerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#D0D5DD',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#FAFAFA',
+  },
+  datePickerText: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    flex: 1,
+    fontSize: 13,
   },
 })
 

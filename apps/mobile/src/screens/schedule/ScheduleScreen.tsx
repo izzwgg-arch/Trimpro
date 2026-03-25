@@ -52,6 +52,16 @@ interface TeamMembersResponse {
   teamMembers: TeamMember[]
 }
 
+interface UnscheduledJobsResponse {
+  jobs: Array<{
+    id: string
+    jobNumber: string
+    title: string
+    status: string
+    client?: { name: string } | null
+  }>
+}
+
 type Props = NativeStackScreenProps<ScheduleStackParamList, 'ScheduleHome'>
 type CalendarViewMode = 'day' | 'week' | 'month'
 
@@ -291,6 +301,16 @@ export function ScheduleScreen({ navigation }: Props) {
   })
 
   const schedules = query.data?.schedules || []
+
+  const unscheduledQuery = useQuery({
+    queryKey: ['mobile-unscheduled-jobs', user?.id],
+    queryFn: () => apiRequest<UnscheduledJobsResponse>('/api/jobs?status=PENDING&unscheduled=true&limit=20'),
+    enabled: Boolean(user?.id),
+    refetchInterval: 120_000,
+    staleTime: 60_000,
+  })
+
+  const unscheduledJobs = unscheduledQuery.data?.jobs ?? []
   const events = useMemo<CalendarScheduleEvent[]>(
     () =>
       schedules.flatMap((item) => {
@@ -434,7 +454,6 @@ export function ScheduleScreen({ navigation }: Props) {
             <Ionicons name="menu" size={20} color={colors.textPrimary} />
           </Pressable>
           <Text style={styles.topBarTitle}>Schedule</Text>
-          <View style={{backgroundColor:'#FF0000',paddingHorizontal:8,paddingVertical:2,borderRadius:4}}><Text style={{color:'#fff',fontSize:10,fontWeight:'900'}}>PLUTO TEST MARKER B</Text></View>
           <Pressable style={styles.newButton} onPress={() => navigation.navigate('ScheduleCreate')}>
             <Ionicons name="add" size={14} color={colors.textPrimary} />
             <Text style={styles.newButtonText}>New</Text>
@@ -583,6 +602,30 @@ export function ScheduleScreen({ navigation }: Props) {
           />
         }
         renderItem={renderJobCard}
+        ListFooterComponent={
+          unscheduledJobs.length > 0 ? (
+            <View style={styles.unscheduledSection}>
+              <Text style={styles.unscheduledTitle}>Unscheduled Jobs</Text>
+              {unscheduledJobs.map((job: UnscheduledJobsResponse['jobs'][number]) => (
+                <Pressable
+                  key={job.id}
+                  style={styles.unscheduledCard}
+                  onPress={() => (navigation as any).navigate('JobDetail', { jobId: job.id })}
+                >
+                  <View style={styles.unscheduledAccent} />
+                  <View style={styles.unscheduledBody}>
+                    <Text style={styles.unscheduledJobNum}>{job.jobNumber}</Text>
+                    <Text style={styles.unscheduledJobTitle} numberOfLines={1}>{job.title}</Text>
+                    {job.client ? (
+                      <Text style={styles.unscheduledMeta} numberOfLines={1}>{job.client.name}</Text>
+                    ) : null}
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+                </Pressable>
+              ))}
+            </View>
+          ) : null
+        }
       />
 
       <FilterSheet
@@ -913,6 +956,55 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 10,
     marginLeft: 2,
+  },
+  unscheduledSection: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
+  unscheduledTitle: {
+    ...typography.sub,
+    color: colors.textPrimary,
+    fontWeight: '700',
+    marginBottom: 10,
+  },
+  unscheduledCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.divider,
+    marginBottom: 8,
+    padding: 12,
+    gap: 10,
+  },
+  unscheduledAccent: {
+    width: 4,
+    minHeight: 36,
+    borderRadius: 2,
+    backgroundColor: '#D97706',
+    alignSelf: 'stretch',
+  },
+  unscheduledBody: {
+    flex: 1,
+    gap: 2,
+  },
+  unscheduledJobNum: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontWeight: '600',
+    fontSize: 11,
+  },
+  unscheduledJobTitle: {
+    ...typography.sub,
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+  unscheduledMeta: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontSize: 12,
   },
   agendaTitle: {
     ...typography.sub,

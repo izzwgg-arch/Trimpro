@@ -454,13 +454,17 @@ export function JobDetailScreen({ route, navigation }: Props) {
           <Text style={styles.empty}>Loading job details...</Text>
         ) : (
           <>
-            <View style={{backgroundColor:'#FF0000',paddingHorizontal:8,paddingVertical:2,borderRadius:4,marginBottom:4,alignSelf:'flex-start'}}><Text style={{color:'#fff',fontSize:10,fontWeight:'900'}}>PLUTO TEST MARKER C</Text></View>
             <Text style={styles.title}>
               {job.jobNumber} - {job.title}
             </Text>
             <StatusChip status={jobStatus} />
             <Text style={styles.meta}>Client: {job.client?.name || 'N/A'}</Text>
             <Text style={styles.meta}>Phone: {job.client?.phone || 'N/A'}</Text>
+            {job.scheduledStart ? (
+              <Text style={styles.meta}>
+                Scheduled: {new Date(job.scheduledStart).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}
+              </Text>
+            ) : null}
             {!isOnline ? <Text style={styles.offlineBadge}>Offline - showing last synced data</Text> : null}
             {job.address?.street ? (
               <Pressable

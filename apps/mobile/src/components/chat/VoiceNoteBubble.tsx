@@ -1,9 +1,15 @@
 import React, { useCallback, useMemo, useState } from 'react'
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Dimensions, Pressable, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { colors, typography } from '../../theme/tokens'
 import { useVoicePlaybackController } from '../../hooks/useVoicePlaybackController'
 import { computeWaveformPlaybackFrame } from '../../screens/messages/message-thread-utils'
+
+const SCREEN_WIDTH = Dimensions.get('window').width
+const BUBBLE_WIDTH = Math.min(Math.round(SCREEN_WIDTH * 0.66), 290)
+
+const SPEED_STEPS = [1, 1.5, 2] as const
+type SpeedStep = (typeof SPEED_STEPS)[number]
 
 interface VoiceNoteBubbleProps {
   messageId: string
@@ -17,7 +23,7 @@ interface VoiceNoteBubbleProps {
   onLongPress?: () => void
 }
 
-function seededWaveform(messageId: string, bars = 48): number[] {
+function seededWaveform(messageId: string, bars = 40): number[] {
   let seed = 0
   for (let i = 0; i < messageId.length; i += 1) {
     seed = (seed * 31 + messageId.charCodeAt(i)) >>> 0
@@ -27,16 +33,16 @@ function seededWaveform(messageId: string, bars = 48): number[] {
     seed = (seed * 1664525 + 1013904223) >>> 0
     const n = (seed % 1000) / 1000
     const peak = i % 11 === 0 ? 0.95 : i % 7 === 0 ? 0.78 : 0.52
-    const mixed = Math.max(0.22, Math.min(1, n * 0.6 + peak * 0.4))
+    const mixed = Math.max(0.2, Math.min(1, n * 0.6 + peak * 0.4))
     values.push(mixed)
   }
   return values
 }
 
 function statusIcon(status?: string) {
-  if (status === 'READ') return '✓✓'
-  if (status === 'DELIVERED') return '✓✓'
-  return '✓'
+  if (status === 'READ') return '\u{2713}\u{2713}'
+  if (status === 'DELIVERED') return '\u{2713}\u{2713}'
+  return '\u{2713}'
 }
 
 function formatDuration(ms: number) {
@@ -53,13 +59,13 @@ export function VoiceNoteBubble({
   isOutgoing,
   timestamp,
   deliveryStatus,
-  senderAvatarUrl,
-  senderInitials,
   onLongPress,
 }: VoiceNoteBubbleProps) {
-  const { isPlaying, play, pause, seek, positionMs, durationMs: liveDurationMs } = useVoicePlaybackController(messageId)
+  const { isPlaying, play, pause, seek, setSpeed, speed, positionMs, durationMs: liveDurationMs } =
+    useVoicePlaybackController(messageId)
   const bars = useMemo(() => seededWaveform(messageId), [messageId])
   const [waveformWidth, setWaveformWidth] = useState(0)
+  const [speedIndex, setSpeedIndex] = useState(0)
 
   const effectiveDurationMs = Math.max(1, liveDurationMs || durationMs || 1000)
   const { activeBars: activeBarCount } = computeWaveformPlaybackFrame({
@@ -69,78 +75,79 @@ export function VoiceNoteBubble({
     waveformWidth,
   })
 
-  const avatarLabel = (senderInitials || '?').slice(0, 1).toUpperCase()
+  const cycleSpeed = useCallback(() => {
+    const next = (speedIndex + 1) % SPEED_STEPS.length
+    setSpeedIndex(next)
+    void setSpeed(SPEED_STEPS[next])
+  }, [speedIndex, setSpeed])
 
   const seekFromTouch = (locationX: number) => {
     if (waveformWidth <= 0) return
-    const ratio = locationX / waveformWidth
-    void seek(ratio)
+    void seek(locationX / waveformWidth)
   }
 
-  return (
-    <Pressable style={styles.root} onLongPress={onLongPress}>
-      <View style={styles.topRow}>
-        {!isOutgoing ? (
-          <View style={styles.avatarWrap}>
-            {senderAvatarUrl ? (
-              <Image source={{ uri: senderAvatarUrl }} style={styles.avatarImage} />
-            ) : (
-              <Text style={styles.avatarText}>{avatarLabel}</Text>
-            )}
-          </View>
-        ) : null}
+  const currentSpeed = SPEED_STEPS[speedIndex]
+  const speedLabel = currentSpeed === 1 ? '1\u00D7' : currentSpeed === 1.5 ? '1.5\u00D7' : '2\u00D7'
 
+  const playColor = isOutgoing ? colors.brandPrimary : colors.surface
+  const playBg = isOutgoing ? colors.surface : colors.brandPrimary
+  const waveActive = isOutgoing ? 'rgba(255,255,255,0.96)' : 'rgba(38,95,178,0.96)'
+  const waveInactive = isOutgoing ? 'rgba(255,255,255,0.35)' : 'rgba(38,95,178,0.28)'
+  const metaColor = isOutgoing ? 'rgba(255,255,255,0.85)' : colors.textSecondary
+
+  return (
+    <Pressable
+      style={[styles.root, { width: BUBBLE_WIDTH }]}
+      onLongPress={onLongPress}
+    >
+      <View style={styles.topRow}>
         <Pressable
-          style={[styles.playButton, isOutgoing && styles.playButtonOutgoing]}
+          style={[styles.playButton, { backgroundColor: playBg }]}
           onPress={() => (isPlaying ? pause() : play(audioUrl))}
+          hitSlop={6}
         >
-          <Ionicons
-            name={isPlaying ? 'pause' : 'play'}
-            size={18}
-            color={isOutgoing ? colors.brandPrimary : colors.surface}
-          />
+          <Ionicons name={isPlaying ? 'pause' : 'play'} size={16} color={playColor} />
         </Pressable>
 
-        <View style={styles.waveBlock}>
-          <View
-            style={styles.waveTrack}
-            onLayout={(event) => setWaveformWidth(event.nativeEvent.layout.width)}
-            onStartShouldSetResponder={() => true}
-            onMoveShouldSetResponder={() => true}
-            onResponderGrant={(event) => seekFromTouch(event.nativeEvent.locationX)}
-            onResponderMove={(event) => seekFromTouch(event.nativeEvent.locationX)}
-          >
+        <View
+          style={styles.waveBlock}
+          onLayout={(e) => setWaveformWidth(e.nativeEvent.layout.width)}
+          onStartShouldSetResponder={() => true}
+          onMoveShouldSetResponder={() => true}
+          onResponderGrant={(e) => seekFromTouch(e.nativeEvent.locationX)}
+          onResponderMove={(e) => seekFromTouch(e.nativeEvent.locationX)}
+        >
+          <View style={styles.waveTrack}>
             {bars.map((amp, index) => (
               <View
-                key={`${messageId}-bar-${index}`}
+                key={`${messageId}-b-${index}`}
                 style={[
                   styles.waveBar,
                   {
-                    height: 4 + Math.round(amp * 12),
-                    backgroundColor:
-                      index < activeBarCount
-                        ? isOutgoing
-                          ? 'rgba(255,255,255,0.96)'
-                          : 'rgba(38,95,178,0.96)'
-                        : isOutgoing
-                          ? 'rgba(255,255,255,0.36)'
-                          : 'rgba(38,95,178,0.32)',
+                    height: 3 + Math.round(amp * 14),
+                    backgroundColor: index < activeBarCount ? waveActive : waveInactive,
                   },
                 ]}
               />
             ))}
           </View>
         </View>
+
+        {isPlaying ? (
+          <Pressable style={styles.speedButton} onPress={cycleSpeed} hitSlop={8}>
+            <Text style={[styles.speedText, { color: metaColor }]}>{speedLabel}</Text>
+          </Pressable>
+        ) : null}
       </View>
 
       <View style={styles.metaRow}>
-        <Text style={[styles.durationText, isOutgoing && styles.durationTextOutgoing]}>
-          {formatDuration(effectiveDurationMs)}
+        <Text style={[styles.durationText, { color: metaColor }]}>
+          {formatDuration(isPlaying ? positionMs : effectiveDurationMs)}
         </Text>
         <View style={styles.timeStatusWrap}>
-          <Text style={[styles.timestampText, isOutgoing && styles.timestampTextOutgoing]}>{timestamp}</Text>
+          <Text style={[styles.timestampText, { color: metaColor }]}>{timestamp}</Text>
           {isOutgoing ? (
-            <Text style={[styles.statusText, deliveryStatus === 'READ' && styles.statusRead]}>
+            <Text style={[styles.statusText, deliveryStatus === 'READ' && styles.statusRead, { color: metaColor }]}>
               {statusIcon(deliveryStatus)}
             </Text>
           ) : null}
@@ -153,77 +160,58 @@ export function VoiceNoteBubble({
 const styles = StyleSheet.create({
   root: {
     marginTop: 2,
-    width: '100%',
-    paddingRight: 8,
   },
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    width: '100%',
-  },
-  avatarWrap: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#1E3A8A',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  avatarImage: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-  },
-  avatarText: {
-    ...typography.caption,
-    color: colors.surface,
-    fontWeight: '700',
+    gap: 6,
   },
   playButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.brandPrimary,
-  },
-  playButtonOutgoing: {
-    backgroundColor: colors.surface,
+    flexShrink: 0,
   },
   waveBlock: {
     flex: 1,
     minWidth: 0,
   },
   waveTrack: {
-    height: 24,
+    height: 26,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
-    position: 'relative',
     overflow: 'hidden',
-    paddingRight: 6,
   },
   waveBar: {
     width: 2,
     borderRadius: 1,
+    flexShrink: 0,
+  },
+  speedButton: {
+    width: 30,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 4,
+    flexShrink: 0,
+  },
+  speedText: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: -0.3,
   },
   metaRow: {
-    marginTop: 2,
+    marginTop: 3,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    width: '100%',
-    paddingRight: 2,
   },
   durationText: {
     ...typography.caption,
-    color: colors.textSecondary,
     fontSize: 11,
-  },
-  durationTextOutgoing: {
-    color: 'rgba(255,255,255,0.92)',
   },
   timeStatusWrap: {
     flexDirection: 'row',
@@ -232,15 +220,10 @@ const styles = StyleSheet.create({
   },
   timestampText: {
     ...typography.caption,
-    color: colors.textSecondary,
     fontSize: 11,
-  },
-  timestampTextOutgoing: {
-    color: 'rgba(255,255,255,0.92)',
   },
   statusText: {
     ...typography.caption,
-    color: 'rgba(255,255,255,0.82)',
     fontSize: 11,
     fontWeight: '700',
     marginTop: -1,
@@ -249,4 +232,3 @@ const styles = StyleSheet.create({
     color: '#9BD0FF',
   },
 })
-

@@ -6,6 +6,7 @@ type PlaybackSnapshot = {
   isPlaying: boolean
   positionMs: number
   durationMs: number
+  speed: number
 }
 
 const listeners = new Set<() => void>()
@@ -16,6 +17,7 @@ let snapshot: PlaybackSnapshot = {
   isPlaying: false,
   positionMs: 0,
   durationMs: 0,
+  speed: 1.0,
 }
 
 function emit() {
@@ -145,6 +147,14 @@ export async function seekVoiceNote(messageId: string, ratio: number) {
   })
 }
 
+export async function setSpeedVoiceNote(messageId: string, rate: number) {
+  if (!sound || snapshot.currentMessageId !== messageId) return
+  const status = await sound.getStatusAsync()
+  if (!isLoadedStatus(status)) return
+  await sound.setRateAsync(rate, true)
+  setSnapshot({ speed: rate })
+}
+
 export async function stopVoiceNote() {
   if (!sound) return
   try {
@@ -168,10 +178,12 @@ export function useVoicePlaybackController(messageId: string) {
     isPlaying: isCurrent && state.isPlaying,
     positionMs: isCurrent ? state.positionMs : 0,
     durationMs: isCurrent ? state.durationMs : 0,
+    speed: isCurrent ? state.speed : 1.0,
     currentPlayingMessageId: state.currentMessageId,
     play: (audioUrl: string) => playVoiceNote(messageId, audioUrl),
     pause: () => pauseVoiceNote(),
     seek: (ratio: number) => seekVoiceNote(messageId, ratio),
+    setSpeed: (rate: number) => setSpeedVoiceNote(messageId, rate),
     stop: () => stopVoiceNote(),
   }
 }
