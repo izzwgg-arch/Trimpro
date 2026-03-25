@@ -454,7 +454,6 @@ export function ScheduleScreen({ navigation }: Props) {
             <Ionicons name="menu" size={20} color={colors.textPrimary} />
           </Pressable>
           <Text style={styles.topBarTitle}>Schedule</Text>
-          <View style={{backgroundColor:'#0F4C5C',paddingHorizontal:8,paddingVertical:2,borderRadius:4}}><Text style={{color:'#fff',fontSize:10,fontWeight:'900'}}>PLUTO FINAL B</Text></View>
           <Pressable style={styles.newButton} onPress={() => navigation.navigate('ScheduleCreate')}>
             <Ionicons name="add" size={14} color={colors.textPrimary} />
             <Text style={styles.newButtonText}>New</Text>

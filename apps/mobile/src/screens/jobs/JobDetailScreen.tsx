@@ -454,7 +454,6 @@ export function JobDetailScreen({ route, navigation }: Props) {
           <Text style={styles.empty}>Loading job details...</Text>
         ) : (
           <>
-            <View style={{backgroundColor:'#0F4C5C',paddingHorizontal:8,paddingVertical:2,borderRadius:4,marginBottom:4,alignSelf:'flex-start'}}><Text style={{color:'#fff',fontSize:10,fontWeight:'900'}}>PLUTO FINAL C</Text></View>
             <Text style={styles.title}>
               {job.jobNumber} - {job.title}
             </Text>
