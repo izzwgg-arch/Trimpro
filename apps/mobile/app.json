@@ -8,8 +8,8 @@
       "policy": "appVersion"
     },
     "updates": {
-      "enabled": false,
-      "checkAutomatically": "ERROR_RECOVERY_ONLY",
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
       "fallbackToCacheTimeout": 0,
       "url": "https://u.expo.dev/5d6344e3-86ce-4e96-93e8-13893313d47f"
     },

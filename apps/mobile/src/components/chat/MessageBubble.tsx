@@ -44,8 +44,8 @@ function statusIcon(status: string) {
 }
 
 const SCREEN_WIDTH = Dimensions.get('window').width
-const VOICE_BUBBLE_MAX_WIDTH = Math.round(Math.min(SCREEN_WIDTH * 0.68, 300))
-const VOICE_BUBBLE_MIN_WIDTH = Math.round(Math.min(SCREEN_WIDTH * 0.56, 240))
+const VOICE_BUBBLE_MAX_WIDTH = Math.round(SCREEN_WIDTH * 0.86)
+const VOICE_BUBBLE_MIN_WIDTH = Math.round(Math.min(SCREEN_WIDTH * 0.70, 320))
 const STANDARD_BUBBLE_MAX_WIDTH = Math.round(SCREEN_WIDTH * 0.82)
 const REPLY_BUBBLE_MIN_WIDTH_MINE = Math.round(Math.max(270, Math.min(SCREEN_WIDTH * 0.74, 390)))
 const REPLY_BUBBLE_MIN_WIDTH_OTHER = Math.round(Math.max(250, Math.min(SCREEN_WIDTH * 0.7, 370)))

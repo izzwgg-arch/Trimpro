@@ -6,7 +6,6 @@ import { useVoicePlaybackController } from '../../hooks/useVoicePlaybackControll
 import { computeWaveformPlaybackFrame } from '../../screens/messages/message-thread-utils'
 
 const SCREEN_WIDTH = Dimensions.get('window').width
-const BUBBLE_WIDTH = Math.min(Math.round(SCREEN_WIDTH * 0.66), 290)
 
 const SPEED_STEPS = [1, 1.5, 2] as const
 type SpeedStep = (typeof SPEED_STEPS)[number]
@@ -97,7 +96,7 @@ export function VoiceNoteBubble({
 
   return (
     <Pressable
-      style={[styles.root, { width: BUBBLE_WIDTH }]}
+      style={styles.root}
       onLongPress={onLongPress}
     >
       <View style={styles.topRow}>
@@ -160,6 +159,7 @@ export function VoiceNoteBubble({
 const styles = StyleSheet.create({
   root: {
     marginTop: 2,
+    width: '100%',
   },
   topRow: {
     flexDirection: 'row',

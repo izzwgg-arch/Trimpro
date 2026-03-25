@@ -1137,6 +1137,7 @@ export function MessageThreadScreen({ route, navigation }: Props) {
         keyboardVerticalOffset={0}
       >
         <View style={styles.header}>
+          <View style={{backgroundColor:'#0F4C5C',paddingHorizontal:8,paddingVertical:2,borderRadius:4,position:'absolute',top:2,right:8,zIndex:999}}><Text style={{color:'#fff',fontSize:10,fontWeight:'900'}}>PLUTO FINAL A</Text></View>
           <Pressable onPress={() => navigation.goBack()} style={styles.backButton}>
             <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
           </Pressable>
