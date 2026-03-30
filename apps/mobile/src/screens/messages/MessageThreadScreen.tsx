@@ -5,7 +5,6 @@ import {
   FlatList,
   GestureResponderEvent,
   Image,
-  KeyboardAvoidingView,
   Linking,
   Modal as RNModal,
   Platform,
@@ -25,6 +24,7 @@ import * as FileSystem from 'expo-file-system/legacy'
 import * as Location from 'expo-location'
 import * as Contacts from 'expo-contacts'
 import * as Clipboard from 'expo-clipboard'
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import ReactNativeModal from 'react-native-modal'
 import { API_BASE_URL } from '../../config/env'
@@ -1264,11 +1264,6 @@ export function MessageThreadScreen({ route, navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
-      {/*
-        Android: edge-to-edge + adjustResize often does not shrink the RN root, so the composer
-        stays under the IME. Use adjustPan (app.json) + KeyboardAvoidingView so keyboard metrics
-        add bottom padding and lift the thread column in one place.
-      */}
       <KeyboardAvoidingView style={styles.fill} behavior="padding" keyboardVerticalOffset={0}>
         {threadColumn}
       </KeyboardAvoidingView>
