@@ -96,7 +96,7 @@ function main() {
 
   const env = { ...process.env, CI: '1' }
   const args = ['eas-cli', 'update', '--channel', channel, '--message', message, '--clear-cache']
-  const result = spawnSync('npx', args, { stdio: 'inherit', env })
+  const result = spawnSync('npx', args, { stdio: 'inherit', env, shell: true })
   if (result.status !== 0) {
     process.exit(result.status || 1)
   }
