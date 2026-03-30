@@ -73,3 +73,9 @@ kbd-*.png
 kbd-live.png
 tmp-login.html
 trimpro-gap.png
+
+# Local Android install / proof APKs (prevents release drift from stray binaries)
+*.apk
+
+# Device QA screen captures often dropped at repo root
+screenshot*.png
