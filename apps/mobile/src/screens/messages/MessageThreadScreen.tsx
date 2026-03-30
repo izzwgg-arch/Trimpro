@@ -32,7 +32,6 @@ import { apiRequest, getValidAccessToken } from '../../api/client'
 import { ChatMessage } from '../../types/models'
 import { MessagesStackParamList } from '../../types/navigation'
 import { useAuth } from '../../auth/AuthContext'
-import { useAndroidChatComposerKeyboardPadding } from '../../hooks/useAndroidChatComposerKeyboard'
 import { useOnlineState } from '../../hooks/useOnlineState'
 import { enqueueOutbox } from '../../offline/outbox'
 import { MessageBubble } from '../../components/chat/MessageBubble'
@@ -225,8 +224,6 @@ export function MessageThreadScreen({ route, navigation }: Props) {
     }>
   >([])
   const [composerDockHeight, setComposerDockHeight] = useState(56)
-  const composerDockRef = useRef<View>(null)
-  const androidThreadBottomPadding = useAndroidChatComposerKeyboardPadding(composerDockRef)
 
   const uploadToMessages = useCallback(
     async (uri: string, mimeType: string) => {
@@ -1133,37 +1130,26 @@ export function MessageThreadScreen({ route, navigation }: Props) {
   }, [listedConversation, conversation, conversationType])
   const otherUserAvatar = listedConversation?.otherUser?.avatar || null
 
-  return (
-    <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
-      <KeyboardAvoidingView
-        style={styles.keyboardRoot}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        enabled={Platform.OS === 'ios'}
-      >
+  const threadColumn = (
+    <View style={styles.mainColumn}>
       <View style={styles.header}>
-          <Pressable onPress={() => navigation.goBack()} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
-          </Pressable>
-          {isTeamChat ? (
-            <View style={styles.teamAvatarCircle}>
-              <Text style={styles.teamAvatarLetter}>{threadTitle.slice(0, 1).toUpperCase()}</Text>
-            </View>
-          ) : otherUserAvatar ? (
-            <Image source={{ uri: otherUserAvatar }} style={styles.headerAvatar} />
-          ) : null}
-          <View style={styles.headerContent}>
-            <Text style={styles.headerTitle}>{threadTitle}</Text>
-            {isTeamChat ? <Text style={styles.headerSubtitle}>Group</Text> : null}
+        <Pressable onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
+        </Pressable>
+        {isTeamChat ? (
+          <View style={styles.teamAvatarCircle}>
+            <Text style={styles.teamAvatarLetter}>{threadTitle.slice(0, 1).toUpperCase()}</Text>
           </View>
+        ) : otherUserAvatar ? (
+          <Image source={{ uri: otherUserAvatar }} style={styles.headerAvatar} />
+        ) : null}
+        <View style={styles.headerContent}>
+          <Text style={styles.headerTitle}>{threadTitle}</Text>
+          {isTeamChat ? <Text style={styles.headerSubtitle}>Group</Text> : null}
         </View>
+      </View>
 
-      <View
-        style={[
-          styles.threadBody,
-          Platform.OS === 'android' ? { paddingBottom: androidThreadBottomPadding } : null,
-        ]}
-      >
-        <FlatList
+      <FlatList
           ref={listRef}
           style={styles.threadList}
           data={renderItems}
@@ -1216,15 +1202,13 @@ export function MessageThreadScreen({ route, navigation }: Props) {
           }}
         />
 
-        <View
-          ref={composerDockRef}
-          collapsable={false}
-          onLayout={(e) => {
-            const h = Math.round(e.nativeEvent.layout.height)
-            if (h < 1) return
-            setComposerDockHeight((prev) => (Math.abs(prev - h) > 1 ? h : prev))
-          }}
-        >
+      <View
+        onLayout={(e) => {
+          const h = Math.round(e.nativeEvent.layout.height)
+          if (h < 1) return
+          setComposerDockHeight((prev) => (Math.abs(prev - h) > 1 ? h : prev))
+        }}
+      >
           {editingMessage ? (
             <View style={styles.editingBar}>
               <View style={styles.editingBarTextWrap}>
@@ -1274,10 +1258,19 @@ export function MessageThreadScreen({ route, navigation }: Props) {
               bottomInset={0}
             />
           </View>
-        </View>
       </View>
+    </View>
+  )
 
-      </KeyboardAvoidingView>
+  return (
+    <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
+      {Platform.OS === 'ios' ? (
+        <KeyboardAvoidingView style={styles.fill} behavior="padding" enabled>
+          {threadColumn}
+        </KeyboardAvoidingView>
+      ) : (
+        <View style={styles.fill}>{threadColumn}</View>
+      )}
 
       {viewingMedia && (
         <MediaViewer
@@ -1378,11 +1371,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  keyboardRoot: {
+  fill: {
     flex: 1,
     minHeight: 0,
   },
-  threadBody: {
+  mainColumn: {
     flex: 1,
     minHeight: 0,
   },
