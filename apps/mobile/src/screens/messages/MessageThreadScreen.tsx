@@ -39,7 +39,6 @@ import { Composer } from '../../components/chat/Composer'
 import { DateSeparator } from '../../components/chat/DateSeparator'
 import { MediaViewer } from '../../components/chat/MediaViewer'
 import { VoiceRecorder } from '../../services/voiceRecorder'
-import { useAndroidKeyboardTransitionLayoutAnimation } from '../../hooks/useAndroidKeyboardTransitionLayoutAnimation'
 import { buildSendDraftSnapshot, toInvertedThreadItems } from './message-thread-utils'
 import { colors, spacing, typography } from '../../theme/tokens'
 
@@ -186,7 +185,6 @@ function ensureFileName(fileName: string | null | undefined, mimeType: string, p
 }
 
 export function MessageThreadScreen({ route, navigation }: Props) {
-  useAndroidKeyboardTransitionLayoutAnimation()
   const { conversationId, jobContext } = route.params
   const { user, token } = useAuth()
   const isOnline = useOnlineState()
@@ -226,6 +224,15 @@ export function MessageThreadScreen({ route, navigation }: Props) {
     }>
   >([])
   const [composerDockHeight, setComposerDockHeight] = useState(56)
+  /** Coalesce dock onLayout bursts (IME / nav bar) into one setState so inverted list paddingTop does not step twice on keyboard close. */
+  const composerDockLayoutRafRef = useRef<number | null>(null)
+  useEffect(() => {
+    return () => {
+      if (composerDockLayoutRafRef.current != null) {
+        cancelAnimationFrame(composerDockLayoutRafRef.current)
+      }
+    }
+  }, [])
 
   const uploadToMessages = useCallback(
     async (uri: string, mimeType: string) => {
@@ -1208,7 +1215,13 @@ export function MessageThreadScreen({ route, navigation }: Props) {
         onLayout={(e) => {
           const h = Math.round(e.nativeEvent.layout.height)
           if (h < 1) return
-          setComposerDockHeight((prev) => (Math.abs(prev - h) > 1 ? h : prev))
+          if (composerDockLayoutRafRef.current != null) {
+            cancelAnimationFrame(composerDockLayoutRafRef.current)
+          }
+          composerDockLayoutRafRef.current = requestAnimationFrame(() => {
+            composerDockLayoutRafRef.current = null
+            setComposerDockHeight((prev) => (Math.abs(prev - h) > 1 ? h : prev))
+          })
         }}
       >
           {editingMessage ? (

@@ -311,6 +311,10 @@ function MainTabsNavigator() {
         options={{
           title: 'Messages',
           tabBarBadge: unreadMessages > 0 ? unreadMessages : undefined,
+          // Keep tab bar visible while the keyboard is open on chat. If the bar hides with
+          // the IME and reappears on dismiss, the stack height jumps after keyboard-controller
+          // finishes padding — a second, whole-thread snap unrelated to the composer.
+          tabBarHideOnKeyboard: false,
         }}
       />
       <MainTabs.Screen
