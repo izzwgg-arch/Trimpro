@@ -41,7 +41,6 @@ interface ResolvedAddress {
 export function CreateJobScreen({ navigation }: Props) {
   const scrollRef = useRef<ScrollView | null>(null)
   const scrollYRef = useRef(0)
-  const [keyboardHeight, setKeyboardHeight] = useState(0)
   const [addressCardY, setAddressCardY] = useState<number | null>(null)
   const [addressFocused, setAddressFocused] = useState(false)
   const { canScheduleJobs, canAssignJobs } = useMobilePermissions()
@@ -164,19 +163,14 @@ export function CreateJobScreen({ navigation }: Props) {
       scrollRef.current.scrollTo({ y: targetY, animated: true })
     }
 
-    const showSub = Keyboard.addListener('keyboardDidShow', (event) => {
-      setKeyboardHeight(event.endCoordinates?.height || 0)
+    const showSub = Keyboard.addListener('keyboardDidShow', () => {
       // Android keyboard animation can race with focus; retry a few times.
       setTimeout(scrollAddressIntoView, 40)
       setTimeout(scrollAddressIntoView, 140)
       setTimeout(scrollAddressIntoView, 280)
     })
-    const hideSub = Keyboard.addListener('keyboardDidHide', () => {
-      setKeyboardHeight(0)
-    })
     return () => {
       showSub.remove()
-      hideSub.remove()
     }
   }, [addressCardY, addressFocused])
 
@@ -289,7 +283,7 @@ export function CreateJobScreen({ navigation }: Props) {
       <ScrollView
         ref={scrollRef}
         style={styles.scrollView}
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: spacing.xxl + keyboardHeight + spacing.lg }]}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: spacing.xxl + spacing.lg }]}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         onScroll={(event) => {

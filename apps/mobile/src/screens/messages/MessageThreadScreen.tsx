@@ -5,7 +5,6 @@ import {
   FlatList,
   GestureResponderEvent,
   Image,
-  KeyboardAvoidingView,
   Linking,
   Modal as RNModal,
   Platform,
@@ -25,6 +24,7 @@ import * as FileSystem from 'expo-file-system/legacy'
 import * as Location from 'expo-location'
 import * as Contacts from 'expo-contacts'
 import * as Clipboard from 'expo-clipboard'
+import Animated, { useAnimatedKeyboard, useAnimatedStyle } from 'react-native-reanimated'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import ReactNativeModal from 'react-native-modal'
 import { API_BASE_URL } from '../../config/env'
@@ -223,6 +223,15 @@ export function MessageThreadScreen({ route, navigation }: Props) {
       uploadProgress?: number
     }>
   >([])
+  const [composerDockHeight, setComposerDockHeight] = useState(56)
+
+  const keyboard = useAnimatedKeyboard({
+    isNavigationBarTranslucentAndroid: true,
+    isStatusBarTranslucentAndroid: true,
+  })
+  const keyboardLiftStyle = useAnimatedStyle(() => ({
+    paddingBottom: keyboard.height.value,
+  }))
 
   const uploadToMessages = useCallback(
     async (uri: string, mimeType: string) => {
@@ -1131,12 +1140,7 @@ export function MessageThreadScreen({ route, navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
-      <KeyboardAvoidingView
-        style={styles.content}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={0}
-      >
-        <View style={styles.header}>
+      <View style={styles.header}>
           <Pressable onPress={() => navigation.goBack()} style={styles.backButton}>
             <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
           </Pressable>
@@ -1153,8 +1157,10 @@ export function MessageThreadScreen({ route, navigation }: Props) {
           </View>
         </View>
 
+      <Animated.View style={[styles.threadBody, keyboardLiftStyle]}>
         <FlatList
           ref={listRef}
+          style={styles.threadList}
           data={renderItems}
           keyExtractor={(item, index) => {
             if ('type' in item && item.type === 'DATE') {
@@ -1162,7 +1168,7 @@ export function MessageThreadScreen({ route, navigation }: Props) {
             }
             return 'id' in item ? item.id : `opt-${index}`
           }}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingTop: composerDockHeight + spacing.sm }]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           inverted
@@ -1205,56 +1211,64 @@ export function MessageThreadScreen({ route, navigation }: Props) {
           }}
         />
 
-        {editingMessage ? (
-          <View style={styles.editingBar}>
-            <View style={styles.editingBarTextWrap}>
-              <Text style={styles.editingLabel}>Editing message</Text>
-              <Text numberOfLines={1} style={styles.editingPreview}>
-                {editingMessage.text || ''}
-              </Text>
+        <View
+          onLayout={(e) => {
+            const h = Math.round(e.nativeEvent.layout.height)
+            if (h < 1) return
+            setComposerDockHeight((prev) => (Math.abs(prev - h) > 1 ? h : prev))
+          }}
+        >
+          {editingMessage ? (
+            <View style={styles.editingBar}>
+              <View style={styles.editingBarTextWrap}>
+                <Text style={styles.editingLabel}>Editing message</Text>
+                <Text numberOfLines={1} style={styles.editingPreview}>
+                  {editingMessage.text || ''}
+                </Text>
+              </View>
+              <Pressable
+                style={styles.editingCancelButton}
+                onPress={() => {
+                  setEditingMessage(null)
+                  setText('')
+                }}
+              >
+                <Text style={styles.editingCancelText}>Cancel</Text>
+              </Pressable>
             </View>
-            <Pressable
-              style={styles.editingCancelButton}
-              onPress={() => {
-                setEditingMessage(null)
-                setText('')
-              }}
-            >
-              <Text style={styles.editingCancelText}>Cancel</Text>
-            </Pressable>
-          </View>
-        ) : null}
+          ) : null}
 
-        <View style={styles.composerDock}>
-          <Composer
-            text={text}
-            onChangeText={setText}
-            onSend={handleSend}
-            onOpenMenu={openAttachMenu}
-            onVoiceStart={startRecording}
-            onVoiceMove={moveRecording}
-            onVoiceStop={stopRecording}
-            onVoiceCancel={cancelRecording}
-            attachments={mediaDrafts}
-            onRemoveAttachment={(index) => setMediaDrafts((prev) => prev.filter((_, i) => i !== index))}
-            recording={isRecordingUi}
-            recordingDurationMs={recordingDurationMs}
-            recordingWillCancel={recordingWillCancel}
-            replyPreview={
-              replyTo
-                ? {
-                    senderName: `${replyTo.sender?.firstName || ''} ${replyTo.sender?.lastName || ''}`.trim() || replyTo.sender?.email || 'Unknown',
-                    textPreview: replyTo.text || replyTo.attachments?.[0]?.fileName || replyTo.attachments?.[0]?.kind || '',
-                  }
-                : null
-            }
-            onClearReply={() => setReplyTo(null)}
-            sending={sendMutation.isPending}
-            disabled={!isOnline}
-            bottomInset={0}
-          />
+          <View style={styles.composerDock}>
+            <Composer
+              text={text}
+              onChangeText={setText}
+              onSend={handleSend}
+              onOpenMenu={openAttachMenu}
+              onVoiceStart={startRecording}
+              onVoiceMove={moveRecording}
+              onVoiceStop={stopRecording}
+              onVoiceCancel={cancelRecording}
+              attachments={mediaDrafts}
+              onRemoveAttachment={(index) => setMediaDrafts((prev) => prev.filter((_, i) => i !== index))}
+              recording={isRecordingUi}
+              recordingDurationMs={recordingDurationMs}
+              recordingWillCancel={recordingWillCancel}
+              replyPreview={
+                replyTo
+                  ? {
+                      senderName: `${replyTo.sender?.firstName || ''} ${replyTo.sender?.lastName || ''}`.trim() || replyTo.sender?.email || 'Unknown',
+                      textPreview: replyTo.text || replyTo.attachments?.[0]?.fileName || replyTo.attachments?.[0]?.kind || '',
+                    }
+                  : null
+              }
+              onClearReply={() => setReplyTo(null)}
+              sending={sendMutation.isPending}
+              disabled={!isOnline}
+              bottomInset={0}
+            />
+          </View>
         </View>
-      </KeyboardAvoidingView>
+      </Animated.View>
 
       {viewingMedia && (
         <MediaViewer
@@ -1355,8 +1369,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  content: {
+  threadBody: {
     flex: 1,
+    minHeight: 0,
+  },
+  threadList: {
+    flex: 1,
+    minHeight: 0,
   },
   header: {
     flexDirection: 'row',
@@ -1418,7 +1437,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   listContent: {
-    paddingTop: spacing.sm,
     paddingBottom: 4,
   },
   composerDock: {
