@@ -1264,13 +1264,14 @@ export function MessageThreadScreen({ route, navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
-      {Platform.OS === 'ios' ? (
-        <KeyboardAvoidingView style={styles.fill} behavior="padding" enabled>
-          {threadColumn}
-        </KeyboardAvoidingView>
-      ) : (
-        <View style={styles.fill}>{threadColumn}</View>
-      )}
+      {/*
+        Android: edge-to-edge + adjustResize often does not shrink the RN root, so the composer
+        stays under the IME. Use adjustPan (app.json) + KeyboardAvoidingView so keyboard metrics
+        add bottom padding and lift the thread column in one place.
+      */}
+      <KeyboardAvoidingView style={styles.fill} behavior="padding" keyboardVerticalOffset={0}>
+        {threadColumn}
+      </KeyboardAvoidingView>
 
       {viewingMedia && (
         <MediaViewer
