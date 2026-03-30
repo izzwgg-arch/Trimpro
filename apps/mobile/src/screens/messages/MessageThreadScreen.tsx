@@ -39,6 +39,7 @@ import { Composer } from '../../components/chat/Composer'
 import { DateSeparator } from '../../components/chat/DateSeparator'
 import { MediaViewer } from '../../components/chat/MediaViewer'
 import { VoiceRecorder } from '../../services/voiceRecorder'
+import { useAndroidKeyboardTransitionLayoutAnimation } from '../../hooks/useAndroidKeyboardTransitionLayoutAnimation'
 import { buildSendDraftSnapshot, toInvertedThreadItems } from './message-thread-utils'
 import { colors, spacing, typography } from '../../theme/tokens'
 
@@ -185,6 +186,7 @@ function ensureFileName(fileName: string | null | undefined, mimeType: string, p
 }
 
 export function MessageThreadScreen({ route, navigation }: Props) {
+  useAndroidKeyboardTransitionLayoutAnimation()
   const { conversationId, jobContext } = route.params
   const { user, token } = useAuth()
   const isOnline = useOnlineState()

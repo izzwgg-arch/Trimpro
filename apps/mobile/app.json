@@ -35,8 +35,8 @@
     },
     "android": {
       "package": "com.trimpro.field",
-      "versionCode": 7,
-      "softwareKeyboardLayoutMode": "resize",
+      "versionCode": 8,
+      "softwareKeyboardLayoutMode": "pan",
       "googleServicesFile": "./google-services.json",
       "notification": {
         "icon": "./assets/adaptive-icon.png",
