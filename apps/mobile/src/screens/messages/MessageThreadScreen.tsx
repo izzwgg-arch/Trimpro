@@ -5,6 +5,7 @@ import {
   FlatList,
   GestureResponderEvent,
   Image,
+  KeyboardAvoidingView,
   Linking,
   Modal as RNModal,
   Platform,
@@ -24,7 +25,6 @@ import * as FileSystem from 'expo-file-system/legacy'
 import * as Location from 'expo-location'
 import * as Contacts from 'expo-contacts'
 import * as Clipboard from 'expo-clipboard'
-import Animated, { useAnimatedKeyboard, useAnimatedStyle } from 'react-native-reanimated'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import ReactNativeModal from 'react-native-modal'
 import { API_BASE_URL } from '../../config/env'
@@ -32,6 +32,7 @@ import { apiRequest, getValidAccessToken } from '../../api/client'
 import { ChatMessage } from '../../types/models'
 import { MessagesStackParamList } from '../../types/navigation'
 import { useAuth } from '../../auth/AuthContext'
+import { useAndroidChatComposerKeyboardPadding } from '../../hooks/useAndroidChatComposerKeyboard'
 import { useOnlineState } from '../../hooks/useOnlineState'
 import { enqueueOutbox } from '../../offline/outbox'
 import { MessageBubble } from '../../components/chat/MessageBubble'
@@ -224,14 +225,8 @@ export function MessageThreadScreen({ route, navigation }: Props) {
     }>
   >([])
   const [composerDockHeight, setComposerDockHeight] = useState(56)
-
-  const keyboard = useAnimatedKeyboard({
-    isNavigationBarTranslucentAndroid: true,
-    isStatusBarTranslucentAndroid: true,
-  })
-  const keyboardLiftStyle = useAnimatedStyle(() => ({
-    paddingBottom: keyboard.height.value,
-  }))
+  const composerDockRef = useRef<View>(null)
+  const androidThreadBottomPadding = useAndroidChatComposerKeyboardPadding(composerDockRef)
 
   const uploadToMessages = useCallback(
     async (uri: string, mimeType: string) => {
@@ -1140,6 +1135,11 @@ export function MessageThreadScreen({ route, navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
+      <KeyboardAvoidingView
+        style={styles.keyboardRoot}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        enabled={Platform.OS === 'ios'}
+      >
       <View style={styles.header}>
           <Pressable onPress={() => navigation.goBack()} style={styles.backButton}>
             <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
@@ -1157,7 +1157,12 @@ export function MessageThreadScreen({ route, navigation }: Props) {
           </View>
         </View>
 
-      <Animated.View style={[styles.threadBody, keyboardLiftStyle]}>
+      <View
+        style={[
+          styles.threadBody,
+          Platform.OS === 'android' ? { paddingBottom: androidThreadBottomPadding } : null,
+        ]}
+      >
         <FlatList
           ref={listRef}
           style={styles.threadList}
@@ -1212,6 +1217,8 @@ export function MessageThreadScreen({ route, navigation }: Props) {
         />
 
         <View
+          ref={composerDockRef}
+          collapsable={false}
           onLayout={(e) => {
             const h = Math.round(e.nativeEvent.layout.height)
             if (h < 1) return
@@ -1268,7 +1275,9 @@ export function MessageThreadScreen({ route, navigation }: Props) {
             />
           </View>
         </View>
-      </Animated.View>
+      </View>
+
+      </KeyboardAvoidingView>
 
       {viewingMedia && (
         <MediaViewer
@@ -1368,6 +1377,10 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  keyboardRoot: {
+    flex: 1,
+    minHeight: 0,
   },
   threadBody: {
     flex: 1,
