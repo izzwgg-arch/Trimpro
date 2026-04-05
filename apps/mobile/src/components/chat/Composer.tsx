@@ -25,6 +25,16 @@ interface AttachmentDraft {
   uploadProgress?: number
 }
 
+/* ─── WhatsApp dark-mode pill colours ─────────────────────────────────────
+   These are matched from the WhatsApp dark-mode reference screenshot.
+   They are intentionally hardcoded here so they are independent of the
+   app light-mode theme tokens and always render the correct dark look. */
+const WA_PILL_BG = '#1F2C34'        // pill background  (WhatsApp dark input)
+const WA_ICON    = '#8696A0'        // icons + placeholder text
+const WA_TEXT    = '#E9EDF0'        // input / timer text
+const WA_FAB_BG  = '#FFFFFF'        // mic circle background
+const WA_FAB_ICON = '#1F2C34'       // mic icon on white circle
+
 const EMOJI_PICKER_ROWS: string[][] = [
   ['😀', '😃', '😄', '😁', '😅', '😂', '🤣', '😊'],
   ['😍', '🥰', '😘', '😎', '🤔', '🙄', '😢', '😭'],
@@ -184,7 +194,7 @@ export function Composer({
         <Ionicons
           name={recording && !voiceLocked ? 'mic' : 'mic-outline'}
           size={22}
-          color={recording && !voiceLocked ? '#FFFFFF' : colors.textPrimary}
+          color={recording && !voiceLocked ? '#FFFFFF' : WA_FAB_ICON}
         />
       </Pressable>
     </Animated.View>
@@ -210,7 +220,7 @@ export function Composer({
   const pillContent = recording && !voiceLocked ? (
     /* Compact recording UI — fits inside the pill, WhatsApp-style */
     <View style={styles.recInPill}>
-      <Ionicons name="mic" size={18} color="#EA4335" style={styles.recMicIcon} />
+      <Ionicons name="mic" size={16} color="#EA4335" style={styles.recMicIcon} />
       <Text style={styles.recTimerText}>{timerLabel}</Text>
       <Text
         style={[styles.slideToCancelText, recordingWillCancel && styles.slideToCancelWarn]}
@@ -228,7 +238,7 @@ export function Composer({
         onChangeText={onChangeText}
         onSubmitEditing={triggerSend}
         placeholder="Message"
-        placeholderTextColor={colors.textSecondary}
+        placeholderTextColor={WA_ICON}
         multiline
         blurOnSubmit={false}
         returnKeyType="default"
@@ -243,7 +253,7 @@ export function Composer({
             disabled={disabled}
             hitSlop={6}
           >
-            <Ionicons name="attach-outline" size={22} color={colors.textSecondary} />
+            <Ionicons name="attach-outline" size={22} color={WA_ICON} />
           </Pressable>
           {onOpenCamera ? (
             <Pressable
@@ -252,7 +262,7 @@ export function Composer({
               disabled={disabled}
               hitSlop={6}
             >
-              <Ionicons name="camera-outline" size={22} color={colors.textSecondary} />
+              <Ionicons name="camera-outline" size={22} color={WA_ICON} />
             </Pressable>
           ) : null}
         </View>
@@ -358,7 +368,7 @@ export function Composer({
               disabled={disabled || recording}
               hitSlop={6}
             >
-              <Ionicons name="happy-outline" size={22} color={colors.textSecondary} />
+              <Ionicons name="happy-outline" size={22} color={WA_ICON} />
             </Pressable>
 
             {/* Pill content: text input or recording UI */}
@@ -382,7 +392,7 @@ export function Composer({
   )
 }
 
-const FAB_SIZE = 48
+const FAB_SIZE = 46
 
 const styles = StyleSheet.create({
   container: {
@@ -451,15 +461,16 @@ const styles = StyleSheet.create({
   /* ── Composer row ── */
   composerRow: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 6,
+    /* center so mic sits mid-height of pill on single-line, drops to bottom on multiline */
+    alignItems: 'center',
+    gap: 8,
   },
 
   /* ── FAB column (holds lock hint + mic/send) ── */
   fabCol: {
     flexShrink: 0,
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
   },
   /* Floating lock badge shown above mic when recording (unlocked) */
   lockBadge: {
@@ -477,20 +488,22 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
 
-  /* ── Input pill ── */
+  /* ── Input pill ── (dark, compact — matches WhatsApp dark-mode reference) */
   inputPill: {
     flex: 1,
-    minHeight: 44,
+    /* tighter than before — WhatsApp pill is ~42px at single line */
+    minHeight: 42,
     maxHeight: 130,
-    borderRadius: 22,
-    backgroundColor: colors.surface,
+    borderRadius: 21,
+    backgroundColor: WA_PILL_BG,
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    paddingVertical: 6,
-    paddingHorizontal: 4,
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 6,
   },
   pillIconBtn: {
-    width: 36,
+    /* tighter hit area — WhatsApp icons have minimal padding */
+    width: 32,
     height: 32,
     alignItems: 'center',
     justifyContent: 'center',
@@ -500,17 +513,16 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
   },
   pillInput: {
     flex: 1,
-    minHeight: 32,
+    minHeight: 30,
     maxHeight: 100,
     paddingHorizontal: 4,
     paddingVertical: 0,
-    paddingBottom: 0,
     ...typography.body,
-    color: colors.textPrimary,
+    color: WA_TEXT,
     fontSize: 16,
     lineHeight: 20,
     textAlignVertical: 'center',
@@ -519,7 +531,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flexShrink: 0,
-    paddingBottom: 2,
+    /* no extra bottom padding — pill is already center-aligned */
+    gap: 0,
   },
 
   /* ── Compact recording inline (inside pill) ── */
@@ -528,9 +541,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingVertical: 6,
+    paddingVertical: 0,
     paddingHorizontal: 4,
-    minHeight: 32,
+    minHeight: 30,
   },
   recMicIcon: {
     flexShrink: 0,
@@ -539,13 +552,13 @@ const styles = StyleSheet.create({
     ...typography.sub,
     fontSize: 15,
     fontWeight: '600',
-    color: colors.textPrimary,
+    color: WA_TEXT,
     minWidth: 34,
   },
   slideToCancelText: {
     ...typography.caption,
     fontSize: 13,
-    color: colors.textSecondary,
+    color: WA_ICON,
     flex: 1,
   },
   slideToCancelWarn: {
@@ -556,21 +569,20 @@ const styles = StyleSheet.create({
   /* ── FAB (mic / send) ── */
   fabWrap: {
     flexShrink: 0,
-    alignSelf: 'flex-end',
-    marginBottom: 0,
+    /* no self-align so it sits at centre (inherits from composerRow alignItems:'center') */
   },
   fab: {
     width: FAB_SIZE,
     height: FAB_SIZE,
     borderRadius: FAB_SIZE / 2,
-    backgroundColor: colors.surface,
+    backgroundColor: WA_FAB_BG,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.14,
+    shadowOpacity: 0.18,
     shadowRadius: 4,
-    elevation: 3,
+    elevation: 4,
   },
   fabRecording: {
     backgroundColor: '#25D366',
