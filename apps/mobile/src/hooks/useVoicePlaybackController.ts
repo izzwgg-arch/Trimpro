@@ -42,6 +42,10 @@ function isLoadedStatus(status: any): status is AVPlaybackStatusSuccess {
   return !!status?.isLoaded
 }
 
+function logVoicePlayback(stage: string, payload: Record<string, unknown>) {
+  console.error(`[VoicePlayback] ${stage}`, payload)
+}
+
 async function cleanupSound() {
   if (!sound) return
   try {
@@ -52,14 +56,37 @@ async function cleanupSound() {
   sound = null
 }
 
+async function ensurePlaybackMode() {
+  try {
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: false,
+      shouldDuckAndroid: true,
+      playThroughEarpieceAndroid: false,
+    })
+  } catch (e) {
+    logVoicePlayback('setAudioModeAsync', { error: String(e) })
+  }
+}
+
 export async function playVoiceNote(messageId: string, audioUrl: string) {
-  if (!messageId || !audioUrl) return
+  const uri = String(audioUrl ?? '').trim()
+  if (!messageId || !uri) {
+    const err = new Error('Missing messageId or audio URL')
+    logVoicePlayback('invalidInput', { messageId, uriPreview: uri.slice(0, 80) })
+    throw err
+  }
 
   if (sound && snapshot.currentMessageId === messageId) {
     const status = await sound.getStatusAsync()
     if (isLoadedStatus(status) && status.isPlaying) {
       await sound.pauseAsync()
-      setSnapshot({ isPlaying: false, positionMs: status.positionMillis || 0, durationMs: status.durationMillis || 0 })
+      setSnapshot({
+        isPlaying: false,
+        positionMs: status.positionMillis || 0,
+        durationMs: status.durationMillis || 0,
+      })
       return
     }
     if (isLoadedStatus(status)) {
@@ -67,38 +94,82 @@ export async function playVoiceNote(messageId: string, audioUrl: string) {
       const position = status.positionMillis || 0
       const isAtEnd = duration > 0 && position >= Math.max(0, duration - 120)
       if (isAtEnd) {
-        // Ensure replay works reliably after completion.
         await sound.setStatusAsync({ positionMillis: 0, shouldPlay: false, isLooping: false })
       }
     }
-    await sound.playAsync()
-    setSnapshot({ isPlaying: true })
+    await ensurePlaybackMode()
+    try {
+      await sound.playAsync()
+      setSnapshot({ isPlaying: true })
+    } catch (e) {
+      logVoicePlayback('resumePlayFailed', { uri: uri.slice(0, 160), error: String(e) })
+      throw e instanceof Error ? e : new Error(String(e))
+    }
     return
   }
 
   await cleanupSound()
+  await ensurePlaybackMode()
 
-  const created = await Audio.Sound.createAsync(
-    { uri: audioUrl },
-    { shouldPlay: true, progressUpdateIntervalMillis: 100, isLooping: false }
-  )
-  sound = created.sound
+  let newSound: Audio.Sound
+  try {
+    const created = await Audio.Sound.createAsync(
+      { uri },
+      {
+        shouldPlay: false,
+        progressUpdateIntervalMillis: 50,
+        isLooping: false,
+        volume: 1.0,
+      }
+    )
+    newSound = created.sound
+  } catch (e) {
+    logVoicePlayback('createAsync threw', {
+      uri: uri.slice(0, 200),
+      messageId,
+      error: String(e),
+    })
+    throw e instanceof Error ? e : new Error(String(e))
+  }
+
+  const statusAfterCreate = await newSound.getStatusAsync()
+  if (!isLoadedStatus(statusAfterCreate)) {
+    const errDetail =
+      'error' in statusAfterCreate && statusAfterCreate.error
+        ? String(statusAfterCreate.error)
+        : 'Audio source did not load (invalid URL, network, or format)'
+    logVoicePlayback('notLoadedAfterCreate', {
+      uri: uri.slice(0, 200),
+      messageId,
+      status: JSON.stringify(statusAfterCreate),
+    })
+    try {
+      await newSound.unloadAsync()
+    } catch {
+      /* ignore */
+    }
+    throw new Error(errDetail)
+  }
+
+  sound = newSound
 
   setSnapshot({
     currentMessageId: messageId,
-    isPlaying: true,
-    positionMs: 0,
-    durationMs: 0,
+    isPlaying: false,
+    positionMs: statusAfterCreate.positionMillis || 0,
+    durationMs: statusAfterCreate.durationMillis || 0,
   })
 
-  sound.setOnPlaybackStatusUpdate((status) => {
-    if (!isLoadedStatus(status)) {
+  newSound.setOnPlaybackStatusUpdate((st) => {
+    if (!isLoadedStatus(st)) {
+      if ('error' in st && st.error) {
+        logVoicePlayback('playbackStatusError', { error: String(st.error), messageId })
+      }
       return
     }
-    const durationMs = status.durationMillis || snapshot.durationMs || 0
-    const positionMs = status.positionMillis || 0
-    if (status.didJustFinish) {
-      // Explicitly stop autoplay/loop behavior at completion.
+    const durationMs = st.durationMillis || snapshot.durationMs || 0
+    const positionMs = st.positionMillis || 0
+    if (st.didJustFinish) {
       void sound?.setStatusAsync({ shouldPlay: false, isLooping: false, positionMillis: 0 }).catch(() => {})
       setSnapshot({
         currentMessageId: messageId,
@@ -110,11 +181,26 @@ export async function playVoiceNote(messageId: string, audioUrl: string) {
     }
     setSnapshot({
       currentMessageId: messageId,
-      isPlaying: status.isPlaying,
+      isPlaying: st.isPlaying,
       positionMs,
       durationMs,
     })
   })
+
+  try {
+    await newSound.playAsync()
+    setSnapshot({ isPlaying: true })
+  } catch (e) {
+    logVoicePlayback('playAsyncFailed', { uri: uri.slice(0, 200), error: String(e) })
+    await cleanupSound()
+    setSnapshot({
+      currentMessageId: null,
+      isPlaying: false,
+      positionMs: 0,
+      durationMs: 0,
+    })
+    throw e instanceof Error ? e : new Error(String(e))
+  }
 }
 
 export async function pauseVoiceNote() {
@@ -179,12 +265,12 @@ export function useVoicePlaybackController(messageId: string) {
     positionMs: isCurrent ? state.positionMs : 0,
     durationMs: isCurrent ? state.durationMs : 0,
     speed: isCurrent ? state.speed : 1.0,
+    isActiveTrack: isCurrent,
     currentPlayingMessageId: state.currentMessageId,
-    play: (audioUrl: string) => playVoiceNote(messageId, audioUrl),
+    play: (url: string) => playVoiceNote(messageId, url),
     pause: () => pauseVoiceNote(),
     seek: (ratio: number) => seekVoiceNote(messageId, ratio),
     setSpeed: (rate: number) => setSpeedVoiceNote(messageId, rate),
     stop: () => stopVoiceNote(),
   }
 }
-

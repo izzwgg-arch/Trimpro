@@ -1,5 +1,17 @@
-import React, { useRef } from 'react'
-import { ActivityIndicator, GestureResponderEvent, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
+import React, { useEffect, useRef, useState } from 'react'
+import {
+  ActivityIndicator,
+  Animated,
+  Easing,
+  GestureResponderEvent,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { colors, spacing, typography } from '../../theme/tokens'
 
@@ -13,15 +25,26 @@ interface AttachmentDraft {
   uploadProgress?: number
 }
 
+const EMOJI_PICKER_ROWS: string[][] = [
+  ['😀', '😃', '😄', '😁', '😅', '😂', '🤣', '😊'],
+  ['😍', '🥰', '😘', '😎', '🤔', '🙄', '😢', '😭'],
+  ['👍', '👎', '❤️', '🔥', '✨', '🙏', '👏', '💯'],
+  ['😮', '😱', '🤝', '💪', '🎉', '✅', '❌', '⚠️'],
+]
+
 interface ComposerProps {
   text: string
   onChangeText: (text: string) => void
   onSend: () => void
   onOpenMenu: () => void
+  onOpenCamera?: () => void
   onVoiceStart: (event: GestureResponderEvent) => void
   onVoiceMove: (event: GestureResponderEvent) => void
   onVoiceStop: (event: GestureResponderEvent) => void
   onVoiceCancel: () => void
+  voiceLocked?: boolean
+  onVoiceSendLocked?: () => void
+  onVoiceDiscardLocked?: () => void
   attachments: AttachmentDraft[]
   onRemoveAttachment: (index: number) => void
   recording: boolean
@@ -37,15 +60,77 @@ interface ComposerProps {
   bottomInset?: number
 }
 
+/* Animated waveform for locked recording panel */
+function RecordingLiveWave({ barCount = 32 }: { barCount?: number }) {
+  const anims = useRef(Array.from({ length: barCount }, () => new Animated.Value(0.3))).current
+  useEffect(() => {
+    const loops = anims.map((v, i) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(v, {
+            toValue: 0.85 + (i % 5) * 0.03,
+            duration: 210 + (i % 7) * 38,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: false,
+          }),
+          Animated.timing(v, {
+            toValue: 0.22,
+            duration: 250 + (i % 5) * 32,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: false,
+          }),
+        ])
+      )
+    )
+    loops.forEach((l) => l.start())
+    return () => loops.forEach((l) => l.stop())
+  }, [anims])
+  return (
+    <View style={styles.liveWaveRow}>
+      {anims.map((v, i) => (
+        <Animated.View
+          key={i}
+          style={[
+            styles.liveWaveBar,
+            {
+              height: v.interpolate({ inputRange: [0, 1], outputRange: [3, 22] }),
+            },
+          ]}
+        />
+      ))}
+    </View>
+  )
+}
+
+/* Dot that blinks while recording */
+function RecordingDot() {
+  const opacity = useRef(new Animated.Value(1)).current
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 0.15, duration: 500, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 1, duration: 500, useNativeDriver: true }),
+      ])
+    )
+    loop.start()
+    return () => loop.stop()
+  }, [opacity])
+  return <Animated.View style={[styles.recDot, { opacity }]} />
+}
+
 export function Composer({
   text,
   onChangeText,
   onSend,
   onOpenMenu,
+  onOpenCamera,
   onVoiceStart,
   onVoiceMove,
   onVoiceStop,
   onVoiceCancel,
+  voiceLocked = false,
+  onVoiceSendLocked,
+  onVoiceDiscardLocked,
   attachments,
   onRemoveAttachment,
   recording,
@@ -58,34 +143,173 @@ export function Composer({
   bottomInset = 0,
 }: ComposerProps) {
   const inputRef = useRef<TextInput>(null)
+  const micScale = useRef(new Animated.Value(1)).current
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
+
   const canSend = (text.trim().length > 0 || attachments.length > 0) && !sending && !disabled
   const showMic = text.trim().length === 0 && attachments.length === 0
+
   const triggerSend = () => {
-    // Force immediate visual clear to avoid stale text rendering on Android.
     inputRef.current?.clear()
     onChangeText('')
     onSend()
   }
 
+  const pulseMic = () => {
+    Animated.sequence([
+      Animated.timing(micScale, {
+        toValue: 1.12,
+        duration: 80,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.spring(micScale, { toValue: 1, useNativeDriver: true, friction: 5 }),
+    ]).start()
+  }
+
+  const handleVoicePressIn = (e: GestureResponderEvent) => {
+    pulseMic()
+    onVoiceStart(e)
+  }
+
+  const insertEmoji = (emo: string) => {
+    onChangeText(text + emo)
+    setEmojiPickerOpen(false)
+  }
+
+  const recordingSeconds = Math.max(0, Math.round((recordingDurationMs || 0) / 1000))
+  const timerLabel = `${Math.floor(recordingSeconds / 60)}:${String(recordingSeconds % 60).padStart(2, '0')}`
+
+  /* ── Mic / Send FAB ─────────────────────────────────────────── */
+  const micFab = (
+    <Animated.View style={[styles.fabWrap, { transform: [{ scale: micScale }] }]}>
+      <Pressable
+        style={[
+          styles.fab,
+          recording && !voiceLocked && styles.fabRecording,
+          recording && recordingWillCancel && !voiceLocked && styles.fabCancel,
+          disabled && styles.fabDisabled,
+        ]}
+        onPressIn={recording || voiceLocked ? undefined : handleVoicePressIn}
+        onTouchMove={recording && !voiceLocked ? onVoiceMove : undefined}
+        onPressOut={recording && !voiceLocked ? onVoiceStop : undefined}
+        disabled={disabled || voiceLocked}
+        hitSlop={8}
+      >
+        <Ionicons
+          name={recording && !voiceLocked ? 'mic' : 'mic-outline'}
+          size={22}
+          color={recording && !voiceLocked ? '#FFFFFF' : colors.textPrimary}
+        />
+      </Pressable>
+    </Animated.View>
+  )
+
+  const sendFab = (
+    <View style={styles.fabWrap}>
+      <Pressable
+        style={[styles.fab, styles.fabSend, !canSend && styles.fabSendDisabled]}
+        onPress={triggerSend}
+        disabled={!canSend}
+      >
+        {sending ? (
+          <ActivityIndicator size="small" color="#FFFFFF" />
+        ) : (
+          <Ionicons name="send" size={18} color="#FFFFFF" />
+        )}
+      </Pressable>
+    </View>
+  )
+
+  /* ── Input pill content ─────────────────────────────────────── */
+  const pillContent = recording && !voiceLocked ? (
+    /* Compact recording UI — fits inside the pill */
+    <View style={styles.recInPill}>
+      <RecordingDot />
+      <Text style={styles.recTimerText}>{timerLabel}</Text>
+      <Text
+        style={[styles.slideToCancelText, recordingWillCancel && styles.slideToCancelWarn]}
+        numberOfLines={1}
+      >
+        {recordingWillCancel ? 'Release to cancel' : '\u2190 Slide to cancel'}
+      </Text>
+    </View>
+  ) : (
+    <>
+      <TextInput
+        ref={inputRef}
+        style={styles.pillInput}
+        value={text}
+        onChangeText={onChangeText}
+        onSubmitEditing={triggerSend}
+        placeholder="Message"
+        placeholderTextColor={colors.textSecondary}
+        multiline
+        blurOnSubmit={false}
+        returnKeyType="default"
+        maxLength={2000}
+        editable={!disabled && !recording}
+      />
+      {!recording ? (
+        <View style={styles.pillRightIcons}>
+          <Pressable
+            style={styles.pillIconBtn}
+            onPress={onOpenMenu}
+            disabled={disabled}
+            hitSlop={6}
+          >
+            <Ionicons name="attach-outline" size={22} color={colors.textSecondary} />
+          </Pressable>
+          {onOpenCamera ? (
+            <Pressable
+              style={styles.pillIconBtn}
+              onPress={onOpenCamera}
+              disabled={disabled}
+              hitSlop={6}
+            >
+              <Ionicons name="camera-outline" size={22} color={colors.textSecondary} />
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
+    </>
+  )
+
   return (
-    <View
-      style={[
-        styles.container,
-        {
-          paddingBottom: Math.max(spacing.sm, bottomInset),
-        },
-      ]}
-    >
+    <View style={[styles.container, { paddingBottom: Math.max(spacing.sm, bottomInset) }]}>
+
+      {/* Emoji picker modal */}
+      <Modal
+        visible={emojiPickerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEmojiPickerOpen(false)}
+      >
+        <Pressable style={styles.emojiBackdrop} onPress={() => setEmojiPickerOpen(false)}>
+          <View style={styles.emojiSheet} onStartShouldSetResponder={() => true}>
+            <Text style={styles.emojiSheetTitle}>Emoji</Text>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              {EMOJI_PICKER_ROWS.map((row, ri) => (
+                <View key={ri} style={styles.emojiRow}>
+                  {row.map((emo) => (
+                    <Pressable key={emo} style={styles.emojiCell} onPress={() => insertEmoji(emo)}>
+                      <Text style={styles.emojiChar}>{emo}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* Reply preview */}
       {replyPreview ? (
         <View style={styles.replyPreview}>
           <View style={styles.replyAccent} />
           <View style={styles.replyBody}>
-            <Text style={styles.replySender} numberOfLines={1}>
-              {replyPreview.senderName}
-            </Text>
-            <Text style={styles.replyText} numberOfLines={1}>
-              {replyPreview.textPreview || 'Attachment'}
-            </Text>
+            <Text style={styles.replySender} numberOfLines={1}>{replyPreview.senderName}</Text>
+            <Text style={styles.replyText} numberOfLines={1}>{replyPreview.textPreview || 'Attachment'}</Text>
           </View>
           <Pressable onPress={onClearReply} style={styles.replyClose}>
             <Ionicons name="close" size={16} color={colors.textSecondary} />
@@ -93,23 +317,24 @@ export function Composer({
         </View>
       ) : null}
 
+      {/* Attachment pills */}
       {attachments.length > 0 && (
         <View style={styles.attachmentsRow}>
-          {attachments.map((attachment, index) => (
-            <View key={index} style={styles.attachmentPill}>
-              <Text style={styles.attachmentPillText} numberOfLines={1}>
-                {attachment.kind === 'LOCATION' && attachment.latitude && attachment.longitude
-                  ? `📍 Location`
-                  : attachment.kind === 'VOICE'
+          {attachments.map((att, idx) => (
+            <View key={idx} style={styles.attPill}>
+              <Text style={styles.attPillText} numberOfLines={1}>
+                {att.kind === 'LOCATION' && att.latitude != null
+                  ? '📍 Location'
+                  : att.kind === 'VOICE'
                     ? '🎤 Voice'
-                    : attachment.fileName || attachment.kind}
+                    : att.fileName || att.kind}
               </Text>
-              {attachment.uploadProgress !== undefined && attachment.uploadProgress < 100 && (
-                <View style={styles.progressBar}>
-                  <View style={[styles.progressFill, { width: `${attachment.uploadProgress}%` }]} />
+              {att.uploadProgress !== undefined && att.uploadProgress < 100 && (
+                <View style={styles.attProgress}>
+                  <View style={[styles.attProgressFill, { width: `${att.uploadProgress}%` }]} />
                 </View>
               )}
-              <Pressable onPress={() => onRemoveAttachment(index)} style={styles.removeAttachment}>
+              <Pressable onPress={() => onRemoveAttachment(idx)} style={styles.attRemove}>
                 <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
               </Pressable>
             </View>
@@ -117,80 +342,76 @@ export function Composer({
         </View>
       )}
 
-      <View style={styles.inputRow}>
-        <Pressable
-          style={[styles.actionButton, disabled && styles.disabledButton]}
-          onPress={onOpenMenu}
-          disabled={disabled}
-        >
-          <Ionicons name="add" size={22} color={colors.textSecondary} />
-        </Pressable>
-
-        <TextInput
-          ref={inputRef}
-          style={styles.input}
-          value={text}
-          onChangeText={onChangeText}
-          onSubmitEditing={triggerSend}
-          placeholder="Message"
-          placeholderTextColor={colors.textSecondary}
-          multiline
-          blurOnSubmit={false}
-          returnKeyType="send"
-          maxLength={2000}
-          editable={!disabled && !recording}
-        />
-
-        {showMic ? (
-          <Pressable
-            style={[styles.actionButton, styles.rightActionButton, recording && styles.recordingButton, disabled && styles.disabledButton]}
-            onPressIn={onVoiceStart}
-            onPressMove={recording ? onVoiceMove : undefined}
-            onTouchMove={recording ? onVoiceMove : undefined}
-            onPressOut={recording ? onVoiceStop : undefined}
-            hitSlop={8}
-            disabled={disabled}
-          >
-            <Ionicons name={recording ? 'mic' : 'mic-outline'} size={20} color={recording ? colors.surface : colors.brandPrimary} />
-          </Pressable>
-        ) : (
-          <Pressable style={[styles.sendButton, !canSend && styles.sendButtonDisabled]} onPress={triggerSend} disabled={!canSend}>
-            {sending ? <ActivityIndicator size="small" color={colors.surface} /> : <Ionicons name="send" size={18} color={colors.surface} />}
-          </Pressable>
-        )}
-      </View>
-      {recording ? (
-        <View style={styles.recordingHintRow}>
-          <View style={[styles.recordingDot, recordingWillCancel && styles.recordingDotCancel]} />
-          <Text style={[styles.recordingTimer, recordingWillCancel && styles.recordingTimerCancel]}>
-            {`${Math.max(0, Math.round((recordingDurationMs || 0) / 1000))}s`}
-          </Text>
-          <Text style={[styles.recordingSlideHint, recordingWillCancel && styles.recordingSlideHintCancel]}>
-            {recordingWillCancel ? 'Release to cancel' : 'Slide left to cancel'}
-          </Text>
-          <Pressable onPress={onVoiceCancel}>
-            <Text style={styles.cancelText}>Cancel</Text>
-          </Pressable>
+      {/* ── LOCKED RECORDING PANEL ── */}
+      {recording && voiceLocked ? (
+        <View style={styles.lockedPanel}>
+          <RecordingLiveWave />
+          <View style={styles.lockedMeta}>
+            <RecordingDot />
+            <Text style={styles.lockedTimer}>{timerLabel}</Text>
+            <Text style={styles.lockedHint}>Tap send when finished</Text>
+          </View>
+          <View style={styles.lockedActions}>
+            <Pressable style={styles.lockedDiscard} onPress={onVoiceDiscardLocked} hitSlop={8}>
+              <Ionicons name="trash-outline" size={22} color={colors.danger} />
+            </Pressable>
+            <Pressable style={styles.lockedSend} onPress={onVoiceSendLocked} hitSlop={8}>
+              <Ionicons name="send" size={20} color="#FFFFFF" />
+            </Pressable>
+          </View>
         </View>
-      ) : null}
+      ) : (
+        /* ── NORMAL / UNLOCKED RECORDING ROW ── */
+        <View style={styles.composerRow}>
+
+          {/* Input pill */}
+          <View style={styles.inputPill}>
+            {/* Emoji button — always left inside pill */}
+            <Pressable
+              style={styles.pillIconBtn}
+              onPress={() => setEmojiPickerOpen(true)}
+              disabled={disabled || recording}
+              hitSlop={6}
+            >
+              <Ionicons name="happy-outline" size={22} color={colors.textSecondary} />
+            </Pressable>
+
+            {/* Pill content: text input or recording UI */}
+            <View style={styles.pillCenter}>
+              {pillContent}
+            </View>
+          </View>
+
+          {/* Mic FAB column (lock hint above when recording) */}
+          <View style={styles.fabCol}>
+            {recording && !voiceLocked ? (
+              <View style={styles.lockHintAbove}>
+                <Ionicons name="lock-closed-outline" size={14} color={colors.textSecondary} />
+              </View>
+            ) : null}
+            {showMic || (recording && !voiceLocked) ? micFab : sendFab}
+          </View>
+        </View>
+      )}
     </View>
   )
 }
 
+const FAB_SIZE = 46
+
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: colors.surface,
-    borderTopWidth: 1,
-    borderTopColor: colors.divider,
+    backgroundColor: 'transparent',
     paddingTop: spacing.xs,
-    paddingBottom: spacing.sm,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.sm,
   },
+
+  /* ── Reply preview ── */
   replyPreview: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.background,
-    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.88)',
+    borderRadius: 12,
     padding: 8,
     marginBottom: spacing.xs,
   },
@@ -201,9 +422,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.brandPrimary,
     marginRight: 8,
   },
-  replyBody: {
-    flex: 1,
-  },
+  replyBody: { flex: 1 },
   replySender: {
     ...typography.caption,
     color: colors.brandPrimary,
@@ -214,133 +433,258 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 1,
   },
-  replyClose: {
-    padding: 4,
-  },
+  replyClose: { padding: 4 },
+
+  /* ── Attachment pills ── */
   attachmentsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.xs,
     marginBottom: spacing.xs,
   },
-  attachmentPill: {
+  attPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
-    backgroundColor: colors.background,
+    backgroundColor: 'rgba(255,255,255,0.9)',
     borderRadius: 16,
     paddingHorizontal: spacing.sm,
     paddingVertical: 4,
     maxWidth: '80%',
   },
-  attachmentPillText: {
-    ...typography.caption,
-    color: colors.textPrimary,
-    fontSize: 11,
-  },
-  progressBar: {
+  attPillText: { ...typography.caption, color: colors.textPrimary, fontSize: 11 },
+  attProgress: {
     width: 40,
     height: 2,
     backgroundColor: colors.divider,
     borderRadius: 1,
     overflow: 'hidden',
   },
-  progressFill: {
-    height: '100%',
-    backgroundColor: colors.brandPrimary,
-  },
-  removeAttachment: {
-    padding: 2,
-  },
-  inputRow: {
+  attProgressFill: { height: '100%', backgroundColor: colors.brandPrimary },
+  attRemove: { padding: 2 },
+
+  /* ── Composer row ── */
+  composerRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: spacing.xs,
+    gap: 6,
   },
-  actionButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+
+  /* ── FAB column (holds lock hint + mic/send) ── */
+  fabCol: {
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  lockHintAbove: {
+    marginBottom: 4,
+    opacity: 0.6,
+  },
+
+  /* ── Input pill ── */
+  inputPill: {
+    flex: 1,
+    minHeight: 44,
+    maxHeight: 130,
+    borderRadius: 22,
     backgroundColor: colors.surface,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+  },
+  pillIconBtn: {
+    width: 36,
+    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
-  rightActionButton: {
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.divider,
-  },
-  recordingButton: {
-    backgroundColor: colors.danger,
-    borderColor: colors.danger,
-  },
-  disabledButton: {
-    opacity: 0.5,
-  },
-  input: {
+  pillCenter: {
     flex: 1,
-    minHeight: 40,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+  },
+  pillInput: {
+    flex: 1,
+    minHeight: 32,
     maxHeight: 100,
-    borderRadius: 20,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.divider,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+    paddingHorizontal: 4,
+    paddingVertical: 0,
+    paddingBottom: 0,
     ...typography.body,
     color: colors.textPrimary,
-    fontSize: 15,
-    textAlignVertical: 'top',
+    fontSize: 16,
+    lineHeight: 20,
+    textAlignVertical: 'center',
   },
-  sendButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: colors.brandPrimary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sendButtonDisabled: {
-    opacity: 0.5,
-    backgroundColor: colors.divider,
-  },
-  recordingHintRow: {
-    marginTop: spacing.xs,
+  pillRightIcons: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    gap: spacing.xs,
+    alignItems: 'center',
+    flexShrink: 0,
+    paddingBottom: 2,
   },
-  recordingDot: {
+
+  /* ── Compact recording inline (inside pill) ── */
+  recInPill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    minHeight: 32,
+  },
+  recDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: colors.danger,
+    backgroundColor: '#EA4335',
+    flexShrink: 0,
   },
-  recordingDotCancel: {
-    backgroundColor: colors.warning,
+  recTimerText: {
+    ...typography.sub,
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    minWidth: 34,
   },
-  recordingTimer: {
+  slideToCancelText: {
     ...typography.caption,
-    color: colors.brandPrimary,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  recordingTimerCancel: {
-    color: colors.warning,
-  },
-  recordingSlideHint: {
-    ...typography.caption,
+    fontSize: 13,
     color: colors.textSecondary,
-    fontSize: 12,
     flex: 1,
   },
-  recordingSlideHintCancel: {
-    color: colors.warning,
+  slideToCancelWarn: {
+    color: colors.danger,
+    fontWeight: '600',
   },
-  cancelText: {
+
+  /* ── FAB (mic / send) ── */
+  fabWrap: {
+    flexShrink: 0,
+    alignSelf: 'flex-end',
+    marginBottom: 0,
+  },
+  fab: {
+    width: FAB_SIZE,
+    height: FAB_SIZE,
+    borderRadius: FAB_SIZE / 2,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  fabRecording: {
+    backgroundColor: '#25D366',
+  },
+  fabCancel: {
+    backgroundColor: colors.warning,
+  },
+  fabDisabled: {
+    opacity: 0.45,
+  },
+  fabSend: {
+    backgroundColor: colors.brandPrimary,
+  },
+  fabSendDisabled: {
+    opacity: 0.42,
+    backgroundColor: colors.muted,
+  },
+
+  /* ── Locked recording panel ── */
+  lockedPanel: {
+    paddingVertical: spacing.sm,
+  },
+  liveWaveRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    height: 30,
+    paddingHorizontal: 2,
+    width: '100%',
+  },
+  liveWaveBar: {
+    flex: 1,
+    marginHorizontal: 0.5,
+    maxWidth: 4,
+    borderRadius: 2,
+    backgroundColor: colors.brandPrimary,
+    opacity: 0.9,
+  },
+  lockedMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 10,
+  },
+  lockedTimer: {
+    ...typography.sub,
+    fontWeight: '700',
+    color: colors.brandPrimary,
+  },
+  lockedHint: {
     ...typography.caption,
+    fontSize: 11,
     color: colors.textSecondary,
-    fontSize: 12,
+    flex: 1,
   },
+  lockedActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 14,
+    paddingHorizontal: spacing.sm,
+  },
+  lockedDiscard: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.divider,
+  },
+  lockedSend: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: colors.brandPrimary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  /* ── Emoji picker ── */
+  emojiBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  emojiSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingBottom: spacing.lg,
+    paddingHorizontal: spacing.md,
+    maxHeight: '42%',
+  },
+  emojiSheetTitle: {
+    ...typography.sub,
+    textAlign: 'center',
+    paddingVertical: 12,
+    color: colors.textSecondary,
+  },
+  emojiRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  emojiCell: { flex: 1, alignItems: 'center', paddingVertical: 6 },
+  emojiChar: { fontSize: 28 },
 })

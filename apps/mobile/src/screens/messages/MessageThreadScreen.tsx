@@ -192,6 +192,9 @@ export function MessageThreadScreen({ route, navigation }: Props) {
   const listRef = useRef<FlatList>(null)
   const [text, setText] = useState(jobContext ? `Regarding Job #${jobContext.jobNumber} - ${jobContext.jobName}\n` : '')
   const [isRecordingUi, setIsRecordingUi] = useState(false)
+  const [recordingLockedUi, setRecordingLockedUi] = useState(false)
+  const recordingLockedRef = useRef(false)
+  const [messageReactions, setMessageReactions] = useState<Record<string, Record<string, number>>>({})
   const [recordingDurationMs, setRecordingDurationMs] = useState(0)
   const [recordingWillCancel, setRecordingWillCancel] = useState(false)
   const [optimisticMessages, setOptimisticMessages] = useState<OptimisticMessage[]>([])
@@ -849,6 +852,7 @@ export function MessageThreadScreen({ route, navigation }: Props) {
 
   const MIN_VOICE_DURATION_MS = 450
   const CANCEL_DRAG_THRESHOLD = 56
+  const LOCK_DRAG_THRESHOLD = 72
 
   const clearDurationTicker = () => {
     if (durationIntervalRef.current) {
@@ -861,10 +865,20 @@ export function MessageThreadScreen({ route, navigation }: Props) {
     clearDurationTicker()
     recordingStartedAtRef.current = null
     pressStartRef.current = null
+    recordingLockedRef.current = false
+    setRecordingLockedUi(false)
     setRecordingDurationMs(0)
     setRecordingWillCancel(false)
     setIsRecordingUi(false)
   }
+
+  const applyMessageReaction = useCallback((messageId: string, emoji: string) => {
+    setMessageReactions((prev) => {
+      const cur = { ...(prev[messageId] || {}) }
+      cur[emoji] = (cur[emoji] || 0) + 1
+      return { ...prev, [messageId]: cur }
+    })
+  }, [])
 
   const sendVoiceMessage = async (uri: string, durationMs: number) => {
     if (!token) {
@@ -976,6 +990,7 @@ export function MessageThreadScreen({ route, navigation }: Props) {
 
       recordingStartedAtRef.current = Date.now()
       setIsRecordingUi(true)
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {})
       clearDurationTicker()
       durationIntervalRef.current = setInterval(() => {
         if (!recordingStartedAtRef.current) return
@@ -991,7 +1006,17 @@ export function MessageThreadScreen({ route, navigation }: Props) {
   const moveRecording = (event: GestureResponderEvent) => {
     if (!pressStartRef.current) return
     const dx = event.nativeEvent.pageX - pressStartRef.current.x
-    const shouldCancel = dx < -CANCEL_DRAG_THRESHOLD
+    const dy = event.nativeEvent.pageY - pressStartRef.current.y
+    if (
+      !recordingLockedRef.current &&
+      voiceRecorderRef.current.isRecording() &&
+      dy < -LOCK_DRAG_THRESHOLD
+    ) {
+      recordingLockedRef.current = true
+      setRecordingLockedUi(true)
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {})
+    }
+    const shouldCancel = dx < -CANCEL_DRAG_THRESHOLD && !recordingLockedRef.current
     if (shouldCancel !== recordingWillCancel) {
       setRecordingWillCancel(shouldCancel)
     }
@@ -1011,6 +1036,9 @@ export function MessageThreadScreen({ route, navigation }: Props) {
   }
 
   const stopRecording = async (event: GestureResponderEvent) => {
+    if (recordingLockedRef.current) {
+      return
+    }
     if (stopInFlightRef.current) return
     stopInFlightRef.current = true
     const recorder = voiceRecorderRef.current
@@ -1049,6 +1077,34 @@ export function MessageThreadScreen({ route, navigation }: Props) {
     } finally {
       stopInFlightRef.current = false
     }
+  }
+
+  const sendLockedVoiceRecording = async () => {
+    if (stopInFlightRef.current) return
+    stopInFlightRef.current = true
+    pressSessionRef.current = 0
+    recordingLockedRef.current = false
+    setRecordingLockedUi(false)
+    const recorder = voiceRecorderRef.current
+    try {
+      if (!recorder.isRecording()) {
+        resetRecordingUi()
+        return
+      }
+      const result = await recorder.stop()
+      resetRecordingUi()
+      await sendVoiceMessage(result.uri, result.durationMs)
+    } catch (error: any) {
+      await recorder.forceCleanup()
+      resetRecordingUi()
+      Alert.alert('Error', error?.message || 'Failed to stop recording.')
+    } finally {
+      stopInFlightRef.current = false
+    }
+  }
+
+  const discardLockedVoiceRecording = async () => {
+    await cancelRecording()
   }
 
   useEffect(() => {
@@ -1185,6 +1241,8 @@ export function MessageThreadScreen({ route, navigation }: Props) {
                 message={{ ...(message as ChatMessage), replyTo: resolvedReplyTo } as ChatMessage}
                 isMine={isMine}
                 showSender={isTeamChat && !isMine}
+                reactionCounts={messageReactions[String(message.id)]}
+                onReaction={(emoji) => applyMessageReaction(String(message.id), emoji)}
                 onSwipeReply={(swipedMessage) => {
                   setEditingMessage(null)
                   setReplyTo(swipedMessage)
@@ -1250,15 +1308,21 @@ export function MessageThreadScreen({ route, navigation }: Props) {
               onChangeText={setText}
               onSend={handleSend}
               onOpenMenu={openAttachMenu}
+              onOpenCamera={() => {
+                void pickFromCamera()
+              }}
               onVoiceStart={startRecording}
               onVoiceMove={moveRecording}
               onVoiceStop={stopRecording}
               onVoiceCancel={cancelRecording}
+              voiceLocked={recordingLockedUi}
+              onVoiceSendLocked={sendLockedVoiceRecording}
+              onVoiceDiscardLocked={discardLockedVoiceRecording}
               attachments={mediaDrafts}
               onRemoveAttachment={(index) => setMediaDrafts((prev) => prev.filter((_, i) => i !== index))}
               recording={isRecordingUi}
               recordingDurationMs={recordingDurationMs}
-              recordingWillCancel={recordingWillCancel}
+              recordingWillCancel={recordingWillCancel && !recordingLockedUi}
               replyPreview={
                 replyTo
                   ? {

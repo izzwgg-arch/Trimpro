@@ -37,7 +37,8 @@ export function computeWaveformPlaybackFrame(params: {
   const progress = clamp01(safePositionMs / durationMs)
   const activeBars = Math.floor(progress * barsCount)
   const boundaryProgress = barsCount > 0 ? activeBars / barsCount : 0
-  const dotX = boundaryProgress * waveformWidth
+  // Dot follows real audio ratio (smooth), not discrete bar index — avoids lag vs playback.
+  const dotX = progress * waveformWidth
   return { progress, activeBars, boundaryProgress, dotX }
 }
 

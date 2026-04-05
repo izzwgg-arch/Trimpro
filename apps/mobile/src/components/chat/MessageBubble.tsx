@@ -1,10 +1,24 @@
-import React, { useMemo, useRef } from 'react'
-import { Animated, Dimensions, Image, Linking, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native'
+import * as Haptics from 'expo-haptics'
+import React, { useCallback, useMemo, useRef, useState } from 'react'
+import {
+  Animated,
+  Dimensions,
+  Image,
+  Linking,
+  Modal,
+  PanResponder,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { colors, spacing, typography } from '../../theme/tokens'
 import { ChatMessage } from '../../types/models'
 import { VoiceNoteBubble } from './VoiceNoteBubble'
 import { ReplyPreview } from './ReplyPreview'
+
+const REACTION_PICKER_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'] as const
 
 interface MessageBubbleProps {
   message: ChatMessage | { sender?: ChatMessage['sender'] | null; [key: string]: any }
@@ -12,6 +26,10 @@ interface MessageBubbleProps {
   showSender?: boolean
   onJobPress?: (jobId: string) => void
   onLongPress?: () => void
+  /** When set, long-press opens emoji bar; "More" calls onLongPress (e.g. existing options sheet). */
+  onReaction?: (emoji: string) => void
+  /** Counts per emoji for chips under the bubble (local / optimistic until API exists). */
+  reactionCounts?: Record<string, number>
   onImagePress?: (uri: string, fileName?: string | null) => void
   onSwipeReply?: (message: ChatMessage) => void
   onReplyPress?: (messageId: string) => void
@@ -89,6 +107,8 @@ export function MessageBubble({
   showSender,
   onJobPress,
   onLongPress,
+  onReaction,
+  reactionCounts,
   onImagePress,
   onSwipeReply,
   onReplyPress,
@@ -96,6 +116,41 @@ export function MessageBubble({
   const translateX = useRef(new Animated.Value(0)).current
   const hasTriggeredReply = useRef(false)
   const SWIPE_THRESHOLD = 60
+  const [reactionPickerOpen, setReactionPickerOpen] = useState(false)
+  const pickerScale = useRef(new Animated.Value(0.92)).current
+
+  const openReactionPicker = useCallback(() => {
+    if (onReaction) {
+      setReactionPickerOpen(true)
+      pickerScale.setValue(0.92)
+      Animated.spring(pickerScale, {
+        toValue: 1,
+        friction: 7,
+        tension: 120,
+        useNativeDriver: true,
+      }).start()
+    } else {
+      onLongPress?.()
+    }
+  }, [onReaction, onLongPress, pickerScale])
+
+  const closeReactionPicker = useCallback(() => {
+    setReactionPickerOpen(false)
+  }, [])
+
+  const pickReaction = useCallback(
+    (emoji: string) => {
+      onReaction?.(emoji)
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {})
+      closeReactionPicker()
+    },
+    [onReaction, closeReactionPicker]
+  )
+
+  const reactionEntries = useMemo(() => {
+    if (!reactionCounts) return []
+    return Object.entries(reactionCounts).filter(([, n]) => n > 0)
+  }, [reactionCounts])
 
   const bubblePanResponder = useMemo(
     () =>
@@ -155,6 +210,7 @@ export function MessageBubble({
         ]}
         {...bubblePanResponder.panHandlers}
       >
+        <View style={[styles.bubbleColumnWrap, isMine ? styles.bubbleColumnWrapMine : styles.bubbleColumnWrapOther]}>
       <Pressable
         style={[
           styles.bubble,
@@ -162,7 +218,7 @@ export function MessageBubble({
           hasOnlyVoiceAttachment && styles.voiceOnlyBubble,
           message.replyTo && (isMine ? styles.replyBubbleMine : styles.replyBubbleOther),
         ]}
-        onLongPress={onLongPress}
+        onLongPress={openReactionPicker}
       >
         {showSender && !isMine && (
           <View style={styles.senderRow}>
@@ -245,7 +301,7 @@ export function MessageBubble({
                 deliveryStatus={message.status}
                 senderAvatarUrl={message.sender?.avatar || null}
                 senderInitials={senderName(message).slice(0, 1).toUpperCase()}
-                onLongPress={onLongPress}
+                onLongPress={openReactionPicker}
               />
             )
           }
@@ -303,7 +359,51 @@ export function MessageBubble({
           </View>
         ) : null}
       </Pressable>
+      {reactionEntries.length > 0 ? (
+        <View style={[styles.reactionChipsRow, isMine ? styles.reactionChipsRowMine : styles.reactionChipsRowOther]}>
+          {reactionEntries.map(([emoji, count]) => (
+            <View key={emoji} style={[styles.reactionChip, isMine ? styles.reactionChipMine : styles.reactionChipOther]}>
+              <Text style={styles.reactionChipText}>
+                {emoji}
+                {count > 1 ? ` ${count}` : ''}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+        </View>
       </View>
+
+      <Modal visible={reactionPickerOpen} transparent animationType="fade" onRequestClose={closeReactionPicker}>
+        <View style={styles.reactionModalRoot}>
+          <Pressable style={styles.reactionModalBackdrop} onPress={closeReactionPicker} accessibilityRole="button" />
+          <Animated.View style={[styles.reactionBar, { transform: [{ scale: pickerScale }] }]}>
+            <View style={styles.reactionEmojiRow}>
+              {REACTION_PICKER_EMOJIS.map((emo) => (
+                <Pressable
+                  key={emo}
+                  style={styles.reactionEmojiHit}
+                  onPress={() => pickReaction(emo)}
+                >
+                  <Text style={styles.reactionEmojiLarge}>{emo}</Text>
+                </Pressable>
+              ))}
+            </View>
+            {onLongPress ? (
+              <Pressable
+                style={styles.reactionMoreRow}
+                onPress={() => {
+                  closeReactionPicker()
+                  onLongPress()
+                }}
+              >
+                <Ionicons name="ellipsis-horizontal" size={18} color={colors.textSecondary} />
+                <Text style={styles.reactionMoreText}>More</Text>
+              </Pressable>
+            ) : null}
+          </Animated.View>
+        </View>
+      </Modal>
     </Animated.View>
   )
 }
@@ -354,6 +454,18 @@ const styles = StyleSheet.create({
   bubbleGestureWrap: {
     flex: 1,
     flexDirection: 'row',
+  },
+  bubbleColumnWrap: {
+    flexShrink: 1,
+    maxWidth: VOICE_BUBBLE_MAX_WIDTH,
+  },
+  bubbleColumnWrapMine: {
+    alignItems: 'flex-end',
+    alignSelf: 'flex-end',
+  },
+  bubbleColumnWrapOther: {
+    alignItems: 'flex-start',
+    alignSelf: 'flex-start',
   },
   bubbleGestureWrapMine: {
     justifyContent: 'flex-end',
@@ -557,5 +669,88 @@ const styles = StyleSheet.create({
   },
   statusMine: {
     color: colors.surface + 'CC',
+  },
+  reactionChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: 4,
+    maxWidth: STANDARD_BUBBLE_MAX_WIDTH,
+  },
+  reactionChipsRowMine: {
+    alignSelf: 'flex-end',
+    justifyContent: 'flex-end',
+  },
+  reactionChipsRowOther: {
+    alignSelf: 'flex-start',
+  },
+  reactionChip: {
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  reactionChipMine: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderColor: 'rgba(255,255,255,0.35)',
+  },
+  reactionChipOther: {
+    backgroundColor: colors.background,
+    borderColor: colors.divider,
+  },
+  reactionChipText: {
+    fontSize: 13,
+  },
+  reactionModalRoot: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  reactionModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  reactionBar: {
+    backgroundColor: colors.surface,
+    borderRadius: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    width: '100%',
+    maxWidth: 360,
+    zIndex: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  reactionEmojiRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    gap: 4,
+  },
+  reactionEmojiHit: {
+    padding: 8,
+  },
+  reactionEmojiLarge: {
+    fontSize: 28,
+  },
+  reactionMoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.divider,
+  },
+  reactionMoreText: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontWeight: '600',
   },
 })
