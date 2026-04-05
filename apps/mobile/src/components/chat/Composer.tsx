@@ -25,15 +25,14 @@ interface AttachmentDraft {
   uploadProgress?: number
 }
 
-/* ─── WhatsApp dark-mode pill colours ─────────────────────────────────────
-   These are matched from the WhatsApp dark-mode reference screenshot.
-   They are intentionally hardcoded here so they are independent of the
-   app light-mode theme tokens and always render the correct dark look. */
-const WA_PILL_BG = '#1F2C34'        // pill background  (WhatsApp dark input)
-const WA_ICON    = '#8696A0'        // icons + placeholder text
-const WA_TEXT    = '#E9EDF0'        // input / timer text
-const WA_FAB_BG  = '#FFFFFF'        // mic circle background
-const WA_FAB_ICON = '#1F2C34'       // mic icon on white circle
+/* ─── Composer pill colours — soft-light premium ──────────────────────────
+   Light frosted pill that floats above the chat background.
+   Uses neutral dark tones for icons/text to keep strong contrast. */
+const WA_PILL_BG  = '#F8F9FB'       // pill fill — off-white, soft premium
+const WA_ICON     = '#6B7280'       // icons + placeholder  — neutral gray
+const WA_TEXT     = '#111827'       // input / timer text   — near black
+const WA_FAB_BG   = '#2E4A59'       // mic circle — brand accent, stands out
+const WA_FAB_ICON = '#FFFFFF'       // mic icon on accent circle
 
 const EMOJI_PICKER_ROWS: string[][] = [
   ['😀', '😃', '😄', '😁', '😅', '😂', '🤣', '😊'],
@@ -488,10 +487,9 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
 
-  /* ── Input pill ── (dark, compact — matches WhatsApp dark-mode reference) */
+  /* ── Input pill ── soft-light premium, floats above chat background */
   inputPill: {
     flex: 1,
-    /* tighter than before — WhatsApp pill is ~42px at single line */
     minHeight: 42,
     maxHeight: 130,
     borderRadius: 21,
@@ -500,6 +498,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 4,
     paddingHorizontal: 6,
+    /* subtle border so pill edge is visible against #F5F7FA chat bg */
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.05)',
+    /* soft shadow to give floating / lifted feel */
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.07,
+    shadowRadius: 3,
+    elevation: 2,
   },
   pillIconBtn: {
     /* tighter hit area — WhatsApp icons have minimal padding */
@@ -578,11 +585,12 @@ const styles = StyleSheet.create({
     backgroundColor: WA_FAB_BG,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
+    /* slightly stronger shadow so accent circle pops against light bg */
+    shadowColor: '#2E4A59',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.18,
-    shadowRadius: 4,
-    elevation: 4,
+    shadowOpacity: 0.22,
+    shadowRadius: 5,
+    elevation: 5,
   },
   fabRecording: {
     backgroundColor: '#25D366',
