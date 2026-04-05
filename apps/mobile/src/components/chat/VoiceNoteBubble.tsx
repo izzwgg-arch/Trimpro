@@ -8,11 +8,14 @@ import { computeWaveformPlaybackFrame } from '../../screens/messages/message-thr
 const SPEED_STEPS = [1, 1.5, 2] as const
 type SpeedStep = (typeof SPEED_STEPS)[number]
 
-// ── Slot / layout constants ────────────────────────────────────────────────
-const LEFT_SLOT_SIZE = 42   // avatar or speed-badge circle width
-const PLAY_BTN_SIZE  = 36   // play/pause circle diameter
-const DOT_SIZE       = 10   // white progress playhead diameter
-const WAVE_HEIGHT    = 28   // waveform track height in px
+// ── Geometry constants — tuned to match WhatsApp reference ─────────────────
+const AVATAR_SIZE   = 42   // left-slot circle diameter
+const PLAY_SIZE     = 28   // play/pause circle diameter (smaller than avatar)
+const DOT_SIZE      = 11   // white progress playhead
+const WAVE_H        = 22   // waveform track height
+const ELEM_GAP      = 6    // gap between every element in the main row
+// meta row indent: content starts under the play button / waveform, not the avatar
+const META_INDENT   = AVATAR_SIZE + ELEM_GAP + PLAY_SIZE + ELEM_GAP  // 82 px
 
 interface VoiceNoteBubbleProps {
   messageId: string
@@ -26,72 +29,56 @@ interface VoiceNoteBubbleProps {
   onLongPress?: () => void
 }
 
-/**
- * Deterministic 50-bar waveform seeded from messageId.
- * Produces natural low/high clusters that look like real speech audio.
- */
-function seededWaveform(messageId: string, bars = 50): number[] {
+/** 50 deterministic amplitude values seeded from messageId. */
+function seededWaveform(id: string, bars = 50): number[] {
   let seed = 0
-  for (let i = 0; i < messageId.length; i += 1) {
-    seed = (seed * 31 + messageId.charCodeAt(i)) >>> 0
-  }
-  const values: number[] = []
-  for (let i = 0; i < bars; i += 1) {
+  for (let i = 0; i < id.length; i++) seed = (seed * 31 + id.charCodeAt(i)) >>> 0
+  return Array.from({ length: bars }, () => {
     seed = (seed * 1664525 + 1013904223) >>> 0
     const n = (seed % 1000) / 1000
-    const peak = i % 9 === 0 ? 0.95 : i % 5 === 0 ? 0.75 : i % 3 === 0 ? 0.55 : 0.28
-    values.push(Math.max(0.1, Math.min(1, n * 0.5 + peak * 0.5)))
-  }
-  return values
+    const peak = (seed % 9 === 0) ? 0.95 : (seed % 5 === 0) ? 0.75 : (seed % 3 === 0) ? 0.55 : 0.28
+    return Math.max(0.1, Math.min(1, n * 0.52 + peak * 0.48))
+  })
 }
 
-function statusIcon(status?: string) {
-  if (status === 'READ') return '\u{2713}\u{2713}'
-  if (status === 'DELIVERED') return '\u{2713}\u{2713}'
+function statusIcon(s?: string) {
+  if (s === 'READ' || s === 'DELIVERED') return '\u{2713}\u{2713}'
   return '\u{2713}'
 }
 
-function formatDuration(ms: number) {
-  const totalSec = Math.max(0, Math.round(ms / 1000))
-  const mins = Math.floor(totalSec / 60)
-  const sec = totalSec % 60
-  return `${mins}:${String(sec).padStart(2, '0')}`
+function formatMs(ms: number) {
+  const s = Math.max(0, Math.round(ms / 1000))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 }
 
-function speedToIndex(s: number): number {
+function speedIdx(s: number) {
   const i = SPEED_STEPS.indexOf(s as SpeedStep)
   return i >= 0 ? i : 0
 }
 
-function sanitizePlaybackError(raw: string): string {
+function sanitize(raw: string): string {
   if (
+    raw.length > 200 ||
     raw.includes('FileNotFoundException') ||
-    raw.includes('FileDataSource') ||
     raw.includes('ExoPlaybackException') ||
+    raw.includes('FileDataSource') ||
     raw.includes('MediaCodec') ||
     raw.includes('com.google.') ||
     raw.includes('java.io.') ||
-    raw.includes('android.') ||
-    raw.includes('ExoPlayer') ||
-    raw.length > 200
-  ) {
-    return "Couldn\u2019t play audio"
-  }
+    raw.includes('android.')
+  ) return "Couldn\u2019t play audio"
   return raw.length > 80 ? "Couldn\u2019t play audio" : raw
 }
 
 /**
- * Bar height per the WhatsApp reference:
- * - At rest (not the active track): all bars = tiny dots (3 px)
- * - Playing, played region (index < activeBars): tiny dots (already consumed)
- * - Playing, unplayed region (index >= activeBars): full amplitude bar
+ * Bar height matching the WhatsApp reference visual logic:
+ *   at rest         → uniform 3 px dot
+ *   played region   → 3 px dot (consumed / compressed)
+ *   unplayed region → natural amplitude bar (4..18 px)
  */
-function barHeight(amp: number, barIndex: number, activeBars: number, isActiveTrack: boolean): number {
-  if (!isActiveTrack || barIndex < activeBars) {
-    return 3 // tiny dot — at rest or already played
-  }
-  // Unplayed while playing: natural waveform height
-  return amp < 0.15 ? 3 : Math.round(3 + amp * 22)
+function barH(amp: number, idx: number, active: number, isCurrentTrack: boolean): number {
+  if (!isCurrentTrack || idx < active) return 3
+  return amp < 0.15 ? 4 : Math.round(4 + amp * 14)  // max ≈ 18 px, well inside WAVE_H
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -108,171 +95,137 @@ export function VoiceNoteBubble({
   onLongPress,
 }: VoiceNoteBubbleProps) {
   const {
-    isPlaying,
-    play,
-    pause,
-    seek,
-    setSpeed,
-    speed,
-    positionMs,
-    durationMs: liveDurationMs,
-    isActiveTrack,
+    isPlaying, play, pause, seek, setSpeed,
+    speed, positionMs, durationMs: liveDurationMs, isActiveTrack,
   } = useVoicePlaybackController(messageId)
 
   const bars = useMemo(() => seededWaveform(messageId), [messageId])
-  const [waveformWidth, setWaveformWidth] = useState(0)
-  const [speedIndex, setSpeedIndex] = useState(0)
-  const [playError, setPlayError] = useState<string | null>(null)
+  const [waveW, setWaveW] = useState(0)
+  const [spdIdx, setSpdIdx] = useState(0)
+  const [playErr, setPlayErr] = useState<string | null>(null)
 
-  const hasUrl = typeof audioUrl === 'string' && audioUrl.trim().length > 0
-  const effectiveDurationMs = Math.max(1, liveDurationMs || durationMs || 1000)
-
+  const hasUrl  = typeof audioUrl === 'string' && audioUrl.trim().length > 0
+  const effDur  = Math.max(1, liveDurationMs || durationMs || 1000)
   const { progress, activeBars } = computeWaveformPlaybackFrame({
-    positionMs,
-    durationMs: effectiveDurationMs,
-    barsCount: bars.length,
-    waveformWidth,
+    positionMs, durationMs: effDur, barsCount: bars.length, waveformWidth: waveW,
   })
 
-  useEffect(() => { setSpeedIndex(speedToIndex(speed)) }, [speed])
+  useEffect(() => { setSpdIdx(speedIdx(speed)) }, [speed])
 
   const cycleSpeed = useCallback(() => {
-    const next = (speedIndex + 1) % SPEED_STEPS.length
-    setSpeedIndex(next)
+    const next = (spdIdx + 1) % SPEED_STEPS.length
+    setSpdIdx(next)
     void setSpeed(SPEED_STEPS[next])
-  }, [speedIndex, setSpeed])
+  }, [spdIdx, setSpeed])
 
-  const seekFromTouch = (locationX: number) => {
-    if (waveformWidth <= 0 || !hasUrl) return
-    void seek(locationX / waveformWidth)
-  }
-
-  const onWaveLayout = (e: LayoutChangeEvent) => {
-    setWaveformWidth(e.nativeEvent.layout.width)
-  }
+  const seekAt = (x: number) => { if (waveW > 0 && hasUrl) void seek(x / waveW) }
+  const onWaveLayout = (e: LayoutChangeEvent) => setWaveW(e.nativeEvent.layout.width)
 
   const togglePlay = async () => {
     if (!hasUrl) return
-    setPlayError(null)
-    const uriPreview = audioUrl.trim().slice(0, 160)
+    setPlayErr(null)
     try {
-      if (isPlaying) {
-        await pause()
-      } else {
-        await play(audioUrl.trim())
-      }
+      if (isPlaying) await pause()
+      else await play(audioUrl.trim())
     } catch (e) {
-      const rawMsg = e instanceof Error ? e.message : String(e)
-      console.error('[VoiceNoteBubble] playback failed', { uriPreview, rawMsg, messageId })
-      setPlayError(sanitizePlaybackError(rawMsg))
+      const raw = e instanceof Error ? e.message : String(e)
+      console.error('[VoiceNoteBubble]', { raw, messageId })
+      setPlayErr(sanitize(raw))
     }
   }
 
-  // ── Derived colors ────────────────────────────────────────────────────────
-  const playIconColor  = isOutgoing ? colors.brandPrimary : colors.surface
-  const playBg         = isOutgoing ? 'rgba(255,255,255,0.90)' : colors.brandPrimary
-  const waveActive     = isOutgoing ? 'rgba(255,255,255,0.90)' : 'rgba(46,74,89,0.85)'
-  const waveInactive   = isOutgoing ? 'rgba(255,255,255,0.30)' : 'rgba(46,74,89,0.20)'
-  const metaColor      = isOutgoing ? 'rgba(255,255,255,0.78)' : colors.textSecondary
-  // Speed badge bg: a slightly darkened pill on the bubble surface
-  const speedBadgeBg   = isOutgoing ? 'rgba(0,0,0,0.22)' : 'rgba(0,0,0,0.07)'
-  const speedBadgeText = isOutgoing ? 'rgba(255,255,255,0.92)' : colors.textPrimary
+  // ── Color scheme ─────────────────────────────────────────────────────────
+  const out = isOutgoing
+  // Play button: subtle transparent circle so the icon is the focus (like WA reference)
+  const playBg        = out ? 'rgba(255,255,255,0.15)' : colors.brandPrimary
+  const playIcon      = out ? 'rgba(255,255,255,0.95)' : '#FFFFFF'
+  // Waveform: slightly bolder inactive bars so they read on teal background
+  const waveActive    = out ? 'rgba(255,255,255,0.95)' : 'rgba(46,74,89,0.88)'
+  const waveInactive  = out ? 'rgba(255,255,255,0.52)' : 'rgba(46,74,89,0.22)'
+  const metaCol       = out ? 'rgba(255,255,255,0.75)' : colors.textSecondary
+  // Speed badge
+  const spdBg         = out ? 'rgba(0,0,0,0.28)' : 'rgba(0,0,0,0.07)'
+  const spdCol        = out ? '#FFFFFF'           : colors.textPrimary
+  // Avatar fallback bg/text
+  const avBg          = out ? 'rgba(255,255,255,0.18)' : '#dbe7ef'
+  const avTxt         = out ? 'rgba(255,255,255,0.95)' : colors.brandPrimary
+  // Mic badge on avatar
+  const micBg         = out ? 'rgba(255,255,255,0.25)' : colors.brandPrimary
+  const micIcon       = out ? colors.brandPrimary : '#fff'
 
-  const currentSpeed = SPEED_STEPS[speedIndex]
-  const speedLabel = currentSpeed === 1 ? '1\u00D7' : currentSpeed === 1.5 ? '1.5\u00D7' : '2\u00D7'
+  const currentSpeed  = SPEED_STEPS[spdIdx]
+  const speedLabel    = currentSpeed === 1 ? '1\u00D7' : currentSpeed === 1.5 ? '1.5\u00D7' : '2\u00D7'
+  const durLabel      = (isPlaying || positionMs > 0) ? positionMs : effDur
+  const dotLeft       = Math.max(0, Math.min(100, progress * 100))
 
-  const durationLabel = (isPlaying || positionMs > 0) ? positionMs : effectiveDurationMs
-  const dotLeftPercent = Math.max(0, Math.min(100, progress * 100))
-
-  // ── LEFT SLOT ─────────────────────────────────────────────────────────────
-  // When active: speed-toggle pill (pressable, far left)
-  // When idle + incoming: sender avatar circle with mic badge
-  // When idle + outgoing: plain mic-icon circle (same shape, consistent layout)
-  const renderLeftSlot = () => {
+  // ── Left slot ─────────────────────────────────────────────────────────────
+  // Active track → speed badge (pressable)
+  // Idle (any direction) → sender avatar circle with mic badge
+  const LeftSlot = () => {
     if (isActiveTrack) {
       return (
-        <Pressable
-          style={[styles.leftSlot, { backgroundColor: speedBadgeBg }]}
-          onPress={cycleSpeed}
-          hitSlop={6}
-        >
-          <Text style={[styles.speedText, { color: speedBadgeText }]}>{speedLabel}</Text>
+        <Pressable style={[styles.avatar, { backgroundColor: spdBg }]} onPress={cycleSpeed} hitSlop={6}>
+          <Text style={[styles.speedText, { color: spdCol }]}>{speedLabel}</Text>
         </Pressable>
       )
     }
-
-    if (!isOutgoing) {
-      // Incoming: show sender avatar
-      return (
-        <View style={styles.leftSlot}>
-          {senderAvatarUrl ? (
-            <Image source={{ uri: senderAvatarUrl }} style={styles.avatarImg} />
-          ) : (
-            <View style={[styles.avatarFallback, { backgroundColor: isOutgoing ? 'rgba(255,255,255,0.15)' : '#dbe7ef' }]}>
-              <Text style={[styles.avatarInitial, { color: isOutgoing ? 'rgba(255,255,255,0.9)' : colors.brandPrimary }]}>
-                {senderInitials || '?'}
-              </Text>
-            </View>
-          )}
-          {/* Mic badge overlay — bottom-right of avatar */}
-          <View style={[styles.micBadge, { backgroundColor: isOutgoing ? 'rgba(255,255,255,0.22)' : colors.brandPrimary }]}>
-            <Ionicons name="mic" size={8} color={isOutgoing ? colors.brandPrimary : '#fff'} />
-          </View>
-        </View>
-      )
-    }
-
-    // Outgoing idle: mic icon in a subtle circle
     return (
-      <View style={[styles.leftSlot, { backgroundColor: 'rgba(255,255,255,0.10)' }]}>
-        <Ionicons name="mic" size={16} color="rgba(255,255,255,0.75)" />
+      <View style={styles.avatar}>
+        {senderAvatarUrl ? (
+          <Image source={{ uri: senderAvatarUrl }} style={styles.avatarImg} />
+        ) : (
+          <View style={[styles.avatarFallback, { backgroundColor: avBg }]}>
+            <Text style={[styles.avatarInitial, { color: avTxt }]}>{senderInitials || '?'}</Text>
+          </View>
+        )}
+        <View style={[styles.micBadge, { backgroundColor: micBg }]}>
+          <Ionicons name="mic" size={8} color={micIcon} />
+        </View>
       </View>
     )
   }
 
-  // ── NO-URL FALLBACK ───────────────────────────────────────────────────────
+  // ── Fallback (no URL) ────────────────────────────────────────────────────
   if (!hasUrl) {
     return (
       <Pressable style={styles.root} onLongPress={onLongPress}>
-        <View style={styles.mainRow}>
-          <View style={[styles.leftSlot, { backgroundColor: speedBadgeBg, opacity: 0.6 }]}>
-            <Ionicons name="mic-off-outline" size={16} color={metaColor} />
+        <View style={styles.row}>
+          <View style={[styles.avatar, { backgroundColor: spdBg, opacity: 0.6 }]}>
+            <Ionicons name="mic-off-outline" size={16} color={metaCol} />
           </View>
           <View style={[styles.playBtn, { backgroundColor: playBg, opacity: 0.5 }]}>
-            <Ionicons name="play" size={14} color={playIconColor} style={styles.playIconOffset} />
+            <Ionicons name="play" size={11} color={playIcon} style={styles.playOffset} />
           </View>
           <View style={styles.waveBlock} onLayout={onWaveLayout}>
             <View style={styles.waveTrack}>
-              {bars.map((_, index) => (
-                <View key={`ph-${index}`} style={styles.waveBarCell}>
-                  <View style={[styles.waveBarFill, { height: 3, backgroundColor: waveInactive }]} />
+              {bars.map((_, i) => (
+                <View key={i} style={styles.barCell}>
+                  <View style={[styles.barFill, { height: 3, backgroundColor: waveInactive }]} />
                 </View>
               ))}
             </View>
           </View>
         </View>
-        <View style={styles.metaRow}>
-          <Text style={[styles.durationText, { color: metaColor }]}>–:––</Text>
-          <View style={styles.timeStatusWrap}>
-            <Text style={[styles.unavailableText, { color: metaColor }]}>Unavailable</Text>
-            <Text style={[styles.timestampText, { color: metaColor }]}>{timestamp}</Text>
+        <View style={styles.meta}>
+          <Text style={[styles.dur, { color: metaCol }]}>–:––</Text>
+          <View style={styles.metaRight}>
+            <Text style={[styles.ts, { color: metaCol }]}>Unavailable · {timestamp}</Text>
           </View>
         </View>
       </Pressable>
     )
   }
 
-  // ── MAIN RENDER ──────────────────────────────────────────────────────────
+  // ── Main render ──────────────────────────────────────────────────────────
   return (
     <Pressable style={styles.root} onLongPress={onLongPress}>
 
-      {/* ── Row 1: [leftSlot] [play/pause] [waveform] ── */}
-      <View style={styles.mainRow}>
+      {/* ── Main row: [avatar/speed] [play] [waveform] ── */}
+      <View style={styles.row}>
 
-        {/* LEFT SLOT — avatar (idle) or speed badge (active) */}
-        {renderLeftSlot()}
+        <LeftSlot />
 
-        {/* PLAY / PAUSE */}
+        {/* Play / pause */}
         <Pressable
           style={[styles.playBtn, { backgroundColor: playBg }]}
           onPress={() => void togglePlay()}
@@ -280,50 +233,37 @@ export function VoiceNoteBubble({
         >
           <Ionicons
             name={isPlaying ? 'pause' : 'play'}
-            size={14}
-            color={playIconColor}
-            style={isPlaying ? undefined : styles.playIconOffset}
+            size={11}
+            color={playIcon}
+            style={isPlaying ? undefined : styles.playOffset}
           />
         </Pressable>
 
-        {/* WAVEFORM + SCRUB + PROGRESS DOT */}
+        {/* Waveform + progress dot */}
         <View
           style={styles.waveBlock}
           onLayout={onWaveLayout}
           onStartShouldSetResponder={() => true}
           onMoveShouldSetResponder={() => true}
-          onResponderGrant={(e) => seekFromTouch(e.nativeEvent.locationX)}
-          onResponderMove={(e) => seekFromTouch(e.nativeEvent.locationX)}
+          onResponderGrant={(e) => seekAt(e.nativeEvent.locationX)}
+          onResponderMove={(e) => seekAt(e.nativeEvent.locationX)}
         >
           <View style={styles.waveTrack}>
-            {bars.map((amp, index) => (
-              <View key={`${messageId}-b-${index}`} style={styles.waveBarCell}>
-                <View
-                  style={[
-                    styles.waveBarFill,
-                    {
-                      height: barHeight(amp, index, activeBars, isActiveTrack),
-                      backgroundColor: index < activeBars ? waveActive : waveInactive,
-                    },
-                  ]}
-                />
+            {bars.map((amp, i) => (
+              <View key={`${messageId}-${i}`} style={styles.barCell}>
+                <View style={[
+                  styles.barFill,
+                  { height: barH(amp, i, activeBars, isActiveTrack), backgroundColor: i < activeBars ? waveActive : waveInactive },
+                ]} />
               </View>
             ))}
-
-            {/* White progress playhead — synced to positionMs / durationMs */}
+            {/* White playhead dot — always present, synced to real positionMs */}
             <View
-              style={[
-                styles.progressDot,
-                {
-                  width: DOT_SIZE,
-                  height: DOT_SIZE,
-                  borderRadius: DOT_SIZE / 2,
-                  top: '50%',
-                  marginTop: -(DOT_SIZE / 2),
-                  left: `${dotLeftPercent}%`,
-                  marginLeft: -(DOT_SIZE / 2),
-                },
-              ]}
+              style={[styles.dot, {
+                width: DOT_SIZE, height: DOT_SIZE, borderRadius: DOT_SIZE / 2,
+                top: '50%', marginTop: -(DOT_SIZE / 2),
+                left: `${dotLeft}%`, marginLeft: -(DOT_SIZE / 2),
+              }]}
               pointerEvents="none"
             />
           </View>
@@ -331,27 +271,21 @@ export function VoiceNoteBubble({
 
       </View>
 
-      {/* ── Error hint (sanitized) ── */}
-      {playError ? (
-        <View style={styles.errorRow}>
-          <Ionicons name="alert-circle-outline" size={11} color={metaColor} />
-          <Text style={[styles.errorText, { color: metaColor }]}>{playError}</Text>
+      {/* ── Error (sanitized) ── */}
+      {playErr ? (
+        <View style={styles.errRow}>
+          <Ionicons name="alert-circle-outline" size={11} color={metaCol} />
+          <Text style={[styles.errText, { color: metaCol }]}>{playErr}</Text>
         </View>
       ) : null}
 
-      {/* ── Row 2: duration | timestamp + delivery ── */}
-      <View style={styles.metaRow}>
-        <Text style={[styles.durationText, { color: metaColor }]}>{formatDuration(durationLabel)}</Text>
-        <View style={styles.timeStatusWrap}>
-          <Text style={[styles.timestampText, { color: metaColor }]}>{timestamp}</Text>
+      {/* ── Metadata row ── */}
+      <View style={styles.meta}>
+        <Text style={[styles.dur, { color: metaCol }]}>{formatMs(durLabel)}</Text>
+        <View style={styles.metaRight}>
+          <Text style={[styles.ts, { color: metaCol }]}>{timestamp}</Text>
           {isOutgoing ? (
-            <Text
-              style={[
-                styles.statusText,
-                deliveryStatus === 'READ' && styles.statusRead,
-                { color: metaColor },
-              ]}
-            >
+            <Text style={[styles.check, deliveryStatus === 'READ' && styles.checkRead, { color: metaCol }]}>
               {statusIcon(deliveryStatus)}
             </Text>
           ) : null}
@@ -366,95 +300,93 @@ export function VoiceNoteBubble({
 
 const styles = StyleSheet.create({
   root: {
-    marginTop: 2,
     width: '100%',
+    marginTop: 2,
   },
 
-  // ── Main content row ──────────────────────────────────────────────────────
-  mainRow: {
+  // ── Main row ──────────────────────────────────────────────────────────────
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: ELEM_GAP,
   },
 
-  // ── Left slot (avatar / speed badge) ──────────────────────────────────────
-  leftSlot: {
-    width: LEFT_SLOT_SIZE,
-    height: LEFT_SLOT_SIZE,
-    borderRadius: LEFT_SLOT_SIZE / 2,
+  // ── Avatar / speed-badge slot (always AVATAR_SIZE × AVATAR_SIZE) ─────────
+  avatar: {
+    width: AVATAR_SIZE,
+    height: AVATAR_SIZE,
+    borderRadius: AVATAR_SIZE / 2,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
     overflow: 'hidden',
   },
   avatarImg: {
-    width: LEFT_SLOT_SIZE,
-    height: LEFT_SLOT_SIZE,
-    borderRadius: LEFT_SLOT_SIZE / 2,
+    width: AVATAR_SIZE,
+    height: AVATAR_SIZE,
+    borderRadius: AVATAR_SIZE / 2,
   },
   avatarFallback: {
-    width: LEFT_SLOT_SIZE,
-    height: LEFT_SLOT_SIZE,
-    borderRadius: LEFT_SLOT_SIZE / 2,
+    width: AVATAR_SIZE,
+    height: AVATAR_SIZE,
+    borderRadius: AVATAR_SIZE / 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarInitial: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '700',
     letterSpacing: -0.3,
   },
   micBadge: {
     position: 'absolute',
-    bottom: 1,
-    right: 1,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    bottom: 2,
+    right: 2,
+    width: 15,
+    height: 15,
+    borderRadius: 7.5,
     alignItems: 'center',
     justifyContent: 'center',
   },
   speedText: {
     fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: -0.4,
+    fontWeight: '800',
+    letterSpacing: -0.5,
   },
 
-  // ── Play / pause button ────────────────────────────────────────────────────
+  // ── Play / pause ──────────────────────────────────────────────────────────
   playBtn: {
-    width: PLAY_BTN_SIZE,
-    height: PLAY_BTN_SIZE,
-    borderRadius: PLAY_BTN_SIZE / 2,
+    width: PLAY_SIZE,
+    height: PLAY_SIZE,
+    borderRadius: PLAY_SIZE / 2,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
-  playIconOffset: {
-    marginLeft: 2,
-  },
+  playOffset: { marginLeft: 2 },
 
   // ── Waveform ──────────────────────────────────────────────────────────────
   waveBlock: {
     flex: 1,
-    minWidth: 40,
-    height: WAVE_HEIGHT,
+    height: WAVE_H,
     justifyContent: 'center',
+    minWidth: 40,
   },
   waveTrack: {
-    height: WAVE_HEIGHT,
+    height: WAVE_H,
     flexDirection: 'row',
     alignItems: 'center',
     width: '100%',
     position: 'relative',
   },
-  waveBarCell: {
+  barCell: {
     flex: 1,
     minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 0.5,
   },
-  waveBarFill: {
+  barFill: {
     width: '100%',
     maxWidth: 2,
     borderRadius: 1,
@@ -462,66 +394,58 @@ const styles = StyleSheet.create({
   },
 
   // ── Progress dot ──────────────────────────────────────────────────────────
-  progressDot: {
+  dot: {
     position: 'absolute',
     backgroundColor: '#FFFFFF',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.35,
     shadowRadius: 2,
-    elevation: 3,
+    elevation: 4,
   },
 
   // ── Error ──────────────────────────────────────────────────────────────────
-  errorRow: {
+  errRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginTop: 4,
-    paddingLeft: LEFT_SLOT_SIZE + 8 + PLAY_BTN_SIZE + 8,
+    marginTop: 3,
+    paddingLeft: META_INDENT,
   },
-  errorText: {
+  errText: {
     ...typography.caption,
     fontSize: 11,
     lineHeight: 15,
   },
 
-  // ── Metadata row ──────────────────────────────────────────────────────────
-  metaRow: {
+  // ── Metadata ──────────────────────────────────────────────────────────────
+  meta: {
     marginTop: 4,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    // Indent duration to sit under the waveform, not the left slot
-    paddingLeft: LEFT_SLOT_SIZE + 8 + PLAY_BTN_SIZE + 8,
+    paddingLeft: META_INDENT,
   },
-  durationText: {
+  dur: {
     ...typography.caption,
     fontSize: 11,
   },
-  unavailableText: {
-    ...typography.caption,
-    fontSize: 11,
-    flex: 1,
-    textAlign: 'center',
-    opacity: 0.65,
-  },
-  timeStatusWrap: {
+  metaRight: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
   },
-  timestampText: {
+  ts: {
     ...typography.caption,
     fontSize: 11,
   },
-  statusText: {
+  check: {
     ...typography.caption,
     fontSize: 11,
     fontWeight: '700',
     marginTop: -1,
   },
-  statusRead: {
+  checkRead: {
     color: '#9BD0FF',
   },
 })
