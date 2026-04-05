@@ -17,6 +17,22 @@ import { colors, spacing, typography } from '../../theme/tokens'
 import { ChatMessage } from '../../types/models'
 import { VoiceNoteBubble } from './VoiceNoteBubble'
 import { ReplyPreview } from './ReplyPreview'
+import { API_BASE_URL } from '../../config/env'
+
+/**
+ * Convert a relative server path (e.g. /uploads/tenant/file.m4a) to an absolute
+ * URL so expo-av and React Native Image can load it over the network.
+ * The server's upload handler intentionally returns relative paths; this is the
+ * single place we resolve them for the client.
+ */
+function resolveMediaUrl(url: string | null | undefined): string {
+  if (!url) return ''
+  const trimmed = url.trim()
+  if (!trimmed) return ''
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed
+  if (trimmed.startsWith('/')) return `${API_BASE_URL}${trimmed}`
+  return trimmed
+}
 
 const REACTION_PICKER_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'] as const
 
@@ -294,7 +310,7 @@ export function MessageBubble({
               <VoiceNoteBubble
                 key={attachmentId}
                 messageId={String(message.id || attachmentId)}
-                audioUrl={attachment.url}
+                audioUrl={resolveMediaUrl(attachment.url)}
                 durationMs={attachment.durationMs || null}
                 isOutgoing={isMine}
                 timestamp={formatMessageTime(message.createdAt)}

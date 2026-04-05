@@ -20,7 +20,7 @@ interface VoiceNoteBubbleProps {
   onLongPress?: () => void
 }
 
-/* WhatsApp uses ~50 bars; generate varied heights with natural-looking clusters */
+/** Deterministic waveform seeded from messageId — 50 bars, natural-looking cluster heights. */
 function seededWaveform(messageId: string, bars = 50): number[] {
   let seed = 0
   for (let i = 0; i < messageId.length; i += 1) {
@@ -30,7 +30,6 @@ function seededWaveform(messageId: string, bars = 50): number[] {
   for (let i = 0; i < bars; i += 1) {
     seed = (seed * 1664525 + 1013904223) >>> 0
     const n = (seed % 1000) / 1000
-    // Create natural low/high clusters like real audio
     const peak = i % 9 === 0 ? 0.92 : i % 5 === 0 ? 0.72 : i % 3 === 0 ? 0.55 : 0.3
     const mixed = Math.max(0.12, Math.min(1, n * 0.55 + peak * 0.45))
     values.push(mixed)
@@ -56,6 +55,29 @@ function speedToIndex(s: number): number {
   return i >= 0 ? i : 0
 }
 
+/**
+ * Sanitize a playback error into a single-line user-facing string.
+ * Strips raw Java/ExoPlayer stack traces and file paths.
+ */
+function sanitizePlaybackError(raw: string): string {
+  // Errors containing ExoPlayer / Android media-specific strings
+  if (
+    raw.includes('FileNotFoundException') ||
+    raw.includes('FileDataSource') ||
+    raw.includes('ExoPlaybackException') ||
+    raw.includes('MediaCodec') ||
+    raw.includes('com.google.') ||
+    raw.includes('java.io.') ||
+    raw.includes('android.') ||
+    raw.includes('ExoPlayer') ||
+    raw.length > 200
+  ) {
+    return "Couldn\u2019t play audio"
+  }
+  // Short, user-readable messages are fine to show
+  return raw.length > 80 ? "Couldn\u2019t play audio" : raw
+}
+
 export function VoiceNoteBubble({
   messageId,
   audioUrl,
@@ -70,7 +92,7 @@ export function VoiceNoteBubble({
   const bars = useMemo(() => seededWaveform(messageId), [messageId])
   const [waveformWidth, setWaveformWidth] = useState(0)
   const [speedIndex, setSpeedIndex] = useState(0)
-  const [playErrorMessage, setPlayErrorMessage] = useState<string | null>(null)
+  const [playError, setPlayError] = useState<string | null>(null)
 
   const hasUrl = typeof audioUrl === 'string' && audioUrl.trim().length > 0
   const effectiveDurationMs = Math.max(1, liveDurationMs || durationMs || 1000)
@@ -102,7 +124,7 @@ export function VoiceNoteBubble({
 
   const togglePlay = async () => {
     if (!hasUrl) return
-    setPlayErrorMessage(null)
+    setPlayError(null)
     const uriPreview = audioUrl.trim().slice(0, 160)
     try {
       if (isPlaying) {
@@ -111,53 +133,84 @@ export function VoiceNoteBubble({
         await play(audioUrl.trim())
       }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      console.error('[VoiceNoteBubble] playback failed', { uriPreview, message: msg, messageId })
-      setPlayErrorMessage(msg)
+      const rawMsg = e instanceof Error ? e.message : String(e)
+      console.error('[VoiceNoteBubble] playback failed', { uriPreview, rawMsg, messageId })
+      setPlayError(sanitizePlaybackError(rawMsg))
     }
   }
 
   const currentSpeed = SPEED_STEPS[speedIndex]
   const speedLabel = currentSpeed === 1 ? '1\u00D7' : currentSpeed === 1.5 ? '1.5\u00D7' : '2\u00D7'
 
-  const playColor = isOutgoing ? colors.brandPrimary : colors.surface
+  // Colors derived from bubble direction
+  const playIconColor = isOutgoing ? colors.brandPrimary : colors.surface
   const playBg = isOutgoing ? colors.surface : colors.brandPrimary
   const waveActive = isOutgoing ? 'rgba(255,255,255,0.92)' : 'rgba(46,74,89,0.88)'
-  const waveInactive = isOutgoing ? 'rgba(255,255,255,0.34)' : 'rgba(46,74,89,0.2)'
-  const metaColor = isOutgoing ? 'rgba(255,255,255,0.85)' : colors.textSecondary
+  const waveInactive = isOutgoing ? 'rgba(255,255,255,0.32)' : 'rgba(46,74,89,0.18)'
+  const metaColor = isOutgoing ? 'rgba(255,255,255,0.82)' : colors.textSecondary
 
-  const showElapsed = isPlaying || positionMs > 0
-  const durationLabel = showElapsed ? positionMs : effectiveDurationMs
+  // Show elapsed time while playing, total duration at rest
+  const durationLabel = (isPlaying || positionMs > 0) ? positionMs : effectiveDurationMs
 
-  /* WhatsApp playhead is a ~10px circle that sits on the waveform line */
-  const dotSize = 10
+  // WhatsApp: 10px solid white circle playhead
+  const DOT_SIZE = 10
   const dotLeftPercent = Math.max(0, Math.min(100, progress * 100))
 
+  // ── Fallback: no URL ────────────────────────────────────────────────────────
   if (!hasUrl) {
     return (
       <Pressable style={styles.root} onLongPress={onLongPress}>
-        <View style={styles.placeholderWave}>
-          {bars.slice(0, 32).map((amp, index) => (
-            <View key={`ph-${index}`} style={styles.waveBarCell}>
-              <View style={[styles.waveBarFill, { height: 2 + Math.round(amp * 6), backgroundColor: waveInactive }]} />
+        <View style={styles.topRow}>
+          <View style={[styles.playButton, { backgroundColor: playBg, opacity: 0.5 }]}>
+            <Ionicons name="mic-off-outline" size={18} color={playIconColor} />
+          </View>
+          <View style={styles.waveBlock} onLayout={onWaveLayout}>
+            <View style={styles.waveTrack}>
+              {bars.map((amp, index) => (
+                <View key={`ph-${index}`} style={styles.waveBarCell}>
+                  <View
+                    style={[
+                      styles.waveBarFill,
+                      { height: amp < 0.25 ? 2 : 2 + Math.round(amp * 12), backgroundColor: waveInactive },
+                    ]}
+                  />
+                </View>
+              ))}
             </View>
-          ))}
+          </View>
+          <View style={styles.speedPlaceholder} />
         </View>
-        <View style={styles.unavailableRow}>
-          <Ionicons name="mic-off-outline" size={18} color={metaColor} />
-          <Text style={[styles.unavailableText, { color: metaColor }]}>Voice message unavailable</Text>
+        <View style={styles.metaRow}>
+          <Text style={[styles.durationText, { color: metaColor }]}>–:––</Text>
+          <Text style={[styles.unavailableText, { color: metaColor }]}>Unavailable</Text>
+          <View style={styles.timeStatusWrap}>
+            <Text style={[styles.timestampText, { color: metaColor }]}>{timestamp}</Text>
+          </View>
         </View>
       </Pressable>
     )
   }
 
+  // ── Main render ─────────────────────────────────────────────────────────────
   return (
     <Pressable style={styles.root} onLongPress={onLongPress}>
+      {/* ── Row 1: play button | waveform | speed ── */}
       <View style={styles.topRow}>
-        <Pressable style={[styles.playButton, { backgroundColor: playBg }]} onPress={() => void togglePlay()} hitSlop={8}>
-          <Ionicons name={isPlaying ? 'pause' : 'play'} size={18} color={playColor} style={isPlaying ? undefined : styles.playIconOffset} />
+        {/* Play / pause button */}
+        <Pressable
+          style={[styles.playButton, { backgroundColor: playBg }]}
+          onPress={() => void togglePlay()}
+          hitSlop={8}
+        >
+          <Ionicons
+            name={isPlaying ? 'pause' : 'play'}
+            size={18}
+            color={playIconColor}
+            style={isPlaying ? undefined : styles.playIconOffset}
+          />
         </Pressable>
 
+        {/* Waveform + scrub area */}
         <View
           style={styles.waveBlock}
           onLayout={onWaveLayout}
@@ -173,7 +226,6 @@ export function VoiceNoteBubble({
                   style={[
                     styles.waveBarFill,
                     {
-                      /* WhatsApp: short bars ~2px, tall bars ~14px */
                       height: amp < 0.25 ? 2 : 2 + Math.round(amp * 14),
                       backgroundColor: index < activeBars ? waveActive : waveInactive,
                     },
@@ -181,18 +233,18 @@ export function VoiceNoteBubble({
                 />
               </View>
             ))}
+            {/* Progress playhead dot — always rendered, synced to real positionMs / durationMs */}
             <View
               style={[
                 styles.progressDot,
-                isOutgoing ? styles.progressDotOutgoing : styles.progressDotIncoming,
                 {
-                  width: dotSize,
-                  height: dotSize,
-                  borderRadius: dotSize / 2,
+                  width: DOT_SIZE,
+                  height: DOT_SIZE,
+                  borderRadius: DOT_SIZE / 2,
                   top: '50%',
-                  marginTop: -dotSize / 2,
+                  marginTop: -DOT_SIZE / 2,
                   left: `${dotLeftPercent}%`,
-                  marginLeft: -dotSize / 2,
+                  marginLeft: -DOT_SIZE / 2,
                 },
               ]}
               pointerEvents="none"
@@ -200,21 +252,25 @@ export function VoiceNoteBubble({
           </View>
         </View>
 
+        {/* Speed toggle — only appears once this track is/was active */}
         {isActiveTrack ? (
           <Pressable style={styles.speedButton} onPress={cycleSpeed} hitSlop={8}>
             <Text style={[styles.speedText, { color: metaColor }]}>{speedLabel}</Text>
           </Pressable>
         ) : (
-          <View style={styles.speedButton} />
+          <View style={styles.speedPlaceholder} />
         )}
       </View>
 
-      {playErrorMessage ? (
-        <Text style={[styles.errorHint, { color: metaColor }]} numberOfLines={3}>
-          {playErrorMessage}
-        </Text>
+      {/* ── Error hint (sanitized — never raw exception text) ── */}
+      {playError ? (
+        <View style={styles.errorRow}>
+          <Ionicons name="alert-circle-outline" size={12} color={metaColor} />
+          <Text style={[styles.errorHint, { color: metaColor }]}>{playError}</Text>
+        </View>
       ) : null}
 
+      {/* ── Row 2: duration | timestamp + delivery ── */}
       <View style={styles.metaRow}>
         <Text style={[styles.durationText, { color: metaColor }]}>{formatDuration(durationLabel)}</Text>
         <View style={styles.timeStatusWrap}>
@@ -236,52 +292,32 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: 32,
   },
-  placeholderWave: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: '100%',
-    height: 18,
-    marginBottom: 6,
-    opacity: 0.85,
-  },
-  unavailableRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 2,
-  },
-  unavailableText: {
-    ...typography.caption,
-    fontSize: 13,
-    flex: 1,
-  },
+  // ── Top row ─────────────────────────────────────────────────────────────────
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
   playButton: {
-    /* WhatsApp: ~36px circle */
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
-  /* Nudge play triangle slightly right so it looks visually centred */
   playIconOffset: {
     marginLeft: 2,
   },
+  // ── Waveform ─────────────────────────────────────────────────────────────────
   waveBlock: {
     flex: 1,
     minWidth: 56,
-    minHeight: 22,
+    minHeight: 24,
     justifyContent: 'center',
   },
   waveTrack: {
-    /* Taller track so tall bars have room */
-    height: 22,
+    height: 24,
     flexDirection: 'row',
     alignItems: 'center',
     width: '100%',
@@ -295,35 +331,33 @@ const styles = StyleSheet.create({
     paddingHorizontal: 0.75,
   },
   waveBarFill: {
-    /* WhatsApp bars are ~2px wide, fully rounded */
     width: '100%',
     maxWidth: 2,
     borderRadius: 1,
     minHeight: 2,
   },
+  // ── Progress dot ─────────────────────────────────────────────────────────────
   progressDot: {
     position: 'absolute',
-    /* WhatsApp: solid white circle, no border */
     backgroundColor: '#FFFFFF',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.22,
-    shadowRadius: 1.5,
+    shadowOpacity: 0.25,
+    shadowRadius: 2,
     elevation: 3,
   },
-  progressDotOutgoing: {
-    /* On outgoing (teal/green bg), slightly darker dot edge */
-    backgroundColor: '#FFFFFF',
-  },
-  progressDotIncoming: {
-    backgroundColor: '#FFFFFF',
-  },
+  // ── Speed control ─────────────────────────────────────────────────────────────
   speedButton: {
-    width: 32,
+    width: 34,
     height: 22,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 6,
+    flexShrink: 0,
+  },
+  speedPlaceholder: {
+    width: 34,
+    height: 22,
     flexShrink: 0,
   },
   speedText: {
@@ -331,12 +365,19 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: -0.3,
   },
+  // ── Error hint ─────────────────────────────────────────────────────────────
+  errorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
   errorHint: {
     ...typography.caption,
-    fontSize: 10,
-    marginTop: 4,
-    lineHeight: 14,
+    fontSize: 11,
+    lineHeight: 15,
   },
+  // ── Metadata row ─────────────────────────────────────────────────────────────
   metaRow: {
     marginTop: 4,
     flexDirection: 'row',
@@ -346,6 +387,13 @@ const styles = StyleSheet.create({
   durationText: {
     ...typography.caption,
     fontSize: 11,
+  },
+  unavailableText: {
+    ...typography.caption,
+    fontSize: 11,
+    flex: 1,
+    textAlign: 'center',
+    opacity: 0.7,
   },
   timeStatusWrap: {
     flexDirection: 'row',
