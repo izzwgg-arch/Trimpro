@@ -102,21 +102,6 @@ function RecordingLiveWave({ barCount = 32 }: { barCount?: number }) {
   )
 }
 
-/* Dot that blinks while recording */
-function RecordingDot() {
-  const opacity = useRef(new Animated.Value(1)).current
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(opacity, { toValue: 0.15, duration: 500, useNativeDriver: true }),
-        Animated.timing(opacity, { toValue: 1, duration: 500, useNativeDriver: true }),
-      ])
-    )
-    loop.start()
-    return () => loop.stop()
-  }, [opacity])
-  return <Animated.View style={[styles.recDot, { opacity }]} />
-}
 
 export function Composer({
   text,
@@ -223,15 +208,15 @@ export function Composer({
 
   /* ── Input pill content ─────────────────────────────────────── */
   const pillContent = recording && !voiceLocked ? (
-    /* Compact recording UI — fits inside the pill */
+    /* Compact recording UI — fits inside the pill, WhatsApp-style */
     <View style={styles.recInPill}>
-      <RecordingDot />
+      <Ionicons name="mic" size={18} color="#EA4335" style={styles.recMicIcon} />
       <Text style={styles.recTimerText}>{timerLabel}</Text>
       <Text
         style={[styles.slideToCancelText, recordingWillCancel && styles.slideToCancelWarn]}
         numberOfLines={1}
       >
-        {recordingWillCancel ? 'Release to cancel' : '\u2190 Slide to cancel'}
+        {recordingWillCancel ? 'Release to cancel' : '< Slide to cancel'}
       </Text>
     </View>
   ) : (
@@ -347,7 +332,7 @@ export function Composer({
         <View style={styles.lockedPanel}>
           <RecordingLiveWave />
           <View style={styles.lockedMeta}>
-            <RecordingDot />
+            <Ionicons name="mic" size={16} color="#EA4335" />
             <Text style={styles.lockedTimer}>{timerLabel}</Text>
             <Text style={styles.lockedHint}>Tap send when finished</Text>
           </View>
@@ -382,11 +367,11 @@ export function Composer({
             </View>
           </View>
 
-          {/* Mic FAB column (lock hint above when recording) */}
+          {/* Mic FAB column (lock badge floats above when recording) */}
           <View style={styles.fabCol}>
             {recording && !voiceLocked ? (
-              <View style={styles.lockHintAbove}>
-                <Ionicons name="lock-closed-outline" size={14} color={colors.textSecondary} />
+              <View style={styles.lockBadge}>
+                <Ionicons name="lock-closed" size={13} color={colors.surface} />
               </View>
             ) : null}
             {showMic || (recording && !voiceLocked) ? micFab : sendFab}
@@ -397,7 +382,7 @@ export function Composer({
   )
 }
 
-const FAB_SIZE = 46
+const FAB_SIZE = 48
 
 const styles = StyleSheet.create({
   container: {
@@ -476,9 +461,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-end',
   },
-  lockHintAbove: {
+  /* Floating lock badge shown above mic when recording (unlocked) */
+  lockBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.brandPrimary,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 4,
-    opacity: 0.6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 3,
   },
 
   /* ── Input pill ── */
@@ -531,16 +527,12 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
     paddingVertical: 6,
     paddingHorizontal: 4,
     minHeight: 32,
   },
-  recDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#EA4335',
+  recMicIcon: {
     flexShrink: 0,
   },
   recTimerText: {

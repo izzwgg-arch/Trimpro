@@ -20,7 +20,8 @@ interface VoiceNoteBubbleProps {
   onLongPress?: () => void
 }
 
-function seededWaveform(messageId: string, bars = 44): number[] {
+/* WhatsApp uses ~50 bars; generate varied heights with natural-looking clusters */
+function seededWaveform(messageId: string, bars = 50): number[] {
   let seed = 0
   for (let i = 0; i < messageId.length; i += 1) {
     seed = (seed * 31 + messageId.charCodeAt(i)) >>> 0
@@ -29,8 +30,9 @@ function seededWaveform(messageId: string, bars = 44): number[] {
   for (let i = 0; i < bars; i += 1) {
     seed = (seed * 1664525 + 1013904223) >>> 0
     const n = (seed % 1000) / 1000
-    const peak = i % 11 === 0 ? 0.95 : i % 7 === 0 ? 0.78 : 0.52
-    const mixed = Math.max(0.25, Math.min(1, n * 0.6 + peak * 0.4))
+    // Create natural low/high clusters like real audio
+    const peak = i % 9 === 0 ? 0.92 : i % 5 === 0 ? 0.72 : i % 3 === 0 ? 0.55 : 0.3
+    const mixed = Math.max(0.12, Math.min(1, n * 0.55 + peak * 0.45))
     values.push(mixed)
   }
   return values
@@ -127,7 +129,8 @@ export function VoiceNoteBubble({
   const showElapsed = isPlaying || positionMs > 0
   const durationLabel = showElapsed ? positionMs : effectiveDurationMs
 
-  const dotSize = 6
+  /* WhatsApp playhead is a ~10px circle that sits on the waveform line */
+  const dotSize = 10
   const dotLeftPercent = Math.max(0, Math.min(100, progress * 100))
 
   if (!hasUrl) {
@@ -151,8 +154,8 @@ export function VoiceNoteBubble({
   return (
     <Pressable style={styles.root} onLongPress={onLongPress}>
       <View style={styles.topRow}>
-        <Pressable style={[styles.playButton, { backgroundColor: playBg }]} onPress={() => void togglePlay()} hitSlop={6}>
-          <Ionicons name={isPlaying ? 'pause' : 'play'} size={16} color={playColor} />
+        <Pressable style={[styles.playButton, { backgroundColor: playBg }]} onPress={() => void togglePlay()} hitSlop={8}>
+          <Ionicons name={isPlaying ? 'pause' : 'play'} size={18} color={playColor} style={isPlaying ? undefined : styles.playIconOffset} />
         </Pressable>
 
         <View
@@ -170,7 +173,8 @@ export function VoiceNoteBubble({
                   style={[
                     styles.waveBarFill,
                     {
-                      height: 2 + Math.round(amp * 7),
+                      /* WhatsApp: short bars ~2px, tall bars ~14px */
+                      height: amp < 0.25 ? 2 : 2 + Math.round(amp * 14),
                       backgroundColor: index < activeBars ? waveActive : waveInactive,
                     },
                   ]}
@@ -257,21 +261,27 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   playButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    /* WhatsApp: ~36px circle */
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
+  /* Nudge play triangle slightly right so it looks visually centred */
+  playIconOffset: {
+    marginLeft: 2,
+  },
   waveBlock: {
     flex: 1,
     minWidth: 56,
-    minHeight: 18,
+    minHeight: 22,
     justifyContent: 'center',
   },
   waveTrack: {
-    height: 18,
+    /* Taller track so tall bars have room */
+    height: 22,
     flexDirection: 'row',
     alignItems: 'center',
     width: '100%',
@@ -282,29 +292,31 @@ const styles = StyleSheet.create({
     minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 0.5,
+    paddingHorizontal: 0.75,
   },
   waveBarFill: {
+    /* WhatsApp bars are ~2px wide, fully rounded */
     width: '100%',
-    maxWidth: 1.5,
-    borderRadius: 0.75,
+    maxWidth: 2,
+    borderRadius: 1,
     minHeight: 2,
   },
   progressDot: {
     position: 'absolute',
+    /* WhatsApp: solid white circle, no border */
     backgroundColor: '#FFFFFF',
-    borderWidth: StyleSheet.hairlineWidth,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 0.5 },
-    shadowOpacity: 0.18,
-    shadowRadius: 1,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.22,
+    shadowRadius: 1.5,
+    elevation: 3,
   },
   progressDotOutgoing: {
-    borderColor: 'rgba(0,0,0,0.2)',
+    /* On outgoing (teal/green bg), slightly darker dot edge */
+    backgroundColor: '#FFFFFF',
   },
   progressDotIncoming: {
-    borderColor: 'rgba(46,74,89,0.35)',
+    backgroundColor: '#FFFFFF',
   },
   speedButton: {
     width: 32,
