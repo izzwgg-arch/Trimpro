@@ -1521,7 +1521,7 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
   },
   composerDock: {
-    backgroundColor: colors.surface,
+    backgroundColor: 'transparent',
   },
   editingBar: {
     backgroundColor: colors.surface,
