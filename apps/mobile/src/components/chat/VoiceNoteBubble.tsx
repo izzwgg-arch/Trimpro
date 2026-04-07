@@ -140,17 +140,17 @@ export function VoiceNoteBubble({
   // ── Color scheme ─────────────────────────────────────────────────────────
   const out = isOutgoing
 
-  // All voice notes use the same dark-bubble palette (outgoing style)
-  const playIconColor = 'rgba(255,255,255,0.88)'
-  const waveActive   = 'rgba(255,255,255,0.40)'
-  const waveInactive = 'rgba(255,255,255,0.88)'
-  const dotColor     = '#FFFFFF'
-  const metaColor    = 'rgba(255,255,255,0.75)'
-  const spdBg        = 'rgba(0,0,0,0.28)'
-  const spdCol       = '#FFFFFF'
-  const avBg         = 'rgba(255,255,255,0.18)'
-  const avTxt        = 'rgba(255,255,255,0.95)'
-  const micBg        = 'rgba(255,255,255,0.22)'
+  // Colors based on bubble background (outgoing = dark, incoming = light)
+  const playIconColor = out ? 'rgba(255,255,255,0.88)' : colors.brandPrimary
+  const waveActive   = out ? 'rgba(255,255,255,0.40)' : 'rgba(46,74,89,0.28)'
+  const waveInactive = out ? 'rgba(255,255,255,0.88)' : 'rgba(46,74,89,0.80)'
+  const dotColor     = out ? '#FFFFFF' : colors.brandPrimary
+  const metaColor    = out ? 'rgba(255,255,255,0.75)' : colors.textSecondary
+  const spdBg        = out ? 'rgba(0,0,0,0.28)' : 'rgba(0,0,0,0.07)'
+  const spdCol       = out ? '#FFFFFF' : colors.textPrimary
+  const avBg         = out ? 'rgba(255,255,255,0.18)' : '#dbe7ef'
+  const avTxt        = out ? 'rgba(255,255,255,0.95)' : colors.brandPrimary
+  const micBg        = out ? 'rgba(255,255,255,0.22)' : colors.brandPrimary
 
   const currentSpeed = SPEED_STEPS[spdIdx]
   const speedLabel   = currentSpeed === 1 ? '1\u00D7' : currentSpeed === 1.5 ? '1.5\u00D7' : '2\u00D7'

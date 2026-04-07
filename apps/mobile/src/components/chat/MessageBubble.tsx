@@ -256,7 +256,6 @@ export function MessageBubble({
           styles.bubble,
           isMine ? styles.mineBubble : styles.otherBubble,
           hasOnlyVoiceAttachment && styles.voiceOnlyBubble,
-          hasOnlyVoiceAttachment && !isMine && styles.incomingVoiceBubble,
           hasOnlyMediaAttachment && styles.mediaOnlyBubble,
           message.replyTo && (isMine ? styles.replyBubbleMine : styles.replyBubbleOther),
         ]}
@@ -524,12 +523,7 @@ const styles = StyleSheet.create({
     maxWidth: VOICE_BUBBLE_MAX_WIDTH,
     minWidth: VOICE_BUBBLE_MIN_WIDTH,
     paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  // Incoming voice note: same dark appearance as outgoing, no border
-  incomingVoiceBubble: {
-    backgroundColor: colors.brandPrimary,
-    borderWidth: 0,
+    paddingVertical: 2,
   },
   replyBubbleMine: {
     minWidth: REPLY_BUBBLE_MIN_WIDTH_MINE,
