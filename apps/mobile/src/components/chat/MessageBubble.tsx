@@ -233,16 +233,7 @@ export function MessageBubble({
 
   return (
     <Animated.View style={[styles.container, isMine ? styles.mineContainer : styles.otherContainer, { transform: [{ translateX }] }]}>
-      {/* Side avatar: hide for incoming voice-only — avatar lives inside the bubble on the right */}
-      {!isMine && !hasOnlyVoiceAttachment ? (
-        <View style={styles.sideAvatar}>
-          {message.sender?.avatar ? (
-            <Image source={{ uri: message.sender.avatar }} style={styles.sideAvatarImage} />
-          ) : (
-            <Text style={styles.sideAvatarInitial}>{senderName(message).slice(0, 1).toUpperCase()}</Text>
-          )}
-        </View>
-      ) : null}
+      {/* No side avatar for incoming messages — voice notes show their avatar inside the bubble */}
       <View
         style={[
           styles.bubbleGestureWrap,
