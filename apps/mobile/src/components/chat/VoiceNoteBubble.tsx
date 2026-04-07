@@ -158,13 +158,12 @@ export function VoiceNoteBubble({
   const dotLeft      = Math.max(0, Math.min(100, progress * 100))
 
   // ── Slot logic ────────────────────────────────────────────────────────────
-  //   OUTGOING idle  : avatar on LEFT
-  //   OUTGOING active: speed badge on LEFT
-  //   INCOMING idle  : avatar on RIGHT
-  //   INCOMING active: speed badge on LEFT
-  const showLeftSlot  = out || isActiveTrack       // outgoing always, or speed badge when active
-  const showRightSlot = !out && !isActiveTrack     // incoming idle: avatar on right
-  const metaIndent    = showLeftSlot ? META_INDENT_OUT : META_INDENT_IN
+  //   OUTGOING: slot always on LEFT  (avatar at rest, speed badge while playing)
+  //   INCOMING: slot always on RIGHT (avatar at rest, speed badge while playing)
+  //   Speed badge only shows while ACTIVELY PLAYING — after finish it reverts to avatar.
+  const showLeftSlot  = out       // outgoing: left slot always
+  const showRightSlot = !out      // incoming: right slot always
+  const metaIndent    = out ? META_INDENT_OUT : META_INDENT_IN
 
   const renderAvatarView = () => (
     <View style={styles.avatarSlot}>
@@ -178,8 +177,9 @@ export function VoiceNoteBubble({
     </View>
   )
 
-  const renderLeftSlot = () => {
-    if (isActiveTrack) {
+  // Speed badge shown only while actively playing; avatar shown when idle or finished
+  const renderSlotContent = () => {
+    if (isPlaying) {
       return (
         <Pressable style={[styles.avatarSlot, { backgroundColor: spdBg }]} onPress={cycleSpeed} hitSlop={6}>
           <Text style={[styles.speedText, { color: spdCol }]}>{speedLabel}</Text>
@@ -194,7 +194,7 @@ export function VoiceNoteBubble({
     return (
       <Pressable style={styles.root} onLongPress={onLongPress}>
         <View style={styles.row}>
-          {out && (
+          {showLeftSlot && (
             <View style={[styles.avatarSlot, { backgroundColor: spdBg, opacity: 0.5 }]}>
               <Ionicons name="mic-off-outline" size={16} color={metaColor} />
             </View>
@@ -229,8 +229,8 @@ export function VoiceNoteBubble({
       {/* ── [avatar/speed?] [play] [waveform + dot] ── */}
       <View style={styles.row}>
 
-        {/* Left slot — present for outgoing always, for incoming only when active */}
-        {showLeftSlot && renderLeftSlot()}
+        {/* Left slot — outgoing only */}
+        {showLeftSlot && renderSlotContent()}
 
         {/* Play / pause — transparent bg, icon only (matches WhatsApp) */}
         <Pressable style={styles.playArea} onPress={() => void togglePlay()} hitSlop={8}>
@@ -276,8 +276,8 @@ export function VoiceNoteBubble({
           </View>
         </View>
 
-        {/* Right slot — incoming idle: avatar on right */}
-        {showRightSlot && renderAvatarView()}
+        {/* Right slot — incoming only (avatar at rest, speed badge while playing) */}
+        {showRightSlot && renderSlotContent()}
 
       </View>
 
