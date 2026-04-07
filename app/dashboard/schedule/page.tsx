@@ -172,6 +172,8 @@ export default function SchedulePage() {
   const [notice, setNotice] = useState<Notice>(null)
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
+  const headerRef = useRef<HTMLDivElement>(null)
+  const [headerHeight, setHeaderHeight] = useState(80)
 
   useEffect(() => {
     fetchTeamMembers()
@@ -190,22 +192,31 @@ export default function SchedulePage() {
   }, [notice])
 
   useEffect(() => {
+    const el = headerRef.current
+    if (!el) return
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setHeaderHeight(Math.round(entry.contentRect.height))
+      }
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  useEffect(() => {
     fetchSchedules()
   }, [view, currentDate, selectedUserId, jobIdFilter])
 
   useEffect(() => {
-    if (view !== 'week' && view !== 'month') return
     fetchScheduledJobs()
   }, [view, currentDate, selectedUserId, statusFilter, crewFilter, priorityFilter, debouncedSearch])
 
   useEffect(() => {
-    if (view !== 'week') return
     setUnscheduledPage(1)
     setUnscheduledJobs([])
   }, [view, selectedUserId, statusFilter, crewFilter, priorityFilter, debouncedSearch])
 
   useEffect(() => {
-    if (view !== 'week') return
     fetchUnscheduledJobs(unscheduledPage)
   }, [view, unscheduledPage, selectedUserId, statusFilter, crewFilter, priorityFilter, debouncedSearch])
 
@@ -344,11 +355,19 @@ export default function SchedulePage() {
   const fetchScheduledJobs = async () => {
     try {
       const token = localStorage.getItem('accessToken')
-      const rangeStart =
-        view === 'month' ? startOfMonth(currentDate) : startOfWeek(currentDate, { weekStartsOn: 1 })
+      let rangeStart: Date
+      let rangeEnd: Date
+      if (view === 'month') {
+        rangeStart = startOfMonth(currentDate)
+        rangeEnd = endOfMonth(currentDate)
+      } else if (view === 'day') {
+        rangeStart = new Date(currentDate)
+        rangeEnd = new Date(currentDate)
+      } else {
+        rangeStart = startOfWeek(currentDate, { weekStartsOn: 1 })
+        rangeEnd = endOfWeek(currentDate, { weekStartsOn: 1 })
+      }
       rangeStart.setHours(0, 0, 0, 0)
-      const rangeEnd =
-        view === 'month' ? endOfMonth(currentDate) : endOfWeek(currentDate, { weekStartsOn: 1 })
       rangeEnd.setHours(23, 59, 59, 999)
 
       const query = buildJobsQuery({
@@ -655,8 +674,10 @@ export default function SchedulePage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col">
+
+      {/* Page title — scrolls away, not sticky */}
+      <div className="flex items-center justify-between pb-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Schedule</h1>
           <p className="mt-2 text-gray-600">Dispatch and schedule jobs with drag-and-drop.</p>
@@ -668,7 +689,7 @@ export default function SchedulePage() {
       </div>
 
       {jobIdFilter && (
-        <div className="flex items-center justify-between rounded-md border bg-muted/30 px-3 py-2 text-sm">
+        <div className="mb-3 flex items-center justify-between rounded-md border bg-muted/30 px-3 py-2 text-sm">
           <div className="flex items-center gap-2">
             <span className="font-medium">Filtered:</span>
             <span>Job schedules only</span>
@@ -680,97 +701,102 @@ export default function SchedulePage() {
       )}
 
       {notice && (
-        <div className={`rounded-md border px-3 py-2 text-sm ${getNoticeClasses()}`}>
+        <div className={`mb-3 rounded-md border px-3 py-2 text-sm ${getNoticeClasses()}`}>
           {notice.message}
         </div>
       )}
 
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center space-x-2">
-              <Button variant="outline" size="sm" onClick={() => navigateDate('prev')}>
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button variant="outline" size="sm" onClick={goToToday}>
-                Today
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => navigateDate('next')}>
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-              <div className="ml-4">
-                <h2 className="text-lg font-semibold">
-                  {view === 'day' && format(currentDate, 'EEEE, MMMM d, yyyy')}
-                  {view === 'week' && `${format(startOfWeek(currentDate, { weekStartsOn: 1 }), 'MMM d')} - ${format(endOfWeek(currentDate, { weekStartsOn: 1 }), 'MMM d, yyyy')}`}
-                  {view === 'month' && format(currentDate, 'MMMM yyyy')}
-                </h2>
-              </div>
-            </div>
+      {conflicts.length > 0 && (
+        <div className="mb-3 flex items-center gap-2 rounded-md border border-yellow-300 bg-yellow-50 px-3 py-2 text-yellow-800">
+          <CalendarIcon className="h-5 w-5 flex-shrink-0" />
+          <p className="text-sm font-medium">Schedule conflicts detected! Please review overlapping appointments.</p>
+        </div>
+      )}
 
-            <div className="flex flex-wrap items-center space-x-2">
-              <Select value={selectedUserId} onValueChange={setSelectedUserId}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="All Team" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Team</SelectItem>
-                  {teamMembers.map((member) => (
-                    <SelectItem key={member.id} value={member.id}>
-                      {member.firstName} {member.lastName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <div className="flex items-center space-x-1 rounded-md border">
-                <button
-                  onClick={() => setView('day')}
-                  className={`px-3 py-2 text-sm ${view === 'day' ? 'bg-primary text-white' : 'bg-white text-gray-700'}`}
-                >
-                  Day
-                </button>
-                <button
-                  onClick={() => setView('week')}
-                  className={`border-l px-3 py-2 text-sm ${view === 'week' ? 'bg-primary text-white' : 'bg-white text-gray-700'}`}
-                >
-                  Week
-                </button>
-                <button
-                  onClick={() => setView('month')}
-                  className={`border-l px-3 py-2 text-sm ${view === 'month' ? 'bg-primary text-white' : 'bg-white text-gray-700'}`}
-                >
-                  Month
-                </button>
-              </div>
+      {/* ── STICKY NAVIGATION HEADER ── */}
+      <div
+        ref={headerRef}
+        className="sticky top-0 z-20 -mx-6 px-6 py-3 bg-gray-100 border-b border-gray-200 shadow-sm"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center space-x-2">
+            <Button variant="outline" size="sm" onClick={() => navigateDate('prev')}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" size="sm" onClick={goToToday}>
+              Today
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => navigateDate('next')}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <div className="ml-4">
+              <h2 className="text-lg font-semibold">
+                {view === 'day' && format(currentDate, 'EEEE, MMMM d, yyyy')}
+                {view === 'week' && `${format(startOfWeek(currentDate, { weekStartsOn: 1 }), 'MMM d')} – ${format(endOfWeek(currentDate, { weekStartsOn: 1 }), 'MMM d, yyyy')}`}
+                {view === 'month' && format(currentDate, 'MMMM yyyy')}
+              </h2>
             </div>
           </div>
-        </CardContent>
-      </Card>
 
-      {!permissionChecked ? null : !canScheduleJobs && view === 'week' ? (
-        <Card className="border-amber-300 bg-amber-50">
-          <CardContent className="pt-6">
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="All Team" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Team</SelectItem>
+                {teamMembers.map((member) => (
+                  <SelectItem key={member.id} value={member.id}>
+                    {member.firstName} {member.lastName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <div className="flex items-center rounded-md border overflow-hidden">
+              <button
+                onClick={() => setView('day')}
+                className={`px-3 py-2 text-sm ${view === 'day' ? 'bg-primary text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+              >
+                Day
+              </button>
+              <button
+                onClick={() => setView('week')}
+                className={`border-l px-3 py-2 text-sm ${view === 'week' ? 'bg-primary text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+              >
+                Week
+              </button>
+              <button
+                onClick={() => setView('month')}
+                className={`border-l px-3 py-2 text-sm ${view === 'month' ? 'bg-primary text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+              >
+                Month
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {permissionChecked && !canScheduleJobs && (
+          <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2">
             <p className="text-sm text-amber-800">
               You can view schedule data but cannot drag and drop jobs without schedule permissions.
             </p>
-          </CardContent>
-        </Card>
-      ) : null}
+          </div>
+        )}
+      </div>
 
-      {conflicts.length > 0 && view !== 'week' && (
-        <Card className="border-yellow-300 bg-yellow-50">
-          <CardContent className="pt-6">
-            <div className="flex items-center space-x-2 text-yellow-800">
-              <CalendarIcon className="h-5 w-5" />
-              <p className="font-medium">Schedule conflicts detected! Please review overlapping appointments.</p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* ── MAIN BODY: sticky Unscheduled Panel + scrollable Calendar ── */}
+      <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+        <div className="flex gap-4 items-start pt-4">
 
-      {view === 'week' && (
-        <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[330px_minmax(0,1fr)]">
+          {/* STICKY UNSCHEDULED PANEL — stays fixed below nav header */}
+          <div
+            className="sticky flex-none w-[300px] xl:w-[330px]"
+            style={{
+              top: `${headerHeight}px`,
+              height: `calc(100vh - ${headerHeight + 8}px)`,
+            }}
+          >
             <UnscheduledPanel
               jobs={unscheduledJobs}
               loading={unscheduledLoading}
@@ -788,144 +814,157 @@ export default function SchedulePage() {
               activeDragJobId={activeDragJobId}
               canDragJob={canDragJob}
             />
-
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Dispatch Calendar</CardTitle>
-                <CardDescription>Drag from Unscheduled to a time slot, drag between slots to reschedule, or back to Unscheduled.</CardDescription>
-              </CardHeader>
-              <CardContent className="overflow-auto">
-                <div className="min-w-[980px]">
-                  <div className="grid grid-cols-[88px_repeat(7,minmax(120px,1fr))] border-b bg-gray-50">
-                    <div className="p-2 text-xs font-semibold text-gray-500">Time</div>
-                    {weekDays.map((day) => (
-                      <div key={day.toISOString()} className={`border-l p-2 text-center ${isToday(day) ? 'bg-blue-50' : ''}`}>
-                        <p className="text-xs font-medium uppercase text-gray-500">{format(day, 'EEE')}</p>
-                        <p className={`text-sm font-semibold ${isToday(day) ? 'text-blue-700' : 'text-gray-900'}`}>{format(day, 'MMM d')}</p>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div>
-                    {timeSlots.map((hour) => (
-                      <div key={hour} className="grid grid-cols-[88px_repeat(7,minmax(120px,1fr))] border-b last:border-b-0">
-                        <div className="border-r p-2 text-xs text-gray-500">{format(addHours(new Date().setHours(0, 0, 0, 0), hour), 'h:mm a')}</div>
-                        {weekDays.map((day) => {
-                          const slotDate = new Date(day)
-                          slotDate.setHours(hour, 0, 0, 0)
-                          const jobsInSlot = getScheduledJobsForSlot(day, hour)
-
-                          return (
-                            <CalendarSlot
-                              key={slotIdForDate(slotDate)}
-                              slotId={slotIdForDate(slotDate)}
-                              jobs={jobsInSlot}
-                              onOpenJob={(jobId) => router.push(`/dashboard/jobs/${jobId}`)}
-                              activeDragJobId={activeDragJobId}
-                              canDragJob={canDragJob}
-                            />
-                          )
-                        })}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
           </div>
-        </DndContext>
-      )}
 
-      {view === 'day' && (
-        <Card>
-          <CardHeader>
-            <CardTitle>{format(currentDate, 'EEEE, MMMM d, yyyy')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {getSchedulesForDate(currentDate).length === 0 ? (
-                <p className="py-8 text-center text-gray-500">No schedules for this day</p>
-              ) : (
-                getSchedulesForDate(currentDate).map((schedule) => (
-                  <div
-                    key={schedule.id}
-                    className="cursor-pointer rounded-lg border p-4 transition-shadow hover:shadow-md"
-                    onClick={() => router.push(schedule.job?.id ? `/dashboard/jobs/${schedule.job.id}` : `/dashboard/schedule/${schedule.id}`)}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <h3 className="font-semibold">{schedule.title}</h3>
-                        <p className="mt-1 text-sm text-gray-600">
-                          {formatDateTime(schedule.startTime)} - {formatDateTime(schedule.endTime)}
-                        </p>
-                        <p className="mt-1 text-sm text-gray-500">
-                          {schedule.user.firstName} {schedule.user.lastName}
-                        </p>
-                        {schedule.job && (
-                          <p className="mt-1 text-sm text-blue-600">
-                            Job {schedule.job.jobNumber}{' \u2022 '}{schedule.job.client.name}
-                          </p>
-                        )}
-                        {schedule.description && <p className="mt-2 text-sm text-gray-600">{schedule.description}</p>}
-                      </div>
-                      <span className="rounded bg-blue-100 px-2 py-1 text-xs text-blue-800">{schedule.type}</span>
+          {/* CALENDAR CONTENT — scrolls with the page */}
+          <div className="flex-1 min-w-0 pb-10">
+
+            {/* ── DAY VIEW ── */}
+            {view === 'day' && (
+              <div className="space-y-4">
+                <DayCalendar
+                  day={currentDate}
+                  scheduledJobs={scheduledJobs}
+                  timeSlots={timeSlots}
+                  activeDragJobId={activeDragJobId}
+                  canDragJob={canDragJob}
+                  onOpenJob={(jobId) => router.push(`/dashboard/jobs/${jobId}`)}
+                />
+                {getSchedulesForDate(currentDate).filter((s) => !s.job).length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">Other Schedule Entries</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {getSchedulesForDate(currentDate)
+                        .filter((s) => !s.job)
+                        .map((schedule) => (
+                          <div
+                            key={schedule.id}
+                            className="cursor-pointer rounded-lg border p-4 transition-shadow hover:shadow-md"
+                            onClick={() => router.push(`/dashboard/schedule/${schedule.id}`)}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <h3 className="font-semibold">{schedule.title}</h3>
+                                <p className="mt-1 text-sm text-gray-600">
+                                  {formatDateTime(schedule.startTime)} – {formatDateTime(schedule.endTime)}
+                                </p>
+                                <p className="mt-1 text-sm text-gray-500">
+                                  {schedule.user.firstName} {schedule.user.lastName}
+                                </p>
+                                {schedule.description && (
+                                  <p className="mt-2 text-sm text-gray-600">{schedule.description}</p>
+                                )}
+                              </div>
+                              <span className="rounded bg-blue-100 px-2 py-1 text-xs text-blue-800">{schedule.type}</span>
+                            </div>
+                          </div>
+                        ))}
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            )}
+
+            {/* ── WEEK VIEW ── */}
+            {view === 'week' && (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Dispatch Calendar</CardTitle>
+                  <CardDescription>Drag from Unscheduled to a time slot, drag between slots to reschedule, or back to Unscheduled.</CardDescription>
+                </CardHeader>
+                <CardContent className="overflow-x-auto p-0">
+                  <div className="min-w-[700px]">
+                    <div className="grid grid-cols-[80px_repeat(7,minmax(100px,1fr))] border-b bg-gray-50">
+                      <div className="p-2 text-xs font-semibold text-gray-500">Time</div>
+                      {weekDays.map((day) => (
+                        <div key={day.toISOString()} className={`border-l p-2 text-center ${isToday(day) ? 'bg-blue-50' : ''}`}>
+                          <p className="text-xs font-medium uppercase text-gray-500">{format(day, 'EEE')}</p>
+                          <p className={`text-sm font-semibold ${isToday(day) ? 'text-blue-700' : 'text-gray-900'}`}>{format(day, 'MMM d')}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div>
+                      {timeSlots.map((hour) => (
+                        <div key={hour} className="grid grid-cols-[80px_repeat(7,minmax(100px,1fr))] border-b last:border-b-0">
+                          <div className="border-r p-2 text-xs text-gray-500 flex items-start pt-2">
+                            {format(addHours(new Date(new Date().setHours(0, 0, 0, 0)), hour), 'h:mm a')}
+                          </div>
+                          {weekDays.map((day) => {
+                            const slotDate = new Date(day)
+                            slotDate.setHours(hour, 0, 0, 0)
+                            const jobsInSlot = getScheduledJobsForSlot(day, hour)
+                            return (
+                              <CalendarSlot
+                                key={slotIdForDate(slotDate)}
+                                slotId={slotIdForDate(slotDate)}
+                                jobs={jobsInSlot}
+                                onOpenJob={(jobId) => router.push(`/dashboard/jobs/${jobId}`)}
+                                activeDragJobId={activeDragJobId}
+                                canDragJob={canDragJob}
+                              />
+                            )
+                          })}
+                        </div>
+                      ))}
                     </div>
                   </div>
-                ))
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+                </CardContent>
+              </Card>
+            )}
 
-      {view === 'month' && (
-        <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="mb-2 grid grid-cols-7 gap-2">
-                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
-                  <div key={day} className="text-center text-sm font-medium text-gray-500">
-                    {day}
+            {/* ── MONTH VIEW ── */}
+            {view === 'month' && (
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="mb-2 grid grid-cols-7 gap-1">
+                    {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
+                      <div key={day} className="py-1 text-center text-sm font-medium text-gray-500">
+                        {day}
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-              <div className="grid grid-cols-7 gap-2">
-                {generateMonthDays().map((day) => {
-                  const inCurrentMonth = isSameMonth(day, currentDate)
-                  const isCurrentDay = isToday(day)
-                  const dayJobs = scheduledJobs
-                    .filter((job) => job.scheduledStart && isSameDay(new Date(job.scheduledStart), day))
-                    .sort((a, b) => {
-                      const aStart = a.scheduledStart ? new Date(a.scheduledStart).getTime() : 0
-                      const bStart = b.scheduledStart ? new Date(b.scheduledStart).getTime() : 0
-                      return aStart - bStart
-                    })
-                  const visibleJobs = dayJobs.slice(0, 3)
-                  const remaining = Math.max(0, dayJobs.length - visibleJobs.length)
+                  <div className="grid grid-cols-7 gap-1">
+                    {generateMonthDays().map((day) => {
+                      const inCurrentMonth = isSameMonth(day, currentDate)
+                      const isCurrentDay = isToday(day)
+                      const dayJobs = scheduledJobs
+                        .filter((job) => job.scheduledStart && isSameDay(new Date(job.scheduledStart), day))
+                        .sort((a, b) => {
+                          const aStart = a.scheduledStart ? new Date(a.scheduledStart).getTime() : 0
+                          const bStart = b.scheduledStart ? new Date(b.scheduledStart).getTime() : 0
+                          return aStart - bStart
+                        })
+                      const visibleJobs = dayJobs.slice(0, 3)
+                      const remaining = Math.max(0, dayJobs.length - visibleJobs.length)
 
-                  return (
-                    <MonthDayCell
-                      key={day.toISOString()}
-                      day={day}
-                      inCurrentMonth={inCurrentMonth}
-                      isCurrentDay={isCurrentDay}
-                      jobs={visibleJobs}
-                      remaining={remaining}
-                      onOpenJob={(jobId) => router.push(`/dashboard/jobs/${jobId}`)}
-                      onOpenDay={() => {
-                        setCurrentDate(day)
-                        setView('day')
-                      }}
-                      activeDragJobId={activeDragJobId}
-                      canDragJob={canDragJob}
-                    />
-                  )
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        </DndContext>
-      )}
+                      return (
+                        <MonthDayCell
+                          key={day.toISOString()}
+                          day={day}
+                          inCurrentMonth={inCurrentMonth}
+                          isCurrentDay={isCurrentDay}
+                          jobs={visibleJobs}
+                          remaining={remaining}
+                          onOpenJob={(jobId) => router.push(`/dashboard/jobs/${jobId}`)}
+                          onOpenDay={() => {
+                            setCurrentDate(day)
+                            setView('day')
+                          }}
+                          activeDragJobId={activeDragJobId}
+                          canDragJob={canDragJob}
+                        />
+                      )
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+          </div>
+        </div>
+      </DndContext>
     </div>
   )
 }
@@ -966,12 +1005,12 @@ function UnscheduledPanel({
   const { isOver, setNodeRef } = useDroppable({ id: 'unscheduled' })
 
   return (
-    <Card className={`h-[78vh] ${isOver ? 'ring-2 ring-blue-500 ring-offset-2' : ''}`}>
-      <CardHeader className="pb-3">
+    <Card className={`flex flex-col h-full ${isOver ? 'ring-2 ring-blue-500 ring-offset-2' : ''}`}>
+      <CardHeader className="pb-3 flex-none">
         <CardTitle className="text-base">Unscheduled Jobs</CardTitle>
         <CardDescription>Drag into the calendar to schedule.</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-3" ref={setNodeRef}>
+      <CardContent className="flex flex-col flex-1 gap-3 overflow-hidden pb-3" ref={setNodeRef}>
         <div className="relative">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
           <Input value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Search jobs..." className="pl-9" />
@@ -1021,7 +1060,7 @@ function UnscheduledPanel({
           </Select>
         </div>
 
-        <div className="h-[52vh] space-y-2 overflow-y-auto pr-1">
+        <div className="flex-1 min-h-0 space-y-2 overflow-y-auto pr-1">
           {jobs.length === 0 && !loading ? (
             <p className="rounded-md border border-dashed p-4 text-center text-sm text-gray-500">No unscheduled jobs found.</p>
           ) : (
@@ -1282,5 +1321,61 @@ function MonthJobChip({
     >
       {job.scheduledStart ? format(new Date(job.scheduledStart), 'h:mm a') : '9:00 AM'} {job.jobNumber} {job.title}
     </button>
+  )
+}
+
+function DayCalendar({
+  day,
+  scheduledJobs,
+  timeSlots,
+  activeDragJobId,
+  canDragJob,
+  onOpenJob,
+}: {
+  day: Date
+  scheduledJobs: JobItem[]
+  timeSlots: number[]
+  activeDragJobId: string | null
+  canDragJob: (job: JobItem) => boolean
+  onOpenJob: (jobId: string) => void
+}) {
+  const getJobsForHour = (hour: number) => {
+    return scheduledJobs.filter((job) => {
+      if (!job.scheduledStart) return false
+      const start = new Date(job.scheduledStart)
+      return isSameDay(start, day) && start.getHours() === hour
+    })
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">{format(day, 'EEEE, MMMM d, yyyy')}</CardTitle>
+        <CardDescription>Drag jobs from Unscheduled to assign a time slot.</CardDescription>
+      </CardHeader>
+      <CardContent className="overflow-x-auto p-0">
+        <div className="min-w-[400px]">
+          {timeSlots.map((hour) => {
+            const slotDate = new Date(day)
+            slotDate.setHours(hour, 0, 0, 0)
+            const jobsInSlot = getJobsForHour(hour)
+            return (
+              <div key={hour} className="grid grid-cols-[80px_1fr] border-b last:border-b-0">
+                <div className="border-r p-2 text-xs text-gray-500 flex items-start pt-2.5">
+                  {format(addHours(new Date(new Date().setHours(0, 0, 0, 0)), hour), 'h:mm a')}
+                </div>
+                <CalendarSlot
+                  slotId={slotIdForDate(slotDate)}
+                  jobs={jobsInSlot}
+                  onOpenJob={onOpenJob}
+                  activeDragJobId={activeDragJobId}
+                  canDragJob={canDragJob}
+                />
+              </div>
+            )
+          })}
+        </div>
+      </CardContent>
+    </Card>
   )
 }
