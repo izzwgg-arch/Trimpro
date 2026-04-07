@@ -140,61 +140,53 @@ export function VoiceNoteBubble({
   // ── Color scheme ─────────────────────────────────────────────────────────
   const out = isOutgoing
 
-  // Play icon — no background circle, just the raw icon on the bubble bg
-  const playIconColor = out ? 'rgba(255,255,255,0.88)' : colors.brandPrimary
-
-  // Waveform: played = dimmer, unplayed = brighter (color, not height change)
-  const waveActive   = out ? 'rgba(255,255,255,0.40)' : `rgba(46,74,89,0.28)`
-  const waveInactive = out ? 'rgba(255,255,255,0.88)' : `rgba(46,74,89,0.80)`
-
-  // Progress dot: contrast color that pops on the bubble background
-  const dotColor = out ? '#FFFFFF' : colors.brandPrimary
-
-  const metaColor = out ? 'rgba(255,255,255,0.75)' : colors.textSecondary
-
-  // Speed badge colors (left slot when active)
-  const spdBg  = out ? 'rgba(0,0,0,0.28)' : 'rgba(0,0,0,0.07)'
-  const spdCol = out ? '#FFFFFF' : colors.textPrimary
-
-  // Avatar slot colors (outgoing idle)
-  const avBg  = out ? 'rgba(255,255,255,0.18)' : '#dbe7ef'
-  const avTxt = out ? 'rgba(255,255,255,0.95)' : colors.brandPrimary
-  const micBg = out ? 'rgba(255,255,255,0.22)' : colors.brandPrimary
+  // All voice notes use the same dark-bubble palette (outgoing style)
+  const playIconColor = 'rgba(255,255,255,0.88)'
+  const waveActive   = 'rgba(255,255,255,0.40)'
+  const waveInactive = 'rgba(255,255,255,0.88)'
+  const dotColor     = '#FFFFFF'
+  const metaColor    = 'rgba(255,255,255,0.75)'
+  const spdBg        = 'rgba(0,0,0,0.28)'
+  const spdCol       = '#FFFFFF'
+  const avBg         = 'rgba(255,255,255,0.18)'
+  const avTxt        = 'rgba(255,255,255,0.95)'
+  const micBg        = 'rgba(255,255,255,0.22)'
 
   const currentSpeed = SPEED_STEPS[spdIdx]
   const speedLabel   = currentSpeed === 1 ? '1\u00D7' : currentSpeed === 1.5 ? '1.5\u00D7' : '2\u00D7'
   const durLabel     = (isPlaying || positionMs > 0) ? positionMs : effDur
   const dotLeft      = Math.max(0, Math.min(100, progress * 100))
 
-  // ── Left slot logic ───────────────────────────────────────────────────────
-  //   OUTGOING: always shown — avatar (idle) or speed badge (active)
-  //   INCOMING: only shown when active (speed badge); hidden when idle
-  //   This matches real WhatsApp: outgoing has avatar, incoming has no avatar.
-  const showLeftSlot = out || isActiveTrack
-  const metaIndent   = showLeftSlot ? META_INDENT_OUT : META_INDENT_IN
+  // ── Slot logic ────────────────────────────────────────────────────────────
+  //   OUTGOING idle  : avatar on LEFT
+  //   OUTGOING active: speed badge on LEFT
+  //   INCOMING idle  : avatar on RIGHT
+  //   INCOMING active: speed badge on LEFT
+  const showLeftSlot  = out || isActiveTrack       // outgoing always, or speed badge when active
+  const showRightSlot = !out && !isActiveTrack     // incoming idle: avatar on right
+  const metaIndent    = showLeftSlot ? META_INDENT_OUT : META_INDENT_IN
+
+  const renderAvatarView = () => (
+    <View style={styles.avatarSlot}>
+      {senderAvatarUrl ? (
+        <Image source={{ uri: senderAvatarUrl }} style={styles.avatarImg} />
+      ) : (
+        <View style={[styles.avatarFallback, { backgroundColor: avBg }]}>
+          <Text style={[styles.avatarInitial, { color: avTxt }]}>{senderInitials || '?'}</Text>
+        </View>
+      )}
+    </View>
+  )
 
   const renderLeftSlot = () => {
     if (isActiveTrack) {
-      // Speed badge — same for both outgoing and incoming
       return (
         <Pressable style={[styles.avatarSlot, { backgroundColor: spdBg }]} onPress={cycleSpeed} hitSlop={6}>
           <Text style={[styles.speedText, { color: spdCol }]}>{speedLabel}</Text>
         </Pressable>
       )
     }
-    // Outgoing idle: sender's own avatar + mic badge
-    return (
-      <View style={styles.avatarSlot}>
-        {senderAvatarUrl ? (
-          <Image source={{ uri: senderAvatarUrl }} style={styles.avatarImg} />
-        ) : (
-          <View style={[styles.avatarFallback, { backgroundColor: avBg }]}>
-            <Text style={[styles.avatarInitial, { color: avTxt }]}>{senderInitials || '?'}</Text>
-          </View>
-        )}
-        {/* mic badge removed — keep avatar clean */}
-      </View>
-    )
+    return renderAvatarView()
   }
 
   // ── No-URL fallback ───────────────────────────────────────────────────────
@@ -266,13 +258,12 @@ export function VoiceNoteBubble({
                   styles.barFill,
                   {
                     height: barH(amp),
-                    // Played = dimmer opacity, Unplayed = brighter (color-only distinction)
                     backgroundColor: i < activeBars ? waveActive : waveInactive,
                   },
                 ]} />
               </View>
             ))}
-            {/* Progress playhead — synced to real positionMs / durationMs */}
+            {/* Progress playhead */}
             <View
               style={[styles.dot, {
                 width: DOT_SIZE, height: DOT_SIZE, borderRadius: DOT_SIZE / 2,
@@ -284,6 +275,9 @@ export function VoiceNoteBubble({
             />
           </View>
         </View>
+
+        {/* Right slot — incoming idle: avatar on right */}
+        {showRightSlot && renderAvatarView()}
 
       </View>
 

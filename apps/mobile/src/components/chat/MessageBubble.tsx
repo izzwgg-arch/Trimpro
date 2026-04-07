@@ -233,7 +233,8 @@ export function MessageBubble({
 
   return (
     <Animated.View style={[styles.container, isMine ? styles.mineContainer : styles.otherContainer, { transform: [{ translateX }] }]}>
-      {!isMine ? (
+      {/* Side avatar: hide for incoming voice-only — avatar lives inside the bubble on the right */}
+      {!isMine && !hasOnlyVoiceAttachment ? (
         <View style={styles.sideAvatar}>
           {message.sender?.avatar ? (
             <Image source={{ uri: message.sender.avatar }} style={styles.sideAvatarImage} />
@@ -255,6 +256,7 @@ export function MessageBubble({
           styles.bubble,
           isMine ? styles.mineBubble : styles.otherBubble,
           hasOnlyVoiceAttachment && styles.voiceOnlyBubble,
+          hasOnlyVoiceAttachment && !isMine && styles.incomingVoiceBubble,
           hasOnlyMediaAttachment && styles.mediaOnlyBubble,
           message.replyTo && (isMine ? styles.replyBubbleMine : styles.replyBubbleOther),
         ]}
@@ -523,6 +525,11 @@ const styles = StyleSheet.create({
     minWidth: VOICE_BUBBLE_MIN_WIDTH,
     paddingHorizontal: 10,
     paddingVertical: 4,
+  },
+  // Incoming voice note: same dark appearance as outgoing, no border
+  incomingVoiceBubble: {
+    backgroundColor: colors.brandPrimary,
+    borderWidth: 0,
   },
   replyBubbleMine: {
     minWidth: REPLY_BUBBLE_MIN_WIDTH_MINE,
