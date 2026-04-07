@@ -1233,6 +1233,7 @@ export function MessageThreadScreen({ route, navigation }: Props) {
             if ('type' in item && item.type === 'DATE') {
               return <DateSeparator date={item.date} />
             }
+            try {
             const message = item as ChatMessage | OptimisticMessage
             const isMine = message.senderId === user?.id
             const resolvedReplyTo = message.replyTo || replyFallbackByMessageId[message.id]
@@ -1273,6 +1274,10 @@ export function MessageThreadScreen({ route, navigation }: Props) {
                 onLongPress={() => openMessageActions(message)}
               />
             )
+            } catch (e) {
+              console.error('[renderItem crash]', e)
+              return null
+            }
           }}
         />
 

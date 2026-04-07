@@ -1,6 +1,5 @@
 import * as Haptics from 'expo-haptics'
-import * as VideoThumbnails from 'expo-video-thumbnails'
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useMemo, useRef, useState } from 'react'
 import {
   Animated,
   Dimensions,
@@ -38,32 +37,15 @@ function resolveMediaUrl(url: string | null | undefined): string {
 const REACTION_PICKER_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'] as const
 
 /**
- * Video thumbnail preview — only generates a frame from LOCAL file URIs
- * (file:// or content://) to avoid downloading large remote video files.
- * Remote/HTTP URLs fall back to a film-icon placeholder.
+ * Video preview — shows a film-icon placeholder with a play button overlay.
+ * No native video-thumbnail module needed; avoids potential module-load crashes.
  */
-function VideoThumbPreview({ videoUrl }: { videoUrl: string }) {
-  const [thumbUri, setThumbUri] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    const isLocal = videoUrl.startsWith('file://') || videoUrl.startsWith('content://')
-    if (!isLocal) return   // never download remote video just for a thumbnail
-    VideoThumbnails.getThumbnailAsync(videoUrl, { time: 1000 })
-      .then(({ uri }) => { if (!cancelled) setThumbUri(uri) })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [videoUrl])
-
+function VideoThumbPreview() {
   return (
     <View style={styles.videoThumbContainer}>
-      {thumbUri ? (
-        <Image source={{ uri: thumbUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-      ) : (
-        <View style={styles.videoPlaceholder}>
-          <Ionicons name="film-outline" size={36} color="rgba(255,255,255,0.6)" />
-        </View>
-      )}
+      <View style={styles.videoPlaceholder}>
+        <Ionicons name="film-outline" size={36} color="rgba(255,255,255,0.6)" />
+      </View>
       <View style={styles.playOverlay}>
         <Ionicons name="play-circle" size={52} color="rgba(255,255,255,0.92)" />
       </View>
@@ -334,7 +316,7 @@ export function MessageBubble({
                   else Linking.openURL(vidUrl)
                 }}
               >
-                <VideoThumbPreview videoUrl={vidUrl} />
+                <VideoThumbPreview />
               </Pressable>
             )
           }
