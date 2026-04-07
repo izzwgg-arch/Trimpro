@@ -1,5 +1,6 @@
 import * as Haptics from 'expo-haptics'
-import React, { useCallback, useMemo, useRef, useState } from 'react'
+import * as VideoThumbnails from 'expo-video-thumbnails'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Animated,
   Dimensions,
@@ -35,6 +36,40 @@ function resolveMediaUrl(url: string | null | undefined): string {
 }
 
 const REACTION_PICKER_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'] as const
+
+/**
+ * Video thumbnail preview — only generates a frame from LOCAL file URIs
+ * (file:// or content://) to avoid downloading large remote video files.
+ * Remote/HTTP URLs fall back to a film-icon placeholder.
+ */
+function VideoThumbPreview({ videoUrl }: { videoUrl: string }) {
+  const [thumbUri, setThumbUri] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const isLocal = videoUrl.startsWith('file://') || videoUrl.startsWith('content://')
+    if (!isLocal) return   // never download remote video just for a thumbnail
+    VideoThumbnails.getThumbnailAsync(videoUrl, { time: 1000 })
+      .then(({ uri }) => { if (!cancelled) setThumbUri(uri) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [videoUrl])
+
+  return (
+    <View style={styles.videoThumbContainer}>
+      {thumbUri ? (
+        <Image source={{ uri: thumbUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+      ) : (
+        <View style={styles.videoPlaceholder}>
+          <Ionicons name="film-outline" size={36} color="rgba(255,255,255,0.6)" />
+        </View>
+      )}
+      <View style={styles.playOverlay}>
+        <Ionicons name="play-circle" size={52} color="rgba(255,255,255,0.92)" />
+      </View>
+    </View>
+  )
+}
 
 interface MessageBubbleProps {
   message: ChatMessage | { sender?: ChatMessage['sender'] | null; [key: string]: any }
@@ -78,8 +113,8 @@ function statusIcon(status: string) {
 }
 
 const SCREEN_WIDTH = Dimensions.get('window').width
-const VOICE_BUBBLE_MAX_WIDTH = Math.round(SCREEN_WIDTH * 0.86)
-const VOICE_BUBBLE_MIN_WIDTH = Math.round(Math.min(SCREEN_WIDTH * 0.70, 320))
+const VOICE_BUBBLE_MAX_WIDTH = Math.round(SCREEN_WIDTH * 0.76)   // shorter side-to-side
+const VOICE_BUBBLE_MIN_WIDTH = Math.round(Math.min(SCREEN_WIDTH * 0.62, 270))
 const STANDARD_BUBBLE_MAX_WIDTH = Math.round(SCREEN_WIDTH * 0.82)
 const REPLY_BUBBLE_MIN_WIDTH_MINE = Math.round(Math.max(270, Math.min(SCREEN_WIDTH * 0.74, 390)))
 const REPLY_BUBBLE_MIN_WIDTH_OTHER = Math.round(Math.max(250, Math.min(SCREEN_WIDTH * 0.7, 370)))
@@ -208,10 +243,16 @@ export function MessageBubble({
     !!message.attachments?.length &&
     message.attachments.every((attachment: any) => attachment.kind === 'VOICE')
 
+  // Image/video-only — use minimal padding so the media fills the bubble
+  const hasOnlyMediaAttachment =
+    !message.text &&
+    !!message.attachments?.length &&
+    message.attachments.every((attachment: any) => attachment.kind === 'IMAGE' || attachment.kind === 'VIDEO')
+
   return (
     <Animated.View style={[styles.container, isMine ? styles.mineContainer : styles.otherContainer, { transform: [{ translateX }] }]}>
       {!isMine ? (
-        <View style={[styles.sideAvatar, hasOnlyVoiceAttachment && styles.sideAvatarHidden]}>
+        <View style={styles.sideAvatar}>
           {message.sender?.avatar ? (
             <Image source={{ uri: message.sender.avatar }} style={styles.sideAvatarImage} />
           ) : (
@@ -232,6 +273,7 @@ export function MessageBubble({
           styles.bubble,
           isMine ? styles.mineBubble : styles.otherBubble,
           hasOnlyVoiceAttachment && styles.voiceOnlyBubble,
+          hasOnlyMediaAttachment && styles.mediaOnlyBubble,
           message.replyTo && (isMine ? styles.replyBubbleMine : styles.replyBubbleOther),
         ]}
         onLongPress={openReactionPicker}
@@ -267,41 +309,32 @@ export function MessageBubble({
         {message.attachments?.map((attachment: any, idx: number) => {
           const attachmentId = 'id' in attachment ? attachment.id : `att-${idx}`
           if (attachment.kind === 'IMAGE') {
+            const imgUrl = resolveMediaUrl(attachment.url)
             return (
               <Pressable
                 key={attachmentId}
-                style={styles.imageContainer}
+                style={styles.mediaThumb}
                 onPress={() => {
-                  if (onImagePress) {
-                    onImagePress(attachment.url, attachment.fileName || null)
-                  } else {
-                    Linking.openURL(attachment.url)
-                  }
+                  if (onImagePress) onImagePress(imgUrl, attachment.fileName || null)
+                  else Linking.openURL(imgUrl)
                 }}
               >
-                <Image source={{ uri: attachment.url }} style={styles.image} resizeMode="cover" />
+                <Image source={{ uri: imgUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
               </Pressable>
             )
           }
           if (attachment.kind === 'VIDEO') {
+            const vidUrl = resolveMediaUrl(attachment.url)
             return (
               <Pressable
                 key={attachmentId}
-                style={styles.videoContainer}
+                style={styles.mediaThumb}
                 onPress={() => {
-                  if (onImagePress) {
-                    onImagePress(attachment.url, attachment.fileName || null)
-                  } else {
-                    Linking.openURL(attachment.url)
-                  }
+                  if (onImagePress) onImagePress(vidUrl, attachment.fileName || null)
+                  else Linking.openURL(vidUrl)
                 }}
               >
-                {attachment.thumbnailUrl ? (
-                  <Image source={{ uri: attachment.thumbnailUrl }} style={styles.image} resizeMode="cover" />
-                ) : null}
-                <View style={styles.playOverlay}>
-                  <Ionicons name="play-circle" size={40} color={colors.surface} />
-                </View>
+                <VideoThumbPreview videoUrl={vidUrl} />
               </Pressable>
             )
           }
@@ -339,24 +372,38 @@ export function MessageBubble({
             )
           }
           if (attachment.kind === 'FILE') {
+            const fileUrl = resolveMediaUrl(attachment.url)
+            const ext = String(attachment.fileName || '').split('.').pop()?.toLowerCase() || ''
+            const fileIcon =
+              ext === 'pdf' ? 'document-text' :
+              ext === 'doc' || ext === 'docx' ? 'document' :
+              ext === 'xls' || ext === 'xlsx' || ext === 'csv' ? 'grid' :
+              ext === 'ppt' || ext === 'pptx' ? 'easel' :
+              ext === 'zip' || ext === 'rar' ? 'archive' :
+              'document-outline'
+            const sizeLabel = attachment.sizeBytes
+              ? attachment.sizeBytes > 1024 * 1024
+                ? `${(attachment.sizeBytes / (1024 * 1024)).toFixed(1)} MB`
+                : `${(attachment.sizeBytes / 1024).toFixed(0)} KB`
+              : null
             return (
               <Pressable
                 key={attachmentId}
                 style={[styles.fileContainer, isMine && styles.fileContainerMine]}
-                onPress={() => Linking.openURL(attachment.url)}
+                onPress={() => Linking.openURL(fileUrl)}
               >
-                <Ionicons name="document" size={20} color={isMine ? colors.surface : colors.brandPrimary} />
+                <View style={[styles.fileIconWrap, isMine && styles.fileIconWrapMine]}>
+                  <Ionicons name={fileIcon as any} size={22} color={isMine ? colors.brandPrimary : colors.surface} />
+                </View>
                 <View style={styles.fileInfo}>
-                  <Text style={[styles.fileName, isMine && styles.fileNameMine]} numberOfLines={1}>
+                  <Text style={[styles.fileName, isMine && styles.fileNameMine]} numberOfLines={2}>
                     {attachment.fileName || 'File'}
                   </Text>
-                  {attachment.sizeBytes && (
-                    <Text style={[styles.fileSize, isMine && styles.fileSizeMine]}>
-                      {(attachment.sizeBytes / 1024).toFixed(1)} KB
-                    </Text>
-                  )}
+                  {sizeLabel ? (
+                    <Text style={[styles.fileSize, isMine && styles.fileSizeMine]}>{sizeLabel}</Text>
+                  ) : null}
                 </View>
-                <Ionicons name="download-outline" size={18} color={isMine ? colors.surface : colors.brandPrimary} />
+                <Ionicons name="open-outline" size={18} color={isMine ? 'rgba(255,255,255,0.7)' : colors.textSecondary} />
               </Pressable>
             )
           }
@@ -493,7 +540,7 @@ const styles = StyleSheet.create({
     maxWidth: VOICE_BUBBLE_MAX_WIDTH,
     minWidth: VOICE_BUBBLE_MIN_WIDTH,
     paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingVertical: 4,
   },
   replyBubbleMine: {
     minWidth: REPLY_BUBBLE_MIN_WIDTH_MINE,
@@ -569,22 +616,44 @@ const styles = StyleSheet.create({
   linkTextMine: {
     color: '#BFE0FF',
   },
-  imageContainer: {
-    marginTop: 4,
-    borderRadius: 12,
+  // Minimal bubble frame for image/video-only messages — nearly flush
+  mediaOnlyBubble: {
+    padding: 1,
+    borderRadius: 16,
+  },
+  // Outer pressable container — same size for both photo and video
+  mediaThumb: {
+    width: '100%',
+    aspectRatio: 4 / 3,
+    borderRadius: 13,
     overflow: 'hidden',
+    backgroundColor: '#111827',
+    marginTop: 2,
   },
-  image: {
-    width: 200,
-    height: 200,
-    maxWidth: '100%',
+  // VideoThumbPreview fills its parent mediaThumb container absolutely
+  videoThumbContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  videoContainer: {
-    marginTop: 4,
-    borderRadius: 12,
-    overflow: 'hidden',
-    position: 'relative',
+  videoPlaceholder: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
+  // Legacy refs — kept so remaining code doesn't break
+  mediaAttachment: { width: '100%', aspectRatio: 4 / 3, borderRadius: 13, overflow: 'hidden' },
+  imageContainer: {},
+  image: { width: '100%', height: '100%' },
+  videoContainer: {},
   playOverlay: {
     position: 'absolute',
     top: 0,
@@ -593,7 +662,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.3)',
   },
   locationContainer: {
     flexDirection: 'row',
@@ -626,6 +694,18 @@ const styles = StyleSheet.create({
   },
   locationCoordsMine: {
     color: colors.surface + 'CC',
+  },
+  fileIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: colors.brandPrimary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  fileIconWrapMine: {
+    backgroundColor: 'rgba(255,255,255,0.9)',
   },
   fileContainer: {
     flexDirection: 'row',

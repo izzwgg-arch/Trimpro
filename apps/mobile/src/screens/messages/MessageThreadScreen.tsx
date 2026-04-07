@@ -1256,12 +1256,19 @@ export function MessageThreadScreen({ route, navigation }: Props) {
                 }}
                 onJobPress={(jobId) => Linking.openURL(`trimpro://jobs/${jobId}`)}
                 onImagePress={(uri, fileName) => {
-                  const attachment = message.attachments?.find((a) => a.url === uri)
-                  if (attachment?.kind === 'IMAGE') {
-                    setViewingMedia({ uri, fileName, kind: 'IMAGE' })
-                  } else if (attachment?.kind === 'VIDEO') {
-                    setViewingMedia({ uri, fileName, kind: 'VIDEO' })
-                  }
+                  // uri is the resolved absolute URL; attachment.url may still be relative
+                  const attachment = message.attachments?.find((a: any) => {
+                    if (!a.url) return false
+                    if (a.url === uri) return true
+                    const resolved = a.url.startsWith('/') ? `${API_BASE_URL}${a.url}` : a.url
+                    return resolved === uri
+                  })
+                  // Determine kind: use attachment data or fall back to extension detection
+                  const kind: 'IMAGE' | 'VIDEO' =
+                    attachment?.kind === 'VIDEO' || /\.(mp4|mov|avi|mkv|webm|m4v)$/i.test(uri)
+                      ? 'VIDEO'
+                      : 'IMAGE'
+                  setViewingMedia({ uri, fileName, kind })
                 }}
                 onLongPress={() => openMessageActions(message)}
               />

@@ -8,14 +8,19 @@ import { computeWaveformPlaybackFrame } from '../../screens/messages/message-thr
 const SPEED_STEPS = [1, 1.5, 2] as const
 type SpeedStep = (typeof SPEED_STEPS)[number]
 
-// ── Geometry constants — pixel-tuned to match WhatsApp reference ──────────
-const AVATAR_SIZE   = 42   // left-slot circle (avatar or speed badge)
-const PLAY_SIZE     = 28   // play/pause circle — same as before
-const DOT_SIZE      = 9    // white progress playhead (9 px = crisper, closer to WA)
-const WAVE_H        = 20   // waveform track height — slimmer strip feel
-const ELEM_GAP      = 5    // 5 px between every element (tighter = more WA-like)
-// Duration / timestamp indent: text baseline aligns with left edge of waveform
-const META_INDENT   = AVATAR_SIZE + ELEM_GAP + PLAY_SIZE + ELEM_GAP  // 80 px
+// ── Geometry ─────────────────────────────────────────────────────────────
+const AVATAR_SIZE  = 44   // outgoing left-slot: avatar / speed badge
+const PLAY_SIZE    = 36   // play/pause touch area (transparent bg — icon only visually)
+const PLAY_ICON    = 26   // triangle icon — larger to fill the touch area visually
+const DOT_SIZE     = 10   // progress playhead diameter
+const WAVE_H       = 30   // waveform fills nearly the full row height (row = 36px)
+const ELEM_GAP     = 5    // gap between row elements
+
+// META_INDENT: duration row aligns with left edge of waveform content.
+// Outgoing (has avatar slot): AVATAR_SIZE + ELEM_GAP + PLAY_SIZE + ELEM_GAP = 90px
+// Incoming (no avatar): PLAY_SIZE + ELEM_GAP = 41px
+const META_INDENT_OUT = AVATAR_SIZE + ELEM_GAP + PLAY_SIZE + ELEM_GAP  // 90
+const META_INDENT_IN  = PLAY_SIZE  + ELEM_GAP                          // 40
 
 interface VoiceNoteBubbleProps {
   messageId: string
@@ -29,23 +34,34 @@ interface VoiceNoteBubbleProps {
   onLongPress?: () => void
 }
 
-/** 44 deterministic amplitude values seeded from messageId.
- *  44 bars gives ~3.4 px/cell on a 150 px waveform, so bars are 2 px wide
- *  with ~1.4 px breathing room — matching the WA reference density. */
-function seededWaveform(id: string, bars = 44): number[] {
+/**
+ * 44-bar waveform — deterministic, natural speech-like amplitude pattern.
+ * Bars render at their FULL natural height in ALL states (rest / played /
+ * unplayed).  Color opacity is what distinguishes played from unplayed,
+ * matching real WhatsApp appearance.
+ */
+function seededWaveform(id: string, count = 36): number[] {
   let seed = 0
   for (let i = 0; i < id.length; i++) seed = (seed * 31 + id.charCodeAt(i)) >>> 0
-  return Array.from({ length: bars }, () => {
+  return Array.from({ length: count }, () => {
     seed = (seed * 1664525 + 1013904223) >>> 0
     const n = (seed % 1000) / 1000
-    const peak = (seed % 9 === 0) ? 0.95 : (seed % 5 === 0) ? 0.75 : (seed % 3 === 0) ? 0.55 : 0.28
-    return Math.max(0.1, Math.min(1, n * 0.52 + peak * 0.48))
+    const peak = seed % 9 === 0 ? 0.95 : seed % 5 === 0 ? 0.75 : seed % 3 === 0 ? 0.55 : 0.28
+    return Math.max(0.1, Math.min(1, n * 0.5 + peak * 0.5))
   })
 }
 
+/**
+ * Bar height: natural speech amplitude in ALL states.
+ * WhatsApp bars are NOT uniform dots at rest — they show the waveform shape.
+ * Played vs unplayed is distinguished by color opacity, not height.
+ */
+function barH(amp: number): number {
+  return amp < 0.12 ? 3 : Math.round(3 + amp * 22)  // 3 – 25 px inside 30 px track
+}
+
 function statusIcon(s?: string) {
-  if (s === 'READ' || s === 'DELIVERED') return '\u{2713}\u{2713}'
-  return '\u{2713}'
+  return s === 'READ' || s === 'DELIVERED' ? '\u{2713}\u{2713}' : '\u{2713}'
 }
 
 function formatMs(ms: number) {
@@ -61,25 +77,11 @@ function speedIdx(s: number) {
 function sanitize(raw: string): string {
   if (
     raw.length > 200 ||
-    raw.includes('FileNotFoundException') ||
-    raw.includes('ExoPlaybackException') ||
-    raw.includes('FileDataSource') ||
-    raw.includes('MediaCodec') ||
-    raw.includes('com.google.') ||
-    raw.includes('java.io.') ||
-    raw.includes('android.')
+    raw.includes('FileNotFoundException') || raw.includes('ExoPlaybackException') ||
+    raw.includes('FileDataSource') || raw.includes('MediaCodec') ||
+    raw.includes('com.google.') || raw.includes('java.io.') || raw.includes('android.')
   ) return "Couldn\u2019t play audio"
   return raw.length > 80 ? "Couldn\u2019t play audio" : raw
-}
-
-/**
- * Bar height matching the WhatsApp reference visual logic:
- *   at rest / played  → 3 px uniform dot (consumed)
- *   unplayed region   → natural amplitude bar capped at 19 px (inside 20 px track)
- */
-function barH(amp: number, idx: number, active: number, isCurrentTrack: boolean): number {
-  if (!isCurrentTrack || idx < active) return 3
-  return amp < 0.15 ? 3 : Math.round(3 + amp * 16)  // max ≈ 19 px, stays inside WAVE_H
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -100,13 +102,13 @@ export function VoiceNoteBubble({
     speed, positionMs, durationMs: liveDurationMs, isActiveTrack,
   } = useVoicePlaybackController(messageId)
 
-  const bars = useMemo(() => seededWaveform(messageId), [messageId])
+  const bars   = useMemo(() => seededWaveform(messageId), [messageId])
   const [waveW, setWaveW] = useState(0)
   const [spdIdx, setSpdIdx] = useState(0)
   const [playErr, setPlayErr] = useState<string | null>(null)
 
-  const hasUrl  = typeof audioUrl === 'string' && audioUrl.trim().length > 0
-  const effDur  = Math.max(1, liveDurationMs || durationMs || 1000)
+  const hasUrl = typeof audioUrl === 'string' && audioUrl.trim().length > 0
+  const effDur = Math.max(1, liveDurationMs || durationMs || 1000)
   const { progress, activeBars } = computeWaveformPlaybackFrame({
     positionMs, durationMs: effDur, barsCount: bars.length, waveformWidth: waveW,
   })
@@ -119,7 +121,7 @@ export function VoiceNoteBubble({
     void setSpeed(SPEED_STEPS[next])
   }, [spdIdx, setSpeed])
 
-  const seekAt = (x: number) => { if (waveW > 0 && hasUrl) void seek(x / waveW) }
+  const seekAt     = (x: number) => { if (waveW > 0 && hasUrl) void seek(x / waveW) }
   const onWaveLayout = (e: LayoutChangeEvent) => setWaveW(e.nativeEvent.layout.width)
 
   const togglePlay = async () => {
@@ -137,41 +139,52 @@ export function VoiceNoteBubble({
 
   // ── Color scheme ─────────────────────────────────────────────────────────
   const out = isOutgoing
-  // Play button: subtle transparent circle so the icon is the focus (like WA reference)
-  const playBg        = out ? 'rgba(255,255,255,0.15)' : colors.brandPrimary
-  const playIcon      = out ? 'rgba(255,255,255,0.95)' : '#FFFFFF'
-  // Waveform: slightly bolder inactive bars so they read on teal background
-  const waveActive    = out ? 'rgba(255,255,255,0.95)' : 'rgba(46,74,89,0.88)'
-  const waveInactive  = out ? 'rgba(255,255,255,0.52)' : 'rgba(46,74,89,0.22)'
-  const metaCol       = out ? 'rgba(255,255,255,0.75)' : colors.textSecondary
-  // Speed badge
-  const spdBg         = out ? 'rgba(0,0,0,0.28)' : 'rgba(0,0,0,0.07)'
-  const spdCol        = out ? '#FFFFFF'           : colors.textPrimary
-  // Avatar fallback bg/text
-  const avBg          = out ? 'rgba(255,255,255,0.18)' : '#dbe7ef'
-  const avTxt         = out ? 'rgba(255,255,255,0.95)' : colors.brandPrimary
-  // Mic badge on avatar
-  const micBg         = out ? 'rgba(255,255,255,0.25)' : colors.brandPrimary
-  const micIcon       = out ? colors.brandPrimary : '#fff'
 
-  const currentSpeed  = SPEED_STEPS[spdIdx]
-  const speedLabel    = currentSpeed === 1 ? '1\u00D7' : currentSpeed === 1.5 ? '1.5\u00D7' : '2\u00D7'
-  const durLabel      = (isPlaying || positionMs > 0) ? positionMs : effDur
-  const dotLeft       = Math.max(0, Math.min(100, progress * 100))
+  // Play icon — no background circle, just the raw icon on the bubble bg
+  const playIconColor = out ? 'rgba(255,255,255,0.88)' : colors.brandPrimary
 
-  // ── Left slot ─────────────────────────────────────────────────────────────
-  // Active track → speed badge (pressable)
-  // Idle (any direction) → sender avatar circle with mic badge
-  const LeftSlot = () => {
+  // Waveform: played = dimmer, unplayed = brighter (color, not height change)
+  const waveActive   = out ? 'rgba(255,255,255,0.40)' : `rgba(46,74,89,0.28)`
+  const waveInactive = out ? 'rgba(255,255,255,0.88)' : `rgba(46,74,89,0.80)`
+
+  // Progress dot: contrast color that pops on the bubble background
+  const dotColor = out ? '#FFFFFF' : colors.brandPrimary
+
+  const metaColor = out ? 'rgba(255,255,255,0.75)' : colors.textSecondary
+
+  // Speed badge colors (left slot when active)
+  const spdBg  = out ? 'rgba(0,0,0,0.28)' : 'rgba(0,0,0,0.07)'
+  const spdCol = out ? '#FFFFFF' : colors.textPrimary
+
+  // Avatar slot colors (outgoing idle)
+  const avBg  = out ? 'rgba(255,255,255,0.18)' : '#dbe7ef'
+  const avTxt = out ? 'rgba(255,255,255,0.95)' : colors.brandPrimary
+  const micBg = out ? 'rgba(255,255,255,0.22)' : colors.brandPrimary
+
+  const currentSpeed = SPEED_STEPS[spdIdx]
+  const speedLabel   = currentSpeed === 1 ? '1\u00D7' : currentSpeed === 1.5 ? '1.5\u00D7' : '2\u00D7'
+  const durLabel     = (isPlaying || positionMs > 0) ? positionMs : effDur
+  const dotLeft      = Math.max(0, Math.min(100, progress * 100))
+
+  // ── Left slot logic ───────────────────────────────────────────────────────
+  //   OUTGOING: always shown — avatar (idle) or speed badge (active)
+  //   INCOMING: only shown when active (speed badge); hidden when idle
+  //   This matches real WhatsApp: outgoing has avatar, incoming has no avatar.
+  const showLeftSlot = out || isActiveTrack
+  const metaIndent   = showLeftSlot ? META_INDENT_OUT : META_INDENT_IN
+
+  const renderLeftSlot = () => {
     if (isActiveTrack) {
+      // Speed badge — same for both outgoing and incoming
       return (
-        <Pressable style={[styles.avatar, { backgroundColor: spdBg }]} onPress={cycleSpeed} hitSlop={6}>
+        <Pressable style={[styles.avatarSlot, { backgroundColor: spdBg }]} onPress={cycleSpeed} hitSlop={6}>
           <Text style={[styles.speedText, { color: spdCol }]}>{speedLabel}</Text>
         </Pressable>
       )
     }
+    // Outgoing idle: sender's own avatar + mic badge
     return (
-      <View style={styles.avatar}>
+      <View style={styles.avatarSlot}>
         {senderAvatarUrl ? (
           <Image source={{ uri: senderAvatarUrl }} style={styles.avatarImg} />
         ) : (
@@ -179,38 +192,38 @@ export function VoiceNoteBubble({
             <Text style={[styles.avatarInitial, { color: avTxt }]}>{senderInitials || '?'}</Text>
           </View>
         )}
-        <View style={[styles.micBadge, { backgroundColor: micBg }]}>
-          <Ionicons name="mic" size={8} color={micIcon} />
-        </View>
+        {/* mic badge removed — keep avatar clean */}
       </View>
     )
   }
 
-  // ── Fallback (no URL) ────────────────────────────────────────────────────
+  // ── No-URL fallback ───────────────────────────────────────────────────────
   if (!hasUrl) {
     return (
       <Pressable style={styles.root} onLongPress={onLongPress}>
         <View style={styles.row}>
-          <View style={[styles.avatar, { backgroundColor: spdBg, opacity: 0.6 }]}>
-            <Ionicons name="mic-off-outline" size={16} color={metaCol} />
-          </View>
-          <View style={[styles.playBtn, { backgroundColor: playBg, opacity: 0.5 }]}>
-            <Ionicons name="play" size={16} color={playIcon} style={styles.playOffset} />
+          {out && (
+            <View style={[styles.avatarSlot, { backgroundColor: spdBg, opacity: 0.5 }]}>
+              <Ionicons name="mic-off-outline" size={16} color={metaColor} />
+            </View>
+          )}
+          <View style={[styles.playArea, { opacity: 0.5 }]}>
+            <Ionicons name="play" size={PLAY_ICON} color={playIconColor} style={styles.playOffset} />
           </View>
           <View style={styles.waveBlock} onLayout={onWaveLayout}>
             <View style={styles.waveTrack}>
-              {bars.map((_, i) => (
+              {bars.map((amp, i) => (
                 <View key={i} style={styles.barCell}>
-                  <View style={[styles.barFill, { height: 3, backgroundColor: waveInactive }]} />
+                  <View style={[styles.barFill, { height: barH(amp), backgroundColor: waveInactive }]} />
                 </View>
               ))}
             </View>
           </View>
         </View>
-        <View style={styles.meta}>
-          <Text style={[styles.dur, { color: metaCol }]}>–:––</Text>
+        <View style={[styles.meta, { paddingLeft: metaIndent }]}>
+          <Text style={[styles.dur, { color: metaColor }]}>–:––</Text>
           <View style={styles.metaRight}>
-            <Text style={[styles.ts, { color: metaCol }]}>Unavailable · {timestamp}</Text>
+            <Text style={[styles.ts, { color: metaColor }]}>{timestamp}</Text>
           </View>
         </View>
       </Pressable>
@@ -221,26 +234,23 @@ export function VoiceNoteBubble({
   return (
     <Pressable style={styles.root} onLongPress={onLongPress}>
 
-      {/* ── Main row: [avatar/speed] [play] [waveform] ── */}
+      {/* ── [avatar/speed?] [play] [waveform + dot] ── */}
       <View style={styles.row}>
 
-        <LeftSlot />
+        {/* Left slot — present for outgoing always, for incoming only when active */}
+        {showLeftSlot && renderLeftSlot()}
 
-        {/* Play / pause */}
-        <Pressable
-          style={[styles.playBtn, { backgroundColor: playBg }]}
-          onPress={() => void togglePlay()}
-          hitSlop={10}
-        >
+        {/* Play / pause — transparent bg, icon only (matches WhatsApp) */}
+        <Pressable style={styles.playArea} onPress={() => void togglePlay()} hitSlop={8}>
           <Ionicons
             name={isPlaying ? 'pause' : 'play'}
-            size={16}
-            color={playIcon}
+            size={PLAY_ICON}
+            color={playIconColor}
             style={isPlaying ? undefined : styles.playOffset}
           />
         </Pressable>
 
-        {/* Waveform + progress dot */}
+        {/* Waveform + scrub + progress dot */}
         <View
           style={styles.waveBlock}
           onLayout={onWaveLayout}
@@ -254,14 +264,19 @@ export function VoiceNoteBubble({
               <View key={`${messageId}-${i}`} style={styles.barCell}>
                 <View style={[
                   styles.barFill,
-                  { height: barH(amp, i, activeBars, isActiveTrack), backgroundColor: i < activeBars ? waveActive : waveInactive },
+                  {
+                    height: barH(amp),
+                    // Played = dimmer opacity, Unplayed = brighter (color-only distinction)
+                    backgroundColor: i < activeBars ? waveActive : waveInactive,
+                  },
                 ]} />
               </View>
             ))}
-            {/* White playhead dot — always present, synced to real positionMs */}
+            {/* Progress playhead — synced to real positionMs / durationMs */}
             <View
               style={[styles.dot, {
                 width: DOT_SIZE, height: DOT_SIZE, borderRadius: DOT_SIZE / 2,
+                backgroundColor: dotColor,
                 top: '50%', marginTop: -(DOT_SIZE / 2),
                 left: `${dotLeft}%`, marginLeft: -(DOT_SIZE / 2),
               }]}
@@ -272,21 +287,21 @@ export function VoiceNoteBubble({
 
       </View>
 
-      {/* ── Error (sanitized) ── */}
+      {/* Error hint — sanitized, never raw exception */}
       {playErr ? (
-        <View style={styles.errRow}>
-          <Ionicons name="alert-circle-outline" size={11} color={metaCol} />
-          <Text style={[styles.errText, { color: metaCol }]}>{playErr}</Text>
+        <View style={[styles.errRow, { paddingLeft: metaIndent }]}>
+          <Ionicons name="alert-circle-outline" size={11} color={metaColor} />
+          <Text style={[styles.errText, { color: metaColor }]}>{playErr}</Text>
         </View>
       ) : null}
 
-      {/* ── Metadata row ── */}
-      <View style={styles.meta}>
-        <Text style={[styles.dur, { color: metaCol }]}>{formatMs(durLabel)}</Text>
+      {/* Duration | timestamp + delivery */}
+      <View style={[styles.meta, { paddingLeft: metaIndent }]}>
+        <Text style={[styles.dur, { color: metaColor }]}>{formatMs(durLabel)}</Text>
         <View style={styles.metaRight}>
-          <Text style={[styles.ts, { color: metaCol }]}>{timestamp}</Text>
+          <Text style={[styles.ts, { color: metaColor }]}>{timestamp}</Text>
           {isOutgoing ? (
-            <Text style={[styles.check, deliveryStatus === 'READ' && styles.checkRead, { color: metaCol }]}>
+            <Text style={[styles.check, deliveryStatus === 'READ' && styles.checkRead, { color: metaColor }]}>
               {statusIcon(deliveryStatus)}
             </Text>
           ) : null}
@@ -300,20 +315,18 @@ export function VoiceNoteBubble({
 // ─────────────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  root: {
-    width: '100%',
-    marginTop: 2,
-  },
+  root: { width: '100%', marginTop: 2 },
 
-  // ── Main row ──────────────────────────────────────────────────────────────
   row: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: ELEM_GAP,
+    width: '100%',
   },
 
-  // ── Avatar / speed-badge slot (always AVATAR_SIZE × AVATAR_SIZE) ─────────
-  avatar: {
+  // ── Avatar / speed-badge slot ─────────────────────────────────────────────
+  avatarSlot: {
     width: AVATAR_SIZE,
     height: AVATAR_SIZE,
     borderRadius: AVATAR_SIZE / 2,
@@ -335,7 +348,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   avatarInitial: {
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '700',
     letterSpacing: -0.3,
   },
@@ -355,22 +368,23 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
   },
 
-  // ── Play / pause ──────────────────────────────────────────────────────────
-  playBtn: {
+  // ── Play / pause — transparent, icon is the visual ────────────────────────
+  playArea: {
     width: PLAY_SIZE,
     height: PLAY_SIZE,
-    borderRadius: PLAY_SIZE / 2,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
+    // backgroundColor intentionally omitted — transparent, icon only
   },
-  playOffset: { marginLeft: 1 },
+  playOffset: { marginLeft: 2 },
 
   // ── Waveform ──────────────────────────────────────────────────────────────
   waveBlock: {
     flex: 1,
     height: WAVE_H,
     justifyContent: 'center',
+    alignSelf: 'center',
     minWidth: 40,
   },
   waveTrack: {
@@ -385,23 +399,20 @@ const styles = StyleSheet.create({
     minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    // 0.75 px padding each side → ~1.5 px gap between 2 px bars (matches WA reference)
-    paddingHorizontal: 0.75,
+    paddingHorizontal: 1,
   },
   barFill: {
-    // Hard 2 px — guaranteed regardless of cell math
-    width: 2,
-    borderRadius: 1,
-    minHeight: 2,
+    width: 3,
+    borderRadius: 1.5,
+    minHeight: 3,
   },
 
   // ── Progress dot ──────────────────────────────────────────────────────────
   dot: {
     position: 'absolute',
-    backgroundColor: '#FFFFFF',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.3,
     shadowRadius: 2,
     elevation: 4,
   },
@@ -412,13 +423,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     marginTop: 3,
-    paddingLeft: META_INDENT,
   },
-  errText: {
-    ...typography.caption,
-    fontSize: 11,
-    lineHeight: 15,
-  },
+  errText: { ...typography.caption, fontSize: 11, lineHeight: 15 },
 
   // ── Metadata ──────────────────────────────────────────────────────────────
   meta: {
@@ -426,28 +432,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingLeft: META_INDENT,
+    width: '100%',  // ensure full width so space-between pushes check to true right edge
   },
-  dur: {
-    ...typography.caption,
-    fontSize: 11,
-  },
-  metaRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
-  ts: {
-    ...typography.caption,
-    fontSize: 11,
-  },
-  check: {
-    ...typography.caption,
-    fontSize: 11,
-    fontWeight: '700',
-    marginTop: -1,
-  },
-  checkRead: {
-    color: '#9BD0FF',
-  },
+  dur:   { ...typography.caption, fontSize: 11 },
+  metaRight: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  ts:    { ...typography.caption, fontSize: 11 },
+  check: { ...typography.caption, fontSize: 11, fontWeight: '700', marginTop: -1 },
+  checkRead: { color: '#9BD0FF' },
 })
