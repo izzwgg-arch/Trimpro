@@ -225,11 +225,13 @@ export function MessageBubble({
     !!message.attachments?.length &&
     message.attachments.every((attachment: any) => attachment.kind === 'VOICE')
 
-  // Image/video-only — use minimal padding so the media fills the bubble
+  // All-media bubble (with or without caption text) — use minimal outer padding
   const hasOnlyMediaAttachment =
-    !message.text &&
     !!message.attachments?.length &&
     message.attachments.every((attachment: any) => attachment.kind === 'IMAGE' || attachment.kind === 'VIDEO')
+
+  // Photo/video with a text caption — text lives BELOW the media
+  const hasMediaWithText = hasOnlyMediaAttachment && !!message.text?.trim()
 
   return (
     <Animated.View style={[styles.container, isMine ? styles.mineContainer : styles.otherContainer, { transform: [{ translateX }] }]}>
@@ -279,7 +281,8 @@ export function MessageBubble({
             </Text>
           </Pressable>
         )}
-        {message.text ? <Text style={[styles.text, isMine && styles.textMine]}>{renderMessageText(message.text, isMine)}</Text> : null}
+        {/* Text rendered at top only when there is no media — captions render below the photo */}
+        {message.text && !hasMediaWithText ? <Text style={[styles.text, isMine && styles.textMine]}>{renderMessageText(message.text, isMine)}</Text> : null}
         {message.attachments?.map((attachment: any, idx: number) => {
           const attachmentId = 'id' in attachment ? attachment.id : `att-${idx}`
           if (attachment.kind === 'IMAGE') {
@@ -383,8 +386,14 @@ export function MessageBubble({
           }
           return null
         })}
+        {/* Caption text below photo/video — only when media + text */}
+        {hasMediaWithText ? (
+          <View style={[styles.mediaCaptionWrap, isMine && styles.mediaCaptionWrapMine]}>
+            <Text style={[styles.text, isMine && styles.textMine]}>{renderMessageText(message.text!, isMine)}</Text>
+          </View>
+        ) : null}
         {!hasOnlyVoiceAttachment ? (
-          <View style={styles.footer}>
+          <View style={[styles.footer, hasOnlyMediaAttachment && styles.footerMedia]}>
             <Text style={[styles.time, isMine && styles.timeMine]}>
               {formatMessageTime(message.createdAt)}
             </Text>
@@ -590,19 +599,30 @@ const styles = StyleSheet.create({
   linkTextMine: {
     color: '#BFE0FF',
   },
-  // Minimal bubble frame for image/video-only messages — nearly flush
+  // Minimal bubble frame for image/video messages — nearly flush to photo edges
   mediaOnlyBubble: {
     padding: 1,
     borderRadius: 16,
   },
-  // Outer pressable container — same size for both photo and video
+  // Photo/video container — fills almost the full bubble with no extra margin
   mediaThumb: {
     width: '100%',
     aspectRatio: 4 / 3,
     borderRadius: 13,
     overflow: 'hidden',
     backgroundColor: '#111827',
-    marginTop: 2,
+  },
+  // Caption text below photo — gets its own horizontal + vertical padding
+  mediaCaptionWrap: {
+    paddingHorizontal: 10,
+    paddingTop: 6,
+    paddingBottom: 2,
+  },
+  mediaCaptionWrapMine: {},
+  // Footer inside a media bubble needs its own padding (outer bubble padding is 1px)
+  footerMedia: {
+    paddingHorizontal: 8,
+    paddingBottom: 4,
   },
   // VideoThumbPreview fills its parent mediaThumb container absolutely
   videoThumbContainer: {
