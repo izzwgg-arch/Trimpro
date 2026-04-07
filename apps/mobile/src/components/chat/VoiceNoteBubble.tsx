@@ -8,14 +8,14 @@ import { computeWaveformPlaybackFrame } from '../../screens/messages/message-thr
 const SPEED_STEPS = [1, 1.5, 2] as const
 type SpeedStep = (typeof SPEED_STEPS)[number]
 
-// ── Geometry constants — tuned to match WhatsApp reference ─────────────────
-const AVATAR_SIZE   = 42   // left-slot circle diameter
-const PLAY_SIZE     = 28   // play/pause circle diameter (smaller than avatar)
-const DOT_SIZE      = 11   // white progress playhead
-const WAVE_H        = 22   // waveform track height
-const ELEM_GAP      = 6    // gap between every element in the main row
-// meta row indent: content starts under the play button / waveform, not the avatar
-const META_INDENT   = AVATAR_SIZE + ELEM_GAP + PLAY_SIZE + ELEM_GAP  // 82 px
+// ── Geometry constants — pixel-tuned to match WhatsApp reference ──────────
+const AVATAR_SIZE   = 42   // left-slot circle (avatar or speed badge)
+const PLAY_SIZE     = 28   // play/pause circle — same as before
+const DOT_SIZE      = 9    // white progress playhead (9 px = crisper, closer to WA)
+const WAVE_H        = 20   // waveform track height — slimmer strip feel
+const ELEM_GAP      = 5    // 5 px between every element (tighter = more WA-like)
+// Duration / timestamp indent: text baseline aligns with left edge of waveform
+const META_INDENT   = AVATAR_SIZE + ELEM_GAP + PLAY_SIZE + ELEM_GAP  // 80 px
 
 interface VoiceNoteBubbleProps {
   messageId: string
@@ -29,8 +29,10 @@ interface VoiceNoteBubbleProps {
   onLongPress?: () => void
 }
 
-/** 50 deterministic amplitude values seeded from messageId. */
-function seededWaveform(id: string, bars = 50): number[] {
+/** 44 deterministic amplitude values seeded from messageId.
+ *  44 bars gives ~3.4 px/cell on a 150 px waveform, so bars are 2 px wide
+ *  with ~1.4 px breathing room — matching the WA reference density. */
+function seededWaveform(id: string, bars = 44): number[] {
   let seed = 0
   for (let i = 0; i < id.length; i++) seed = (seed * 31 + id.charCodeAt(i)) >>> 0
   return Array.from({ length: bars }, () => {
@@ -72,13 +74,12 @@ function sanitize(raw: string): string {
 
 /**
  * Bar height matching the WhatsApp reference visual logic:
- *   at rest         → uniform 3 px dot
- *   played region   → 3 px dot (consumed / compressed)
- *   unplayed region → natural amplitude bar (4..18 px)
+ *   at rest / played  → 3 px uniform dot (consumed)
+ *   unplayed region   → natural amplitude bar capped at 19 px (inside 20 px track)
  */
 function barH(amp: number, idx: number, active: number, isCurrentTrack: boolean): number {
   if (!isCurrentTrack || idx < active) return 3
-  return amp < 0.15 ? 4 : Math.round(4 + amp * 14)  // max ≈ 18 px, well inside WAVE_H
+  return amp < 0.15 ? 3 : Math.round(3 + amp * 16)  // max ≈ 19 px, stays inside WAVE_H
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -194,7 +195,7 @@ export function VoiceNoteBubble({
             <Ionicons name="mic-off-outline" size={16} color={metaCol} />
           </View>
           <View style={[styles.playBtn, { backgroundColor: playBg, opacity: 0.5 }]}>
-            <Ionicons name="play" size={11} color={playIcon} style={styles.playOffset} />
+            <Ionicons name="play" size={16} color={playIcon} style={styles.playOffset} />
           </View>
           <View style={styles.waveBlock} onLayout={onWaveLayout}>
             <View style={styles.waveTrack}>
@@ -233,7 +234,7 @@ export function VoiceNoteBubble({
         >
           <Ionicons
             name={isPlaying ? 'pause' : 'play'}
-            size={11}
+            size={16}
             color={playIcon}
             style={isPlaying ? undefined : styles.playOffset}
           />
@@ -363,7 +364,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexShrink: 0,
   },
-  playOffset: { marginLeft: 2 },
+  playOffset: { marginLeft: 1 },
 
   // ── Waveform ──────────────────────────────────────────────────────────────
   waveBlock: {
@@ -384,11 +385,12 @@ const styles = StyleSheet.create({
     minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 0.5,
+    // 0.75 px padding each side → ~1.5 px gap between 2 px bars (matches WA reference)
+    paddingHorizontal: 0.75,
   },
   barFill: {
-    width: '100%',
-    maxWidth: 2,
+    // Hard 2 px — guaranteed regardless of cell math
+    width: 2,
     borderRadius: 1,
     minHeight: 2,
   },
@@ -420,7 +422,7 @@ const styles = StyleSheet.create({
 
   // ── Metadata ──────────────────────────────────────────────────────────────
   meta: {
-    marginTop: 4,
+    marginTop: 3,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
