@@ -95,7 +95,10 @@ function statusIcon(status: string) {
 }
 
 const SCREEN_WIDTH = Dimensions.get('window').width
-const VOICE_BUBBLE_MAX_WIDTH = Math.round(SCREEN_WIDTH * 0.76)   // shorter side-to-side
+// Hybrid cap: phones stay at 76 % of screen width (unchanged); tablets/large screens
+// are capped at 400 px so the voice note never stretches into a wide empty bar.
+// Breakeven ~526 px screen width — all common phone sizes stay below this threshold.
+const VOICE_BUBBLE_MAX_WIDTH = Math.min(Math.round(SCREEN_WIDTH * 0.76), 400)
 const VOICE_BUBBLE_MIN_WIDTH = Math.round(Math.min(SCREEN_WIDTH * 0.62, 270))
 const STANDARD_BUBBLE_MAX_WIDTH = Math.round(SCREEN_WIDTH * 0.82)
 const REPLY_BUBBLE_MIN_WIDTH_MINE = Math.round(Math.max(270, Math.min(SCREEN_WIDTH * 0.74, 390)))
