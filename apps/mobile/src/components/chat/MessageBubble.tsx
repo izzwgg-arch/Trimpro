@@ -153,22 +153,56 @@ export function MessageBubble({
   const hasTriggeredReply = useRef(false)
   const SWIPE_THRESHOLD = 60
   const [reactionPickerOpen, setReactionPickerOpen] = useState(false)
-  const pickerScale = useRef(new Animated.Value(0.92)).current
+  const pickerScale = useRef(new Animated.Value(0.88)).current
+  // Per-emoji staggered pop-in animations
+  const emojiAnims = useRef(
+    REACTION_PICKER_EMOJIS.map(() => ({
+      scale: new Animated.Value(0),
+      translateY: new Animated.Value(14),
+    }))
+  ).current
 
   const openReactionPicker = useCallback(() => {
     if (onReaction) {
       setReactionPickerOpen(true)
-      pickerScale.setValue(0.92)
+      // Reset all values before animating
+      pickerScale.setValue(0.88)
+      emojiAnims.forEach(({ scale, translateY }) => {
+        scale.setValue(0)
+        translateY.setValue(14)
+      })
+      // Popup container springs in
       Animated.spring(pickerScale, {
         toValue: 1,
-        friction: 7,
-        tension: 120,
+        friction: 6,
+        tension: 140,
         useNativeDriver: true,
       }).start()
+      // Each emoji pops in with a staggered jump — 35 ms apart
+      emojiAnims.forEach(({ scale, translateY }, i) => {
+        const delay = i * 35
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.parallel([
+            Animated.spring(scale, {
+              toValue: 1,
+              friction: 4,
+              tension: 200,
+              useNativeDriver: true,
+            }),
+            Animated.spring(translateY, {
+              toValue: 0,
+              friction: 6,
+              tension: 160,
+              useNativeDriver: true,
+            }),
+          ]),
+        ]).start()
+      })
     } else {
       onLongPress?.()
     }
-  }, [onReaction, onLongPress, pickerScale])
+  }, [onReaction, onLongPress, pickerScale, emojiAnims])
 
   const closeReactionPicker = useCallback(() => {
     setReactionPickerOpen(false)
@@ -428,14 +462,23 @@ export function MessageBubble({
           <Pressable style={styles.reactionModalBackdrop} onPress={closeReactionPicker} accessibilityRole="button" />
           <Animated.View style={[styles.reactionBar, { transform: [{ scale: pickerScale }] }]}>
             <View style={styles.reactionEmojiRow}>
-              {REACTION_PICKER_EMOJIS.map((emo) => (
-                <Pressable
+              {REACTION_PICKER_EMOJIS.map((emo, i) => (
+                <Animated.View
                   key={emo}
-                  style={styles.reactionEmojiHit}
-                  onPress={() => pickReaction(emo)}
+                  style={{
+                    transform: [
+                      { scale: emojiAnims[i].scale },
+                      { translateY: emojiAnims[i].translateY },
+                    ],
+                  }}
                 >
-                  <Text style={styles.reactionEmojiLarge}>{emo}</Text>
-                </Pressable>
+                  <Pressable
+                    style={styles.reactionEmojiHit}
+                    onPress={() => pickReaction(emo)}
+                  >
+                    <Text style={styles.reactionEmojiLarge}>{emo}</Text>
+                  </Pressable>
+                </Animated.View>
               ))}
             </View>
             {onLongPress ? (
@@ -798,7 +841,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.md,
   },
   reactionModalBackdrop: {
     ...StyleSheet.absoluteFillObject,
@@ -806,30 +849,30 @@ const styles = StyleSheet.create({
   },
   reactionBar: {
     backgroundColor: colors.surface,
-    borderRadius: 20,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
+    borderRadius: 22,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
     width: '100%',
     maxWidth: 360,
     zIndex: 2,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    elevation: 10,
   },
   reactionEmojiRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-around',
+    flexWrap: 'nowrap',       // force single row — never wrap
+    justifyContent: 'space-evenly',
     alignItems: 'center',
-    gap: 4,
   },
   reactionEmojiHit: {
-    padding: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 8,
   },
   reactionEmojiLarge: {
-    fontSize: 28,
+    fontSize: 30,
   },
   reactionMoreRow: {
     flexDirection: 'row',
