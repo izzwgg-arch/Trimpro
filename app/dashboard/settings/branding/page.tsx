@@ -683,12 +683,16 @@ export default function BrandingSettingsPage() {
               </div>
               <Button variant="outline" onClick={closeCropper}>Cancel</Button>
             </div>
-            <div className="relative h-[520px] w-full overflow-hidden rounded border bg-black">
+            <div className="relative h-[600px] w-full overflow-hidden rounded border bg-black">
               <Cropper
                 image={cropImageSrc}
                 crop={{ x: cropX, y: cropY }}
                 zoom={cropZoom}
                 aspect={cropAspect}
+                objectFit="contain"
+                minZoom={0.5}
+                restrictPosition={false}
+                initialCroppedAreaPercentages={{ x: 0, y: 0, width: 100, height: 100 }}
                 onCropChange={(next) => {
                   setCropX(next.x)
                   setCropY(next.y)
@@ -702,7 +706,7 @@ export default function BrandingSettingsPage() {
               <Label className="text-xs">Zoom</Label>
               <input
                 type="range"
-                min={1}
+                min={0.5}
                 max={3}
                 step={0.05}
                 value={cropZoom}
