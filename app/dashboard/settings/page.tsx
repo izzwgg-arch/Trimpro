@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Settings, User, Bell, Shield, Link as LinkIcon, Mail, Phone, Users } from 'lucide-react'
+import { Settings, User, Bell, Shield, Link as LinkIcon, Mail, Phone, Users, Palette } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 export default function SettingsPage() {
@@ -15,6 +15,7 @@ export default function SettingsPage() {
   
   // Determine active tab based on current path
   const getActiveTab = () => {
+    if (pathname?.includes('/settings/branding')) return 'branding'
     if (pathname?.includes('/settings/integrations')) return 'integrations'
     if (pathname?.includes('/settings/roles')) return 'roles'
     return 'profile'
@@ -77,6 +78,17 @@ export default function SettingsPage() {
         >
           <Users className="inline mr-2 h-4 w-4" />
           Roles & Permissions
+        </button>
+        <button
+          onClick={() => router.push('/dashboard/settings/branding')}
+          className={`px-4 py-2 border-b-2 ${
+            activeTab === 'branding'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          <Palette className="inline mr-2 h-4 w-4" />
+          Branding
         </button>
         <button
           onClick={() => setActiveTab('security')}
