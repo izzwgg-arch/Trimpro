@@ -73,6 +73,7 @@ model Tenant {
   estimateApprovalTokens EstimateApprovalToken[]
   estimateItemApprovals  EstimateItemApproval[]
   invoiceLineItemSources InvoiceLineItemSource[]
+  brandingSettings       BrandingSettings?
 
   @@map("tenants")
 }
@@ -3058,4 +3059,72 @@ model WebhookEvent {
   @@index([eventId])
   @@index([payloadHash])
   @@map("webhook_events")
+}
+
+// ============================================
+// BRANDING SETTINGS
+// ============================================
+
+model BrandingSettings {
+  id       String @id @default(cuid())
+  tenantId String @unique
+
+  // UI Colors
+  primaryColor        String? @db.VarChar(20)
+  secondaryColor      String? @db.VarChar(20)
+  backgroundColor     String? @db.VarChar(20)
+  sidebarColor        String? @db.VarChar(20)
+  menuColor           String? @db.VarChar(20)
+  buttonColor         String? @db.VarChar(20)
+  buttonTextColor     String? @db.VarChar(20)
+  textPrimaryColor    String? @db.VarChar(20)
+  textSecondaryColor  String? @db.VarChar(20)
+  linkColor           String? @db.VarChar(20)
+  borderColor         String? @db.VarChar(20)
+  successColor        String? @db.VarChar(20)
+  warningColor        String? @db.VarChar(20)
+  dangerColor         String? @db.VarChar(20)
+
+  // Logos / Assets
+  webLogoUrl             String? @db.Text
+  faviconUrl             String? @db.Text
+  mobileAppIconUrl       String? @db.Text
+  mobileAppSplashLogoUrl String? @db.Text
+
+  // Invoice settings
+  invoicePdfTemplateId String? @db.VarChar(100)
+  invoiceStyle         String? @db.VarChar(50)
+  invoiceBusinessName  String? @db.VarChar(255)
+  invoicePhone         String? @db.VarChar(50)
+  invoiceEmail         String? @db.VarChar(255)
+  invoiceAddress       String? @db.Text
+  invoiceFooterText    String? @db.Text
+  invoiceLogoUrl       String? @db.Text
+
+  // Email colors
+  emailPrimaryColor            String? @db.VarChar(20)
+  emailButtonColor             String? @db.VarChar(20)
+  emailButtonTextColor         String? @db.VarChar(20)
+  emailBackgroundColor         String? @db.VarChar(20)
+  emailCardBackgroundColor     String? @db.VarChar(20)
+  emailHeaderBackgroundColor   String? @db.VarChar(20)
+  emailFooterBackgroundColor   String? @db.VarChar(20)
+  emailTextPrimaryColor        String? @db.VarChar(20)
+  emailTextSecondaryColor      String? @db.VarChar(20)
+  emailLinkColor               String? @db.VarChar(20)
+  emailBorderColor             String? @db.VarChar(20)
+
+  // Email content
+  emailLogoUrl          String? @db.Text
+  emailFooterText       String? @db.Text
+  emailSignature        String? @db.Text
+  emailCustomHeaderHTML String? @db.Text
+  emailCustomFooterHTML String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("branding_settings")
 }
