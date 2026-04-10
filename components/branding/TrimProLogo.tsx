@@ -32,16 +32,21 @@ interface TrimProLogoProps {
   className?: string
 }
 
+/**
+ * Height caps per size — width is always `auto` so the logo renders at its
+ * natural aspect ratio without squishing.  A max-width guard prevents very
+ * wide panoramic logos from overflowing the sidebar.
+ */
 const sizeMap = {
-  sm: { width: 120, height: 36 },
-  md: { width: 160, height: 48 },
-  lg: { width: 200, height: 60 },
+  sm: { height: 36, maxWidth: 160 },
+  md: { height: 52, maxWidth: 200 },
+  lg: { height: 64, maxWidth: 240 },
 }
 
 const DEFAULT_LOGO = '/branding/trimpro-logo.svg'
 
 export function TrimProLogo({ variant = 'light', size = 'md', className }: TrimProLogoProps) {
-  const dimensions = sizeMap[size]
+  const { height, maxWidth } = sizeMap[size]
   const { webLogoUrl } = useBranding()
   const [errored, setErrored] = useState(false)
 
@@ -53,14 +58,20 @@ export function TrimProLogo({ variant = 'light', size = 'md', className }: TrimP
   const src = !errored && webLogoUrl ? webLogoUrl : DEFAULT_LOGO
 
   return (
-    <div className={cn('inline-flex items-center', className)}>
+    <div
+      className={cn('inline-flex items-center', className)}
+      style={{ height, maxWidth }}
+    >
       <img
         src={src}
         alt="TrimPro"
-        width={dimensions.width}
-        height={dimensions.height}
-        className="block"
-        style={{ width: dimensions.width, height: dimensions.height, objectFit: 'contain' }}
+        className="block h-full w-auto"
+        style={{
+          maxHeight: height,
+          maxWidth,
+          objectFit: 'contain',
+          objectPosition: 'left center',
+        }}
         onError={() => setErrored(true)}
       />
     </div>

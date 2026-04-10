@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -114,11 +114,49 @@ function isValidHex(value: string) {
 function createImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const image = new Image()
+    image.crossOrigin = 'anonymous'
     image.onload = () => resolve(image)
     image.onerror = reject
     image.src = url
   })
 }
+
+/**
+ * Finds the bounding box of non-transparent pixels in a canvas.
+ * Returns null if the canvas is fully transparent.
+ */
+function findContentBounds(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number
+): { x: number; y: number; w: number; h: number } | null {
+  let top = height, bottom = -1, left = width, right = -1
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const alpha = data[(y * width + x) * 4 + 3]
+      if (alpha > 8) {
+        if (y < top) top = y
+        if (y > bottom) bottom = y
+        if (x < left) left = x
+        if (x > right) right = x
+      }
+    }
+  }
+
+  if (bottom < 0) return null
+
+  // 2px padding so content doesn't touch the very edge
+  const pad = 2
+  const x = Math.max(0, left - pad)
+  const y = Math.max(0, top - pad)
+  const w = Math.min(width, right + pad + 1) - x
+  const h = Math.min(height, bottom + pad + 1) - y
+  return { x, y, w, h }
+}
+
+/** Max output dimension (longest side) for saved logo PNGs. */
+const LOGO_MAX_PX = 1200
 
 async function getCroppedImageFile(
   imageSrc: string,
@@ -126,31 +164,73 @@ async function getCroppedImageFile(
   outputName: string
 ): Promise<File> {
   const image = await createImage(imageSrc)
-  const canvas = document.createElement('canvas')
-  const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('Canvas is not available')
 
-  canvas.width = Math.max(1, Math.round(crop.width))
-  canvas.height = Math.max(1, Math.round(crop.height))
+  const cropW = Math.max(1, Math.round(crop.width))
+  const cropH = Math.max(1, Math.round(crop.height))
 
-  ctx.drawImage(
-    image,
-    crop.x,
-    crop.y,
-    crop.width,
-    crop.height,
-    0,
-    0,
-    canvas.width,
-    canvas.height
-  )
+  // Step 1: draw the user's selected crop region at natural pixel size
+  const cropCanvas = document.createElement('canvas')
+  cropCanvas.width = cropW
+  cropCanvas.height = cropH
+  const cropCtx = cropCanvas.getContext('2d')
+  if (!cropCtx) throw new Error('Canvas not available')
+
+  cropCtx.drawImage(image, crop.x, crop.y, cropW, cropH, 0, 0, cropW, cropH)
+
+  // Step 2: auto-trim transparent padding
+  const imageData = cropCtx.getImageData(0, 0, cropW, cropH)
+  const bounds = findContentBounds(imageData.data, cropW, cropH)
+
+  const trimX = bounds?.x ?? 0
+  const trimY = bounds?.y ?? 0
+  const trimW = bounds?.w ?? cropW
+  const trimH = bounds?.h ?? cropH
+
+  // Step 3: scale to LOGO_MAX_PX on the longest side (preserve aspect ratio)
+  const scale = Math.min(1, LOGO_MAX_PX / Math.max(trimW, trimH))
+  const outW = Math.max(1, Math.round(trimW * scale))
+  const outH = Math.max(1, Math.round(trimH * scale))
+
+  const finalCanvas = document.createElement('canvas')
+  finalCanvas.width = outW
+  finalCanvas.height = outH
+  const finalCtx = finalCanvas.getContext('2d')
+  if (!finalCtx) throw new Error('Canvas not available')
+
+  finalCtx.drawImage(cropCanvas, trimX, trimY, trimW, trimH, 0, 0, outW, outH)
 
   const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, 'image/png', 0.92)
+    finalCanvas.toBlob(resolve, 'image/png', 0.95)
   )
   if (!blob) throw new Error('Failed to create cropped image')
 
   return new File([blob], outputName, { type: 'image/png' })
+}
+
+/** Generate a small preview data-URL from the current crop selection (for live preview). */
+async function generateCropPreview(
+  imageSrc: string,
+  crop: Area,
+  previewW: number,
+  previewH: number
+): Promise<string | null> {
+  try {
+    const image = await createImage(imageSrc)
+    const canvas = document.createElement('canvas')
+    canvas.width = previewW
+    canvas.height = previewH
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    // Draw crop region scaled to preview size
+    ctx.drawImage(
+      image,
+      crop.x, crop.y, Math.max(1, crop.width), Math.max(1, crop.height),
+      0, 0, previewW, previewH
+    )
+    return canvas.toDataURL('image/png')
+  } catch {
+    return null
+  }
 }
 
 export default function BrandingSettingsPage() {
@@ -167,6 +247,8 @@ export default function BrandingSettingsPage() {
   const [cropZoom, setCropZoom] = useState(1)
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null)
   const [cropping, setCropping] = useState(false)
+  const [cropPreviewUrl, setCropPreviewUrl] = useState<string | null>(null)
+  const previewDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
 
@@ -292,6 +374,8 @@ export default function BrandingSettingsPage() {
     setCropImageSrc(null)
     setCroppedAreaPixels(null)
     setCropping(false)
+    setCropPreviewUrl(null)
+    if (previewDebounceRef.current) clearTimeout(previewDebounceRef.current)
   }
 
   const confirmCropAndUpload = async () => {
@@ -671,19 +755,22 @@ export default function BrandingSettingsPage() {
 
       {cropImageSrc && cropFieldKey ? (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4">
-          <div className="w-full max-w-3xl rounded-lg bg-white p-4">
-            <div className="mb-3 flex items-center justify-between">
+          <div className="w-full max-w-3xl rounded-lg bg-white p-4 flex flex-col gap-3">
+            {/* Header */}
+            <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm font-semibold">Crop Image</div>
                 <div className="text-xs text-gray-500">
                   {cropFieldKey === 'faviconUrl' || cropFieldKey === 'mobileAppIconUrl'
-                    ? 'Square crop enforced'
-                    : 'Drag to reposition · scroll/pinch to zoom · crop freely'}
+                    ? 'Square crop enforced · zoom in to fill tightly'
+                    : 'Zoom in to remove white/transparent padding · drag to reposition'}
                 </div>
               </div>
               <Button variant="outline" onClick={closeCropper}>Cancel</Button>
             </div>
-            <div className="relative h-[600px] w-full overflow-hidden rounded border bg-black">
+
+            {/* Crop area */}
+            <div className="relative h-[520px] w-full overflow-hidden rounded border bg-black">
               <Cropper
                 image={cropImageSrc}
                 crop={{ x: cropX, y: cropY }}
@@ -691,28 +778,66 @@ export default function BrandingSettingsPage() {
                 aspect={cropAspect}
                 objectFit="contain"
                 minZoom={0.5}
+                maxZoom={15}
                 restrictPosition={false}
                 initialCroppedAreaPercentages={{ x: 0, y: 0, width: 100, height: 100 }}
-                onCropChange={(next) => {
-                  setCropX(next.x)
-                  setCropY(next.y)
-                }}
+                onCropChange={(next) => { setCropX(next.x); setCropY(next.y) }}
                 onZoomChange={setCropZoom}
-                onCropComplete={(_, pixels) => setCroppedAreaPixels(pixels)}
+                onCropComplete={(_, pixels) => {
+                  setCroppedAreaPixels(pixels)
+                  // Debounced live preview
+                  if (previewDebounceRef.current) clearTimeout(previewDebounceRef.current)
+                  previewDebounceRef.current = setTimeout(async () => {
+                    const url = await generateCropPreview(cropImageSrc, pixels, 400, 120)
+                    setCropPreviewUrl(url)
+                  }, 250)
+                }}
                 showGrid
               />
             </div>
-            <div className="mt-4 flex items-center gap-3">
-              <Label className="text-xs">Zoom</Label>
+
+            {/* Zoom slider */}
+            <div className="flex items-center gap-3">
+              <Label className="text-xs shrink-0">Zoom</Label>
               <input
                 type="range"
                 min={0.5}
-                max={3}
-                step={0.05}
+                max={15}
+                step={0.1}
                 value={cropZoom}
                 onChange={(e) => setCropZoom(Number(e.target.value))}
                 className="w-full"
               />
+              <span className="text-xs text-gray-500 shrink-0 w-8 text-right">{cropZoom.toFixed(1)}×</span>
+            </div>
+
+            {/* Live sidebar preview */}
+            {(cropFieldKey === 'webLogoUrl' || cropFieldKey === 'invoiceLogoUrl' || cropFieldKey === 'emailLogoUrl') && (
+              <div className="rounded border bg-gray-50 p-3">
+                <div className="text-xs font-medium text-gray-500 mb-2">Sidebar preview (actual render size)</div>
+                <div
+                  className="flex items-center px-4 gap-3 rounded"
+                  style={{ height: 64, backgroundColor: '#2E4A59' }}
+                >
+                  {cropPreviewUrl ? (
+                    <img
+                      src={cropPreviewUrl}
+                      alt="logo preview"
+                      style={{ height: 52, width: 'auto', maxWidth: 200, objectFit: 'contain', objectPosition: 'left center' }}
+                    />
+                  ) : (
+                    <div className="text-white/40 text-xs">adjust crop to see preview</div>
+                  )}
+                  <div className="ml-auto w-6 h-6 rounded-full bg-white/20" />
+                </div>
+                <div className="text-xs text-gray-400 mt-1">
+                  Transparent edges will be auto-trimmed on save. Zoom in to crop tightly for best results.
+                </div>
+              </div>
+            )}
+
+            {/* Upload button */}
+            <div className="flex justify-end">
               <Button onClick={confirmCropAndUpload} disabled={cropping || !croppedAreaPixels}>
                 {cropping ? 'Uploading...' : 'Crop & Upload'}
               </Button>
