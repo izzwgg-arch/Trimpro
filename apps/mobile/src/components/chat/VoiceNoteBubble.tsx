@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Image, LayoutChangeEvent, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Dimensions, Image, LayoutChangeEvent, Pressable, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { colors, typography } from '../../theme/tokens'
 import { useVoicePlaybackController } from '../../hooks/useVoicePlaybackController'
@@ -7,6 +7,15 @@ import { computeWaveformPlaybackFrame } from '../../screens/messages/message-thr
 
 const SPEED_STEPS = [1, 1.5, 2] as const
 type SpeedStep = (typeof SPEED_STEPS)[number]
+
+// ── Responsive inner cap ──────────────────────────────────────────────────
+// On tablets / large screens (≥ 600 dp) the root Pressable gets a hard
+// maxWidth: 320 so the waveform row can NEVER flex beyond that, regardless
+// of how wide the outer message bubble happens to be.
+// On phones (< 600 dp) no extra constraint is added — the outer bubble
+// already controls the width correctly.
+const _SW = Dimensions.get('window').width
+const TABLET_INNER_CAP: { maxWidth: number } | null = _SW >= 600 ? { maxWidth: 320 } : null
 
 // ── Geometry ─────────────────────────────────────────────────────────────
 const AVATAR_SIZE  = 44   // outgoing left-slot: avatar / speed badge
@@ -192,7 +201,7 @@ export function VoiceNoteBubble({
   // ── No-URL fallback ───────────────────────────────────────────────────────
   if (!hasUrl) {
     return (
-      <Pressable style={styles.root} onLongPress={onLongPress}>
+      <Pressable style={[styles.root, TABLET_INNER_CAP]} onLongPress={onLongPress}>
         <View style={styles.row}>
           {showLeftSlot && (
             <View style={[styles.avatarSlot, { backgroundColor: spdBg, opacity: 0.5 }]}>
@@ -224,7 +233,7 @@ export function VoiceNoteBubble({
 
   // ── Main render ──────────────────────────────────────────────────────────
   return (
-    <Pressable style={styles.root} onLongPress={onLongPress}>
+    <Pressable style={[styles.root, TABLET_INNER_CAP]} onLongPress={onLongPress}>
 
       {/* ── [avatar/speed?] [play] [waveform + dot] ── */}
       <View style={styles.row}>
