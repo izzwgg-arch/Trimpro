@@ -74,6 +74,7 @@ model Tenant {
   estimateItemApprovals  EstimateItemApproval[]
   invoiceLineItemSources InvoiceLineItemSource[]
   brandingSettings       BrandingSettings?
+  measuringRequests      MeasuringRequest[]
 
   @@map("tenants")
 }
@@ -156,6 +157,8 @@ model User {
   createdInvoicePaymentIntents InvoicePaymentIntent[]    @relation("InvoicePaymentIntentCreatedBy")
   pushDevices                  UserPushDevice[]
   requestedPaymentRefunds      PaymentRefund[]
+  assignedMeasuringRequests    MeasuringRequest[]            @relation("MeasuringRequestAssignee")
+  createdMeasuringRequests     MeasuringRequest[]            @relation("MeasuringRequestCreatedBy")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -347,6 +350,8 @@ model Lead {
   assignedToId String?
   assignedTo   User?   @relation("LeadAssignee", fields: [assignedToId], references: [id])
   urgentBy     User?   @relation("LeadUrgentBy", fields: [urgentByUserId], references: [id], onDelete: SetNull)
+
+  measuringRequests MeasuringRequest[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1451,6 +1456,11 @@ model Task {
   updatedAt DateTime @updatedAt
 
   @@index([tenantId])
+  // Notification tracking
+  openedAt             DateTime?
+  lastNotificationAt   DateTime?
+  notificationAttempts Int       @default(0)
+
   @@index([tenantId, assigneeId])
   @@index([tenantId, jobId])
   @@index([tenantId, status])
@@ -1520,6 +1530,11 @@ model Issue {
   firstResponseAt DateTime?
   resolvedAt      DateTime?
   closedAt        DateTime?
+
+  // Notification tracking
+  openedAt             DateTime?
+  lastNotificationAt   DateTime?
+  notificationAttempts Int       @default(0)
 
   // Relationships
   tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -3127,4 +3142,42 @@ model BrandingSettings {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@map("branding_settings")
+}
+
+// ============================================
+// MEASURING REQUESTS
+// ============================================
+
+enum MeasuringRequestStatus {
+  PENDING
+  OPENED
+  COMPLETED
+}
+
+model MeasuringRequest {
+  id               String                 @id @default(cuid())
+  tenantId         String
+  requestId        String
+  assignedUserId   String
+  createdByUserId  String
+  status           MeasuringRequestStatus @default(PENDING)
+  notes            String?                @db.Text
+
+  createdAt            DateTime  @default(now())
+  openedAt             DateTime?
+  completedAt          DateTime?
+  lastNotificationAt   DateTime?
+  notificationAttempts Int       @default(0)
+
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  request     Lead   @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  assignedUser    User @relation("MeasuringRequestAssignee", fields: [assignedUserId], references: [id], onDelete: Cascade)
+  createdByUser   User @relation("MeasuringRequestCreatedBy", fields: [createdByUserId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([requestId])
+  @@index([assignedUserId])
+  @@index([status])
+  @@index([tenantId, assignedUserId, status])
+  @@map("measuring_requests")
 }
