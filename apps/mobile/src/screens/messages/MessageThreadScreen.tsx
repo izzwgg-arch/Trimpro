@@ -1224,7 +1224,7 @@ export function MessageThreadScreen({ route, navigation }: Props) {
             }
             return 'id' in item ? item.id : `opt-${index}`
           }}
-          contentContainerStyle={[styles.listContent, { paddingTop: composerDockHeight + spacing.sm }]}
+          contentContainerStyle={[styles.listContent, { paddingTop: spacing.sm }]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           inverted
