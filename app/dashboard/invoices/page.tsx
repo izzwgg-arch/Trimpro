@@ -13,7 +13,7 @@ import { RowDetailedItem } from '@/components/lists/RowDetailedItem'
 import { TableView } from '@/components/lists/TableView'
 import { PaginationControls } from '@/components/ui/PaginationControls'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { Plus, Search, Filter, DollarSign, Calendar, AlertCircle, Trash2, Copy } from 'lucide-react'
+import { Plus, Search, Filter, DollarSign, AlertCircle, Trash2, Copy, Download } from 'lucide-react'
 import Link from 'next/link'
 
 interface Invoice {
@@ -67,6 +67,7 @@ export default function InvoicesPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [duplicating, setDuplicating] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [exporting, setExporting] = useState(false)
   const [viewMode, setViewMode] = useViewMode('invoices', 'grid')
   const [summary, setSummary] = useState<{
     totalInvoicesAllTime: number
@@ -214,6 +215,44 @@ export default function InvoicesPage() {
     }
   }
 
+  const handleExport = async (scope: 'selected' | 'filtered' | 'all') => {
+    setExporting(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const params = new URLSearchParams()
+      if (scope === 'selected') {
+        if (selectedIds.length === 0) return
+        params.set('ids', selectedIds.join(','))
+      } else if (scope === 'filtered') {
+        if (search)  params.set('search', search)
+        if (status !== 'all') params.set('status', status)
+      }
+      // scope === 'all' sends no params → returns everything
+
+      const res = await fetch(`/api/invoices/export?${params}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) { alert('Export failed'); return }
+
+      const blob = await res.blob()
+      const cd = res.headers.get('Content-Disposition') || ''
+      const nameMatch = cd.match(/filename="([^"]+)"/)
+      const filename = nameMatch ? nameMatch[1] : 'invoices.xlsx'
+
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = filename
+      document.body.appendChild(a); a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      console.error('Export error', e)
+      alert('Export failed')
+    } finally {
+      setExporting(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -232,8 +271,30 @@ export default function InvoicesPage() {
           <h1 className="text-3xl font-bold text-gray-900">Invoices</h1>
           <p className="mt-2 text-gray-600">Manage invoices and payments</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <ViewModeSelector value={viewMode} onChange={setViewMode} />
+
+          {/* Export controls */}
+          <div className="flex items-center gap-1 border border-gray-200 rounded-md overflow-hidden">
+            <button
+              onClick={() => handleExport(selectedIds.length > 0 ? 'selected' : 'filtered')}
+              disabled={exporting}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm bg-white hover:bg-gray-50 text-gray-700 disabled:opacity-50 border-r border-gray-200 transition-colors"
+              title={selectedIds.length > 0 ? `Export ${selectedIds.length} selected invoice(s)` : `Export ${total} filtered invoices`}
+            >
+              <Download className="h-4 w-4 text-emerald-600" />
+              {exporting ? 'Exporting…' : selectedIds.length > 0 ? `Export (${selectedIds.length})` : `Export (${total})`}
+            </button>
+            <button
+              onClick={() => handleExport('all')}
+              disabled={exporting}
+              className="px-2 py-2 text-xs bg-white hover:bg-gray-50 text-gray-500 disabled:opacity-50 transition-colors whitespace-nowrap"
+              title="Export all invoices"
+            >
+              All
+            </button>
+          </div>
+
           <Button
             variant="outline"
             onClick={handleDuplicateSelected}
@@ -285,11 +346,11 @@ export default function InvoicesPage() {
       {/* Search and Filters */}
       <Card>
         <CardContent className="pt-6">
-          <div className="flex items-center space-x-4">
-            <div className="flex-1 relative">
+          <div className="flex items-center space-x-4 flex-wrap gap-y-2">
+            <div className="flex-1 relative min-w-[180px]">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               <Input
-                placeholder="Search invoices by number or title..."
+                placeholder="Search invoices by number, title or client…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-10"
@@ -298,22 +359,38 @@ export default function InvoicesPage() {
             <div className="flex items-center space-x-2">
               <Filter className="h-4 w-4 text-gray-400" />
               <Select value={status} onValueChange={setStatus}>
-                <SelectTrigger className="w-[160px]">
+                <SelectTrigger className="w-[180px]">
                   <SelectValue placeholder="All Status" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Status</SelectItem>
                   <SelectItem value="UNPAID_OVERDUE">Unpaid / Overdue</SelectItem>
+                  <SelectItem value="PAID">Paid</SelectItem>
                   <SelectItem value="DRAFT">Draft</SelectItem>
                   <SelectItem value="SENT">Sent</SelectItem>
                   <SelectItem value="VIEWED">Viewed</SelectItem>
                   <SelectItem value="PARTIAL">Partial</SelectItem>
-                  <SelectItem value="PAID">Paid</SelectItem>
                   <SelectItem value="OVERDUE">Overdue</SelectItem>
                   <SelectItem value="CANCELLED">Cancelled</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            {/* Select / deselect all on page */}
+            <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none whitespace-nowrap">
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={invoices.length > 0 && invoices.every((inv) => selectedIds.includes(inv.id))}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setSelectedIds((prev) => Array.from(new Set([...prev, ...invoices.map((i) => i.id)])))
+                  } else {
+                    setSelectedIds((prev) => prev.filter((id) => !invoices.map((i) => i.id).includes(id)))
+                  }
+                }}
+              />
+              {selectedIds.length > 0 ? `${selectedIds.length} selected` : 'Select page'}
+            </label>
           </div>
         </CardContent>
       </Card>
