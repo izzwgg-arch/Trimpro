@@ -51,6 +51,8 @@ export default function IntegrationProviderPage() {
   const [importingQboInvoices, setImportingQboInvoices] = useState(false)
   const [updatingLineItems, setUpdatingLineItems] = useState(false)
   const [updatingQboItems, setUpdatingQboItems] = useState(false)
+  const [syncingBalances, setSyncingBalances] = useState(false)
+  const [syncBalancesResult, setSyncBalancesResult] = useState<any>(null)
 
   useEffect(() => {
     fetchIntegration()
@@ -470,6 +472,39 @@ export default function IntegrationProviderPage() {
       alert('Failed to update items. Please try again.')
     } finally {
       setUpdatingQboItems(false)
+    }
+  }
+
+  const handleSyncQboBalances = async () => {
+    if (syncingBalances) return
+    setSyncingBalances(true)
+    setSyncBalancesResult(null)
+    try {
+      let token = localStorage.getItem('accessToken')
+      if (!token) { const ok = await refreshToken(); if (!ok) return; token = localStorage.getItem('accessToken') }
+      let response = await fetch('/api/integrations/quickbooks/sync-balances', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (response.status === 401) {
+        const ok = await refreshToken(); if (!ok) return; token = localStorage.getItem('accessToken')
+        response = await fetch('/api/integrations/quickbooks/sync-balances', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      }
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        alert(data.error || 'Balance sync failed')
+        setSyncBalancesResult({ success: false, ...data })
+        return
+      }
+      setSyncBalancesResult({ success: true, ...data })
+    } catch (e) {
+      console.error('QB balance sync failed:', e)
+      alert('Balance sync failed. Please try again.')
+    } finally {
+      setSyncingBalances(false)
     }
   }
 
@@ -937,6 +972,9 @@ export default function IntegrationProviderPage() {
                   <Button onClick={handleQuickBooksImportOpenInvoices} disabled={importingQboInvoices} variant="outline">
                     {importingQboInvoices ? 'Importing...' : 'Import Open Invoices'}
                   </Button>
+                  <Button onClick={handleSyncQboBalances} disabled={syncingBalances} variant="outline">
+                    {syncingBalances ? 'Syncing...' : 'Sync QB Balances'}
+                  </Button>
                 </>
               )}
               <Button onClick={handleUpdateLineItems} disabled={updatingLineItems || status === 'NOT_CONFIGURED'} variant="outline">
@@ -970,6 +1008,34 @@ export default function IntegrationProviderPage() {
                     </div>
                   ) : null}
                 </>
+              )}
+            </div>
+          )}
+
+          {provider === 'quickbooks' && syncBalancesResult && (
+            <div className={`rounded border p-3 text-sm ${syncBalancesResult.success ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+              {syncBalancesResult.success ? (
+                <>
+                  <span className="font-semibold">Balance sync complete.</span>{' '}
+                  Checked: {syncBalancesResult.totalInvoicesChecked ?? 0} invoices ·{' '}
+                  Updated: {syncBalancesResult.synced ?? 0} ·{' '}
+                  Skipped (already correct): {syncBalancesResult.skipped ?? 0}
+                  {syncBalancesResult.errors > 0 && ` · Errors: ${syncBalancesResult.errors}`}
+                  {Array.isArray(syncBalancesResult.changes) && syncBalancesResult.changes.length > 0 && (
+                    <div className="mt-2 text-xs space-y-0.5">
+                      {syncBalancesResult.changes.slice(0, 8).map((c: any, i: number) => (
+                        <div key={i}>
+                          #{c.invoiceNumber}: QB balance ${c.qboBalance.toFixed(2)} (was ${c.localBalance.toFixed(2)}) — applied ${c.applied.toFixed(2)}
+                        </div>
+                      ))}
+                      {syncBalancesResult.changes.length > 8 && (
+                        <div>…and {syncBalancesResult.changes.length - 8} more</div>
+                      )}
+                    </div>
+                  )}
+                </>
+              ) : (
+                syncBalancesResult.error || 'Sync failed'
               )}
             </div>
           )}

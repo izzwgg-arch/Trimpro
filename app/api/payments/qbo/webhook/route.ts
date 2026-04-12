@@ -252,7 +252,7 @@ async function processInvoiceEntity(params: {
 
   const localInvoice = await prisma.invoice.findFirst({
     where: { tenantId: params.tenantId, qboSyncId: params.invoiceId },
-    select: { id: true },
+    select: { id: true, balance: true },
   })
   if (!localInvoice?.id) {
     logWebhook('invoice_mapping_missing', {
@@ -263,8 +263,13 @@ async function processInvoiceEntity(params: {
     return
   }
 
+  // Always reconcile on any QB invoice update — this captures partial payments,
+  // checks, and any other payment method recorded directly in QuickBooks.
+  // reconcileSingleInvoiceAchPayment already handles the delta safely (idempotent).
+  await reconcileSingleInvoiceAchPayment(localInvoice.id)
+
   if (qboBalance <= 0) {
-    await reconcileSingleInvoiceAchPayment(localInvoice.id)
+    // Mark any open ACH payment intents as succeeded when QB confirms full payment.
     await prisma.invoicePaymentIntent.updateMany({
       where: {
         tenantId: params.tenantId,
@@ -276,12 +281,14 @@ async function processInvoiceEntity(params: {
       data: { status: 'SUCCEEDED' },
     })
   }
+
   logWebhook('invoice_canonical_fetched', {
     tenantId: params.tenantId,
     realmId: params.realmId,
     qboInvoiceId: params.invoiceId,
     qboBalance,
     localInvoiceId: localInvoice.id,
+    localBalanceBefore: Number(localInvoice.balance),
   })
 }
 
