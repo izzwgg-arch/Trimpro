@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
-import { getUserMobilePermissions } from '@/lib/authorization'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -10,7 +9,7 @@ export async function GET(request: NextRequest) {
 
   const search = String(request.nextUrl.searchParams.get('search') || '').trim().toLowerCase()
 
-  const candidates = await prisma.user.findMany({
+  const users = await prisma.user.findMany({
     where: {
       tenantId: user.tenantId,
       status: 'ACTIVE',
@@ -32,20 +31,8 @@ export async function GET(request: NextRequest) {
       email: true,
       role: true,
     },
-    take: 250,
+    take: 500,
   })
 
-  const withMobileAccess = await Promise.all(
-    candidates.map(async (row) => {
-      const perms = await getUserMobilePermissions(row.id, user.tenantId)
-      return {
-        ...row,
-        hasMobileAccess: perms.includes('mobile.access'),
-      }
-    })
-  )
-
-  return NextResponse.json({
-    users: withMobileAccess.filter((row) => row.hasMobileAccess),
-  })
+  return NextResponse.json({ users })
 }

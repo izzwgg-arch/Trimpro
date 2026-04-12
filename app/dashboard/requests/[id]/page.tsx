@@ -529,22 +529,36 @@ export default function RequestDetailPage() {
               <Input
                 value={measuringSearch}
                 onChange={(e) => setMeasuringSearch(e.target.value)}
-                placeholder="Search by name, email, or role"
-                disabled={usersLoading}
+                placeholder="Search by name or email…"
+                autoFocus
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Assign to user *</label>
+              <label className="text-sm font-medium">
+                Assign to user *{' '}
+                {usersLoading && <span className="text-gray-400 font-normal">(loading…)</span>}
+                {!usersLoading && assignableUsers.length > 0 && (
+                  <span className="text-gray-400 font-normal">({filteredAssignableUsers.length} shown)</span>
+                )}
+              </label>
               <Select value={selectedMeasuringUserId || undefined} onValueChange={setSelectedMeasuringUserId}>
                 <SelectTrigger>
                   <SelectValue placeholder={usersLoading ? 'Loading users...' : 'Select a user'} />
                 </SelectTrigger>
                 <SelectContent>
-                  {filteredAssignableUsers.map((u) => (
-                    <SelectItem key={u.id} value={u.id}>
-                      {u.firstName} {u.lastName}{u.email ? ` (${u.email})` : ''}
-                    </SelectItem>
-                  ))}
+                  {filteredAssignableUsers.length === 0 && (
+                    <div className="py-3 px-2 text-sm text-gray-500 text-center">
+                      {usersLoading ? 'Loading…' : measuringSearch ? 'No users match your search' : 'No users found'}
+                    </div>
+                  )}
+                  {filteredAssignableUsers.map((u) => {
+                    const displayName = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || u.id
+                    return (
+                      <SelectItem key={u.id} value={u.id}>
+                        {displayName}{u.email && (u.firstName || u.lastName) ? ` (${u.email})` : ''}
+                      </SelectItem>
+                    )
+                  })}
                 </SelectContent>
               </Select>
             </div>
