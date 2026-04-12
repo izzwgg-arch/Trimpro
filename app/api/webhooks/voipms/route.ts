@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { decryptSecrets } from '@/lib/integrations/secrets'
+import { toE164, toNanp10 } from '@/lib/phone'
 
+// Legacy alias used throughout this file
 function normalizeNanpDigits(input: string): string {
-  const digits = input.replace(/\D/g, '')
-  return digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits
+  return toNanp10(input)
 }
 
 export async function POST(request: NextRequest) {
@@ -127,6 +128,8 @@ export async function POST(request: NextRequest) {
       console.log(`Found matching connection for tenant: ${matchingConnection.tenantId}`)
       const tenantId = matchingConnection.tenantId
       const normalizedFrom = normalizeNanpDigits(from || '')
+      // Canonical E.164 form — used for storage so same number always maps to one thread
+      const fromE164 = toE164(from || '')
 
       // Try to find client/contact by phone number
       const client = await prisma.client.findFirst({
@@ -148,62 +151,45 @@ export async function POST(request: NextRequest) {
           })
         : null
 
-      // Find or create conversation
-      // Normalize phone numbers for matching - merge conversations with same number in different formats
+      // Find or create conversation — always match and store using E.164 to prevent duplicates
       const channel = type === 'mms' ? 'MMS' : 'SMS'
-      const normalizedFromForMatching = normalizeNanpDigits(from || '')
-      
-      // Get all SMS/MMS conversations for this tenant
+
+      // Load all SMS/MMS conversations for this tenant (only id + participants for efficiency)
       const allConversations = await prisma.conversation.findMany({
-        where: {
-          tenantId,
-          channel: channel as any,
-        },
-        select: {
-          id: true,
-          participants: true,
-        },
+        where: { tenantId, channel: { in: ['SMS', 'MMS'] as any } },
+        select: { id: true, participants: true },
       })
 
-      // Find conversation by normalizing phone numbers in participants
+      // Match by E.164 normalization — same number in any format → same thread
       let conversation = allConversations.find((conv) => {
-        const participants = conv.participants as any
-        if (!Array.isArray(participants)) return false
-        
-        // Check if any participant matches after normalization
-        return participants.some((participant: string) => {
-          const normalizedParticipant = normalizeNanpDigits(participant)
-          return normalizedParticipant === normalizedFromForMatching
-        })
-      })
+        const parts = Array.isArray(conv.participants) ? (conv.participants as string[]) : []
+        return parts.some((p) => toE164(p) === fromE164)
+      }) as any
 
       const timestamp = datetime ? new Date(datetime) : new Date()
 
       if (conversation) {
-        // Update conversation - ensure the current format is in participants if not already
-        const participants = conversation.participants as any
-        const hasCurrentFormat = Array.isArray(participants) && participants.includes(from)
-        const updatedParticipants = hasCurrentFormat 
-          ? participants 
-          : [...(Array.isArray(participants) ? participants : []), from]
-        
+        // Canonicalize participants to E.164 if not already stored that way
+        const parts = Array.isArray(conversation.participants) ? (conversation.participants as string[]) : []
+        const alreadyE164 = parts.includes(fromE164)
         await prisma.conversation.update({
           where: { id: conversation.id },
           data: {
             lastMessageAt: timestamp,
             unreadCount: { increment: 1 },
-            participants: updatedParticipants,
+            // Replace any legacy formats with E.164
+            participants: alreadyE164 ? undefined : [fromE164, ...parts.filter((p: string) => toE164(p) !== fromE164)],
           },
         })
         conversation = await prisma.conversation.findUnique({ where: { id: conversation.id } })
       } else {
-        // Create new conversation
+        // Create new conversation — always store E.164
         conversation = await prisma.conversation.create({
           data: {
             tenantId,
             channel: channel as any,
             clientId: client?.id || null,
-            participants: [from],
+            participants: [fromE164],
             status: 'ACTIVE',
             lastMessageAt: timestamp,
             unreadCount: 1,

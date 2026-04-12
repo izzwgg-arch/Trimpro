@@ -7,6 +7,7 @@ import { WebWhatisProvider } from './providers/webwhatis'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { prisma } from '@/lib/prisma'
 import { sendVoipMsSms, sendVoipMsMms } from '@/lib/integrations/providers/voipms'
+import { toE164, toNanp10 } from '@/lib/phone'
 
 function getPublicBaseUrlFromEnv(): string | null {
   const envUrl =
@@ -211,71 +212,52 @@ export class MessagingService {
       }
 
       if (!conversation) {
-        // Normalize phone number for matching - merge conversations with same number in different formats
-        function normalizeNanpDigits(input: string): string {
-          const digits = input.replace(/\D/g, '')
-          return digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits
-        }
-        
-        const normalizedTo = normalizeNanpDigits(params.to)
-        
-        // Find or create conversation
-        // For JSON array fields, we need to check if the array contains the value
+        // Normalize to E.164 for consistent matching — prevents duplicate threads per number
+        const toE164Canonical = toE164(params.to)
+        const toNanp = toNanp10(params.to)
+
+        // Fetch all SMS/MMS conversations and match by E.164
         const allConversations = await prisma.conversation.findMany({
-          where: {
-            tenantId,
-            channel: effectiveChannel as any,
-          },
-          select: {
-            id: true,
-            participants: true,
-          },
+          where: { tenantId, channel: { in: ['SMS', 'MMS'] as any } },
+          select: { id: true, participants: true },
         })
 
         const found = allConversations.find((conv) => {
-          const participants = conv.participants as any
-          if (!Array.isArray(participants)) return false
-          // Check if any participant matches after normalization
-          return participants.some((participant: string) => {
-            const normalizedParticipant = normalizeNanpDigits(participant)
-            return normalizedParticipant === normalizedTo
-          })
+          const parts = Array.isArray(conv.participants) ? (conv.participants as string[]) : []
+          return parts.some((p) => toE164(p) === toE164Canonical)
         })
 
         if (found) {
-          // Update conversation to include current phone format if not already present
-          const participants = found.participants as any
-          const hasCurrentFormat = Array.isArray(participants) && participants.includes(params.to)
-          if (!hasCurrentFormat) {
-            const updatedParticipants = [...(Array.isArray(participants) ? participants : []), params.to]
+          // Canonicalize participants to E.164 if not already stored
+          const parts = Array.isArray(found.participants) ? (found.participants as string[]) : []
+          if (!parts.includes(toE164Canonical)) {
             await prisma.conversation.update({
               where: { id: found.id },
-              data: { participants: updatedParticipants },
+              data: { participants: [toE164Canonical, ...parts.filter((p) => toE164(p) !== toE164Canonical)] },
             })
           }
-          conversation = await prisma.conversation.findUnique({
-            where: { id: found.id },
-          })
+          conversation = await prisma.conversation.findUnique({ where: { id: found.id } })
         }
 
         if (!conversation) {
-          // Find client by phone/email
+          // Find client by phone
           const client = await prisma.client.findFirst({
             where: {
               tenantId,
               OR: [
-                { phone: params.to },
+                { phone: { contains: toNanp } },
                 { email: params.to },
               ],
             },
           })
 
+          // Always store E.164 in participants
           conversation = await prisma.conversation.create({
             data: {
               tenantId,
               channel: effectiveChannel as any,
               clientId: client?.id || null,
-              participants: [params.to],
+              participants: [toE164Canonical],
               status: 'ACTIVE',
               lastMessageAt: new Date(),
             },
