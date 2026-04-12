@@ -6,7 +6,7 @@ import { MessagingChannel } from '@/lib/messaging/types'
 
 export const dynamic = 'force-dynamic'
 
-/** GET /api/sms/conversations/[id]/messages — fetch messages for an SMS conversation. */
+/** GET /api/sms/conversations/[id]/messages */
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -38,7 +38,14 @@ export async function GET(
   return NextResponse.json({ messages, conversation })
 }
 
-/** POST /api/sms/conversations/[id]/messages — send an SMS in this conversation. */
+/**
+ * POST /api/sms/conversations/[id]/messages
+ *
+ * Supports:
+ *   - text-only SMS: { text: "hello" }
+ *   - MMS with media: { text?: "caption", media: [{ url, type, mimeType, filename }] }
+ *   - voice note:     { media: [{ url, type: "audio", mimeType: "audio/webm" }] }
+ */
 export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -54,17 +61,39 @@ export async function POST(
 
   const body = await request.json()
   const text: string = String(body.text || '').trim()
-  if (!text) return NextResponse.json({ error: 'text is required' }, { status: 400 })
+  const rawMedia: any[] = Array.isArray(body.media) ? body.media : []
+
+  if (!text && rawMedia.length === 0) {
+    return NextResponse.json({ error: 'text or media required' }, { status: 400 })
+  }
 
   const participants = Array.isArray(conversation.participants)
     ? (conversation.participants as string[])
     : []
   const toNumber = participants[0]
-  if (!toNumber) return NextResponse.json({ error: 'No recipient phone number on this conversation' }, { status: 400 })
+  if (!toNumber) {
+    return NextResponse.json({ error: 'No recipient phone number on this conversation' }, { status: 400 })
+  }
+
+  // Determine channel: MMS if any media, otherwise SMS
+  const hasmedia = rawMedia.length > 0
+  const channel = hasmedia ? MessagingChannel.MMS : MessagingChannel.SMS
 
   const result = await messagingService.sendMessage(
     user.tenantId,
-    { to: toNumber, body: text, channel: MessagingChannel.SMS },
+    {
+      to: toNumber,
+      body: text || undefined,
+      channel,
+      media: hasmedia
+        ? rawMedia.map((m: any) => ({
+            url: m.url,
+            type: m.type || 'image',
+            mimeType: m.mimeType || null,
+            filename: m.filename || m.fileName || null,
+          }))
+        : undefined,
+    },
     params.id
   )
 
