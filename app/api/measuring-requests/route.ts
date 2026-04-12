@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { createNotification } from '@/lib/notifications'
-import { getUserMobilePermissions } from '@/lib/authorization'
 
 function toApiStatus(status: 'PENDING' | 'OPENED' | 'COMPLETED') {
   return status.toLowerCase()
@@ -150,11 +149,6 @@ export async function POST(request: NextRequest) {
   }
   if (!assignee) {
     return NextResponse.json({ error: 'Assigned user not found' }, { status: 404 })
-  }
-
-  const mobilePermissions = await getUserMobilePermissions(assignee.id, user.tenantId)
-  if (!mobilePermissions.includes('mobile.access')) {
-    return NextResponse.json({ error: 'Assigned user does not have mobile access' }, { status: 400 })
   }
 
   const created = await prisma.measuringRequest.create({
