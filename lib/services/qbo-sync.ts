@@ -1388,12 +1388,52 @@ export async function importQuickBooksCustomersAndPayments(
       })
     : []
   const existingClientIdSet = new Set(existingClients.map((c) => c.id))
+  const claimedLocalClientIds = new Set<string>()
 
   for (const row of existingClientMaps) {
     if (!row.qboId || !row.entityId) continue
     const localId = String(row.entityId)
     if (!existingClientIdSet.has(localId)) continue
+    if (claimedLocalClientIds.has(localId)) continue
+    claimedLocalClientIds.add(localId)
     qboCustomerIdToLocalClientId.set(String(row.qboId), localId)
+  }
+
+  const getReusableMappedClientId = async (qboId: string): Promise<string | null> => {
+    const existingMap = await prisma.quickBooksSyncLog.findFirst({
+      where: {
+        integrationId: session.integrationId,
+        type: 'client',
+        qboId,
+        status: 'success',
+        entityId: { not: null },
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+    if (!existingMap?.entityId) return null
+
+    const localId = String(existingMap.entityId)
+    const stillExists = await prisma.client.findFirst({
+      where: { id: localId, tenantId },
+      select: { id: true },
+    })
+    if (!stillExists) return null
+
+    // Historical bad imports sometimes mapped multiple QB customer IDs into one
+    // TrimPro client. Keep only the earliest QB mapping for that local client.
+    const firstMappingForLocal = await prisma.quickBooksSyncLog.findFirst({
+      where: {
+        integrationId: session.integrationId,
+        type: 'client',
+        status: 'success',
+        entityId: localId,
+        qboId: { not: null },
+      },
+      orderBy: { createdAt: 'asc' },
+      select: { qboId: true },
+    })
+
+    return firstMappingForLocal?.qboId === qboId ? localId : null
   }
 
   for (let start = 1; start <= 50000; start += 1000) {
@@ -1413,26 +1453,10 @@ export async function importQuickBooksCustomersAndPayments(
       const cached = qboCustomerIdToLocalClientId.get(normalizedParent)
       if (cached) return cached
 
-      const existingMap = await prisma.quickBooksSyncLog.findFirst({
-        where: {
-          integrationId: session.integrationId,
-          type: 'client',
-          qboId: normalizedParent,
-          status: 'success',
-          entityId: { not: null },
-        },
-        orderBy: { createdAt: 'desc' },
-      })
-      if (existingMap?.entityId) {
-        // Verify the local client still exists (not deleted since last import).
-        const stillExists = await prisma.client.findFirst({
-          where: { id: String(existingMap.entityId), tenantId },
-          select: { id: true },
-        })
-        if (stillExists) {
-          qboCustomerIdToLocalClientId.set(normalizedParent, String(existingMap.entityId))
-          return String(existingMap.entityId)
-        }
+      const reusableMappedClientId = await getReusableMappedClientId(normalizedParent)
+      if (reusableMappedClientId) {
+        qboCustomerIdToLocalClientId.set(normalizedParent, reusableMappedClientId)
+        return reusableMappedClientId
       }
 
       // Parent not imported yet; fetch parent customer by id and import it now.
@@ -1486,28 +1510,11 @@ export async function importQuickBooksCustomersAndPayments(
         const qboId = String(c.Id || '')
         if (!qboId) return
 
-        const existingMap = await prisma.quickBooksSyncLog.findFirst({
-          where: {
-            integrationId: session.integrationId,
-            type: 'client',
-            qboId,
-            status: 'success',
-            entityId: { not: null },
-          },
-          orderBy: { createdAt: 'desc' },
-        })
-        if (existingMap?.entityId) {
-          const localId = String(existingMap.entityId)
-          const stillExists = await prisma.client.findFirst({
-            where: { id: localId, tenantId },
-            select: { id: true },
-          })
-          if (stillExists) {
-            qboCustomerIdToLocalClientId.set(qboId, localId)
-            skippedExistingClients += 1
-            return
-          }
-          // Stale sync log entry; continue importing.
+        const reusableMappedClientId = await getReusableMappedClientId(qboId)
+        if (reusableMappedClientId) {
+          qboCustomerIdToLocalClientId.set(qboId, reusableMappedClientId)
+          skippedExistingClients += 1
+          return
         }
 
         const parentQboId = c?.ParentRef?.value ? String(c.ParentRef.value) : null
