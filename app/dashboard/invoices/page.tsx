@@ -6,6 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
 import { ViewModeSelector } from '@/components/ui/ViewModeSelector'
 import { useViewMode } from '@/hooks/useViewMode'
 import { RowCompactItem } from '@/components/lists/RowCompactItem'
@@ -68,6 +70,12 @@ export default function InvoicesPage() {
   const [duplicating, setDuplicating] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [exporting, setExporting] = useState(false)
+  const [showBulkPayment, setShowBulkPayment] = useState(false)
+  const [bulkPaymentAmounts, setBulkPaymentAmounts] = useState<Record<string, string>>({})
+  const [bulkPaymentMethod, setBulkPaymentMethod] = useState<'CHECK' | 'QUICK_PAY' | 'OTHER'>('CHECK')
+  const [bulkPaymentOtherLabel, setBulkPaymentOtherLabel] = useState('')
+  const [bulkPaymentSaving, setBulkPaymentSaving] = useState(false)
+  const [bulkPaymentError, setBulkPaymentError] = useState('')
   const [viewMode, setViewMode] = useViewMode('invoices', 'grid')
   const [summary, setSummary] = useState<{
     totalInvoicesAllTime: number
@@ -79,6 +87,17 @@ export default function InvoicesPage() {
   const toggleSelected = (id: string, checked: boolean) => {
     setSelectedIds((prev) => (checked ? (prev.includes(id) ? prev : [...prev, id]) : prev.filter((x) => x !== id)))
   }
+
+  const selectedVisibleInvoices = invoices.filter((invoice) => selectedIds.includes(invoice.id))
+  const payableSelectedInvoices = selectedVisibleInvoices.filter((invoice) => {
+    const balance = parseFloat(invoice.balance || '0')
+    return balance > 0 && invoice.status !== 'CANCELLED' && invoice.status !== 'REFUNDED'
+  })
+  const skippedSelectedInvoices = selectedVisibleInvoices.filter((invoice) => !payableSelectedInvoices.some((item) => item.id === invoice.id))
+  const bulkPaymentTotal = payableSelectedInvoices.reduce((sum, invoice) => {
+    const amount = parseFloat(bulkPaymentAmounts[invoice.id] || '0')
+    return sum + (Number.isFinite(amount) ? amount : 0)
+  }, 0)
 
   useEffect(() => {
     const statusParam = searchParams.get('status')
@@ -253,6 +272,82 @@ export default function InvoicesPage() {
     }
   }
 
+  const openBulkPaymentModal = () => {
+    if (payableSelectedInvoices.length === 0) {
+      alert('Select at least one unpaid invoice to add payments.')
+      return
+    }
+    const nextAmounts: Record<string, string> = {}
+    for (const invoice of payableSelectedInvoices) {
+      nextAmounts[invoice.id] = Number(invoice.balance || 0).toFixed(2)
+    }
+    setBulkPaymentAmounts(nextAmounts)
+    setBulkPaymentMethod('CHECK')
+    setBulkPaymentOtherLabel('')
+    setBulkPaymentError('')
+    setShowBulkPayment(true)
+  }
+
+  const handleBulkPaymentSubmit = async () => {
+    if (payableSelectedInvoices.length === 0) {
+      setBulkPaymentError('Select at least one unpaid invoice.')
+      return
+    }
+    if (bulkPaymentMethod === 'OTHER' && !bulkPaymentOtherLabel.trim()) {
+      setBulkPaymentError('Please enter a payment type name.')
+      return
+    }
+
+    const items: Array<{ invoiceId: string; amount: number }> = []
+    for (const invoice of payableSelectedInvoices) {
+      const amount = parseFloat(bulkPaymentAmounts[invoice.id] || '0')
+      const balance = parseFloat(invoice.balance || '0')
+      if (!Number.isFinite(amount) || amount <= 0) {
+        setBulkPaymentError(`Enter a valid amount for ${invoice.invoiceNumber}.`)
+        return
+      }
+      if (amount > balance) {
+        setBulkPaymentError(`${invoice.invoiceNumber} cannot exceed its balance of ${formatCurrency(balance)}.`)
+        return
+      }
+      items.push({ invoiceId: invoice.id, amount })
+    }
+
+    setBulkPaymentSaving(true)
+    setBulkPaymentError('')
+    try {
+      const token = localStorage.getItem('accessToken')
+      const res = await fetch('/api/invoices/bulk-manual-payments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          method: bulkPaymentMethod,
+          methodLabel: bulkPaymentMethod === 'OTHER' ? bulkPaymentOtherLabel.trim() : undefined,
+          items,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setBulkPaymentError(data.error || 'Failed to record payments.')
+        return
+      }
+      setShowBulkPayment(false)
+      setBulkPaymentAmounts({})
+      setBulkPaymentMethod('CHECK')
+      setBulkPaymentOtherLabel('')
+      setSelectedIds((prev) => prev.filter((id) => !items.some((item) => item.invoiceId === id)))
+      await fetchInvoices()
+    } catch (error) {
+      console.error('Bulk payment error:', error)
+      setBulkPaymentError('Failed to record payments. Please try again.')
+    } finally {
+      setBulkPaymentSaving(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -302,6 +397,14 @@ export default function InvoicesPage() {
           >
             <Copy className="mr-2 h-4 w-4" />
             {duplicating ? 'Duplicating...' : `Duplicate${selectedIds.length ? ` (${selectedIds.length})` : ''}`}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={openBulkPaymentModal}
+            disabled={payableSelectedInvoices.length === 0}
+          >
+            <DollarSign className="mr-2 h-4 w-4" />
+            {selectedIds.length > 0 ? `Add Payment (${payableSelectedInvoices.length})` : 'Add Payment'}
           </Button>
           <Button onClick={() => router.push('/dashboard/invoices/new')}>
             <Plus className="mr-2 h-4 w-4" />
@@ -394,6 +497,100 @@ export default function InvoicesPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={showBulkPayment} onOpenChange={setShowBulkPayment}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Add Payment to Selected Invoices</DialogTitle>
+            <DialogDescription>
+              Record manual payments for the selected invoices. Each payment will update the invoice and sync to QuickBooks.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1">
+              <Label>Payment Type</Label>
+              <div className="flex flex-col gap-2">
+                {(['CHECK', 'QUICK_PAY', 'OTHER'] as const).map((method) => (
+                  <label key={method} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      checked={bulkPaymentMethod === method}
+                      onChange={() => setBulkPaymentMethod(method)}
+                      className="accent-blue-600"
+                    />
+                    <span className="text-sm font-medium">
+                      {method === 'CHECK' ? 'Check' : method === 'QUICK_PAY' ? 'QuickPay' : 'Other'}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            {bulkPaymentMethod === 'OTHER' && (
+              <div className="space-y-1">
+                <Label htmlFor="bulk-payment-other">Payment Type Name</Label>
+                <Input
+                  id="bulk-payment-other"
+                  placeholder="e.g. Cash, Zelle, Venmo..."
+                  value={bulkPaymentOtherLabel}
+                  onChange={(e) => setBulkPaymentOtherLabel(e.target.value)}
+                />
+              </div>
+            )}
+            <div className="max-h-[360px] overflow-y-auto rounded-md border">
+              <div className="grid grid-cols-[1.4fr_1fr_1fr] gap-3 border-b bg-gray-50 px-4 py-2 text-xs font-medium uppercase tracking-wide text-gray-500">
+                <div>Invoice</div>
+                <div>Balance</div>
+                <div>Payment Amount</div>
+              </div>
+              <div className="divide-y">
+                {payableSelectedInvoices.map((invoice) => (
+                  <div key={invoice.id} className="grid grid-cols-[1.4fr_1fr_1fr] gap-3 px-4 py-3 items-center">
+                    <div className="min-w-0">
+                      <div className="truncate font-medium text-gray-900">{invoice.invoiceNumber}</div>
+                      <div className="truncate text-xs text-gray-500">{invoice.client.name}</div>
+                    </div>
+                    <div className="text-sm text-gray-700">{formatCurrency(parseFloat(invoice.balance))}</div>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
+                      <Input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        className="pl-7"
+                        value={bulkPaymentAmounts[invoice.id] || ''}
+                        onChange={(e) =>
+                          setBulkPaymentAmounts((prev) => ({
+                            ...prev,
+                            [invoice.id]: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {skippedSelectedInvoices.length > 0 && (
+              <p className="text-xs text-amber-600">
+                {skippedSelectedInvoices.length} selected invoice{skippedSelectedInvoices.length !== 1 ? 's were' : ' was'} skipped because {skippedSelectedInvoices.length !== 1 ? 'they are' : 'it is'} already fully paid or not payable.
+              </p>
+            )}
+            <div className="flex items-center justify-between rounded-md bg-gray-50 px-4 py-3">
+              <span className="text-sm text-gray-600">Total payment</span>
+              <span className="text-lg font-semibold text-gray-900">{formatCurrency(bulkPaymentTotal)}</span>
+            </div>
+            {bulkPaymentError && <p className="text-sm text-red-600">{bulkPaymentError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBulkPayment(false)} disabled={bulkPaymentSaving}>
+              Cancel
+            </Button>
+            <Button onClick={handleBulkPaymentSubmit} disabled={bulkPaymentSaving || payableSelectedInvoices.length === 0}>
+              {bulkPaymentSaving ? 'Saving...' : 'Save Payments'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Invoices List */}
       {viewMode === 'grid' ? (
