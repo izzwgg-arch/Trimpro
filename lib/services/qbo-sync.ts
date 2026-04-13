@@ -1353,6 +1353,7 @@ export async function importQuickBooksCustomersAndPayments(
 
   let importedClients = 0
   let importedSubClients = 0
+  let skippedExistingClients = 0
   let importedOpenInvoices = 0
   let skippedOpenInvoices = 0
   let importedPayments = 0
@@ -1395,8 +1396,9 @@ export async function importQuickBooksCustomersAndPayments(
     qboCustomerIdToLocalClientId.set(String(row.qboId), localId)
   }
 
-  for (let start = 1; start <= 10000; start += 1000) {
-    const query = `select * from Customer startposition ${start} maxresults 1000`
+  for (let start = 1; start <= 50000; start += 1000) {
+    // Include both active AND inactive customers so nothing is hidden from the import.
+    const query = `select * from Customer WHERE Active IN (true, false) startposition ${start} maxresults 1000`
     const res = await quickBooksService.query(session.accessToken, session.realmId, query)
     const customers = res?.QueryResponse?.Customer || []
     if (!customers.length) break
@@ -1444,10 +1446,10 @@ export async function importQuickBooksCustomersAndPayments(
       const existingLocal = await prisma.client.findFirst({
         where: {
           tenantId,
-          OR: [
-            ...(parentEmail ? [{ email: { equals: String(parentEmail), mode: 'insensitive' as const } }] : []),
-            { name: { equals: String(parentName), mode: 'insensitive' } },
-          ],
+          ...(parentEmail
+            ? { email: { equals: String(parentEmail), mode: 'insensitive' } }
+            : { name: { equals: String(parentName), mode: 'insensitive' } }
+          ),
         },
         orderBy: { updatedAt: 'desc' },
       })
@@ -1504,6 +1506,7 @@ export async function importQuickBooksCustomersAndPayments(
           })
           if (stillExists) {
             qboCustomerIdToLocalClientId.set(qboId, localId)
+            skippedExistingClients += 1
             return
           }
           // Stale sync log entry; continue importing.
@@ -1518,14 +1521,20 @@ export async function importQuickBooksCustomersAndPayments(
         const email = c.PrimaryEmailAddr?.Address || null
         const phone = c.PrimaryPhone?.FreeFormNumber || null
         const companyName = c.CompanyName || null
+        const isActive = typeof c.Active === 'boolean' ? c.Active : true
 
+        // Dedup strategy:
+        // - When email is present: match ONLY by email (name-match is too risky and causes false merges)
+        // - When no email: match by exact name (case-insensitive)
+        // This prevents two distinct QB customers with different names but one sharing a name
+        // with an existing local client from collapsing into the same TrimPro client.
         const local = await prisma.client.findFirst({
           where: {
             tenantId,
-            OR: [
-              ...(email ? [{ email: { equals: String(email), mode: 'insensitive' as const } }] : []),
-              { name: { equals: String(name), mode: 'insensitive' } },
-            ],
+            ...(email
+              ? { email: { equals: String(email), mode: 'insensitive' } }
+              : { name: { equals: String(name), mode: 'insensitive' } }
+            ),
           },
           orderBy: { updatedAt: 'desc' },
         })
@@ -1540,7 +1549,9 @@ export async function importQuickBooksCustomersAndPayments(
               companyName: companyName ? String(companyName) : null,
               email: email ? String(email) : null,
               phone: phone ? String(phone) : null,
-              notes: 'Imported from QuickBooks historical import',
+              notes: isActive
+                ? 'Imported from QuickBooks historical import'
+                : 'Imported from QuickBooks historical import (inactive in QuickBooks)',
               isActive: true,
             },
           }))
@@ -1611,7 +1622,7 @@ export async function importQuickBooksCustomersAndPayments(
   }
 
   // Import Items (products/services) when requested.
-  for (let start = 1; includeItems && start <= 10000; start += 1000) {
+  for (let start = 1; includeItems && start <= 50000; start += 1000) {
     const query = `select * from Item startposition ${start} maxresults 1000`
     const res = await quickBooksService.query(session.accessToken, session.realmId, query)
     const items = res?.QueryResponse?.Item || []
@@ -2017,6 +2028,7 @@ export async function importQuickBooksCustomersAndPayments(
   return {
     importedClients,
     importedSubClients,
+    skippedExistingClients,
     importedItems,
     importedOpenInvoices,
     skippedOpenInvoices,
