@@ -16,6 +16,10 @@ type MeasuringRequestListItem = {
   status: 'pending' | 'opened' | 'completed'
   notes?: string | null
   createdAt: string
+  createdByUser: {
+    firstName: string
+    lastName: string
+  } | null
   request: {
     id: string
     customerName: string
@@ -90,7 +94,10 @@ export function MeasuringRequestsScreen({ navigation }: Props) {
                 {item.request.address}
               </Text>
             ) : null}
-            <Text style={styles.cardMeta}>Created {new Date(item.createdAt).toLocaleString()}</Text>
+            <Text style={styles.cardMeta}>
+              {new Date(item.createdAt).toLocaleDateString()}
+              {item.createdByUser ? ` · Created by ${item.createdByUser.firstName} ${item.createdByUser.lastName}` : ''}
+            </Text>
             {item.notes ? (
               <Text style={styles.notes} numberOfLines={2}>
                 {item.notes}

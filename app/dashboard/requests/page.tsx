@@ -13,7 +13,7 @@ import { RowDetailedItem } from '@/components/lists/RowDetailedItem'
 import { TableView } from '@/components/lists/TableView'
 import { PaginationControls } from '@/components/ui/PaginationControls'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { Plus, Search, Filter, User, Phone, Mail, CheckCircle, Trash2, FileText, Briefcase, Copy } from 'lucide-react'
+import { Plus, Search, Filter, User, Phone, Mail, CheckCircle, Trash2, FileText, Briefcase, Copy, Calendar, UserPlus } from 'lucide-react'
 import Link from 'next/link'
 
 interface Request {
@@ -32,7 +32,13 @@ interface Request {
   probability: number
   convertedToClientId: string | null
   convertedAt: string | null
+  createdAt: string
   assignedTo: {
+    id: string
+    firstName: string
+    lastName: string
+  } | null
+  createdBy: {
     id: string
     firstName: string
     lastName: string
@@ -531,6 +537,19 @@ export default function RequestsPage() {
                       </div>
                     )}
 
+                    <div className="flex items-center gap-3 text-xs text-gray-400 flex-wrap">
+                      <span className="flex items-center gap-1">
+                        <Calendar className="h-3 w-3" />
+                        {formatDate(request.createdAt)}
+                      </span>
+                      {request.createdBy && (
+                        <span className="flex items-center gap-1">
+                          <UserPlus className="h-3 w-3" />
+                          {request.createdBy.firstName} {request.createdBy.lastName}
+                        </span>
+                      )}
+                    </div>
+
                     {(request.value || request.probability) && (
                       <div className="pt-2 border-t">
                         {request.value && (
@@ -646,10 +665,13 @@ export default function RequestsPage() {
               <RowCompactItem
                 href={`/dashboard/requests/${request.id}`}
                 primary={`${request.firstName} ${request.lastName}${request.isUrgent ? ' • URGENT' : ''}`.trim()}
-                secondary={request.company || request.email || request.phone || 'No contact info'}
+                secondary={[
+                  request.company || request.email || request.phone || 'No contact info',
+                  request.createdBy ? `by ${request.createdBy.firstName} ${request.createdBy.lastName}` : null,
+                ].filter(Boolean).join(' · ')}
                 status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[request.status] || 'bg-gray-100 text-gray-800'}`}>{request.status.replace('_', ' ')}</span>}
                 amount={<span>{request.probability}%</span>}
-                date={<span>{request._count.estimates} est.</span>}
+                date={<span>{formatDate(request.createdAt)}</span>}
                 className="pl-10"
               />
             </div>
@@ -671,7 +693,11 @@ export default function RequestsPage() {
                 href={`/dashboard/requests/${request.id}`}
                 primary={`${request.firstName} ${request.lastName}${request.isUrgent ? ' • URGENT' : ''}`.trim()}
                 status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[request.status] || 'bg-gray-100 text-gray-800'}`}>{request.status.replace('_', ' ')}</span>}
-                line2={`${request.company || 'No company'} • ${request.email || 'No email'} • ${request.phone || 'No phone'}`}
+                line2={[
+                  request.company || request.email || request.phone || 'No contact info',
+                  formatDate(request.createdAt),
+                  request.createdBy ? `Created by ${request.createdBy.firstName} ${request.createdBy.lastName}` : null,
+                ].filter(Boolean).join(' · ')}
                 rightTop={<span>{request.probability}%</span>}
                 rightBottom={<span>{request._count.estimates} estimates</span>}
                 className="pl-10"
@@ -731,6 +757,19 @@ export default function RequestsPage() {
               header: 'Probability',
               sortValue: (request) => request.probability,
               render: (request) => `${request.probability}%`,
+            },
+            {
+              key: 'createdAt',
+              header: 'Created',
+              sortValue: (request) => request.createdAt,
+              render: (request) => (
+                <span className="text-xs text-gray-500">
+                  {formatDate(request.createdAt)}
+                  {request.createdBy ? (
+                    <span className="block text-gray-400">{request.createdBy.firstName} {request.createdBy.lastName}</span>
+                  ) : null}
+                </span>
+              ),
             },
             {
               key: 'actions',

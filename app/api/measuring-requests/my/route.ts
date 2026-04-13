@@ -40,6 +40,13 @@ export async function GET(request: NextRequest) {
             jobSiteAddress: true,
           },
         },
+        createdByUser: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
       },
       orderBy: [{ createdAt: 'desc' }],
       take: 300,
@@ -76,6 +83,9 @@ export async function GET(request: NextRequest) {
       openedAt: row.openedAt?.toISOString() || null,
       completedAt: row.completedAt?.toISOString() || null,
       notificationAttempts: row.notificationAttempts,
+      createdByUser: row.createdByUser
+        ? { id: row.createdByUser.id, firstName: row.createdByUser.firstName, lastName: row.createdByUser.lastName }
+        : null,
       request: {
         id: row.request.id,
         customerName: row.request.company || `${row.request.firstName} ${row.request.lastName}`.trim(),

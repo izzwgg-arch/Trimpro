@@ -142,6 +142,7 @@ model User {
   watchedIssues                IssueWatcher[]
   assignedLeads                Lead[]                    @relation("LeadAssignee")
   urgentLeadsMarked            Lead[]                    @relation("LeadUrgentBy")
+  createdLeads                 Lead[]                    @relation("LeadCreatedBy")
   sentEmails                   Email[]
   calls                        Call[]
   smsMessages                  SmsMessage[]
@@ -347,9 +348,11 @@ model Lead {
   schedules   Schedule[]
   activities  Activity[]
 
-  assignedToId String?
+  assignedToId    String?
+  createdByUserId String?
   assignedTo   User?   @relation("LeadAssignee", fields: [assignedToId], references: [id])
   urgentBy     User?   @relation("LeadUrgentBy", fields: [urgentByUserId], references: [id], onDelete: SetNull)
+  createdBy    User?   @relation("LeadCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
 
   measuringRequests MeasuringRequest[]
 

@@ -19,6 +19,10 @@ interface MobileRequestListItem {
   isUrgent?: boolean
   notes?: string | null
   createdAt: string
+  createdBy: {
+    firstName: string
+    lastName: string
+  } | null
 }
 
 interface RequestsListResponse {
@@ -169,7 +173,8 @@ export function RequestsListScreen({ navigation }: Props) {
               {item.isUrgent ? <Text style={styles.urgentBadge}>URGENT</Text> : null}
             </View>
             <Text style={styles.requestMeta}>
-              {item.status} • {new Date(item.createdAt).toLocaleDateString()}
+              {item.status} · {new Date(item.createdAt).toLocaleDateString()}
+              {item.createdBy ? ` · Created by ${item.createdBy.firstName} ${item.createdBy.lastName}` : ''}
             </Text>
             {item.notes ? (
               <Text numberOfLines={2} style={styles.requestNotes}>

@@ -56,6 +56,13 @@ export async function GET(request: NextRequest) {
               lastName: true,
             },
           },
+          createdBy: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
           client: {
             select: {
               id: true,
@@ -190,6 +197,7 @@ export async function POST(request: NextRequest) {
         probability: probability || 50,
         notes: notes || null,
         assignedToId: assignedToId || null,
+        createdByUserId: user.id,
       },
       include: {
         assignedTo: true,
