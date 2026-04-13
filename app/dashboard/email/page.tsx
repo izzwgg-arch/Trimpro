@@ -163,7 +163,7 @@ export default function EmailPage() {
   const fetchClients = async () => {
     try {
       const token = localStorage.getItem('accessToken')
-      const response = await fetch('/api/clients?limit=1000', {
+      const response = await fetch('/api/clients?limit=5000', {
         headers: { Authorization: `Bearer ${token}` },
       })
 

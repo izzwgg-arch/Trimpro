@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
-import { getPaginationParams, createPaginationResponse } from '@/lib/pagination'
+import { createPaginationResponse } from '@/lib/pagination'
 import { validateRequest, createClientSchema } from '@/lib/validation'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 
@@ -13,7 +13,11 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const search = searchParams.get('search') || ''
   const status = searchParams.get('status') || 'all'
-  const { skip, take, page, limit } = getPaginationParams(searchParams)
+  const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10))
+  // Client pickers on create/edit forms need more than the default 100-item cap.
+  const limit = Math.min(5000, Math.max(1, parseInt(searchParams.get('limit') || '50', 10)))
+  const skip = (page - 1) * limit
+  const take = limit
 
   try {
     const where: any = {
