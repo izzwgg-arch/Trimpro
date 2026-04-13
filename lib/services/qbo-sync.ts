@@ -1424,8 +1424,15 @@ export async function importQuickBooksCustomersAndPayments(
         orderBy: { createdAt: 'desc' },
       })
       if (existingMap?.entityId) {
-        qboCustomerIdToLocalClientId.set(normalizedParent, String(existingMap.entityId))
-        return String(existingMap.entityId)
+        // Verify the local client still exists (not deleted since last import).
+        const stillExists = await prisma.client.findFirst({
+          where: { id: String(existingMap.entityId), tenantId },
+          select: { id: true },
+        })
+        if (stillExists) {
+          qboCustomerIdToLocalClientId.set(normalizedParent, String(existingMap.entityId))
+          return String(existingMap.entityId)
+        }
       }
 
       // Parent not imported yet; fetch parent customer by id and import it now.
@@ -1442,31 +1449,22 @@ export async function importQuickBooksCustomersAndPayments(
       const parentEmail = parent.PrimaryEmailAddr?.Address || null
       const parentPhone = parent.PrimaryPhone?.FreeFormNumber || null
       const parentCompanyName = parent.CompanyName || null
+      const parentActive = typeof parent.Active === 'boolean' ? parent.Active : true
 
-      const existingLocal = await prisma.client.findFirst({
-        where: {
+      // Always create a new client — no name/email dedup to avoid false merges.
+      const created = await prisma.client.create({
+        data: {
           tenantId,
-          ...(parentEmail
-            ? { email: { equals: String(parentEmail), mode: 'insensitive' } }
-            : { name: { equals: String(parentName), mode: 'insensitive' } }
-          ),
+          name: String(parentName),
+          companyName: parentCompanyName ? String(parentCompanyName) : null,
+          email: parentEmail ? String(parentEmail) : null,
+          phone: parentPhone ? String(parentPhone) : null,
+          notes: parentActive
+            ? 'Imported from QuickBooks (parent auto-import during subclient import)'
+            : 'Imported from QuickBooks (parent auto-import, inactive in QuickBooks)',
+          isActive: true,
         },
-        orderBy: { updatedAt: 'desc' },
       })
-
-      const created =
-        existingLocal ||
-        (await prisma.client.create({
-          data: {
-            tenantId,
-            name: String(parentName),
-            companyName: parentCompanyName ? String(parentCompanyName) : null,
-            email: parentEmail ? String(parentEmail) : null,
-            phone: parentPhone ? String(parentPhone) : null,
-            notes: 'Imported from QuickBooks (parent auto-import during subclient import)',
-            isActive: true,
-          },
-        }))
 
       await logSync({
         integrationId: session.integrationId,
@@ -1478,7 +1476,7 @@ export async function importQuickBooksCustomersAndPayments(
         data: { parentQboId: null, qboJob: Boolean(parent?.Job) },
       })
 
-      if (!existingLocal) importedClients += 1
+      importedClients += 1
       qboCustomerIdToLocalClientId.set(String(parent.Id), created.id)
       return created.id
     }
@@ -1523,38 +1521,25 @@ export async function importQuickBooksCustomersAndPayments(
         const companyName = c.CompanyName || null
         const isActive = typeof c.Active === 'boolean' ? c.Active : true
 
-        // Dedup strategy:
-        // - When email is present: match ONLY by email (name-match is too risky and causes false merges)
-        // - When no email: match by exact name (case-insensitive)
-        // This prevents two distinct QB customers with different names but one sharing a name
-        // with an existing local client from collapsing into the same TrimPro client.
-        const local = await prisma.client.findFirst({
-          where: {
+        // Always create a new TrimPro client for each unique QB customer ID.
+        // We do NOT try to match by name or email — that caused false merges where
+        // multiple distinct QB customers collapsed into one TrimPro record.
+        // Idempotency is handled above via the QB ID sync log check, so re-running
+        // the import multiple times will not create duplicate TrimPro clients.
+        const client = await prisma.client.create({
+          data: {
             tenantId,
-            ...(email
-              ? { email: { equals: String(email), mode: 'insensitive' } }
-              : { name: { equals: String(name), mode: 'insensitive' } }
-            ),
+            parentId: parentLocalId,
+            name: String(name),
+            companyName: companyName ? String(companyName) : null,
+            email: email ? String(email) : null,
+            phone: phone ? String(phone) : null,
+            notes: isActive
+              ? 'Imported from QuickBooks'
+              : 'Imported from QuickBooks (inactive)',
+            isActive: true,
           },
-          orderBy: { updatedAt: 'desc' },
         })
-
-        const client =
-          local ||
-          (await prisma.client.create({
-            data: {
-              tenantId,
-              parentId: parentLocalId,
-              name: String(name),
-              companyName: companyName ? String(companyName) : null,
-              email: email ? String(email) : null,
-              phone: phone ? String(phone) : null,
-              notes: isActive
-                ? 'Imported from QuickBooks historical import'
-                : 'Imported from QuickBooks historical import (inactive in QuickBooks)',
-              isActive: true,
-            },
-          }))
 
         // If this is a subcustomer and we found a parent, set it when the local client wasn't already parented.
         if (parentLocalId && client.parentId !== parentLocalId && client.id !== parentLocalId) {
@@ -1576,10 +1561,8 @@ export async function importQuickBooksCustomersAndPayments(
           data: { parentQboId: parentQboId || null, qboJob: Boolean(c?.Job) },
         })
         qboCustomerIdToLocalClientId.set(qboId, client.id)
-        if (!local) {
-          importedClients += 1
-          if (parentLocalId) importedSubClients += 1
-        }
+        importedClients += 1
+        if (parentLocalId) importedSubClients += 1
 
         // If we couldn't resolve the parent yet, record a pending link to be attempted after all pages are imported.
         if (parentQboId && !parentLocalId) {
