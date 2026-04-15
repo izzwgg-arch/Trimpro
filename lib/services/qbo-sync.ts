@@ -702,16 +702,66 @@ function extractSalesItemLines(qboLines: any): any[] {
   return lines.filter((l) => l && l.DetailType === 'SalesItemLineDetail')
 }
 
-function buildSalesItemLinesWithIds(params: {
-  localLineItems: any[]
-  existingQboSalesLines: any[]
-  serviceItemId: string
-}) {
-  const local = Array.isArray(params.localLineItems) ? params.localLineItems : []
-  const existing = Array.isArray(params.existingQboSalesLines) ? params.existingQboSalesLines : []
+/** Extract all customer-facing QBO lines (sales + subtotals) for ID matching on updates. */
+function extractAllQboLines(qboLines: any): any[] {
+  const lines = Array.isArray(qboLines) ? qboLines : []
+  return lines.filter(
+    (l) => l && (l.DetailType === 'SalesItemLineDetail' || l.DetailType === 'SubTotalLineDetail'),
+  )
+}
 
-  return local.map((li: any, idx: number) => {
-    const existingLine = existing[idx] || null
+/** Build the QBO Line array from TrimPro line items. Subtotal rows become SubTotalLineDetail. */
+function buildQboLines(lineItems: any[], serviceItemId: string): any[] {
+  return lineItems.map((li: any) => {
+    if (li.isSubtotal) {
+      return {
+        DetailType: 'SubTotalLineDetail',
+        Amount: toNumber(li.total),
+        SubTotalLineDetail: {},
+      }
+    }
+    return {
+      DetailType: 'SalesItemLineDetail',
+      Description: li.notes || li.description,
+      Amount: toNumber(li.quantity) * toNumber(li.unitPrice),
+      SalesItemLineDetail: {
+        ItemRef: { value: serviceItemId },
+        Qty: toNumber(li.quantity),
+        UnitPrice: toNumber(li.unitPrice),
+      },
+    }
+  })
+}
+
+/** Build QBO Line array for updates, preserving existing QBO line IDs to prevent duplicates. */
+function buildQboLinesWithIds(params: {
+  localLineItems: any[]
+  existingQboLines: any[]
+  serviceItemId: string
+}): any[] {
+  const local = Array.isArray(params.localLineItems) ? params.localLineItems : []
+  const existingSales = Array.isArray(params.existingQboLines)
+    ? params.existingQboLines.filter((l) => l?.DetailType === 'SalesItemLineDetail')
+    : []
+  const existingSubtotals = Array.isArray(params.existingQboLines)
+    ? params.existingQboLines.filter((l) => l?.DetailType === 'SubTotalLineDetail')
+    : []
+
+  let salesIdx = 0
+  let subtotalIdx = 0
+
+  return local.map((li: any) => {
+    if (li.isSubtotal) {
+      const existingLine = existingSubtotals[subtotalIdx++] || null
+      const out: any = {
+        DetailType: 'SubTotalLineDetail',
+        Amount: toNumber(li.total),
+        SubTotalLineDetail: {},
+      }
+      if (existingLine?.Id) out.Id = String(existingLine.Id)
+      return out
+    }
+    const existingLine = existingSales[salesIdx++] || null
     const out: any = {
       DetailType: 'SalesItemLineDetail',
       Description: li?.notes || li?.description,
@@ -722,9 +772,21 @@ function buildSalesItemLinesWithIds(params: {
         UnitPrice: toNumber(li?.unitPrice),
       },
     }
-    // For updates, QBO needs an Id per line to avoid duplicates.
     if (existingLine?.Id) out.Id = String(existingLine.Id)
     return out
+  })
+}
+
+/** @deprecated Use buildQboLinesWithIds instead. Kept for any external callers. */
+function buildSalesItemLinesWithIds(params: {
+  localLineItems: any[]
+  existingQboSalesLines: any[]
+  serviceItemId: string
+}) {
+  return buildQboLinesWithIds({
+    localLineItems: params.localLineItems,
+    existingQboLines: params.existingQboSalesLines,
+    serviceItemId: params.serviceItemId,
   })
 }
 
@@ -1329,16 +1391,7 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
       TxnDate: qboDate(estimate.createdAt),
       ExpirationDate: qboDate(estimate.validUntil || estimate.createdAt),
       PrivateNote: estimate.notes || undefined,
-      Line: lineItems.map((li: any) => ({
-        DetailType: 'SalesItemLineDetail',
-        Description: li.notes || li.description, // Use notes (description) if available, otherwise use item name
-        Amount: toNumber(li.quantity) * toNumber(li.unitPrice),
-        SalesItemLineDetail: {
-          ItemRef: { value: serviceItemId },
-          Qty: toNumber(li.quantity),
-          UnitPrice: toNumber(li.unitPrice),
-        },
-      })),
+      Line: buildQboLines(lineItems, serviceItemId),
     }
 
     if (existingQboId) {
@@ -1359,15 +1412,15 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
       const syncToken = qboEstimate?.SyncToken
       if (!syncToken) throw new Error('QuickBooks estimate SyncToken missing (cannot update)')
 
-      const existingSalesLines = extractSalesItemLines(qboEstimate?.Line)
+      const existingQboLines = extractAllQboLines(qboEstimate?.Line)
       const updatePayload: any = {
         ...payload,
         Id: existingQboId,
         SyncToken: String(syncToken),
-        // Full update so line removals reflect in QBO.
-        Line: buildSalesItemLinesWithIds({
+        // Full update so line additions/removals (including subtotals) reflect in QBO.
+        Line: buildQboLinesWithIds({
           localLineItems: lineItems,
-          existingQboSalesLines: existingSalesLines,
+          existingQboLines,
           serviceItemId,
         }),
       }
