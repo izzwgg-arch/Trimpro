@@ -615,6 +615,88 @@ export async function importQuickBooksEstimateById(tenantId: string, qboEstimate
   }
 }
 
+export async function reimportEstimateLines(tenantId: string, estimateId: string) {
+  const session = await getQboSession(tenantId)
+  if (!session) throw new Error('QuickBooks is not connected for this tenant.')
+
+  // Look up the QBO ID mapped to this estimate
+  const syncLog = await prisma.quickBooksSyncLog.findFirst({
+    where: {
+      integrationId: session.integrationId,
+      entityId: estimateId,
+      type: 'estimate',
+      status: { in: ['success', 'conflict'] },
+    },
+    orderBy: { id: 'desc' },
+    select: { qboId: true },
+  })
+
+  if (!syncLog?.qboId) {
+    throw new Error('This estimate was not imported from QuickBooks, or no QBO mapping was found.')
+  }
+
+  const qboResponse = await quickBooksService.makeAPIRequest(
+    session.accessToken,
+    session.realmId,
+    `/estimate/${encodeURIComponent(syncLog.qboId)}`,
+    'GET',
+    undefined,
+    {
+      tenantId,
+      entityType: 'estimate',
+      entityId: syncLog.qboId,
+      triggerSource: 'reimport_lines',
+    }
+  )
+
+  const qboEstimate = qboResponse?.Estimate
+  if (!qboEstimate?.Id) {
+    throw new Error('QuickBooks estimate not found. It may have been deleted or made inactive.')
+  }
+
+  const { lineRows } = buildImportedEstimateLineRows(qboEstimate)
+
+  await prisma.$transaction(async (tx) => {
+    await tx.estimateLineItem.deleteMany({ where: { estimateId } })
+    if (lineRows.length > 0) {
+      await tx.estimateLineItem.createMany({
+        data: lineRows.map((line: any) => ({
+          estimateId,
+          groupId: null,
+          sourceItemId: null,
+          sourceBundleId: null,
+          description: line.description,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+          unitCost: null,
+          total: line.total,
+          sortOrder: line.sortOrder,
+          isVisibleToClient: true,
+          showDescriptionToCustomer: true,
+          showCostToCustomer: false,
+          showPriceToCustomer: true,
+          showTaxToCustomer: true,
+          showNotesToCustomer: false,
+          notes: line.notes,
+          vendorId: null,
+          taxable: line.taxable,
+          taxRate: null,
+          isSubtotal: line.isSubtotal === true,
+        })),
+      })
+    }
+  })
+
+  const subtotalRows = lineRows.filter((l: any) => l.isSubtotal)
+  const regularRows = lineRows.filter((l: any) => !l.isSubtotal)
+
+  return {
+    linesImported: lineRows.length,
+    subtotalRowsAdded: subtotalRows.length,
+    regularItemCount: regularRows.length,
+  }
+}
+
 function extractSalesItemLines(qboLines: any): any[] {
   const lines = Array.isArray(qboLines) ? qboLines : []
   return lines.filter((l) => l && l.DetailType === 'SalesItemLineDetail')
