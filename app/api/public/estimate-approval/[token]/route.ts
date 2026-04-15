@@ -106,6 +106,7 @@ export async function GET(request: NextRequest, ctx: { params: { token: string }
           unitPrice: String(li.unitPrice),
           total: String(li.total),
           isOptional: false,
+          isSubtotal: (li as any).isSubtotal === true,
           approved: Boolean(approved),
           approvedAt: approved?.approvedAt || null,
           approvedByName: approved?.approvedByName || null,

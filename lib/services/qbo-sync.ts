@@ -284,6 +284,8 @@ function inferEstimateStatusFromQuickBooks(qboEstimate: any): 'DRAFT' | 'SENT' |
 function buildImportedEstimateLineRows(qboEstimate: any) {
   const qboLines = Array.isArray(qboEstimate?.Line) ? qboEstimate.Line : []
   let detectedDiscount = 0
+  // Track running sum for subtotal rows
+  let runningSinceLastSubtotal = 0
 
   const lineRows = qboLines
     .filter((line: any) => line && typeof line === 'object')
@@ -296,7 +298,27 @@ function buildImportedEstimateLineRows(qboEstimate: any) {
         return []
       }
 
-      if (detailType === 'SubTotalLineDetail' || detailType === 'DescriptionOnly') {
+      // Preserve SubTotalLineDetail rows so the import matches QBO structure exactly
+      if (detailType === 'SubTotalLineDetail') {
+        // Use the QBO-provided amount (sum of items above), or fall back to running sum
+        const subtotalAmt = amount > 0 ? amount : runningSinceLastSubtotal
+        runningSinceLastSubtotal = 0 // reset for next segment
+        return [
+          {
+            description: 'Subtotal',
+            notes: null,
+            quantity: 0,
+            unitPrice: 0,
+            total: subtotalAmt,
+            sortOrder: idx,
+            taxable: false,
+            isSubtotal: true,
+          },
+        ]
+      }
+
+      // Skip description-only lines (section headers with no amount)
+      if (detailType === 'DescriptionOnly') {
         return []
       }
 
@@ -313,6 +335,8 @@ function buildImportedEstimateLineRows(qboEstimate: any) {
       const finalDescription = (itemName || description || `QuickBooks line ${idx + 1}`).slice(0, 500)
       const finalNotes = description && itemName && description !== itemName ? description.slice(0, 2000) : null
 
+      runningSinceLastSubtotal += amount
+
       return [
         {
           description: finalDescription,
@@ -322,13 +346,17 @@ function buildImportedEstimateLineRows(qboEstimate: any) {
           total: amount,
           sortOrder: idx,
           taxable: true,
+          isSubtotal: false,
         },
       ]
     })
 
   const totalAmt = toNumber(qboEstimate?.TotalAmt)
   const taxAmount = toNumber(qboEstimate?.TxnTaxDetail?.TotalTax)
-  const subtotalFromLines = lineRows.reduce((sum, line) => sum + toNumber(line.total), 0)
+  // Only sum regular (non-subtotal) rows for the estimate subtotal field
+  const subtotalFromLines = lineRows
+    .filter((l: any) => !l.isSubtotal)
+    .reduce((sum: number, line: any) => sum + toNumber(line.total), 0)
   const computedDiscount = Math.max(0, subtotalFromLines + taxAmount - totalAmt)
 
   return {
@@ -344,6 +372,7 @@ function buildImportedEstimateLineRows(qboEstimate: any) {
               total: Math.max(0, totalAmt - taxAmount),
               sortOrder: 0,
               taxable: true,
+              isSubtotal: false,
             },
           ],
     subtotal: subtotalFromLines > 0 ? subtotalFromLines : Math.max(0, totalAmt - taxAmount),
@@ -526,7 +555,7 @@ export async function importQuickBooksEstimateById(tenantId: string, qboEstimate
   })
 
   await prisma.estimateLineItem.createMany({
-    data: lineRows.map((line) => ({
+    data: lineRows.map((line: any) => ({
       estimateId: importedEstimate.id,
       groupId: null,
       sourceItemId: null,
@@ -547,6 +576,7 @@ export async function importQuickBooksEstimateById(tenantId: string, qboEstimate
       vendorId: null,
       taxable: line.taxable,
       taxRate: null,
+      isSubtotal: line.isSubtotal === true,
     })),
   })
 

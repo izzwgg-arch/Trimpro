@@ -86,6 +86,7 @@ interface EstimateDetail {
     total: string
     sortOrder: number
     isVisibleToClient?: boolean
+    isSubtotal?: boolean
     groupId: string | null
     group: {
       id: string
@@ -852,8 +853,21 @@ export default function EstimateDetailPage() {
                         }
                       }
 
-                      // Render ungrouped items
+                      // Render ungrouped items (with subtotal rows)
                       ungroupedItems.forEach((item) => {
+                        if (item.isSubtotal) {
+                          rows.push(
+                            <tr key={item.id} className="border-b bg-slate-50">
+                              <td colSpan={6} className="py-2 px-4 text-right text-sm font-semibold text-slate-700">
+                                Subtotal
+                              </td>
+                              <td className="py-2 px-4 text-right font-bold text-slate-800">
+                                {formatCurrency(parseFloat(item.total || '0'))}
+                              </td>
+                            </tr>
+                          )
+                          return
+                        }
                         const unitCost = item.unitCost ? parseFloat(item.unitCost) : 0
                         const unitPrice = parseFloat(item.unitPrice)
                         const qty = parseFloat(item.quantity)

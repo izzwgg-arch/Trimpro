@@ -16,6 +16,7 @@ type ApprovalItem = {
   unitPrice: string
   total: string
   isOptional: boolean
+  isSubtotal?: boolean
   approved: boolean
   approvedAt: string | null
   approvedByName: string | null
@@ -40,9 +41,9 @@ export default function PublicEstimateApprovalPage() {
   const [busy, setBusy] = useState(false)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
 
-  // Items that can still be selected (not yet approved)
-  const selectableRegularIds = useMemo(() => items.filter((i) => !i.approved).map((i) => i.id), [items])
-  const selectableOptionalIds = useMemo(() => optionalItems.filter((i) => !i.approved).map((i) => i.id), [optionalItems])
+  // Items that can still be selected (not yet approved, not subtotal rows)
+  const selectableRegularIds = useMemo(() => items.filter((i) => !i.approved && !i.isSubtotal).map((i) => i.id), [items])
+  const selectableOptionalIds = useMemo(() => optionalItems.filter((i) => !i.approved && !i.isSubtotal).map((i) => i.id), [optionalItems])
   const allSelectableIds = useMemo(() => [...selectableRegularIds, ...selectableOptionalIds], [selectableRegularIds, selectableOptionalIds])
 
   const selectedTotal = useMemo(() => {
@@ -51,7 +52,7 @@ export default function PublicEstimateApprovalPage() {
     let sum = 0
     for (const id of selectedIds) {
       const it = map.get(id)
-      if (!it) continue
+      if (!it || it.isSubtotal) continue
       sum += Number(it.total || 0)
     }
     return sum
@@ -82,10 +83,16 @@ export default function PublicEstimateApprovalPage() {
       setItems(data.items || [])
       setOptionalItems(data.optionalItems || [])
 
-      // Remove any selections that are no longer selectable
+      // Default: select all selectable (non-approved, non-subtotal) items on first load
       setSelectedIds((prev) => {
         const allItems = [...(data.items || []), ...(data.optionalItems || [])]
-        const allowed = new Set(allItems.filter((i: any) => !i.approved).map((i: any) => i.id))
+        const selectable = allItems.filter((i: any) => !i.approved && !i.isSubtotal)
+        const allowed = new Set(selectable.map((i: any) => i.id))
+        // If nothing was previously selected (initial load), select all
+        if (prev.size === 0) {
+          return new Set(selectable.map((i: any) => i.id))
+        }
+        // On refresh: keep existing selections, only prune removed items
         const next = new Set<string>()
         for (const id of prev) {
           if (allowed.has(id)) next.add(id)
@@ -193,6 +200,16 @@ export default function PublicEstimateApprovalPage() {
   }
 
   const renderItemRow = (it: ApprovalItem, showOptionalBadge = false) => {
+    if (it.isSubtotal) {
+      return (
+        <tr key={it.id} className="border-t bg-slate-50">
+          <td className="p-3"></td>
+          <td colSpan={4} className="p-3 text-right text-sm font-semibold text-slate-700">Subtotal</td>
+          <td className="p-3 text-right font-bold text-slate-800">{formatCurrency(Number(it.total || 0))}</td>
+          <td className="p-3"></td>
+        </tr>
+      )
+    }
     const canSelect = !it.approved
     const checked = it.approved || selectedIds.has(it.id)
     return (

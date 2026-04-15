@@ -183,6 +183,12 @@ export default function RequestDetailPage() {
   const [measuringSearch, setMeasuringSearch] = useState('')
   const [sendingMeasuringRequest, setSendingMeasuringRequest] = useState(false)
 
+  // Admin-only: field worker assignment
+  const [currentUserRole, setCurrentUserRole] = useState<string>('')
+  const [fieldWorkers, setFieldWorkers] = useState<AssignableUser[]>([])
+  const [assigningWorker, setAssigningWorker] = useState(false)
+  const [selectedFieldWorkerId, setSelectedFieldWorkerId] = useState<string>('')
+
   useEffect(() => {
     if (!requestId) {
       setError('Invalid request ID')
@@ -191,6 +197,39 @@ export default function RequestDetailPage() {
     }
     fetchRequest()
   }, [requestId])
+
+  // Decode role from JWT
+  useEffect(() => {
+    const token = localStorage.getItem('accessToken')
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]))
+        setCurrentUserRole(payload.role || '')
+      } catch {
+        // ignore
+      }
+    }
+  }, [])
+
+  // Fetch field workers for admin assignment (only when admin)
+  useEffect(() => {
+    if (currentUserRole !== 'ADMIN') return
+    const token = localStorage.getItem('accessToken')
+    if (!token) return
+    fetch('/api/schedules/team', { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.json())
+      .then((data) => {
+        setFieldWorkers(data.teamMembers || [])
+      })
+      .catch(() => {})
+  }, [currentUserRole])
+
+  // Sync selected field worker with loaded request
+  useEffect(() => {
+    if (request?.assignedTo?.id) {
+      setSelectedFieldWorkerId(request.assignedTo.id)
+    }
+  }, [request?.assignedTo?.id])
 
   useEffect(() => {
     if (!requestId) return
@@ -249,6 +288,31 @@ export default function RequestDetailPage() {
       setError('Failed to load request. Please try again.')
     } finally {
       if (!silent) setLoading(false)
+    }
+  }
+
+  const handleAssignFieldWorker = async () => {
+    if (!request || !selectedFieldWorkerId) return
+    setAssigningWorker(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) return
+      const res = await fetch(`/api/leads/${requestId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ assignedToId: selectedFieldWorkerId }),
+      })
+      if (res.ok) {
+        await fetchRequest(true)
+        setSelectedFieldWorkerId('')
+      } else {
+        const data = await res.json().catch(() => ({}))
+        alert(data.error || 'Failed to assign worker.')
+      }
+    } catch {
+      alert('Failed to assign worker.')
+    } finally {
+      setAssigningWorker(false)
     }
   }
 
@@ -964,8 +1028,53 @@ export default function RequestDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Assigned To */}
-          {request.assignedTo && (
+          {/* Assigned To — read-only for non-admins, editable for admins */}
+          {currentUserRole === 'ADMIN' ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Assign Field Worker</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {request.assignedTo && (
+                  <div className="flex items-center space-x-2 rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-sm">
+                    <User className="h-4 w-4 text-blue-500 shrink-0" />
+                    <span className="font-medium text-blue-800">
+                      {request.assignedTo.firstName} {request.assignedTo.lastName}
+                    </span>
+                    {request.assignedTo.email && (
+                      <span className="text-blue-600 text-xs">({request.assignedTo.email})</span>
+                    )}
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Select
+                    value={selectedFieldWorkerId}
+                    onValueChange={setSelectedFieldWorkerId}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a team member..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {fieldWorkers.map((u) => (
+                        <SelectItem key={u.id} value={u.id}>
+                          {u.firstName} {u.lastName}
+                          {u.role ? ` (${u.role})` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={assigningWorker || !selectedFieldWorkerId || selectedFieldWorkerId === request.assignedTo?.id}
+                    onClick={handleAssignFieldWorker}
+                  >
+                    {assigningWorker ? 'Saving...' : 'Save Assignment'}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : request.assignedTo ? (
             <Card>
               <CardHeader>
                 <CardTitle>Assigned To</CardTitle>
@@ -984,7 +1093,7 @@ export default function RequestDetailPage() {
                 </div>
               </CardContent>
             </Card>
-          )}
+          ) : null}
 
           {/* Converted Client */}
           {request.convertedToClientId && request.client && (

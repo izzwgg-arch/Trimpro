@@ -39,6 +39,8 @@ interface LineItem {
   isGroupHeader?: boolean
   sourceItemId?: string
   sourceBundleId?: string
+  // Subtotal row
+  isSubtotal?: boolean
 }
 
 export default function NewEstimatePage() {
@@ -765,9 +767,9 @@ export default function NewEstimatePage() {
     try {
       const token = localStorage.getItem('accessToken')
       
-      // Calculate totals
+      // Calculate totals (exclude group headers and subtotal rows)
       const subtotal = lineItems.reduce((sum, item) => {
-        if (item.isGroupHeader) return sum // Group headers don't contribute to subtotal
+        if (item.isGroupHeader || item.isSubtotal) return sum
         return sum + parseFloat(item.quantity || '0') * parseFloat(item.unitPrice || '0')
       }, 0)
       
@@ -788,27 +790,28 @@ export default function NewEstimatePage() {
       // Prepare line items for API
       const apiLineItems = lineItems
         .filter(item => !item.isGroupHeader) // Exclude group headers from API
-        .filter(item => !isBlankLine(item))
+        .filter(item => item.isSubtotal || !isBlankLine(item)) // Keep subtotal rows even if blank
         .map((item, index) => ({
-          description: item.description,
-          quantity: parseFloat(item.quantity || '1'),
-          unitPrice: parseFloat(item.unitPrice || '0'),
+          description: item.isSubtotal ? 'Subtotal' : item.description,
+          quantity: item.isSubtotal ? 0 : parseFloat(item.quantity || '1'),
+          unitPrice: item.isSubtotal ? 0 : parseFloat(item.unitPrice || '0'),
           unitCost: item.unitCost ? parseFloat(item.unitCost) : null,
-          total: parseFloat(item.quantity || '1') * parseFloat(item.unitPrice || '0'),
+          total: item.isSubtotal ? 0 : parseFloat(item.quantity || '1') * parseFloat(item.unitPrice || '0'),
           sortOrder: index,
-          isVisibleToClient: true, // Legacy field
+          isVisibleToClient: true,
           showDescriptionToCustomer: item.showDescriptionToCustomer,
           showCostToCustomer: item.showCostToCustomer,
           showPriceToCustomer: item.showPriceToCustomer,
           showTaxToCustomer: item.showTaxToCustomer,
           showNotesToCustomer: item.showNotesToCustomer,
           vendorId: item.vendorId || null,
-          taxable: item.taxable,
+          taxable: item.isSubtotal ? false : item.taxable,
           taxRate: item.taxRate ? parseFloat(item.taxRate) / 100 : null,
           notes: item.notes || null,
           groupId: item.groupId || null,
           sourceItemId: item.sourceItemId || null,
           sourceBundleId: item.sourceBundleId || null,
+          isSubtotal: item.isSubtotal || false,
         }))
 
       const apiOptionalItems = optionalItems
@@ -1011,7 +1014,46 @@ export default function NewEstimatePage() {
                   {lineItems.map((item, index) => {
                     const isGroupHeader = item.isGroupHeader
                     const isInGroup = !!item.groupId && !isGroupHeader
-                    
+                    const isSubtotalRow = item.isSubtotal
+
+                    // For subtotal rows: sum items since the previous subtotal
+                    const prevSubtotalIdx = isSubtotalRow
+                      ? (() => {
+                          for (let k = index - 1; k >= 0; k--) {
+                            if (lineItems[k].isSubtotal) return k
+                          }
+                          return -1
+                        })()
+                      : -1
+                    const subtotalDisplay = isSubtotalRow
+                      ? lineItems.slice(prevSubtotalIdx + 1, index).reduce((sum, li) => {
+                          if (li.isGroupHeader || li.isSubtotal) return sum
+                          return sum + parseFloat(li.quantity || '0') * parseFloat(li.unitPrice || '0')
+                        }, 0)
+                      : 0
+
+                    if (isSubtotalRow) {
+                      return (
+                        <div
+                          key={index}
+                          className="flex items-center justify-between p-2 rounded border border-slate-300 bg-slate-50"
+                        >
+                          <span className="text-sm font-semibold text-slate-700">Subtotal</span>
+                          <div className="flex items-center gap-3">
+                            <span className="font-bold text-slate-800">${subtotalDisplay.toFixed(2)}</span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeLineItem(index)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      )
+                    }
+
                     return (
                       <div
                         key={index}
@@ -1265,10 +1307,37 @@ export default function NewEstimatePage() {
                     )
                   })}
                 </div>
-                <Button type="button" variant="outline" onClick={addLineItem}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Line Item
-                </Button>
+                <div className="flex gap-2 flex-wrap">
+                  <Button type="button" variant="outline" onClick={addLineItem}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Line Item
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setLineItems(prev => [
+                        ...prev,
+                        {
+                          description: 'Subtotal',
+                          quantity: '0',
+                          unitPrice: '0',
+                          taxable: false,
+                          showDescriptionToCustomer: true,
+                          showCostToCustomer: false,
+                          showPriceToCustomer: true,
+                          showTaxToCustomer: false,
+                          showNotesToCustomer: false,
+                          isSubtotal: true,
+                        },
+                      ])
+                    }}
+                    className="border-dashed"
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Subtotal Row
+                  </Button>
+                </div>
               </CardContent>
             </Card>
 

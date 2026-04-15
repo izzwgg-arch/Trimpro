@@ -210,7 +210,9 @@ export async function PUT(
     let taxRateNum = Number(existing.taxRate || 0)
 
     if (lineItems && Array.isArray(lineItems)) {
+      // Only regular (non-subtotal) rows contribute to the estimate subtotal
       subtotal = lineItems.reduce((sum: number, item: any) => {
+        if (item.isSubtotal) return sum
         const qty = parseFloat(item.quantity || 0)
         const price = parseFloat(item.unitPrice || 0)
         return sum + (qty * price)
@@ -249,12 +251,25 @@ export async function PUT(
         }
       }
 
-      // Create new line items
+      // Create new line items; for subtotal rows compute running sum
+      let runningSinceLastSubtotal = 0
       for (let i = 0; i < lineItems.length; i++) {
         const item = lineItems[i]
-        const qty = parseFloat(item.quantity || 0)
-        const price = parseFloat(item.unitPrice || 0)
-        const itemTotal = qty * price
+        const isSubtotal = Boolean(item.isSubtotal)
+
+        let itemTotal: number
+        if (isSubtotal) {
+          itemTotal = runningSinceLastSubtotal
+          runningSinceLastSubtotal = 0
+        } else {
+          const qty = parseFloat(item.quantity || 0)
+          const price = parseFloat(item.unitPrice || 0)
+          itemTotal = qty * price
+          runningSinceLastSubtotal += itemTotal
+        }
+
+        const qty = isSubtotal ? 0 : parseFloat(item.quantity || 0)
+        const price = isSubtotal ? 0 : parseFloat(item.unitPrice || 0)
 
         // Get groupId from map if item has a groupId
         const dbGroupId = item.groupId ? groupMap.get(item.groupId) || null : null
@@ -263,27 +278,26 @@ export async function PUT(
           data: {
             estimateId: params.id,
             groupId: dbGroupId,
-            description: item.description,
+            description: item.description || 'Subtotal',
             quantity: qty,
             unitPrice: price,
             unitCost: item.unitCost ? parseFloat(item.unitCost) : null,
             total: itemTotal,
             sortOrder: i,
             isVisibleToClient: item.isVisibleToClient !== undefined ? Boolean(item.isVisibleToClient) : true,
-            // New per-field visibility flags
             showDescriptionToCustomer:
               item.showDescriptionToCustomer !== undefined ? Boolean(item.showDescriptionToCustomer) : true,
             showCostToCustomer: item.showCostToCustomer !== undefined ? Boolean(item.showCostToCustomer) : false,
             showPriceToCustomer: item.showPriceToCustomer !== undefined ? Boolean(item.showPriceToCustomer) : true,
             showTaxToCustomer: item.showTaxToCustomer !== undefined ? Boolean(item.showTaxToCustomer) : true,
             showNotesToCustomer: item.showNotesToCustomer !== undefined ? Boolean(item.showNotesToCustomer) : false,
-            // Additional fields
             vendorId: item.vendorId || null,
-            taxable: item.taxable !== undefined ? Boolean(item.taxable) : true,
+            taxable: isSubtotal ? false : (item.taxable !== undefined ? Boolean(item.taxable) : true),
             taxRate: item.taxRate ? parseFloat(item.taxRate) : null,
             notes: item.notes || null,
             sourceItemId: item.sourceItemId || null,
             sourceBundleId: item.sourceBundleId || null,
+            isSubtotal,
           },
         })
       }

@@ -672,6 +672,7 @@ model EstimateLineItem {
   vendorId                  String? // Vendor for this specific line item
   taxable                   Boolean  @default(true)
   taxRate                   Decimal? @db.Decimal(5, 4)
+  isSubtotal                Boolean  @default(false) // True for subtotal rows (sums items since previous subtotal)
 
   estimate   Estimate           @relation(fields: [estimateId], references: [id], onDelete: Cascade)
   group      DocumentLineGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)

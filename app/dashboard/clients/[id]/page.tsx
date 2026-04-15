@@ -848,6 +848,15 @@ export default function ClientDetailPage() {
                   {formatCurrency(parseFloat(client.openInvoiceBalance || '0'))}
                 </p>
               </div>
+              {subClients.length > 0 && (
+                <div>
+                  <p className="text-sm text-gray-500">Total Sub-Client Balance</p>
+                  <p className="text-2xl font-bold text-amber-600">
+                    {formatCurrency(parseFloat(client.subClientsOpenInvoiceBalance || '0'))}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">Combined across {subClients.length} sub-client{subClients.length !== 1 ? 's' : ''}</p>
+                </div>
+              )}
               <div>
                 <p className="text-sm text-gray-500">Calls</p>
                 <p className="text-2xl font-bold">{client._count?.calls || 0}</p>
