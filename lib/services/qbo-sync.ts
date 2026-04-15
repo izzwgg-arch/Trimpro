@@ -50,6 +50,13 @@ function toNumber(value: any): number {
   return Number.isFinite(n) ? n : 0
 }
 
+/** Intuit recommends minorversion on reads so nested line structures match the UI. */
+const QBO_ESTIMATE_READ_MINOR_VERSION = '75'
+
+export function qboEstimateReadEndpoint(qboId: string) {
+  return `/estimate/${encodeURIComponent(qboId)}?minorversion=${QBO_ESTIMATE_READ_MINOR_VERSION}`
+}
+
 function qboDate(value: Date | string | null | undefined): string {
   if (!value) return new Date().toISOString().slice(0, 10)
   const d = value instanceof Date ? value : new Date(value)
@@ -289,6 +296,85 @@ function buildImportedEstimateLineRows(qboEstimate: any) {
   // Global sort order counter so sub-items within groups get unique positions
   let sortCounter = 0
 
+  /**
+   * QBO often returns a bundle as one SalesItemLineDetail with many detail rows in Description
+   * (newline-separated). When parsed line totals match the QBO line Amount, expand into rows.
+   */
+  function tryExpandBundledDescriptionSalesLine(line: any): any[] | null {
+    const amount = toNumber(line.Amount)
+    if (!amount) return null
+    const fullDesc = String(line.Description || '')
+      .replace(/\r\n?/g, '\n')
+      .replace(/\t/g, ' ')
+    if (!fullDesc.includes('\n')) return null
+
+    const rawLines = fullDesc
+      .split('\n')
+      .map((l) => l.trim().replace(/\s+/g, ' '))
+      .filter(Boolean)
+
+    if (rawLines.length < 2) return null
+
+    const parseMoneyToken = (s: string) => {
+      const n = parseFloat(String(s).replace(/,/g, '').replace(/^\$/, '').trim())
+      return Number.isFinite(n) ? n : 0
+    }
+
+    const tryParseDetailLine = (text: string) => {
+      if (/^(qty|quantity|rate|amount|description)\b/i.test(text) && text.length < 48) return null
+      const m = text.match(/^(\d+(?:\.\d+)?)\s+(.+?)\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s*$/)
+      if (!m) return null
+      const qty = parseFloat(m[1])
+      const desc = m[2].trim()
+      const unitPrice = parseMoneyToken(m[3])
+      const total = parseMoneyToken(m[4])
+      if (!(qty > 0) || !(total > 0)) return null
+      const implied = qty * unitPrice
+      if (Math.abs(implied - total) > Math.max(total * 0.06, 1)) return null
+      return { qty, desc, unitPrice, total }
+    }
+
+    let sectionHeading: string | null = null
+    const parsed: Array<{ qty: number; desc: string; unitPrice: number; total: number }> = []
+    for (const text of rawLines) {
+      const row = tryParseDetailLine(text)
+      if (row) {
+        parsed.push(row)
+      } else if (parsed.length === 0) {
+        sectionHeading = text.slice(0, 500)
+      }
+    }
+
+    if (parsed.length === 0) return null
+
+    const sumParsed = parsed.reduce((s, p) => s + p.total, 0)
+    const relErr = Math.abs(sumParsed - amount) / Math.max(amount, 1)
+    if (relErr > 0.02 && Math.abs(sumParsed - amount) > 0.05) return null
+
+    const itemName =
+      String(line?.SalesItemLineDetail?.ItemRef?.name || '') ||
+      String(line?.SalesItemLineDetail?.ItemRef?.value || '') ||
+      ''
+
+    return parsed.map((p, i) => {
+      runningSinceLastSubtotal += p.total
+      const noteParts: string[] = []
+      if (i === 0 && sectionHeading) noteParts.push(sectionHeading)
+      if (itemName && itemName !== p.desc) noteParts.push(itemName)
+      const notes = noteParts.length ? noteParts.join(' — ').slice(0, 2000) : null
+      return {
+        description: p.desc.slice(0, 500),
+        notes,
+        quantity: p.qty,
+        unitPrice: p.unitPrice,
+        total: p.total,
+        sortOrder: sortCounter++,
+        taxable: true,
+        isSubtotal: false,
+      }
+    })
+  }
+
   /** Build a single SalesItemLineDetail row from a QBO line object */
   function buildSalesRow(line: any): any | null {
     const amount = toNumber(line.Amount)
@@ -348,8 +434,9 @@ function buildImportedEstimateLineRows(qboEstimate: any) {
       }
 
       // GroupLineDetail = QBO bundle/group: expand all sub-items then add a subtotal row
-      if (detailType === 'GroupLineDetail') {
-        const subLines = Array.isArray(line.GroupLineDetail?.Line) ? line.GroupLineDetail.Line : []
+      const nestedGroupLines = Array.isArray(line.GroupLineDetail?.Line) ? line.GroupLineDetail.Line : []
+      if (detailType === 'GroupLineDetail' || nestedGroupLines.length > 0) {
+        const subLines = nestedGroupLines
         const results: any[] = []
         for (const subLine of subLines) {
           const row = buildSalesRow(subLine)
@@ -379,6 +466,9 @@ function buildImportedEstimateLineRows(qboEstimate: any) {
       }
 
       if (!amount) return []
+
+      const expanded = tryExpandBundledDescriptionSalesLine(line)
+      if (expanded && expanded.length > 0) return expanded
 
       const row = buildSalesRow(line)
       return row ? [row] : []
@@ -469,7 +559,7 @@ export async function importQuickBooksEstimateById(tenantId: string, qboEstimate
   const qboResponse = await quickBooksService.makeAPIRequest(
     session.accessToken,
     session.realmId,
-    `/estimate/${encodeURIComponent(normalizedEstimateId)}`,
+    qboEstimateReadEndpoint(normalizedEstimateId),
     'GET',
     undefined,
     {
@@ -671,7 +761,7 @@ export async function reimportEstimateLines(tenantId: string, estimateId: string
   const qboResponse = await quickBooksService.makeAPIRequest(
     session.accessToken,
     session.realmId,
-    `/estimate/${encodeURIComponent(syncLog.qboId)}`,
+    qboEstimateReadEndpoint(syncLog.qboId),
     'GET',
     undefined,
     {
@@ -1431,7 +1521,7 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
       const fetched = await quickBooksService.makeAPIRequest(
         session.accessToken,
         session.realmId,
-        `/estimate/${existingQboId}`,
+        qboEstimateReadEndpoint(String(existingQboId)),
         'GET',
         undefined,
         {
