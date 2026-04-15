@@ -286,10 +286,40 @@ function buildImportedEstimateLineRows(qboEstimate: any) {
   let detectedDiscount = 0
   // Track running sum for subtotal rows
   let runningSinceLastSubtotal = 0
+  // Global sort order counter so sub-items within groups get unique positions
+  let sortCounter = 0
+
+  /** Build a single SalesItemLineDetail row from a QBO line object */
+  function buildSalesRow(line: any): any | null {
+    const amount = toNumber(line.Amount)
+    if (!amount) return null
+    const qty = toNumber(line?.SalesItemLineDetail?.Qty) || 1
+    const unitPrice =
+      toNumber(line?.SalesItemLineDetail?.UnitPrice) || (qty ? amount / qty : amount)
+    const itemName =
+      String(line?.SalesItemLineDetail?.ItemRef?.name || '') ||
+      String(line?.SalesItemLineDetail?.ItemRef?.value || '') ||
+      ''
+    const description = String(line.Description || '')
+    const finalDescription = (itemName || description || 'QuickBooks item').slice(0, 500)
+    const finalNotes =
+      description && itemName && description !== itemName ? description.slice(0, 2000) : null
+    runningSinceLastSubtotal += amount
+    return {
+      description: finalDescription,
+      notes: finalNotes,
+      quantity: qty,
+      unitPrice,
+      total: amount,
+      sortOrder: sortCounter++,
+      taxable: true,
+      isSubtotal: false,
+    }
+  }
 
   const lineRows = qboLines
     .filter((line: any) => line && typeof line === 'object')
-    .flatMap((line: any, idx: number) => {
+    .flatMap((line: any) => {
       const detailType = String(line.DetailType || '')
       const amount = toNumber(line.Amount)
 
@@ -310,45 +340,48 @@ function buildImportedEstimateLineRows(qboEstimate: any) {
             quantity: 0,
             unitPrice: 0,
             total: subtotalAmt,
-            sortOrder: idx,
+            sortOrder: sortCounter++,
             taxable: false,
             isSubtotal: true,
           },
         ]
       }
 
+      // GroupLineDetail = QBO bundle/group: expand all sub-items then add a subtotal row
+      if (detailType === 'GroupLineDetail') {
+        const subLines = Array.isArray(line.GroupLineDetail?.Line) ? line.GroupLineDetail.Line : []
+        const results: any[] = []
+        for (const subLine of subLines) {
+          const row = buildSalesRow(subLine)
+          if (row) results.push(row)
+        }
+        if (results.length > 0) {
+          // Add a subtotal row after the group items to mirror QBO's visual grouping
+          const groupTotal = amount > 0 ? amount : runningSinceLastSubtotal
+          results.push({
+            description: 'Subtotal',
+            notes: null,
+            quantity: 0,
+            unitPrice: 0,
+            total: groupTotal,
+            sortOrder: sortCounter++,
+            taxable: false,
+            isSubtotal: true,
+          })
+          runningSinceLastSubtotal = 0
+        }
+        return results
+      }
+
       // Skip description-only lines (section headers with no amount)
-      if (detailType === 'DescriptionOnly') {
+      if (detailType === 'DescriptionOnly' || detailType === 'DescriptionOnlyLineDetail') {
         return []
       }
 
       if (!amount) return []
 
-      const qty = toNumber(line?.SalesItemLineDetail?.Qty) || 1
-      const unitPrice =
-        toNumber(line?.SalesItemLineDetail?.UnitPrice) || (qty ? amount / qty : amount)
-      const itemName =
-        String(line?.SalesItemLineDetail?.ItemRef?.name || '') ||
-        String(line?.SalesItemLineDetail?.ItemRef?.value || '') ||
-        ''
-      const description = String(line.Description || '')
-      const finalDescription = (itemName || description || `QuickBooks line ${idx + 1}`).slice(0, 500)
-      const finalNotes = description && itemName && description !== itemName ? description.slice(0, 2000) : null
-
-      runningSinceLastSubtotal += amount
-
-      return [
-        {
-          description: finalDescription,
-          notes: finalNotes,
-          quantity: qty,
-          unitPrice,
-          total: amount,
-          sortOrder: idx,
-          taxable: true,
-          isSubtotal: false,
-        },
-      ]
+      const row = buildSalesRow(line)
+      return row ? [row] : []
     })
 
   const totalAmt = toNumber(qboEstimate?.TotalAmt)
