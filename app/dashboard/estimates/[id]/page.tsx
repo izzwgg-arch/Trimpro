@@ -156,6 +156,7 @@ export default function EstimateDetailPage() {
   } | null>(null)
   const [loadingApprovals, setLoadingApprovals] = useState(false)
   const [regeneratingApprovalLink, setRegeneratingApprovalLink] = useState(false)
+  const [reimportingLines, setReimportingLines] = useState(false)
 
   useEffect(() => {
     fetchEstimate()
@@ -388,6 +389,30 @@ export default function EstimateDetailPage() {
     }
   }
 
+  const handleReimportLines = async () => {
+    if (!confirm('Re-import line items from QuickBooks? This will replace all current line items with the latest structure from QBO (including subtotal rows). This cannot be undone.')) return
+    setReimportingLines(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const res = await fetch(`/api/estimates/${estimateId}/reimport-lines`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        alert(data.error || 'Failed to re-import line items.')
+        return
+      }
+      alert(`Done! Replaced with ${data.regularItemCount} item(s) and ${data.subtotalRowsAdded} subtotal row(s) from QuickBooks.`)
+      await fetchEstimate()
+    } catch (e) {
+      console.error('Reimport lines error:', e)
+      alert('Failed to re-import line items.')
+    } finally {
+      setReimportingLines(false)
+    }
+  }
+
   const handleOpenConvertToInvoice = () => {
     if (!estimate) return
     // Bring back the progress billing modal; invoice is only created after the user saves the draft.
@@ -592,6 +617,17 @@ export default function EstimateDetailPage() {
             <Copy className="mr-2 h-4 w-4" />
             {duplicating ? 'Duplicating...' : 'Duplicate'}
           </Button>
+          {estimate?.estimateNumber?.startsWith('QB-EST-') && (
+            <Button
+              variant="outline"
+              onClick={handleReimportLines}
+              disabled={reimportingLines}
+              title="Re-fetch line items from QuickBooks (adds subtotal rows)"
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${reimportingLines ? 'animate-spin' : ''}`} />
+              {reimportingLines ? 'Re-importing...' : 'Sync Lines from QBO'}
+            </Button>
+          )}
           <Button variant="outline" onClick={handleOpenConvertToInvoice}>
             <DollarSign className="mr-2 h-4 w-4" />
             Convert to Invoice
