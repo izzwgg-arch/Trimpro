@@ -274,6 +274,58 @@ async function getExistingMappedEstimateSummary(params: {
   }
 }
 
+/**
+ * QBO often emits each PDF "sub-row" as its own DescriptionOnly line after a single SalesItem line.
+ * Merge those into the neighboring sales/subtotal/group line so import can see one multi-line Description.
+ */
+function flattenEmbeddedDescriptionOnlyLines(qboLines: any[]): any[] {
+  const pending: string[] = []
+  const out: any[] = []
+
+  const appendDesc = (target: any, texts: string[]) => {
+    if (!texts.length) return
+    const add = texts.join('\n')
+    const cur = String(target.Description || '').trim()
+    target.Description = cur ? `${cur}\n${add}` : add
+  }
+
+  for (const line of qboLines) {
+    if (!line || typeof line !== 'object') continue
+    const dt = String(line.DetailType || '')
+    if (
+      dt === 'DescriptionOnly' ||
+      dt === 'DescriptionOnlyLineDetail' ||
+      dt === 'DescriptionLineDetail'
+    ) {
+      const d = String(line.Description || '').trim()
+      if (d) pending.push(d)
+      continue
+    }
+
+    if (out.length === 0 && pending.length) {
+      const merged = { ...line }
+      appendDesc(merged, pending)
+      pending.length = 0
+      out.push(merged)
+      continue
+    }
+
+    if (out.length > 0 && pending.length) {
+      appendDesc(out[out.length - 1], pending)
+      pending.length = 0
+    }
+
+    out.push({ ...line })
+  }
+
+  if (pending.length && out.length) {
+    appendDesc(out[out.length - 1], pending)
+    pending.length = 0
+  }
+
+  return out
+}
+
 function inferEstimateStatusFromQuickBooks(qboEstimate: any): 'DRAFT' | 'SENT' | 'VIEWED' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED' {
   const txnStatus = String(qboEstimate?.TxnStatus || '').trim().toLowerCase()
   const emailStatus = String(qboEstimate?.EmailStatus || '').trim().toLowerCase()
@@ -289,7 +341,8 @@ function inferEstimateStatusFromQuickBooks(qboEstimate: any): 'DRAFT' | 'SENT' |
 }
 
 function buildImportedEstimateLineRows(qboEstimate: any) {
-  const qboLines = Array.isArray(qboEstimate?.Line) ? qboEstimate.Line : []
+  const rawLines = Array.isArray(qboEstimate?.Line) ? qboEstimate.Line : []
+  const qboLines = flattenEmbeddedDescriptionOnlyLines(rawLines)
   let detectedDiscount = 0
   // Track running sum for subtotal rows
   let runningSinceLastSubtotal = 0
@@ -303,17 +356,19 @@ function buildImportedEstimateLineRows(qboEstimate: any) {
   function tryExpandBundledDescriptionSalesLine(line: any): any[] | null {
     const amount = toNumber(line.Amount)
     if (!amount) return null
-    const fullDesc = String(line.Description || '')
+    let fullDesc = String(line.Description || '')
+      .replace(/<br\s*\/?>/gi, '\n')
       .replace(/\r\n?/g, '\n')
+      .replace(/\u00a0/g, ' ')
       .replace(/\t/g, ' ')
     if (!fullDesc.includes('\n')) return null
 
-    const rawLines = fullDesc
+    const rawDescLines = fullDesc
       .split('\n')
       .map((l) => l.trim().replace(/\s+/g, ' '))
       .filter(Boolean)
 
-    if (rawLines.length < 2) return null
+    if (rawDescLines.length < 2) return null
 
     const parseMoneyToken = (s: string) => {
       const n = parseFloat(String(s).replace(/,/g, '').replace(/^\$/, '').trim())
@@ -322,7 +377,10 @@ function buildImportedEstimateLineRows(qboEstimate: any) {
 
     const tryParseDetailLine = (text: string) => {
       if (/^(qty|quantity|rate|amount|description)\b/i.test(text) && text.length < 48) return null
-      const m = text.match(/^(\d+(?:\.\d+)?)\s+(.+?)\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s*$/)
+      // Optional "x" after quantity (e.g. "21 x Door ...")
+      const m = text.match(
+        /^(\d+(?:\.\d+)?)\s*x?\s+(.+?)\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s*$/i,
+      )
       if (!m) return null
       const qty = parseFloat(m[1])
       const desc = m[2].trim()
@@ -330,13 +388,13 @@ function buildImportedEstimateLineRows(qboEstimate: any) {
       const total = parseMoneyToken(m[4])
       if (!(qty > 0) || !(total > 0)) return null
       const implied = qty * unitPrice
-      if (Math.abs(implied - total) > Math.max(total * 0.06, 1)) return null
+      if (Math.abs(implied - total) > Math.max(total * 0.12, 2)) return null
       return { qty, desc, unitPrice, total }
     }
 
     let sectionHeading: string | null = null
     const parsed: Array<{ qty: number; desc: string; unitPrice: number; total: number }> = []
-    for (const text of rawLines) {
+    for (const text of rawDescLines) {
       const row = tryParseDetailLine(text)
       if (row) {
         parsed.push(row)
@@ -349,7 +407,7 @@ function buildImportedEstimateLineRows(qboEstimate: any) {
 
     const sumParsed = parsed.reduce((s, p) => s + p.total, 0)
     const relErr = Math.abs(sumParsed - amount) / Math.max(amount, 1)
-    if (relErr > 0.02 && Math.abs(sumParsed - amount) > 0.05) return null
+    if (relErr > 0.035 && Math.abs(sumParsed - amount) > 1.5) return null
 
     const itemName =
       String(line?.SalesItemLineDetail?.ItemRef?.name || '') ||
@@ -436,7 +494,7 @@ function buildImportedEstimateLineRows(qboEstimate: any) {
       // GroupLineDetail = QBO bundle/group: expand all sub-items then add a subtotal row
       const nestedGroupLines = Array.isArray(line.GroupLineDetail?.Line) ? line.GroupLineDetail.Line : []
       if (detailType === 'GroupLineDetail' || nestedGroupLines.length > 0) {
-        const subLines = nestedGroupLines
+        const subLines = flattenEmbeddedDescriptionOnlyLines(nestedGroupLines)
         const results: any[] = []
         for (const subLine of subLines) {
           const row = buildSalesRow(subLine)
@@ -461,7 +519,11 @@ function buildImportedEstimateLineRows(qboEstimate: any) {
       }
 
       // Skip description-only lines (section headers with no amount)
-      if (detailType === 'DescriptionOnly' || detailType === 'DescriptionOnlyLineDetail') {
+      if (
+        detailType === 'DescriptionOnly' ||
+        detailType === 'DescriptionOnlyLineDetail' ||
+        detailType === 'DescriptionLineDetail'
+      ) {
         return []
       }
 
