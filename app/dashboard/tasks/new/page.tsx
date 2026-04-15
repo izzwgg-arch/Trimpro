@@ -9,17 +9,14 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ArrowLeft, Save } from 'lucide-react'
 import Link from 'next/link'
+import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
+import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
 import { useCreateContextPrefill } from '@/src/hooks/useCreateContextPrefill'
 
 interface User {
   id: string
   firstName: string
   lastName: string
-}
-
-interface Client {
-  id: string
-  name: string
 }
 
 interface Job {
@@ -46,7 +43,7 @@ export default function NewTaskPage() {
   const { prefillClientId, sourceType, sourceId, applyDefaultsOnce } = useCreateContextPrefill('task')
   const [loading, setLoading] = useState(false)
   const [users, setUsers] = useState<User[]>([])
-  const [clients, setClients] = useState<Client[]>([])
+  const [clients, setClients] = useState<PickerClient[]>([])
   const [jobs, setJobs] = useState<Job[]>([])
   const [jobContext, setJobContext] = useState<Job | null>(null)
   const [formData, setFormData] = useState({
@@ -111,14 +108,7 @@ export default function NewTaskPage() {
 
   const fetchClients = async () => {
     try {
-      const token = localStorage.getItem('accessToken')
-      const response = await fetch('/api/clients?limit=5000', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (response.ok) {
-        const data = await response.json()
-        setClients(data.clients || [])
-      }
+      setClients(await fetchAllPickerClients())
     } catch (error) {
       console.error('Error fetching clients:', error)
     }
@@ -341,22 +331,25 @@ export default function NewTaskPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="clientId">Client</Label>
-                <Select
-                  value={formData.clientId}
-                  onValueChange={(value) => setFormData({ ...formData, clientId: value, jobId: '' })}
-                  disabled={Boolean(jobIdParam)}
-                >
-                  <SelectTrigger id="clientId">
-                    <SelectValue placeholder="Select a client" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {clients.map((client) => (
-                      <SelectItem key={client.id} value={client.id}>
-                        {client.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="space-y-2">
+                  <SearchableClientSelect
+                    clients={clients}
+                    value={formData.clientId}
+                    onSelect={(value) => setFormData({ ...formData, clientId: value, jobId: '' })}
+                    placeholder="Select a client"
+                    disabled={Boolean(jobIdParam)}
+                  />
+                  {formData.clientId && !jobIdParam ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setFormData({ ...formData, clientId: '', jobId: '' })}
+                    >
+                      Clear client
+                    </Button>
+                  ) : null}
+                </div>
               </div>
               <div>
                 <Label htmlFor="jobId">Job</Label>

@@ -36,6 +36,8 @@ export async function PUT(
     const status = typeof body.status === 'string' ? body.status.trim().toUpperCase() : undefined
     const rawManagerId = typeof body.managerId === 'string' ? body.managerId.trim() : body.managerId
     const managerIdFromBody = rawManagerId === '' || rawManagerId === null ? null : rawManagerId
+    const allowWebLogin = typeof body.allowWebLogin === 'boolean' ? body.allowWebLogin : true
+    const allowMobileLogin = typeof body.allowMobileLogin === 'boolean' ? body.allowMobileLogin : true
 
     if (!firstName || !lastName || !email || !status || (!requestedRole && !roleId)) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -91,6 +93,8 @@ export async function PUT(
         role: true,
         status: true,
         managerId: true,
+        allowWebLogin: true,
+        allowMobileLogin: true,
         userRoles: {
           select: {
             roleId: true,
@@ -158,6 +162,8 @@ export async function PUT(
           role: role as any,
           status: status as any,
           managerId: role === 'FIELD' ? normalizedManagerId : null,
+          allowWebLogin,
+          allowMobileLogin,
           permissions: selectedPermissionKeys,
         },
         select: {
@@ -169,6 +175,8 @@ export async function PUT(
           role: true,
           status: true,
           managerId: true,
+          allowWebLogin: true,
+          allowMobileLogin: true,
         },
       })
 

@@ -110,6 +110,8 @@ model User {
   role      UserRole   @default(FIELD)
   status    UserStatus @default(INVITED)
   managerId String?
+  allowWebLogin    Boolean @default(true)
+  allowMobileLogin Boolean @default(true)
 
   // Password management
   passwordHash         String?
@@ -1523,6 +1525,7 @@ model Issue {
   type        IssueType
   status      IssueStatus   @default(OPEN)
   priority    IssuePriority @default(MEDIUM)
+  dueDate     DateTime?
 
   // Links
   clientId String?
@@ -1566,6 +1569,7 @@ model Issue {
   @@index([tenantId, assigneeId])
   @@index([tenantId, jobId])
   @@index([tenantId, type])
+  @@index([tenantId, dueDate])
   @@map("issues")
 }
 

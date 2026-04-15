@@ -11,7 +11,8 @@ import {
 
 export async function POST(request: NextRequest) {
   try {
-    const { refreshToken, deviceId } = await request.json()
+    const { refreshToken, deviceId, clientType } = await request.json()
+    const normalizedClientType = String(clientType || '').trim().toLowerCase() === 'mobile' ? 'mobile' : 'web'
 
     if (!refreshToken) {
       return NextResponse.json({ error: 'Refresh token required' }, { status: 400 })
@@ -37,6 +38,15 @@ export async function POST(request: NextRequest) {
     if (tokenRecord.user.status !== 'ACTIVE') {
       await deleteRefreshToken(refreshToken)
       return NextResponse.json({ error: 'User is not active' }, { status: 401 })
+    }
+
+    if (normalizedClientType === 'mobile' && !tokenRecord.user.allowMobileLogin) {
+      await deleteRefreshToken(refreshToken)
+      return NextResponse.json({ error: 'This user is not allowed to use the phone app.' }, { status: 401 })
+    }
+    if (normalizedClientType === 'web' && !tokenRecord.user.allowWebLogin) {
+      await deleteRefreshToken(refreshToken)
+      return NextResponse.json({ error: 'This user is not allowed to log in to the web app.' }, { status: 401 })
     }
 
     // Generate new tokens

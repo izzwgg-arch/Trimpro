@@ -136,7 +136,14 @@ async function processPaymentEntity(params: {
     session.accessToken,
     session.realmId,
     `/payment/${params.paymentId}`,
-    'GET'
+    'GET',
+    undefined,
+    {
+      tenantId: params.tenantId,
+      entityType: 'payment',
+      entityId: params.paymentId,
+      triggerSource: 'qbo_webhook',
+    }
   )
   const payment = paymentRes?.Payment
   const totalAmt = moneyToNumber(payment?.TotalAmt)
@@ -245,7 +252,14 @@ async function processInvoiceEntity(params: {
     session.accessToken,
     session.realmId,
     `/invoice/${params.invoiceId}`,
-    'GET'
+    'GET',
+    undefined,
+    {
+      tenantId: params.tenantId,
+      entityType: 'invoice',
+      entityId: params.invoiceId,
+      triggerSource: 'qbo_webhook',
+    }
   )
   const qboInvoice = invoiceRes?.Invoice
   const qboBalance = moneyToNumber(qboInvoice?.Balance ?? qboInvoice?.BalanceAmt)
@@ -266,7 +280,10 @@ async function processInvoiceEntity(params: {
   // Always reconcile on any QB invoice update — this captures partial payments,
   // checks, and any other payment method recorded directly in QuickBooks.
   // reconcileSingleInvoiceAchPayment already handles the delta safely (idempotent).
-  await reconcileSingleInvoiceAchPayment(localInvoice.id)
+  await reconcileSingleInvoiceAchPayment(localInvoice.id, {
+    qboInvoice,
+    source: 'qbo_webhook',
+  })
 
   if (qboBalance <= 0) {
     // Mark any open ACH payment intents as succeeded when QB confirms full payment.

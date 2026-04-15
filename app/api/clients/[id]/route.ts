@@ -65,8 +65,12 @@ export async function GET(
           },
         },
         invoices: {
-          take: 10,
-          orderBy: { createdAt: 'desc' },
+          where: {
+            balance: { gt: 0 },
+            status: { notIn: ['PAID', 'CANCELLED', 'REFUNDED'] as any },
+          },
+          take: 100,
+          orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],
         },
         estimates: {
           take: 10,
@@ -171,6 +175,35 @@ export async function GET(
       },
     })
 
+    const subClientIds = (client.subClients || []).map((subClient) => subClient.id)
+    const subClientBalanceRows = subClientIds.length
+      ? await prisma.invoice.groupBy({
+          by: ['clientId'],
+          where: {
+            tenantId: user.tenantId,
+            clientId: { in: subClientIds },
+            balance: { gt: 0 },
+            status: { notIn: ['PAID', 'CANCELLED', 'REFUNDED'] as any },
+          } as any,
+          _sum: {
+            balance: true,
+          },
+        })
+      : []
+    const subClientBalanceById = new Map<string, string>()
+    for (const row of subClientBalanceRows) {
+      if (!row.clientId) continue
+      subClientBalanceById.set(String(row.clientId), row._sum.balance?.toString() || '0')
+    }
+    const subClientsWithBalances = (client.subClients || []).map((subClient) => ({
+      ...subClient,
+      openInvoiceBalance: subClientBalanceById.get(subClient.id) || '0',
+    }))
+    const subClientsOpenInvoiceBalance = subClientsWithBalances.reduce(
+      (sum, subClient) => sum + Number(subClient.openInvoiceBalance || 0),
+      0
+    )
+
     // Ensure all arrays are present (defensive)
     const safeClient = {
       ...client,
@@ -188,7 +221,7 @@ export async function GET(
       tasks: client.tasks || [],
       issues: client.issues || [],
       parent: client.parent || null,
-      subClients: client.subClients || [],
+      subClients: subClientsWithBalances,
       _count: client._count || {
         jobs: 0,
         invoices: 0,
@@ -198,6 +231,7 @@ export async function GET(
         emails: 0,
       },
       openInvoiceBalance: openInvoiceAgg._sum.balance?.toString() || '0',
+      subClientsOpenInvoiceBalance: subClientsOpenInvoiceBalance.toFixed(2),
     }
 
     return NextResponse.json({ client: safeClient })
@@ -218,7 +252,7 @@ export async function PUT(
 
   try {
     const body = await request.json()
-    const { name, companyName, email, phone, website, notes, tags, isActive, billingAddress, shippingAddress } = body
+    const { name, companyName, email, phone, website, notes, tags, isActive, billingAddress, shippingAddress, parentId } = body
 
     let normalizedEmail: string | null | undefined = undefined
     if (email !== undefined) {
@@ -247,6 +281,49 @@ export async function PUT(
       return NextResponse.json({ error: 'Client not found' }, { status: 404 })
     }
 
+    let normalizedParentId: string | null | undefined = undefined
+    if (parentId !== undefined) {
+      normalizedParentId = typeof parentId === 'string' && parentId.trim() ? parentId.trim() : null
+
+      if (normalizedParentId === params.id) {
+        return NextResponse.json({ error: 'A client cannot be its own parent.' }, { status: 400 })
+      }
+
+      if (normalizedParentId) {
+        const parentClient = await prisma.client.findFirst({
+          where: {
+            id: normalizedParentId,
+            tenantId: user.tenantId,
+          },
+          select: { id: true, parentId: true },
+        })
+
+        if (!parentClient) {
+          return NextResponse.json({ error: 'Selected parent client was not found.' }, { status: 400 })
+        }
+
+        let cursorParentId = parentClient.parentId
+        let guard = 0
+        while (cursorParentId && guard < 50) {
+          if (cursorParentId === params.id) {
+            return NextResponse.json(
+              { error: 'You cannot move a client under one of its own descendants.' },
+              { status: 400 }
+            )
+          }
+          const nextParent = await prisma.client.findFirst({
+            where: {
+              id: cursorParentId,
+              tenantId: user.tenantId,
+            },
+            select: { parentId: true },
+          })
+          cursorParentId = nextParent?.parentId || null
+          guard += 1
+        }
+      }
+    }
+
     // Update client
     const client = await prisma.client.update({
       where: { id: params.id },
@@ -259,6 +336,7 @@ export async function PUT(
         notes: notes !== undefined ? notes : existing.notes,
         tags: tags !== undefined ? tags : existing.tags,
         isActive: isActive !== undefined ? isActive : existing.isActive,
+        parentId: normalizedParentId !== undefined ? normalizedParentId : existing.parentId,
       },
     })
 

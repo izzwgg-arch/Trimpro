@@ -47,7 +47,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ connected: false, ok: false, reason: 'not_connected' })
     }
 
-    const companyInfo = await quickBooksService.getCompanyInfo(session.accessToken, session.realmId)
+    const companyInfo = await quickBooksService.getCompanyInfo(session.accessToken, session.realmId, {
+      tenantId: user.tenantId,
+      entityType: 'company_info',
+      entityId: session.realmId,
+      triggerSource: force ? 'qbo_health_check_forced' : 'qbo_health_check',
+    })
 
     await updateIntegrationStatus(user.tenantId, 'quickbooks' as any, 'CONNECTED' as any, null, {
       qboHealth: {

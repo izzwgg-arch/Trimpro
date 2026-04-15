@@ -14,6 +14,7 @@ type Props = NativeStackScreenProps<JobsStackParamList, 'MeasuringRequestDetail'
 type MeasuringRequestDetailResponse = {
   measuringRequest: {
     id: string
+    assignedUserId?: string | null
     status: 'pending' | 'opened' | 'completed'
     notes?: string | null
     createdAt: string
@@ -35,7 +36,20 @@ type MeasuringRequestDetailResponse = {
   }
 }
 
-export function MeasuringRequestDetailScreen({ route }: Props) {
+type MeasuringScheduleResponse = {
+  schedules: Array<{
+    id: string
+    title: string
+    startTime: string
+    endTime: string
+    user?: {
+      firstName: string
+      lastName: string
+    } | null
+  }>
+}
+
+export function MeasuringRequestDetailScreen({ route, navigation }: Props) {
   const { measuringRequestId } = route.params
   const queryClient = useQueryClient()
   const didAutoOpenRef = React.useRef(false)
@@ -44,6 +58,16 @@ export function MeasuringRequestDetailScreen({ route }: Props) {
     queryKey: ['mobile-measuring-request-detail', measuringRequestId],
     queryFn: () => apiRequest<MeasuringRequestDetailResponse>(`/api/measuring-requests/${measuringRequestId}`),
     refetchInterval: 15_000,
+  })
+
+  const scheduleQuery = useQuery({
+    queryKey: ['mobile-measuring-request-schedule', query.data?.measuringRequest?.request.id],
+    queryFn: () =>
+      apiRequest<MeasuringScheduleResponse>(
+        `/api/schedules?leadId=${encodeURIComponent(String(query.data?.measuringRequest?.request.id || ''))}`
+      ),
+    enabled: Boolean(query.data?.measuringRequest?.request.id),
+    refetchInterval: 30_000,
   })
 
   const openMutation = useMutation({
@@ -107,6 +131,8 @@ export function MeasuringRequestDetailScreen({ route }: Props) {
 
   const row = query.data.measuringRequest
   const request = row.request
+  const schedules = scheduleQuery.data?.schedules || []
+  const nextSchedule = schedules[0]
 
   return (
     <AppScreen>
@@ -132,6 +158,46 @@ export function MeasuringRequestDetailScreen({ route }: Props) {
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Address</Text>
           <Text style={styles.sectionBody}>{request.jobSiteAddress || 'No address provided'}</Text>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Schedule</Text>
+          {nextSchedule ? (
+            <>
+              <Text style={styles.sectionBody}>{new Date(nextSchedule.startTime).toLocaleDateString()}</Text>
+              <Text style={styles.meta}>
+                {new Date(nextSchedule.startTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} -{' '}
+                {new Date(nextSchedule.endTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+              </Text>
+              {nextSchedule.user ? (
+                <Text style={styles.meta}>
+                  Assigned to {`${nextSchedule.user.firstName} ${nextSchedule.user.lastName}`.trim()}
+                </Text>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <Text style={styles.sectionBody}>Optional / Unscheduled</Text>
+              <Text style={styles.meta}>Choose a date and time to place this measuring request on the schedule.</Text>
+            </>
+          )}
+          <Pressable
+            style={styles.scheduleButton}
+            onPress={() => {
+              const tabsNav = navigation.getParent() as any
+              tabsNav?.navigate('ScheduleTab', {
+                screen: 'ScheduleCreate',
+                params: {
+                leadId: request.id,
+                assignedUserId: row.assignedUserId || undefined,
+                title: `Measure - ${request.customerName}`,
+                description: [request.jobSiteAddress, request.notes].filter(Boolean).join('\n\n'),
+                },
+              })
+            }}
+          >
+            <Text style={styles.scheduleButtonText}>{nextSchedule ? 'Edit Schedule' : 'Schedule'}</Text>
+          </Pressable>
         </View>
 
         <View style={styles.card}>
@@ -227,6 +293,20 @@ const styles = StyleSheet.create({
   completeButtonText: {
     ...typography.sub,
     color: '#E6C98B',
+    fontWeight: '700',
+  },
+  scheduleButton: {
+    marginTop: spacing.xs,
+    alignSelf: 'flex-start',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.brandPrimary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  scheduleButtonText: {
+    ...typography.caption,
+    color: colors.brandPrimary,
     fontWeight: '700',
   },
 })

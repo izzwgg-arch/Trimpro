@@ -42,6 +42,7 @@ export async function GET(request: NextRequest) {
   const userIds = searchParams.get('userIds') || ''
   const scope = searchParams.get('scope') || ''
   const jobId = searchParams.get('jobId') || ''
+  const leadId = searchParams.get('leadId') || ''
   const status = searchParams.get('status') || ''
 
   try {
@@ -117,6 +118,10 @@ export async function GET(request: NextRequest) {
 
     if (jobId) {
       where.jobId = jobId
+    }
+
+    if (leadId) {
+      where.leadId = leadId
     }
 
     const statuses = status

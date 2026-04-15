@@ -10,13 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ArrowLeft, Save, Plus, Trash2, Eye, EyeOff } from 'lucide-react'
 import Link from 'next/link'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
+import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
 import { refreshAccessToken } from '@/lib/auth/client'
+import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
 import { useCreateContextPrefill } from '@/src/hooks/useCreateContextPrefill'
-
-interface Client {
-  id: string
-  name: string
-}
 
 interface LineItem {
   id?: string
@@ -55,7 +52,7 @@ export default function NewEstimatePage() {
     useCreateContextPrefill('estimate')
   
   const [loading, setLoading] = useState(false)
-  const [clients, setClients] = useState<Client[]>([])
+  const [clients, setClients] = useState<PickerClient[]>([])
   const [pickerItems, setPickerItems] = useState<FastPickerItem[]>([])
   const [pickerBundles, setPickerBundles] = useState<FastPickerItem[]>([])
   const [lineItems, setLineItems] = useState<LineItem[]>([
@@ -219,14 +216,7 @@ export default function NewEstimatePage() {
 
   const fetchClients = async () => {
     try {
-      const token = localStorage.getItem('accessToken')
-      const response = await fetch('/api/clients?limit=5000', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (response.ok) {
-        const data = await response.json()
-        setClients(data.clients || [])
-      }
+      setClients(await fetchAllPickerClients())
     } catch (error) {
       console.error('Error fetching clients:', error)
     }
@@ -957,22 +947,13 @@ export default function NewEstimatePage() {
               <CardContent className="space-y-4">
                 <div>
                   <Label htmlFor="clientId">Client *</Label>
-                  <Select
+                  <SearchableClientSelect
+                    clients={clients}
                     value={formData.clientId}
-                    onValueChange={handleClientSelect}
+                    onSelect={handleClientSelect}
+                    placeholder="Select a client..."
                     disabled={Boolean(jobIdParam)}
-                  >
-                    <SelectTrigger id="clientId">
-                      <SelectValue placeholder="Select a client..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {clients.map((client) => (
-                        <SelectItem key={client.id} value={client.id}>
-                          {client.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  />
                   {jobIdParam && (
                     <p className="mt-1 text-xs text-gray-500">Client is locked because this estimate is being created from a job.</p>
                   )}

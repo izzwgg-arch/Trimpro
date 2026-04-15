@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { decryptSecrets, encryptSecrets } from '@/lib/integrations/secrets'
 import { updateIntegrationStatus } from '@/lib/integrations/status'
+import { logQuickBooksApiUsage } from '@/lib/services/quickbooks'
 
 const QBO_TOKEN_URL = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer'
 
@@ -92,6 +93,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Exchange authorization code for tokens
+    const startedAt = Date.now()
     const tokenResponse = await fetch(QBO_TOKEN_URL, {
       method: 'POST',
       headers: {
@@ -115,6 +117,21 @@ export async function GET(request: NextRequest) {
     const contentType = tokenResponse.headers.get('content-type') || ''
 
     const raw = await tokenResponse.text()
+    logQuickBooksApiUsage({
+      tenantId,
+      realmId,
+      endpoint: '/oauth2/v1/tokens/bearer',
+      method: 'POST',
+      entityType: 'oauth_token',
+      entityId: null,
+      triggerSource: 'oauth_callback',
+      httpStatus: tokenResponse.status,
+      success: tokenResponse.ok,
+      retryCount: null,
+      durationMs: Date.now() - startedAt,
+      timestamp: new Date().toISOString(),
+      intuitTid,
+    })
     let tokenData: any = null
     try {
       tokenData = raw ? JSON.parse(raw) : {}

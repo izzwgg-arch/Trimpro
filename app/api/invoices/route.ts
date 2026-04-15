@@ -27,6 +27,12 @@ export async function GET(request: NextRequest) {
       where.OR = [
         { invoiceNumber: { contains: search, mode: 'insensitive' } },
         { title: { contains: search, mode: 'insensitive' } },
+        { client: { name: { contains: search, mode: 'insensitive' } } },
+        { client: { companyName: { contains: search, mode: 'insensitive' } } },
+        { client: { addresses: { some: { street: { contains: search, mode: 'insensitive' } } } } },
+        { client: { addresses: { some: { city: { contains: search, mode: 'insensitive' } } } } },
+        { client: { addresses: { some: { state: { contains: search, mode: 'insensitive' } } } } },
+        { client: { addresses: { some: { zipCode: { contains: search, mode: 'insensitive' } } } } },
       ]
     }
 

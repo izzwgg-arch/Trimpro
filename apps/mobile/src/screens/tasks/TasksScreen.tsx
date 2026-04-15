@@ -1,7 +1,8 @@
-import React, { useState } from 'react'
-import { Alert, FlatList, Platform, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native'
+import React, { useCallback, useMemo, useState } from 'react'
+import { Alert, FlatList, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useFocusEffect } from '@react-navigation/native'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { Ionicons } from '@expo/vector-icons'
 import { AppScreen } from '../../components/AppScreen'
@@ -15,9 +16,28 @@ import { StatusBadge } from '../../components/StatusBadge'
 import { SectionHeader } from '../../components/SectionHeader'
 import { useMobilePermissions } from '../../hooks/useMobilePermissions'
 import { useAuth } from '../../auth/AuthContext'
+import {
+  convertTaskDraftToRequestDraft,
+  deleteTaskDraft,
+  isTaskDraftReady,
+  listTaskDrafts,
+  LocalTaskDraft,
+  setTaskDraftPublishState,
+  upsertTaskDraft,
+} from '../../drafts/storage'
+import { combineDateAndTime, formatScheduledAt, splitDateAndTime } from '../../utils/schedule'
+import { useOnlineState } from '../../hooks/useOnlineState'
 
 interface TasksResponse {
   tasks: Task[]
+}
+
+interface ClientListResponse {
+  clients: Array<{
+    id: string
+    name: string
+    companyName?: string | null
+  }>
 }
 
 type Props = NativeStackScreenProps<TasksStackParamList, 'TasksList'>
@@ -25,15 +45,73 @@ type Props = NativeStackScreenProps<TasksStackParamList, 'TasksList'>
 export function TasksScreen({ navigation }: Props) {
   const { canCreateTasks, canAssignTasksToAdmin } = useMobilePermissions()
   const { user } = useAuth()
+  const isOnline = useOnlineState()
   const queryClient = useQueryClient()
   const [showCreateForm, setShowCreateForm] = useState(false)
+  const [editingDraftId, setEditingDraftId] = useState<string | null>(null)
+  const [taskDrafts, setTaskDrafts] = useState<LocalTaskDraft[]>([])
   const [taskTitle, setTaskTitle] = useState('')
   const [taskDescription, setTaskDescription] = useState('')
   const [taskNotes, setTaskNotes] = useState('')
-  const [taskDueDate, setTaskDueDate] = useState<Date | null>(null)
-  const [taskReminder, setTaskReminder] = useState<Date | null>(null)
-  const [showDueDatePicker, setShowDueDatePicker] = useState(false)
-  const [showReminderPicker, setShowReminderPicker] = useState(false)
+  const [taskClientId, setTaskClientId] = useState<string | null>(null)
+  const [taskClientName, setTaskClientName] = useState<string | null>(null)
+  const [clientSearch, setClientSearch] = useState('')
+  const [showClientPicker, setShowClientPicker] = useState(false)
+  const [taskDate, setTaskDate] = useState<Date | null>(null)
+  const [taskTime, setTaskTime] = useState<Date | null>(null)
+  const [showDatePicker, setShowDatePicker] = useState(false)
+  const [showTimePicker, setShowTimePicker] = useState(false)
+
+  const reloadDrafts = useCallback(async () => {
+    setTaskDrafts(await listTaskDrafts())
+  }, [])
+
+  useFocusEffect(
+    useCallback(() => {
+      void reloadDrafts()
+      return () => {}
+    }, [reloadDrafts])
+  )
+
+  const resetForm = useCallback(() => {
+    setEditingDraftId(null)
+    setTaskTitle('')
+    setTaskDescription('')
+    setTaskNotes('')
+    setTaskClientId(null)
+    setTaskClientName(null)
+    setClientSearch('')
+    setShowClientPicker(false)
+    setTaskDate(null)
+    setTaskTime(null)
+    setShowDatePicker(false)
+    setShowTimePicker(false)
+    setShowCreateForm(false)
+  }, [])
+
+  const loadDraftIntoForm = useCallback((draft: LocalTaskDraft) => {
+    const split = splitDateAndTime(draft.scheduledAt)
+    setEditingDraftId(draft.id)
+    setTaskTitle(draft.title)
+    setTaskDescription(draft.description)
+    setTaskNotes(draft.notes)
+    setTaskClientId(draft.selectedClientId || null)
+    setTaskClientName(draft.selectedClientName || null)
+    setTaskDate(split.date)
+    setTaskTime(split.time)
+    setShowCreateForm(true)
+  }, [])
+
+  const clientsQuery = useQuery({
+    queryKey: ['mobile-task-clients', clientSearch],
+    queryFn: () =>
+      apiRequest<ClientListResponse>(
+        `/api/clients?status=active&limit=100&search=${encodeURIComponent(clientSearch.trim())}`
+      ),
+    enabled: showClientPicker,
+  })
+
+  const clientRows = useMemo(() => clientsQuery.data?.clients || [], [clientsQuery.data?.clients])
 
   const query = useQuery({
     queryKey: ['mobile-tasks'],
@@ -41,10 +119,13 @@ export function TasksScreen({ navigation }: Props) {
     refetchInterval: 60_000,
   })
 
-  const createTaskMutation = useMutation({
-    mutationFn: async () => {
+  const publishTaskMutation = useMutation({
+    mutationFn: async (draft: LocalTaskDraft) => {
       if (!user?.id) {
         throw new Error('Unable to determine current user')
+      }
+      if (!isOnline) {
+        throw new Error('Reconnect before publishing this task.')
       }
 
       let assigneeId = user.id
@@ -59,37 +140,98 @@ export function TasksScreen({ navigation }: Props) {
         }
       }
 
-      const descriptionWithNotes = [taskDescription.trim(), taskNotes.trim() ? `Notes:\n${taskNotes.trim()}` : '']
+      const descriptionWithNotes = [draft.description.trim(), draft.notes.trim() ? `Notes:\n${draft.notes.trim()}` : '']
         .filter(Boolean)
         .join('\n\n')
-      
+
+      await setTaskDraftPublishState(draft.id, 'pendingPublish')
+
       return apiRequest('/api/tasks?mobile=true', 'POST', {
-        title: taskTitle.trim(),
+        title: draft.title.trim(),
         description: descriptionWithNotes || null,
         assigneeId,
         priority: 'MEDIUM',
         status: 'TODO',
-        dueDate: taskDueDate ? taskDueDate.toISOString() : null,
-        reminderAt: taskReminder ? taskReminder.toISOString() : null,
+        dueDate: draft.scheduledAt,
+        clientId: draft.selectedClientId || null,
       })
     },
-    onSuccess: () => {
-      setTaskDueDate(null)
-      setTaskReminder(null)
-      setShowDueDatePicker(false)
-      setShowReminderPicker(false)
+    onSuccess: async (_result, draft) => {
+      await deleteTaskDraft(draft.id)
+      await reloadDrafts()
       queryClient.invalidateQueries({ queryKey: ['mobile-tasks'] })
       queryClient.invalidateQueries({ queryKey: ['mobile-assignments'] })
-      setTaskTitle('')
-      setTaskDescription('')
-      setTaskNotes('')
-      setShowCreateForm(false)
-      Alert.alert('Success', 'Task created successfully')
+      Alert.alert('Published', 'Task uploaded successfully.')
     },
-    onError: (error: any) => {
-      Alert.alert('Error', error?.message || 'Failed to create task')
+    onError: async (error: any, draft) => {
+      await setTaskDraftPublishState(draft.id, 'publishFailed', error?.message || 'Failed to publish task')
+      await reloadDrafts()
+      Alert.alert('Publish failed', error?.message || 'Failed to publish task')
     },
   })
+
+  const saveLocalDraft = useMutation({
+    mutationFn: async () => {
+      if (!taskTitle.trim()) {
+        throw new Error('Task title is required.')
+      }
+      return upsertTaskDraft({
+        id: editingDraftId || undefined,
+        title: taskTitle,
+        description: taskDescription,
+        notes: taskNotes,
+        selectedClientId: taskClientId,
+        selectedClientName: taskClientName,
+        scheduledAt: combineDateAndTime(taskDate, taskTime),
+        publishState: isTaskDraftReady({ title: taskTitle }) ? 'readyToPublish' : 'localDraft',
+        publishError: null,
+      })
+    },
+    onSuccess: async () => {
+      await reloadDrafts()
+      resetForm()
+      Alert.alert('Saved locally', 'Task draft is stored on this phone until you publish it.')
+    },
+    onError: (error: any) => {
+      Alert.alert('Unable to save', error?.message || 'Task draft could not be saved locally.')
+    },
+  })
+
+  const onConvertDraft = useCallback(
+    async (draft: LocalTaskDraft) => {
+      try {
+        const requestDraft = await convertTaskDraftToRequestDraft(draft.id)
+        await reloadDrafts()
+        const tabsNav = navigation.getParent() as any
+        tabsNav?.navigate('JobsTab', {
+          screen: 'RequestCreate',
+          params: { draftId: requestDraft.id },
+        })
+      } catch (error: any) {
+        Alert.alert('Conversion failed', error?.message || 'Unable to convert task draft to request.')
+      }
+    },
+    [navigation, reloadDrafts]
+  )
+
+  const onDeleteDraft = useCallback(
+    (draft: LocalTaskDraft) => {
+      Alert.alert('Delete local draft', 'Remove this unpublished task draft from this phone?', [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            void deleteTaskDraft(draft.id).then(reloadDrafts)
+          },
+        },
+      ])
+    },
+    [reloadDrafts]
+  )
+
+  const localDrafts = taskDrafts
+  const publishedTasks = query.data?.tasks ?? []
 
   return (
     <AppScreen>
@@ -102,8 +244,14 @@ export function TasksScreen({ navigation }: Props) {
           {canCreateTasks() && (
             <Pressable
               style={styles.createButton}
-              onPress={() => setShowCreateForm((prev) => !prev)}
-              disabled={createTaskMutation.isPending}
+              onPress={() => {
+                if (showCreateForm) {
+                  resetForm()
+                  return
+                }
+                setShowCreateForm(true)
+              }}
+              disabled={saveLocalDraft.isPending}
             >
               <Ionicons name="add" size={24} color="#E6C98B" />
             </Pressable>
@@ -112,7 +260,7 @@ export function TasksScreen({ navigation }: Props) {
       </View>
       {showCreateForm && (
         <View style={styles.formCard}>
-          <Text style={styles.formTitle}>Create Task</Text>
+          <Text style={styles.formTitle}>{editingDraftId ? 'Edit Local Task Draft' : 'Create Local Task Draft'}</Text>
           <TextInput
             style={styles.input}
             placeholder="Title"
@@ -142,37 +290,62 @@ export function TasksScreen({ navigation }: Props) {
             onChangeText={setTaskNotes}
             multiline
           />
+          <Pressable style={styles.clientSelectButton} onPress={() => setShowClientPicker(true)}>
+            <Ionicons name="people-outline" size={16} color={colors.textSecondary} />
+            <Text style={taskClientName ? styles.clientSelectValue : styles.clientSelectPlaceholder}>
+              {taskClientName || 'Client · Optional'}
+            </Text>
+            {taskClientId ? (
+              <Pressable
+                onPress={() => {
+                  setTaskClientId(null)
+                  setTaskClientName(null)
+                }}
+                hitSlop={8}
+              >
+                <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
+              </Pressable>
+            ) : (
+              <Ionicons name="chevron-down" size={16} color={colors.textSecondary} />
+            )}
+          </Pressable>
 
           <Pressable
             style={styles.datePickerButton}
             onPress={() => {
               if (Platform.OS === 'android') {
                 DateTimePickerAndroid.open({
-                  value: taskDueDate ?? new Date(),
+                  value: taskDate ?? new Date(),
                   mode: 'date',
-                  onChange: (_e, d) => { if (d) setTaskDueDate(d) },
+                  onChange: (_e, d) => {
+                    if (d) setTaskDate(d)
+                  },
                 })
               } else {
-                setShowDueDatePicker(!showDueDatePicker)
+                setShowDatePicker(!showDatePicker)
               }
             }}
           >
             <Ionicons name="calendar-outline" size={16} color={colors.textSecondary} />
             <Text style={styles.datePickerText}>
-              {taskDueDate ? taskDueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Set due date'}
+              {taskDate
+                ? taskDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                : 'Date · Optional / Unscheduled'}
             </Text>
-            {taskDueDate ? (
-              <Pressable onPress={() => setTaskDueDate(null)} hitSlop={8}>
+            {taskDate ? (
+              <Pressable onPress={() => setTaskDate(null)} hitSlop={8}>
                 <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
               </Pressable>
             ) : null}
           </Pressable>
-          {Platform.OS === 'ios' && showDueDatePicker ? (
+          {Platform.OS === 'ios' && showDatePicker ? (
             <DateTimePicker
-              value={taskDueDate ?? new Date()}
+              value={taskDate ?? new Date()}
               mode="date"
               display="spinner"
-              onChange={(_e, d) => { if (d) setTaskDueDate(d) }}
+              onChange={(_e, d) => {
+                if (d) setTaskDate(d)
+              }}
             />
           ) : null}
           <Pressable
@@ -180,59 +353,110 @@ export function TasksScreen({ navigation }: Props) {
             onPress={() => {
               if (Platform.OS === 'android') {
                 DateTimePickerAndroid.open({
-                  value: taskReminder ?? new Date(),
+                  value: taskTime ?? new Date(),
                   mode: 'time',
-                  onChange: (_e, d) => { if (d) setTaskReminder(d) },
+                  onChange: (_e, d) => {
+                    if (d) setTaskTime(d)
+                  },
                 })
               } else {
-                setShowReminderPicker(!showReminderPicker)
+                setShowTimePicker(!showTimePicker)
               }
             }}
           >
-            <Ionicons name="notifications-outline" size={16} color={colors.textSecondary} />
+            <Ionicons name="time-outline" size={16} color={colors.textSecondary} />
             <Text style={styles.datePickerText}>
-              {taskReminder ? taskReminder.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Set reminder'}
+              {taskTime
+                ? taskTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+                : 'Time · Optional / Unscheduled'}
             </Text>
-            {taskReminder ? (
-              <Pressable onPress={() => setTaskReminder(null)} hitSlop={8}>
+            {taskTime ? (
+              <Pressable onPress={() => setTaskTime(null)} hitSlop={8}>
                 <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
               </Pressable>
             ) : null}
           </Pressable>
-          {Platform.OS === 'ios' && showReminderPicker ? (
+          {Platform.OS === 'ios' && showTimePicker ? (
             <DateTimePicker
-              value={taskReminder ?? new Date()}
+              value={taskTime ?? new Date()}
               mode="time"
               display="spinner"
-              onChange={(_e, d) => { if (d) setTaskReminder(d) }}
+              onChange={(_e, d) => {
+                if (d) setTaskTime(d)
+              }}
             />
-          ) : null}          <View style={styles.formActions}>
+          ) : null}
+          <Text style={styles.scheduleHint}>Status: {combineDateAndTime(taskDate, taskTime) ? 'Scheduled' : 'Unscheduled'}</Text>
+          <View style={styles.formActions}>
             <Pressable
               style={[styles.actionButton, styles.cancelButton]}
               onPress={() => {
-                setShowCreateForm(false)
-                setTaskTitle('')
-                setTaskDescription('')
-                setTaskNotes('')
+                resetForm()
               }}
             >
               <Text style={styles.cancelButtonText}>Cancel</Text>
             </Pressable>
             <Pressable
-              style={[styles.actionButton, styles.saveButton, (!taskTitle.trim() || createTaskMutation.isPending) && styles.disabledButton]}
-              onPress={() => createTaskMutation.mutate()}
-              disabled={!taskTitle.trim() || createTaskMutation.isPending}
+              style={[styles.actionButton, styles.saveButton, (!taskTitle.trim() || saveLocalDraft.isPending) && styles.disabledButton]}
+              onPress={() => saveLocalDraft.mutate()}
+              disabled={!taskTitle.trim() || saveLocalDraft.isPending}
             >
-              <Text style={styles.saveButtonText}>{createTaskMutation.isPending ? 'Saving...' : 'Create'}</Text>
+              <Text style={styles.saveButtonText}>{saveLocalDraft.isPending ? 'Saving...' : 'Save locally'}</Text>
             </Pressable>
           </View>
         </View>
       )}
       <FlatList
-        data={query.data?.tasks ?? []}
+        data={publishedTasks}
         keyExtractor={(item) => item.id}
         refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => query.refetch()} />}
-        ListHeaderComponent={<SectionHeader title="Assigned Tasks" />}
+        ListHeaderComponent={
+          <View style={styles.listSections}>
+            <SectionHeader title="Local Drafts" />
+            {localDrafts.length === 0 ? (
+              <Text style={styles.emptyLocalDrafts}>No unpublished task drafts on this phone.</Text>
+            ) : (
+              localDrafts.map((draft) => (
+                <PressableCard key={draft.id} style={styles.card} onPress={() => loadDraftIntoForm(draft)}>
+                  <View style={styles.row}>
+                    <Text style={styles.cardTitle}>{draft.title || 'Untitled local task'}</Text>
+                    <StatusBadge status={draft.publishState === 'publishFailed' ? 'FAILED' : 'LOCAL DRAFT'} />
+                  </View>
+                  <Text style={styles.meta}>
+                    {draft.publishState === 'publishFailed'
+                      ? 'Unpublished · Publish failed'
+                      : draft.publishState === 'readyToPublish'
+                        ? 'Local draft · Ready to publish'
+                        : 'Local draft · Unpublished'}
+                  </Text>
+                  {draft.selectedClientName ? <Text style={styles.meta}>Client: {draft.selectedClientName}</Text> : null}
+                  <Text style={styles.meta}>{formatScheduledAt(draft.scheduledAt)}</Text>
+                  <Text style={styles.meta}>Status: {draft.scheduledAt ? 'Scheduled' : 'Unscheduled'}</Text>
+                  {draft.publishError ? <Text style={styles.errorText}>{draft.publishError}</Text> : null}
+                  <View style={styles.draftActionRow}>
+                    <Pressable style={styles.mutedButton} onPress={() => loadDraftIntoForm(draft)}>
+                      <Text style={styles.mutedButtonText}>Edit</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.mutedButton, !isOnline && styles.disabledButton]}
+                      onPress={() => publishTaskMutation.mutate(draft)}
+                      disabled={!isOnline || publishTaskMutation.isPending}
+                    >
+                      <Text style={styles.mutedButtonText}>{publishTaskMutation.isPending ? 'Publishing...' : 'Publish'}</Text>
+                    </Pressable>
+                    <Pressable style={styles.mutedButton} onPress={() => void onConvertDraft(draft)}>
+                      <Text style={styles.mutedButtonText}>Convert to request</Text>
+                    </Pressable>
+                    <Pressable style={styles.deleteButton} onPress={() => onDeleteDraft(draft)}>
+                      <Text style={styles.deleteButtonText}>Delete</Text>
+                    </Pressable>
+                  </View>
+                </PressableCard>
+              ))
+            )}
+            <SectionHeader title="Assigned Tasks" />
+          </View>
+        }
         ListEmptyComponent={<EmptyState icon="checkbox-outline" title="No assigned tasks" description="You have no pending tasks right now." />}
         renderItem={({ item }) => (
           <PressableCard
@@ -245,9 +469,67 @@ export function TasksScreen({ navigation }: Props) {
             </View>
             <Text style={styles.meta}>{item.description || 'No description'}</Text>
             <Text style={styles.meta}>Priority: {item.priority}</Text>
+            {item.client?.name ? <Text style={styles.meta}>Client: {item.client.name}</Text> : null}
+            <Text style={styles.meta}>{formatScheduledAt(item.dueDate)}</Text>
           </PressableCard>
         )}
       />
+      <Modal
+        visible={showClientPicker}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowClientPicker(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowClientPicker(false)} />
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Select Client</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Search client"
+              placeholderTextColor={colors.textPrimary}
+              selectionColor={colors.textPrimary}
+              cursorColor={colors.textPrimary}
+              value={clientSearch}
+              onChangeText={setClientSearch}
+            />
+            <ScrollView style={styles.clientList}>
+              <Pressable
+                style={styles.clientRow}
+                onPress={() => {
+                  setTaskClientId(null)
+                  setTaskClientName(null)
+                  setShowClientPicker(false)
+                }}
+              >
+                <Text style={styles.clientRowName}>No client</Text>
+                <Text style={styles.clientRowMeta}>Leave this task unattached</Text>
+              </Pressable>
+              {clientRows.map((client) => (
+                <Pressable
+                  key={client.id}
+                  style={styles.clientRow}
+                  onPress={() => {
+                    setTaskClientId(client.id)
+                    setTaskClientName(client.name)
+                    setShowClientPicker(false)
+                  }}
+                >
+                  <Text style={styles.clientRowName}>{client.name}</Text>
+                  {!!client.companyName ? <Text style={styles.clientRowMeta}>{client.companyName}</Text> : null}
+                </Pressable>
+              ))}
+              {clientsQuery.isLoading ? <Text style={styles.modalHint}>Loading clients...</Text> : null}
+              {!clientsQuery.isLoading && clientRows.length === 0 ? (
+                <Text style={styles.modalHint}>No clients found.</Text>
+              ) : null}
+            </ScrollView>
+            <Pressable style={styles.modalCloseButton} onPress={() => setShowClientPicker(false)}>
+              <Text style={styles.modalCloseText}>Close</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </AppScreen>
   )
 }
@@ -291,6 +573,29 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     color: colors.textPrimary,
     backgroundColor: '#FFFFFF',
+  },
+  clientSelectButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#D0D5DD',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#FFFFFF',
+  },
+  clientSelectValue: {
+    ...typography.caption,
+    color: colors.textPrimary,
+    flex: 1,
+    fontSize: 13,
+  },
+  clientSelectPlaceholder: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    flex: 1,
+    fontSize: 13,
   },
   multilineInput: {
     minHeight: 88,
@@ -344,6 +649,106 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     flex: 1,
     fontSize: 13,
+  },
+  scheduleHint: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  listSections: {
+    gap: spacing.xs,
+  },
+  emptyLocalDrafts: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
+  },
+  draftActionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  mutedButton: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#D0D5DD',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: '#FFFFFF',
+  },
+  mutedButtonText: {
+    ...typography.caption,
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+  deleteButton: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: '#FEF2F2',
+  },
+  deleteButtonText: {
+    ...typography.caption,
+    color: '#B42318',
+    fontWeight: '700',
+  },
+  errorText: {
+    ...typography.caption,
+    color: '#B42318',
+    marginTop: 4,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.35)',
+    justifyContent: 'center',
+    padding: spacing.md,
+  },
+  modalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: spacing.md,
+    maxHeight: '70%',
+    gap: spacing.xs,
+  },
+  modalTitle: {
+    ...typography.sub,
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+  clientList: {
+    maxHeight: 280,
+  },
+  clientRow: {
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EAECF0',
+  },
+  clientRowName: {
+    ...typography.caption,
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+  clientRowMeta: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  modalHint: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    paddingVertical: 12,
+  },
+  modalCloseButton: {
+    alignSelf: 'flex-end',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  modalCloseText: {
+    ...typography.caption,
+    color: colors.brandPrimary,
+    fontWeight: '700',
   },
 })
 

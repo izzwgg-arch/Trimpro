@@ -33,6 +33,8 @@ export async function GET(request: NextRequest) {
         email: true,
         phone: true,
         role: true,
+        allowWebLogin: true,
+        allowMobileLogin: true,
         managerId: true,
         manager: {
           select: {

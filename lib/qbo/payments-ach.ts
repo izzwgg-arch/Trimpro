@@ -53,6 +53,7 @@ function appBaseUrl(): string {
  * - If Payments isn't enabled, QBO may ignore AllowOnlineACHPayment or not provide InvoiceLink.
  */
 async function ensureQboInvoiceAchHostedLink(params: {
+  tenantId: string
   accessToken: string
   realmId: string
   qboInvoiceId: string
@@ -63,7 +64,14 @@ async function ensureQboInvoiceAchHostedLink(params: {
       params.accessToken,
       params.realmId,
       `/invoice/${params.qboInvoiceId}`,
-      'GET'
+      'GET',
+      undefined,
+      {
+        tenantId: params.tenantId,
+        entityType: 'invoice',
+        entityId: params.qboInvoiceId,
+        triggerSource: 'qbo_ach_hosted_link',
+      }
     )
     return res?.Invoice || res?.QueryResponse?.Invoice?.[0] || null
   }
@@ -106,7 +114,13 @@ async function ensureQboInvoiceAchHostedLink(params: {
     params.realmId,
     `/invoice?operation=update`,
     'POST',
-    payload
+    payload,
+    {
+      tenantId: params.tenantId,
+      entityType: 'invoice',
+      entityId: params.qboInvoiceId,
+      triggerSource: 'qbo_ach_hosted_link',
+    }
   )
 
   // QBO sometimes generates InvoiceLink asynchronously (especially for freshly-created invoices).
@@ -128,7 +142,13 @@ async function ensureQboInvoiceAchHostedLink(params: {
         params.realmId,
         `/invoice/${encodeURIComponent(params.qboInvoiceId)}/send?sendTo=${encodeURIComponent(sendTo)}`,
         'POST',
-        {}
+        {},
+        {
+          tenantId: params.tenantId,
+          entityType: 'invoice',
+          entityId: params.qboInvoiceId,
+          triggerSource: 'qbo_ach_hosted_link',
+        }
       )
       const sentInvoice = sendRes?.Invoice || sendRes?.QueryResponse?.Invoice?.[0] || null
       const sentLink = extractLink(sentInvoice)
@@ -228,6 +248,7 @@ export async function createAchPaymentSession(params: {
   }
 
   const hostedUrl = await ensureQboInvoiceAchHostedLink({
+    tenantId: params.tenantId,
     accessToken: session.accessToken,
     realmId: session.realmId,
     qboInvoiceId: String(invoice.qboSyncId),

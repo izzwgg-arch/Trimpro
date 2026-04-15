@@ -30,6 +30,44 @@ interface QBOCompanyInfo {
   SupportedLanguages: string
 }
 
+export type QuickBooksRequestContext = {
+  tenantId?: string | null
+  entityType?: string | null
+  entityId?: string | null
+  triggerSource?: string | null
+  retryCount?: number | null
+}
+
+type QuickBooksUsageLog = {
+  tenantId: string | null
+  realmId: string | null
+  endpoint: string
+  method: string
+  entityType: string | null
+  entityId: string | null
+  triggerSource: string | null
+  httpStatus: number | null
+  success: boolean
+  retryCount: number | null
+  durationMs: number
+  timestamp: string
+  intuitTid: string | null
+}
+
+function shouldLogQuickBooksUsage(): boolean {
+  return String(process.env.QBO_METERING_MODE || 'log').toLowerCase() !== 'off'
+}
+
+export function logQuickBooksApiUsage(entry: QuickBooksUsageLog) {
+  if (!shouldLogQuickBooksUsage()) return
+  console.info(
+    JSON.stringify({
+      area: 'qbo_api_usage',
+      ...entry,
+    })
+  )
+}
+
 export class QuickBooksService {
   private extractIntuitTid(headers: Headers): string | null {
     // Intuit returns a trace id header used by their support team.
@@ -64,6 +102,7 @@ export class QuickBooksService {
   }
 
   async exchangeCodeForTokens(code: string): Promise<QBOAccessTokenResponse> {
+    const startedAt = Date.now()
     const response = await fetch(QBO_TOKEN_URL, {
       method: 'POST',
       headers: {
@@ -80,6 +119,21 @@ export class QuickBooksService {
 
     const intuitTid = this.extractIntuitTid(response.headers)
     this.logIntuitTid(intuitTid, { method: 'POST', url: `${QBO_BASE_URL}/v1/tokens/bearer`, status: response.status })
+    logQuickBooksApiUsage({
+      tenantId: null,
+      realmId: null,
+      endpoint: '/oauth2/v1/tokens/bearer',
+      method: 'POST',
+      entityType: 'oauth_token',
+      entityId: null,
+      triggerSource: 'oauth_code_exchange',
+      httpStatus: response.status,
+      success: response.ok,
+      retryCount: null,
+      durationMs: Date.now() - startedAt,
+      timestamp: new Date().toISOString(),
+      intuitTid,
+    })
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ message: 'Unknown error' }))
@@ -93,7 +147,8 @@ export class QuickBooksService {
   async refreshAccessToken(
     refreshToken: string,
     clientId?: string,
-    clientSecret?: string
+    clientSecret?: string,
+    context?: QuickBooksRequestContext
   ): Promise<Omit<QBOAccessTokenResponse, 'realmId'>> {
     // Use provided credentials or fall back to env vars
     const cid = clientId || QBO_CLIENT_ID || ''
@@ -103,6 +158,7 @@ export class QuickBooksService {
       throw new Error('QuickBooks OAuth credentials missing (clientId/clientSecret required)')
     }
 
+    const startedAt = Date.now()
     const response = await fetch(QBO_TOKEN_URL, {
       method: 'POST',
       headers: {
@@ -118,6 +174,21 @@ export class QuickBooksService {
 
     const intuitTid = this.extractIntuitTid(response.headers)
     this.logIntuitTid(intuitTid, { method: 'POST', url: `${QBO_BASE_URL}/v1/tokens/bearer`, status: response.status })
+    logQuickBooksApiUsage({
+      tenantId: context?.tenantId ?? null,
+      realmId: null,
+      endpoint: '/oauth2/v1/tokens/bearer',
+      method: 'POST',
+      entityType: context?.entityType ?? 'oauth_token',
+      entityId: context?.entityId ?? null,
+      triggerSource: context?.triggerSource ?? 'access_token_refresh',
+      httpStatus: response.status,
+      success: response.ok,
+      retryCount: context?.retryCount ?? null,
+      durationMs: Date.now() - startedAt,
+      timestamp: new Date().toISOString(),
+      intuitTid,
+    })
 
     if (!response.ok) {
       // Intuit sometimes returns non-JSON (or JSON with different fields). Capture a short snippet for debugging.
@@ -162,9 +233,11 @@ export class QuickBooksService {
     realmId: string,
     endpoint: string,
     method: string = 'GET',
-    body?: any
+    body?: any,
+    context?: QuickBooksRequestContext
   ): Promise<any> {
     const url = `${QBO_API_BASE}/v3/company/${realmId}${endpoint}`
+    const startedAt = Date.now()
     
     const headers: HeadersInit = {
       'Authorization': `Bearer ${accessToken}`,
@@ -183,6 +256,21 @@ export class QuickBooksService {
 
     const intuitTid = this.extractIntuitTid(response.headers)
     this.logIntuitTid(intuitTid, { method, url, status: response.status })
+    logQuickBooksApiUsage({
+      tenantId: context?.tenantId ?? null,
+      realmId,
+      endpoint,
+      method,
+      entityType: context?.entityType ?? null,
+      entityId: context?.entityId ?? null,
+      triggerSource: context?.triggerSource ?? null,
+      httpStatus: response.status,
+      success: response.ok,
+      retryCount: context?.retryCount ?? null,
+      durationMs: Date.now() - startedAt,
+      timestamp: new Date().toISOString(),
+      intuitTid,
+    })
 
     if (!response.ok) {
       const raw = await response.text().catch(() => '')
@@ -201,37 +289,72 @@ export class QuickBooksService {
     return response.json()
   }
 
-  async getCompanyInfo(accessToken: string, realmId: string): Promise<QBOCompanyInfo> {
-    const response = await this.makeAPIRequest(accessToken, realmId, `/companyinfo/${realmId}`)
+  async getCompanyInfo(
+    accessToken: string,
+    realmId: string,
+    context?: QuickBooksRequestContext
+  ): Promise<QBOCompanyInfo> {
+    const response = await this.makeAPIRequest(accessToken, realmId, `/companyinfo/${realmId}`, 'GET', undefined, context)
     return response.QueryResponse?.CompanyInfo?.[0] || response.CompanyInfo
   }
 
-  async createCustomer(accessToken: string, realmId: string, customerData: any): Promise<any> {
-    return this.makeAPIRequest(accessToken, realmId, '/customer', 'POST', customerData)
+  async createCustomer(
+    accessToken: string,
+    realmId: string,
+    customerData: any,
+    context?: QuickBooksRequestContext
+  ): Promise<any> {
+    return this.makeAPIRequest(accessToken, realmId, '/customer', 'POST', customerData, context)
   }
 
-  async updateCustomer(accessToken: string, realmId: string, customerId: string, customerData: any): Promise<any> {
+  async updateCustomer(
+    accessToken: string,
+    realmId: string,
+    customerId: string,
+    customerData: any,
+    context?: QuickBooksRequestContext
+  ): Promise<any> {
     return this.makeAPIRequest(accessToken, realmId, `/customer?operation=update`, 'POST', {
       ...customerData,
       Id: customerId,
       SyncToken: customerData.SyncToken || '0',
-    })
+    }, context)
   }
 
-  async createInvoice(accessToken: string, realmId: string, invoiceData: any): Promise<any> {
-    return this.makeAPIRequest(accessToken, realmId, '/invoice', 'POST', invoiceData)
+  async createInvoice(
+    accessToken: string,
+    realmId: string,
+    invoiceData: any,
+    context?: QuickBooksRequestContext
+  ): Promise<any> {
+    return this.makeAPIRequest(accessToken, realmId, '/invoice', 'POST', invoiceData, context)
   }
 
-  async createPayment(accessToken: string, realmId: string, paymentData: any): Promise<any> {
-    return this.makeAPIRequest(accessToken, realmId, '/payment', 'POST', paymentData)
+  async createPayment(
+    accessToken: string,
+    realmId: string,
+    paymentData: any,
+    context?: QuickBooksRequestContext
+  ): Promise<any> {
+    return this.makeAPIRequest(accessToken, realmId, '/payment', 'POST', paymentData, context)
   }
 
-  async createItem(accessToken: string, realmId: string, itemData: any): Promise<any> {
-    return this.makeAPIRequest(accessToken, realmId, '/item', 'POST', itemData)
+  async createItem(
+    accessToken: string,
+    realmId: string,
+    itemData: any,
+    context?: QuickBooksRequestContext
+  ): Promise<any> {
+    return this.makeAPIRequest(accessToken, realmId, '/item', 'POST', itemData, context)
   }
 
-  async query(accessToken: string, realmId: string, query: string): Promise<any> {
-    return this.makeAPIRequest(accessToken, realmId, `/query?query=${encodeURIComponent(query)}`)
+  async query(
+    accessToken: string,
+    realmId: string,
+    query: string,
+    context?: QuickBooksRequestContext
+  ): Promise<any> {
+    return this.makeAPIRequest(accessToken, realmId, `/query?query=${encodeURIComponent(query)}`, 'GET', undefined, context)
   }
 }
 

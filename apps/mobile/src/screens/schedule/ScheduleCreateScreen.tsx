@@ -51,14 +51,17 @@ interface ScheduleDetailResponse {
     endTime: string
     userId: string
     jobId: string | null
+    leadId?: string | null
   }
 }
 
 export function ScheduleCreateScreen({ navigation, route }: Props) {
   const scheduleId = route.params?.scheduleId
   const prefillJobId = route.params?.jobId
+  const prefillLeadId = route.params?.leadId
   const prefillAssignedUserId = route.params?.assignedUserId
   const prefillTitle = route.params?.title
+  const prefillDescription = route.params?.description
   const isEdit = Boolean(scheduleId)
   const { user } = useAuth()
   const { canCreateSchedulesForOthers, canAssignJobs } = useMobilePermissions()
@@ -71,6 +74,7 @@ export function ScheduleCreateScreen({ navigation, route }: Props) {
   const [assignedUserId, setAssignedUserId] = useState('')
   const [linkToJob, setLinkToJob] = useState(false)
   const [jobId, setJobId] = useState('')
+  const [leadId, setLeadId] = useState('')
   const [startAt, setStartAt] = useState<Date>(new Date())
   const [endAt, setEndAt] = useState<Date>(() => new Date(Date.now() + 60 * 60 * 1000))
   const [iosPicker, setIosPicker] = useState<{ mode: 'date' | 'time'; target: 'start' | 'end' } | null>(null)
@@ -109,6 +113,7 @@ export function ScheduleCreateScreen({ navigation, route }: Props) {
     setType((s.type as any) || 'OTHER')
     setAssignedUserId(s.userId || user?.id || '')
     setJobId(s.jobId || '')
+    setLeadId((s as any).leadId || '')
     setLinkToJob(Boolean(s.jobId) || s.type === 'JOB')
     setStartAt(new Date(s.startTime))
     setEndAt(new Date(s.endTime))
@@ -121,13 +126,19 @@ export function ScheduleCreateScreen({ navigation, route }: Props) {
       setLinkToJob(true)
       setJobId(prefillJobId)
     }
+    if (prefillLeadId) {
+      setLeadId(prefillLeadId)
+    }
     if (prefillAssignedUserId) {
       setAssignedUserId(prefillAssignedUserId)
     }
     if (prefillTitle && !title.trim()) {
       setTitle(prefillTitle)
     }
-  }, [isEdit, prefillAssignedUserId, prefillJobId, prefillTitle, title])
+    if (prefillDescription && !notes.trim()) {
+      setNotes(prefillDescription)
+    }
+  }, [isEdit, notes, prefillAssignedUserId, prefillDescription, prefillJobId, prefillLeadId, prefillTitle, title])
 
   useEffect(() => {
     if (type === 'JOB') {
@@ -181,6 +192,7 @@ export function ScheduleCreateScreen({ navigation, route }: Props) {
         endTime: endAt.toISOString(),
         assignedUserId: allowedAssignedUserId,
         jobId: linkToJob ? jobId || null : null,
+        leadId: leadId || null,
       }
       if (__DEV__) console.debug('[schedule] submit', { isEdit, payload })
       if (isEdit && scheduleId) {

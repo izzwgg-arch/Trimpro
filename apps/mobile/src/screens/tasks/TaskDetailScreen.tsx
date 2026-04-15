@@ -174,8 +174,9 @@ export function TaskDetailScreen({ route }: Props) {
             <Text style={styles.title}>{task.title}</Text>
             <StatusChip status={task.status} />
             <Text style={styles.meta}>Priority: {task.priority}</Text>
-            <Text style={styles.meta}>Due: {task.dueDate ? new Date(task.dueDate).toLocaleString() : 'Not set'}</Text>
+            <Text style={styles.meta}>Scheduled: {task.dueDate ? new Date(task.dueDate).toLocaleString() : 'Optional / Unscheduled'}</Text>
             <Text style={styles.meta}>Assignee: {task.assignee ? `${task.assignee.firstName} ${task.assignee.lastName}` : 'N/A'}</Text>
+            <Text style={styles.meta}>Client: {task.client?.name || 'Unattached'}</Text>
 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Description</Text>

@@ -11,6 +11,7 @@ import { ArrowLeft, ExternalLink, Paperclip, Save, Trash2, Upload } from 'lucide
 import Link from 'next/link'
 import { parseAddressParts } from '@/lib/address/parse'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
+import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
 import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
 import { PlaceAutocompleteInput } from '@/components/maps/PlaceAutocompleteInput'
 
@@ -18,14 +19,6 @@ interface User {
   id: string
   firstName: string
   lastName: string
-}
-
-interface Client {
-  id: string
-  name: string
-  companyName: string | null
-  email: string | null
-  phone: string | null
 }
 
 interface StagedAttachment {
@@ -46,7 +39,7 @@ export default function NewRequestPage() {
   const preselectedClientId = searchParams.get('clientId')?.trim() || ''
   const [loading, setLoading] = useState(false)
   const [users, setUsers] = useState<User[]>([])
-  const [clients, setClients] = useState<Client[]>([])
+  const [clients, setClients] = useState<PickerClient[]>([])
   const [stagedAttachments, setStagedAttachments] = useState<StagedAttachment[]>([])
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const [dragActive, setDragActive] = useState(false)
@@ -122,14 +115,7 @@ export default function NewRequestPage() {
 
   const fetchClients = async () => {
     try {
-      const token = localStorage.getItem('accessToken')
-      const response = await fetch('/api/clients?limit=5000', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (response.ok) {
-        const data = await response.json()
-        setClients(data.clients || [])
-      }
+      setClients(await fetchAllPickerClients())
     } catch (error) {
       console.error('Error fetching clients:', error)
     }

@@ -6,19 +6,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ArrowLeft, Save } from 'lucide-react'
 import Link from 'next/link'
 import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
 import { PlaceAutocompleteInput } from '@/components/maps/PlaceAutocompleteInput'
+import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
+import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
 import { useCreateContextPrefill } from '@/src/hooks/useCreateContextPrefill'
 import { refreshAccessToken } from '@/lib/auth/client'
-
-interface Client {
-  id: string
-  name: string
-  companyName: string | null
-}
 
 export default function NewJobPage() {
   const router = useRouter()
@@ -27,7 +22,7 @@ export default function NewJobPage() {
   const { prefillClientId, address: prefillAddress, noAddressWarning, applyDefaultsOnce } =
     useCreateContextPrefill('job')
   const [loading, setLoading] = useState(false)
-  const [clients, setClients] = useState<Client[]>([])
+  const [clients, setClients] = useState<PickerClient[]>([])
   const [jobSitePlaceId, setJobSitePlaceId] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     clientId: clientIdParam || '',
@@ -98,14 +93,7 @@ export default function NewJobPage() {
 
   const fetchClients = async () => {
     try {
-      const token = localStorage.getItem('accessToken')
-      const response = await fetch('/api/clients?limit=5000', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (response.ok) {
-        const data = await response.json()
-        setClients(data.clients || [])
-      }
+      setClients(await fetchAllPickerClients())
     } catch (error) {
       console.error('Error fetching clients:', error)
     }
@@ -270,18 +258,12 @@ export default function NewJobPage() {
           <CardContent className="space-y-4">
             <div>
               <Label htmlFor="clientId">Client *</Label>
-              <Select value={formData.clientId} onValueChange={handleClientChange}>
-                <SelectTrigger id="clientId">
-                  <SelectValue placeholder="Select a client" />
-                </SelectTrigger>
-                <SelectContent>
-                  {clients.map((client) => (
-                    <SelectItem key={client.id} value={client.id}>
-                      {client.name} {client.companyName ? `(${client.companyName})` : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableClientSelect
+                clients={clients}
+                value={formData.clientId}
+                onSelect={handleClientChange}
+                placeholder="Select a client"
+              />
             </div>
 
             <div>

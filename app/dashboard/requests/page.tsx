@@ -116,7 +116,6 @@ export default function RequestsPage() {
   }, [])
 
   const fetchRequests = async (silent = false) => {
-    if (!silent) setLoading(true)
     try {
       const token = localStorage.getItem('accessToken')
       const params = new URLSearchParams({
@@ -412,7 +411,7 @@ export default function RequestsPage() {
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               <Input
-                placeholder="Search requests by name, email, or phone..."
+                placeholder="Search by request #, client name, or address..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-10"

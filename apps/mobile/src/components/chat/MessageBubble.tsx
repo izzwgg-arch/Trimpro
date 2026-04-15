@@ -30,8 +30,12 @@ function resolveMediaUrl(url: string | null | undefined): string {
   const trimmed = url.trim()
   if (!trimmed) return ''
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed
-  if (trimmed.startsWith('/')) return `${API_BASE_URL}${trimmed}`
-  return trimmed
+  if (trimmed.startsWith('file://') || trimmed.startsWith('content://')) return trimmed
+  try {
+    return new URL(trimmed, `${API_BASE_URL}/`).toString()
+  } catch {
+    return trimmed
+  }
 }
 
 const REACTION_PICKER_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'] as const

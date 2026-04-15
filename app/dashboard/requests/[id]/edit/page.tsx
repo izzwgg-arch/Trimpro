@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { parseAddressParts } from '@/lib/address/parse'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
+import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
 import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
 import { PlaceAutocompleteInput } from '@/components/maps/PlaceAutocompleteInput'
 import { DocumentAttachments } from '@/components/common/document-attachments'
@@ -37,14 +38,6 @@ type RequestResponse = {
   }
 }
 
-interface Client {
-  id: string
-  name: string
-  companyName: string | null
-  email: string | null
-  phone: string | null
-}
-
 export default function EditRequestPage() {
   const router = useRouter()
   const params = useParams()
@@ -56,7 +49,7 @@ export default function EditRequestPage() {
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [users, setUsers] = useState<Array<{ id: string; firstName: string; lastName: string }>>([])
-  const [clients, setClients] = useState<Client[]>([])
+  const [clients, setClients] = useState<PickerClient[]>([])
   const [clientMode, setClientMode] = useState<'new' | 'existing'>('new')
   const [jobSitePlaceId, setJobSitePlaceId] = useState<string | null>(null)
 
@@ -113,14 +106,7 @@ export default function EditRequestPage() {
 
   const fetchClients = async () => {
     try {
-      const token = localStorage.getItem('accessToken')
-      const response = await fetch('/api/clients?limit=5000', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (response.ok) {
-        const data = await response.json()
-        setClients(data.clients || [])
-      }
+      setClients(await fetchAllPickerClients())
     } catch (error) {
       console.error('Error fetching clients:', error)
     }

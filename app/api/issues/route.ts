@@ -22,6 +22,8 @@ export async function GET(request: NextRequest) {
   const status = searchParams.get('status') || 'all'
   const type = searchParams.get('type') || 'all'
   const assigneeId = searchParams.get('assigneeId') || ''
+  const scheduledFrom = searchParams.get('scheduledFrom')
+  const scheduledTo = searchParams.get('scheduledTo')
   const filter = searchParams.get('filter') || 'all' // all, my, assigned, watched
   const page = parseInt(searchParams.get('page') || '1')
   const limit = parseInt(searchParams.get('limit') || '50')
@@ -52,6 +54,13 @@ export async function GET(request: NextRequest) {
 
     if (assigneeId) {
       where.assigneeId = assigneeId
+    }
+
+    if (scheduledFrom || scheduledTo) {
+      where.dueDate = {
+        ...(scheduledFrom ? { gte: new Date(scheduledFrom) } : {}),
+        ...(scheduledTo ? { lte: new Date(scheduledTo) } : {}),
+      }
     }
 
     // Filter: my issues (created by me), assigned to me, watched, or assigned/created combined.
@@ -127,6 +136,7 @@ export async function GET(request: NextRequest) {
         },
         orderBy: [
           { priority: 'desc' },
+          { dueDate: 'asc' },
           { createdAt: 'desc' },
         ],
         skip,
@@ -171,12 +181,16 @@ export async function POST(request: NextRequest) {
       type,
       status,
       priority,
+      dueDate,
+      scheduledAt,
       assigneeId,
       clientId,
       leadId,
       jobId,
       watchers,
     } = body
+
+    const resolvedDueDate = dueDate ?? scheduledAt ?? null
 
     if (!title) {
       return NextResponse.json({ error: 'Title is required' }, { status: 400 })
@@ -271,6 +285,7 @@ export async function POST(request: NextRequest) {
         type: type || 'OTHER',
         status: status || 'OPEN',
         priority: priority || 'MEDIUM',
+        dueDate: resolvedDueDate ? new Date(resolvedDueDate) : null,
         assigneeId: assigneeId || null,
         createdById: user.id,
         clientId: resolvedClientId,

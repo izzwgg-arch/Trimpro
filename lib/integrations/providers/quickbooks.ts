@@ -5,6 +5,7 @@
 
 import { IntegrationTestResult } from '../types'
 import { decryptSecrets } from '../../integrations/secrets'
+import { logQuickBooksApiUsage } from '../../services/quickbooks'
 
 export async function testQuickBooks(secrets: Record<string, any>): Promise<IntegrationTestResult> {
   try {
@@ -77,6 +78,7 @@ async function refreshQuickBooksToken(secrets: Record<string, any>): Promise<{
 
     const refreshToken = secrets.refreshToken
 
+    const startedAt = Date.now()
     const response = await fetch('https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer', {
       method: 'POST',
       headers: {
@@ -88,6 +90,27 @@ async function refreshQuickBooksToken(secrets: Record<string, any>): Promise<{
         grant_type: 'refresh_token',
         refresh_token: refreshToken,
       }),
+    })
+
+    const intuitTid =
+      response.headers.get('intuit_tid') ||
+      response.headers.get('intuit-tid') ||
+      response.headers.get('x-intuit-tid') ||
+      null
+    logQuickBooksApiUsage({
+      tenantId: null,
+      realmId: String(secrets.realmId || '') || null,
+      endpoint: '/oauth2/v1/tokens/bearer',
+      method: 'POST',
+      entityType: 'oauth_token',
+      entityId: null,
+      triggerSource: 'integration_test',
+      httpStatus: response.status,
+      success: response.ok,
+      retryCount: null,
+      durationMs: Date.now() - startedAt,
+      timestamp: new Date().toISOString(),
+      intuitTid,
     })
 
     if (!response.ok) {
@@ -129,11 +152,33 @@ async function fetchQuickBooksCompany(
         ? 'https://sandbox-quickbooks.api.intuit.com'
         : 'https://quickbooks.api.intuit.com'
 
+    const startedAt = Date.now()
     const response = await fetch(`${baseUrl}/v3/company/${realmId}/companyinfo/${realmId}`, {
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Accept': 'application/json',
       },
+    })
+
+    const intuitTid =
+      response.headers.get('intuit_tid') ||
+      response.headers.get('intuit-tid') ||
+      response.headers.get('x-intuit-tid') ||
+      null
+    logQuickBooksApiUsage({
+      tenantId: null,
+      realmId,
+      endpoint: `/companyinfo/${realmId}`,
+      method: 'GET',
+      entityType: 'company_info',
+      entityId: realmId,
+      triggerSource: 'integration_test',
+      httpStatus: response.status,
+      success: response.ok,
+      retryCount: null,
+      durationMs: Date.now() - startedAt,
+      timestamp: new Date().toISOString(),
+      intuitTid,
     })
 
     if (!response.ok) {

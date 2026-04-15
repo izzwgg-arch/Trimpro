@@ -8,12 +8,12 @@ import { Screen } from '../../components/Screen'
 import { apiRequest } from '../../api/client'
 import { StatusChip } from '../../components/StatusChip'
 import { API_BASE_URL, BRAND } from '../../config/env'
-import { MoreStackParamList } from '../../types/navigation'
+import { IssuesStackParamList } from '../../types/navigation'
 import { useAuth } from '../../auth/AuthContext'
 import { useOnlineState } from '../../hooks/useOnlineState'
 import { enqueueOutbox } from '../../offline/outbox'
 
-type Props = NativeStackScreenProps<MoreStackParamList, 'IssueDetail'>
+type Props = NativeStackScreenProps<IssuesStackParamList, 'IssueDetail'>
 
 interface IssueDetailResponse {
   issue: any
@@ -186,6 +186,8 @@ export function IssueDetailScreen({ route, navigation }: Props) {
             <StatusChip status={issue.status} />
             <Text style={styles.meta}>Type: {issue.type}</Text>
             <Text style={styles.meta}>Priority: {issue.priority}</Text>
+            <Text style={styles.meta}>Scheduled: {issue.dueDate ? new Date(issue.dueDate).toLocaleString() : 'Optional / Unscheduled'}</Text>
+            <Text style={styles.meta}>Client: {issue.client?.name || 'Unattached'}</Text>
             <Text style={styles.meta}>
               Job: {issue.job ? `${issue.job.jobNumber} - ${issue.job.title}` : 'No linked job'}
             </Text>

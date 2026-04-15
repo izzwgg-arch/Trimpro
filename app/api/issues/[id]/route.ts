@@ -165,9 +165,13 @@ export async function PUT(
       type,
       status,
       priority,
+      dueDate,
+      scheduledAt,
       assigneeId,
       watchers,
     } = body
+
+    const resolvedDueDate = dueDate ?? scheduledAt
 
     // Get existing issue
     const existing = await prisma.issue.findFirst({
@@ -234,6 +238,8 @@ export async function PUT(
         type: type !== undefined ? type : existing.type,
         status: status !== undefined ? status : existing.status,
         priority: priority !== undefined ? priority : existing.priority,
+        dueDate:
+          resolvedDueDate !== undefined ? (resolvedDueDate ? new Date(resolvedDueDate) : null) : existing.dueDate,
         assigneeId: assigneeId !== undefined ? assigneeId : existing.assigneeId,
         firstResponseAt,
         resolvedAt,

@@ -11,12 +11,8 @@ import { ArrowLeft, Save, Copy } from 'lucide-react'
 import Link from 'next/link'
 import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
 import { PlaceAutocompleteInput } from '@/components/maps/PlaceAutocompleteInput'
-
-interface Client {
-  id: string
-  name: string
-  companyName: string | null
-}
+import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
+import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
 
 type JobResponse = {
   job: {
@@ -58,7 +54,7 @@ export default function EditJobPage() {
   const [saving, setSaving] = useState(false)
   const [duplicating, setDuplicating] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [clients, setClients] = useState<Client[]>([])
+  const [clients, setClients] = useState<PickerClient[]>([])
   const [jobSitePlaceId, setJobSitePlaceId] = useState<string | null>(null)
 
   const [formData, setFormData] = useState({
@@ -94,14 +90,7 @@ export default function EditJobPage() {
 
   const fetchClients = async () => {
     try {
-      const token = localStorage.getItem('accessToken')
-      const response = await fetch('/api/clients?limit=5000', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (response.ok) {
-        const data = await response.json()
-        setClients(data.clients || [])
-      }
+      setClients(await fetchAllPickerClients())
     } catch (error) {
       console.error('Error fetching clients:', error)
     }
@@ -353,18 +342,13 @@ export default function EditJobPage() {
           <CardContent className="space-y-4">
             <div>
               <Label htmlFor="clientId">Client *</Label>
-              <Select value={formData.clientId} onValueChange={(value) => setFormData({ ...formData, clientId: value })} disabled>
-                <SelectTrigger id="clientId">
-                  <SelectValue placeholder="Select a client" />
-                </SelectTrigger>
-                <SelectContent>
-                  {clients.map((client) => (
-                    <SelectItem key={client.id} value={client.id}>
-                      {client.name} {client.companyName ? `(${client.companyName})` : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableClientSelect
+                clients={clients}
+                value={formData.clientId}
+                onSelect={(value) => setFormData({ ...formData, clientId: value })}
+                placeholder="Select a client"
+                disabled
+              />
               <p className="text-sm text-gray-500 mt-1">Client cannot be changed after job creation</p>
             </div>
 

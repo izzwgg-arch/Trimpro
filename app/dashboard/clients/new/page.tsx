@@ -10,13 +10,17 @@ import { ArrowLeft, Save } from 'lucide-react'
 import Link from 'next/link'
 import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
 import { PlaceAutocompleteInput } from '@/components/maps/PlaceAutocompleteInput'
+import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
+import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
 
 export default function NewClientPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const parentId = searchParams.get('parentId')
-  const isSubClientMode = !!parentId
   const [loading, setLoading] = useState(false)
+  const [availableClients, setAvailableClients] = useState<PickerClient[]>([])
+  const [isSubClient, setIsSubClient] = useState(Boolean(parentId))
+  const [selectedParentId, setSelectedParentId] = useState(parentId || '')
   const [parentClientName, setParentClientName] = useState<string>('')
   const [billingPlaceId, setBillingPlaceId] = useState<string | null>(null)
   const [shippingPlaceId, setShippingPlaceId] = useState<string | null>(null)
@@ -45,14 +49,34 @@ export default function NewClientPage() {
   })
 
   useEffect(() => {
-    if (!parentId) return
+    const fetchClients = async () => {
+      try {
+        setAvailableClients(await fetchAllPickerClients())
+      } catch (error) {
+        console.error('Error loading client list for sub-client selector:', error)
+      }
+    }
+
+    fetchClients()
+  }, [])
+
+  useEffect(() => {
+    setIsSubClient(Boolean(parentId))
+    setSelectedParentId(parentId || '')
+  }, [parentId])
+
+  useEffect(() => {
+    if (!selectedParentId) {
+      setParentClientName('')
+      return
+    }
 
     const fetchParentClient = async () => {
       try {
         const token = localStorage.getItem('accessToken')
         if (!token) return
 
-        const response = await fetch(`/api/clients/${parentId}`, {
+        const response = await fetch(`/api/clients/${selectedParentId}`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -67,15 +91,19 @@ export default function NewClientPage() {
         if (parentBilling) {
           setFormData((prev) => ({
             ...prev,
-            billingAddress: {
-              street: parentBilling.street || '',
-              city: parentBilling.city || '',
-              state: parentBilling.state || '',
-              zipCode: parentBilling.zipCode || '',
-              country: parentBilling.country || 'US',
-            },
+            billingAddress: prev.billingAddress.street
+              ? prev.billingAddress
+              : {
+                  street: parentBilling.street || '',
+                  city: parentBilling.city || '',
+                  state: parentBilling.state || '',
+                  zipCode: parentBilling.zipCode || '',
+                  country: parentBilling.country || 'US',
+                },
           }))
-          setBillingPlaceId(parentBilling.street ? 'existing' : null)
+          if (!formData.billingAddress.street) {
+            setBillingPlaceId(parentBilling.street ? 'existing' : null)
+          }
         }
       } catch (error) {
         console.error('Error loading parent client for sub-client defaults:', error)
@@ -83,7 +111,7 @@ export default function NewClientPage() {
     }
 
     fetchParentClient()
-  }, [parentId])
+  }, [selectedParentId, formData.billingAddress.street])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -91,7 +119,11 @@ export default function NewClientPage() {
       alert('Please select a real billing address from the suggestions.')
       return
     }
-    if (!isSubClientMode && formData.shippingAddress.street.trim() && !shippingPlaceId) {
+    if (isSubClient && !selectedParentId) {
+      alert('Please select a parent client.')
+      return
+    }
+    if (!isSubClient && formData.shippingAddress.street.trim() && !shippingPlaceId) {
       alert('Please select a real shipping address from the suggestions.')
       return
     }
@@ -107,7 +139,7 @@ export default function NewClientPage() {
         },
         body: JSON.stringify({
           name: formData.name,
-          parentId: parentId || null,
+          parentId: isSubClient ? selectedParentId : null,
           companyName: formData.companyName || null,
           email: formData.email || null,
           phone: formData.phone || null,
@@ -115,7 +147,7 @@ export default function NewClientPage() {
           notes: formData.notes || null,
           tags: formData.tags ? formData.tags.split(',').map(t => t.trim()).filter(t => t) : [],
           billingAddress: formData.billingAddress.street ? formData.billingAddress : null,
-          shippingAddress: isSubClientMode ? null : (formData.shippingAddress.street ? formData.shippingAddress : null),
+          shippingAddress: isSubClient ? null : (formData.shippingAddress.street ? formData.shippingAddress : null),
         }),
       })
 
@@ -155,9 +187,9 @@ export default function NewClientPage() {
           </Button>
         </Link>
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">{isSubClientMode ? 'New Sub-Client' : 'New Client'}</h1>
+          <h1 className="text-3xl font-bold text-gray-900">{isSubClient ? 'New Sub-Client' : 'New Client'}</h1>
           <p className="mt-2 text-gray-600">
-            {isSubClientMode
+            {isSubClient
               ? `Create a sub-client under ${parentClientName || 'the selected parent client'}.`
               : 'Create a new client record'}
           </p>
@@ -168,9 +200,35 @@ export default function NewClientPage() {
         <Card>
           <CardHeader>
             <CardTitle>Client Information</CardTitle>
-            <CardDescription>Enter the client's basic information</CardDescription>
+            <CardDescription>Enter the client&apos;s basic information</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="rounded-md border p-4 space-y-3">
+              <label className="flex items-center justify-between gap-3 text-sm font-medium">
+                <span>Make this a sub-client</span>
+                <input
+                  type="checkbox"
+                  checked={isSubClient}
+                  onChange={(e) => {
+                    const checked = e.target.checked
+                    setIsSubClient(checked)
+                    if (!checked) setSelectedParentId('')
+                  }}
+                />
+              </label>
+              {isSubClient && (
+                <div className="space-y-2">
+                  <Label>Parent Client</Label>
+                  <SearchableClientSelect
+                    clients={availableClients}
+                    value={selectedParentId}
+                    onSelect={setSelectedParentId}
+                    placeholder="Select a parent client..."
+                  />
+                  <p className="text-xs text-gray-500">Billing defaults can be inherited from the selected parent.</p>
+                </div>
+              )}
+            </div>
             <div>
               <Label htmlFor="name">Name *</Label>
               <Input
@@ -338,7 +396,7 @@ export default function NewClientPage() {
           </CardContent>
         </Card>
 
-        {!isSubClientMode && (
+        {!isSubClient && (
           <Card>
             <CardHeader>
               <CardTitle>Shipping Address (Optional)</CardTitle>

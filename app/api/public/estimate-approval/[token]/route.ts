@@ -115,6 +115,7 @@ export async function GET(request: NextRequest, ctx: { params: { token: string }
       }),
       optionalItems: visibleOptionalItems.map((li) => {
         const approved = approvedMap.get(li.id) || null
+        const invoiced = invoicedMap.get(li.id) || null
         return {
           id: li.id,
           description: li.description,
@@ -126,8 +127,8 @@ export async function GET(request: NextRequest, ctx: { params: { token: string }
           approved: Boolean(approved),
           approvedAt: approved?.approvedAt || null,
           approvedByName: approved?.approvedByName || null,
-          invoiced: false,
-          invoicedAt: null,
+          invoiced: Boolean(invoiced),
+          invoicedAt: invoiced?.createdAt || null,
         }
       }),
     })

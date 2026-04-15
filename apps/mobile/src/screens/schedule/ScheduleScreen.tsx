@@ -68,10 +68,31 @@ type CalendarViewMode = 'day' | 'week' | 'month'
 interface CalendarScheduleEvent extends ICalendarEventBase {
   id: string
   scheduleId: string
+  entityType: 'schedule' | 'task' | 'issue'
+  entityId: string
   jobId?: string
   status?: string
   employeeLabel?: string
   accentColor: string
+}
+
+interface ScheduledTasksResponse {
+  tasks: Array<{
+    id: string
+    title: string
+    status: string
+    dueDate?: string | null
+  }>
+}
+
+interface ScheduledIssuesResponse {
+  issues: Array<{
+    id: string
+    title: string
+    status: string
+    type?: string
+    dueDate?: string | null
+  }>
 }
 
 interface DayCellMeta {
@@ -311,26 +332,104 @@ export function ScheduleScreen({ navigation }: Props) {
   })
 
   const unscheduledJobs = unscheduledQuery.data?.jobs ?? []
-  const events = useMemo<CalendarScheduleEvent[]>(
+  const scheduledTasksQuery = useQuery({
+    queryKey: ['mobile-schedule-tasks', visibleRange.start.toISOString(), visibleRange.end.toISOString()],
+    queryFn: () =>
+      apiRequest<ScheduledTasksResponse>(
+        `/api/tasks?filter=assigned&limit=100&scheduledFrom=${encodeURIComponent(
+          visibleRange.start.toISOString()
+        )}&scheduledTo=${encodeURIComponent(visibleRange.end.toISOString())}`
+      ),
+    enabled: Boolean(user?.id),
+    refetchInterval: 60_000,
+    placeholderData: (previousData) => previousData,
+  })
+  const scheduledIssuesQuery = useQuery({
+    queryKey: ['mobile-schedule-issues', visibleRange.start.toISOString(), visibleRange.end.toISOString()],
+    queryFn: () =>
+      apiRequest<ScheduledIssuesResponse>(
+        `/api/issues?filter=assigned_or_created&limit=100&scheduledFrom=${encodeURIComponent(
+          visibleRange.start.toISOString()
+        )}&scheduledTo=${encodeURIComponent(visibleRange.end.toISOString())}`
+      ),
+    enabled: Boolean(user?.id),
+    refetchInterval: 60_000,
+    placeholderData: (previousData) => previousData,
+  })
+
+  const scheduledTaskEvents = useMemo<CalendarScheduleEvent[]>(
     () =>
-      schedules.flatMap((item) => {
+      (scheduledTasksQuery.data?.tasks || []).flatMap((task) => {
+        const start = toValidDate(task.dueDate || '')
+        if (!start) return []
+        const end = new Date(start.getTime() + 45 * 60 * 1000)
+        return [
+          {
+            id: `task-${task.id}`,
+            scheduleId: `task-${task.id}`,
+            entityType: 'task',
+            entityId: task.id,
+            start,
+            end,
+            title: task.title,
+            status: task.status,
+            accentColor: '#C17F00',
+          },
+        ]
+      }),
+    [scheduledTasksQuery.data?.tasks]
+  )
+
+  const scheduledIssueEvents = useMemo<CalendarScheduleEvent[]>(
+    () =>
+      (scheduledIssuesQuery.data?.issues || []).flatMap((issue) => {
+        const start = toValidDate(issue.dueDate || '')
+        if (!start) return []
+        const end = new Date(start.getTime() + 45 * 60 * 1000)
+        return [
+          {
+            id: `issue-${issue.id}`,
+            scheduleId: `issue-${issue.id}`,
+            entityType: 'issue',
+            entityId: issue.id,
+            start,
+            end,
+            title: issue.type ? `${issue.type} - ${issue.title}` : issue.title,
+            status: issue.status,
+            accentColor: '#8B5CF6',
+          },
+        ]
+      }),
+    [scheduledIssuesQuery.data?.issues]
+  )
+
+  const events = useMemo<CalendarScheduleEvent[]>(
+    () => [
+      ...schedules.flatMap((item) => {
         const start = toValidDate(item.startTime)
         const end = toValidDate(item.endTime)
         if (!start || !end) return []
         const accentColor = getEventAccentColor(item.job?.status)
-        return [{
-          id: item.id,
-          scheduleId: item.id,
-          start,
-          end,
-          title: item.title || item.job?.title || 'Schedule',
-          jobId: item.job?.id,
-          status: item.job?.status || undefined,
-          employeeLabel: item.user ? `${item.user.firstName} ${item.user.lastName}`.trim() : undefined,
-          accentColor,
-        }]
+        return [
+          {
+            id: item.id,
+            scheduleId: item.id,
+            entityType: 'schedule' as const,
+            entityId: item.id,
+            start,
+            end,
+            title: item.title || item.job?.title || 'Schedule',
+            jobId: item.job?.id,
+            status: item.job?.status || undefined,
+            employeeLabel: item.user ? `${item.user.firstName} ${item.user.lastName}`.trim() : undefined,
+            accentColor,
+          },
+        ]
       }),
-    [schedules]
+      ...scheduledTaskEvents,
+      ...scheduledIssueEvents,
+    ],
+    [schedules, scheduledIssueEvents, scheduledTaskEvents]
   )
 
   const statusOptions = useMemo(() => {
@@ -398,6 +497,22 @@ export function ScheduleScreen({ navigation }: Props) {
 
   const onPressCalendarEvent = useCallback(
     (event: CalendarScheduleEvent) => {
+      if (event.entityType === 'task') {
+        const tabsNav = navigation.getParent() as any
+        tabsNav?.navigate('TasksTab', {
+          screen: 'TaskDetail',
+          params: { taskId: event.entityId },
+        })
+        return
+      }
+      if (event.entityType === 'issue') {
+        const tabsNav = navigation.getParent() as any
+        tabsNav?.navigate('IssuesTab', {
+          screen: 'IssueDetail',
+          params: { issueId: event.entityId },
+        })
+        return
+      }
       if (event.jobId) {
         const jobsScreen = canViewAllJobs() ? 'AdminJobDetail' : 'JobDetail'
         const tabsNav = navigation.getParent() as any
@@ -530,7 +645,6 @@ export function ScheduleScreen({ navigation }: Props) {
               weekStartsOn={1}
               height={viewMode === 'week' ? 430 : 500}
               swipeEnabled
-              scrollEnabled={false}
               onPressEvent={onPressCalendarEvent}
               onPressCell={(value) => setAnchorDate(value)}
               onChangeDate={([start]) => {

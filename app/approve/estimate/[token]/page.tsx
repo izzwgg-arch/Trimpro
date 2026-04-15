@@ -39,7 +39,6 @@ export default function PublicEstimateApprovalPage() {
   const [eSign, setESign] = useState(false)
   const [busy, setBusy] = useState(false)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
-  const [createdInvoice, setCreatedInvoice] = useState<{ invoiceNumber: string; portalPayUrl?: string } | null>(null)
 
   // Items that can still be selected (not yet approved)
   const selectableRegularIds = useMemo(() => items.filter((i) => !i.approved).map((i) => i.id), [items])
@@ -137,7 +136,6 @@ export default function PublicEstimateApprovalPage() {
   const approve = async (approveAll: boolean) => {
     setBusy(true)
     setSuccessMsg(null)
-    setCreatedInvoice(null)
     try {
       if (!signerName.trim()) { setActionError('Signer name is required.'); return }
       if (!eSign) { setActionError('Please confirm you approve this estimate.'); return }
@@ -157,9 +155,9 @@ export default function PublicEstimateApprovalPage() {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) { setActionError(describeApiError(data, 'Approval failed.')); return }
 
-      // If a 50% invoice was auto-created and we have a payment URL, redirect to it
+      // Approval should always take the customer to the generated invoice/payment page.
       if (data.paymentUrl) {
-        setSuccessMsg(`Approved ${data.approvedCount || 0} item(s). Redirecting to payment...`)
+        setSuccessMsg(`Approved ${data.approvedCount || 0} item(s). Redirecting to invoice...`)
         setTimeout(() => {
           window.location.href = data.paymentUrl
         }, 1500)
@@ -171,30 +169,6 @@ export default function PublicEstimateApprovalPage() {
       clearAll()
     } catch (e: any) {
       setActionError(e?.message || 'Approval failed.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const createInvoice = async () => {
-    setBusy(true)
-    setActionError(null)
-    setSuccessMsg(null)
-    try {
-      const res = await fetch(`/api/public/estimate-approval/${encodeURIComponent(token)}/create-invoice`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) { setActionError(describeApiError(data, 'Unable to create invoice.')); return }
-
-      setCreatedInvoice({
-        invoiceNumber: data?.invoice?.invoiceNumber || 'Invoice',
-        portalPayUrl: data?.invoice?.portalPayUrl,
-      })
-      await refresh()
-    } catch (e: any) {
-      setActionError(e?.message || 'Unable to create invoice.')
     } finally {
       setBusy(false)
     }
@@ -388,21 +362,7 @@ export default function PublicEstimateApprovalPage() {
             <Button type="button" variant="outline" onClick={() => approve(false)} disabled={busy || selectedIds.size === 0}>
               Approve Selected Items
             </Button>
-            <Button type="button" variant="secondary" onClick={createInvoice} disabled={busy}>
-              Create Invoice
-            </Button>
           </div>
-
-          {createdInvoice && (
-            <div className="rounded border border-green-200 bg-green-50 p-3 text-sm text-green-900">
-              Invoice created: <strong>{createdInvoice.invoiceNumber}</strong>
-              {createdInvoice.portalPayUrl && (
-                <div className="mt-1">
-                  <a className="underline" href={createdInvoice.portalPayUrl}>Pay / View Invoice</a>
-                </div>
-              )}
-            </div>
-          )}
         </CardContent>
       </Card>
     </div>

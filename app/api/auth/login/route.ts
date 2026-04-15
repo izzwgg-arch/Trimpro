@@ -4,7 +4,8 @@ import { verifyPassword, generateAccessToken, generateRefreshToken, createRefres
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, password, deviceId } = await request.json()
+    const { email, password, deviceId, clientType } = await request.json()
+    const normalizedClientType = String(clientType || '').trim().toLowerCase() === 'mobile' ? 'mobile' : 'web'
 
     if (!email || !password) {
       return NextResponse.json({ error: 'Email and password are required' }, { status: 400 })
@@ -45,6 +46,13 @@ export async function POST(request: NextRequest) {
     const isValid = await verifyPassword(password, user.passwordHash)
     if (!isValid) {
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
+    }
+
+    if (normalizedClientType === 'mobile' && !user.allowMobileLogin) {
+      return NextResponse.json({ error: 'This user is not allowed to use the phone app.' }, { status: 403 })
+    }
+    if (normalizedClientType === 'web' && !user.allowWebLogin) {
+      return NextResponse.json({ error: 'This user is not allowed to log in to the web app.' }, { status: 403 })
     }
 
     // Generate tokens
@@ -100,6 +108,8 @@ export async function POST(request: NextRequest) {
         role: user.role,
         tenantId: user.tenantId,
         tenantName: user.tenant.name,
+        allowWebLogin: user.allowWebLogin,
+        allowMobileLogin: user.allowMobileLogin,
       },
     })
   } catch (error) {

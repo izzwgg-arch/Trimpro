@@ -37,7 +37,16 @@ export async function getQboSessionForTenant(tenantId: string): Promise<QboSessi
     // Use saved clientId/clientSecret from IntegrationConnection if available
     const clientId = secrets?.clientId || null
     const clientSecret = secrets?.clientSecret || null
-    const refreshed = await quickBooksService.refreshAccessToken(refreshToken, clientId || undefined, clientSecret || undefined)
+    const refreshed = await quickBooksService.refreshAccessToken(
+      refreshToken,
+      clientId || undefined,
+      clientSecret || undefined,
+      {
+        tenantId,
+        entityType: 'oauth_token',
+        triggerSource: 'qbo_session_refresh',
+      }
+    )
     accessToken = refreshed.access_token
     const newRefresh = refreshed.refresh_token || refreshToken
     const newExpiresAt = new Date(Date.now() + refreshed.expires_in * 1000)

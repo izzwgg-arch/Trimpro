@@ -1,13 +1,25 @@
 import React, { useMemo, useState } from 'react'
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native'
+import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native'
 import { useFocusEffect } from '@react-navigation/native'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { InfiniteData, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import * as FileSystem from 'expo-file-system/legacy'
 import { AppScreen } from '../../components/AppScreen'
 import { EmptyState } from '../../components/EmptyState'
 import { apiRequest } from '../../api/client'
 import { JobsStackParamList } from '../../types/navigation'
 import { colors, spacing, typography } from '../../theme/tokens'
+import { API_BASE_URL } from '../../config/env'
+import { useAuth } from '../../auth/AuthContext'
+import {
+  deleteRequestDraft,
+  listRequestDrafts,
+  LocalRequestDraft,
+  setRequestDraftPublishState,
+  upsertRequestDraft,
+} from '../../drafts/storage'
+import { formatScheduledAt } from '../../utils/schedule'
+import { extractCreatedRequestId } from './request-utils'
 
 type Props = NativeStackScreenProps<JobsStackParamList, 'RequestsHome'>
 
@@ -36,8 +48,15 @@ interface RequestsListResponse {
 }
 
 export function RequestsListScreen({ navigation }: Props) {
+  const { token } = useAuth()
   const queryClient = useQueryClient()
   const [isPullRefreshing, setIsPullRefreshing] = useState(false)
+  const [localDrafts, setLocalDrafts] = useState<LocalRequestDraft[]>([])
+
+  const reloadLocalDrafts = React.useCallback(async () => {
+    setLocalDrafts(await listRequestDrafts())
+  }, [])
+
   const query = useInfiniteQuery({
     queryKey: ['mobile-requests-list'],
     initialPageParam: 1,
@@ -85,23 +104,128 @@ export function RequestsListScreen({ navigation }: Props) {
   useFocusEffect(
     React.useCallback(() => {
       void query.refetch()
+      void reloadLocalDrafts()
       return () => {}
-    }, [query.refetch])
+    }, [query.refetch, reloadLocalDrafts])
   )
 
   const handlePullRefresh = React.useCallback(async () => {
     setIsPullRefreshing(true)
     try {
-      await query.refetch()
+      await Promise.all([query.refetch(), reloadLocalDrafts()])
     } finally {
       setIsPullRefreshing(false)
     }
-  }, [query.refetch])
+  }, [query.refetch, reloadLocalDrafts])
 
   const requests = useMemo(
     () => (query.data?.pages || []).flatMap((page) => page.leads || []),
     [query.data]
   )
+
+  const publishDraftMutation = useMutation({
+    mutationFn: async (draft: LocalRequestDraft) => {
+      if (!token) {
+        throw new Error('You must be logged in to publish requests.')
+      }
+      if (draft.clientMode === 'existing' && !draft.selectedClientId) {
+        throw new Error('Select an existing client before publishing.')
+      }
+      if (!draft.firstName.trim() || !draft.lastName.trim()) {
+        throw new Error('First name and last name are required before publishing.')
+      }
+
+      await setRequestDraftPublishState(draft.id, 'pendingPublish')
+      await reloadLocalDrafts()
+
+      let resolvedAddress = draft.jobSiteAddress
+      let addressSelected = draft.addressSelectedFromSuggestions
+      if (resolvedAddress.trim() && !addressSelected) {
+        const resolved = await apiRequest<{ address: { street: string; city: string; state: string; zipCode: string } }>(
+          `/api/mobile/places?mode=resolve&address=${encodeURIComponent(resolvedAddress.trim())}`
+        )
+        const locality = [resolved.address.city, resolved.address.state, resolved.address.zipCode].filter(Boolean).join(' ')
+        resolvedAddress = [resolved.address.street, locality].filter(Boolean).join(', ')
+        addressSelected = true
+        await upsertRequestDraft({
+          id: draft.id,
+          jobSiteAddress: resolvedAddress,
+          addressSelectedFromSuggestions: true,
+          publishState: 'pendingPublish',
+        })
+      }
+
+      const response = await apiRequest<{ lead?: { id?: string; createdAt?: string; status?: string }; id?: string }>(
+        '/api/leads',
+        'POST',
+        {
+          firstName: draft.firstName.trim(),
+          lastName: draft.lastName.trim(),
+          phone: draft.phone.trim() || null,
+          email: draft.email.trim() || null,
+          company: draft.company.trim() || null,
+          clientId: draft.clientMode === 'existing' ? draft.selectedClientId : null,
+          jobSiteAddress: resolvedAddress.trim() || null,
+          notes: draft.notes.trim() || null,
+          source: 'OTHER',
+          status: 'NEW',
+        }
+      )
+
+      const requestId = extractCreatedRequestId(response)
+      const attachmentErrors: string[] = []
+
+      for (const attachment of draft.attachments || []) {
+        try {
+          const upload = await FileSystem.uploadAsync(`${API_BASE_URL}/api/uploads`, attachment.uri, {
+            fieldName: 'file',
+            httpMethod: 'POST',
+            uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Accept: 'application/json',
+            },
+            mimeType: attachment.mimeType,
+          })
+
+          if (upload.status < 200 || upload.status >= 300) {
+            throw new Error('Upload failed')
+          }
+
+          const payload = JSON.parse(upload.body)
+          await apiRequest('/api/attachments', 'POST', {
+            entityType: 'request',
+            entityId: requestId,
+            fileName: attachment.fileName,
+            fileSize: attachment.fileSize,
+            mimeType: attachment.mimeType,
+            url: payload.url,
+            key: payload.relativeUrl || payload.filename || payload.url,
+          })
+        } catch (error: any) {
+          attachmentErrors.push(error?.message || `Failed to upload ${attachment.fileName}`)
+        }
+      }
+
+      return { requestId, attachmentErrors }
+    },
+    onSuccess: async ({ requestId, attachmentErrors }, draft) => {
+      await deleteRequestDraft(draft.id)
+      await reloadLocalDrafts()
+      void queryClient.invalidateQueries({ queryKey: ['mobile-requests-list'] })
+      navigation.navigate('RequestDetail', { requestId })
+      if (attachmentErrors.length > 0) {
+        Alert.alert('Published with warnings', `Request was published, but ${attachmentErrors.length} attachment(s) failed.`)
+      } else {
+        Alert.alert('Published', 'Request uploaded successfully.')
+      }
+    },
+    onError: async (error: any, draft) => {
+      await setRequestDraftPublishState(draft.id, 'publishFailed', error?.message || 'Failed to publish request')
+      await reloadLocalDrafts()
+      Alert.alert('Publish failed', error?.message || 'Unable to publish this request.')
+    },
+  })
 
   if (query.isLoading && requests.length === 0) {
     return (
@@ -144,14 +268,84 @@ export function RequestsListScreen({ navigation }: Props) {
           />
         }
         ListHeaderComponent={
-          <View style={styles.headerRow}>
-            <Text style={styles.headerTitle}>Requests</Text>
-            <Pressable
-              style={styles.newButton}
-              onPress={() => navigation.navigate('RequestCreate')}
-            >
-              <Text style={styles.newButtonText}>New Request</Text>
-            </Pressable>
+          <View style={styles.headerWrap}>
+            <View style={styles.headerRow}>
+              <Text style={styles.headerTitle}>Requests</Text>
+              <Pressable
+                style={styles.newButton}
+                onPress={() => navigation.navigate('RequestCreate')}
+              >
+                <Text style={styles.newButtonText}>New Draft</Text>
+              </Pressable>
+            </View>
+            <Text style={styles.sectionLabel}>Local drafts</Text>
+            {localDrafts.length === 0 ? (
+              <Text style={styles.localDraftEmpty}>No unpublished request drafts on this phone.</Text>
+            ) : (
+              localDrafts.map((draft) => (
+                <View key={draft.id} style={styles.localDraftCard}>
+                  <View style={styles.requestHeadRow}>
+                    <Text style={styles.requestName}>
+                      {draft.firstName || 'Unfinished'} {draft.lastName || 'request'}
+                    </Text>
+                    <Text style={styles.localBadge}>{draft.publishState === 'publishFailed' ? 'Publish failed' : 'Local draft'}</Text>
+                  </View>
+                  <Text style={styles.requestMeta}>
+                    {draft.kind === 'MEASURING' ? 'Measuring request' : 'Request'} · {formatScheduledAt(draft.scheduledAt)}
+                  </Text>
+                  <Text style={styles.requestMeta}>
+                    {draft.publishState === 'publishFailed'
+                      ? 'Local draft · Publish failed'
+                      : draft.publishState === 'readyToPublish'
+                        ? 'Local draft · Ready to publish'
+                        : 'Local draft · Unpublished'}
+                  </Text>
+                  <Text style={styles.requestMeta}>
+                    {draft.clientMode === 'existing'
+                      ? `Existing client: ${draft.selectedClientName || 'Not selected'}`
+                      : 'New client request'}
+                  </Text>
+                  {(draft.notes || '').trim() ? (
+                    <Text numberOfLines={2} style={styles.requestNotes}>
+                      {draft.notes}
+                    </Text>
+                  ) : null}
+                  {draft.publishError ? <Text style={styles.publishError}>{draft.publishError}</Text> : null}
+                  <View style={styles.requestActionRow}>
+                    <Pressable style={styles.urgentButton} onPress={() => navigation.navigate('RequestCreate', { draftId: draft.id })}>
+                      <Text style={styles.urgentButtonText}>Edit</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.urgentButton, (!token || publishDraftMutation.isPending) && styles.disabledAction]}
+                      onPress={() => publishDraftMutation.mutate(draft)}
+                      disabled={!token || publishDraftMutation.isPending}
+                    >
+                      <Text style={styles.urgentButtonText}>
+                        {publishDraftMutation.isPending ? 'Publishing...' : 'Publish'}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.urgentButton, styles.deleteDraftButton]}
+                      onPress={() => {
+                        Alert.alert('Delete local draft', 'Remove this unpublished request draft from this phone?', [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: 'Delete',
+                            style: 'destructive',
+                            onPress: () => {
+                              void deleteRequestDraft(draft.id).then(reloadLocalDrafts)
+                            },
+                          },
+                        ])
+                      }}
+                    >
+                      <Text style={[styles.urgentButtonText, styles.deleteDraftButtonText]}>Delete</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ))
+            )}
+            <Text style={styles.sectionLabel}>Published requests</Text>
           </View>
         }
         ListEmptyComponent={
@@ -247,6 +441,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: spacing.xs,
   },
+  headerWrap: {
+    gap: spacing.xs,
+  },
   headerTitle: {
     ...typography.h3,
     color: colors.textPrimary,
@@ -268,6 +465,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.divider,
+    padding: spacing.md,
+  },
+  localDraftCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#D7E2EA',
     padding: spacing.md,
   },
   requestHeadRow: {
@@ -297,15 +501,31 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 2,
   },
+  localBadge: {
+    ...typography.caption,
+    color: '#175CD3',
+    backgroundColor: '#EFF8FF',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    fontWeight: '700',
+  },
   requestNotes: {
     ...typography.caption,
     color: colors.textPrimary,
+    marginTop: spacing.xs,
+  },
+  publishError: {
+    ...typography.caption,
+    color: '#B42318',
     marginTop: spacing.xs,
   },
   requestActionRow: {
     marginTop: spacing.xs,
     flexDirection: 'row',
     justifyContent: 'flex-end',
+    gap: spacing.xs,
+    flexWrap: 'wrap',
   },
   urgentButton: {
     borderWidth: 1,
@@ -318,6 +538,28 @@ const styles = StyleSheet.create({
   urgentButtonActive: {
     borderColor: '#FCA5A5',
     backgroundColor: '#FEF2F2',
+  },
+  deleteDraftButton: {
+    borderColor: '#FECACA',
+    backgroundColor: '#FEF2F2',
+  },
+  deleteDraftButtonText: {
+    color: '#B42318',
+  },
+  disabledAction: {
+    opacity: 0.6,
+  },
+  sectionLabel: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    marginTop: spacing.xs,
+  },
+  localDraftEmpty: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
   },
   urgentButtonText: {
     ...typography.caption,

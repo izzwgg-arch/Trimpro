@@ -30,6 +30,18 @@ export async function GET(request: NextRequest) {
         { companyName: { contains: search, mode: 'insensitive' } },
         { email: { contains: search, mode: 'insensitive' } },
         { phone: { contains: search, mode: 'insensitive' } },
+        {
+          addresses: {
+            some: {
+              OR: [
+                { street: { contains: search, mode: 'insensitive' } },
+                { city: { contains: search, mode: 'insensitive' } },
+                { state: { contains: search, mode: 'insensitive' } },
+                { zipCode: { contains: search, mode: 'insensitive' } },
+              ],
+            },
+          },
+        },
       ]
     }
 
@@ -50,6 +62,16 @@ export async function GET(request: NextRequest) {
           contacts: {
             where: { isPrimary: true },
             take: 1,
+          },
+          addresses: {
+            orderBy: { isDefault: 'desc' },
+            take: 1,
+            select: {
+              street: true,
+              city: true,
+              state: true,
+              zipCode: true,
+            },
           },
           _count: {
             select: {
@@ -91,6 +113,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       clients: clients.map((c) => ({
         ...c,
+        address: c.addresses?.[0]
+          ? [c.addresses[0].street, [c.addresses[0].city, c.addresses[0].state, c.addresses[0].zipCode].filter(Boolean).join(' ')]
+              .filter(Boolean)
+              .join(', ')
+          : null,
         openInvoiceBalance: openBalanceByClientId.get(c.id) || '0',
       })),
       pagination: createPaginationResponse(total, limit, skip),

@@ -20,7 +20,16 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { email, firstName, lastName, phone, role, roleId } = await request.json()
+    const {
+      email,
+      firstName,
+      lastName,
+      phone,
+      role,
+      roleId,
+      allowWebLogin,
+      allowMobileLogin,
+    } = await request.json()
 
     if (!email || !firstName || !lastName || (!role && !roleId)) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -94,6 +103,8 @@ export async function POST(request: NextRequest) {
         phone: phone || null,
         role: normalizedRole as any,
         status: 'INVITED',
+        allowWebLogin: allowWebLogin !== false,
+        allowMobileLogin: allowMobileLogin !== false,
         passwordResetToken: inviteToken,
         passwordResetExp: inviteExp,
         permissions,
@@ -142,6 +153,8 @@ export async function POST(request: NextRequest) {
           firstName,
           lastName,
           role: normalizedRole,
+          allowWebLogin: newUser.allowWebLogin,
+          allowMobileLogin: newUser.allowMobileLogin,
           selectedRoleId: selectedRoleRecord?.id || null,
           selectedRoleName: selectedRoleRecord?.name || normalizedRole,
         },
@@ -194,6 +207,8 @@ export async function POST(request: NextRequest) {
           lastName: newUser.lastName,
           role: newUser.role,
           status: newUser.status,
+          allowWebLogin: newUser.allowWebLogin,
+          allowMobileLogin: newUser.allowMobileLogin,
         },
       },
       { status: emailSent ? 200 : 502 }

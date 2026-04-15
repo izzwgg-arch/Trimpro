@@ -109,7 +109,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = useCallback(async (email: string, password: string) => {
     const deviceId = await getOrCreateDeviceId()
-    const response = await apiRequest<LoginResponse>('/api/auth/login', 'POST', { email, password, deviceId })
+    const response = await apiRequest<LoginResponse>('/api/auth/login', 'POST', {
+      email,
+      password,
+      deviceId,
+      clientType: 'mobile',
+    })
     await saveAuth(response.accessToken, response.refreshToken, JSON.stringify(response.user))
     setToken(response.accessToken)
     setUser(response.user)

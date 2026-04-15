@@ -109,6 +109,12 @@ export interface Task {
   priority: string
   dueDate?: string | null
   assigneeId?: string | null
+  clientId?: string | null
+  client?: {
+    id: string
+    name: string
+    companyName?: string | null
+  } | null
   jobId?: string | null
   createdAt: string
 }
@@ -120,7 +126,14 @@ export interface Issue {
   type: string
   status: string
   priority: string
+  dueDate?: string | null
   assigneeId?: string | null
+  clientId?: string | null
+  client?: {
+    id: string
+    name: string
+    companyName?: string | null
+  } | null
   jobId?: string | null
   createdAt: string
 }
@@ -149,6 +162,11 @@ export interface ScheduleItem {
       id: string
       name: string
     } | null
+  } | null
+  lead?: {
+    id: string
+    firstName?: string | null
+    lastName?: string | null
   } | null
 }
 

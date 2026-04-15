@@ -948,7 +948,7 @@ export default function IntegrationProviderPage() {
           )}
 
           {provider === 'quickbooks' && (
-            <div className="flex space-x-2 pt-2">
+            <div className="flex flex-wrap gap-2 pt-2">
               <Button onClick={handleSave} disabled={saving}>
                 <Save className="mr-2 h-4 w-4" />
                 {saving ? 'Saving...' : 'Save Credentials'}
@@ -972,6 +972,11 @@ export default function IntegrationProviderPage() {
                   <Button onClick={handleQuickBooksImportOpenInvoices} disabled={importingQboInvoices} variant="outline">
                     {importingQboInvoices ? 'Importing...' : 'Import Open Invoices'}
                   </Button>
+                  <Link href="/dashboard/settings/integrations/quickbooks/import-estimate">
+                    <Button variant="outline">
+                      Import Estimate by ID
+                    </Button>
+                  </Link>
                   <Button onClick={handleSyncQboBalances} disabled={syncingBalances} variant="outline">
                     {syncingBalances ? 'Syncing...' : 'Sync QB Balances'}
                   </Button>

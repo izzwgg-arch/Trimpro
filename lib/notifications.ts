@@ -46,6 +46,7 @@ function buildMobileDeepLink(linkType?: string | null, linkId?: string | null): 
   if (linkType === 'job') return `trimpro://jobs/${linkId}`
   if (linkType === 'task') return `trimpro://tasks/${linkId}`
   if (linkType === 'issue') return `trimpro://issues/${linkId}`
+  if (linkType === 'request' || linkType === 'lead') return `trimpro://requests/${linkId}`
   if (linkType === 'message' || linkType === 'conversation') return `trimpro://messages/${linkId}`
   if (linkType === 'schedule') return 'trimpro://schedule'
   return undefined
@@ -191,6 +192,66 @@ export async function createNotificationsForUsers(
   }
 }
 
+function parseNotificationTargetEnv(value: string | undefined) {
+  return String(value || '')
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
+}
+
+const REQUEST_NOTIFICATION_TARGET_NAME_FALLBACKS = [
+  { firstName: 'Shia', lastName: 'Weinstock' },
+  { firstName: 'Shalomy', lastName: 'Falkowitz' },
+]
+
+async function getRequestNotificationRecipientUserIds(tenantId: string) {
+  const configuredUserIds = new Set(parseNotificationTargetEnv(process.env.REQUEST_NOTIFICATION_TARGET_USER_IDS))
+  const configuredEmails = new Set(
+    parseNotificationTargetEnv(process.env.REQUEST_NOTIFICATION_TARGET_EMAILS).map((email) =>
+      email.toLowerCase()
+    )
+  )
+  const shouldUseNameFallback = configuredUserIds.size === 0 && configuredEmails.size === 0
+
+  const candidates = await prisma.user.findMany({
+    where: {
+      tenantId,
+      status: 'ACTIVE',
+      OR: [
+        ...(configuredUserIds.size > 0 ? [{ id: { in: Array.from(configuredUserIds) } }] : []),
+        ...(configuredEmails.size > 0
+          ? [{ email: { in: Array.from(configuredEmails) } }]
+          : []),
+        ...(shouldUseNameFallback
+          ? REQUEST_NOTIFICATION_TARGET_NAME_FALLBACKS.map((target) => ({
+              firstName: { equals: target.firstName, mode: 'insensitive' as const },
+              lastName: { equals: target.lastName, mode: 'insensitive' as const },
+            }))
+          : []),
+      ],
+    },
+    select: {
+      id: true,
+      email: true,
+      firstName: true,
+      lastName: true,
+    },
+  })
+
+  return candidates
+    .filter((candidate) => {
+      if (configuredUserIds.has(candidate.id)) return true
+      if (candidate.email && configuredEmails.has(candidate.email.toLowerCase())) return true
+      if (!shouldUseNameFallback) return false
+      return REQUEST_NOTIFICATION_TARGET_NAME_FALLBACKS.some(
+        (target) =>
+          candidate.firstName.trim().toLowerCase() === target.firstName.toLowerCase() &&
+          candidate.lastName.trim().toLowerCase() === target.lastName.toLowerCase()
+      )
+    })
+    .map((candidate) => candidate.id)
+}
+
 /**
  * Notify dispatch-facing users about job activity (status, notes, media, messages).
  */
@@ -319,31 +380,24 @@ export async function notifyInvoiceOverdue(
 }
 
 /**
- * Notify when a new lead is created
+ * Notify when a new request is created.
  */
-export async function notifyNewLead(
+export async function notifyRequestCreated(
   tenantId: string,
-  leadId: string,
-  leadName: string
+  requestId: string,
+  requestName: string
 ) {
-  // Notify sales users and admins
-  const salesUsers = await prisma.user.findMany({
-    where: {
-      tenantId,
-      role: { in: ['ADMIN', 'SALES'] },
-      status: 'ACTIVE',
-    },
-    select: { id: true },
-  })
+  const recipientUserIds = await getRequestNotificationRecipientUserIds(tenantId)
 
-  if (salesUsers.length > 0) {
-    await createNotificationsForUsers(tenantId, salesUsers.map((u) => u.id), {
+  if (recipientUserIds.length > 0) {
+    await createNotificationsForUsers(tenantId, recipientUserIds, {
       type: 'OTHER',
-      title: 'New Lead Created',
-      message: `New lead: ${leadName}`,
-      linkUrl: `/dashboard/leads/${leadId}`,
-      linkType: 'lead',
-      linkId: leadId,
+      title: 'New Request Created',
+      message: `New request: ${requestName}`,
+      linkUrl: `/dashboard/requests/${requestId}`,
+      linkType: 'request',
+      linkId: requestId,
+      action: 'request_created',
     })
   }
 }

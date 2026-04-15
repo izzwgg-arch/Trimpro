@@ -26,6 +26,8 @@ import { TeamChatScreen } from '../screens/messages/TeamChatScreen'
 import { CreateRequestScreen } from '../screens/requests/CreateRequestScreen'
 import { RequestsListScreen } from '../screens/requests/RequestsListScreen'
 import { RequestDetailScreen } from '../screens/requests/RequestDetailScreen'
+import { MeasuringRequestsScreen } from '../screens/requests/MeasuringRequestsScreen'
+import { MeasuringRequestDetailScreen } from '../screens/requests/MeasuringRequestDetailScreen'
 import { IssuesScreen } from '../screens/issues/IssuesScreen'
 import { IssueDetailScreen } from '../screens/issues/IssueDetailScreen'
 import { CallsScreen } from '../screens/calls/CallsScreen'
@@ -77,6 +79,8 @@ const linking: LinkingOptions<RootDrawerParamList> = {
               CreateJob: 'all-jobs/new',
               EditJob: 'all-jobs/:jobId/edit',
               RequestsHome: 'requests',
+              MeasuringRequestsHome: 'measuring-requests',
+              MeasuringRequestDetail: 'measuring-requests/:measuringRequestId',
               RequestCreate: 'requests/new',
               RequestDetail: 'requests/:requestId',
               CallsHome: 'calls',
@@ -133,6 +137,16 @@ function JobsStackNavigator() {
         options={mainHeaderOptions('Notifications')}
       />
       <JobsStack.Screen name="RequestsHome" component={RequestsListScreen} options={mainHeaderOptions('Requests')} />
+      <JobsStack.Screen
+        name="MeasuringRequestsHome"
+        component={MeasuringRequestsScreen}
+        options={mainHeaderOptions('Measuring Requests')}
+      />
+      <JobsStack.Screen
+        name="MeasuringRequestDetail"
+        component={MeasuringRequestDetailScreen}
+        options={detailsHeaderOptions('Measuring Request')}
+      />
       <JobsStack.Screen name="RequestCreate" component={CreateRequestScreen} options={detailsHeaderOptions('Create Request')} />
       <JobsStack.Screen name="RequestDetail" component={RequestDetailScreen} options={detailsHeaderOptions('Request')} />
       <JobsStack.Screen name="CallsHome" component={CallsScreen} options={mainHeaderOptions('Calls')} />

@@ -2,16 +2,20 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
-import { InfiniteData, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Screen } from '../../components/Screen'
 import { apiRequest } from '../../api/client'
 import { BRAND } from '../../config/env'
 import { JobsStackParamList } from '../../types/navigation'
 import { AttachmentPickerSheet } from '../../components/attachments/AttachmentPickerSheet'
-import { AttachmentUploadQueue } from '../../components/attachments/AttachmentUploadQueue'
-import { pickAttachmentsByAction, uploadFileWithProgress } from '../../services/attachment-upload'
-import { useAttachmentUploadQueue } from '../../hooks/useAttachmentUploadQueue'
-import { extractCreatedRequestId } from './request-utils'
+import { pickAttachmentsByAction } from '../../services/attachment-upload'
+import {
+  createEmptyRequestDraft,
+  getRequestDraft,
+  LocalRequestDraftAttachment,
+  upsertRequestDraft,
+} from '../../drafts/storage'
+import { formatScheduledAt } from '../../utils/schedule'
 
 interface ResolvedAddress {
   street: string
@@ -22,47 +26,6 @@ interface ResolvedAddress {
 }
 
 type Props = NativeStackScreenProps<JobsStackParamList, 'RequestCreate'>
-
-interface CreatedLead {
-  id: string
-  firstName?: string
-  lastName?: string
-  phone?: string | null
-  email?: string | null
-  jobSiteAddress?: string | null
-  notes?: string | null
-  status?: string
-  isUrgent?: boolean
-  source?: string
-  createdAt?: string
-}
-
-interface CreateLeadResponse {
-  lead?: CreatedLead
-  id?: string
-}
-
-interface RequestDetailResponse {
-  lead: CreatedLead
-}
-
-interface RequestsListResponse {
-  leads: CreatedLead[]
-  pagination: {
-    page: number
-    limit: number
-    total: number
-    totalPages: number
-  }
-}
-
-interface UploadsApiResponse {
-  url: string
-  relativeUrl?: string
-  mimeType?: string
-  size?: number
-  filename?: string
-}
 
 interface ClientListResponse {
   clients: Array<{
@@ -76,8 +39,8 @@ interface ClientListResponse {
 
 type ClientMode = 'existing' | 'new'
 
-export function CreateRequestScreen({ navigation }: Props) {
-  const queryClient = useQueryClient()
+export function CreateRequestScreen({ navigation, route }: Props) {
+  const draftId = route.params?.draftId
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [phone, setPhone] = useState('')
@@ -94,16 +57,8 @@ export function CreateRequestScreen({ navigation }: Props) {
   const [showClientPicker, setShowClientPicker] = useState(false)
   const [clientSearch, setClientSearch] = useState('')
   const [selectedClient, setSelectedClient] = useState<ClientListResponse['clients'][number] | null>(null)
-
-  const stagedUploadQueue = useAttachmentUploadQueue<UploadsApiResponse>({
-    startUpload: (file, onProgress) => {
-      const task = uploadFileWithProgress<UploadsApiResponse>('/api/uploads', file, onProgress)
-      return {
-        promise: task.promise.then((result) => result.raw),
-        cancel: task.cancel,
-      }
-    },
-  })
+  const [draftAttachments, setDraftAttachments] = useState<LocalRequestDraftAttachment[]>([])
+  const [scheduledAt, setScheduledAt] = useState<string | null>(null)
 
   useEffect(() => {
     const value = jobSiteAddress.trim()
@@ -149,25 +104,59 @@ export function CreateRequestScreen({ navigation }: Props) {
     }
   }
 
+  useEffect(() => {
+    let cancelled = false
+    const loadDraft = async () => {
+      if (!draftId) return
+      const draft = await getRequestDraft(draftId)
+      if (!draft || cancelled) return
+      setFirstName(draft.firstName)
+      setLastName(draft.lastName)
+      setPhone(draft.phone)
+      setEmail(draft.email)
+      setCompany(draft.company)
+      setJobSiteAddress(draft.jobSiteAddress)
+      setAddressSelectedFromSuggestions(draft.addressSelectedFromSuggestions)
+      setNotes(draft.notes)
+      setClientMode(draft.clientMode)
+      setDraftAttachments(draft.attachments || [])
+      setScheduledAt(draft.scheduledAt || null)
+      setSelectedClient(
+        draft.selectedClientId
+          ? {
+              id: draft.selectedClientId,
+              name: draft.selectedClientName || 'Selected client',
+              companyName: draft.selectedClientName || null,
+            }
+          : null
+      )
+    }
+    void loadDraft()
+    return () => {
+      cancelled = true
+    }
+  }, [draftId])
+
   const onSelectAttachmentAction = async (
     action: 'take-photo' | 'record-video' | 'choose-photos' | 'choose-videos' | 'choose-document'
   ) => {
     try {
       const picked = await pickAttachmentsByAction(action)
       if (!picked.length) return
-      stagedUploadQueue.enqueueFiles(picked)
+      setDraftAttachments((prev) => [
+        ...prev,
+        ...picked.map((file) => ({
+          id: `${Date.now()}-${file.name}-${Math.random().toString(36).slice(2, 7)}`,
+          uri: file.uri,
+          fileName: file.name,
+          mimeType: file.mimeType,
+          fileSize: Number(file.sizeBytes || 0),
+        })),
+      ])
     } catch (error: any) {
       Alert.alert('Attachment selection failed', error?.message || 'Please try again.')
     }
   }
-
-  const successfulUploads = useMemo(
-    () =>
-      stagedUploadQueue.items.filter(
-        (item) => item.status === 'success' && item.result?.url
-      ),
-    [stagedUploadQueue.items]
-  )
 
   const clientsQuery = useQuery({
     queryKey: ['mobile-clients-for-request', clientSearch],
@@ -194,116 +183,35 @@ export function CreateRequestScreen({ navigation }: Props) {
   }
 
   const submit = async () => {
-    if (clientMode === 'existing' && !selectedClient?.id) {
-      Alert.alert('Select client', 'Please select an existing client or switch to Add New Client.')
-      return
-    }
-    if (!firstName || !lastName) {
-      Alert.alert('Missing fields', 'First name and last name are required.')
-      return
-    }
-    if (jobSiteAddress.trim().length > 0 && !addressSelectedFromSuggestions) {
-      const resolved = await resolveAndSelectAddress(jobSiteAddress.trim())
-      if (!resolved) return
-    }
-    if (stagedUploadQueue.hasUploading) {
-      Alert.alert('Please wait', 'Please wait for file uploads to finish before creating the request.')
-      return
-    }
-    if (stagedUploadQueue.failedCount > 0) {
-      Alert.alert('Upload errors', 'Please retry or remove failed uploads before creating the request.')
-      return
-    }
-
     setLoading(true)
     try {
-      const response = await apiRequest<CreateLeadResponse>('/api/leads', 'POST', {
+      const existingDraft = draftId ? await getRequestDraft(draftId) : null
+      const savedDraft = await upsertRequestDraft({
+        id: existingDraft?.id || draftId || createEmptyRequestDraft().id,
+        kind: existingDraft?.kind || 'STANDARD',
         firstName,
         lastName,
-        phone: phone || null,
-        email: email || null,
-        company: company || null,
-        clientId: clientMode === 'existing' ? selectedClient?.id || null : null,
-        jobSiteAddress: jobSiteAddress || null,
-        notes: notes || null,
-        source: 'OTHER',
-        status: 'NEW',
+        phone,
+        email,
+        company,
+        clientMode,
+        selectedClientId: clientMode === 'existing' ? selectedClient?.id || null : null,
+        selectedClientName: clientMode === 'existing' ? selectedClient?.name || null : null,
+        jobSiteAddress,
+        addressSelectedFromSuggestions,
+        notes,
+        attachments: draftAttachments,
+        scheduledAt,
+        publishState:
+          firstName.trim() && lastName.trim() && (clientMode === 'new' || selectedClient?.id)
+            ? 'readyToPublish'
+            : 'localDraft',
+        publishError: null,
       })
-      const createdRequestId = extractCreatedRequestId(response)
-
-      const detailResponse =
-        response.lead?.createdAt && response.lead?.status
-          ? { lead: response.lead }
-          : await apiRequest<RequestDetailResponse>(`/api/leads/${createdRequestId}`)
-      queryClient.setQueryData(['mobile-request-detail', createdRequestId], detailResponse)
-
-      const attachErrors: string[] = []
-      for (const queued of successfulUploads) {
-        try {
-          await apiRequest('/api/attachments', 'POST', {
-            entityType: 'request',
-            entityId: createdRequestId,
-            fileName: queued.file.name,
-            fileSize: Number(queued.result?.size || queued.file.sizeBytes || 0),
-            mimeType: queued.file.mimeType,
-            url: queued.result?.url,
-            key: queued.result?.relativeUrl || queued.result?.filename || queued.result?.url,
-          })
-        } catch (error: any) {
-          attachErrors.push(error?.message || `Failed to attach ${queued.file.name}`)
-        }
-      }
-
-      queryClient.setQueryData<InfiniteData<RequestsListResponse>>(
-        ['mobile-requests-list'],
-        (existing) => {
-          if (!existing?.pages?.length) return existing
-          const createdLead = detailResponse.lead
-          const firstPage = existing.pages[0]
-          const deduped = (firstPage.leads || []).filter((lead) => lead.id !== createdLead.id)
-          return {
-            ...existing,
-            pages: [
-              {
-                ...firstPage,
-                leads: [createdLead, ...deduped],
-                pagination: {
-                  ...firstPage.pagination,
-                  total: Number(firstPage.pagination?.total || 0) + 1,
-                },
-              },
-              ...existing.pages.slice(1),
-            ],
-          }
-        }
-      )
-      void queryClient.invalidateQueries({ queryKey: ['mobile-requests-list'] })
-
-      setFirstName('')
-      setLastName('')
-      setPhone('')
-      setEmail('')
-      setCompany('')
-      setJobSiteAddress('')
-      setAddressPredictions([])
-      setAddressSelectedFromSuggestions(false)
-      setNotes('')
-      setSelectedClient(null)
-      setClientSearch('')
-      setClientMode('existing')
-      stagedUploadQueue.setItems([])
-
-      navigation.replace('RequestDetail', { requestId: createdRequestId })
-      if (attachErrors.length > 0) {
-        setTimeout(() => {
-          Alert.alert(
-            'Request created',
-            `Request was created, but ${attachErrors.length} file(s) could not be attached.`
-          )
-        }, 0)
-      }
+      navigation.replace('RequestCreate', { draftId: savedDraft.id })
+      Alert.alert('Saved locally', 'Request draft stays on this phone until you publish it from the Requests list.')
     } catch (error: any) {
-      Alert.alert('Failed', error?.message || 'Could not create request.')
+      Alert.alert('Failed', error?.message || 'Could not save request draft.')
     } finally {
       setLoading(false)
     }
@@ -312,7 +220,12 @@ export function CreateRequestScreen({ navigation }: Props) {
   return (
     <Screen style={styles.screen}>
       <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.title}>Create Request</Text>
+        <Text style={styles.title}>{draftId ? 'Edit Local Request Draft' : 'Create Local Request Draft'}</Text>
+        <View style={styles.statusCard}>
+          <Text style={styles.statusTitle}>Local draft</Text>
+          <Text style={styles.statusText}>This request stays unpublished until you explicitly publish it.</Text>
+          <Text style={styles.statusText}>Schedule: {formatScheduledAt(scheduledAt)}</Text>
+        </View>
         <View style={styles.clientModeWrap}>
           <Pressable
             style={[styles.clientModeButton, clientMode === 'existing' && styles.clientModeButtonActive]}
@@ -428,29 +341,39 @@ export function CreateRequestScreen({ navigation }: Props) {
         <View style={styles.uploadSection}>
           <View style={styles.uploadHeader}>
             <Ionicons name="attach-outline" size={18} color={BRAND.text} />
-            <Text style={styles.uploadTitle}>Attachments (before save)</Text>
+            <Text style={styles.uploadTitle}>Local attachments</Text>
           </View>
           <Pressable style={styles.uploadButton} onPress={() => setShowAttachmentPicker(true)}>
             <Ionicons name="add-circle-outline" size={18} color={BRAND.primary} />
             <Text style={styles.uploadButtonText}>Add Attachment</Text>
           </Pressable>
           <Text style={styles.uploadHint}>
-            Supports photos, videos, PDF, Word, Excel, CSV, PowerPoint, and TXT.
+            Files stay local until publish. Supports photos, videos, PDF, Word, Excel, CSV, PowerPoint, and TXT.
           </Text>
-          <AttachmentUploadQueue
-            items={stagedUploadQueue.items}
-            onRetry={(item) => stagedUploadQueue.retryItem(item.id)}
-            onRemove={(item) => stagedUploadQueue.removeItem(item.id)}
-            onCancel={(item) => stagedUploadQueue.cancelItem(item.id)}
-          />
+          {draftAttachments.map((attachment) => (
+            <View key={attachment.id} style={styles.localAttachmentRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.localAttachmentName}>{attachment.fileName}</Text>
+                <Text style={styles.localAttachmentMeta}>
+                  {attachment.mimeType || 'file'} • {Math.max(1, Math.round(attachment.fileSize / 1024))} KB
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => setDraftAttachments((prev) => prev.filter((item) => item.id !== attachment.id))}
+                hitSlop={8}
+              >
+                <Ionicons name="trash-outline" size={18} color="#B42318" />
+              </Pressable>
+            </View>
+          ))}
         </View>
 
         <Pressable
-          style={[styles.button, (loading || stagedUploadQueue.hasUploading) && styles.buttonDisabled]}
+          style={[styles.button, loading && styles.buttonDisabled]}
           onPress={submit}
-          disabled={loading || stagedUploadQueue.hasUploading}
+          disabled={loading}
         >
-          <Text style={styles.buttonText}>{loading ? 'Creating...' : 'Create Request'}</Text>
+          <Text style={styles.buttonText}>{loading ? 'Saving...' : 'Save locally'}</Text>
         </Pressable>
       </ScrollView>
       <AttachmentPickerSheet
@@ -622,9 +545,44 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#6B7280',
   },
+  localAttachmentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#EAECF0',
+    paddingTop: 10,
+  },
+  localAttachmentName: {
+    color: BRAND.text,
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  localAttachmentMeta: {
+    color: '#6B7280',
+    fontSize: 11,
+    marginTop: 2,
+  },
   button: { backgroundColor: BRAND.primary, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
   buttonDisabled: { opacity: 0.7 },
   buttonText: { color: BRAND.white, fontWeight: '700' },
+  statusCard: {
+    backgroundColor: '#EEF4F7',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#D4E3EA',
+    padding: 12,
+    gap: 4,
+  },
+  statusTitle: {
+    color: BRAND.primary,
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  statusText: {
+    color: BRAND.text,
+    fontSize: 12,
+  },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(2,6,23,0.45)',

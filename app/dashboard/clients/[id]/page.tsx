@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { formatCurrency, formatDate, formatPhoneNumber } from '@/lib/utils'
 import {
   Phone,
@@ -121,6 +123,7 @@ interface ClientDetail {
     emails: number
   }
   openInvoiceBalance?: string
+  subClientsOpenInvoiceBalance?: string
   parent?: {
     id: string
     name: string
@@ -135,6 +138,7 @@ interface ClientDetail {
     phone: string | null
     isActive: boolean
     createdAt: string
+    openInvoiceBalance?: string
   }>
 }
 
@@ -152,6 +156,13 @@ export default function ClientDetailPage() {
   const [emailTo, setEmailTo] = useState('')
   const [emailSending, setEmailSending] = useState(false)
   const [emailResult, setEmailResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([])
+  const [showBulkPayment, setShowBulkPayment] = useState(false)
+  const [bulkPaymentAmounts, setBulkPaymentAmounts] = useState<Record<string, string>>({})
+  const [bulkPaymentMethod, setBulkPaymentMethod] = useState<'CHECK' | 'QUICK_PAY' | 'OTHER'>('CHECK')
+  const [bulkPaymentOtherLabel, setBulkPaymentOtherLabel] = useState('')
+  const [bulkPaymentSaving, setBulkPaymentSaving] = useState(false)
+  const [bulkPaymentError, setBulkPaymentError] = useState('')
 
   // Defensive: Validate params before using
   const clientId = params?.id as string | undefined
@@ -369,6 +380,78 @@ export default function ClientDetailPage() {
     }
   }
 
+  const toggleSelectedInvoice = (invoiceId: string, checked: boolean) => {
+    setSelectedInvoiceIds((prev) =>
+      checked ? (prev.includes(invoiceId) ? prev : [...prev, invoiceId]) : prev.filter((id) => id !== invoiceId)
+    )
+  }
+
+  const openPaymentModal = () => {
+    const payableInvoices = invoices.filter((invoice) => selectedInvoiceIds.includes(invoice.id))
+    if (payableInvoices.length === 0) {
+      alert('Select at least one invoice to apply a payment.')
+      return
+    }
+
+    const defaults: Record<string, string> = {}
+    payableInvoices.forEach((invoice) => {
+      defaults[invoice.id] = Number(parseFloat(invoice.balance || '0')).toFixed(2)
+    })
+    setBulkPaymentAmounts(defaults)
+    setBulkPaymentMethod('CHECK')
+    setBulkPaymentOtherLabel('')
+    setBulkPaymentError('')
+    setShowBulkPayment(true)
+  }
+
+  const handleBulkPaymentSubmit = async () => {
+    const items = invoices
+      .filter((invoice) => selectedInvoiceIds.includes(invoice.id))
+      .map((invoice) => ({
+        invoiceId: invoice.id,
+        amount: parseFloat(bulkPaymentAmounts[invoice.id] || '0'),
+      }))
+      .filter((item) => Number.isFinite(item.amount) && item.amount > 0)
+
+    if (items.length === 0) {
+      setBulkPaymentError('Enter at least one payment amount greater than zero.')
+      return
+    }
+
+    setBulkPaymentSaving(true)
+    setBulkPaymentError('')
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch('/api/invoices/bulk-manual-payments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          items,
+          method: bulkPaymentMethod,
+          methodLabel: bulkPaymentMethod === 'OTHER' ? bulkPaymentOtherLabel.trim() : undefined,
+        }),
+      })
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        setBulkPaymentError(data.error || 'Failed to apply payment.')
+        return
+      }
+
+      setShowBulkPayment(false)
+      setSelectedInvoiceIds([])
+      await fetchClient()
+    } catch (error) {
+      console.error('Bulk client payment error:', error)
+      setBulkPaymentError('Failed to apply payment.')
+    } finally {
+      setBulkPaymentSaving(false)
+    }
+  }
+
   // Loading state
   if (loading) {
     return (
@@ -416,6 +499,11 @@ export default function ClientDetailPage() {
   const tasks = (client.tasks && Array.isArray(client.tasks)) ? client.tasks : []
   const issues = (client.issues && Array.isArray(client.issues)) ? client.issues : []
   const subClients = (client.subClients && Array.isArray(client.subClients)) ? client.subClients : []
+  const selectedInvoices = invoices.filter((invoice) => selectedInvoiceIds.includes(invoice.id))
+  const bulkPaymentTotal = selectedInvoices.reduce((sum, invoice) => {
+    const amount = parseFloat(bulkPaymentAmounts[invoice.id] || '0')
+    return sum + (Number.isFinite(amount) ? amount : 0)
+  }, 0)
 
   return (
     <>
@@ -554,7 +642,9 @@ export default function ClientDetailPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle>Sub-Clients</CardTitle>
-                  <CardDescription>Child clients attached to this dominant client</CardDescription>
+                  <CardDescription>
+                    Child clients attached to this parent client{subClients.length > 0 ? ` · ${subClients.length} total` : ''}
+                  </CardDescription>
                 </div>
                 <Button variant="outline" onClick={() => router.push(`/dashboard/clients/new?parentId=${clientId}`)}>
                   <Plus className="mr-2 h-4 w-4" />
@@ -567,6 +657,12 @@ export default function ClientDetailPage() {
                 <p className="text-sm text-gray-500">No sub-clients yet.</p>
               ) : (
                 <div className="space-y-3">
+                  <div className="flex items-center justify-between rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                    <span className="font-medium text-slate-700">Combined child open balance</span>
+                    <span className="font-semibold text-amber-700">
+                      {formatCurrency(parseFloat(client.subClientsOpenInvoiceBalance || '0'))}
+                    </span>
+                  </div>
                   {subClients.map((subClient) => (
                     <Link
                       key={subClient.id}
@@ -577,7 +673,12 @@ export default function ClientDetailPage() {
                         <div>
                           <p className="font-medium">{subClient.name}</p>
                           <div className="text-xs text-gray-600">
-                            {subClient.companyName || 'No company'} {subClient.email ? `| ${subClient.email}` : ''}
+                            {subClient.companyName || 'No company'}
+                            {subClient.email ? ` | ${subClient.email}` : ''}
+                            {subClient.phone ? ` | ${formatPhoneNumber(subClient.phone)}` : ''}
+                          </div>
+                          <div className="mt-1 text-xs font-medium text-amber-700">
+                            Open Balance: {formatCurrency(parseFloat(subClient.openInvoiceBalance || '0'))}
                           </div>
                         </div>
                         <span className={`px-2 py-1 text-xs rounded-full ${
@@ -786,36 +887,61 @@ export default function ClientDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Recent Invoices */}
+          {/* Open Invoices */}
           <Card>
             <CardHeader>
-              <CardTitle>Recent Invoices</CardTitle>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <CardTitle>Open Invoices</CardTitle>
+                  <CardDescription>Select invoices and apply one manual payment batch.</CardDescription>
+                </div>
+                <Button variant="outline" onClick={openPaymentModal} disabled={selectedInvoiceIds.length === 0}>
+                  <DollarSign className="mr-2 h-4 w-4" />
+                  Add Payment{selectedInvoiceIds.length > 0 ? ` (${selectedInvoiceIds.length})` : ''}
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
                 {invoices.length === 0 ? (
-                  <p className="text-sm text-gray-500">No invoices yet</p>
+                  <p className="text-sm text-gray-500">No open invoices.</p>
                 ) : (
                   invoices.map((invoice) => (
-                    <Link
+                    <div
                       key={invoice.id}
-                      href={`/dashboard/invoices/${invoice.id}`}
-                      className="block p-3 rounded-lg border hover:bg-gray-50 transition-colors"
+                      className={`rounded-lg border p-3 transition-colors ${
+                        selectedInvoiceIds.includes(invoice.id) ? 'border-[#1e4d6e] bg-slate-50' : 'hover:bg-gray-50'
+                      }`}
                     >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-medium">{invoice.invoiceNumber}</p>
-                          <p className="text-xs text-gray-600">{formatCurrency(parseFloat(invoice.total))}</p>
-                        </div>
-                        <span className={`px-2 py-1 text-xs rounded ${
-                          invoice.status === 'PAID' ? 'bg-green-100 text-green-800' :
-                          invoice.status === 'OVERDUE' ? 'bg-red-100 text-red-800' :
-                          'bg-gray-100 text-gray-800'
-                        }`}>
-                          {invoice.status}
-                        </span>
+                      <div className="flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedInvoiceIds.includes(invoice.id)}
+                          onChange={(e) => toggleSelectedInvoice(invoice.id, e.target.checked)}
+                          className="mt-1"
+                        />
+                        <Link href={`/dashboard/invoices/${invoice.id}`} className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-medium">{invoice.invoiceNumber}</p>
+                              <p className="text-xs text-gray-600">
+                                Total {formatCurrency(parseFloat(invoice.total))} • Balance {formatCurrency(parseFloat(invoice.balance))}
+                              </p>
+                              {invoice.dueDate && (
+                                <p className="text-xs text-gray-500">Due {formatDate(invoice.dueDate)}</p>
+                              )}
+                            </div>
+                            <span className={`px-2 py-1 text-xs rounded ${
+                              invoice.status === 'PAID' ? 'bg-green-100 text-green-800' :
+                              invoice.status === 'OVERDUE' ? 'bg-red-100 text-red-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {invoice.status}
+                            </span>
+                          </div>
+                        </Link>
                       </div>
-                    </Link>
+                    </div>
                   ))
                 )}
               </div>
@@ -861,6 +987,89 @@ export default function ClientDetailPage() {
         </div>
       </div>
     </div>
+
+    {showBulkPayment && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div className="w-full max-w-2xl rounded-xl bg-white shadow-2xl">
+          <div className="border-b p-4">
+            <h2 className="text-lg font-semibold text-gray-900">Add Payment</h2>
+            <p className="text-sm text-gray-600">Apply one manual payment entry across selected invoices.</p>
+          </div>
+          <div className="space-y-4 p-4">
+            {bulkPaymentError && (
+              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {bulkPaymentError}
+              </div>
+            )}
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <Label>Payment Method</Label>
+                <select
+                  className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
+                  value={bulkPaymentMethod}
+                  onChange={(e) => setBulkPaymentMethod(e.target.value as 'CHECK' | 'QUICK_PAY' | 'OTHER')}
+                >
+                  <option value="CHECK">Check</option>
+                  <option value="QUICK_PAY">Quick Pay</option>
+                  <option value="OTHER">Other</option>
+                </select>
+              </div>
+              {bulkPaymentMethod === 'OTHER' && (
+                <div>
+                  <Label>Payment Label</Label>
+                  <Input
+                    value={bulkPaymentOtherLabel}
+                    onChange={(e) => setBulkPaymentOtherLabel(e.target.value)}
+                    placeholder="Cash, Zelle, Venmo..."
+                  />
+                </div>
+              )}
+            </div>
+            <div className="space-y-3 max-h-[50vh] overflow-auto pr-1">
+              {selectedInvoices.map((invoice) => (
+                <div key={invoice.id} className="rounded-md border p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium">{invoice.invoiceNumber}</p>
+                      <p className="text-xs text-gray-500">
+                        Remaining {formatCurrency(parseFloat(invoice.balance || '0'))}
+                      </p>
+                    </div>
+                    <div className="w-36">
+                      <Label>Amount</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={bulkPaymentAmounts[invoice.id] || ''}
+                        onChange={(e) =>
+                          setBulkPaymentAmounts((prev) => ({
+                            ...prev,
+                            [invoice.id]: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center justify-between border-t pt-3">
+              <p className="text-sm text-gray-600">Total payment</p>
+              <p className="text-lg font-semibold">{formatCurrency(bulkPaymentTotal)}</p>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 border-t p-4">
+            <Button variant="outline" onClick={() => setShowBulkPayment(false)} disabled={bulkPaymentSaving}>
+              Cancel
+            </Button>
+            <Button onClick={handleBulkPaymentSubmit} disabled={bulkPaymentSaving}>
+              {bulkPaymentSaving ? 'Saving...' : 'Apply Payment'}
+            </Button>
+          </div>
+        </div>
+      </div>
+    )}
 
     {/* Statement Modal */}
     {showStatement && (

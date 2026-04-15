@@ -11,6 +11,8 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
 import { PlaceAutocompleteInput } from '@/components/maps/PlaceAutocompleteInput'
+import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
+import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
 
 type AddressForm = {
   street: string
@@ -23,6 +25,7 @@ type AddressForm = {
 type ClientResponse = {
   client: {
     id: string
+    parentId: string | null
     name: string
     companyName: string | null
     email: string | null
@@ -53,6 +56,9 @@ export default function EditClientPage() {
   const [error, setError] = useState<string | null>(null)
   const [billingPlaceId, setBillingPlaceId] = useState<string | null>(null)
   const [shippingPlaceId, setShippingPlaceId] = useState<string | null>(null)
+  const [availableClients, setAvailableClients] = useState<PickerClient[]>([])
+  const [isSubClient, setIsSubClient] = useState(false)
+  const [selectedParentId, setSelectedParentId] = useState('')
 
   const [formData, setFormData] = useState({
     name: '',
@@ -99,9 +105,12 @@ export default function EditClientPage() {
           return
         }
 
-        const res = await fetch(`/api/clients/${normalizedClientId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
+        const [res, availableClients] = await Promise.all([
+          fetch(`/api/clients/${normalizedClientId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          fetchAllPickerClients(),
+        ])
 
         if (res.status === 401) {
           router.push('/auth/login')
@@ -149,6 +158,11 @@ export default function EditClientPage() {
             country: shipping?.country || 'US',
           },
         })
+        setAvailableClients(
+          availableClients.filter((item) => item.id !== normalizedClientId)
+        )
+        setIsSubClient(Boolean(client.parentId))
+        setSelectedParentId(client.parentId || '')
         setBillingPlaceId(billing?.street ? 'existing' : null)
         setShippingPlaceId(shipping?.street ? 'existing' : null)
         setError(null)
@@ -174,7 +188,11 @@ export default function EditClientPage() {
       alert('Please select a real billing address from the suggestions.')
       return
     }
-    if (formData.shippingAddress.street.trim() && !shippingPlaceId) {
+    if (isSubClient && !selectedParentId) {
+      alert('Please select a parent client.')
+      return
+    }
+    if (!isSubClient && formData.shippingAddress.street.trim() && !shippingPlaceId) {
       alert('Please select a real shipping address from the suggestions.')
       return
     }
@@ -201,8 +219,9 @@ export default function EditClientPage() {
               .filter(Boolean)
           : [],
         isActive: formData.isActive,
+        parentId: isSubClient ? selectedParentId : null,
         billingAddress: formData.billingAddress.street ? formData.billingAddress : null,
-        shippingAddress: formData.shippingAddress.street ? formData.shippingAddress : null,
+        shippingAddress: isSubClient ? null : (formData.shippingAddress.street ? formData.shippingAddress : null),
       }
 
       const res = await fetch(`/api/clients/${normalizedClientId}`, {
@@ -293,6 +312,31 @@ export default function EditClientPage() {
             <CardDescription>Edit the client’s basic information</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="rounded-md border p-4 space-y-3">
+              <label className="flex items-center justify-between gap-3 text-sm font-medium">
+                <span>This client is a sub-client</span>
+                <input
+                  type="checkbox"
+                  checked={isSubClient}
+                  onChange={(e) => {
+                    const checked = e.target.checked
+                    setIsSubClient(checked)
+                    if (!checked) setSelectedParentId('')
+                  }}
+                />
+              </label>
+              {isSubClient && (
+                <div className="space-y-2">
+                  <Label>Parent Client</Label>
+                  <SearchableClientSelect
+                    clients={availableClients}
+                    value={selectedParentId}
+                    onSelect={setSelectedParentId}
+                    placeholder="Select a parent client..."
+                  />
+                </div>
+              )}
+            </div>
             <div>
               <Label htmlFor="name">Name *</Label>
               <Input
@@ -477,6 +521,7 @@ export default function EditClientPage() {
           </CardContent>
         </Card>
 
+        {!isSubClient && (
         <Card>
           <CardHeader>
             <CardTitle>Shipping Address (Optional)</CardTitle>
@@ -564,6 +609,7 @@ export default function EditClientPage() {
             </div>
           </CardContent>
         </Card>
+        )}
 
         <div className="flex justify-end space-x-4">
           <Button type="button" variant="outline" onClick={() => router.back()} disabled={saving}>

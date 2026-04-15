@@ -30,7 +30,7 @@ async function refreshAccessTokenSilently(): Promise<boolean> {
           'Content-Type': 'application/json',
           'User-Agent': 'TrimProMobile',
         },
-        body: JSON.stringify({ refreshToken, deviceId }),
+        body: JSON.stringify({ refreshToken, deviceId, clientType: 'mobile' }),
       })
 
       if (!response.ok) {

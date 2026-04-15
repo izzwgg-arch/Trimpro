@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
-import { notifyNewLead } from '@/lib/notifications'
+import { notifyRequestCreated } from '@/lib/notifications'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 
 export async function GET(request: NextRequest) {
@@ -25,11 +25,19 @@ export async function GET(request: NextRequest) {
 
     if (search) {
       where.OR = [
+        { id: { contains: search, mode: 'insensitive' } },
         { firstName: { contains: search, mode: 'insensitive' } },
         { lastName: { contains: search, mode: 'insensitive' } },
         { email: { contains: search, mode: 'insensitive' } },
         { phone: { contains: search, mode: 'insensitive' } },
         { company: { contains: search, mode: 'insensitive' } },
+        { jobSiteAddress: { contains: search, mode: 'insensitive' } },
+        { client: { name: { contains: search, mode: 'insensitive' } } },
+        { client: { companyName: { contains: search, mode: 'insensitive' } } },
+        { client: { addresses: { some: { street: { contains: search, mode: 'insensitive' } } } } },
+        { client: { addresses: { some: { city: { contains: search, mode: 'insensitive' } } } } },
+        { client: { addresses: { some: { state: { contains: search, mode: 'insensitive' } } } } },
+        { client: { addresses: { some: { zipCode: { contains: search, mode: 'insensitive' } } } } },
       ]
     }
 
@@ -219,13 +227,13 @@ export async function POST(request: NextRequest) {
         tenantId: user.tenantId,
         userId: user.id,
         type: 'OTHER',
-        description: `Lead "${firstName} ${lastName}" created`,
+        description: `Request "${firstName} ${lastName}" created`,
         leadId: lead.id,
       },
     })
 
-    // Notify sales team about new lead
-    await notifyNewLead(user.tenantId, lead.id, `${firstName} ${lastName}`)
+    // Notify only the intended request recipients about a new request
+    await notifyRequestCreated(user.tenantId, lead.id, `${firstName} ${lastName}`)
 
     // Create notification for assignee if different from creator
     if (assignedToId && assignedToId !== user.id) {
@@ -233,10 +241,10 @@ export async function POST(request: NextRequest) {
         data: {
           tenantId: user.tenantId,
           userId: assignedToId,
-          type: 'TASK_ASSIGNED',
-          title: 'New Lead Assigned',
-          message: `${user.firstName} ${user.lastName} assigned you a new lead: "${firstName} ${lastName}"`,
-          linkType: 'lead',
+          type: 'OTHER',
+          title: 'New Request Assigned',
+          message: `${user.firstName} ${user.lastName} assigned you a new request: "${firstName} ${lastName}"`,
+          linkType: 'request',
           linkId: lead.id,
           linkUrl: `/dashboard/requests/${lead.id}`,
         },

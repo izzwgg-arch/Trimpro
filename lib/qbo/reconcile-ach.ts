@@ -8,6 +8,77 @@ function toMoney(n: number) {
   return Math.round(n * 100) / 100
 }
 
+const PUBLIC_INVOICE_RECONCILE_COOLDOWN_MS = 2 * 60 * 1000
+const PUBLIC_INVOICE_RETURN_RECONCILE_WINDOW_MS = 30 * 60 * 1000
+
+async function getLatestQboAchIntent(invoiceId: string) {
+  return prisma.invoicePaymentIntent.findFirst({
+    where: {
+      invoiceId,
+      provider: 'qbo',
+      method: 'ach',
+    },
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true,
+      tenantId: true,
+      invoiceId: true,
+      status: true,
+      returnTokenUsedAt: true,
+      createdAt: true,
+    },
+  })
+}
+
+async function logReconcileAttempt(params: {
+  intentId: string | null
+  tenantId: string
+  source: string
+  appliedAmount: number
+  skippedReason?: string | null
+}) {
+  if (!params.intentId) return
+  await prisma.paymentEvent.create({
+    data: {
+      tenantId: params.tenantId,
+      intentId: params.intentId,
+      provider: 'qbo',
+      type: 'reconcile',
+      rawPayload: {
+        source: params.source,
+        appliedAmount: params.appliedAmount,
+        skippedReason: params.skippedReason || null,
+      },
+    },
+  }).catch(() => undefined)
+}
+
+export async function shouldAttemptPublicInvoiceReconcile(invoiceId: string): Promise<boolean> {
+  const intent = await getLatestQboAchIntent(invoiceId)
+  if (!intent) return false
+
+  const isActiveIntent = ['CREATED', 'LINK_CREATED', 'PENDING'].includes(String(intent.status))
+  const hasRecentReturn =
+    intent.returnTokenUsedAt instanceof Date &&
+    Date.now() - intent.returnTokenUsedAt.getTime() <= PUBLIC_INVOICE_RETURN_RECONCILE_WINDOW_MS
+
+  if (!isActiveIntent && !hasRecentReturn) return false
+
+  const latestReconcileEvent = await prisma.paymentEvent.findFirst({
+    where: {
+      tenantId: intent.tenantId,
+      intentId: intent.id,
+      provider: 'qbo',
+      type: 'reconcile',
+    },
+    orderBy: { createdAt: 'desc' },
+    select: { createdAt: true },
+  })
+
+  if (!latestReconcileEvent?.createdAt) return true
+  return Date.now() - latestReconcileEvent.createdAt.getTime() >= PUBLIC_INVOICE_RECONCILE_COOLDOWN_MS
+}
+
 export async function reconcileTenantRecentAchPayments(tenantId: string): Promise<void> {
   const intents = await prisma.invoicePaymentIntent.findMany({
     where: {
@@ -24,14 +95,17 @@ export async function reconcileTenantRecentAchPayments(tenantId: string): Promis
   const invoiceIds = Array.from(new Set(intents.map((i) => i.invoiceId).filter(Boolean)))
   for (const invoiceId of invoiceIds) {
     try {
-      await reconcileSingleInvoiceAchPayment(invoiceId)
+      await reconcileSingleInvoiceAchPayment(invoiceId, { source: 'qbo_reconcile_sweep' })
     } catch (e) {
       console.error('[QBO ACH] Reconcile (tenant sweep) failed:', { tenantId, invoiceId, error: e })
     }
   }
 }
 
-export async function reconcileSingleInvoiceAchPayment(invoiceId: string): Promise<void> {
+export async function reconcileSingleInvoiceAchPayment(
+  invoiceId: string,
+  options?: { qboInvoice?: any; source?: string }
+): Promise<void> {
   const invoice = await prisma.invoice.findUnique({
     where: { id: invoiceId },
     include: {
@@ -51,21 +125,51 @@ export async function reconcileSingleInvoiceAchPayment(invoiceId: string): Promi
   const localBalance = Number(invoice.balance || 0)
   if (localBalance <= 0 || !invoice.qboSyncId) return
 
+  const latestIntent = await getLatestQboAchIntent(invoice.id)
+  const source = options?.source || 'qbo_reconcile'
   const session = await getQboSessionForTenant(invoice.tenantId)
   if (!session) return
 
-  const qboRes = await quickBooksService.makeAPIRequest(
-    session.accessToken,
-    session.realmId,
-    `/invoice/${invoice.qboSyncId}`,
-    'GET'
-  )
-  const qboInvoice = qboRes?.Invoice
+  const qboInvoice =
+    options?.qboInvoice ||
+    (
+      await quickBooksService.makeAPIRequest(
+        session.accessToken,
+        session.realmId,
+        `/invoice/${invoice.qboSyncId}`,
+        'GET',
+        undefined,
+        {
+          tenantId: invoice.tenantId,
+          entityType: 'invoice',
+          entityId: invoice.id,
+          triggerSource: source,
+        }
+      )
+    )?.Invoice
   const qboBalance = Number(qboInvoice?.Balance ?? qboInvoice?.BalanceAmt ?? NaN)
-  if (!Number.isFinite(qboBalance)) return
+  if (!Number.isFinite(qboBalance)) {
+    await logReconcileAttempt({
+      intentId: latestIntent?.id || null,
+      tenantId: invoice.tenantId,
+      source,
+      appliedAmount: 0,
+      skippedReason: 'invalid_qbo_balance',
+    })
+    return
+  }
 
   const baselineDelta = toMoney(localBalance - qboBalance)
-  if (baselineDelta <= 0) return
+  if (baselineDelta <= 0) {
+    await logReconcileAttempt({
+      intentId: latestIntent?.id || null,
+      tenantId: invoice.tenantId,
+      source,
+      appliedAmount: 0,
+      skippedReason: 'no_balance_delta',
+    })
+    return
+  }
 
   const reference = `qbo_reconcile_${invoice.qboSyncId}_${qboBalance.toFixed(2)}`
   let appliedAmount = 0
@@ -127,7 +231,7 @@ export async function reconcileSingleInvoiceAchPayment(invoiceId: string): Promi
           currency: 'USD',
           externalId: reference,
           invoiceId: current.id,
-          metadata: { source: 'qbo_reconcile_sweep' },
+          metadata: { source },
         },
       })
     })
@@ -136,7 +240,16 @@ export async function reconcileSingleInvoiceAchPayment(invoiceId: string): Promi
     if (e?.code !== 'P2002') throw e
   }
 
-  if (appliedAmount <= 0) return
+  if (appliedAmount <= 0) {
+    await logReconcileAttempt({
+      intentId: latestIntent?.id || null,
+      tenantId: invoice.tenantId,
+      source,
+      appliedAmount: 0,
+      skippedReason: 'no_payment_applied',
+    })
+    return
+  }
 
   await prisma.invoicePaymentIntent.updateMany({
     where: {
@@ -147,6 +260,13 @@ export async function reconcileSingleInvoiceAchPayment(invoiceId: string): Promi
       status: { in: ['CREATED', 'LINK_CREATED', 'PENDING'] as any },
     },
     data: { status: 'SUCCEEDED' as any },
+  })
+
+  await logReconcileAttempt({
+    intentId: latestIntent?.id || null,
+    tenantId: invoice.tenantId,
+    source,
+    appliedAmount,
   })
 
   await notifyInvoicePaid(

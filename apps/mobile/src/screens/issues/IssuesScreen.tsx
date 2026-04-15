@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { Alert, FlatList, Platform, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native'
+import React, { useMemo, useState } from 'react'
+import { Alert, FlatList, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker'
 import { useQuery } from '@tanstack/react-query'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
@@ -15,9 +15,18 @@ import { EmptyState } from '../../components/EmptyState'
 import { PressableCard } from '../../components/Card'
 import { StatusBadge } from '../../components/StatusBadge'
 import { SectionHeader } from '../../components/SectionHeader'
+import { combineDateAndTime, formatScheduledAt } from '../../utils/schedule'
 
 interface IssuesResponse {
   issues: Issue[]
+}
+
+interface ClientListResponse {
+  clients: Array<{
+    id: string
+    name: string
+    companyName?: string | null
+  }>
 }
 
 type Props = NativeStackScreenProps<IssuesStackParamList, 'IssuesList'>
@@ -29,16 +38,31 @@ export function IssuesScreen({ navigation }: Props) {
   const [issueTitle, setIssueTitle] = useState('')
   const [issueDescription, setIssueDescription] = useState('')
   const [issueNotes, setIssueNotes] = useState('')
-  const [issueDueDate, setIssueDueDate] = useState<Date | null>(null)
-  const [issueReminder, setIssueReminder] = useState<Date | null>(null)
-  const [showDueDatePicker, setShowDueDatePicker] = useState(false)
-  const [showReminderPicker, setShowReminderPicker] = useState(false)
+  const [issueClientId, setIssueClientId] = useState<string | null>(null)
+  const [issueClientName, setIssueClientName] = useState<string | null>(null)
+  const [clientSearch, setClientSearch] = useState('')
+  const [showClientPicker, setShowClientPicker] = useState(false)
+  const [issueDate, setIssueDate] = useState<Date | null>(null)
+  const [issueTime, setIssueTime] = useState<Date | null>(null)
+  const [showDatePicker, setShowDatePicker] = useState(false)
+  const [showTimePicker, setShowTimePicker] = useState(false)
 
   const query = useQuery({
     queryKey: ['mobile-issues'],
     queryFn: () => apiRequest<IssuesResponse>('/api/issues?filter=assigned_or_created&limit=100'),
     refetchInterval: 60_000,
   })
+
+  const clientsQuery = useQuery({
+    queryKey: ['mobile-issue-clients', clientSearch],
+    queryFn: () =>
+      apiRequest<ClientListResponse>(
+        `/api/clients?status=active&limit=100&search=${encodeURIComponent(clientSearch.trim())}`
+      ),
+    enabled: showClientPicker,
+  })
+
+  const clientRows = useMemo(() => clientsQuery.data?.clients || [], [clientsQuery.data?.clients])
 
   const createIssueMutation = useMutation({
     mutationFn: async () => {
@@ -64,15 +88,19 @@ export function IssuesScreen({ navigation }: Props) {
         type: 'OTHER',
         priority: 'MEDIUM',
         status: 'OPEN',
-        dueDate: issueDueDate ? issueDueDate.toISOString() : null,
-        reminderAt: issueReminder ? issueReminder.toISOString() : null,
+        dueDate: combineDateAndTime(issueDate, issueTime),
+        clientId: issueClientId || null,
       })
     },
     onSuccess: () => {
-      setIssueDueDate(null)
-      setIssueReminder(null)
-      setShowDueDatePicker(false)
-      setShowReminderPicker(false)
+      setIssueClientId(null)
+      setIssueClientName(null)
+      setClientSearch('')
+      setShowClientPicker(false)
+      setIssueDate(null)
+      setIssueTime(null)
+      setShowDatePicker(false)
+      setShowTimePicker(false)
       queryClient.invalidateQueries({ queryKey: ['mobile-issues'] })
       queryClient.invalidateQueries({ queryKey: ['mobile-assignments'] })
       setIssueTitle('')
@@ -137,37 +165,62 @@ export function IssuesScreen({ navigation }: Props) {
             onChangeText={setIssueNotes}
             multiline
           />
+          <Pressable style={styles.clientSelectButton} onPress={() => setShowClientPicker(true)}>
+            <Ionicons name="people-outline" size={16} color={colors.textSecondary} />
+            <Text style={issueClientName ? styles.clientSelectValue : styles.clientSelectPlaceholder}>
+              {issueClientName || 'Client · Optional'}
+            </Text>
+            {issueClientId ? (
+              <Pressable
+                onPress={() => {
+                  setIssueClientId(null)
+                  setIssueClientName(null)
+                }}
+                hitSlop={8}
+              >
+                <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
+              </Pressable>
+            ) : (
+              <Ionicons name="chevron-down" size={16} color={colors.textSecondary} />
+            )}
+          </Pressable>
 
           <Pressable
             style={styles.datePickerButton}
             onPress={() => {
               if (Platform.OS === 'android') {
                 DateTimePickerAndroid.open({
-                  value: issueDueDate ?? new Date(),
+                  value: issueDate ?? new Date(),
                   mode: 'date',
-                  onChange: (_e, d) => { if (d) setIssueDueDate(d) },
+                  onChange: (_e, d) => {
+                    if (d) setIssueDate(d)
+                  },
                 })
               } else {
-                setShowDueDatePicker(!showDueDatePicker)
+                setShowDatePicker(!showDatePicker)
               }
             }}
           >
             <Ionicons name="calendar-outline" size={16} color={colors.textSecondary} />
             <Text style={styles.datePickerText}>
-              {issueDueDate ? issueDueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Set due date'}
+              {issueDate
+                ? issueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                : 'Date · Optional / Unscheduled'}
             </Text>
-            {issueDueDate ? (
-              <Pressable onPress={() => setIssueDueDate(null)} hitSlop={8}>
+            {issueDate ? (
+              <Pressable onPress={() => setIssueDate(null)} hitSlop={8}>
                 <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
               </Pressable>
             ) : null}
           </Pressable>
-          {Platform.OS === 'ios' && showDueDatePicker ? (
+          {Platform.OS === 'ios' && showDatePicker ? (
             <DateTimePicker
-              value={issueDueDate ?? new Date()}
+              value={issueDate ?? new Date()}
               mode="date"
               display="spinner"
-              onChange={(_e, d) => { if (d) setIssueDueDate(d) }}
+              onChange={(_e, d) => {
+                if (d) setIssueDate(d)
+              }}
             />
           ) : null}
           <Pressable
@@ -175,33 +228,41 @@ export function IssuesScreen({ navigation }: Props) {
             onPress={() => {
               if (Platform.OS === 'android') {
                 DateTimePickerAndroid.open({
-                  value: issueReminder ?? new Date(),
+                  value: issueTime ?? new Date(),
                   mode: 'time',
-                  onChange: (_e, d) => { if (d) setIssueReminder(d) },
+                  onChange: (_e, d) => {
+                    if (d) setIssueTime(d)
+                  },
                 })
               } else {
-                setShowReminderPicker(!showReminderPicker)
+                setShowTimePicker(!showTimePicker)
               }
             }}
           >
-            <Ionicons name="notifications-outline" size={16} color={colors.textSecondary} />
+            <Ionicons name="time-outline" size={16} color={colors.textSecondary} />
             <Text style={styles.datePickerText}>
-              {issueReminder ? issueReminder.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Set reminder'}
+              {issueTime
+                ? issueTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+                : 'Time · Optional / Unscheduled'}
             </Text>
-            {issueReminder ? (
-              <Pressable onPress={() => setIssueReminder(null)} hitSlop={8}>
+            {issueTime ? (
+              <Pressable onPress={() => setIssueTime(null)} hitSlop={8}>
                 <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
               </Pressable>
             ) : null}
           </Pressable>
-          {Platform.OS === 'ios' && showReminderPicker ? (
+          {Platform.OS === 'ios' && showTimePicker ? (
             <DateTimePicker
-              value={issueReminder ?? new Date()}
+              value={issueTime ?? new Date()}
               mode="time"
               display="spinner"
-              onChange={(_e, d) => { if (d) setIssueReminder(d) }}
+              onChange={(_e, d) => {
+                if (d) setIssueTime(d)
+              }}
             />
-          ) : null}          <View style={styles.formActions}>
+          ) : null}
+          <Text style={styles.scheduleHint}>Status: {combineDateAndTime(issueDate, issueTime) ? 'Scheduled' : 'Unscheduled'}</Text>
+          <View style={styles.formActions}>
             <Pressable
               style={[styles.actionButton, styles.cancelButton]}
               onPress={() => {
@@ -209,6 +270,12 @@ export function IssuesScreen({ navigation }: Props) {
                 setIssueTitle('')
                 setIssueDescription('')
                 setIssueNotes('')
+                setIssueClientId(null)
+                setIssueClientName(null)
+                setClientSearch('')
+                setShowClientPicker(false)
+                setIssueDate(null)
+                setIssueTime(null)
               }}
             >
               <Text style={styles.cancelButtonText}>Cancel</Text>
@@ -240,9 +307,67 @@ export function IssuesScreen({ navigation }: Props) {
             </View>
             <Text style={styles.meta}>{item.description || 'No description'}</Text>
             <Text style={styles.meta}>Priority: {item.priority}</Text>
+            {item.client?.name ? <Text style={styles.meta}>Client: {item.client.name}</Text> : null}
+            <Text style={styles.meta}>{formatScheduledAt(item.dueDate)}</Text>
           </PressableCard>
         )}
       />
+      <Modal
+        visible={showClientPicker}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowClientPicker(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowClientPicker(false)} />
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Select Client</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Search client"
+              placeholderTextColor={colors.textPrimary}
+              selectionColor={colors.textPrimary}
+              cursorColor={colors.textPrimary}
+              value={clientSearch}
+              onChangeText={setClientSearch}
+            />
+            <ScrollView style={styles.clientList}>
+              <Pressable
+                style={styles.clientRow}
+                onPress={() => {
+                  setIssueClientId(null)
+                  setIssueClientName(null)
+                  setShowClientPicker(false)
+                }}
+              >
+                <Text style={styles.clientRowName}>No client</Text>
+                <Text style={styles.clientRowMeta}>Leave this issue unattached</Text>
+              </Pressable>
+              {clientRows.map((client) => (
+                <Pressable
+                  key={client.id}
+                  style={styles.clientRow}
+                  onPress={() => {
+                    setIssueClientId(client.id)
+                    setIssueClientName(client.name)
+                    setShowClientPicker(false)
+                  }}
+                >
+                  <Text style={styles.clientRowName}>{client.name}</Text>
+                  {!!client.companyName ? <Text style={styles.clientRowMeta}>{client.companyName}</Text> : null}
+                </Pressable>
+              ))}
+              {clientsQuery.isLoading ? <Text style={styles.modalHint}>Loading clients...</Text> : null}
+              {!clientsQuery.isLoading && clientRows.length === 0 ? (
+                <Text style={styles.modalHint}>No clients found.</Text>
+              ) : null}
+            </ScrollView>
+            <Pressable style={styles.modalCloseButton} onPress={() => setShowClientPicker(false)}>
+              <Text style={styles.modalCloseText}>Close</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </AppScreen>
   )
 }
@@ -286,6 +411,29 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     color: colors.textPrimary,
     backgroundColor: '#FFFFFF',
+  },
+  clientSelectButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#D0D5DD',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#FFFFFF',
+  },
+  clientSelectValue: {
+    ...typography.caption,
+    color: colors.textPrimary,
+    flex: 1,
+    fontSize: 13,
+  },
+  clientSelectPlaceholder: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    flex: 1,
+    fontSize: 13,
   },
   multilineInput: {
     minHeight: 88,
@@ -339,6 +487,61 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     flex: 1,
     fontSize: 13,
+  },
+  scheduleHint: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.35)',
+    justifyContent: 'center',
+    padding: spacing.md,
+  },
+  modalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: spacing.md,
+    maxHeight: '70%',
+    gap: spacing.xs,
+  },
+  modalTitle: {
+    ...typography.sub,
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+  clientList: {
+    maxHeight: 280,
+  },
+  clientRow: {
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EAECF0',
+  },
+  clientRowName: {
+    ...typography.caption,
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+  clientRowMeta: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  modalHint: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    paddingVertical: 12,
+  },
+  modalCloseButton: {
+    alignSelf: 'flex-end',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  modalCloseText: {
+    ...typography.caption,
+    color: colors.brandPrimary,
+    fontWeight: '700',
   },
 })
 

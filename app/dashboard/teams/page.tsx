@@ -27,6 +27,8 @@ interface TeamMember {
   email: string
   phone: string | null
   role: string
+  allowWebLogin: boolean
+  allowMobileLogin: boolean
   roleId?: string | null
   roleName?: string | null
   managerId?: string | null
@@ -74,6 +76,8 @@ export default function TeamsPage() {
     phone: '',
     role: 'FIELD',
     roleId: '',
+    allowWebLogin: true,
+    allowMobileLogin: true,
   })
   const [editForm, setEditForm] = useState({
     firstName: '',
@@ -84,6 +88,8 @@ export default function TeamsPage() {
     roleId: '',
     managerId: null as string | null,
     status: 'ACTIVE' as 'ACTIVE' | 'INACTIVE' | 'INVITED' | 'SUSPENDED',
+    allowWebLogin: true,
+    allowMobileLogin: true,
   })
 
   useEffect(() => {
@@ -184,6 +190,8 @@ export default function TeamsPage() {
         phone: '',
         role: deriveBaseRole(defaultRole.name),
         roleId: defaultRole.id,
+        allowWebLogin: true,
+        allowMobileLogin: true,
       })
       
       // Refresh team list
@@ -289,6 +297,8 @@ export default function TeamsPage() {
       roleId: matchingRole?.id || '',
       managerId: member.managerId || null,
       status: member.status as any,
+      allowWebLogin: member.allowWebLogin !== false,
+      allowMobileLogin: member.allowMobileLogin !== false,
     })
     setShowEditModal(true)
   }
@@ -598,6 +608,8 @@ export default function TeamsPage() {
                       phone: '',
                       role: deriveBaseRole(roleOptions[0]?.name || 'FIELD'),
                       roleId: roleOptions[0]?.id || 'FIELD',
+                      allowWebLogin: true,
+                      allowMobileLogin: true,
                     })
                   }}
                 >
@@ -682,6 +694,25 @@ export default function TeamsPage() {
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="rounded-md border p-3 space-y-3">
+                  <p className="text-sm font-medium">App Access</p>
+                  <label className="flex items-center justify-between gap-3 text-sm">
+                    <span>Allow web app login</span>
+                    <input
+                      type="checkbox"
+                      checked={inviteForm.allowWebLogin}
+                      onChange={(e) => setInviteForm({ ...inviteForm, allowWebLogin: e.target.checked })}
+                    />
+                  </label>
+                  <label className="flex items-center justify-between gap-3 text-sm">
+                    <span>Allow phone app login</span>
+                    <input
+                      type="checkbox"
+                      checked={inviteForm.allowMobileLogin}
+                      onChange={(e) => setInviteForm({ ...inviteForm, allowMobileLogin: e.target.checked })}
+                    />
+                  </label>
+                </div>
                 <div className="flex space-x-2">
                   <Button
                     type="button"
@@ -698,6 +729,8 @@ export default function TeamsPage() {
                         phone: '',
                         role: deriveBaseRole(roleOptions[0]?.name || 'FIELD'),
                         roleId: roleOptions[0]?.id || 'FIELD',
+                        allowWebLogin: true,
+                        allowMobileLogin: true,
                       })
                     }}
                   >
@@ -850,6 +883,25 @@ export default function TeamsPage() {
                       <SelectItem value="SUSPENDED">Suspended</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="rounded-md border p-3 space-y-3">
+                  <p className="text-sm font-medium">App Access</p>
+                  <label className="flex items-center justify-between gap-3 text-sm">
+                    <span>Allow web app login</span>
+                    <input
+                      type="checkbox"
+                      checked={editForm.allowWebLogin}
+                      onChange={(e) => setEditForm({ ...editForm, allowWebLogin: e.target.checked })}
+                    />
+                  </label>
+                  <label className="flex items-center justify-between gap-3 text-sm">
+                    <span>Allow phone app login</span>
+                    <input
+                      type="checkbox"
+                      checked={editForm.allowMobileLogin}
+                      onChange={(e) => setEditForm({ ...editForm, allowMobileLogin: e.target.checked })}
+                    />
+                  </label>
                 </div>
                 <div className="flex space-x-2">
                   <Button

@@ -22,6 +22,8 @@ export async function GET(request: NextRequest) {
   const status = searchParams.get('status') || 'all'
   const assigneeId = searchParams.get('assigneeId') || ''
   const filter = searchParams.get('filter') || 'all' // all, my, assigned
+  const scheduledFrom = searchParams.get('scheduledFrom')
+  const scheduledTo = searchParams.get('scheduledTo')
   const page = parseInt(searchParams.get('page') || '1')
   const limit = parseInt(searchParams.get('limit') || '50')
   const skip = (page - 1) * limit
@@ -48,6 +50,13 @@ export async function GET(request: NextRequest) {
 
     if (assigneeId) {
       where.assigneeId = assigneeId
+    }
+
+    if (scheduledFrom || scheduledTo) {
+      where.dueDate = {
+        ...(scheduledFrom ? { gte: new Date(scheduledFrom) } : {}),
+        ...(scheduledTo ? { lte: new Date(scheduledTo) } : {}),
+      }
     }
 
     // Filter: my tasks (created by me) or assigned to me
@@ -160,6 +169,7 @@ export async function POST(request: NextRequest) {
       status,
       priority,
       dueDate,
+      scheduledAt,
       assigneeId,
       clientId,
       leadId,
@@ -170,6 +180,8 @@ export async function POST(request: NextRequest) {
       smsId,
       subtasks,
     } = body
+
+    const resolvedDueDate = dueDate ?? scheduledAt ?? null
 
     if (!title || !assigneeId) {
       return NextResponse.json({ error: 'Title and assignee are required' }, { status: 400 })
@@ -298,7 +310,7 @@ export async function POST(request: NextRequest) {
         description: description || null,
         status: status || 'TODO',
         priority: priority || 'MEDIUM',
-        dueDate: dueDate ? new Date(dueDate) : null,
+        dueDate: resolvedDueDate ? new Date(resolvedDueDate) : null,
         assigneeId,
         createdById: user.id,
         clientId: resolvedClientId,

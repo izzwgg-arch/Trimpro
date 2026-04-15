@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { rateLimitOrThrow } from '@/lib/security/rate-limit'
 import { hashApprovalToken } from '@/lib/estimate-approval'
 import { createNotificationsForUsers } from '@/lib/notifications'
+import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 
 export const runtime = 'nodejs'
 
@@ -25,6 +26,30 @@ function getAppUrl(): string {
     String(process.env.NEXT_PUBLIC_APP_URL || '').trim() ||
     'https://app.trimprony.com'
   ).replace(/\/$/, '')
+}
+
+function toNumber(value: any): number {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : 0
+}
+
+async function allocateInvoiceNumber(tx: any) {
+  const latest = await tx.invoice.findFirst({
+    where: { invoiceNumber: { startsWith: 'INV-' } },
+    orderBy: { invoiceNumber: 'desc' },
+    select: { invoiceNumber: true },
+  })
+  const latestNum = latest?.invoiceNumber ? parseInt(String(latest.invoiceNumber).replace(/^INV-/, ''), 10) : 0
+  const startNum = Number.isFinite(latestNum) ? latestNum : 0
+
+  for (let attempt = 0; attempt < 300; attempt++) {
+    const candidate = `INV-${String(startNum + 1 + attempt).padStart(6, '0')}`
+    const exists = await tx.invoice.findFirst({ where: { invoiceNumber: candidate }, select: { id: true } })
+    if (!exists) return candidate
+  }
+
+  const suffix = crypto.randomBytes(3).toString('hex').toUpperCase()
+  return `INV-${String(startNum + 1).padStart(6, '0')}-${suffix}`
 }
 
 export async function POST(request: NextRequest, ctx: { params: { token: string } }) {
@@ -151,7 +176,7 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
       }
     })
 
-    // --- Auto-create job + 50% invoice on first approval ---
+    // --- Auto-create job + 50% invoice for this approval batch ---
     let autoCreatedJob: any = null
     let autoCreatedInvoice: any = null
     let paymentUrl: string | null = null
@@ -209,7 +234,18 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
       }
 
       // Auto-create 50% deposit invoice with per-item breakdown
-      const approvedIdSet = new Set(approvedIds)
+      const selectedForThisApproval = Array.from(new Set(normalizedSelected))
+      const alreadyInvoiced = await prisma.invoiceLineItemSource.findMany({
+        where: {
+          tenantId: tokenRow.tenantId,
+          estimateId: estimate.id,
+          estimateLineItemId: { in: selectedForThisApproval },
+        },
+        select: { estimateLineItemId: true },
+      })
+      const alreadyInvoicedSet = new Set(alreadyInvoiced.map((row) => row.estimateLineItemId))
+      const toInvoiceIds = selectedForThisApproval.filter((id) => !alreadyInvoicedSet.has(id))
+      const approvedIdSet = new Set(toInvoiceIds)
       const approvedRegularItems = estimate.lineItems.filter(
         (li) => li.isVisibleToClient !== false && approvedIdSet.has(li.id)
       )
@@ -221,37 +257,35 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
       if (allApprovedItems.length > 0) {
         try {
           autoCreatedInvoice = await prisma.$transaction(async (tx) => {
-            const latestInvoice = await tx.invoice.findFirst({
-              where: { invoiceNumber: { startsWith: 'INV-' } },
-              orderBy: { invoiceNumber: 'desc' },
-              select: { invoiceNumber: true },
-            })
-            const latestNum = latestInvoice?.invoiceNumber
-              ? parseInt(latestInvoice.invoiceNumber.replace(/^INV-/, ''), 10)
-              : 0
-            const startNum = Number.isFinite(latestNum) ? latestNum : 0
-            const invoiceNumber = `INV-${String(startNum + 1).padStart(6, '0')}`
+            const invoiceNumber = await allocateInvoiceNumber(tx)
 
-            // Build per-item line items at 50%
+            // Build per-item line items at 50%.
             const lineItemsData = allApprovedItems.map((li, idx) => {
-              const fullPrice = Number(li.unitPrice || 0)
-              const qty = Number(li.quantity || 1)
+              const fullPrice = toNumber(li.unitPrice)
+              const qty = toNumber(li.quantity || 1)
               const charged = Math.round(fullPrice * 50) / 100
               const outstanding = Math.round((fullPrice - charged) * 100) / 100
               const lineTotal = Math.round(charged * qty * 100) / 100
               return {
+                sourceId: li.id,
                 description: li.description,
                 quantity: qty,
                 unitPrice: charged,
                 total: lineTotal,
                 sortOrder: idx,
-                isVisibleToClient: true,
-                showDescriptionToCustomer: true,
-                showCostToCustomer: false,
-                showPriceToCustomer: true,
-                showTaxToCustomer: true,
-                showNotesToCustomer: true,
+                isVisibleToClient: li.isVisibleToClient !== false,
+                showDescriptionToCustomer: li.showDescriptionToCustomer ?? true,
+                showCostToCustomer: li.showCostToCustomer ?? false,
+                showPriceToCustomer: li.showPriceToCustomer ?? true,
+                showTaxToCustomer: li.showTaxToCustomer ?? true,
+                showNotesToCustomer: li.showNotesToCustomer ?? true,
                 notes: `Full price: $${fullPrice.toFixed(2)} | Charged (50%): $${charged.toFixed(2)} | Outstanding: $${outstanding.toFixed(2)}`,
+                vendorId: li.vendorId || null,
+                taxable: li.taxable ?? true,
+                taxRate: li.taxRate ?? null,
+                unitCost: li.unitCost ?? null,
+                sourceItemId: li.sourceItemId || null,
+                sourceBundleId: li.sourceBundleId || null,
               }
             })
 
@@ -278,6 +312,7 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
                 paidAmount: 0,
                 balance: total,
                 invoiceDate: now,
+                qboAchEnabled: true,
                 paymentToken,
                 notes: `50% deposit invoice from approved estimate ${estimate.estimateNumber}. Remaining 50% due upon completion.`,
               },
@@ -287,10 +322,37 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
               await tx.invoiceLineItem.create({
                 data: {
                   invoiceId: inv.id,
-                  ...lid,
+                  description: lid.description,
+                  quantity: lid.quantity,
+                  unitPrice: lid.unitPrice,
+                  total: lid.total,
+                  sortOrder: lid.sortOrder,
+                  isVisibleToClient: lid.isVisibleToClient,
+                  showDescriptionToCustomer: lid.showDescriptionToCustomer,
+                  showCostToCustomer: lid.showCostToCustomer,
+                  showPriceToCustomer: lid.showPriceToCustomer,
+                  showTaxToCustomer: lid.showTaxToCustomer,
+                  showNotesToCustomer: lid.showNotesToCustomer,
+                  notes: lid.notes,
+                  vendorId: lid.vendorId,
+                  taxable: lid.taxable,
+                  taxRate: lid.taxRate,
+                  unitCost: lid.unitCost,
+                  sourceItemId: lid.sourceItemId,
+                  sourceBundleId: lid.sourceBundleId,
                 },
               })
             }
+
+            await tx.invoiceLineItemSource.createMany({
+              data: toInvoiceIds.map((estimateLineItemId) => ({
+                tenantId: tokenRow.tenantId,
+                invoiceId: inv.id,
+                estimateId: estimate.id,
+                estimateLineItemId,
+              })),
+              skipDuplicates: true,
+            })
 
             // Mark estimate as CONVERTED with 50% billed
             await tx.estimate.update({
@@ -351,6 +413,14 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
         }
       } catch (notifyErr) {
         console.error('Failed to send estimate approval notification:', notifyErr)
+      }
+    }
+
+    if (autoCreatedInvoice?.id) {
+      try {
+        await enqueueQboSync(tokenRow.tenantId, 'invoice', autoCreatedInvoice.id)
+      } catch (error) {
+        console.error('QuickBooks invoice sync trigger error (estimate approval):', error)
       }
     }
 

@@ -16,6 +16,7 @@ type ClientOption = {
   companyName?: string | null
   email?: string | null
   phone?: string | null
+  address?: string | null
 }
 
 interface SearchableClientSelectProps {
@@ -23,6 +24,7 @@ interface SearchableClientSelectProps {
   value: string
   onSelect: (clientId: string) => void
   placeholder?: string
+  disabled?: boolean
 }
 
 export function SearchableClientSelect({
@@ -30,6 +32,7 @@ export function SearchableClientSelect({
   value,
   onSelect,
   placeholder = 'Select client...',
+  disabled = false,
 }: SearchableClientSelectProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -42,7 +45,7 @@ export function SearchableClientSelect({
     const q = query.trim().toLowerCase()
     if (!q) return clients
     return clients.filter((client) => {
-      const haystack = `${client.name} ${client.companyName || ''} ${client.email || ''} ${client.phone || ''}`.toLowerCase()
+      const haystack = `${client.name} ${client.companyName || ''} ${client.email || ''} ${client.phone || ''} ${client.address || ''}`.toLowerCase()
       return haystack.includes(q)
     })
   }, [clients, query])
@@ -77,8 +80,12 @@ export function SearchableClientSelect({
     <div className="relative" ref={containerRef}>
       <button
         type="button"
-        onClick={() => setOpen((prev) => !prev)}
-        className={DROPDOWN_TRIGGER}
+        onClick={() => {
+          if (disabled) return
+          setOpen((prev) => !prev)
+        }}
+        className={`${DROPDOWN_TRIGGER} ${disabled ? 'cursor-not-allowed opacity-60' : ''}`}
+        disabled={disabled}
       >
         <span className={selectedClient ? 'text-foreground' : 'text-muted-foreground'}>
           {selectedClient
@@ -88,7 +95,7 @@ export function SearchableClientSelect({
         <ChevronDown className="h-4 w-4 opacity-70" />
       </button>
 
-      {open && (
+      {open && !disabled && (
         <div className={DROPDOWN_PANEL}>
           <div className={DROPDOWN_SEARCH_WRAP}>
             <input
@@ -124,7 +131,7 @@ export function SearchableClientSelect({
                           selected ? 'text-white/90' : 'text-muted-foreground group-hover:text-white'
                         }`}
                       >
-                        {[client.companyName, client.email, client.phone].filter(Boolean).join(' • ') || 'No extra details'}
+                        {[client.companyName, client.email, client.phone, client.address].filter(Boolean).join(' • ') || 'No extra details'}
                       </div>
                     </div>
                     {selected && <Check className="ml-2 h-4 w-4 shrink-0 text-white" />}

@@ -112,9 +112,12 @@ export async function PUT(
       status,
       priority,
       dueDate,
+      scheduledAt,
       assigneeId,
       subtasks,
     } = body
+
+    const resolvedDueDate = dueDate ?? scheduledAt
 
     // Get existing task
     const existing = await prisma.task.findFirst({
@@ -162,7 +165,8 @@ export async function PUT(
         description: description !== undefined ? description : existing.description,
         status: status !== undefined ? status : existing.status,
         priority: priority !== undefined ? priority : existing.priority,
-        dueDate: dueDate !== undefined ? (dueDate ? new Date(dueDate) : null) : existing.dueDate,
+        dueDate:
+          resolvedDueDate !== undefined ? (resolvedDueDate ? new Date(resolvedDueDate) : null) : existing.dueDate,
         assigneeId: assigneeId !== undefined ? assigneeId : existing.assigneeId,
         completedAt,
       },

@@ -12,7 +12,11 @@ export type JobsStackParamList = {
   RequestsHome: undefined
   MeasuringRequestsHome: undefined
   MeasuringRequestDetail: { measuringRequestId: string }
-  RequestCreate: undefined
+  RequestCreate:
+    | {
+        draftId?: string
+      }
+    | undefined
   RequestDetail: { requestId: string }
   CallsHome: undefined
   OutboxHome: undefined
@@ -26,8 +30,10 @@ export type ScheduleStackParamList = {
     | {
         scheduleId?: string
         jobId?: string
+        leadId?: string
         assignedUserId?: string
         title?: string
+        description?: string
       }
     | undefined
 }
