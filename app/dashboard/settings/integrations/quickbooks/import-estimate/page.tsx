@@ -160,7 +160,10 @@ export default function QuickBooksEstimateImportPage() {
                 disabled={importing}
               />
               <p className="text-xs text-gray-500">
-                The import checks local mappings first. If that QuickBooks estimate is already in Trim Pro, the import is blocked instead of creating a duplicate.
+                To find the ID: in QuickBooks go to <strong>Sales → Estimates</strong>, open the estimate, and copy the number from the URL — e.g. <code>…/app/estimate?txnId=<strong>1234</strong></code> → enter <strong>1234</strong>.
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                The import checks local mappings first. If that estimate is already in Trim Pro, the import is blocked instead of creating a duplicate.
               </p>
             </div>
 

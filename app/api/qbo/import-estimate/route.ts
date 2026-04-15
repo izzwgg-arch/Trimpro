@@ -10,6 +10,16 @@ function toClientError(message: string) {
     return { status: 400, error: 'QuickBooks estimate ID must be a number (e.g. 1482).' }
   }
 
+  // QBO returned a transaction of a different type (Bill Payment, Expense, etc.)
+  const txnMismatch = normalized.match(/TxnType does not match read:\s*([^|]+)\s*expected:\s*Estimate/i)
+  if (txnMismatch) {
+    const actualType = txnMismatch[1]?.trim() || 'another transaction type'
+    return {
+      status: 400,
+      error: `That ID belongs to a ${actualType} in QuickBooks, not an Estimate. Open QuickBooks → Sales → Estimates, click the estimate you want, and copy the number from the URL (e.g. …/app/estimate?txnId=1234 → enter 1234).`,
+    }
+  }
+
   // QBO error code 610 — estimate was deleted or made inactive in QuickBooks
   if (lower.includes('made inactive') || lower.includes('code=610')) {
     return {
