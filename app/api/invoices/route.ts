@@ -177,6 +177,7 @@ export async function POST(request: NextRequest) {
 
     // Calculate totals
     const subtotal = lineItems.reduce((sum: number, item: any) => {
+      if (item?.isSubtotal) return sum
       const qty = typeof item.quantity === 'number' ? item.quantity : parseFloat(item.quantity || 0)
       const price = typeof item.unitPrice === 'number' ? item.unitPrice : parseFloat(item.unitPrice || 0)
       return sum + (qty * price)

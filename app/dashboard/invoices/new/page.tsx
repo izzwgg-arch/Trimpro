@@ -1,13 +1,13 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ArrowLeft, Save, Plus, Trash2, Eye, EyeOff } from 'lucide-react'
+import { ArrowLeft, Save, Plus, Trash2, Eye, EyeOff, GripVertical } from 'lucide-react'
 import Link from 'next/link'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
@@ -43,6 +43,14 @@ interface LineItem {
   isGroupHeader?: boolean
   sourceItemId?: string
   sourceBundleId?: string
+  isSubtotal?: boolean
+  estimateLineItemId?: string
+  /** When converting estimate with percentage billing */
+  progressBillMode?: 'GLOBAL_PCT' | 'FULL' | 'CUSTOM_PCT' | 'CUSTOM_AMT'
+  progressCustom?: string
+  /** Line total when mode is CUSTOM_AMT */
+  progressAmount?: string
+  baseUnitPrice?: string
 }
 
 export default function NewInvoicePage() {
@@ -60,7 +68,13 @@ export default function NewInvoicePage() {
       .map((v) => v.trim())
       .filter(Boolean)
   )
-  
+
+  const defaultProgressPct = useMemo(() => {
+    const p = parseFloat(percentageParam || '50')
+    if (!Number.isFinite(p) || p <= 0 || p > 100) return 50
+    return p
+  }, [percentageParam])
+
   const [loading, setLoading] = useState(false)
   const [clients, setClients] = useState<PickerClient[]>([])
   const [jobs, setJobs] = useState<Job[]>([])
@@ -224,40 +238,23 @@ export default function NewInvoicePage() {
           terms: est.terms || prev.terms,
         }))
 
-        // Billing mode: PERCENTAGE becomes a single "progress billing" line.
         if (effectiveMode === 'PERCENTAGE') {
           const safePct = Number.isFinite(pct) ? pct : 0
-          const amount = Math.max(0, (Number(est.total || 0) * safePct) / 100)
-          setLineItems([
-            {
-              description: `Progress Billing (${safePct.toFixed(2)}%) - Estimate ${est.estimateNumber}`,
-              quantity: '1',
-              unitPrice: amount.toFixed(2),
-              unitCost: '0',
-              notes: '',
-              vendorId: null as any,
-              vendorName: null as any,
-              taxable: false,
-              taxRate: '',
-              isVisibleToClient: true,
-              showDescriptionToCustomer: true,
-              showCostToCustomer: false,
-              showPriceToCustomer: true,
-              showTaxToCustomer: true,
-              showNotesToCustomer: false,
-            },
-          ])
-        } else {
-          const sourceLines =
-            effectiveMode === 'MANUAL' && selectedLineItemIdSet.size > 0
-              ? (est.lineItems || []).filter((li: any) => selectedLineItemIdSet.has(String(li.id)))
-              : (est.lineItems || [])
+          if (!Number.isFinite(safePct) || safePct <= 0 || safePct > 100) {
+            alert('Percentage must be between 0 and 100.')
+            return
+          }
+        }
 
-          // Map estimate line items to invoice line items
+        const sourceLines =
+          effectiveMode === 'MANUAL' && selectedLineItemIdSet.size > 0
+            ? (est.lineItems || []).filter((li: any) => selectedLineItemIdSet.has(String(li.id)))
+            : (est.lineItems || [])
+
         const groupsMap = new Map<string, { name: string; sourceBundleId?: string }>()
         const mappedItems: LineItem[] = []
-        
-          sourceLines.forEach((li: any) => {
+
+        sourceLines.forEach((li: any) => {
           if (li.group && !groupsMap.has(li.group.id)) {
             groupsMap.set(li.group.id, {
               name: li.group.name,
@@ -265,9 +262,14 @@ export default function NewInvoicePage() {
             })
           }
         })
-        
+
         const processedGroups = new Set<string>()
-          sourceLines.forEach((li: any) => {
+        const safePct = Number.isFinite(pct) ? pct : 0
+        const scaleDefault = effectiveMode === 'PERCENTAGE' ? safePct / 100 : 1
+
+        sourceLines.forEach((li: any) => {
+          if (effectiveMode === 'PERCENTAGE' && li.isSubtotal) return
+
           const group = li.group
           if (group && !processedGroups.has(group.id)) {
             mappedItems.push({
@@ -289,12 +291,45 @@ export default function NewInvoicePage() {
             })
             processedGroups.add(group.id)
           }
-          
+
+          if (li.isSubtotal) {
+            mappedItems.push({
+              id: li.id,
+              description: li.description || 'Subtotal',
+              quantity: '0',
+              unitPrice: '0',
+              unitCost: undefined,
+              notes: li.notes || undefined,
+              vendorId: li.vendorId || undefined,
+              vendorName: li.vendorName || undefined,
+              taxable: false,
+              taxRate: li.taxRate ? (parseFloat(li.taxRate) * 100).toString() : undefined,
+              isVisibleToClient: li.isVisibleToClient ?? true,
+              showDescriptionToCustomer: li.showDescriptionToCustomer ?? true,
+              showCostToCustomer: li.showCostToCustomer ?? false,
+              showPriceToCustomer: li.showPriceToCustomer ?? true,
+              showTaxToCustomer: li.showTaxToCustomer ?? true,
+              showNotesToCustomer: li.showNotesToCustomer ?? false,
+              groupId: li.groupId || undefined,
+              sourceItemId: li.sourceItemId || undefined,
+              sourceBundleId: li.sourceBundleId || undefined,
+              isSubtotal: true,
+            })
+            return
+          }
+
+          const baseUp = Number(li.unitPrice)
+          const qty = Number(li.quantity)
+          const scaledUnit =
+            effectiveMode === 'PERCENTAGE' ? Math.round(baseUp * scaleDefault * 10000) / 10000 : baseUp
+          const unitPriceStr =
+            effectiveMode === 'PERCENTAGE' ? (Math.round(scaledUnit * 100) / 100).toFixed(2) : li.unitPrice.toString()
+
           mappedItems.push({
             id: li.id,
             description: li.description,
             quantity: li.quantity.toString(),
-            unitPrice: li.unitPrice.toString(),
+            unitPrice: unitPriceStr,
             unitCost: li.unitCost ? li.unitCost.toString() : undefined,
             notes: li.notes || undefined,
             vendorId: li.vendorId || undefined,
@@ -310,12 +345,19 @@ export default function NewInvoicePage() {
             groupId: li.groupId || undefined,
             sourceItemId: li.sourceItemId || undefined,
             sourceBundleId: li.sourceBundleId || undefined,
+            ...(effectiveMode === 'PERCENTAGE'
+              ? {
+                  estimateLineItemId: li.id,
+                  progressBillMode: 'GLOBAL_PCT' as const,
+                  progressCustom: String(safePct),
+                  baseUnitPrice: li.unitPrice.toString(),
+                }
+              : {}),
           })
         })
-        
+
         if (mappedItems.length > 0) {
           setLineItems(mappedItems)
-        }
         }
 
         // Optional items (separate section)
@@ -359,6 +401,7 @@ export default function NewInvoicePage() {
         quantity: '1',
         unitPrice: '0',
         taxable: true,
+        isVisibleToClient: true,
         showDescriptionToCustomer: true,
         showCostToCustomer: false,
         showPriceToCustomer: true,
@@ -372,11 +415,82 @@ export default function NewInvoicePage() {
     setLineItems((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== index) : prev))
   }
 
+  const formatMoney2 = (n: number) => (Math.round(n * 100) / 100).toFixed(2)
+
+  const recalcProgressUnitPrice = useCallback((row: LineItem, urlPct: number): string => {
+    const base = parseFloat(row.baseUnitPrice || row.unitPrice || '0')
+    const qty = Math.max(parseFloat(row.quantity || '1') || 0, 0.0001)
+    const mode = row.progressBillMode || 'GLOBAL_PCT'
+    if (mode === 'FULL') return formatMoney2(base)
+    if (mode === 'CUSTOM_AMT') {
+      const amt = parseFloat(row.progressAmount || '0')
+      if (!Number.isFinite(amt) || amt < 0) return formatMoney2(0)
+      return formatMoney2(amt / qty)
+    }
+    const pctRaw =
+      mode === 'CUSTOM_PCT' ? parseFloat(row.progressCustom || '0') : parseFloat(row.progressCustom || String(urlPct))
+    const pct = Number.isFinite(pctRaw) ? Math.max(0, Math.min(100, pctRaw)) : 0
+    return formatMoney2(base * (pct / 100))
+  }, [])
+
   const updateLineItem = (index: number, field: keyof LineItem, value: any) => {
     setLineItems((prev) => {
       const updated = [...prev]
-      updated[index] = { ...updated[index], [field]: value }
+      let next: LineItem = { ...updated[index], [field]: value }
+      if (next.estimateLineItemId && next.baseUnitPrice) {
+        if (field === 'quantity' && next.progressBillMode === 'CUSTOM_AMT' && next.progressAmount) {
+          const amt = parseFloat(next.progressAmount)
+          const q = Math.max(parseFloat(String(value) || '1') || 0, 0.0001)
+          if (Number.isFinite(amt)) next.unitPrice = formatMoney2(amt / q)
+        }
+      }
+      updated[index] = next
       return updated
+    })
+  }
+
+  const updateLineProgressMode = (index: number, mode: NonNullable<LineItem['progressBillMode']>) => {
+    setLineItems((prev) => {
+      const copy = [...prev]
+      const row = { ...copy[index], progressBillMode: mode }
+      if (mode === 'CUSTOM_AMT') {
+        const q = Math.max(parseFloat(row.quantity || '1') || 0, 0.0001)
+        const up = parseFloat(row.unitPrice || '0')
+        row.progressAmount = formatMoney2(Number.isFinite(up) ? up * q : 0)
+      }
+      if (mode === 'CUSTOM_PCT' && !row.progressCustom) row.progressCustom = String(defaultProgressPct)
+      if (mode === 'GLOBAL_PCT') row.progressCustom = String(defaultProgressPct)
+      row.unitPrice = recalcProgressUnitPrice(row, defaultProgressPct)
+      copy[index] = row
+      return copy
+    })
+  }
+
+  const updateLineProgressField = (index: number, patch: Partial<Pick<LineItem, 'progressCustom' | 'progressAmount'>>) => {
+    setLineItems((prev) => {
+      const copy = [...prev]
+      const row = { ...copy[index], ...patch }
+      row.unitPrice = recalcProgressUnitPrice(row, defaultProgressPct)
+      copy[index] = row
+      return copy
+    })
+  }
+
+  const reorderLineItems = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return
+    setLineItems((prev) => {
+      const next = [...prev]
+      const [moved] = next.splice(fromIndex, 1)
+      next.splice(toIndex, 0, moved)
+      return next
+    })
+  }
+
+  const toggleLineRowVisibility = (index: number) => {
+    setLineItems((prev) => {
+      const copy = [...prev]
+      copy[index] = { ...copy[index], isVisibleToClient: !(copy[index].isVisibleToClient ?? true) }
+      return copy
     })
   }
 
@@ -524,6 +638,7 @@ export default function NewInvoicePage() {
           quantity: '1',
           unitPrice: '0',
           taxable: true,
+          isVisibleToClient: true,
           showDescriptionToCustomer: true,
           showCostToCustomer: false,
           showPriceToCustomer: true,
@@ -611,6 +726,16 @@ export default function NewInvoicePage() {
         isVisibleToClient: !(updated[index].isVisibleToClient ?? true),
       }
       return updated
+    })
+  }
+
+  const reorderOptionalItems = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return
+    setOptionalItems((prev) => {
+      const next = [...prev]
+      const [moved] = next.splice(fromIndex, 1)
+      next.splice(toIndex, 0, moved)
+      return next
     })
   }
 
@@ -818,7 +943,7 @@ export default function NewInvoicePage() {
       const token = localStorage.getItem('accessToken')
       
       const subtotal = lineItems.reduce((sum, item) => {
-        if (item.isGroupHeader) return sum
+        if (item.isGroupHeader || item.isSubtotal) return sum
         return sum + parseFloat(item.quantity || '0') * parseFloat(item.unitPrice || '0')
       }, 0)
       
@@ -846,7 +971,7 @@ export default function NewInvoicePage() {
           unitCost: item.unitCost ? parseFloat(item.unitCost) : null,
           total: parseFloat(item.quantity || '1') * parseFloat(item.unitPrice || '0'),
           sortOrder: index,
-          isVisibleToClient: true,
+          isVisibleToClient: item.isVisibleToClient !== false,
           showDescriptionToCustomer: item.showDescriptionToCustomer,
           showCostToCustomer: item.showCostToCustomer,
           showPriceToCustomer: item.showPriceToCustomer,
@@ -950,7 +1075,7 @@ export default function NewInvoicePage() {
   }
 
   const subtotal = lineItems.reduce((sum, item) => {
-    if (item.isGroupHeader) return sum
+    if (item.isGroupHeader || item.isSubtotal) return sum
     return sum + parseFloat(item.quantity || '0') * parseFloat(item.unitPrice || '0')
   }, 0)
 
@@ -1073,32 +1198,119 @@ export default function NewInvoicePage() {
                   {lineItems.map((item, index) => {
                     const isGroupHeader = item.isGroupHeader
                     const isInGroup = !!item.groupId && !isGroupHeader
-                    
+                    const isSubtotalRow = Boolean(item.isSubtotal)
+                    const showProgressControls =
+                      Boolean(estimateIdParam) &&
+                      billingModeParam === 'PERCENTAGE' &&
+                      Boolean(item.estimateLineItemId)
+
+                    const prevSubtotalIdx = isSubtotalRow
+                      ? (() => {
+                          for (let k = index - 1; k >= 0; k--) {
+                            if (lineItems[k].isSubtotal) return k
+                          }
+                          return -1
+                        })()
+                      : -1
+                    const subtotalDisplay = isSubtotalRow
+                      ? lineItems.slice(prevSubtotalIdx + 1, index).reduce((sum, li) => {
+                          if (li.isGroupHeader || li.isSubtotal) return sum
+                          return sum + parseFloat(li.quantity || '0') * parseFloat(li.unitPrice || '0')
+                        }, 0)
+                      : 0
+
+                    if (isSubtotalRow) {
+                      return (
+                        <div
+                          key={index}
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData('text/line-index', String(index))
+                            e.dataTransfer.effectAllowed = 'move'
+                          }}
+                          onDragOver={(e) => {
+                            e.preventDefault()
+                            e.dataTransfer.dropEffect = 'move'
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault()
+                            const from = parseInt(e.dataTransfer.getData('text/line-index'), 10)
+                            if (!Number.isFinite(from)) return
+                            reorderLineItems(from, index)
+                          }}
+                          className="flex items-center justify-between gap-2 p-2 rounded border border-slate-300 bg-slate-50"
+                        >
+                          <span className="text-sm font-semibold text-slate-700">Subtotal</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-800">${subtotalDisplay.toFixed(2)}</span>
+                            <button
+                              type="button"
+                              title="Drag to reorder"
+                              className="cursor-grab text-slate-400 hover:text-slate-600 p-1"
+                              aria-label="Drag to reorder"
+                            >
+                              <GripVertical className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    }
+
                     return (
                       <div
                         key={index}
                         ref={(el) => {
                           lineItemRefs.current[index] = el
                         }}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('text/line-index', String(index))
+                          e.dataTransfer.effectAllowed = 'move'
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault()
+                          e.dataTransfer.dropEffect = 'move'
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault()
+                          const from = parseInt(e.dataTransfer.getData('text/line-index'), 10)
+                          if (!Number.isFinite(from)) return
+                          reorderLineItems(from, index)
+                        }}
                         className={`flex gap-2 ${isGroupHeader ? 'items-center' : 'items-start'} p-2 rounded border ${
                           isGroupHeader
                             ? 'bg-purple-50 border-purple-200'
                             : isInGroup
                             ? 'bg-purple-25 border-purple-100 ml-4'
-                            : 'border-gray-300'
+                            : item.isVisibleToClient === false
+                              ? 'border-gray-300 opacity-80'
+                              : 'border-gray-300'
                         }`}
                       >
                         {!isGroupHeader && (
-                          <div className="flex flex-col gap-1">
+                          <div className="flex flex-col gap-1 items-center">
+                            <button
+                              type="button"
+                              title="Drag to reorder"
+                              className="cursor-grab text-gray-400 hover:text-gray-600 p-0.5"
+                              aria-label="Drag to reorder"
+                              onMouseDown={(e) => e.stopPropagation()}
+                            >
+                              <GripVertical className="h-4 w-4" />
+                            </button>
                             <Button
                               type="button"
                               variant="ghost"
                               size="sm"
-                              onClick={() => toggleVisibility(index, 'cost')}
-                              title={item.showCostToCustomer ? 'Hide cost from customer' : 'Show cost to customer'}
+                              onClick={() => toggleLineRowVisibility(index)}
+                              title={
+                                item.isVisibleToClient !== false
+                                  ? 'Hide entire line from customer (PDF & portal)'
+                                  : 'Show line to customer'
+                              }
                               className="p-1 h-6"
                             >
-                              {item.showCostToCustomer ? (
+                              {item.isVisibleToClient !== false ? (
                                 <Eye className="h-3 w-3 text-gray-600" />
                               ) : (
                                 <EyeOff className="h-3 w-3 text-gray-400" />
@@ -1167,6 +1379,61 @@ export default function NewInvoicePage() {
                                 placeholder="Description (optional)"
                                 className="w-full text-sm"
                               />
+                              {showProgressControls && (
+                                <div className="flex flex-wrap items-end gap-2 pt-1 border-t border-dashed border-gray-200 mt-1">
+                                  <div className="w-[160px]">
+                                    <Label className="text-xs text-gray-500 mb-1 block">Progress bill</Label>
+                                    <Select
+                                      value={item.progressBillMode || 'GLOBAL_PCT'}
+                                      onValueChange={(v) =>
+                                        updateLineProgressMode(index, v as NonNullable<LineItem['progressBillMode']>)
+                                      }
+                                    >
+                                      <SelectTrigger className="h-8 text-xs">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="GLOBAL_PCT">Progress % (default)</SelectItem>
+                                        <SelectItem value="FULL">Full (100%)</SelectItem>
+                                        <SelectItem value="CUSTOM_PCT">Custom %</SelectItem>
+                                        <SelectItem value="CUSTOM_AMT">Custom amount</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  {item.progressBillMode === 'CUSTOM_PCT' && (
+                                    <div className="w-24">
+                                      <Label className="text-xs text-gray-500 mb-1 block">%</Label>
+                                      <Input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        max="100"
+                                        value={item.progressCustom || ''}
+                                        onChange={(e) => updateLineProgressField(index, { progressCustom: e.target.value })}
+                                        className="h-8 text-xs"
+                                      />
+                                    </div>
+                                  )}
+                                  {item.progressBillMode === 'CUSTOM_AMT' && (
+                                    <div className="w-28">
+                                      <Label className="text-xs text-gray-500 mb-1 block">Line total</Label>
+                                      <Input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        value={item.progressAmount || ''}
+                                        onChange={(e) => updateLineProgressField(index, { progressAmount: e.target.value })}
+                                        className="h-8 text-xs"
+                                      />
+                                    </div>
+                                  )}
+                                  {item.baseUnitPrice && (
+                                    <p className="text-[10px] text-gray-500 pb-1">
+                                      Estimate unit: ${parseFloat(item.baseUnitPrice).toFixed(2)}
+                                    </p>
+                                  )}
+                                </div>
+                              )}
                             </>
                           )}
                         </div>
@@ -1338,6 +1605,21 @@ export default function NewInvoicePage() {
                         ref={(el) => {
                           optionalItemRefs.current[index] = el
                         }}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('text/opt-line-index', String(index))
+                          e.dataTransfer.effectAllowed = 'move'
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault()
+                          e.dataTransfer.dropEffect = 'move'
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault()
+                          const from = parseInt(e.dataTransfer.getData('text/opt-line-index'), 10)
+                          if (!Number.isFinite(from)) return
+                          reorderOptionalItems(from, index)
+                        }}
                         className={`flex gap-2 ${isGroupHeader ? 'items-center' : 'items-start'} p-2 rounded border ${
                           isGroupHeader
                             ? 'bg-purple-50 border-purple-200'
@@ -1346,9 +1628,17 @@ export default function NewInvoicePage() {
                               : 'border-gray-300'
                         } ${!isGroupHeader && !isVisible ? 'opacity-70' : ''}`}
                       >
-                        {/* Customer visibility toggle (whole optional line) */}
                         {!isGroupHeader && (
-                          <div className="flex flex-col gap-1">
+                          <div className="flex flex-col gap-1 items-center">
+                            <button
+                              type="button"
+                              title="Drag to reorder"
+                              className="cursor-grab text-gray-400 hover:text-gray-600 p-0.5"
+                              aria-label="Drag to reorder"
+                              onMouseDown={(ev) => ev.stopPropagation()}
+                            >
+                              <GripVertical className="h-4 w-4" />
+                            </button>
                             <Button
                               type="button"
                               variant="ghost"

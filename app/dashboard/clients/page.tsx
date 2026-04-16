@@ -24,6 +24,8 @@ interface Client {
   phone: string | null
   isActive: boolean
   openInvoiceBalance?: string
+  /** When this client is a parent with sub-clients, combined open AR (parent + all children). */
+  openInvoiceBalanceWithSubClients?: string | null
   contacts: Array<{
     id: string
     firstName: string
@@ -41,6 +43,10 @@ interface Client {
     id: string
     name: string
   } | null
+}
+
+function clientListBalance(c: Client) {
+  return c.openInvoiceBalanceWithSubClients ?? c.openInvoiceBalance ?? '0'
 }
 
 export default function ClientsPage() {
@@ -415,7 +421,7 @@ export default function ClientsPage() {
                         <span>{client._count.invoices} invoices</span>
                       </div>
                       <div className="text-xs font-semibold text-gray-800" title="Total open balance across all unpaid invoices">
-                        {formatCurrency(client.openInvoiceBalance || 0)}
+                        {formatCurrency(clientListBalance(client))}
                       </div>
                       <Button
                         variant="ghost"
@@ -455,7 +461,7 @@ export default function ClientsPage() {
               primary={client.name}
               secondary={
                 `${client.companyName || client.email || client.phone || 'No contact info'} • Open: ${formatCurrency(
-                  client.openInvoiceBalance || 0
+                  clientListBalance(client)
                 )}`
               }
               status={
@@ -463,7 +469,7 @@ export default function ClientsPage() {
                   {client.isActive ? 'Active' : 'Inactive'}
                 </span>
               }
-              amount={<span>{formatCurrency(client.openInvoiceBalance || 0)}</span>}
+              amount={<span>{formatCurrency(clientListBalance(client))}</span>}
               date={
                 <span>
                   {client._count.jobs} jobs • {client._count.invoices} invoices
@@ -509,7 +515,7 @@ export default function ClientsPage() {
                 </span>
               }
               line2={`${client.companyName || 'No company'} • ${client.email || 'No email'} • ${client.phone || 'No phone'}`}
-              rightTop={<span>{formatCurrency(client.openInvoiceBalance || 0)}</span>}
+              rightTop={<span>{formatCurrency(clientListBalance(client))}</span>}
               rightBottom={
                 <span>
                   {client._count.jobs} jobs • {client._count.invoices} invoices
@@ -590,8 +596,15 @@ export default function ClientsPage() {
             {
               key: 'openBalance',
               header: 'Open Balance',
-              sortValue: (client) => parseFloat(client.openInvoiceBalance || '0'),
-              render: (client) => <span className="font-medium">{formatCurrency(client.openInvoiceBalance || 0)}</span>,
+              sortValue: (client) => parseFloat(clientListBalance(client) || '0'),
+              render: (client) => (
+                <span className="font-medium">
+                  {formatCurrency(clientListBalance(client))}
+                  {client.openInvoiceBalanceWithSubClients ? (
+                    <span className="ml-1 block text-[10px] font-normal text-gray-500">incl. sub-clients</span>
+                  ) : null}
+                </span>
+              ),
             },
             {
               key: 'actions',

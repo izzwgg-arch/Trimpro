@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ArrowLeft, Save, Plus, Trash2, Eye, EyeOff } from 'lucide-react'
+import { ArrowLeft, Save, Plus, Trash2, Eye, EyeOff, GripVertical } from 'lucide-react'
 import Link from 'next/link'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
@@ -516,6 +516,27 @@ export default function NewEstimatePage() {
     setLineItems(updated)
   }
 
+  const toggleLineRowVisibility = (index: number) => {
+    setLineItems((prev) => {
+      const updated = [...prev]
+      updated[index] = {
+        ...updated[index],
+        isVisibleToClient: !(updated[index].isVisibleToClient ?? true),
+      }
+      return updated
+    })
+  }
+
+  const reorderLineItems = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return
+    setLineItems((prev) => {
+      const next = [...prev]
+      const [moved] = next.splice(fromIndex, 1)
+      next.splice(toIndex, 0, moved)
+      return next
+    })
+  }
+
   // Optional items (separate section; not included in main totals)
   const addOptionalItem = () => {
     setOptionalItems((prev) => [
@@ -562,6 +583,16 @@ export default function NewEstimatePage() {
         isVisibleToClient: !(updated[index].isVisibleToClient ?? true),
       }
       return updated
+    })
+  }
+
+  const reorderOptionalItems = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return
+    setOptionalItems((prev) => {
+      const next = [...prev]
+      const [moved] = next.splice(fromIndex, 1)
+      next.splice(toIndex, 0, moved)
+      return next
     })
   }
 
@@ -798,7 +829,7 @@ export default function NewEstimatePage() {
           unitCost: item.unitCost ? parseFloat(item.unitCost) : null,
           total: item.isSubtotal ? 0 : parseFloat(item.quantity || '1') * parseFloat(item.unitPrice || '0'),
           sortOrder: index,
-          isVisibleToClient: true,
+          isVisibleToClient: item.isVisibleToClient !== false,
           showDescriptionToCustomer: item.showDescriptionToCustomer,
           showCostToCustomer: item.showCostToCustomer,
           showPriceToCustomer: item.showPriceToCustomer,
@@ -1036,11 +1067,27 @@ export default function NewEstimatePage() {
                       return (
                         <div
                           key={index}
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData('text/line-index', String(index))
+                            e.dataTransfer.effectAllowed = 'move'
+                          }}
+                          onDragOver={(e) => {
+                            e.preventDefault()
+                            e.dataTransfer.dropEffect = 'move'
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault()
+                            const from = parseInt(e.dataTransfer.getData('text/line-index'), 10)
+                            if (!Number.isFinite(from)) return
+                            reorderLineItems(from, index)
+                          }}
                           className="flex items-center justify-between p-2 rounded border border-slate-300 bg-slate-50"
                         >
                           <span className="text-sm font-semibold text-slate-700">Subtotal</span>
                           <div className="flex items-center gap-3">
                             <span className="font-bold text-slate-800">${subtotalDisplay.toFixed(2)}</span>
+                            <GripVertical className="h-4 w-4 text-slate-400" aria-hidden />
                             <Button
                               type="button"
                               variant="ghost"
@@ -1060,26 +1107,55 @@ export default function NewEstimatePage() {
                         ref={(el) => {
                           lineItemRefs.current[index] = el
                         }}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('text/line-index', String(index))
+                          e.dataTransfer.effectAllowed = 'move'
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault()
+                          e.dataTransfer.dropEffect = 'move'
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault()
+                          const from = parseInt(e.dataTransfer.getData('text/line-index'), 10)
+                          if (!Number.isFinite(from)) return
+                          reorderLineItems(from, index)
+                        }}
                         className={`flex gap-2 ${isGroupHeader ? 'items-center' : 'items-start'} p-2 rounded border ${
                           isGroupHeader
                             ? 'bg-purple-50 border-purple-200'
                             : isInGroup
                             ? 'bg-purple-25 border-purple-100 ml-4'
-                            : 'border-gray-300'
+                            : item.isVisibleToClient === false
+                              ? 'border-gray-300 opacity-80'
+                              : 'border-gray-300'
                         }`}
                       >
-                        {/* Visibility toggle (only for non-group headers) */}
                         {!isGroupHeader && (
-                          <div className="flex flex-col gap-1">
+                          <div className="flex flex-col gap-1 items-center">
+                            <button
+                              type="button"
+                              title="Drag to reorder"
+                              className="cursor-grab text-gray-400 hover:text-gray-600 p-0.5"
+                              aria-label="Drag to reorder"
+                              onMouseDown={(e) => e.stopPropagation()}
+                            >
+                              <GripVertical className="h-4 w-4" />
+                            </button>
                             <Button
                               type="button"
                               variant="ghost"
                               size="sm"
-                              onClick={() => toggleVisibility(index, 'cost')}
-                              title={item.showCostToCustomer ? 'Hide cost from customer' : 'Show cost to customer'}
+                              onClick={() => toggleLineRowVisibility(index)}
+                              title={
+                                item.isVisibleToClient !== false
+                                  ? 'Hide entire line from customer (PDF & portal)'
+                                  : 'Show line to customer'
+                              }
                               className="p-1 h-6"
                             >
-                              {item.showCostToCustomer ? (
+                              {item.isVisibleToClient !== false ? (
                                 <Eye className="h-3 w-3 text-gray-600" />
                               ) : (
                                 <EyeOff className="h-3 w-3 text-gray-400" />
@@ -1359,6 +1435,21 @@ export default function NewEstimatePage() {
                         ref={(el) => {
                           optionalItemRefs.current[index] = el
                         }}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('text/opt-line-index', String(index))
+                          e.dataTransfer.effectAllowed = 'move'
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault()
+                          e.dataTransfer.dropEffect = 'move'
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault()
+                          const from = parseInt(e.dataTransfer.getData('text/opt-line-index'), 10)
+                          if (!Number.isFinite(from)) return
+                          reorderOptionalItems(from, index)
+                        }}
                         className={`flex gap-2 ${isGroupHeader ? 'items-center' : 'items-start'} p-2 rounded border ${
                           isGroupHeader
                             ? 'bg-purple-50 border-purple-200'
@@ -1367,9 +1458,17 @@ export default function NewEstimatePage() {
                               : 'border-gray-300'
                         } ${!isGroupHeader && !isVisible ? 'opacity-70' : ''}`}
                       >
-                        {/* Customer visibility toggle (whole optional line) */}
                         {!isGroupHeader && (
-                          <div className="flex flex-col gap-1">
+                          <div className="flex flex-col gap-1 items-center">
+                            <button
+                              type="button"
+                              title="Drag to reorder"
+                              className="cursor-grab text-gray-400 hover:text-gray-600 p-0.5"
+                              aria-label="Drag to reorder"
+                              onMouseDown={(ev) => ev.stopPropagation()}
+                            >
+                              <GripVertical className="h-4 w-4" />
+                            </button>
                             <Button
                               type="button"
                               variant="ghost"

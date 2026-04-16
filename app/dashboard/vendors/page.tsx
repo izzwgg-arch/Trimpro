@@ -64,6 +64,7 @@ export default function VendorsPage() {
   const [showImportDialog, setShowImportDialog] = useState(false)
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importing, setImporting] = useState(false)
+  const [qboImporting, setQboImporting] = useState(false)
   const [viewMode, setViewMode] = useViewMode('vendors', 'table')
 
   useEffect(() => {
@@ -206,6 +207,35 @@ export default function VendorsPage() {
     }
   }
 
+  const handleImportFromQuickBooks = async () => {
+    if (!confirm('Import all vendors from QuickBooks? Existing vendors matched by QuickBooks ID or name will be updated.')) return
+    setQboImporting(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const res = await fetch('/api/vendors/import-quickbooks', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        alert(data.error || 'QuickBooks vendor import failed.')
+        return
+      }
+      alert(
+        `QuickBooks vendors: ${data.fetchedFromQuickBooks || 0} fetched. Created ${data.created || 0}, updated ${data.updated || 0}, skipped ${data.skipped || 0}.`
+      )
+      if (Array.isArray(data.errors) && data.errors.length) {
+        console.warn('Vendor import errors:', data.errors)
+      }
+      await fetchVendors()
+    } catch (e) {
+      console.error(e)
+      alert('QuickBooks vendor import failed.')
+    } finally {
+      setQboImporting(false)
+    }
+  }
+
   const handleImportDialogOpenChange = (open: boolean) => {
     if (importing && !open) return
     setShowImportDialog(open)
@@ -245,6 +275,9 @@ export default function VendorsPage() {
           <Button onClick={() => setShowImportDialog(true)} variant="outline">
             <Upload className="mr-2 h-4 w-4" />
             Import CSV
+          </Button>
+          <Button onClick={() => void handleImportFromQuickBooks()} variant="outline" disabled={qboImporting}>
+            {qboImporting ? 'Importing…' : 'Import from QuickBooks'}
           </Button>
           <Button onClick={() => router.push('/dashboard/vendors/new')}>
             <Plus className="mr-2 h-4 w-4" />
@@ -306,7 +339,7 @@ export default function VendorsPage() {
                 ? 'Try adjusting your filters'
                 : 'Get started by creating your first vendor'}
             </p>
-            <div className="flex justify-center space-x-2">
+            <div className="flex justify-center flex-wrap gap-2">
               <Button onClick={() => router.push('/dashboard/vendors/new')}>
                 <Plus className="mr-2 h-4 w-4" />
                 New Vendor
@@ -314,6 +347,9 @@ export default function VendorsPage() {
               <Button variant="outline" onClick={() => setShowImportDialog(true)}>
                 <Upload className="mr-2 h-4 w-4" />
                 Import CSV
+              </Button>
+              <Button variant="outline" onClick={() => void handleImportFromQuickBooks()} disabled={qboImporting}>
+                {qboImporting ? 'Importing…' : 'Import from QuickBooks'}
               </Button>
             </div>
           </CardContent>

@@ -92,13 +92,32 @@ export async function GET(request: NextRequest) {
     const clientIds = clients.map((c) => c.id)
     const openBalanceByClientId = new Map<string, string>()
 
-    if (clientIds.length) {
+    const parentIdsOnPage = clients.filter((c) => !c.parentId).map((c) => c.id)
+    const childrenOfParents =
+      parentIdsOnPage.length > 0
+        ? await prisma.client.findMany({
+            where: { tenantId: user.tenantId, parentId: { in: parentIdsOnPage } },
+            select: { id: true, parentId: true },
+          })
+        : []
+    const childIdsByParent = new Map<string, string[]>()
+    for (const ch of childrenOfParents) {
+      if (!ch.parentId) continue
+      const list = childIdsByParent.get(ch.parentId) || []
+      list.push(ch.id)
+      childIdsByParent.set(ch.parentId, list)
+    }
+
+    const extraChildIds = childrenOfParents.map((c) => c.id).filter((id) => !clientIds.includes(id))
+    const balanceClientIds = [...clientIds, ...extraChildIds]
+
+    if (balanceClientIds.length) {
       // "Open" means there is a remaining balance and it isn't closed/cancelled/refunded.
       const grouped = await prisma.invoice.groupBy({
         by: ['clientId'],
         where: {
           tenantId: user.tenantId,
-          clientId: { in: clientIds },
+          clientId: { in: balanceClientIds },
           balance: { gt: 0 },
           status: { notIn: ['PAID', 'CANCELLED', 'REFUNDED'] as any },
         } as any,
@@ -110,16 +129,25 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    const sumOpen = (clientId: string) => parseFloat(openBalanceByClientId.get(clientId) || '0')
+
     return NextResponse.json({
-      clients: clients.map((c) => ({
-        ...c,
-        address: c.addresses?.[0]
-          ? [c.addresses[0].street, [c.addresses[0].city, c.addresses[0].state, c.addresses[0].zipCode].filter(Boolean).join(' ')]
-              .filter(Boolean)
-              .join(', ')
-          : null,
-        openInvoiceBalance: openBalanceByClientId.get(c.id) || '0',
-      })),
+      clients: clients.map((c) => {
+        const own = sumOpen(c.id)
+        const childIds = childIdsByParent.get(c.id) || []
+        const withSubs =
+          childIds.length > 0 ? own + childIds.reduce((s, cid) => s + sumOpen(cid), 0) : own
+        return {
+          ...c,
+          address: c.addresses?.[0]
+            ? [c.addresses[0].street, [c.addresses[0].city, c.addresses[0].state, c.addresses[0].zipCode].filter(Boolean).join(' ')]
+                .filter(Boolean)
+                .join(', ')
+            : null,
+          openInvoiceBalance: own.toFixed(2),
+          openInvoiceBalanceWithSubClients: childIds.length > 0 ? withSubs.toFixed(2) : null,
+        }
+      }),
       pagination: createPaginationResponse(total, limit, skip),
     })
   } catch (error) {

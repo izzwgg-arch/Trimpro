@@ -83,6 +83,15 @@ function msgTimeStr(iso: string) {
   return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
 
+/** Relative `/uploads/...` URLs need an origin for `<audio>` / `<video>` in some browsers and dev setups. */
+function resolveMessageMediaUrl(url: string): string {
+  if (!url) return url
+  if (/^https?:\/\//i.test(url)) return url
+  if (typeof window === 'undefined') return url
+  const path = url.startsWith('/') ? url : `/${url}`
+  return `${window.location.origin}${path}`
+}
+
 // Convert a raw ChatMessage (team) to NormalizedMsg
 function normaliseTeamMsg(raw: any, myId: string, isGroup: boolean): NormalizedMsg {
   const atts: MsgAttachment[] = (raw.attachments || []).map((a: any): MsgAttachment => {
@@ -95,7 +104,7 @@ function normaliseTeamMsg(raw: any, myId: string, isGroup: boolean): NormalizedM
       : 'FILE'
     return {
       kind,
-      url: a.url,
+      url: resolveMessageMediaUrl(typeof a.url === 'string' ? a.url : ''),
       fileName: a.fileName,
       mimeType: a.mimeType,
       durationMs: a.durationMs,
@@ -133,7 +142,12 @@ function normaliseSmsMsg(raw: any): NormalizedMsg {
       : mime.startsWith('video/') || type === 'video' ? 'VIDEO'
       : mime.startsWith('audio/') || type === 'audio' ? 'AUDIO'
       : 'FILE'
-    return { kind, url: m.url, fileName: m.filename || null, mimeType: m.mimeType || null }
+    return {
+      kind,
+      url: resolveMessageMediaUrl(typeof m.url === 'string' ? m.url : ''),
+      fileName: m.filename || null,
+      mimeType: m.mimeType || null,
+    }
   })
   return {
     id: raw.id,
@@ -242,10 +256,11 @@ function MsgBubble({ msg, showSenderName }: { msg: NormalizedMsg; showSenderName
 
 function AttachmentItem({ att, isMine }: { att: MsgAttachment; isMine: boolean }) {
   if (att.kind === 'IMAGE') {
+    const src = resolveMessageMediaUrl(att.url)
     return (
-      <a href={att.url} target="_blank" rel="noreferrer" className="block mb-1">
+      <a href={src} target="_blank" rel="noreferrer" className="block mb-1">
         <img
-          src={att.url}
+          src={src}
           alt={att.fileName || 'Image'}
           className="rounded-2xl max-h-[260px] max-w-[280px] object-cover cursor-pointer hover:opacity-90 transition-opacity"
         />
@@ -253,19 +268,21 @@ function AttachmentItem({ att, isMine }: { att: MsgAttachment; isMine: boolean }
     )
   }
   if (att.kind === 'VIDEO') {
+    const src = resolveMessageMediaUrl(att.url)
     return (
       <video
         controls
-        src={att.url}
+        src={src}
         className="rounded-2xl max-h-[240px] max-w-[280px] mb-1"
       />
     )
   }
   if (att.kind === 'AUDIO') {
+    const src = resolveMessageMediaUrl(att.url)
     return (
       <div className={`flex items-center gap-2 px-3 py-2 rounded-2xl mb-1 ${isMine ? 'bg-blue-500' : 'bg-gray-200'}`}>
         <svg className={`w-4 h-4 flex-shrink-0 ${isMine ? 'text-white' : 'text-gray-500'}`} fill="currentColor" viewBox="0 0 24 24"><path d="M12 3a9 9 0 110 18A9 9 0 0112 3zm0 2a7 7 0 100 14A7 7 0 0012 5zm-1 4h2v6h-2V9zM10 9a1 1 0 11-2 0 1 1 0 012 0zm6 0a1 1 0 11-2 0 1 1 0 012 0z"/></svg>
-        <audio controls src={att.url} className="h-7 w-40 opacity-90" />
+        <audio controls src={src} preload="metadata" className="h-7 w-40 opacity-90" />
         {att.durationMs && (
           <span className={`text-[10px] flex-shrink-0 ${isMine ? 'text-blue-100' : 'text-gray-500'}`}>
             {Math.round(att.durationMs / 1000)}s
@@ -290,7 +307,7 @@ function AttachmentItem({ att, isMine }: { att: MsgAttachment; isMine: boolean }
   // FILE
   return (
     <a
-      href={att.url}
+      href={resolveMessageMediaUrl(att.url)}
       target="_blank"
       rel="noreferrer"
       className={`flex items-center gap-2 px-3 py-2 rounded-2xl mb-1 text-sm max-w-[240px] transition-opacity hover:opacity-80 ${isMine ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'}`}
@@ -350,7 +367,11 @@ function Composer({
         headers: { Authorization: `Bearer ${token}` },
         body: fd,
       })
-      if (!res.ok) continue
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error || `Upload failed (${res.status})`)
+        continue
+      }
       const { url } = await res.json()
       const mediaType = f.type.startsWith('image/') ? 'image'
         : f.type.startsWith('video/') ? 'video'
@@ -365,11 +386,18 @@ function Composer({
     if (recording) return
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const rec = new MediaRecorder(stream)
-      recorderRef.current = rec; chunksRef.current = []
-      rec.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data) }
-      rec.start()
-      setRecording(true); setRecordStart(Date.now()); setRecSecs(0)
+      const mimeCandidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
+      const mimeType = mimeCandidates.find((t) => MediaRecorder.isTypeSupported(t)) || ''
+      const rec = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
+      recorderRef.current = rec
+      chunksRef.current = []
+      rec.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data)
+      }
+      rec.start(250)
+      setRecording(true)
+      setRecordStart(Date.now())
+      setRecSecs(0)
       timerRef.current = setInterval(() => setRecSecs((s) => s + 1), 1000)
     } catch {
       alert('Microphone access denied')
@@ -383,23 +411,46 @@ function Composer({
     const rec = recorderRef.current
     await new Promise<void>((resolve) => {
       rec.onstop = async () => {
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
-        const file = new File([blob], `voice-${Date.now()}.webm`, { type: 'audio/webm' })
-        const fd = new FormData(); fd.append('file', file)
-        const token = localStorage.getItem('accessToken')
-        const res = await fetch('/api/uploads/messages', {
-          method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
-        })
-        if (res.ok) {
+        try {
+          if (typeof rec.requestData === 'function') {
+            try {
+              rec.requestData()
+            } catch {
+              /* ignore */
+            }
+          }
+          await new Promise((r) => setTimeout(r, 80))
+          const blobType = rec.mimeType && rec.mimeType.includes('webm') ? rec.mimeType : 'audio/webm'
+          const blob = new Blob(chunksRef.current, { type: blobType })
+          if (!blob.size) {
+            alert('Recording was empty. Try again and speak closer to the mic.')
+            return
+          }
+          const ext = blobType.includes('mp4') ? 'm4a' : 'webm'
+          const file = new File([blob], `voice-${Date.now()}.${ext}`, { type: blobType })
+          const fd = new FormData()
+          fd.append('file', file)
+          const token = localStorage.getItem('accessToken')
+          const res = await fetch('/api/uploads/messages', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+            body: fd,
+          })
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}))
+            alert(err.error || `Voice upload failed (${res.status})`)
+            return
+          }
           const { url } = await res.json()
-          // Send immediately as a voice note
           setSending(true)
-          await onSend('', [{ url, type: 'audio', mimeType: 'audio/webm', filename: file.name }], durMs).catch(() => {})
+          await onSend('', [{ url, type: 'audio', mimeType: blobType, filename: file.name }], durMs).catch(() => {})
           setSending(false)
+        } finally {
+          resolve()
         }
-        resolve()
       }
-      rec.stop(); rec.stream.getTracks().forEach((t) => t.stop())
+      rec.stop()
+      rec.stream.getTracks().forEach((t) => t.stop())
     })
     setRecording(false); setRecSecs(0); recorderRef.current = null
   }
@@ -657,7 +708,7 @@ export default function MessagesPage() {
         mimeType: m.mimeType,
         durationMs: durationMs || null,
       }))
-      await fetchAuth(`/api/messages/conversations/${selectedThread.id}/messages`, {
+      const res = await fetchAuth(`/api/messages/conversations/${selectedThread.id}/messages`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text: text || null,
@@ -665,6 +716,11 @@ export default function MessagesPage() {
           attachments,
         }),
       })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error || `Failed to send message (${res.status})`)
+        return
+      }
     } else {
       // SMS / MMS
       const mediaPayload = media.map((m) => ({

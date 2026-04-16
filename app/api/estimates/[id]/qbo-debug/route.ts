@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
-import { getQboSessionForTenant, qboEstimateReadEndpoint } from '@/lib/services/qbo-sync'
+import { getQboSessionForTenant } from '@/lib/qbo/session'
+import { qboEstimateReadEndpoint } from '@/lib/services/qbo-sync'
 import { quickBooksService } from '@/lib/services/quickbooks'
 
 export async function GET(

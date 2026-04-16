@@ -40,6 +40,9 @@ export const ALLOWED_AUDIO_MIME_TYPES = new Set([
   'audio/aac',
   'audio/3gpp',
   'audio/amr',
+  'audio/webm',
+  'audio/ogg',
+  'audio/opus',
 ])
 
 const MIME_TO_EXT: Record<string, string> = {
@@ -71,6 +74,9 @@ const MIME_TO_EXT: Record<string, string> = {
   'audio/aac': 'aac',
   'audio/3gpp': '3gp',
   'audio/amr': 'amr',
+  'audio/webm': 'webm',
+  'audio/ogg': 'ogg',
+  'audio/opus': 'opus',
 }
 
 const EXT_TO_MIME: Record<string, string> = {
@@ -99,6 +105,9 @@ const EXT_TO_MIME: Record<string, string> = {
   m4a: 'audio/m4a',
   aac: 'audio/aac',
   amr: 'audio/amr',
+  webm: 'audio/webm',
+  ogg: 'audio/ogg',
+  opus: 'audio/opus',
 }
 
 const MIME_ALIASES: Record<string, string> = {

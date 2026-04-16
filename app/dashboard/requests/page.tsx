@@ -529,12 +529,16 @@ export default function RequestsPage() {
                       )}
                     </div>
 
-                    {request.assignedTo && (
-                      <div className="flex items-center text-sm text-gray-600">
-                        <User className="mr-2 h-3 w-3" />
-                        {request.assignedTo.firstName} {request.assignedTo.lastName}
-                      </div>
-                    )}
+                    <div className="flex items-center text-sm text-gray-600">
+                      <User className="mr-2 h-3 w-3 flex-shrink-0" />
+                      {request.assignedTo ? (
+                        <span>
+                          {request.assignedTo.firstName} {request.assignedTo.lastName}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400 italic">Unassigned</span>
+                      )}
+                    </div>
 
                     <div className="flex items-center gap-3 text-xs text-gray-400 flex-wrap">
                       <span className="flex items-center gap-1">
@@ -666,6 +670,9 @@ export default function RequestsPage() {
                 primary={`${request.firstName} ${request.lastName}${request.isUrgent ? ' • URGENT' : ''}`.trim()}
                 secondary={[
                   request.company || request.email || request.phone || 'No contact info',
+                  request.assignedTo
+                    ? `Assigned: ${request.assignedTo.firstName} ${request.assignedTo.lastName}`
+                    : 'Assigned: Unassigned',
                   request.createdBy ? `by ${request.createdBy.firstName} ${request.createdBy.lastName}` : null,
                 ].filter(Boolean).join(' · ')}
                 status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[request.status] || 'bg-gray-100 text-gray-800'}`}>{request.status.replace('_', ' ')}</span>}
@@ -694,6 +701,9 @@ export default function RequestsPage() {
                 status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[request.status] || 'bg-gray-100 text-gray-800'}`}>{request.status.replace('_', ' ')}</span>}
                 line2={[
                   request.company || request.email || request.phone || 'No contact info',
+                  request.assignedTo
+                    ? `Assigned: ${request.assignedTo.firstName} ${request.assignedTo.lastName}`
+                    : 'Assigned: Unassigned',
                   formatDate(request.createdAt),
                   request.createdBy ? `Created by ${request.createdBy.firstName} ${request.createdBy.lastName}` : null,
                 ].filter(Boolean).join(' · ')}
@@ -750,6 +760,22 @@ export default function RequestsPage() {
               header: 'Source',
               sortValue: (request) => request.source,
               render: (request) => request.source,
+            },
+            {
+              key: 'assigned',
+              header: 'Assigned',
+              sortValue: (request) =>
+                request.assignedTo
+                  ? `${request.assignedTo.firstName} ${request.assignedTo.lastName}`
+                  : 'Unassigned',
+              render: (request) =>
+                request.assignedTo ? (
+                  <span className="text-sm">
+                    {request.assignedTo.firstName} {request.assignedTo.lastName}
+                  </span>
+                ) : (
+                  <span className="text-sm text-gray-400 italic">Unassigned</span>
+                ),
             },
             {
               key: 'probability',

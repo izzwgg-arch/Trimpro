@@ -8,6 +8,15 @@ import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 
 type BillingMode = 'FULL' | 'PERCENTAGE' | 'MANUAL'
 
+type LineBillingMode = 'GLOBAL_PCT' | 'FULL' | 'CUSTOM_PCT' | 'CUSTOM_AMT'
+
+type LineBillingInput = {
+  lineItemId: string
+  mode?: LineBillingMode
+  percent?: number
+  amount?: number
+}
+
 function toCents(value: number) {
   return Math.round((Number.isFinite(value) ? value : 0) * 100)
 }
@@ -32,6 +41,11 @@ export async function POST(
     const selectedLineItemIds: string[] = Array.isArray(body.selectedLineItemIds)
       ? body.selectedLineItemIds
       : []
+    const lineBillingsRaw: LineBillingInput[] = Array.isArray(body.lineItemBillings) ? body.lineItemBillings : []
+    const lineBillingById = new Map<string, LineBillingInput>()
+    for (const row of lineBillingsRaw) {
+      if (row && typeof row.lineItemId === 'string' && row.lineItemId) lineBillingById.set(row.lineItemId, row)
+    }
 
     const estimate = await prisma.estimate.findFirst({
       where: {
@@ -96,28 +110,72 @@ export async function POST(
         return NextResponse.json({ error: 'Percentage must be between 0 and 100.' }, { status: 400 })
       }
       progressPercent = percentage
-      subtotalCents = Math.max(0, Math.round(estimateTotalCents * (percentage / 100)))
-      invoiceLineItems = [
-        {
-          description: `Progress Billing (${percentage.toFixed(2)}%) - Estimate ${estimate.estimateNumber}`,
-          quantity: 1,
-          unitPrice: fromCents(subtotalCents),
-          unitCost: null,
-          total: fromCents(subtotalCents),
+      const defaultScale = percentage / 100
+      const sourceLines = [...estimate.lineItems].sort((a, b) => a.sortOrder - b.sortOrder)
+      let sortOrder = 0
+
+      const pushLine = (row: (typeof invoiceLineItems)[0]) => {
+        subtotalCents += toCents(row.total)
+        invoiceLineItems.push({ ...row, sortOrder: sortOrder++ })
+      }
+
+      for (const line of sourceLines) {
+        const isSubtotal = Boolean((line as any).isSubtotal)
+        // Itemized percentage billing: only chargeable lines; skip subtotal rows to avoid double-counting amounts.
+        if (isSubtotal) continue
+
+        const qty = Number(line.quantity)
+        const baseUnit = Number(line.unitPrice)
+        const baseTotal = Number(line.total)
+        const bill = lineBillingById.get(line.id)
+        const mode: LineBillingMode = bill?.mode || 'GLOBAL_PCT'
+
+        let lineTotalCents = 0
+        let unitPriceOut = 0
+        let qtyOut = qty
+
+        if (mode === 'FULL') {
+          lineTotalCents = toCents(baseTotal)
+          unitPriceOut = qty ? baseTotal / qty : baseUnit
+        } else if (mode === 'CUSTOM_AMT' && bill && Number.isFinite(bill.amount)) {
+          lineTotalCents = toCents(Math.max(0, Number(bill.amount)))
+          unitPriceOut = qty ? fromCents(lineTotalCents) / qty : fromCents(lineTotalCents)
+        } else if (mode === 'CUSTOM_PCT' && bill && Number.isFinite(bill.percent)) {
+          const p = Math.max(0, Math.min(100, Number(bill.percent)))
+          const scaled = baseTotal * (p / 100)
+          lineTotalCents = toCents(scaled)
+          unitPriceOut = qty ? scaled / qty : scaled
+        } else {
+          const scaled = baseTotal * defaultScale
+          lineTotalCents = toCents(scaled)
+          unitPriceOut = qty ? scaled / qty : scaled
+        }
+
+        pushLine({
+          description: line.description,
+          quantity: qtyOut,
+          unitPrice: Number(unitPriceOut.toFixed(4)),
+          unitCost: line.unitCost ? Number(line.unitCost) : null,
+          total: fromCents(lineTotalCents),
           sortOrder: 0,
-          isVisibleToClient: true,
-          showCostToCustomer: false,
-          showPriceToCustomer: true,
-          showTaxToCustomer: true,
-          showNotesToCustomer: false,
-          notes: null,
-          vendorId: null,
-          taxable: false,
-          taxRate: null,
-          sourceItemId: null,
-          sourceBundleId: null,
-        },
-      ]
+          isVisibleToClient: line.isVisibleToClient !== false,
+          showDescriptionToCustomer: (line as any).showDescriptionToCustomer ?? true,
+          showCostToCustomer: line.showCostToCustomer,
+          showPriceToCustomer: line.showPriceToCustomer,
+          showTaxToCustomer: line.showTaxToCustomer,
+          showNotesToCustomer: line.showNotesToCustomer,
+          notes: line.notes || null,
+          vendorId: line.vendorId || null,
+          taxable: line.taxable,
+          taxRate: line.taxRate ? Number(line.taxRate) : null,
+          sourceItemId: line.sourceItemId || null,
+          sourceBundleId: line.sourceBundleId || null,
+        })
+      }
+
+      if (invoiceLineItems.length === 0) {
+        return NextResponse.json({ error: 'No billable line items for this percentage invoice.' }, { status: 400 })
+      }
     } else {
       const sourceLines =
         billingMode === 'MANUAL'
