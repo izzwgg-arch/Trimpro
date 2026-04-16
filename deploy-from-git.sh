@@ -40,7 +40,7 @@ export NVM_DIR="$HOME/.nvm"
 
 echo ""
 echo "📦 Step 1: Installing dependencies..."
-npm install --production=false
+npm install --legacy-peer-deps --production=false
 
 echo ""
 echo "🔧 Step 2: Generating Prisma Client..."
