@@ -4,20 +4,27 @@ import { Sidebar } from './sidebar'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { QboSyncFailureNotifier } from '@/components/qbo/QboSyncFailureNotifier'
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
+  const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
     // Check if user is authenticated
     const accessToken = localStorage.getItem('accessToken')
-    const user = localStorage.getItem('user')
+    const userRaw = localStorage.getItem('user')
 
-    if (!accessToken || !user) {
+    if (!accessToken || !userRaw) {
       router.push('/auth/login')
       return
     }
+
+    try {
+      const parsed = JSON.parse(userRaw)
+      setIsAdmin(parsed?.role === 'ADMIN')
+    } catch {}
 
     setLoading(false)
   }, [router])
@@ -35,6 +42,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-full min-h-screen bg-gray-100">
+      {isAdmin && <QboSyncFailureNotifier />}
       <Sidebar />
       <main className="flex-1 overflow-y-auto bg-gray-100 min-h-0">
         <div className="p-6 bg-gray-100 min-h-full flex flex-col">
