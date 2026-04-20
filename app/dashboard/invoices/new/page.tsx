@@ -270,6 +270,43 @@ export default function NewInvoicePage() {
         const safePct = Number.isFinite(pct) ? pct : 0
         const scaleDefault = effectiveMode === 'PERCENTAGE' ? safePct / 100 : 1
 
+        // Read per-item overrides saved by the billing modal (estimate detail page)
+        type PerItemMode = 'GLOBAL_PCT' | 'FULL' | 'CUSTOM_PCT' | 'CUSTOM_AMT'
+        interface PerItemBilling { mode: PerItemMode; percent?: string; amount?: string }
+        let perItemBillings: Record<string, PerItemBilling> = {}
+        if (effectiveMode === 'PERCENTAGE' && estimateIdParam) {
+          try {
+            const raw = sessionStorage.getItem(`estimate-convert-billings-${estimateIdParam}`)
+            if (raw) {
+              perItemBillings = JSON.parse(raw)
+              sessionStorage.removeItem(`estimate-convert-billings-${estimateIdParam}`)
+            }
+          } catch (_) {}
+        }
+
+        const calcScaledUnit = (li: any, baseUp: number): { unitPrice: string; mode: PerItemMode; customPct: number } => {
+          const b: PerItemBilling | undefined = perItemBillings[li.id]
+          if (!b || b.mode === 'GLOBAL_PCT') {
+            const scaled = Math.round(baseUp * scaleDefault * 10000) / 10000
+            return { unitPrice: (Math.round(scaled * 100) / 100).toFixed(2), mode: 'GLOBAL_PCT', customPct: safePct }
+          }
+          if (b.mode === 'FULL') {
+            return { unitPrice: baseUp.toFixed(2), mode: 'FULL', customPct: 100 }
+          }
+          if (b.mode === 'CUSTOM_PCT') {
+            const cp = Math.max(0, Math.min(100, Number(b.percent || 0)))
+            const scaled = Math.round(baseUp * (cp / 100) * 10000) / 10000
+            return { unitPrice: (Math.round(scaled * 100) / 100).toFixed(2), mode: 'CUSTOM_PCT', customPct: cp }
+          }
+          if (b.mode === 'CUSTOM_AMT') {
+            const qty = Number(li.quantity) || 1
+            const amt = Math.max(0, Number(b.amount || 0))
+            return { unitPrice: (amt / qty).toFixed(4), mode: 'CUSTOM_AMT', customPct: 0 }
+          }
+          const scaled = Math.round(baseUp * scaleDefault * 10000) / 10000
+          return { unitPrice: (Math.round(scaled * 100) / 100).toFixed(2), mode: 'GLOBAL_PCT', customPct: safePct }
+        }
+
         sourceLines.forEach((li: any) => {
           if (effectiveMode === 'PERCENTAGE' && li.isSubtotal) return
 
@@ -322,41 +359,63 @@ export default function NewInvoicePage() {
           }
 
           const baseUp = Number(li.unitPrice)
-          const qty = Number(li.quantity)
-          const scaledUnit =
-            effectiveMode === 'PERCENTAGE' ? Math.round(baseUp * scaleDefault * 10000) / 10000 : baseUp
-          const unitPriceStr =
-            effectiveMode === 'PERCENTAGE' ? (Math.round(scaledUnit * 100) / 100).toFixed(2) : li.unitPrice.toString()
 
-          mappedItems.push({
-            id: li.id,
-            description: li.description,
-            quantity: li.quantity.toString(),
-            unitPrice: unitPriceStr,
-            unitCost: li.unitCost ? li.unitCost.toString() : undefined,
-            notes: li.notes || undefined,
-            vendorId: li.vendorId || undefined,
-            vendorName: li.vendorName || undefined,
-            taxable: li.taxable ?? true,
-            taxRate: li.taxRate ? (parseFloat(li.taxRate) * 100).toString() : undefined,
-            isVisibleToClient: li.isVisibleToClient ?? true,
-            showDescriptionToCustomer: li.showDescriptionToCustomer ?? true,
-            showCostToCustomer: li.showCostToCustomer ?? false,
-            showPriceToCustomer: li.showPriceToCustomer ?? true,
-            showTaxToCustomer: li.showTaxToCustomer ?? true,
-            showNotesToCustomer: li.showNotesToCustomer ?? false,
-            groupId: li.groupId || undefined,
-            sourceItemId: li.sourceItemId || undefined,
-            sourceBundleId: li.sourceBundleId || undefined,
-            ...(effectiveMode === 'PERCENTAGE'
-              ? {
-                  estimateLineItemId: li.id,
-                  progressBillMode: 'GLOBAL_PCT' as const,
-                  progressCustom: String(safePct),
-                  baseUnitPrice: li.unitPrice.toString(),
-                }
-              : {}),
-          })
+          if (effectiveMode === 'PERCENTAGE') {
+            const { unitPrice: unitPriceStr, mode: resolvedMode, customPct } = calcScaledUnit(li, baseUp)
+            const progressBillMode: LineItem['progressBillMode'] =
+              resolvedMode === 'FULL' ? 'FULL'
+              : resolvedMode === 'CUSTOM_PCT' ? 'CUSTOM_PCT'
+              : resolvedMode === 'CUSTOM_AMT' ? 'CUSTOM_AMT'
+              : 'GLOBAL_PCT'
+
+            mappedItems.push({
+              id: li.id,
+              description: li.description,
+              quantity: li.quantity.toString(),
+              unitPrice: unitPriceStr,
+              unitCost: li.unitCost ? li.unitCost.toString() : undefined,
+              notes: li.notes || undefined,
+              vendorId: li.vendorId || undefined,
+              vendorName: li.vendorName || undefined,
+              taxable: li.taxable ?? true,
+              taxRate: li.taxRate ? (parseFloat(li.taxRate) * 100).toString() : undefined,
+              isVisibleToClient: li.isVisibleToClient ?? true,
+              showDescriptionToCustomer: li.showDescriptionToCustomer ?? true,
+              showCostToCustomer: li.showCostToCustomer ?? false,
+              showPriceToCustomer: li.showPriceToCustomer ?? true,
+              showTaxToCustomer: li.showTaxToCustomer ?? true,
+              showNotesToCustomer: li.showNotesToCustomer ?? false,
+              groupId: li.groupId || undefined,
+              sourceItemId: li.sourceItemId || undefined,
+              sourceBundleId: li.sourceBundleId || undefined,
+              estimateLineItemId: li.id,
+              progressBillMode,
+              progressCustom: String(customPct),
+              baseUnitPrice: li.unitPrice.toString(),
+            })
+          } else {
+            mappedItems.push({
+              id: li.id,
+              description: li.description,
+              quantity: li.quantity.toString(),
+              unitPrice: li.unitPrice.toString(),
+              unitCost: li.unitCost ? li.unitCost.toString() : undefined,
+              notes: li.notes || undefined,
+              vendorId: li.vendorId || undefined,
+              vendorName: li.vendorName || undefined,
+              taxable: li.taxable ?? true,
+              taxRate: li.taxRate ? (parseFloat(li.taxRate) * 100).toString() : undefined,
+              isVisibleToClient: li.isVisibleToClient ?? true,
+              showDescriptionToCustomer: li.showDescriptionToCustomer ?? true,
+              showCostToCustomer: li.showCostToCustomer ?? false,
+              showPriceToCustomer: li.showPriceToCustomer ?? true,
+              showTaxToCustomer: li.showTaxToCustomer ?? true,
+              showNotesToCustomer: li.showNotesToCustomer ?? false,
+              groupId: li.groupId || undefined,
+              sourceItemId: li.sourceItemId || undefined,
+              sourceBundleId: li.sourceBundleId || undefined,
+            })
+          }
         })
 
         if (mappedItems.length > 0) {

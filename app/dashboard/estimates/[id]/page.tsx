@@ -141,6 +141,23 @@ export default function EstimateDetailPage() {
   const [billingMode, setBillingMode] = useState<'FULL' | 'PERCENTAGE' | 'MANUAL'>('FULL')
   const [billingPercent, setBillingPercent] = useState('50')
   const [selectedLineItemIds, setSelectedLineItemIds] = useState<string[]>([])
+
+  type PerItemMode = 'GLOBAL_PCT' | 'FULL' | 'CUSTOM_PCT' | 'CUSTOM_AMT'
+  interface PerItemBilling { mode: PerItemMode; percent?: string; amount?: string }
+  const [lineItemBillings, setLineItemBillings] = useState<Record<string, PerItemBilling>>({})
+
+  const setItemBilling = (id: string, patch: Partial<PerItemBilling>) =>
+    setLineItemBillings((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }))
+
+  const calcLinePreview = (li: { id: string; total: string }, globalPct: number): number => {
+    const base = Number(li.total)
+    const b = lineItemBillings[li.id]
+    if (!b || b.mode === 'GLOBAL_PCT') return base * (globalPct / 100)
+    if (b.mode === 'FULL') return base
+    if (b.mode === 'CUSTOM_PCT') return base * (Number(b.percent || 0) / 100)
+    if (b.mode === 'CUSTOM_AMT') return Number(b.amount || 0)
+    return base * (globalPct / 100)
+  }
   const [sending, setSending] = useState(false)
   const [showSendModal, setShowSendModal] = useState(false)
   const [sendTo, setSendTo] = useState('')
@@ -415,10 +432,15 @@ export default function EstimateDetailPage() {
 
   const handleOpenConvertToInvoice = () => {
     if (!estimate) return
-    // Bring back the progress billing modal; invoice is only created after the user saves the draft.
     setBillingMode('FULL')
     setBillingPercent('50')
     setSelectedLineItemIds(estimate.lineItems.map((li) => li.id))
+    // Initialise every non-subtotal line item to the global percentage mode
+    const initial: Record<string, PerItemBilling> = {}
+    for (const li of estimate.lineItems) {
+      if (!li.isSubtotal) initial[li.id] = { mode: 'GLOBAL_PCT' }
+    }
+    setLineItemBillings(initial)
     setShowBillingModal(true)
   }
 
@@ -440,7 +462,17 @@ export default function EstimateDetailPage() {
         return
       }
 
-      // Business rule: do NOT create/convert immediately. Open a draft invoice prefilled from this estimate.
+      // Persist per-item billing overrides so the invoice new page can read them
+      if (mode === 'PERCENTAGE') {
+        try {
+          sessionStorage.setItem(
+            `estimate-convert-billings-${estimate.id}`,
+            JSON.stringify(lineItemBillings)
+          )
+        } catch (_) {}
+      }
+
+      // Open a draft invoice prefilled from this estimate
       const qs = new URLSearchParams()
       qs.set('estimateId', estimate.id)
       qs.set('billingMode', mode)
@@ -1290,63 +1322,144 @@ export default function EstimateDetailPage() {
       )}
 
       <Dialog open={showBillingModal} onOpenChange={setShowBillingModal}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col">
           <DialogHeader>
             <DialogTitle>Create Invoice from Estimate</DialogTitle>
             <DialogDescription>
-              Choose how much to bill now. All currency calculations are handled precisely.
+              Choose how much to bill now. Per-item overrides let you mix percentages on the same invoice.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <input
-                type="radio"
-                id="bill-full"
-                checked={billingMode === 'FULL'}
-                onChange={() => setBillingMode('FULL')}
-              />
-              <Label htmlFor="bill-full">Full Amount (100%)</Label>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                type="radio"
-                id="bill-percentage"
-                checked={billingMode === 'PERCENTAGE'}
-                onChange={() => setBillingMode('PERCENTAGE')}
-              />
-              <Label htmlFor="bill-percentage">Percentage</Label>
-              <Input
-                className="w-28"
-                type="number"
-                min={1}
-                max={100}
-                step={0.01}
-                value={billingPercent}
-                onChange={(e) => setBillingPercent(e.target.value)}
-                disabled={billingMode !== 'PERCENTAGE'}
-              />
-              <span className="text-sm text-gray-600">%</span>
-              {billingMode === 'PERCENTAGE' && (() => {
-                const pct = Number(billingPercent || 0)
-                const estimateTotal = Number(estimate?.total || 0)
-                if (pct > 0 && pct <= 100 && estimateTotal > 0) {
-                  const invoiceAmt = (estimateTotal * pct / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
-                  return <span className="text-sm font-semibold text-green-700">&rarr; Invoice for {invoiceAmt}</span>
-                }
-                return null
-              })()}
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="radio"
-                id="bill-manual"
-                checked={billingMode === 'MANUAL'}
-                onChange={() => setBillingMode('MANUAL')}
-              />
-              <Label htmlFor="bill-manual">Manual Selection (Line Items)</Label>
+          <div className="flex-1 space-y-4 overflow-y-auto pr-1">
+            {/* ── Billing mode selector ── */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <input type="radio" id="bill-full" checked={billingMode === 'FULL'} onChange={() => setBillingMode('FULL')} />
+                <Label htmlFor="bill-full">Full Amount (100%)</Label>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <input type="radio" id="bill-percentage" checked={billingMode === 'PERCENTAGE'} onChange={() => setBillingMode('PERCENTAGE')} />
+                <Label htmlFor="bill-percentage">Percentage</Label>
+                <Input
+                  className="w-24"
+                  type="number"
+                  min={1}
+                  max={100}
+                  step={1}
+                  value={billingPercent}
+                  onChange={(e) => setBillingPercent(e.target.value)}
+                  disabled={billingMode !== 'PERCENTAGE'}
+                />
+                <span className="text-sm text-gray-600">% (default — override per item below)</span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input type="radio" id="bill-manual" checked={billingMode === 'MANUAL'} onChange={() => setBillingMode('MANUAL')} />
+                <Label htmlFor="bill-manual">Manual Selection (Line Items)</Label>
+              </div>
             </div>
 
+            {/* ── PERCENTAGE: per-item controls ── */}
+            {billingMode === 'PERCENTAGE' && estimate && (() => {
+              const globalPct = Math.max(0, Math.min(100, Number(billingPercent || 50)))
+              const billableLines = estimate.lineItems.filter((li) => !li.isSubtotal)
+              const invoiceTotal = billableLines.reduce((sum, li) => sum + calcLinePreview(li, globalPct), 0)
+
+              return (
+                <div className="space-y-2 rounded-lg border bg-gray-50 p-3">
+                  <div className="mb-1 flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    <span>Line item</span>
+                    <span>Est. total → Invoice</span>
+                  </div>
+
+                  {billableLines.map((li) => {
+                    const b = lineItemBillings[li.id] || { mode: 'GLOBAL_PCT' as PerItemMode }
+                    const preview = calcLinePreview(li, globalPct)
+                    const baseTotal = Number(li.total)
+
+                    return (
+                      <div key={li.id} className="rounded border bg-white p-2 space-y-2">
+                        {/* Description + totals row */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-medium">{li.description || '—'}</div>
+                            <div className="text-xs text-gray-400">Qty {li.quantity} × ${Number(li.unitPrice).toFixed(2)}</div>
+                          </div>
+                          <div className="shrink-0 text-right text-sm">
+                            <span className="text-gray-400">${baseTotal.toFixed(2)}</span>
+                            <span className="mx-1 text-gray-300">→</span>
+                            <span className="font-semibold text-green-700">${preview.toFixed(2)}</span>
+                          </div>
+                        </div>
+
+                        {/* Mode buttons */}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {([
+                            { label: `${globalPct}% (default)`, value: 'GLOBAL_PCT' },
+                            { label: '100%', value: 'FULL' },
+                            { label: 'Custom %', value: 'CUSTOM_PCT' },
+                            { label: 'Custom $', value: 'CUSTOM_AMT' },
+                          ] as { label: string; value: PerItemMode }[]).map(({ label, value }) => (
+                            <button
+                              key={value}
+                              type="button"
+                              onClick={() => setItemBilling(li.id, { mode: value })}
+                              className={`rounded px-2 py-0.5 text-xs font-medium border transition-colors ${
+                                b.mode === value
+                                  ? 'bg-blue-600 text-white border-blue-600'
+                                  : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+
+                          {b.mode === 'CUSTOM_PCT' && (
+                            <div className="flex items-center gap-1">
+                              <Input
+                                className="h-6 w-20 text-xs"
+                                type="number"
+                                min={0}
+                                max={100}
+                                step={1}
+                                placeholder="e.g. 75"
+                                value={b.percent ?? ''}
+                                onChange={(e) => setItemBilling(li.id, { percent: e.target.value })}
+                              />
+                              <span className="text-xs text-gray-500">%</span>
+                            </div>
+                          )}
+                          {b.mode === 'CUSTOM_AMT' && (
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-gray-500">$</span>
+                              <Input
+                                className="h-6 w-24 text-xs"
+                                type="number"
+                                min={0}
+                                step={0.01}
+                                placeholder="e.g. 500"
+                                value={b.amount ?? ''}
+                                onChange={(e) => setItemBilling(li.id, { amount: e.target.value })}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+
+                  <div className="flex items-center justify-between border-t pt-2 text-sm font-semibold">
+                    <span>Invoice total</span>
+                    <span className="text-green-700">
+                      {invoiceTotal.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+                    </span>
+                  </div>
+                </div>
+              )
+            })()}
+
+            {/* ── MANUAL: checkbox selection ── */}
             {billingMode === 'MANUAL' && (
               <div className="max-h-64 space-y-2 overflow-auto rounded border p-3">
                 {estimate?.lineItems.map((li) => (
@@ -1354,18 +1467,18 @@ export default function EstimateDetailPage() {
                     <div className="text-sm">
                       <div className="font-medium">{li.description}</div>
                       <div className="text-gray-500">
-                        Qty {li.quantity}{' \u2022 '}${Number(li.unitPrice).toFixed(2)}
+                        Qty {li.quantity}{' • '}${Number(li.unitPrice).toFixed(2)}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-semibold">${Number(li.total).toFixed(2)}</span>
                       <Checkbox
                         checked={selectedLineItemIds.includes(li.id)}
-                        onCheckedChange={(checked) => {
+                        onCheckedChange={(checked) =>
                           setSelectedLineItemIds((prev) =>
                             checked ? [...prev, li.id] : prev.filter((id) => id !== li.id)
                           )
-                        }}
+                        }
                       />
                     </div>
                   </div>
@@ -1374,7 +1487,7 @@ export default function EstimateDetailPage() {
             )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="border-t pt-3">
             <Button variant="outline" onClick={() => setShowBillingModal(false)}>
               Cancel
             </Button>
