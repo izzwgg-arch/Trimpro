@@ -1,6 +1,7 @@
 export const MAX_IMAGE_FILE_BYTES = 15 * 1024 * 1024
-export const MAX_VIDEO_FILE_BYTES = 200 * 1024 * 1024
-export const MAX_DOCUMENT_FILE_BYTES = 25 * 1024 * 1024
+export const MAX_VIDEO_FILE_BYTES = 1024 * 1024 * 1024
+export const MAX_DOCUMENT_FILE_BYTES = 1024 * 1024 * 1024
+export const MAX_AUDIO_FILE_BYTES = 1024 * 1024 * 1024
 
 export const ALLOWED_DOCUMENT_MIME_TYPES = new Set([
   'application/pdf',
@@ -157,7 +158,7 @@ export function getMaxBytesForMimeType(mimeType: string, fileName?: string | nul
   const normalized = resolveUploadMimeType(mimeType, fileName)
   if (ALLOWED_IMAGE_MIME_TYPES.has(normalized)) return MAX_IMAGE_FILE_BYTES
   if (ALLOWED_VIDEO_MIME_TYPES.has(normalized)) return MAX_VIDEO_FILE_BYTES
-  if (ALLOWED_AUDIO_MIME_TYPES.has(normalized)) return MAX_DOCUMENT_FILE_BYTES
+  if (ALLOWED_AUDIO_MIME_TYPES.has(normalized)) return MAX_AUDIO_FILE_BYTES
   return MAX_DOCUMENT_FILE_BYTES
 }
 

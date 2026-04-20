@@ -38,7 +38,15 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       where: { estimateId: estimate.id },
       select: { id: true, description: true, quantity: true, unitPrice: true, total: true },
     })
-    const itemMap = new Map(lineItems.map((li) => [li.id, li]))
+    // Also look up optional items so approvals on add-ons show their descriptions
+    const optionalLineItems = await prisma.estimateOptionalLineItem.findMany({
+      where: { estimateId: estimate.id },
+      select: { id: true, description: true, quantity: true, unitPrice: true, total: true },
+    })
+    const itemMap = new Map([
+      ...lineItems.map((li) => [li.id, { ...li, isOptional: false }] as const),
+      ...optionalLineItems.map((li) => [li.id, { ...li, isOptional: true }] as const),
+    ])
 
     const sources = await prisma.invoiceLineItemSource.findMany({
       where: { tenantId: user.tenantId, estimateId: estimate.id },
@@ -57,6 +65,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       approvals: approvals.map((a) => ({
         ...a,
         item: itemMap.get(a.estimateLineItemId) || null,
+        isOptionalItem: optionalLineItems.some((li) => li.id === a.estimateLineItemId),
       })),
       invoiceHistory: sources.map((s) => ({
         ...s,

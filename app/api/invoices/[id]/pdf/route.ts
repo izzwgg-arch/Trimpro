@@ -90,17 +90,54 @@ export async function GET(
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
     }
 
-    const subtotal = invoice.lineItems.reduce((sum, item) => {
-      return sum + Number(item.quantity) * Number(item.unitPrice)
-    }, 0)
+    const visibleRegularItems = invoice.lineItems.filter((item) => item.isVisibleToClient !== false)
     const visibleOptionalItems = invoice.optionalItems.filter((item) => item.isVisibleToClient !== false)
-    const optionalSubtotal = visibleOptionalItems.reduce((sum, item) => {
+    // Merge optional items into the main items — all items on an invoice are being billed
+    const visibleLineItems = [...visibleRegularItems, ...visibleOptionalItems]
+    const subtotal = visibleLineItems.reduce((sum, item) => {
       return sum + Number(item.quantity) * Number(item.unitPrice)
     }, 0)
+    const optionalSubtotal = 0 // No longer shown separately — merged into main total
+
+    // Column visibility — respect per-field flags so admin PDF matches customer view
+    const showNameCol = visibleLineItems.some((li) => li.showDescriptionToCustomer !== false) ||
+      visibleOptionalItems.some((li) => li.showDescriptionToCustomer !== false)
+    const showNotesCol = visibleLineItems.some((li) => li.showNotesToCustomer !== false) ||
+      visibleOptionalItems.some((li) => li.showNotesToCustomer !== false)
+    const showCostCol = visibleLineItems.some((li) => li.showCostToCustomer === true) ||
+      visibleOptionalItems.some((li) => li.showCostToCustomer === true)
+    const showPriceCol = visibleLineItems.some((li) => li.showPriceToCustomer !== false) ||
+      visibleOptionalItems.some((li) => li.showPriceToCustomer !== false)
+
+    const buildRow = (item: typeof visibleLineItems[0]) => {
+      const nameCell = item.showDescriptionToCustomer !== false ? escapeHtml(item.description) : ''
+      const notesCell = item.showNotesToCustomer !== false ? escapeHtml(item.notes || '') : ''
+      const costCell = item.showCostToCustomer === true ? `$${Number((item as any).unitCost || 0).toFixed(2)}` : ''
+      const priceCell = item.showPriceToCustomer !== false ? `$${Number(item.unitPrice).toFixed(2)}` : ''
+      return `<tr>
+        ${showNameCol ? `<td>${nameCell}</td>` : ''}
+        ${showNotesCol ? `<td>${notesCell}</td>` : ''}
+        <td class="text-right">${Number(item.quantity).toFixed(2)}</td>
+        ${showCostCol ? `<td class="text-right">${costCell}</td>` : ''}
+        ${showPriceCol ? `<td class="text-right">${priceCell}</td>` : ''}
+        <td class="text-right">$${Number(item.total).toFixed(2)}</td>
+      </tr>`
+    }
+
+    const tableHeader = `<tr>
+      ${showNameCol ? '<th>Item</th>' : ''}
+      ${showNotesCol ? '<th>Description</th>' : ''}
+      <th class="text-right">Qty</th>
+      ${showCostCol ? '<th class="text-right">Cost</th>' : ''}
+      ${showPriceCol ? '<th class="text-right">Unit Price</th>' : ''}
+      <th class="text-right">Total</th>
+    </tr>`
+
     const discount = Number(invoice.discount || 0)
     const tax = Number(invoice.taxAmount || 0)
-    const total = Number(invoice.total || 0)
-    const balance = Number(invoice.balance || 0)
+    const optItemsSubtotal = visibleOptionalItems.reduce((sum, item) => sum + Number(item.quantity) * Number(item.unitPrice), 0)
+    const total = Number(invoice.total || 0) + optItemsSubtotal
+    const balance = Number(invoice.balance || 0) + optItemsSubtotal
     const paid = Number(invoice.paidAmount || 0)
     const showNotes = invoice.isNotesVisibleToClient !== false && Boolean(invoice.notes)
     const generatedAt = new Date().toLocaleString()
@@ -313,67 +350,14 @@ export async function GET(
             </div>
 
             <table>
-              <thead>
-                <tr>
-                  <th>Item</th>
-                  <th>Description</th>
-                  <th class="text-right">Qty</th>
-                  <th class="text-right">Unit Price</th>
-                  <th class="text-right">Total</th>
-                </tr>
-              </thead>
+              <thead>${tableHeader}</thead>
               <tbody>
-                ${invoice.lineItems.map((item) => `
-                  <tr>
-                    <td>${escapeHtml(item.description)}</td>
-                    <td>${escapeHtml(item.showDescriptionToCustomer === false ? '' : (item.notes || ''))}</td>
-                    <td class="text-right">${Number(item.quantity).toFixed(2)}</td>
-                    <td class="text-right">$${Number(item.unitPrice).toFixed(2)}</td>
-                    <td class="text-right">$${Number(item.total).toFixed(2)}</td>
-                  </tr>
-                `).join('')}
+                ${visibleLineItems.length === 0
+                  ? `<tr><td colspan="6" class="muted">No visible items</td></tr>`
+                  : visibleLineItems.map(buildRow).join('')}
               </tbody>
             </table>
 
-            ${
-              visibleOptionalItems.length > 0
-                ? `
-                  <div class="section">
-                    <h3>Optional Items</h3>
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Item</th>
-                          <th>Description</th>
-                          <th class="text-right">Qty</th>
-                          <th class="text-right">Unit</th>
-                          <th class="text-right">Total</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        ${visibleOptionalItems
-                          .map(
-                            (item) => `
-                              <tr>
-                                <td>${escapeHtml(item.description)}</td>
-                                <td>${escapeHtml(item.showDescriptionToCustomer === false ? '' : (item.notes || ''))}</td>
-                                <td class="text-right">${Number(item.quantity).toFixed(2)}</td>
-                                <td class="text-right">$${Number(item.unitPrice).toFixed(2)}</td>
-                                <td class="text-right">$${Number(item.total).toFixed(2)}</td>
-                              </tr>
-                            `
-                          )
-                          .join('')}
-                      </tbody>
-                    </table>
-                    <div class="summary" style="margin-top:12px; width: 320px;">
-                      <h4>Optional Subtotal</h4>
-                      <div class="summary-row total"><span>Optional Items</span><span>$${optionalSubtotal.toFixed(2)}</span></div>
-                    </div>
-                  </div>
-                `
-                : ''
-            }
 
             <div class="summary">
               <h4>Summary</h4>

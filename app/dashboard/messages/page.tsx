@@ -283,6 +283,14 @@ function AttachmentItem({ att, isMine }: { att: MsgAttachment; isMine: boolean }
       <div className={`flex items-center gap-2 px-3 py-2 rounded-2xl mb-1 ${isMine ? 'bg-blue-500' : 'bg-gray-200'}`}>
         <svg className={`w-4 h-4 flex-shrink-0 ${isMine ? 'text-white' : 'text-gray-500'}`} fill="currentColor" viewBox="0 0 24 24"><path d="M12 3a9 9 0 110 18A9 9 0 0112 3zm0 2a7 7 0 100 14A7 7 0 0012 5zm-1 4h2v6h-2V9zM10 9a1 1 0 11-2 0 1 1 0 012 0zm6 0a1 1 0 11-2 0 1 1 0 012 0z"/></svg>
         <audio controls src={src} preload="metadata" className="h-7 w-40 opacity-90" />
+        <a
+          href={src}
+          target="_blank"
+          rel="noreferrer"
+          className={`text-[10px] underline ${isMine ? 'text-blue-100' : 'text-gray-500'}`}
+        >
+          Open
+        </a>
         {att.durationMs && (
           <span className={`text-[10px] flex-shrink-0 ${isMine ? 'text-blue-100' : 'text-gray-500'}`}>
             {Math.round(att.durationMs / 1000)}s
@@ -420,7 +428,7 @@ function Composer({
             }
           }
           await new Promise((r) => setTimeout(r, 80))
-          const blobType = rec.mimeType && rec.mimeType.includes('webm') ? rec.mimeType : 'audio/webm'
+          const blobType = rec.mimeType || 'audio/webm'
           const blob = new Blob(chunksRef.current, { type: blobType })
           if (!blob.size) {
             alert('Recording was empty. Try again and speak closer to the mic.')
@@ -529,8 +537,7 @@ function Composer({
           <button
             type="button"
             title="Record voice note"
-            onMouseDown={startRecording}
-            onTouchStart={startRecording}
+            onClick={startRecording}
             disabled={disabled}
             className="h-9 w-9 rounded-xl flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors flex-shrink-0"
           >

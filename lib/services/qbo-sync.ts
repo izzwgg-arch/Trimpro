@@ -92,6 +92,31 @@ async function logSync(params: {
   })
 }
 
+const QBO_SESSION_UNAVAILABLE_MSG =
+  'QuickBooks session unavailable (not connected, missing realm, or token refresh failed). Reconnect in Settings → Integrations.'
+
+/** When getQboSession returns null, record why document sync did not run (avoids silent no-ops). */
+async function logQboSessionUnavailable(
+  tenantId: string,
+  type: SyncType,
+  entityId: string,
+  message: string = QBO_SESSION_UNAVAILABLE_MSG
+) {
+  const integration = await prisma.quickBooksIntegration.findUnique({
+    where: { tenantId },
+    select: { id: true },
+  })
+  if (!integration?.id) return
+  await logSync({
+    integrationId: integration.id,
+    type,
+    action: 'skip',
+    status: 'error',
+    entityId,
+    error: message,
+  })
+}
+
 async function getQboSession(tenantId: string) {
   const integration = await prisma.quickBooksIntegration.findUnique({ where: { tenantId } })
   if (!integration || !integration.isConnected || !integration.realmId) return null
@@ -1176,6 +1201,25 @@ async function ensureClientCustomer(params: {
   })
   if (!client) return null
 
+  // If this is a sub-client, ensure the parent is synced to QBO first so we
+  // can set ParentRef on the child customer.
+  let parentQboId: string | null = null
+  if (client.parentId) {
+    parentQboId = await ensureClientCustomer({
+      tenantId: params.tenantId,
+      clientId: client.parentId,
+      accessToken: params.accessToken,
+      realmId: params.realmId,
+      integrationId: params.integrationId,
+      createIfMissing: true,
+    })
+    if (!parentQboId) {
+      throw new Error(
+        'Cannot sync sub-client to QuickBooks: parent client is not linked to a QuickBooks customer yet. Open the parent client, save or sync to QuickBooks, then retry.'
+      )
+    }
+  }
+
   const mappedId = await getMappedQboId(params.integrationId, 'client', client.id)
   const createIfMissing = params.createIfMissing !== false
   const billing = client.addresses?.[0]
@@ -1195,6 +1239,17 @@ async function ensureClientCustomer(params: {
           Country: billing.country || 'US',
         }
       : undefined,
+    // Nested under parent in QBO: Intuit requires ParentRef + Job=true (see API / StackOverflow).
+    // Do NOT set IsSubCustomer together with Job — that combination often returns Business Validation Error.
+    // BillWithParent matches our working ensureProjectCustomer() pattern.
+    ...(parentQboId
+      ? {
+          ParentRef: { value: parentQboId },
+          Job: true,
+          BillWithParent: true,
+          FullyQualifiedName: client.name,
+        }
+      : {}),
   }
 
   // Hash the fields that matter to QBO.  If the hash matches the last
@@ -1210,6 +1265,7 @@ async function ensureClientCustomer(params: {
       billing: billing
         ? `${billing.street}|${billing.city}|${billing.state}|${billing.zipCode}`
         : null,
+      parentQboId: parentQboId || null,
     }))
     .digest('hex')
     .slice(0, 16)
@@ -1268,26 +1324,31 @@ async function ensureClientCustomer(params: {
       qboId: mappedId,
       error: error?.message || 'QuickBooks customer update failed',
     })
+    throw error
   }
 
-  // Try to link by DisplayName without creating duplicates.
-  const candidates = Array.from(
-    new Set([client.name, client.companyName].map((v) => String(v || '').trim()).filter(Boolean))
-  )
-  for (const candidate of candidates) {
-    const existing = await findCustomerByDisplayName(params.accessToken, params.realmId, candidate)
-    if (existing?.Id) {
-      const qboId = String(existing.Id)
-      await logSync({
-        integrationId: params.integrationId,
-        type: 'client',
-        action: 'link',
-        status: 'success',
-        entityId: client.id,
-        qboId,
-        data: { matchedDisplayName: candidate },
-      })
-      return qboId
+  // Try to link root clients by DisplayName without creating duplicates.
+  // Never do this for TrimPro sub-clients: they must be created under ParentRef in QBO, and
+  // name-based matches often point at unrelated top-level customers.
+  if (!client.parentId) {
+    const candidates = Array.from(
+      new Set([client.name, client.companyName].map((v) => String(v || '').trim()).filter(Boolean))
+    )
+    for (const candidate of candidates) {
+      const existing = await findCustomerByDisplayName(params.accessToken, params.realmId, candidate)
+      if (existing?.Id) {
+        const qboId = String(existing.Id)
+        await logSync({
+          integrationId: params.integrationId,
+          type: 'client',
+          action: 'link',
+          status: 'success',
+          entityId: client.id,
+          qboId,
+          data: { matchedDisplayName: candidate },
+        })
+        return qboId
+      }
     }
   }
 
@@ -1304,7 +1365,36 @@ async function ensureClientCustomer(params: {
     return null
   }
 
-  const created = await quickBooksService.createCustomer(params.accessToken, params.realmId, payload)
+  let created: any
+  if (!parentQboId) {
+    created = await quickBooksService.createCustomer(params.accessToken, params.realmId, payload)
+  } else {
+    try {
+      created = await quickBooksService.createCustomer(params.accessToken, params.realmId, payload)
+    } catch {
+      try {
+        const jobStyle: any = {
+          DisplayName: client.name,
+          FullyQualifiedName: client.name,
+          ParentRef: { value: parentQboId },
+          Job: true,
+          BillWithParent: true,
+        }
+        if (primaryEmail) jobStyle.PrimaryEmailAddr = { Address: primaryEmail }
+        if (client.phone) jobStyle.PrimaryPhone = { FreeFormNumber: client.phone }
+        created = await quickBooksService.createCustomer(params.accessToken, params.realmId, jobStyle)
+      } catch {
+        const isSubOnly: any = {
+          DisplayName: client.name,
+          ParentRef: { value: parentQboId },
+          IsSubCustomer: true,
+        }
+        if (primaryEmail) isSubOnly.PrimaryEmailAddr = { Address: primaryEmail }
+        if (client.phone) isSubOnly.PrimaryPhone = { FreeFormNumber: client.phone }
+        created = await quickBooksService.createCustomer(params.accessToken, params.realmId, isSubOnly)
+      }
+    }
+  }
   const qboId = String(created?.Customer?.Id || '')
   if (!qboId) throw new Error('QuickBooks did not return customer id')
   await logSync({
@@ -1368,7 +1458,10 @@ async function ensureProjectCustomer(params: {
 
 export async function syncClientToQuickBooks(tenantId: string, clientId: string) {
   const session = await getQboSession(tenantId)
-  if (!session) return
+  if (!session) {
+    await logQboSessionUnavailable(tenantId, 'client', clientId)
+    throw new Error(QBO_SESSION_UNAVAILABLE_MSG)
+  }
   try {
     await ensureClientCustomer({
       tenantId,
@@ -1387,6 +1480,7 @@ export async function syncClientToQuickBooks(tenantId: string, clientId: string)
       entityId: clientId,
       error: error?.message || 'QuickBooks client sync failed',
     })
+    throw error
   }
 }
 
@@ -1503,7 +1597,10 @@ export async function syncJobToQuickBooksProject(tenantId: string, jobId: string
 
 export async function syncEstimateToQuickBooks(tenantId: string, estimateId: string) {
   const session = await getQboSession(tenantId)
-  if (!session) return
+  if (!session) {
+    await logQboSessionUnavailable(tenantId, 'estimate', estimateId)
+    return
+  }
   try {
     const estimate = await prisma.estimate.findFirst({
       where: { id: estimateId, tenantId },
@@ -1516,38 +1613,22 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
     })
     if (!estimate?.clientId) return
 
-    let customerQboId = await ensureClientCustomer({
+    // Always push/link the client first. syncClientToQuickBooks rethrows on failure so we never
+    // continue with a missing QB customer after a failed client sync (previously errors were swallowed).
+    await syncClientToQuickBooks(tenantId, estimate.clientId)
+    const customerQboId = await ensureClientCustomer({
       tenantId,
       clientId: estimate.clientId,
       accessToken: session.accessToken,
       realmId: session.realmId,
       integrationId: session.integrationId,
-      // Strict flow: only create QBO customers when we explicitly create a new client in TrimPro
-      // (Clients page or "New Client" request). For existing clients, we link by name; no create.
       createIfMissing: false,
     })
     if (!customerQboId) {
-      // Best-effort: if this looks like a newly created client (very recent), try syncing the client
-      // first (which is allowed for "new client" flow) and then re-attempt link-only resolution.
-      const clientCreatedAt = (estimate as any)?.client?.createdAt
-      const estimateCreatedAt = estimate.createdAt
-      const isLikelyNewClient =
-        clientCreatedAt instanceof Date &&
-        Math.abs(estimateCreatedAt.getTime() - clientCreatedAt.getTime()) < 10 * 60 * 1000
-
-      if (isLikelyNewClient) {
-        await syncClientToQuickBooks(tenantId, estimate.clientId)
-        customerQboId = await ensureClientCustomer({
-          tenantId,
-          clientId: estimate.clientId,
-          accessToken: session.accessToken,
-          realmId: session.realmId,
-          integrationId: session.integrationId,
-          createIfMissing: false,
-        })
-      }
+      throw new Error(
+        'QuickBooks estimate sync skipped: this client is not linked to a QuickBooks customer after sync. Check QuickBooks connection and sync/import the client, then retry.'
+      )
     }
-    if (!customerQboId) return
 
     const existingQboId = await getMappedQboId(session.integrationId, 'estimate', estimate.id)
 
@@ -1673,7 +1754,10 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
 
 export async function syncInvoiceToQuickBooks(tenantId: string, invoiceId: string) {
   const session = await getQboSession(tenantId)
-  if (!session) return
+  if (!session) {
+    await logQboSessionUnavailable(tenantId, 'invoice', invoiceId)
+    return
+  }
   try {
     const invoice = await prisma.invoice.findFirst({
       where: { id: invoiceId, tenantId },
@@ -1686,34 +1770,20 @@ export async function syncInvoiceToQuickBooks(tenantId: string, invoiceId: strin
     })
     if (!invoice?.clientId) return
 
-    let customerQboId = await ensureClientCustomer({
+    await syncClientToQuickBooks(tenantId, invoice.clientId)
+    const customerQboId = await ensureClientCustomer({
       tenantId,
       clientId: invoice.clientId,
       accessToken: session.accessToken,
       realmId: session.realmId,
       integrationId: session.integrationId,
-      // Strict flow: do not create new QBO customers for existing clients as a side-effect of invoice sync.
       createIfMissing: false,
     })
     if (!customerQboId) {
-      const clientCreatedAt = (invoice as any)?.client?.createdAt
-      const invoiceCreatedAt = invoice.createdAt
-      const isLikelyNewClient =
-        clientCreatedAt instanceof Date &&
-        Math.abs(invoiceCreatedAt.getTime() - clientCreatedAt.getTime()) < 10 * 60 * 1000
-      if (isLikelyNewClient) {
-        await syncClientToQuickBooks(tenantId, invoice.clientId)
-        customerQboId = await ensureClientCustomer({
-          tenantId,
-          clientId: invoice.clientId,
-          accessToken: session.accessToken,
-          realmId: session.realmId,
-          integrationId: session.integrationId,
-          createIfMissing: false,
-        })
-      }
+      throw new Error(
+        'QuickBooks invoice sync skipped: this client is not linked to a QuickBooks customer after sync. Check QuickBooks connection and sync/import the client, then retry.'
+      )
     }
-    if (!customerQboId) return
 
     const serviceItemId = await ensureDefaultServiceItem({
       accessToken: session.accessToken,
@@ -2242,6 +2312,11 @@ export async function importQuickBooksCustomersAndPayments(
   let skippedExistingClients = 0
   let importedOpenInvoices = 0
   let skippedOpenInvoices = 0
+  let reassignedInvoices = 0
+  /** QuickBooks invoices with Balance > 0 seen while open-invoice import ran */
+  let qboOpenInvoicesScanned = 0
+  /** Those invoices already had a TrimPro row (matched by qboSyncId) */
+  let openInvoicesAlreadyInTrimPro = 0
   let importedPayments = 0
   let skippedPayments = 0
   let importedItems = 0
@@ -2252,37 +2327,96 @@ export async function importQuickBooksCustomersAndPayments(
   const qboCustomerIdToLocalClientId = new Map<string, string>()
   const pendingParentLinks: Array<{ childLocalId: string; parentQboId: string }> = []
 
-  const existingClientMaps = await prisma.quickBooksSyncLog.findMany({
-    where: {
-      integrationId: session.integrationId,
-      type: 'client',
-      status: 'success',
-      qboId: { not: null },
-      entityId: { not: null },
-    },
-    select: { qboId: true, entityId: true, createdAt: true },
-    orderBy: { createdAt: 'asc' },
-  })
-  // Filter out stale mappings (e.g., after a factory reset that wiped clients but preserved sync logs).
-  const mappedClientIds = Array.from(
-    new Set(existingClientMaps.map((r) => (r.entityId ? String(r.entityId) : null)).filter(Boolean) as string[])
-  )
-  const existingClients = mappedClientIds.length
-    ? await prisma.client.findMany({
-        where: { tenantId, id: { in: mappedClientIds } },
-        select: { id: true },
-      })
-    : []
-  const existingClientIdSet = new Set(existingClients.map((c) => c.id))
-  const claimedLocalClientIds = new Set<string>()
+  // Load QBO→TrimPro client mappings from the sync log. Prefer sub-client over parent when both
+  // exist for the same QBO customer ID. Rebuilt again after the live QBO customer import loop so
+  // `getReusableMappedClientId` cannot leave the map pointing at a merged parent instead of the
+  // dedicated sub-client row.
+  const refreshQboCustomerIdMapFromSyncLog = async () => {
+    qboCustomerIdToLocalClientId.clear()
+    const existingClientMaps = await prisma.quickBooksSyncLog.findMany({
+      where: {
+        integrationId: session.integrationId,
+        type: 'client',
+        status: 'success',
+        qboId: { not: null },
+        entityId: { not: null },
+      },
+      select: { qboId: true, entityId: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+    })
+    const mappedClientIds = Array.from(
+      new Set(existingClientMaps.map((r) => (r.entityId ? String(r.entityId) : null)).filter(Boolean) as string[]),
+    )
+    const existingClients = mappedClientIds.length
+      ? await prisma.client.findMany({
+          where: { tenantId, id: { in: mappedClientIds } },
+          select: { id: true, parentId: true },
+        })
+      : []
+    const existingClientIdSet = new Set(existingClients.map((c) => c.id))
+    const parentIdByClientId = new Map(existingClients.map((c) => [c.id, c.parentId]))
 
-  for (const row of existingClientMaps) {
-    if (!row.qboId || !row.entityId) continue
-    const localId = String(row.entityId)
-    if (!existingClientIdSet.has(localId)) continue
-    if (claimedLocalClientIds.has(localId)) continue
-    claimedLocalClientIds.add(localId)
-    qboCustomerIdToLocalClientId.set(String(row.qboId), localId)
+    const rowsByQboId = new Map<string, Array<{ entityId: string; createdAt: Date }>>()
+    for (const row of existingClientMaps) {
+      if (!row.qboId || !row.entityId) continue
+      const localId = String(row.entityId)
+      if (!existingClientIdSet.has(localId)) continue
+      const qboIdKey = String(row.qboId)
+      const list = rowsByQboId.get(qboIdKey) || []
+      list.push({ entityId: localId, createdAt: row.createdAt })
+      rowsByQboId.set(qboIdKey, list)
+    }
+
+    for (const [qboIdKey, rows] of rowsByQboId.entries()) {
+      const subRows = rows.filter((r) => parentIdByClientId.get(r.entityId))
+      const chosen = subRows.length > 0 ? subRows[0] : rows[0]
+      qboCustomerIdToLocalClientId.set(qboIdKey, chosen.entityId)
+    }
+  }
+
+  await refreshQboCustomerIdMapFromSyncLog()
+
+  /** Resolve QBO Customer Id → TrimPro client id (prefer sub-client when sync log has conflicts). */
+  const resolveQboCustomerToLocalClientId = async (qboCustomerId: string): Promise<string | null> => {
+    const key = String(qboCustomerId || '').trim()
+    if (!key) return null
+    const cached = qboCustomerIdToLocalClientId.get(key)
+    if (cached) return cached
+
+    const rows = await prisma.quickBooksSyncLog.findMany({
+      where: {
+        integrationId: session.integrationId,
+        type: 'client',
+        status: 'success',
+        qboId: key,
+        entityId: { not: null },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { entityId: true },
+    })
+    const orderedIds: string[] = []
+    const seen = new Set<string>()
+    for (const row of rows) {
+      const id = String(row.entityId)
+      if (seen.has(id)) continue
+      seen.add(id)
+      orderedIds.push(id)
+    }
+    if (!orderedIds.length) return null
+    const clients = await prisma.client.findMany({
+      where: { tenantId, id: { in: orderedIds } },
+      select: { id: true, parentId: true },
+    })
+    const pmap = new Map(clients.map((c) => [c.id, c.parentId]))
+    for (const id of orderedIds) {
+      if (pmap.get(id)) {
+        qboCustomerIdToLocalClientId.set(key, id)
+        return id
+      }
+    }
+    const rootId = orderedIds[0]
+    qboCustomerIdToLocalClientId.set(key, rootId)
+    return rootId
   }
 
   const getReusableMappedClientId = async (qboId: string): Promise<string | null> => {
@@ -2497,6 +2631,8 @@ export async function importQuickBooksCustomersAndPayments(
     }
   }
 
+  await refreshQboCustomerIdMapFromSyncLog()
+
   // Import Items (products/services) when requested.
   for (let start = 1; includeItems && start <= 50000; start += 1000) {
     const query = `select * from Item startposition ${start} maxresults 1000`
@@ -2620,14 +2756,35 @@ export async function importQuickBooksCustomersAndPayments(
         // Skip paid/zero-balance invoices; this importer is specifically for open/unpaid.
         if (balance <= 0) continue
 
-        const exists = await prisma.invoice.findFirst({
-          where: { tenantId, qboSyncId: qboInvoiceId },
-          select: { id: true },
-        })
-        if (exists) continue
+        qboOpenInvoicesScanned += 1
 
         const customerQboId = inv?.CustomerRef?.value ? String(inv.CustomerRef.value) : ''
-        const clientId = customerQboId ? qboCustomerIdToLocalClientId.get(customerQboId) || null : null
+        const resolvedClientId = customerQboId ? await resolveQboCustomerToLocalClientId(customerQboId) : null
+
+        const exists = await prisma.invoice.findFirst({
+          where: { tenantId, qboSyncId: qboInvoiceId },
+          select: { id: true, clientId: true },
+        })
+        if (exists) {
+          openInvoicesAlreadyInTrimPro += 1
+          // Invoice already imported — check if it was assigned to the wrong client.
+          // This happens when an old name-merge import put the invoice on a parent client
+          // but the correct mapping (newest) is a dedicated sub-client.
+          if (resolvedClientId && exists.clientId !== resolvedClientId) {
+            try {
+              await prisma.invoice.update({
+                where: { id: exists.id },
+                data: { clientId: resolvedClientId },
+              })
+              reassignedInvoices++
+            } catch {
+              // best-effort
+            }
+          }
+          continue
+        }
+        const clientId = resolvedClientId
+
         if (!clientId) {
           skippedOpenInvoices += 1
           errors.push(`Invoice import skipped (missing client mapping): QB invoice ${qboInvoiceId}`)
@@ -2908,6 +3065,9 @@ export async function importQuickBooksCustomersAndPayments(
     importedItems,
     importedOpenInvoices,
     skippedOpenInvoices,
+    reassignedInvoices,
+    qboOpenInvoicesScanned,
+    openInvoicesAlreadyInTrimPro,
     importedPayments,
     skippedPayments,
     errors: errors.slice(0, 20),

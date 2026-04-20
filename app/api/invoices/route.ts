@@ -67,6 +67,12 @@ export async function GET(request: NextRequest) {
               jobNumber: true,
             },
           },
+          estimate: {
+            select: {
+              id: true,
+              estimateNumber: true,
+            },
+          },
           _count: {
             select: {
               lineItems: true,

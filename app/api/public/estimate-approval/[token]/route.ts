@@ -100,11 +100,13 @@ export async function GET(request: NextRequest, ctx: { params: { token: string }
         const invoiced = invoicedMap.get(li.id) || null
         return {
           id: li.id,
-          description: li.description,
-          notes: li.showDescriptionToCustomer === false ? '' : li.notes || '',
+          description: li.showDescriptionToCustomer !== false ? li.description : '',
+          notes: li.showNotesToCustomer !== false ? (li.notes || '') : '',
           quantity: String(li.quantity),
-          unitPrice: String(li.unitPrice),
+          unitPrice: li.showPriceToCustomer !== false ? String(li.unitPrice) : '0',
+          unitCost: li.showCostToCustomer === true ? (li.unitCost ? String(li.unitCost) : null) : null,
           total: String(li.total),
+          showPriceToCustomer: li.showPriceToCustomer !== false,
           isOptional: false,
           isSubtotal: (li as any).isSubtotal === true,
           approved: Boolean(approved),
@@ -119,11 +121,13 @@ export async function GET(request: NextRequest, ctx: { params: { token: string }
         const invoiced = invoicedMap.get(li.id) || null
         return {
           id: li.id,
-          description: li.description,
-          notes: li.showDescriptionToCustomer === false ? '' : li.notes || '',
+          description: li.showDescriptionToCustomer !== false ? li.description : '',
+          notes: li.showNotesToCustomer !== false ? (li.notes || '') : '',
           quantity: String(li.quantity),
-          unitPrice: String(li.unitPrice),
+          unitPrice: li.showPriceToCustomer !== false ? String(li.unitPrice) : '0',
+          unitCost: li.showCostToCustomer === true ? (li.unitCost ? String(li.unitCost) : null) : null,
           total: String(li.total),
+          showPriceToCustomer: li.showPriceToCustomer !== false,
           isOptional: true,
           approved: Boolean(approved),
           approvedAt: approved?.approvedAt || null,

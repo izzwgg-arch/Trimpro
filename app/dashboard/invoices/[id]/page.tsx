@@ -59,6 +59,8 @@ interface InvoiceDetail {
   memo: string | null
   jobSiteAddress?: string | null
   estimateId?: string | null
+  progressBillingMode?: string | null
+  progressBillingPercent?: string | null
   paymentToken?: string | null
   isBillRest?: boolean
   createdAt: string
@@ -1085,40 +1087,14 @@ export default function InvoiceDetailPage() {
                         )
                       })
 
-                      return rows
-                    })()}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Optional Items */}
-          {Array.isArray(optionalItems) && optionalItems.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Optional Items</CardTitle>
-                <CardDescription>Optional items are not included in the invoice total unless added later.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b">
-                        <th className="text-left py-2 px-4 font-semibold">Item</th>
-                        <th className="text-left py-2 px-4 font-semibold">Description</th>
-                        <th className="text-right py-2 px-4 font-semibold">Quantity</th>
-                        <th className="text-right py-2 px-4 font-semibold">Unit Price</th>
-                        <th className="text-right py-2 px-4 font-semibold">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {optionalItems.map((item: any) => {
+                      // Optional add-on items are appended inline into the main items table
+                      optionalItems.forEach((item: any) => {
                         const isVisibleToClient = item.isVisibleToClient ?? true
-                        return (
-                          <tr key={item.id} className={`border-b ${!isVisibleToClient ? 'bg-gray-50' : ''}`}>
+                        rows.push(
+                          <tr key={`opt-${item.id}`} className={`border-b ${!isVisibleToClient ? 'bg-gray-50' : ''}`}>
                             <td className="py-3 px-4">
                               {item.description}
+                              <span className="ml-1 text-xs rounded bg-blue-50 border border-blue-200 px-1.5 py-0.5 text-blue-700">add-on</span>
                               {!isVisibleToClient && (
                                 <span className="ml-2 text-xs text-gray-500">(Hidden from client)</span>
                               )}
@@ -1126,18 +1102,18 @@ export default function InvoiceDetailPage() {
                             <td className="py-3 px-4">{item.notes || '-'}</td>
                             <td className="py-3 px-4 text-right">{item.quantity}</td>
                             <td className="py-3 px-4 text-right">{formatCurrency(parseFloat(item.unitPrice || '0'))}</td>
-                            <td className="py-3 px-4 text-right font-semibold">
-                              {formatCurrency(parseFloat(item.total || '0'))}
-                            </td>
+                            <td className="py-3 px-4 text-right font-semibold">{formatCurrency(parseFloat(item.total || '0'))}</td>
                           </tr>
                         )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+                      })
+
+                      return rows
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Payments */}
           {invoice.payments && invoice.payments.length > 0 && (
@@ -1220,16 +1196,15 @@ export default function InvoiceDetailPage() {
                   <Checkbox checked={billRest} onCheckedChange={(checked) => setBillRest(Boolean(checked))} />
                 </div>
               )}
-              <div className="flex justify-between">
-                <span className="text-gray-600">Subtotal:</span>
-                <span className="font-semibold">{formatCurrency(parseFloat(invoice.subtotal))}</span>
-              </div>
-              {optionalItemsSubtotal > 0 && (
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Optional Items Subtotal:</span>
-                  <span className="font-semibold">{formatCurrency(optionalItemsSubtotal)}</span>
+              {invoice.estimateId && invoice.progressBillingMode === 'PERCENTAGE' && Number(invoice.progressBillingPercent || 0) > 0 && (
+                <div className="rounded border border-blue-200 bg-blue-50 p-2 text-sm text-blue-800">
+                  Converted from estimate at {Number(invoice.progressBillingPercent).toFixed(0)}%
                 </div>
               )}
+              <div className="flex justify-between">
+                <span className="text-gray-600">Subtotal:</span>
+                <span className="font-semibold">{formatCurrency(parseFloat(invoice.subtotal) + optionalItemsSubtotal)}</span>
+              </div>
               {parseFloat(invoice.discount) > 0 && (
                 <div className="flex justify-between text-red-600">
                   <span>Discount:</span>
@@ -1244,7 +1219,7 @@ export default function InvoiceDetailPage() {
               )}
               <div className="flex justify-between text-lg font-bold border-t pt-3">
                 <span>Total:</span>
-                <span>{formatCurrency(parseFloat(invoice.total))}</span>
+                <span>{formatCurrency(parseFloat(invoice.total) + optionalItemsSubtotal)}</span>
               </div>
               {parseFloat(invoice.paidAmount) > 0 && (
                 <div className="flex justify-between text-green-600 border-t pt-3">

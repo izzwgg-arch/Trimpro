@@ -77,30 +77,47 @@ export async function GET(
       return NextResponse.json({ error: 'Estimate not found' }, { status: 404 })
     }
 
+    // Load approvals so approved optional items render in the main items section
+    const itemApprovals = await prisma.estimateItemApproval.findMany({
+      where: { estimateId: estimate.id, status: 'APPROVED' },
+      select: { estimateLineItemId: true },
+    })
+    const approvedIdSet = new Set(itemApprovals.map((a) => a.estimateLineItemId))
+
     const brand = await getPdfBranding(estimate.tenantId)
     const logoUrl = brand.logoUrl
     const accentColor = brand.accentColor
     const accentTextColor = brand.accentTextColor
     const visibleLineItems = estimate.lineItems.filter((li) => li.isVisibleToClient !== false)
-    const visibleOptionalItems = estimate.optionalItems.filter((li) => li.isVisibleToClient !== false)
-    const optionalSubtotal = visibleOptionalItems.reduce(
+    const allVisibleOptionalItems = estimate.optionalItems.filter((li) => li.isVisibleToClient !== false)
+    // Approved optional items are treated as regular included items in the PDF
+    const approvedOptionalItems = allVisibleOptionalItems.filter((li) => approvedIdSet.has(li.id))
+    const pendingOptionalItems = allVisibleOptionalItems.filter((li) => !approvedIdSet.has(li.id))
+    // Main items = regular items + approved add-ons
+    const mainItems = [...visibleLineItems, ...approvedOptionalItems]
+    const optionalSubtotal = pendingOptionalItems.reduce(
       (sum, item) => sum + Number(item.quantity) * Number(item.unitPrice),
       0
     )
 
     // Determine column visibility based on per-item flags
-    const showPriceCol = visibleLineItems.some((li) => li.showPriceToCustomer !== false) ||
-      visibleOptionalItems.some((li) => li.showPriceToCustomer !== false)
-    const showCostCol = visibleLineItems.some((li) => li.showCostToCustomer === true) ||
-      visibleOptionalItems.some((li) => li.showCostToCustomer === true)
-    const showNotesCol = visibleLineItems.some((li) => li.showDescriptionToCustomer !== false) ||
-      visibleOptionalItems.some((li) => li.showDescriptionToCustomer !== false)
+    const showPriceCol = mainItems.some((li) => li.showPriceToCustomer !== false) ||
+      pendingOptionalItems.some((li) => li.showPriceToCustomer !== false)
+    const showCostCol = mainItems.some((li) => li.showCostToCustomer === true) ||
+      pendingOptionalItems.some((li) => li.showCostToCustomer === true)
+    const showNotesCol = mainItems.some((li) => li.showNotesToCustomer !== false) ||
+      pendingOptionalItems.some((li) => li.showNotesToCustomer !== false)
+    // Hide tax summary row if every visible item explicitly hides tax
+    const showTaxRow = mainItems.some((li) => li.showTaxToCustomer !== false) ||
+      pendingOptionalItems.some((li) => li.showTaxToCustomer !== false) ||
+      (mainItems.length === 0 && pendingOptionalItems.length === 0)
 
-    function buildEstRow(li: (typeof visibleLineItems)[0]) {
+    function buildEstRow(li: (typeof mainItems)[0]) {
+      const descCell = li.showDescriptionToCustomer !== false ? escapeHtml(li.description) : ''
       return `
         <tr>
-          <td>${escapeHtml(li.description)}</td>
-          ${showNotesCol ? `<td>${escapeHtml(li.showDescriptionToCustomer === false ? '' : (li.notes || ''))}</td>` : ''}
+          <td>${descCell}</td>
+          ${showNotesCol ? `<td>${escapeHtml(li.showNotesToCustomer === false ? '' : (li.notes || ''))}</td>` : ''}
           <td style="text-align:right">${Number(li.quantity).toFixed(2)}</td>
           ${showCostCol ? `<td style="text-align:right">${li.showCostToCustomer === true ? '$' + Number((li as any).unitCost || 0).toFixed(2) : ''}</td>` : ''}
           ${showPriceCol ? `<td style="text-align:right">${li.showPriceToCustomer !== false ? '$' + Number(li.unitPrice).toFixed(2) : ''}</td>` : ''}
@@ -109,8 +126,20 @@ export async function GET(
       `
     }
 
-    const rows = visibleLineItems.map(buildEstRow).join('')
-    const optionalRows = visibleOptionalItems.map(buildEstRow).join('')
+    const rows = mainItems.map(buildEstRow).join('')
+    const optionalRows = pendingOptionalItems.map(buildEstRow).join('')
+    const visibleOptionalItems = pendingOptionalItems
+
+    // Recompute totals to include approved optional items (DB values only have regular items)
+    const approvedOptionalSubtotal = approvedOptionalItems.reduce(
+      (sum, item) => sum + Number(item.quantity) * Number(item.unitPrice),
+      0
+    )
+    const combinedSubtotal = Number(estimate.subtotal) + approvedOptionalSubtotal
+    const combinedDiscount = Number(estimate.discount || 0)
+    const combinedTaxRate = Number(estimate.taxRate || 0)
+    const combinedTax = Math.round((combinedSubtotal - combinedDiscount) * combinedTaxRate * 100) / 100
+    const combinedTotal = Math.round((combinedSubtotal - combinedDiscount + combinedTax) * 100) / 100
 
     function tableHeader() {
       return `
@@ -281,9 +310,10 @@ export async function GET(
           : ''
       }
       <div class="summary">
-        <div class="summary-row"><span>Subtotal</span><span>$${Number(estimate.subtotal).toFixed(2)}</span></div>
-        <div class="summary-row"><span>Tax</span><span>$${Number(estimate.taxAmount || 0).toFixed(2)}</span></div>
-        <div class="summary-row total"><span>Total</span><span>$${Number(estimate.total).toFixed(2)}</span></div>
+        <div class="summary-row"><span>Subtotal</span><span>$${combinedSubtotal.toFixed(2)}</span></div>
+        ${combinedDiscount > 0 ? `<div class="summary-row"><span>Discount</span><span>-$${combinedDiscount.toFixed(2)}</span></div>` : ''}
+        ${showTaxRow ? `<div class="summary-row"><span>Tax</span><span>$${combinedTax.toFixed(2)}</span></div>` : ''}
+        <div class="summary-row total"><span>Total</span><span>$${combinedTotal.toFixed(2)}</span></div>
       </div>
     </div>
   </body>

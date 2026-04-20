@@ -562,9 +562,13 @@ export default function EstimateDetailPage() {
 
   const primaryContact = estimate.client?.contacts?.[0] || null
   const optionalItems = (estimate as any).optionalItems || []
+  // Split optional items by customer approval status
+  const approvedOptionalItems: any[] = Array.isArray(optionalItems) ? optionalItems.filter((i: any) => i.isApproved) : []
+  const pendingOptionalItems: any[] = Array.isArray(optionalItems) ? optionalItems.filter((i: any) => !i.isApproved) : []
   const optionalItemsSubtotal = Array.isArray(optionalItems)
     ? optionalItems.reduce((sum: number, item: any) => sum + parseFloat(item.total || '0'), 0)
     : 0
+  const approvedOptionalSubtotal = approvedOptionalItems.reduce((sum: number, item: any) => sum + parseFloat(item.total || '0'), 0)
 
   return (
     <div className="space-y-6">
@@ -929,6 +933,28 @@ export default function EstimateDetailPage() {
                         )
                       })
 
+                      // Approved optional items are appended inline — they are no longer optional after approval
+                      approvedOptionalItems.forEach((item: any) => {
+                        const unitCost = item.unitCost ? parseFloat(item.unitCost) : 0
+                        const unitPrice = parseFloat(item.unitPrice || '0')
+                        const qty = parseFloat(item.quantity || '0')
+                        const marginTotal = (unitPrice - unitCost) * qty
+                        rows.push(
+                          <tr key={`approved-opt-${item.id}`} className="border-b">
+                            <td className="py-3 px-4">
+                              {item.description}
+                              <span className="ml-1 text-xs rounded bg-green-100 border border-green-200 px-1.5 py-0.5 text-green-700">add-on</span>
+                            </td>
+                            <td className="py-3 px-4">{item.notes || '-'}</td>
+                            <td className="py-3 px-4 text-right">{item.quantity}</td>
+                            <td className="py-3 px-4 text-right">{formatCurrency(unitPrice)}</td>
+                            <td className="py-3 px-4 text-right">{formatCurrency(unitCost)}</td>
+                            <td className="py-3 px-4 text-right">{formatCurrency(marginTotal)}</td>
+                            <td className="py-3 px-4 text-right font-semibold">{formatCurrency(parseFloat(item.total || '0'))}</td>
+                          </tr>
+                        )
+                      })
+
                       return rows
                     })()}
                   </tbody>
@@ -937,12 +963,12 @@ export default function EstimateDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Optional Items */}
-          {Array.isArray(optionalItems) && optionalItems.length > 0 && (
+          {/* Pending Optional Items */}
+          {pendingOptionalItems.length > 0 && (
             <Card>
               <CardHeader>
                 <CardTitle>Optional Items</CardTitle>
-                <CardDescription>Optional items are not included in the estimate total unless added later.</CardDescription>
+                <CardDescription>Optional items are not included in the estimate total unless approved by the customer.</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto">
@@ -959,7 +985,7 @@ export default function EstimateDetailPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {optionalItems.map((item: any) => {
+                      {pendingOptionalItems.map((item: any) => {
                         const unitCost = item.unitCost ? parseFloat(item.unitCost) : 0
                         const unitPrice = parseFloat(item.unitPrice || '0')
                         const qty = parseFloat(item.quantity || '0')
@@ -1033,12 +1059,12 @@ export default function EstimateDetailPage() {
             <CardContent className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-gray-600">Subtotal:</span>
-                <span className="font-semibold">{formatCurrency(parseFloat(estimate.subtotal))}</span>
+                <span className="font-semibold">{formatCurrency(parseFloat(estimate.subtotal) + approvedOptionalSubtotal)}</span>
               </div>
-              {optionalItemsSubtotal > 0 && (
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Optional Items Subtotal:</span>
-                  <span className="font-semibold">{formatCurrency(optionalItemsSubtotal)}</span>
+              {pendingOptionalItems.length > 0 && (
+                <div className="flex justify-between text-gray-500 text-sm">
+                  <span>Pending Optional Items:</span>
+                  <span>{formatCurrency(pendingOptionalItems.reduce((s: number, i: any) => s + parseFloat(i.total || '0'), 0))}</span>
                 </div>
               )}
               {parseFloat(estimate.discount) > 0 && (

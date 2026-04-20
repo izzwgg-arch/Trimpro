@@ -23,6 +23,8 @@ interface Invoice {
   invoiceNumber: string
   title: string
   status: string
+  progressBillingMode?: string | null
+  progressBillingPercent?: string | number | null
   total: string
   balance: string
   paidAmount: string
@@ -39,6 +41,10 @@ interface Invoice {
     id: string
     jobNumber: string
   } | null
+  estimate?: {
+    id: string
+    estimateNumber: string
+  } | null
   _count: {
     lineItems: number
     payments: number
@@ -54,6 +60,13 @@ const statusColors: Record<string, string> = {
   OVERDUE: 'bg-red-100 text-red-800',
   CANCELLED: 'bg-gray-100 text-gray-800',
   REFUNDED: 'bg-orange-100 text-orange-800',
+}
+
+function progressBillingLabel(invoice: Invoice): string | null {
+  if (!invoice.estimate || invoice.progressBillingMode !== 'PERCENTAGE') return null
+  const pct = Number(invoice.progressBillingPercent || 0)
+  if (!Number.isFinite(pct) || pct <= 0) return null
+  return `${pct}% of ${invoice.estimate.estimateNumber}`
 }
 
 export default function InvoicesPage() {
@@ -628,6 +641,11 @@ export default function InvoicesPage() {
                         {invoice.invoiceNumber} • <Link href={`/dashboard/clients/${invoice.client.id}`} className="hover:text-primary">{invoice.client.name}</Link>
                         {invoice.job && ` • Job ${invoice.job.jobNumber}`}
                       </CardDescription>
+                      {progressBillingLabel(invoice) ? (
+                        <p className="mt-1 text-xs font-medium text-blue-600">
+                          Converted from estimate: {progressBillingLabel(invoice)}
+                        </p>
+                      ) : null}
                     </div>
                     <div className="flex items-center space-x-2">
                       <input
@@ -748,7 +766,7 @@ export default function InvoicesPage() {
                 />
               }
               primary={`${invoice.invoiceNumber} • ${invoice.title}`}
-              secondary={invoice.client.name}
+              secondary={[invoice.client.name, progressBillingLabel(invoice) ? `Converted: ${progressBillingLabel(invoice)}` : null].filter(Boolean).join(' • ')}
               status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[invoice.status] || 'bg-gray-100 text-gray-800'}`}>{invoice.status}</span>}
               amount={formatCurrency(parseFloat(invoice.total))}
               date={formatDate(invoice.invoiceDate)}
@@ -776,7 +794,7 @@ export default function InvoicesPage() {
               }
               primary={`${invoice.invoiceNumber} • ${invoice.title}`}
               status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[invoice.status] || 'bg-gray-100 text-gray-800'}`}>{invoice.status}</span>}
-              line2={`${invoice.client.name} • Balance ${formatCurrency(parseFloat(invoice.balance))}`}
+              line2={[invoice.client.name, progressBillingLabel(invoice) ? `Converted: ${progressBillingLabel(invoice)}` : null, `Balance ${formatCurrency(parseFloat(invoice.balance))}`].filter(Boolean).join(' • ')}
               rightTop={formatCurrency(parseFloat(invoice.total))}
               rightBottom={formatDate(invoice.invoiceDate)}
             />
@@ -808,7 +826,14 @@ export default function InvoicesPage() {
               key: 'invoice',
               header: 'Invoice',
               sortValue: (invoice) => `${invoice.invoiceNumber} ${invoice.title}`,
-              render: (invoice) => <span className="font-medium">{invoice.invoiceNumber} • {invoice.title}</span>,
+              render: (invoice) => (
+                <div>
+                  <div className="font-medium">{invoice.invoiceNumber} • {invoice.title}</div>
+                  {progressBillingLabel(invoice) ? (
+                    <div className="text-xs text-blue-600">Converted: {progressBillingLabel(invoice)}</div>
+                  ) : null}
+                </div>
+              ),
             },
             {
               key: 'status',

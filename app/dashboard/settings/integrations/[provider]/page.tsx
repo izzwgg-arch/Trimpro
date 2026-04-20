@@ -1005,8 +1005,26 @@ export default function IntegrationProviderPage() {
                 </>
               ) : (
                 <>
-                  Imported clients: {importResult.importedClients ?? 0} · Imported items: {importResult.importedItems ?? 0} · Imported open invoices:{' '}
+                  Imported clients: {importResult.importedClients ?? 0} · Imported items: {importResult.importedItems ?? 0} · New open invoices:{' '}
                   {importResult.importedOpenInvoices ?? 0}
+                  {importResult.mode === 'customers_items_and_open_invoices' ? (
+                    <>
+                      <div className="mt-1 text-gray-600">
+                        QuickBooks open invoices scanned (unpaid in QB):{' '}
+                        <span className="font-medium text-gray-800">{importResult.qboOpenInvoicesScanned ?? 0}</span>
+                        {' · '}
+                        Already linked in TrimPro:{' '}
+                        <span className="font-medium text-gray-800">{importResult.openInvoicesAlreadyInTrimPro ?? 0}</span>
+                      </div>
+                      <div className="mt-0.5">
+                        Invoices moved to correct client:{' '}
+                        <span className={(importResult.reassignedInvoices ?? 0) > 0 ? 'font-medium text-green-700' : ''}>
+                          {importResult.reassignedInvoices ?? 0}
+                        </span>
+                        <span className="text-gray-500"> (parent vs sub-client repair)</span>
+                      </div>
+                    </>
+                  ) : null}
                   {Array.isArray(importResult.errors) && importResult.errors.length ? (
                     <div className="mt-2 text-xs text-amber-700">
                       {importResult.errors.slice(0, 5).join(' | ')}

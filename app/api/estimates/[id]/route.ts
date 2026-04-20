@@ -57,6 +57,13 @@ export async function GET(
       return NextResponse.json({ error: 'Estimate not found' }, { status: 404 })
     }
 
+    // Load approval records so optional items can be marked as approved
+    const itemApprovals = await prisma.estimateItemApproval.findMany({
+      where: { tenantId: user.tenantId, estimateId: params.id, status: 'APPROVED' },
+      select: { estimateLineItemId: true, approvedAt: true, approvedByName: true },
+    })
+    const approvedItemIdSet = new Set(itemApprovals.map((a) => a.estimateLineItemId))
+
     // Convert Decimal fields to strings for frontend
     const jobSiteAddress = estimate.jobSiteAddress
       ? String(estimate.jobSiteAddress)
@@ -141,6 +148,8 @@ export async function GET(
         groupId: item.groupId || null,
         sourceItemId: item.sourceItemId || null,
         sourceBundleId: item.sourceBundleId || null,
+        // True when customer has approved this optional item
+        isApproved: approvedItemIdSet.has(item.id),
       })),
     }
 

@@ -62,14 +62,65 @@ export async function GET(
       return NextResponse.json({ error: 'Estimate not found' }, { status: 404 })
     }
 
-    const visibleItems = estimate.lineItems.filter((item) => item.isVisibleToClient !== false)
-    const visibleOptionalItems = estimate.optionalItems.filter((item) => item.isVisibleToClient !== false)
-    const subtotal = visibleItems.reduce((sum, item) => {
+    // Fetch approvals so approved optional items are merged into the main line items section
+    const itemApprovals = await prisma.estimateItemApproval.findMany({
+      where: { estimateId: estimate.id, tenantId: user.tenantId, status: 'APPROVED' },
+      select: { estimateLineItemId: true },
+    })
+    const approvedIdSet = new Set(itemApprovals.map((a) => a.estimateLineItemId))
+
+    const visibleRegularItems = estimate.lineItems.filter((item) => item.isVisibleToClient !== false)
+    const allVisibleOptionalItems = estimate.optionalItems.filter((item) => item.isVisibleToClient !== false)
+    // Approved optional items become regular line items; only pending ones show as optional
+    const approvedOptionalItems = allVisibleOptionalItems.filter((li) => approvedIdSet.has(li.id))
+    const pendingOptionalItems = allVisibleOptionalItems.filter((li) => !approvedIdSet.has(li.id))
+    const visibleItems = [...visibleRegularItems, ...approvedOptionalItems]
+    const visibleOptionalItems = pendingOptionalItems
+
+    const regularSubtotal = visibleRegularItems.reduce((sum, item) => {
       return sum + Number(item.quantity) * Number(item.unitPrice)
     }, 0)
-    const optionalSubtotal = visibleOptionalItems.reduce((sum, item) => {
+    const approvedOptionalSubtotal = approvedOptionalItems.reduce((sum, item) => {
       return sum + Number(item.quantity) * Number(item.unitPrice)
     }, 0)
+    const subtotal = regularSubtotal + approvedOptionalSubtotal
+    const optionalSubtotal = pendingOptionalItems.reduce((sum, item) => {
+      return sum + Number(item.quantity) * Number(item.unitPrice)
+    }, 0)
+
+    // Column visibility — respect per-field flags
+    const showNameCol = visibleItems.some((li) => li.showDescriptionToCustomer !== false) ||
+      visibleOptionalItems.some((li) => li.showDescriptionToCustomer !== false)
+    const showNotesCol = visibleItems.some((li) => li.showNotesToCustomer !== false) ||
+      visibleOptionalItems.some((li) => li.showNotesToCustomer !== false)
+    const showCostCol = visibleItems.some((li) => li.showCostToCustomer === true) ||
+      visibleOptionalItems.some((li) => li.showCostToCustomer === true)
+    const showPriceCol = visibleItems.some((li) => li.showPriceToCustomer !== false) ||
+      visibleOptionalItems.some((li) => li.showPriceToCustomer !== false)
+
+    const buildRow = (item: typeof visibleItems[0]) => {
+      const nameCell = item.showDescriptionToCustomer !== false ? escapeHtml(item.description) : ''
+      const notesCell = item.showNotesToCustomer !== false ? escapeHtml(item.notes || '') : ''
+      const costCell = item.showCostToCustomer === true ? `$${Number((item as any).unitCost || 0).toFixed(2)}` : ''
+      const priceCell = item.showPriceToCustomer !== false ? `$${Number(item.unitPrice).toFixed(2)}` : ''
+      return `<tr>
+        ${showNameCol ? `<td>${nameCell}</td>` : ''}
+        ${showNotesCol ? `<td>${notesCell}</td>` : ''}
+        <td class="text-right">${Number(item.quantity).toFixed(2)}</td>
+        ${showCostCol ? `<td class="text-right">${costCell}</td>` : ''}
+        ${showPriceCol ? `<td class="text-right">${priceCell}</td>` : ''}
+        <td class="text-right">$${Number(item.total).toFixed(2)}</td>
+      </tr>`
+    }
+
+    const tableHeader = `<tr>
+      ${showNameCol ? '<th>Item</th>' : ''}
+      ${showNotesCol ? '<th>Description</th>' : ''}
+      <th class="text-right">Qty</th>
+      ${showCostCol ? '<th class="text-right">Cost</th>' : ''}
+      ${showPriceCol ? '<th class="text-right">Unit Price</th>' : ''}
+      <th class="text-right">Total</th>
+    </tr>`
     const discount = Number(estimate.discount || 0)
     const taxRate = Number(estimate.taxRate || 0)
     const subtotalAfterDiscount = subtotal - discount
@@ -271,28 +322,12 @@ export async function GET(
             </div>
 
             <table>
-              <thead>
-                <tr>
-                  <th>Item</th>
-                  <th>Description</th>
-                  <th class="text-right">Qty</th>
-                  <th class="text-right">Unit Price</th>
-                  <th class="text-right">Total</th>
-                </tr>
-              </thead>
+              <thead>${tableHeader}</thead>
               <tbody>
                 ${
                   visibleItems.length === 0
-                    ? '<tr><td colspan="5" class="muted">No visible items</td></tr>'
-                    : visibleItems.map((item) => `
-                        <tr>
-                          <td>${escapeHtml(item.description)}</td>
-                          <td>${escapeHtml(item.showDescriptionToCustomer === false ? '' : (item.notes || ''))}</td>
-                          <td class="text-right">${Number(item.quantity).toFixed(2)}</td>
-                          <td class="text-right">$${Number(item.unitPrice).toFixed(2)}</td>
-                          <td class="text-right">$${Number(item.total).toFixed(2)}</td>
-                        </tr>
-                      `).join('')
+                    ? `<tr><td colspan="6" class="muted">No visible items</td></tr>`
+                    : visibleItems.map(buildRow).join('')
                 }
               </tbody>
             </table>
@@ -303,29 +338,9 @@ export async function GET(
                   <div class="section">
                     <h3>Optional Items</h3>
                     <table>
-                      <thead>
-                        <tr>
-                          <th>Item</th>
-                          <th>Description</th>
-                          <th class="text-right">Qty</th>
-                          <th class="text-right">Unit</th>
-                          <th class="text-right">Total</th>
-                        </tr>
-                      </thead>
+                      <thead>${tableHeader}</thead>
                       <tbody>
-                        ${visibleOptionalItems
-                          .map(
-                            (item) => `
-                              <tr>
-                                <td>${escapeHtml(item.description)}</td>
-                                <td>${escapeHtml(item.showDescriptionToCustomer === false ? '' : (item.notes || ''))}</td>
-                                <td class="text-right">${Number(item.quantity).toFixed(2)}</td>
-                                <td class="text-right">$${Number(item.unitPrice).toFixed(2)}</td>
-                                <td class="text-right">$${Number(item.total).toFixed(2)}</td>
-                              </tr>
-                            `
-                          )
-                          .join('')}
+                        ${visibleOptionalItems.map(buildRow).join('')}
                       </tbody>
                     </table>
                     <div class="summary" style="margin-top:12px; width: 320px;">

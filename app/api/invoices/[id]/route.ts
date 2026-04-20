@@ -123,6 +123,8 @@ export async function GET(
       total: invoice.total.toString(),
       balance: invoice.balance.toString(),
       paidAmount: invoice.paidAmount.toString(),
+      progressBillingMode: invoice.progressBillingMode || null,
+      progressBillingPercent: invoice.progressBillingPercent ? invoice.progressBillingPercent.toString() : null,
       lineItems: invoice.lineItems.map(item => ({
         ...item,
         quantity: item.quantity.toString(),

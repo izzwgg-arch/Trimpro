@@ -74,6 +74,16 @@ export async function POST(
       return NextResponse.json({ error: 'Estimate not found' }, { status: 404 })
     }
 
+    // Fetch approvals so we can promote approved optional items to regular invoice line items
+    const itemApprovals = await prisma.estimateItemApproval.findMany({
+      where: { tenantId: user.tenantId, estimateId: params.id, status: 'APPROVED' },
+      select: { estimateLineItemId: true },
+    })
+    const approvedOptionalItemIds = new Set(itemApprovals.map((a) => a.estimateLineItemId))
+    // Split optional items: approved ones become regular invoice line items, pending stay optional
+    const approvedOptionalItems = estimate.optionalItems.filter((opt) => approvedOptionalItemIds.has(opt.id))
+    const pendingOptionalItems = estimate.optionalItems.filter((opt) => !approvedOptionalItemIds.has(opt.id))
+
     if (!estimate.clientId || !estimate.client) {
       return NextResponse.json(
         { error: 'Estimate must be linked to a client before converting to invoice.' },
@@ -111,7 +121,8 @@ export async function POST(
       }
       progressPercent = percentage
       const defaultScale = percentage / 100
-      const sourceLines = [...estimate.lineItems].sort((a, b) => a.sortOrder - b.sortOrder)
+      // Include approved optional items alongside regular line items for billing
+      const sourceLines = [...estimate.lineItems, ...approvedOptionalItems].sort((a, b) => a.sortOrder - b.sortOrder)
       let sortOrder = 0
 
       const pushLine = (row: (typeof invoiceLineItems)[0]) => {
@@ -177,10 +188,17 @@ export async function POST(
         return NextResponse.json({ error: 'No billable line items for this percentage invoice.' }, { status: 400 })
       }
     } else {
-      const sourceLines =
-        billingMode === 'MANUAL'
-          ? estimate.lineItems.filter((li) => selectedLineItemIds.includes(li.id))
-          : estimate.lineItems
+      // For FULL billing: include all regular lines + all approved optional items
+      // For MANUAL billing: include selected regular lines + any approved optional items whose IDs are in selectedLineItemIds
+      let sourceLines: typeof estimate.lineItems
+      if (billingMode === 'MANUAL') {
+        const regularSelected = estimate.lineItems.filter((li) => selectedLineItemIds.includes(li.id))
+        const optionalSelected = approvedOptionalItems.filter((li) => selectedLineItemIds.includes(li.id))
+        sourceLines = [...regularSelected, ...optionalSelected]
+      } else {
+        // FULL: all regular lines + all approved optional items
+        sourceLines = [...estimate.lineItems, ...approvedOptionalItems]
+      }
 
       if (sourceLines.length === 0) {
         return NextResponse.json({ error: 'No line items selected to bill.' }, { status: 400 })
@@ -266,10 +284,10 @@ export async function POST(
             })
           }
 
-          // Copy optional items from estimate (not included in invoice totals)
-          if (estimate.optionalItems && estimate.optionalItems.length > 0) {
-            for (let i = 0; i < estimate.optionalItems.length; i++) {
-              const opt = estimate.optionalItems[i] as any
+          // Copy only non-approved optional items (approved ones are already in invoiceLineItems above)
+          if (pendingOptionalItems.length > 0) {
+            for (let i = 0; i < pendingOptionalItems.length; i++) {
+              const opt = pendingOptionalItems[i] as any
               await tx.invoiceOptionalLineItem.create({
                 data: {
                   invoiceId: invoice.id,

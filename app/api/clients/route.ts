@@ -93,22 +93,33 @@ export async function GET(request: NextRequest) {
     const openBalanceByClientId = new Map<string, string>()
 
     const parentIdsOnPage = clients.filter((c) => !c.parentId).map((c) => c.id)
-    const childrenOfParents =
-      parentIdsOnPage.length > 0
-        ? await prisma.client.findMany({
-            where: { tenantId: user.tenantId, parentId: { in: parentIdsOnPage } },
-            select: { id: true, parentId: true },
-          })
-        : []
     const childIdsByParent = new Map<string, string[]>()
-    for (const ch of childrenOfParents) {
-      if (!ch.parentId) continue
-      const list = childIdsByParent.get(ch.parentId) || []
-      list.push(ch.id)
-      childIdsByParent.set(ch.parentId, list)
+    const rootParentByClientId = new Map<string, string>()
+    for (const parentId of parentIdsOnPage) rootParentByClientId.set(parentId, parentId)
+
+    let frontierParentIds = [...parentIdsOnPage]
+    const allDescendants: Array<{ id: string; parentId: string | null }> = []
+    while (frontierParentIds.length > 0) {
+      const nextLayer = await prisma.client.findMany({
+        where: { tenantId: user.tenantId, parentId: { in: frontierParentIds } },
+        select: { id: true, parentId: true },
+      })
+      if (nextLayer.length === 0) break
+
+      frontierParentIds = []
+      for (const child of nextLayer) {
+        if (!child.parentId) continue
+        const rootParentId = rootParentByClientId.get(child.parentId) || child.parentId
+        rootParentByClientId.set(child.id, rootParentId)
+        const list = childIdsByParent.get(rootParentId) || []
+        list.push(child.id)
+        childIdsByParent.set(rootParentId, list)
+        frontierParentIds.push(child.id)
+        allDescendants.push(child)
+      }
     }
 
-    const extraChildIds = childrenOfParents.map((c) => c.id).filter((id) => !clientIds.includes(id))
+    const extraChildIds = allDescendants.map((c) => c.id).filter((id) => !clientIds.includes(id))
     const balanceClientIds = [...clientIds, ...extraChildIds]
 
     if (balanceClientIds.length) {

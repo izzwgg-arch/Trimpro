@@ -272,11 +272,11 @@ export default function NewRequestPage() {
       return
     }
     
-    // Validate file sizes (10MB max)
-    const maxSize = 10 * 1024 * 1024 // 10MB
+    // Validate file sizes (1GB max)
+    const maxSize = 1024 * 1024 * 1024 // 1GB
     const oversized = fileList.filter(file => file.size > maxSize)
     if (oversized.length > 0) {
-      setAttachmentError(`Files too large (max 10MB per file). Rejected: ${oversized.map(f => f.name).join(', ')}`)
+      setAttachmentError(`Files too large (max 1GB per file). Rejected: ${oversized.map(f => f.name).join(', ')}`)
       return
     }
     

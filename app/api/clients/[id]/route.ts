@@ -175,13 +175,46 @@ export async function GET(
       },
     })
 
-    const subClientIds = (client.subClients || []).map((subClient) => subClient.id)
-    const subClientBalanceRows = subClientIds.length
+    const directSubClients = client.subClients || []
+    const directSubClientIds = directSubClients.map((subClient) => subClient.id)
+    const descendantIdsByRootSubClient = new Map<string, string[]>()
+    const rootSubClientByClientId = new Map<string, string>()
+    for (const subClientId of directSubClientIds) {
+      rootSubClientByClientId.set(subClientId, subClientId)
+      descendantIdsByRootSubClient.set(subClientId, [subClientId])
+    }
+
+    let frontierParentIds = [...directSubClientIds]
+    while (frontierParentIds.length > 0) {
+      const nextLayer = await prisma.client.findMany({
+        where: {
+          tenantId: user.tenantId,
+          parentId: { in: frontierParentIds },
+        },
+        select: { id: true, parentId: true },
+      })
+      if (nextLayer.length === 0) break
+      frontierParentIds = []
+      for (const child of nextLayer) {
+        if (!child.parentId) continue
+        const rootSubClientId = rootSubClientByClientId.get(child.parentId) || child.parentId
+        rootSubClientByClientId.set(child.id, rootSubClientId)
+        const ids = descendantIdsByRootSubClient.get(rootSubClientId) || [rootSubClientId]
+        ids.push(child.id)
+        descendantIdsByRootSubClient.set(rootSubClientId, ids)
+        frontierParentIds.push(child.id)
+      }
+    }
+
+    const allSubClientIds = Array.from(
+      new Set(Array.from(descendantIdsByRootSubClient.values()).flat())
+    )
+    const subClientBalanceRows = allSubClientIds.length
       ? await prisma.invoice.groupBy({
           by: ['clientId'],
           where: {
             tenantId: user.tenantId,
-            clientId: { in: subClientIds },
+            clientId: { in: allSubClientIds },
             balance: { gt: 0 },
             status: { notIn: ['PAID', 'CANCELLED', 'REFUNDED'] as any },
           } as any,
@@ -195,10 +228,17 @@ export async function GET(
       if (!row.clientId) continue
       subClientBalanceById.set(String(row.clientId), row._sum.balance?.toString() || '0')
     }
-    const subClientsWithBalances = (client.subClients || []).map((subClient) => ({
-      ...subClient,
-      openInvoiceBalance: subClientBalanceById.get(subClient.id) || '0',
-    }))
+    const subClientsWithBalances = directSubClients.map((subClient) => {
+      const descendantIds = descendantIdsByRootSubClient.get(subClient.id) || [subClient.id]
+      const combinedOpenBalance = descendantIds.reduce(
+        (sum, childId) => sum + Number(subClientBalanceById.get(childId) || 0),
+        0
+      )
+      return {
+        ...subClient,
+        openInvoiceBalance: combinedOpenBalance.toFixed(2),
+      }
+    })
     const subClientsOpenInvoiceBalance = subClientsWithBalances.reduce(
       (sum, subClient) => sum + Number(subClient.openInvoiceBalance || 0),
       0

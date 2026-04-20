@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -78,6 +79,8 @@ export default function NewInvoicePage() {
   const [loading, setLoading] = useState(false)
   const [clients, setClients] = useState<PickerClient[]>([])
   const [jobs, setJobs] = useState<Job[]>([])
+  const [bulkModeActive, setBulkModeActive] = useState(false)
+  const [selectedItemIndices, setSelectedItemIndices] = useState<Set<number>>(new Set())
   const [pickerItems, setPickerItems] = useState<FastPickerItem[]>([])
   const [pickerBundles, setPickerBundles] = useState<FastPickerItem[]>([])
   const [lineItems, setLineItems] = useState<LineItem[]>([
@@ -486,6 +489,55 @@ export default function NewInvoicePage() {
     })
   }
 
+  const setAllLineItemsVisibility = (isVisibleToClient: boolean) => {
+    setLineItems((prev) =>
+      prev.map((item) => (item.isGroupHeader ? item : { ...item, isVisibleToClient }))
+    )
+  }
+
+  const setGroupLineItemsVisibility = (groupId: string, isVisibleToClient: boolean) => {
+    setLineItems((prev) =>
+      prev.map((item) =>
+        item.groupId === groupId && !item.isGroupHeader ? { ...item, isVisibleToClient } : item
+      )
+    )
+  }
+
+  type VisibilityField = 'showDescriptionToCustomer' | 'showNotesToCustomer' | 'showPriceToCustomer' | 'showCostToCustomer' | 'showTaxToCustomer'
+  const setBulkFieldVisibility = (field: VisibilityField, value: boolean) => {
+    setLineItems((prev) => prev.map((item, idx) => {
+      if (item.isGroupHeader) return item
+      if (bulkModeActive && selectedItemIndices.size > 0 && !selectedItemIndices.has(idx)) return item
+      return { ...item, [field]: value }
+    }))
+    if (!bulkModeActive || selectedItemIndices.size === 0) {
+      setOptionalItems((prev) => prev.map((item) => item.isGroupHeader ? item : { ...item, [field]: value }))
+    }
+  }
+
+  const toggleSelectedItem = (index: number) => {
+    setSelectedItemIndices((prev) => {
+      const next = new Set(prev)
+      if (next.has(index)) next.delete(index)
+      else next.add(index)
+      return next
+    })
+  }
+
+  const selectAllLineItems = () => {
+    setSelectedItemIndices(new Set(lineItems.map((_, i) => i).filter((i) => !lineItems[i].isGroupHeader && !lineItems[i].isSubtotal)))
+  }
+
+  const maybeAutoScrollDuringDrag = (clientY: number) => {
+    const edge = 120
+    const step = 26
+    if (clientY > window.innerHeight - edge) {
+      window.scrollBy({ top: step, behavior: 'auto' })
+    } else if (clientY < edge) {
+      window.scrollBy({ top: -step, behavior: 'auto' })
+    }
+  }
+
   const toggleLineRowVisibility = (index: number) => {
     setLineItems((prev) => {
       const copy = [...prev]
@@ -737,6 +789,20 @@ export default function NewInvoicePage() {
       next.splice(toIndex, 0, moved)
       return next
     })
+  }
+
+  const setAllOptionalItemsVisibility = (isVisibleToClient: boolean) => {
+    setOptionalItems((prev) =>
+      prev.map((item) => (item.isGroupHeader ? item : { ...item, isVisibleToClient }))
+    )
+  }
+
+  const setGroupOptionalItemsVisibility = (groupId: string, isVisibleToClient: boolean) => {
+    setOptionalItems((prev) =>
+      prev.map((item) =>
+        item.groupId === groupId && !item.isGroupHeader ? { ...item, isVisibleToClient } : item
+      )
+    )
   }
 
   const handleOptionalItemSelect = async (item: FastPickerItem, lineIndex: number) => {
@@ -1190,8 +1256,56 @@ export default function NewInvoicePage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Line Items</CardTitle>
-                <CardDescription>Click in Item field to search and add items</CardDescription>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <CardTitle>Line Items</CardTitle>
+                    <CardDescription>Click in Item field to search and add items</CardDescription>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs shrink-0">
+                    <span className="text-gray-500 font-medium self-center">Show to customer:</span>
+                    {(['showDescriptionToCustomer', 'showNotesToCustomer', 'showPriceToCustomer', 'showCostToCustomer', 'showTaxToCustomer'] as VisibilityField[]).map((field) => {
+                      const labels: Record<VisibilityField, string> = { showDescriptionToCustomer: 'Name', showNotesToCustomer: 'Description', showPriceToCustomer: 'Price', showCostToCustomer: 'Cost', showTaxToCustomer: 'Tax' }
+                      const targetItems = (bulkModeActive && selectedItemIndices.size > 0)
+                        ? lineItems.filter((_, i) => selectedItemIndices.has(i))
+                        : lineItems
+                      const anyVisible = targetItems.some((li) => !li.isGroupHeader && li[field] !== false)
+                      return (
+                        <button key={field} type="button"
+                          onClick={() => setBulkFieldVisibility(field, !anyVisible)}
+                          title={`${anyVisible ? 'Hide' : 'Show'} ${labels[field]} for ${bulkModeActive && selectedItemIndices.size > 0 ? 'selected' : 'all'} items`}
+                          className={`flex items-center gap-1 px-2 py-1 rounded border font-medium ${anyVisible ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-gray-50 border-gray-300 text-gray-500'}`}
+                        >
+                          {anyVisible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+                          {labels[field]}
+                        </button>
+                      )
+                    })}
+                    <span className="text-gray-300 self-center">|</span>
+                    <button type="button"
+                      onClick={() => { setAllLineItemsVisibility(true); setAllOptionalItemsVisibility(true) }}
+                      className="px-2 py-1 rounded border bg-gray-50 border-gray-300 text-gray-600 font-medium hover:bg-gray-100"
+                    >Show lines</button>
+                    <button type="button"
+                      onClick={() => { setAllLineItemsVisibility(false); setAllOptionalItemsVisibility(false) }}
+                      className="px-2 py-1 rounded border bg-gray-50 border-gray-300 text-gray-600 font-medium hover:bg-gray-100"
+                    >Hide lines</button>
+                    <span className="text-gray-300 self-center">|</span>
+                    <button type="button"
+                      onClick={() => { setBulkModeActive(!bulkModeActive); setSelectedItemIndices(new Set()) }}
+                      className={`px-2 py-1 rounded border font-medium ${bulkModeActive ? 'bg-violet-50 border-violet-300 text-violet-700' : 'bg-gray-50 border-gray-300 text-gray-600'}`}
+                    >{bulkModeActive ? `Bulk (${selectedItemIndices.size} sel.)` : 'Bulk Select'}</button>
+                    {bulkModeActive && (
+                      <>
+                        <button type="button" onClick={selectAllLineItems}
+                          className="px-2 py-1 rounded border bg-gray-50 border-gray-300 text-gray-600 font-medium hover:bg-gray-100"
+                        >All</button>
+                        <button type="button" onClick={() => setSelectedItemIndices(new Set())}
+                          className="px-2 py-1 rounded border bg-gray-50 border-gray-300 text-gray-600 font-medium hover:bg-gray-100"
+                        >Clear</button>
+                      </>
+                    )}
+                  </div>
+                </div>
               </CardHeader>
               <CardContent className="space-y-2">
                 <div className="space-y-2">
@@ -1231,6 +1345,7 @@ export default function NewInvoicePage() {
                           onDragOver={(e) => {
                             e.preventDefault()
                             e.dataTransfer.dropEffect = 'move'
+                            maybeAutoScrollDuringDrag(e.clientY)
                           }}
                           onDrop={(e) => {
                             e.preventDefault()
@@ -1270,6 +1385,7 @@ export default function NewInvoicePage() {
                         onDragOver={(e) => {
                           e.preventDefault()
                           e.dataTransfer.dropEffect = 'move'
+                          maybeAutoScrollDuringDrag(e.clientY)
                         }}
                         onDrop={(e) => {
                           e.preventDefault()
@@ -1287,6 +1403,15 @@ export default function NewInvoicePage() {
                               : 'border-gray-300'
                         }`}
                       >
+                        {!isGroupHeader && bulkModeActive && !isSubtotalRow && (
+                          <div className="flex items-center pt-2">
+                            <Checkbox
+                              checked={selectedItemIndices.has(index)}
+                              onCheckedChange={() => toggleSelectedItem(index)}
+                            />
+                          </div>
+                        )}
+
                         {!isGroupHeader && (
                           <div className="flex flex-col gap-1 items-center">
                             <button
@@ -1332,11 +1457,45 @@ export default function NewInvoicePage() {
                               <span className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded">
                                 Bundle
                               </span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  setGroupLineItemsVisibility(
+                                    item.groupId || '',
+                                    lineItems.some((li) => li.groupId === item.groupId && !li.isGroupHeader && li.isVisibleToClient === false)
+                                  )
+                                }
+                                title="Show or hide this whole section for the customer"
+                                className="p-1 h-7"
+                              >
+                                {lineItems.some((li) => li.groupId === item.groupId && !li.isGroupHeader && li.isVisibleToClient === false) ? (
+                                  <EyeOff className="h-4 w-4 text-gray-400" />
+                                ) : (
+                                  <Eye className="h-4 w-4 text-gray-600" />
+                                )}
+                              </Button>
                             </div>
                           ) : (
                             <>
                               <div className="flex items-center gap-1">
-                                <Label className="text-xs text-gray-500">Item</Label>
+                                <Label className="text-xs text-gray-500">Name</Label>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  tabIndex={-1}
+                                  onClick={() => toggleVisibility(index, 'description')}
+                                  title={item.showDescriptionToCustomer ? 'Hide item name from customer' : 'Show item name to customer'}
+                                  className="p-0 h-3 w-3"
+                                >
+                                  {item.showDescriptionToCustomer ? (
+                                    <Eye className="h-3 w-3 text-gray-600" />
+                                  ) : (
+                                    <EyeOff className="h-3 w-3 text-gray-400" />
+                                  )}
+                                </Button>
                               </div>
                               <FastPicker
                                 value={item.description}
@@ -1358,15 +1517,11 @@ export default function NewInvoicePage() {
                                   variant="ghost"
                                   size="sm"
                                   tabIndex={-1}
-                                  onClick={() => toggleVisibility(index, 'description')}
-                                  title={
-                                    item.showDescriptionToCustomer
-                                      ? 'Hide description from customer'
-                                      : 'Show description to customer'
-                                  }
+                                  onClick={() => toggleVisibility(index, 'notes')}
+                                  title={item.showNotesToCustomer ? 'Hide description from customer' : 'Show description to customer'}
                                   className="p-0 h-3 w-3"
                                 >
-                                  {item.showDescriptionToCustomer ? (
+                                  {item.showNotesToCustomer ? (
                                     <Eye className="h-3 w-3 text-gray-600" />
                                   ) : (
                                     <EyeOff className="h-3 w-3 text-gray-400" />
@@ -1589,8 +1744,36 @@ export default function NewInvoicePage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Optional Items</CardTitle>
-                <CardDescription>Optional items are shown separately and do not affect the total unless added later.</CardDescription>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <CardTitle>Optional Items</CardTitle>
+                    <CardDescription>Optional items are shown separately and do not affect the total unless added later.</CardDescription>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs shrink-0">
+                    <span className="text-gray-500 font-medium self-center">Show to customer:</span>
+                    {(['showDescriptionToCustomer', 'showNotesToCustomer', 'showPriceToCustomer', 'showCostToCustomer', 'showTaxToCustomer'] as VisibilityField[]).map((field) => {
+                      const labels: Record<VisibilityField, string> = { showDescriptionToCustomer: 'Name', showNotesToCustomer: 'Description', showPriceToCustomer: 'Price', showCostToCustomer: 'Cost', showTaxToCustomer: 'Tax' }
+                      const anyVisible = optionalItems.some((li) => !li.isGroupHeader && li[field] !== false)
+                      return (
+                        <button key={field} type="button"
+                          onClick={() => setBulkFieldVisibility(field, !anyVisible)}
+                          title={`${anyVisible ? 'Hide' : 'Show'} ${labels[field]} for all optional items`}
+                          className={`flex items-center gap-1 px-2 py-1 rounded border font-medium ${anyVisible ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-gray-50 border-gray-300 text-gray-500'}`}
+                        >
+                          {anyVisible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+                          {labels[field]}
+                        </button>
+                      )
+                    })}
+                    <span className="text-gray-300 self-center">|</span>
+                    <button type="button" onClick={() => setAllOptionalItemsVisibility(true)}
+                      className="px-2 py-1 rounded border bg-gray-50 border-gray-300 text-gray-600 font-medium hover:bg-gray-100"
+                    >Show lines</button>
+                    <button type="button" onClick={() => setAllOptionalItemsVisibility(false)}
+                      className="px-2 py-1 rounded border bg-gray-50 border-gray-300 text-gray-600 font-medium hover:bg-gray-100"
+                    >Hide lines</button>
+                  </div>
+                </div>
               </CardHeader>
               <CardContent className="space-y-2">
                 <div className="space-y-2">
@@ -1613,6 +1796,7 @@ export default function NewInvoicePage() {
                         onDragOver={(e) => {
                           e.preventDefault()
                           e.dataTransfer.dropEffect = 'move'
+                          maybeAutoScrollDuringDrag(e.clientY)
                         }}
                         onDrop={(e) => {
                           e.preventDefault()
@@ -1669,11 +1853,45 @@ export default function NewInvoicePage() {
                               <span className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded">
                                 Bundle
                               </span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  setGroupOptionalItemsVisibility(
+                                    item.groupId || '',
+                                    optionalItems.some((li) => li.groupId === item.groupId && !li.isGroupHeader && li.isVisibleToClient === false)
+                                  )
+                                }
+                                title="Show or hide this whole section for the customer"
+                                className="p-1 h-7"
+                              >
+                                {optionalItems.some((li) => li.groupId === item.groupId && !li.isGroupHeader && li.isVisibleToClient === false) ? (
+                                  <EyeOff className="h-4 w-4 text-gray-400" />
+                                ) : (
+                                  <Eye className="h-4 w-4 text-gray-600" />
+                                )}
+                              </Button>
                             </div>
                           ) : (
                             <>
                               <div className="flex items-center gap-1">
-                                <Label className="text-xs text-gray-500">Item</Label>
+                                <Label className="text-xs text-gray-500">Name</Label>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  tabIndex={-1}
+                                  onClick={() => toggleOptionalFieldVisibility(index, 'description')}
+                                  title={item.showDescriptionToCustomer ? 'Hide item name from customer' : 'Show item name to customer'}
+                                  className="p-0 h-3 w-3"
+                                >
+                                  {item.showDescriptionToCustomer ? (
+                                    <Eye className="h-3 w-3 text-gray-600" />
+                                  ) : (
+                                    <EyeOff className="h-3 w-3 text-gray-400" />
+                                  )}
+                                </Button>
                               </div>
                               <FastPicker
                                 value={item.description}
@@ -1695,15 +1913,11 @@ export default function NewInvoicePage() {
                                   variant="ghost"
                                   size="sm"
                                   tabIndex={-1}
-                                  onClick={() => toggleOptionalFieldVisibility(index, 'description')}
-                                  title={
-                                    item.showDescriptionToCustomer
-                                      ? 'Hide description from customer'
-                                      : 'Show description to customer'
-                                  }
+                                  onClick={() => toggleOptionalFieldVisibility(index, 'notes')}
+                                  title={item.showNotesToCustomer ? 'Hide description from customer' : 'Show description to customer'}
                                   className="p-0 h-3 w-3"
                                 >
-                                  {item.showDescriptionToCustomer ? (
+                                  {item.showNotesToCustomer ? (
                                     <Eye className="h-3 w-3 text-gray-600" />
                                   ) : (
                                     <EyeOff className="h-3 w-3 text-gray-400" />
