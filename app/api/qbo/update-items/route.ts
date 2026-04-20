@@ -14,6 +14,13 @@ export async function POST(request: NextRequest) {
 
   const user = getAuthUser(request)
 
+  if (user.role !== 'ADMIN') {
+    return NextResponse.json(
+      { error: 'Admin access required to run this repair tool' },
+      { status: 403 }
+    )
+  }
+
   try {
     const session = await getQboSessionForTenant(user.tenantId)
     if (!session) {

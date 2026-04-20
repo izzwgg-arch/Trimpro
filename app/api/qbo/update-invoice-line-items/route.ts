@@ -4,14 +4,27 @@ import { prisma } from '@/lib/prisma'
 import { getQboSessionForTenant } from '@/lib/qbo/session'
 import { quickBooksService } from '@/lib/services/quickbooks'
 
+const MAX_LIMIT = 200
+
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
 
   const user = getAuthUser(request)
 
+  if (user.role !== 'ADMIN') {
+    return NextResponse.json(
+      { error: 'Admin access required to run this repair tool' },
+      { status: 403 }
+    )
+  }
+
   try {
-    // Get all invoices that were imported from QuickBooks (have qboSyncId)
+    const body = await request.json().catch(() => ({}))
+    const limit = Math.min(Number(body?.limit) || MAX_LIMIT, MAX_LIMIT)
+    const dryRun = body?.dryRun === true
+
+    // Get invoices that were imported from QuickBooks (have qboSyncId)
     const invoices = await prisma.invoice.findMany({
       where: {
         tenantId: user.tenantId,
@@ -22,16 +35,25 @@ export async function POST(request: NextRequest) {
           orderBy: { sortOrder: 'asc' },
         },
       },
+      take: limit,
     })
 
     if (invoices.length === 0) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         message: 'No QuickBooks-imported invoices found to update',
-        updated: 0 
+        updated: 0,
       })
     }
 
-    // Get QuickBooks session
+    if (dryRun) {
+      return NextResponse.json({
+        dryRun: true,
+        message: `Dry run: would scan ${invoices.length} QuickBooks-imported invoice(s). Pass dryRun: false to apply.`,
+        invoiceCount: invoices.length,
+        limit,
+      })
+    }
+
     const session = await getQboSessionForTenant(user.tenantId)
     if (!session) {
       return NextResponse.json(
@@ -44,26 +66,29 @@ export async function POST(request: NextRequest) {
     let errorCount = 0
     const errors: string[] = []
 
-    // Process each invoice
     for (const invoice of invoices) {
       try {
         if (!invoice.qboSyncId) continue
 
-        // Fetch the invoice from QuickBooks
         const qboInvoice = await quickBooksService.makeAPIRequest(
           session.accessToken,
           session.realmId,
           `/invoice/${invoice.qboSyncId}`,
-          'GET'
+          'GET',
+          undefined,
+          {
+            tenantId: user.tenantId,
+            entityType: 'invoice',
+            entityId: invoice.id,
+            triggerSource: 'admin_update_line_items',
+          }
         )
 
         const inv = qboInvoice?.Invoice || qboInvoice
         if (!inv || !inv.Line) {
-          console.warn(`[Update Line Items] No line items found for invoice ${invoice.id} (QBO: ${invoice.qboSyncId})`)
           continue
         }
 
-        // Process line items from QuickBooks
         const qboLines = Array.isArray(inv.Line) ? inv.Line : []
         const lineItemsMap = new Map<number, { itemName: string; description: string }>()
 
@@ -74,31 +99,24 @@ export async function POST(request: NextRequest) {
             return dt !== 'SubTotalLineDetail' && dt !== 'DescriptionOnly'
           })
           .forEach((l: any, idx: number) => {
-            // Extract item name from ItemRef
-            const itemName = String(l?.SalesItemLineDetail?.ItemRef?.name || '') || 
-                            String(l?.SalesItemLineDetail?.ItemRef?.value || '') || 
-                            ''
-            
-            // Extract description from Description field
+            const itemName =
+              String(l?.SalesItemLineDetail?.ItemRef?.name || '') ||
+              String(l?.SalesItemLineDetail?.ItemRef?.value || '') ||
+              ''
             const description = String(l.Description || '')
-            
             lineItemsMap.set(idx, {
               itemName: itemName || description || `QuickBooks line ${idx + 1}`,
               description: description && itemName ? description : '',
             })
           })
 
-        // Update existing line items in the database
-        // Match by sortOrder (index)
         const localLineItems = invoice.lineItems
         let lineItemUpdated = false
 
         for (let i = 0; i < localLineItems.length; i++) {
           const localItem = localLineItems[i]
           const qboData = lineItemsMap.get(i)
-          
           if (qboData) {
-            // Update the line item with item name and description
             await prisma.invoiceLineItem.update({
               where: { id: localItem.id },
               data: {
@@ -122,8 +140,9 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({
-      message: `Updated ${updatedCount} invoice(s)`,
+      message: `Updated ${updatedCount} invoice(s) (scanned ${invoices.length}, limit=${limit})`,
       updated: updatedCount,
+      scanned: invoices.length,
       errors: errorCount,
       errorDetails: errors.length > 0 ? errors : undefined,
     })

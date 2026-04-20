@@ -1613,10 +1613,11 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
     })
     if (!estimate?.clientId) return
 
-    // Always push/link the client first. syncClientToQuickBooks rethrows on failure so we never
-    // continue with a missing QB customer after a failed client sync (previously errors were swallowed).
-    await syncClientToQuickBooks(tenantId, estimate.clientId)
-    const customerQboId = await ensureClientCustomer({
+    // Try to resolve the QBO customer id without triggering a full push.
+    // ensureClientCustomer(false) skips creation but still updates the customer in QBO if its
+    // data hash changed, so already-mapped clients stay current.
+    // Only call syncClientToQuickBooks (which also rethrows) when the client has never been mapped.
+    let customerQboId = await ensureClientCustomer({
       tenantId,
       clientId: estimate.clientId,
       accessToken: session.accessToken,
@@ -1625,8 +1626,19 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
       createIfMissing: false,
     })
     if (!customerQboId) {
+      await syncClientToQuickBooks(tenantId, estimate.clientId)
+      customerQboId = await ensureClientCustomer({
+        tenantId,
+        clientId: estimate.clientId,
+        accessToken: session.accessToken,
+        realmId: session.realmId,
+        integrationId: session.integrationId,
+        createIfMissing: false,
+      })
+    }
+    if (!customerQboId) {
       throw new Error(
-        'QuickBooks estimate sync skipped: this client is not linked to a QuickBooks customer after sync. Check QuickBooks connection and sync/import the client, then retry.'
+        'QuickBooks estimate sync skipped: this client is not linked to a QuickBooks customer. Check QuickBooks connection and sync/import the client, then retry.'
       )
     }
 
@@ -1770,8 +1782,7 @@ export async function syncInvoiceToQuickBooks(tenantId: string, invoiceId: strin
     })
     if (!invoice?.clientId) return
 
-    await syncClientToQuickBooks(tenantId, invoice.clientId)
-    const customerQboId = await ensureClientCustomer({
+    let customerQboId = await ensureClientCustomer({
       tenantId,
       clientId: invoice.clientId,
       accessToken: session.accessToken,
@@ -1780,8 +1791,19 @@ export async function syncInvoiceToQuickBooks(tenantId: string, invoiceId: strin
       createIfMissing: false,
     })
     if (!customerQboId) {
+      await syncClientToQuickBooks(tenantId, invoice.clientId)
+      customerQboId = await ensureClientCustomer({
+        tenantId,
+        clientId: invoice.clientId,
+        accessToken: session.accessToken,
+        realmId: session.realmId,
+        integrationId: session.integrationId,
+        createIfMissing: false,
+      })
+    }
+    if (!customerQboId) {
       throw new Error(
-        'QuickBooks invoice sync skipped: this client is not linked to a QuickBooks customer after sync. Check QuickBooks connection and sync/import the client, then retry.'
+        'QuickBooks invoice sync skipped: this client is not linked to a QuickBooks customer. Check QuickBooks connection and sync/import the client, then retry.'
       )
     }
 
@@ -2115,11 +2137,15 @@ export async function syncVendorToQuickBooks(tenantId: string, vendorId: string)
         : undefined,
     }
 
+    const vendorCtx = { tenantId, entityType: 'vendor', entityId: vendor.id, triggerSource: 'vendor_sync' }
     if (mappedId) {
       const current = await quickBooksService.makeAPIRequest(
         session.accessToken,
         session.realmId,
-        `/vendor/${mappedId}`
+        `/vendor/${mappedId}`,
+        'GET',
+        undefined,
+        vendorCtx
       )
       const syncToken = current?.Vendor?.SyncToken || '0'
       const updated = await quickBooksService.makeAPIRequest(
@@ -2127,7 +2153,8 @@ export async function syncVendorToQuickBooks(tenantId: string, vendorId: string)
         session.realmId,
         '/vendor?operation=update',
         'POST',
-        { ...payload, Id: mappedId, SyncToken: syncToken, sparse: true }
+        { ...payload, Id: mappedId, SyncToken: syncToken, sparse: true },
+        vendorCtx
       )
       const qboId = String(updated?.Vendor?.Id || mappedId)
       await logSync({
@@ -2159,7 +2186,8 @@ export async function syncVendorToQuickBooks(tenantId: string, vendorId: string)
       session.realmId,
       '/vendor',
       'POST',
-      payload
+      payload,
+      vendorCtx
     )
     const qboId = String(created?.Vendor?.Id || '')
     if (!qboId) throw new Error('QuickBooks did not return vendor id')
@@ -2240,12 +2268,16 @@ export async function syncPurchaseOrderToQuickBooks(tenantId: string, purchaseOr
       Line: lines,
     }
 
+    const poCtx = { tenantId, entityType: 'purchase_order', entityId: po.id, triggerSource: 'po_sync' }
     const mappedPoQboId = await getMappedQboId(session.integrationId, 'purchase_order', po.id)
     if (mappedPoQboId) {
       const current = await quickBooksService.makeAPIRequest(
         session.accessToken,
         session.realmId,
-        `/purchaseorder/${mappedPoQboId}`
+        `/purchaseorder/${mappedPoQboId}`,
+        'GET',
+        undefined,
+        poCtx
       )
       const syncToken = current?.PurchaseOrder?.SyncToken || '0'
       const updated = await quickBooksService.makeAPIRequest(
@@ -2253,7 +2285,8 @@ export async function syncPurchaseOrderToQuickBooks(tenantId: string, purchaseOr
         session.realmId,
         '/purchaseorder?operation=update',
         'POST',
-        { ...payload, Id: mappedPoQboId, SyncToken: syncToken }
+        { ...payload, Id: mappedPoQboId, SyncToken: syncToken },
+        poCtx
       )
       const qboId = String(updated?.PurchaseOrder?.Id || mappedPoQboId)
       await logSync({
@@ -2272,7 +2305,8 @@ export async function syncPurchaseOrderToQuickBooks(tenantId: string, purchaseOr
       session.realmId,
       '/purchaseorder',
       'POST',
-      payload
+      payload,
+      poCtx
     )
     const qboId = String(created?.PurchaseOrder?.Id || '')
     if (!qboId) throw new Error('QuickBooks did not return purchase order id')

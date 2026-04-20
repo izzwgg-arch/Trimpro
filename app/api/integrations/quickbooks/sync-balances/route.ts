@@ -22,6 +22,13 @@ export async function POST(request: NextRequest) {
   if (authError) return authError
   const user = getAuthUser(request)
 
+  if (user.role !== 'ADMIN') {
+    return NextResponse.json(
+      { error: 'Admin access required to run this repair tool' },
+      { status: 403 }
+    )
+  }
+
   const session = await getQboSessionForTenant(user.tenantId)
   if (!session) {
     return NextResponse.json({ error: 'QuickBooks not connected' }, { status: 400 })
@@ -49,7 +56,14 @@ export async function POST(request: NextRequest) {
         session.accessToken,
         session.realmId,
         `/invoice/${invoice.qboSyncId}`,
-        'GET'
+        'GET',
+        undefined,
+        {
+          tenantId: user.tenantId,
+          entityType: 'invoice',
+          entityId: invoice.id,
+          triggerSource: 'admin_sync_balances',
+        }
       )
       const qboInvoice = qboRes?.Invoice
       const qboBalance = Number(qboInvoice?.Balance ?? qboInvoice?.BalanceAmt ?? NaN)
