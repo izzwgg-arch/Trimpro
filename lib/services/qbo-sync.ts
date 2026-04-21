@@ -78,6 +78,11 @@ function isQboDeletedListReferenceError(error: any): boolean {
   return msg.includes('cannot modify a list element that has been deleted')
 }
 
+function isQboDuplicateNameError(error: any): boolean {
+  const msg = getErrorMessage(error).toLowerCase()
+  return msg.includes('duplicate name exists') || msg.includes('code=6240') || msg.includes('the name supplied already exists')
+}
+
 function invalidateCustomerLookupCache(realmId: string, names: Array<string | null | undefined>) {
   for (const name of Array.from(new Set(names.map((value) => String(value || '').trim()).filter(Boolean)))) {
     customerLookupCache.delete(makeLookupCacheKey(['customer', realmId, name]))
@@ -1394,32 +1399,30 @@ async function ensureClientCustomer(params: {
     }
   }
 
-  // Try to link root clients by DisplayName without creating duplicates.
-  // Never do this for TrimPro sub-clients: they must be created under ParentRef in QBO, and
-  // name-based matches often point at unrelated top-level customers.
-  if (!client.parentId) {
-    const candidates = Array.from(
-      new Set([client.name, client.companyName].map((v) => String(v || '').trim()).filter(Boolean))
-    )
-    for (const candidate of candidates) {
-      const existing = await findCustomerByDisplayName(params.accessToken, params.realmId, candidate, {
-        tenantId: params.tenantId,
+  // Try to link clients by DisplayName before creating, to avoid duplicates.
+  // For sub-clients we restrict to Job=true matches to avoid false positives.
+  const linkCandidates = Array.from(
+    new Set([client.name, client.companyName].map((v) => String(v || '').trim()).filter(Boolean))
+  )
+  for (const candidate of linkCandidates) {
+    const existing = await findCustomerByDisplayName(params.accessToken, params.realmId, candidate, {
+      tenantId: params.tenantId,
+      entityId: client.id,
+      triggerSource: 'client_link_by_name',
+    })
+    // For sub-clients only accept a Job match to avoid hijacking unrelated top-level customers
+    if (existing?.Id && (!client.parentId || existing.Job)) {
+      const qboId = String(existing.Id)
+      await logSync({
+        integrationId: params.integrationId,
+        type: 'client',
+        action: 'link',
+        status: 'success',
         entityId: client.id,
-        triggerSource: 'client_link_by_name',
+        qboId,
+        data: { matchedDisplayName: candidate },
       })
-      if (existing?.Id) {
-        const qboId = String(existing.Id)
-        await logSync({
-          integrationId: params.integrationId,
-          type: 'client',
-          action: 'link',
-          status: 'success',
-          entityId: client.id,
-          qboId,
-          data: { matchedDisplayName: candidate },
-        })
-        return qboId
-      }
+      return qboId
     }
   }
 
@@ -1436,12 +1439,50 @@ async function ensureClientCustomer(params: {
     return null
   }
 
-  let created: any
+  /**
+   * Helper: if create fails with "duplicate name" (code=6240), fall back to a name lookup
+   * and link the pre-existing QBO customer rather than failing.
+   */
+  async function createOrRelink(payload: any): Promise<string> {
+    try {
+      const res = await quickBooksService.createCustomer(params.accessToken, params.realmId, payload, customerCtx)
+      const id = String(res?.Customer?.Id || '')
+      if (!id) throw new Error('QuickBooks did not return customer id after create')
+      return id
+    } catch (createErr: any) {
+      if (isQboDuplicateNameError(createErr)) {
+        // Customer already exists in QBO — find it by name and link
+        for (const candidate of linkCandidates) {
+          const found = await findCustomerByDisplayName(params.accessToken, params.realmId, candidate, {
+            tenantId: params.tenantId,
+            entityId: client.id,
+            triggerSource: 'client_relink_after_duplicate',
+          })
+          if (found?.Id && (!client.parentId || found.Job)) {
+            const qboId = String(found.Id)
+            await logSync({
+              integrationId: params.integrationId,
+              type: 'client',
+              action: 'link',
+              status: 'success',
+              entityId: client.id,
+              qboId,
+              data: { matchedDisplayName: candidate, reason: 'relink_after_6240' },
+            })
+            return qboId
+          }
+        }
+      }
+      throw createErr
+    }
+  }
+
+  let qboId: string
   if (!parentQboId) {
-    created = await quickBooksService.createCustomer(params.accessToken, params.realmId, buildCreatePayload(), customerCtx)
+    qboId = await createOrRelink(buildCreatePayload())
   } else {
     try {
-      created = await quickBooksService.createCustomer(params.accessToken, params.realmId, buildCreatePayload(), customerCtx)
+      qboId = await createOrRelink(buildCreatePayload())
     } catch {
       try {
         const jobStyle: any = {
@@ -1451,7 +1492,7 @@ async function ensureClientCustomer(params: {
         }
         if (primaryEmail) jobStyle.PrimaryEmailAddr = { Address: primaryEmail }
         if (client.phone) jobStyle.PrimaryPhone = { FreeFormNumber: client.phone }
-        created = await quickBooksService.createCustomer(params.accessToken, params.realmId, jobStyle, customerCtx)
+        qboId = await createOrRelink(jobStyle)
       } catch {
         const isSubOnly: any = {
           DisplayName: client.name,
@@ -1460,11 +1501,10 @@ async function ensureClientCustomer(params: {
         }
         if (primaryEmail) isSubOnly.PrimaryEmailAddr = { Address: primaryEmail }
         if (client.phone) isSubOnly.PrimaryPhone = { FreeFormNumber: client.phone }
-        created = await quickBooksService.createCustomer(params.accessToken, params.realmId, isSubOnly, customerCtx)
+        qboId = await createOrRelink(isSubOnly)
       }
     }
   }
-  const qboId = String(created?.Customer?.Id || '')
   if (!qboId) throw new Error('QuickBooks did not return customer id')
   await logSync({
     integrationId: params.integrationId,
@@ -1505,12 +1545,29 @@ async function ensureProjectCustomer(params: {
     return qboId
   }
 
-  const created = await quickBooksService.createCustomer(params.accessToken, params.realmId, {
-    DisplayName: params.displayName,
-    ParentRef: { value: params.parentCustomerQboId },
-    Job: true,
-  })
-  const qboId = String(created?.Customer?.Id || '')
+  let qboId: string
+  try {
+    const created = await quickBooksService.createCustomer(params.accessToken, params.realmId, {
+      DisplayName: params.displayName,
+      ParentRef: { value: params.parentCustomerQboId },
+      Job: true,
+    })
+    qboId = String(created?.Customer?.Id || '')
+  } catch (createErr: any) {
+    if (isQboDuplicateNameError(createErr)) {
+      // Already exists — re-query without Job filter as a fallback
+      const retry = await quickBooksService.query(params.accessToken, params.realmId,
+        `select * from Customer where DisplayName='${esc(params.displayName)}' maxresults 1`)
+      const retryCustomer = retry?.QueryResponse?.Customer?.[0]
+      if (retryCustomer?.Id) {
+        qboId = String(retryCustomer.Id)
+      } else {
+        throw createErr
+      }
+    } else {
+      throw createErr
+    }
+  }
   if (!qboId) throw new Error('QuickBooks did not return project id')
   await logSync({
     integrationId: params.integrationId,
