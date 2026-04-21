@@ -831,6 +831,7 @@ model InvoiceLineItem {
   vendorId                  String? // Vendor for this specific line item
   taxable                   Boolean  @default(true)
   taxRate                   Decimal? @db.Decimal(5, 4)
+  isSubtotal                Boolean  @default(false) // True for subtotal rows (sums items since previous subtotal)
 
   invoice    Invoice            @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   group      DocumentLineGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)

@@ -262,6 +262,7 @@ export async function PUT(
 
     if (lineItems && Array.isArray(lineItems)) {
       subtotal = lineItems.reduce((sum: number, item: any) => {
+        if (item?.isSubtotal) return sum
         const qty = parseFloat(item.quantity || 0)
         const price = parseFloat(item.unitPrice || 0)
         return sum + (qty * price)
@@ -303,9 +304,10 @@ export async function PUT(
       // Create new line items
       for (let i = 0; i < lineItems.length; i++) {
         const item = lineItems[i]
-        const qty = parseFloat(item.quantity || 0)
-        const price = parseFloat(item.unitPrice || 0)
-        const itemTotal = qty * price
+        const isSubtotalItem = Boolean(item.isSubtotal)
+        const qty = isSubtotalItem ? 0 : parseFloat(item.quantity || 0)
+        const price = isSubtotalItem ? 0 : parseFloat(item.unitPrice || 0)
+        const itemTotal = isSubtotalItem ? 0 : (qty * price)
 
         // Get groupId from map if item has a groupId
         const dbGroupId = item.groupId ? groupMap.get(item.groupId) || null : null
@@ -314,12 +316,13 @@ export async function PUT(
           data: {
             invoiceId: params.id,
             groupId: dbGroupId,
-            description: item.description,
+            description: isSubtotalItem ? 'Subtotal' : item.description,
             quantity: qty,
             unitPrice: price,
-            unitCost: item.unitCost ? parseFloat(item.unitCost) : null,
+            unitCost: isSubtotalItem ? null : (item.unitCost ? parseFloat(item.unitCost) : null),
             total: itemTotal,
             sortOrder: i,
+            isSubtotal: isSubtotalItem,
             isVisibleToClient: item.isVisibleToClient !== undefined ? Boolean(item.isVisibleToClient) : true,
             // New per-field visibility flags
             showDescriptionToCustomer:
@@ -329,9 +332,9 @@ export async function PUT(
             showTaxToCustomer: item.showTaxToCustomer !== undefined ? Boolean(item.showTaxToCustomer) : true,
             showNotesToCustomer: item.showNotesToCustomer !== undefined ? Boolean(item.showNotesToCustomer) : false,
             // Additional fields
-            vendorId: item.vendorId || null,
-            taxable: item.taxable !== undefined ? Boolean(item.taxable) : true,
-            taxRate: item.taxRate ? parseFloat(item.taxRate) : null,
+            vendorId: isSubtotalItem ? null : (item.vendorId || null),
+            taxable: isSubtotalItem ? false : (item.taxable !== undefined ? Boolean(item.taxable) : true),
+            taxRate: isSubtotalItem ? null : (item.taxRate ? parseFloat(item.taxRate) : null),
             notes: item.notes || null,
             sourceItemId: item.sourceItemId || null,
             sourceBundleId: item.sourceBundleId || null,

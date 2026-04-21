@@ -801,7 +801,7 @@ export default function EditInvoicePage() {
         if (item.isGroupHeader || item.isSubtotal) return sum
         return sum + parseFloat(item.quantity || '0') * parseFloat(item.unitPrice || '0')
       }, 0)
-      
+
       const discount = parseFloat(formData.discount || '0')
       const subtotalAfterDiscount = Math.max(0, subtotal - discount)
       const taxRate = parseFloat(formData.taxRate || '0') / 100
@@ -812,21 +812,22 @@ export default function EditInvoicePage() {
         .filter(item => !item.isGroupHeader)
         .map((item, index) => ({
           id: item.id,
-          description: item.description,
-          quantity: parseFloat(item.quantity || '1'),
-          unitPrice: parseFloat(item.unitPrice || '0'),
-          unitCost: item.unitCost ? parseFloat(item.unitCost) : null,
-          total: parseFloat(item.quantity || '1') * parseFloat(item.unitPrice || '0'),
+          description: item.isSubtotal ? 'Subtotal' : item.description,
+          quantity: item.isSubtotal ? 0 : parseFloat(item.quantity || '1'),
+          unitPrice: item.isSubtotal ? 0 : parseFloat(item.unitPrice || '0'),
+          unitCost: item.isSubtotal ? null : (item.unitCost ? parseFloat(item.unitCost) : null),
+          total: item.isSubtotal ? 0 : (parseFloat(item.quantity || '1') * parseFloat(item.unitPrice || '0')),
           sortOrder: index,
+          isSubtotal: item.isSubtotal || false,
           isVisibleToClient: item.isVisibleToClient !== false,
           showDescriptionToCustomer: item.showDescriptionToCustomer,
           showCostToCustomer: item.showCostToCustomer,
           showPriceToCustomer: item.showPriceToCustomer,
           showTaxToCustomer: item.showTaxToCustomer,
           showNotesToCustomer: item.showNotesToCustomer,
-          vendorId: item.vendorId || null,
-          taxable: item.taxable,
-          taxRate: item.taxRate ? parseFloat(item.taxRate) / 100 : null,
+          vendorId: item.isSubtotal ? null : (item.vendorId || null),
+          taxable: item.isSubtotal ? false : item.taxable,
+          taxRate: item.isSubtotal ? null : (item.taxRate ? parseFloat(item.taxRate) / 100 : null),
           notes: item.notes || null,
           groupId: item.groupId || null,
           sourceItemId: item.sourceItemId || null,
@@ -1183,6 +1184,15 @@ export default function EditInvoicePage() {
                           <div className="flex items-center gap-2">
                             <span className="font-bold text-slate-800">${subtotalDisplay.toFixed(2)}</span>
                             <GripVertical className="h-4 w-4 text-slate-400" aria-hidden />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeLineItem(index)}
+                              className="text-red-400 hover:text-red-600 p-1 h-auto"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </div>
                         </div>
                       )
@@ -1495,10 +1505,38 @@ export default function EditInvoicePage() {
                     )
                   })}
                 </div>
-                <Button type="button" variant="outline" onClick={addLineItem}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Line Item
-                </Button>
+                <div className="flex gap-2 flex-wrap">
+                  <Button type="button" variant="outline" onClick={addLineItem}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Line Item
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="border-dashed"
+                    onClick={() => {
+                      setLineItems(prev => [
+                        ...prev,
+                        {
+                          description: 'Subtotal',
+                          quantity: '0',
+                          unitPrice: '0',
+                          taxable: false,
+                          isVisibleToClient: true,
+                          showDescriptionToCustomer: true,
+                          showCostToCustomer: false,
+                          showPriceToCustomer: true,
+                          showTaxToCustomer: false,
+                          showNotesToCustomer: false,
+                          isSubtotal: true,
+                        },
+                      ])
+                    }}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Subtotal Row
+                  </Button>
+                </div>
               </CardContent>
             </Card>
 

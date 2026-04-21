@@ -314,16 +314,18 @@ export async function POST(request: NextRequest) {
       // Get groupId from map if item has a groupId
       const dbGroupId = item.groupId ? groupMap.get(item.groupId) || null : null
 
+      const isSubtotalItem = Boolean(item.isSubtotal)
       await prisma.invoiceLineItem.create({
         data: {
           invoiceId: invoice.id,
           groupId: dbGroupId,
-          description: item.description,
-          quantity: qty,
-          unitPrice: price,
-          unitCost: item.unitCost ? (typeof item.unitCost === 'number' ? item.unitCost : parseFloat(item.unitCost)) : null,
-          total: itemTotal,
+          description: isSubtotalItem ? 'Subtotal' : item.description,
+          quantity: isSubtotalItem ? 0 : qty,
+          unitPrice: isSubtotalItem ? 0 : price,
+          unitCost: isSubtotalItem ? null : (item.unitCost ? (typeof item.unitCost === 'number' ? item.unitCost : parseFloat(item.unitCost)) : null),
+          total: isSubtotalItem ? 0 : itemTotal,
           sortOrder: i,
+          isSubtotal: isSubtotalItem,
           isVisibleToClient: item.isVisibleToClient !== undefined ? Boolean(item.isVisibleToClient) : true,
           // New per-field visibility flags
           showDescriptionToCustomer:
@@ -333,9 +335,9 @@ export async function POST(request: NextRequest) {
           showTaxToCustomer: item.showTaxToCustomer !== undefined ? Boolean(item.showTaxToCustomer) : true,
           showNotesToCustomer: item.showNotesToCustomer !== undefined ? Boolean(item.showNotesToCustomer) : false,
           // Additional fields
-          vendorId: item.vendorId || null,
-          taxable: item.taxable !== undefined ? Boolean(item.taxable) : true,
-          taxRate: item.taxRate ? (typeof item.taxRate === 'number' ? item.taxRate : parseFloat(item.taxRate)) : null,
+          vendorId: isSubtotalItem ? null : (item.vendorId || null),
+          taxable: isSubtotalItem ? false : (item.taxable !== undefined ? Boolean(item.taxable) : true),
+          taxRate: isSubtotalItem ? null : (item.taxRate ? (typeof item.taxRate === 'number' ? item.taxRate : parseFloat(item.taxRate)) : null),
           notes: item.notes || null,
           sourceItemId: item.sourceItemId || null,
           sourceBundleId: item.sourceBundleId || null,
