@@ -279,7 +279,7 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
                 showPriceToCustomer: li.showPriceToCustomer ?? true,
                 showTaxToCustomer: li.showTaxToCustomer ?? true,
                 showNotesToCustomer: li.showNotesToCustomer ?? true,
-                notes: `Full price: $${fullPrice.toFixed(2)} | Charged (50%): $${charged.toFixed(2)} | Outstanding: $${outstanding.toFixed(2)}`,
+                notes: li.notes || null,
                 vendorId: li.vendorId || null,
                 taxable: li.taxable ?? true,
                 taxRate: li.taxRate ?? null,

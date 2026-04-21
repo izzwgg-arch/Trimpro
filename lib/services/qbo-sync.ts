@@ -57,6 +57,33 @@ export function qboEstimateReadEndpoint(qboId: string) {
   return `/estimate/${encodeURIComponent(qboId)}?minorversion=${QBO_ESTIMATE_READ_MINOR_VERSION}`
 }
 
+function getErrorMessage(error: any): string {
+  return String(error?.message || error || '')
+}
+
+function isQboMissingOrDeletedEntityError(error: any): boolean {
+  const msg = getErrorMessage(error).toLowerCase()
+  return (
+    msg.includes('has been deleted') ||
+    msg.includes('made inactive') ||
+    msg.includes('object not found') ||
+    msg.includes('not found') ||
+    msg.includes('code=610') ||
+    msg.includes('status=404')
+  )
+}
+
+function isQboDeletedListReferenceError(error: any): boolean {
+  const msg = getErrorMessage(error).toLowerCase()
+  return msg.includes('cannot modify a list element that has been deleted')
+}
+
+function invalidateCustomerLookupCache(realmId: string, names: Array<string | null | undefined>) {
+  for (const name of Array.from(new Set(names.map((value) => String(value || '').trim()).filter(Boolean)))) {
+    customerLookupCache.delete(makeLookupCacheKey(['customer', realmId, name]))
+  }
+}
+
 function qboDate(value: Date | string | null | undefined): string {
   if (!value) return new Date().toISOString().slice(0, 10)
   const d = value instanceof Date ? value : new Date(value)
@@ -1003,14 +1030,24 @@ function buildSalesItemLinesWithIds(params: {
 async function findCustomerByDisplayName(
   accessToken: string,
   realmId: string,
-  displayName: string
+  displayName: string,
+  context?: {
+    tenantId?: string
+    entityId?: string
+    triggerSource?: string
+  }
 ) {
   const cacheKey = makeLookupCacheKey(['customer', realmId, displayName])
   const cachedId = readCachedLookup(customerLookupCache, cacheKey)
   if (cachedId) return { Id: cachedId }
 
   const query = `select * from Customer where DisplayName='${esc(displayName)}' maxresults 1`
-  const res = await quickBooksService.query(accessToken, realmId, query)
+  const res = await quickBooksService.query(accessToken, realmId, query, {
+    tenantId: context?.tenantId ?? null,
+    entityType: 'client',
+    entityId: context?.entityId ?? null,
+    triggerSource: context?.triggerSource ?? 'client_lookup_by_name',
+  })
   const customer = res?.QueryResponse?.Customer?.[0] || null
   if (customer?.Id) {
     writeCachedLookup(customerLookupCache, cacheKey, String(customer.Id), LOOKUP_CACHE_TTL_MS)
@@ -1189,6 +1226,7 @@ async function ensureClientCustomer(params: {
   realmId: string
   integrationId: string
   createIfMissing?: boolean
+  verifyMappedId?: boolean
 }) {
   const client = await prisma.client.findFirst({
     where: { id: params.clientId, tenantId: params.tenantId },
@@ -1212,6 +1250,7 @@ async function ensureClientCustomer(params: {
       realmId: params.realmId,
       integrationId: params.integrationId,
       createIfMissing: true,
+      verifyMappedId: true,
     })
     if (!parentQboId) {
       throw new Error(
@@ -1220,37 +1259,44 @@ async function ensureClientCustomer(params: {
     }
   }
 
-  const mappedId = await getMappedQboId(params.integrationId, 'client', client.id)
+  let mappedId = await getMappedQboId(params.integrationId, 'client', client.id)
   const createIfMissing = params.createIfMissing !== false
   const billing = client.addresses?.[0]
   const primaryEmail = getPrimaryEmail(client.email)
-  const payload: any = {
-    DisplayName: client.name,
-    CompanyName: client.companyName || client.name,
-    // QBO supports a single email. TrimPro can store comma-separated emails.
-    PrimaryEmailAddr: primaryEmail ? { Address: primaryEmail } : undefined,
-    PrimaryPhone: client.phone ? { FreeFormNumber: client.phone } : undefined,
-    BillAddr: billing
-      ? {
-          Line1: billing.street,
-          City: billing.city,
-          CountrySubDivisionCode: billing.state,
-          PostalCode: billing.zipCode,
-          Country: billing.country || 'US',
-        }
-      : undefined,
-    // Nested under parent in QBO: Intuit requires ParentRef + Job=true (see API / StackOverflow).
-    // Do NOT set IsSubCustomer together with Job — that combination often returns Business Validation Error.
-    // BillWithParent matches our working ensureProjectCustomer() pattern.
-    ...(parentQboId
-      ? {
-          ParentRef: { value: parentQboId },
-          Job: true,
-          BillWithParent: true,
-          FullyQualifiedName: client.name,
-        }
-      : {}),
+  const customerCtx = {
+    tenantId: params.tenantId,
+    entityType: 'client',
+    entityId: client.id,
+    triggerSource: client.parentId ? 'client_sync_subcustomer' : 'client_sync',
   }
+  const basePayload = () =>
+    ({
+      DisplayName: client.name,
+      CompanyName: client.companyName || client.name,
+      // QBO supports a single email. TrimPro can store comma-separated emails.
+      PrimaryEmailAddr: primaryEmail ? { Address: primaryEmail } : undefined,
+      PrimaryPhone: client.phone ? { FreeFormNumber: client.phone } : undefined,
+      BillAddr: billing
+        ? {
+            Line1: billing.street,
+            City: billing.city,
+            CountrySubDivisionCode: billing.state,
+            PostalCode: billing.zipCode,
+            Country: billing.country || 'US',
+          }
+        : undefined,
+    }) as any
+  const buildUpdatePayload = () => basePayload()
+  const buildCreatePayload = () =>
+    ({
+      ...basePayload(),
+      ...(parentQboId
+        ? {
+            ParentRef: { value: parentQboId },
+            Job: true,
+          }
+        : {}),
+    }) as any
 
   // Hash the fields that matter to QBO.  If the hash matches the last
   // successful sync we skip the GET + PUT entirely (saves 2 QBO calls per
@@ -1285,7 +1331,7 @@ async function ensureClientCustomer(params: {
         select: { data: true, qboId: true },
       })
       const lastHash = (lastSync?.data as any)?.dataHash
-      if (lastHash && lastHash === dataHash && lastSync?.qboId) {
+      if (lastHash && lastHash === dataHash && lastSync?.qboId && !params.verifyMappedId) {
         // Nothing changed — skip the QBO update entirely.
         return String(lastSync.qboId)
       }
@@ -1293,14 +1339,21 @@ async function ensureClientCustomer(params: {
       const current = await quickBooksService.makeAPIRequest(
         params.accessToken,
         params.realmId,
-        `/customer/${mappedId}`
+        `/customer/${mappedId}`,
+        'GET',
+        undefined,
+        customerCtx
       )
+      if (lastHash && lastHash === dataHash && lastSync?.qboId) {
+        return String(lastSync.qboId)
+      }
       const syncToken = current?.Customer?.SyncToken || '0'
       const updated = await quickBooksService.updateCustomer(
         params.accessToken,
         params.realmId,
         mappedId,
-        { ...payload, SyncToken: syncToken, sparse: true }
+        { ...buildUpdatePayload(), SyncToken: syncToken, sparse: true },
+        customerCtx
       )
       const qboId = String(updated?.Customer?.Id || mappedId)
       await logSync({
@@ -1315,16 +1368,30 @@ async function ensureClientCustomer(params: {
       return qboId
     }
   } catch (error: any) {
-    await logSync({
-      integrationId: params.integrationId,
-      type: 'client',
-      action: 'update',
-      status: 'error',
-      entityId: client.id,
-      qboId: mappedId,
-      error: error?.message || 'QuickBooks customer update failed',
-    })
-    throw error
+    if (mappedId && (isQboMissingOrDeletedEntityError(error) || isQboDeletedListReferenceError(error))) {
+      invalidateCustomerLookupCache(params.realmId, [client.name, client.companyName])
+      await logSync({
+        integrationId: params.integrationId,
+        type: 'client',
+        action: 'recover_stale_mapping',
+        status: 'conflict',
+        entityId: client.id,
+        qboId: mappedId,
+        error: getErrorMessage(error),
+      })
+      mappedId = null
+    } else {
+      await logSync({
+        integrationId: params.integrationId,
+        type: 'client',
+        action: 'update',
+        status: 'error',
+        entityId: client.id,
+        qboId: mappedId,
+        error: error?.message || 'QuickBooks customer update failed',
+      })
+      throw error
+    }
   }
 
   // Try to link root clients by DisplayName without creating duplicates.
@@ -1335,7 +1402,11 @@ async function ensureClientCustomer(params: {
       new Set([client.name, client.companyName].map((v) => String(v || '').trim()).filter(Boolean))
     )
     for (const candidate of candidates) {
-      const existing = await findCustomerByDisplayName(params.accessToken, params.realmId, candidate)
+      const existing = await findCustomerByDisplayName(params.accessToken, params.realmId, candidate, {
+        tenantId: params.tenantId,
+        entityId: client.id,
+        triggerSource: 'client_link_by_name',
+      })
       if (existing?.Id) {
         const qboId = String(existing.Id)
         await logSync({
@@ -1367,22 +1438,20 @@ async function ensureClientCustomer(params: {
 
   let created: any
   if (!parentQboId) {
-    created = await quickBooksService.createCustomer(params.accessToken, params.realmId, payload)
+    created = await quickBooksService.createCustomer(params.accessToken, params.realmId, buildCreatePayload(), customerCtx)
   } else {
     try {
-      created = await quickBooksService.createCustomer(params.accessToken, params.realmId, payload)
+      created = await quickBooksService.createCustomer(params.accessToken, params.realmId, buildCreatePayload(), customerCtx)
     } catch {
       try {
         const jobStyle: any = {
           DisplayName: client.name,
-          FullyQualifiedName: client.name,
           ParentRef: { value: parentQboId },
           Job: true,
-          BillWithParent: true,
         }
         if (primaryEmail) jobStyle.PrimaryEmailAddr = { Address: primaryEmail }
         if (client.phone) jobStyle.PrimaryPhone = { FreeFormNumber: client.phone }
-        created = await quickBooksService.createCustomer(params.accessToken, params.realmId, jobStyle)
+        created = await quickBooksService.createCustomer(params.accessToken, params.realmId, jobStyle, customerCtx)
       } catch {
         const isSubOnly: any = {
           DisplayName: client.name,
@@ -1391,7 +1460,7 @@ async function ensureClientCustomer(params: {
         }
         if (primaryEmail) isSubOnly.PrimaryEmailAddr = { Address: primaryEmail }
         if (client.phone) isSubOnly.PrimaryPhone = { FreeFormNumber: client.phone }
-        created = await quickBooksService.createCustomer(params.accessToken, params.realmId, isSubOnly)
+        created = await quickBooksService.createCustomer(params.accessToken, params.realmId, isSubOnly, customerCtx)
       }
     }
   }
