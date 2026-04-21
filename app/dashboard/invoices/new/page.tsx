@@ -477,6 +477,26 @@ export default function NewInvoicePage() {
     setLineItems((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== index) : prev))
   }
 
+  const insertSubtotalAfter = (index: number) => {
+    setLineItems((prev) => {
+      const next = [...prev]
+      next.splice(index + 1, 0, {
+        description: 'Subtotal',
+        quantity: '0',
+        unitPrice: '0',
+        taxable: false,
+        isVisibleToClient: true,
+        showDescriptionToCustomer: true,
+        showCostToCustomer: false,
+        showPriceToCustomer: true,
+        showTaxToCustomer: false,
+        showNotesToCustomer: false,
+        isSubtotal: true,
+      })
+      return next
+    })
+  }
+
   const formatMoney2 = (n: number) => (Math.round(n * 100) / 100).toFixed(2)
 
   const recalcProgressUnitPrice = useCallback((row: LineItem, urlPct: number): string => {
@@ -1784,6 +1804,18 @@ export default function NewInvoicePage() {
                           </>
                         )}
 
+                        {!isGroupHeader && !isSubtotalRow && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            title="Insert subtotal after this item"
+                            onClick={() => insertSubtotalAfter(index)}
+                            className="text-blue-500 hover:text-blue-700 px-1.5"
+                          >
+                            Σ
+                          </Button>
+                        )}
                         {lineItems.length > 1 && !isGroupHeader && (
                           <Button
                             type="button"

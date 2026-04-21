@@ -307,6 +307,26 @@ export default function NewEstimatePage() {
     setLineItems((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== index) : prev))
   }
 
+  const insertSubtotalAfter = (index: number) => {
+    setLineItems((prev) => {
+      const next = [...prev]
+      next.splice(index + 1, 0, {
+        description: 'Subtotal',
+        quantity: '0',
+        unitPrice: '0',
+        taxable: false,
+        isVisibleToClient: true,
+        showDescriptionToCustomer: true,
+        showCostToCustomer: false,
+        showPriceToCustomer: true,
+        showTaxToCustomer: false,
+        showNotesToCustomer: false,
+        isSubtotal: true,
+      })
+      return next
+    })
+  }
+
   const updateLineItem = (index: number, field: keyof LineItem, value: any) => {
     setLineItems((prev) => {
       const updated = [...prev]
@@ -1517,6 +1537,19 @@ export default function NewEstimatePage() {
                           </div>
                         )}
 
+                        {/* Insert subtotal after this row */}
+                        {!isGroupHeader && !isSubtotalRow && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            title="Insert subtotal after this item"
+                            onClick={() => insertSubtotalAfter(index)}
+                            className="text-blue-500 hover:text-blue-700 px-1.5"
+                          >
+                            Σ
+                          </Button>
+                        )}
                         {/* Remove button */}
                         {lineItems.length > 1 && !isGroupHeader && (
                           <Button
