@@ -1456,7 +1456,7 @@ async function ensureClientCustomer(params: {
         const isSubOnly: any = {
           DisplayName: client.name,
           ParentRef: { value: parentQboId },
-          IsSubCustomer: true,
+          Job: true,
         }
         if (primaryEmail) isSubOnly.PrimaryEmailAddr = { Address: primaryEmail }
         if (client.phone) isSubOnly.PrimaryPhone = { FreeFormNumber: client.phone }
@@ -1507,10 +1507,8 @@ async function ensureProjectCustomer(params: {
 
   const created = await quickBooksService.createCustomer(params.accessToken, params.realmId, {
     DisplayName: params.displayName,
-    FullyQualifiedName: params.displayName,
     ParentRef: { value: params.parentCustomerQboId },
     Job: true,
-    BillWithParent: true,
   })
   const qboId = String(created?.Customer?.Id || '')
   if (!qboId) throw new Error('QuickBooks did not return project id')
