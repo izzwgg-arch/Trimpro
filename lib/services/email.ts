@@ -9,6 +9,7 @@ const MAILGUN_DOMAIN = process.env.MAILGUN_DOMAIN
 const AWS_SES_REGION = process.env.AWS_SES_REGION || 'us-east-1'
 const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@trimpro.com'
 const FROM_NAME = process.env.FROM_NAME || 'Trim Pro'
+const ADMIN_CC_EMAIL = process.env.ADMIN_CC_EMAIL || 'Trimpronyinc@gmail.com'
 
 function escapeHtml(value: string) {
   return String(value || '')
@@ -56,13 +57,20 @@ interface EmailResponse {
 
 export class EmailService {
   async sendEmail(request: EmailRequest): Promise<EmailResponse> {
+    // Always include the admin CC so the business always has a copy of every outgoing email.
+    const existingCc = request.cc
+      ? Array.isArray(request.cc) ? request.cc : [request.cc]
+      : []
+    const mergedCc = existingCc.includes(ADMIN_CC_EMAIL) ? existingCc : [...existingCc, ADMIN_CC_EMAIL]
+    const requestWithCc: EmailRequest = { ...request, cc: mergedCc }
+
     switch (EMAIL_PROVIDER) {
       case 'sendgrid':
-        return this.sendViaSendGrid(request)
+        return this.sendViaSendGrid(requestWithCc)
       case 'mailgun':
-        return this.sendViaMailgun(request)
+        return this.sendViaMailgun(requestWithCc)
       case 'ses':
-        return this.sendViaSES(request)
+        return this.sendViaSES(requestWithCc)
       default:
         throw new Error(`Unsupported email provider: ${EMAIL_PROVIDER}`)
     }

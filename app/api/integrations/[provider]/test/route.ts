@@ -49,7 +49,8 @@ export async function POST(
           secrets,
           testParams.to || user.email,
           'Trim Pro Test Email',
-          '<p>This is a test email from Trim Pro. If you received this, your email integration is working correctly.</p>'
+          '<p>This is a test email from Trim Pro. If you received this, your email integration is working correctly.</p>',
+          { skipAdminCc: true }
         )
         break
 

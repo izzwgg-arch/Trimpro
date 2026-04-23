@@ -5,6 +5,9 @@
 
 import { IntegrationTestResult } from '../types'
 
+// Every outbound customer email is automatically CC'd to this address.
+const ADMIN_CC_EMAIL = process.env.ADMIN_CC_EMAIL || 'Trimpronyinc@gmail.com'
+
 export interface EmailAttachment {
   filename: string
   content: Buffer | string   // Buffer for binary (PDF), string for base64/text
@@ -18,6 +21,7 @@ export interface SendEmailWithAttachmentsInput {
   html: string
   text?: string
   attachments?: EmailAttachment[]
+  cc?: string[]
 }
 
 /**
@@ -28,18 +32,21 @@ export async function sendEmailWithAttachments(
   input: SendEmailWithAttachmentsInput
 ): Promise<IntegrationTestResult> {
   const { secrets, to, subject, html, text, attachments } = input
+  // Always include the admin CC
+  const ccBase = input.cc ?? []
+  const cc = ccBase.includes(ADMIN_CC_EMAIL) ? ccBase : [...ccBase, ADMIN_CC_EMAIL]
   try {
     const provider = secrets.provider || 'resend'
     switch (provider) {
       case 'sendgrid':
-        return await sendViaSendGrid({ secrets, to, subject, html, text, attachments })
+        return await sendViaSendGrid({ secrets, to, subject, html, text, attachments, cc })
       case 'mailgun':
-        return await sendViaMailgun({ secrets, to, subject, html, text, attachments })
+        return await sendViaMailgun({ secrets, to, subject, html, text, attachments, cc })
       case 'google':
-        return await sendViaGoogle({ secrets, to, subject, html, text, attachments })
+        return await sendViaGoogle({ secrets, to, subject, html, text, attachments, cc })
       case 'resend':
       default:
-        return await sendViaResend({ secrets, to, subject, html, text, attachments })
+        return await sendViaResend({ secrets, to, subject, html, text, attachments, cc })
     }
   } catch (error: any) {
     return { success: false, message: 'Email send failed', error: error.message || 'Unknown error' }
@@ -51,15 +58,18 @@ function toBase64(content: Buffer | string) {
 }
 
 async function sendViaSendGrid(input: Omit<SendEmailWithAttachmentsInput, 'secrets'> & { secrets: Record<string, any> }): Promise<IntegrationTestResult> {
-  const { secrets, to, subject, html, text, attachments } = input
+  const { secrets, to, subject, html, text, attachments, cc } = input
   const apiKey = secrets.apiKey
   if (!apiKey) return { success: false, message: 'SendGrid API key not configured', error: 'Missing apiKey' }
 
   const fromName = getFromName(secrets)
   const fromEmail = getFromEmail(secrets, 'noreply@trimpro.com')
 
+  const personalization: Record<string, any> = { to: [{ email: to }] }
+  if (cc?.length) personalization.cc = cc.map((email) => ({ email }))
+
   const body: Record<string, any> = {
-    personalizations: [{ to: [{ email: to }] }],
+    personalizations: [personalization],
     from: { email: fromEmail, name: fromName },
     subject,
     content: [{ type: 'text/html', value: html }],
@@ -87,7 +97,7 @@ async function sendViaSendGrid(input: Omit<SendEmailWithAttachmentsInput, 'secre
 }
 
 async function sendViaMailgun(input: Omit<SendEmailWithAttachmentsInput, 'secrets'> & { secrets: Record<string, any> }): Promise<IntegrationTestResult> {
-  const { secrets, to, subject, html, text, attachments } = input
+  const { secrets, to, subject, html, text, attachments, cc } = input
   const apiKey = secrets.apiKey
   const domain = secrets.mailgunDomain
   if (!apiKey || !domain) return { success: false, message: 'Mailgun not configured', error: 'Missing apiKey or domain' }
@@ -100,6 +110,7 @@ async function sendViaMailgun(input: Omit<SendEmailWithAttachmentsInput, 'secret
   const formData = new FormData()
   formData.append('from', formatFromHeader(fromName, fromEmail))
   formData.append('to', to)
+  if (cc?.length) cc.forEach((c) => formData.append('cc', c))
   formData.append('subject', subject)
   formData.append('html', html)
   if (text) formData.append('text', text)
@@ -123,7 +134,7 @@ async function sendViaMailgun(input: Omit<SendEmailWithAttachmentsInput, 'secret
 }
 
 async function sendViaResend(input: Omit<SendEmailWithAttachmentsInput, 'secrets'> & { secrets: Record<string, any> }): Promise<IntegrationTestResult> {
-  const { secrets, to, subject, html, text, attachments } = input
+  const { secrets, to, subject, html, text, attachments, cc } = input
   const apiKey = secrets.apiKey
   if (!apiKey) return { success: false, message: 'Resend API key not configured', error: 'Missing apiKey' }
 
@@ -136,6 +147,7 @@ async function sendViaResend(input: Omit<SendEmailWithAttachmentsInput, 'secrets
     subject,
     html,
   }
+  if (cc?.length) body.cc = cc
   if (text) body.text = text
   if (attachments?.length) {
     body.attachments = attachments.map((a) => ({
@@ -157,7 +169,7 @@ async function sendViaResend(input: Omit<SendEmailWithAttachmentsInput, 'secrets
 }
 
 async function sendViaGoogle(input: Omit<SendEmailWithAttachmentsInput, 'secrets'> & { secrets: Record<string, any> }): Promise<IntegrationTestResult> {
-  const { secrets, to, subject, html, text, attachments } = input
+  const { secrets, to, subject, html, text, attachments, cc } = input
   const user = (secrets.googleEmail || secrets.fromEmail || '').trim()
   const pass = (secrets.googleAppPassword || '').trim()
   if (!user || !pass) return { success: false, message: 'Google credentials not configured', error: 'Missing credentials' }
@@ -170,6 +182,7 @@ async function sendViaGoogle(input: Omit<SendEmailWithAttachmentsInput, 'secrets
   await transporter.sendMail({
     from: formatFromHeader(fromName, fromEmail),
     to,
+    cc: cc?.length ? cc.join(', ') : undefined,
     subject,
     html,
     text,
@@ -199,25 +212,27 @@ export async function testEmailProvider(
   secrets: Record<string, any>,
   to: string,
   subject: string,
-  html: string
+  html: string,
+  options?: { skipAdminCc?: boolean }
 ): Promise<IntegrationTestResult> {
+  const cc = options?.skipAdminCc ? [] : [ADMIN_CC_EMAIL]
   try {
     const provider = secrets.provider || 'resend'
     let result: any
 
     switch (provider) {
       case 'sendgrid':
-        result = await testSendGrid(secrets, to, subject, html)
+        result = await testSendGrid(secrets, to, subject, html, cc)
         break
       case 'mailgun':
-        result = await testMailgun(secrets, to, subject, html)
+        result = await testMailgun(secrets, to, subject, html, cc)
         break
       case 'google':
-        result = await testGoogle(secrets, to, subject, html)
+        result = await testGoogle(secrets, to, subject, html, cc)
         break
       case 'resend':
       default:
-        result = await testResend(secrets, to, subject, html)
+        result = await testResend(secrets, to, subject, html, cc)
         break
     }
 
@@ -235,7 +250,8 @@ async function testSendGrid(
   secrets: Record<string, any>,
   to: string,
   subject: string,
-  html: string
+  html: string,
+  cc?: string[]
 ): Promise<IntegrationTestResult> {
   const apiKey = secrets.apiKey
   if (!apiKey) {
@@ -245,6 +261,8 @@ async function testSendGrid(
   try {
     const fromName = getFromName(secrets)
     const fromEmail = getFromEmail(secrets, 'noreply@trimpro.com')
+    const personalization: Record<string, any> = { to: [{ email: to }] }
+    if (cc?.length) personalization.cc = cc.map((email) => ({ email }))
     const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
       method: 'POST',
       headers: {
@@ -252,7 +270,7 @@ async function testSendGrid(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        personalizations: [{ to: [{ email: to }] }],
+        personalizations: [personalization],
         from: { email: fromEmail, name: fromName },
         subject,
         content: [{ type: 'text/html', value: html }],
@@ -286,7 +304,8 @@ async function testMailgun(
   secrets: Record<string, any>,
   to: string,
   subject: string,
-  html: string
+  html: string,
+  cc?: string[]
 ): Promise<IntegrationTestResult> {
   const apiKey = secrets.apiKey
   const domain = secrets.mailgunDomain
@@ -307,6 +326,7 @@ async function testMailgun(
     const formData = new URLSearchParams()
     formData.append('from', formatFromHeader(fromName, fromEmail))
     formData.append('to', to)
+    if (cc?.length) formData.append('cc', cc.join(','))
     formData.append('subject', subject)
     formData.append('html', html)
     if (secrets.replyTo) {
@@ -348,7 +368,8 @@ async function testResend(
   secrets: Record<string, any>,
   to: string,
   subject: string,
-  html: string
+  html: string,
+  cc?: string[]
 ): Promise<IntegrationTestResult> {
   const apiKey = secrets.apiKey
   if (!apiKey) {
@@ -367,6 +388,7 @@ async function testResend(
       body: JSON.stringify({
         from: formatFromHeader(fromName, fromEmail),
         to: [to],
+        cc: cc?.length ? cc : undefined,
         subject,
         html,
         reply_to: secrets.replyTo,
@@ -400,7 +422,8 @@ async function testGoogle(
   secrets: Record<string, any>,
   to: string,
   subject: string,
-  html: string
+  html: string,
+  cc?: string[]
 ): Promise<IntegrationTestResult> {
   const user = (secrets.googleEmail || secrets.fromEmail || '').trim()
   const pass = (secrets.googleAppPassword || '').trim()
@@ -430,6 +453,7 @@ async function testGoogle(
     await transporter.sendMail({
       from: formatFromHeader(fromName, fromEmail),
       to,
+      cc: cc?.length ? cc.join(', ') : undefined,
       subject,
       html,
       replyTo: secrets.replyTo || undefined,

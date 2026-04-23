@@ -10,8 +10,12 @@ interface SendEmailOptions {
   text?: string
   from?: string
   replyTo?: string
+  cc?: string | string[]
   metadata?: Record<string, any>
 }
+
+// Every outbound email is CC'd to this address so the business always has a copy.
+const ADMIN_CC_EMAIL = process.env.ADMIN_CC_EMAIL || 'Trimpronyinc@gmail.com'
 
 interface SendEmailResult {
   success: boolean
@@ -30,18 +34,22 @@ const EMAIL_REPLY_TO = process.env.EMAIL_REPLY_TO || EMAIL_FROM
 export async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult> {
   const { to, subject, html, text, from = EMAIL_FROM, replyTo = EMAIL_REPLY_TO, metadata } = options
 
+  // Always include the admin CC unless it's already in the list
+  const ccInput = options.cc ? (Array.isArray(options.cc) ? options.cc : [options.cc]) : []
+  const cc = ccInput.includes(ADMIN_CC_EMAIL) ? ccInput : [...ccInput, ADMIN_CC_EMAIL]
+
   try {
     switch (EMAIL_PROVIDER.toLowerCase()) {
       case 'resend':
-        return await sendViaResend({ to, subject, html, text, from, replyTo, metadata })
+        return await sendViaResend({ to, subject, html, text, from, replyTo, cc, metadata })
       case 'sendgrid':
-        return await sendViaSendGrid({ to, subject, html, text, from, replyTo, metadata })
+        return await sendViaSendGrid({ to, subject, html, text, from, replyTo, cc, metadata })
       case 'ses':
       case 'aws':
-        return await sendViaSES({ to, subject, html, text, from, replyTo, metadata })
+        return await sendViaSES({ to, subject, html, text, from, replyTo, cc, metadata })
       default:
         console.warn(`Unknown email provider: ${EMAIL_PROVIDER}, falling back to Resend`)
-        return await sendViaResend({ to, subject, html, text, from, replyTo, metadata })
+        return await sendViaResend({ to, subject, html, text, from, replyTo, cc, metadata })
     }
   } catch (error: any) {
     console.error('Email send error:', error)
@@ -63,6 +71,7 @@ async function sendViaResend(options: SendEmailOptions): Promise<SendEmailResult
   }
 
   const toArray = Array.isArray(options.to) ? options.to : [options.to]
+  const ccArray = options.cc ? (Array.isArray(options.cc) ? options.cc : [options.cc]) : undefined
 
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -73,6 +82,7 @@ async function sendViaResend(options: SendEmailOptions): Promise<SendEmailResult
     body: JSON.stringify({
       from: options.from,
       to: toArray,
+      cc: ccArray?.length ? ccArray : undefined,
       subject: options.subject,
       html: options.html,
       text: options.text,
@@ -104,6 +114,7 @@ async function sendViaSendGrid(options: SendEmailOptions): Promise<SendEmailResu
   }
 
   const toArray = Array.isArray(options.to) ? options.to : [options.to]
+  const ccArray = options.cc ? (Array.isArray(options.cc) ? options.cc : [options.cc]) : undefined
 
   const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
     method: 'POST',
@@ -115,6 +126,7 @@ async function sendViaSendGrid(options: SendEmailOptions): Promise<SendEmailResu
       personalizations: [
         {
           to: toArray.map((email) => ({ email })),
+          ...(ccArray?.length ? { cc: ccArray.map((email) => ({ email })) } : {}),
         },
       ],
       from: { email: options.from },

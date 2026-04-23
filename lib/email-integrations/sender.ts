@@ -28,6 +28,7 @@ interface SendDocumentEmailInput {
 const SYSTEM_FROM = process.env.EMAIL_FROM || process.env.EMAIL_FROM_NAME || 'noreply@trimpro.com'
 const SYSTEM_FROM_NAME = process.env.FROM_NAME || 'Trim Pro'
 const SYSTEM_REPLY_TO = process.env.EMAIL_REPLY_TO || SYSTEM_FROM
+const ADMIN_CC_EMAIL = process.env.ADMIN_CC_EMAIL || 'Trimpronyinc@gmail.com'
 
 function formatFromHeader(fromName: string, fromEmail: string) {
   return `${fromName} <${fromEmail}>`
@@ -162,6 +163,7 @@ async function sendViaUserProfile(
   const info = await transporter.sendMail({
     from: formatFromHeader(sender.fromName, sender.fromEmail),
     to: to.join(', '),
+    cc: ADMIN_CC_EMAIL,
     subject,
     html,
     text,
@@ -215,6 +217,7 @@ async function sendViaAssignedIntegration(
   const info = await transporter.sendMail({
     from: formatFromHeader(sender.fromName, sender.fromEmail),
     to: to.join(', '),
+    cc: ADMIN_CC_EMAIL,
     subject,
     html,
     text,
