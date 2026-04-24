@@ -584,14 +584,16 @@ export async function POST(request: NextRequest) {
     }
 
     // Best-effort: automatically generate the QuickBooks ACH hosted payment link after sync.
-    // This pre-populates the ACH button without any manual checkbox/toggle.
+    // This must never block the invoice create response.
     try {
       const achEnabled = String(process.env.QUICKBOOKS_ACH_ENABLED || '').toLowerCase()
       if (achEnabled === 'true' || achEnabled === '1' || achEnabled === 'yes') {
-        await createAchPaymentSession({
+        void createAchPaymentSession({
           tenantId: user.tenantId,
           invoiceId: invoice.id,
           createdById: user.id,
+        }).catch((error) => {
+          console.warn('QuickBooks ACH session auto-create skipped:', (error as any)?.message || error)
         })
       }
     } catch (error) {
