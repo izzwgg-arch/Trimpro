@@ -77,6 +77,9 @@ export default function NewInvoicePage() {
   }, [percentageParam])
 
   const [loading, setLoading] = useState(false)
+  // Ref-based guard prevents two simultaneous submits from a double-click before the
+  // first setLoading(true) re-render fires.
+  const submittingRef = useRef(false)
   const [clients, setClients] = useState<PickerClient[]>([])
   const [jobs, setJobs] = useState<Job[]>([])
   const [bulkModeActive, setBulkModeActive] = useState(false)
@@ -133,16 +136,28 @@ export default function NewInvoicePage() {
   const optionalItemRefs = useRef<(HTMLDivElement | null)[]>([])
   const optionalPickerInputRefs = useRef<(HTMLInputElement | null)[]>([])
 
+  // Guard: prevents loadFromEstimate from running more than once per estimateId param,
+  // which would happen because loadFromEstimate sets formData.clientId → triggers re-render.
+  const estimateLoadedRef = useRef<string | null>(null)
+
+  // Initial load: clients + picker items (does NOT include clientId so it doesn't re-run when client is set)
   useEffect(() => {
     fetchClients()
     fetchPickerData()
+    if (estimateIdParam && estimateLoadedRef.current !== estimateIdParam) {
+      estimateLoadedRef.current = estimateIdParam
+      loadFromEstimate()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [estimateIdParam, billingModeParam, percentageParam, selectedLineItemIdsParam])
+
+  // Separate effect: fetch jobs when clientId is available
+  useEffect(() => {
     if (formData.clientId) {
       fetchJobs()
     }
-    if (estimateIdParam) {
-      loadFromEstimate()
-    }
-  }, [formData.clientId, estimateIdParam, billingModeParam, percentageParam, selectedLineItemIdsParam])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.clientId])
 
   const fetchClients = async () => {
     try {
@@ -1082,6 +1097,9 @@ export default function NewInvoicePage() {
       alert('Please enter a title')
       return
     }
+    // Prevent double-submit (fast double-click before first re-render)
+    if (submittingRef.current) return
+    submittingRef.current = true
 
     setLoading(true)
     try {
@@ -1167,6 +1185,17 @@ export default function NewInvoicePage() {
         }
       })
 
+      // Defensive: if this is a conversion from an estimate, require at least 1 real line item.
+      const realItems = apiLineItems.filter((item: any) => !item.isSubtotal)
+      if (formData.estimateId && realItems.length === 0) {
+        alert('No items were loaded from the estimate. Please wait a moment and try again, or add items manually.')
+        submittingRef.current = false
+        setLoading(false)
+        return
+      }
+
+      console.log(`[invoice-create] estimateId=${formData.estimateId || 'none'} lineItems=${apiLineItems.length} realItems=${realItems.length}`)
+
       const response = await fetch('/api/invoices', {
         method: 'POST',
         headers: {
@@ -1204,6 +1233,17 @@ export default function NewInvoicePage() {
         return
       }
 
+      // 409 = invoice already exists for this estimate — redirect to it instead of erroring
+      if (response.status === 409) {
+        const errorData = await response.json().catch(() => ({}))
+        if (errorData.invoiceId) {
+          router.push(`/dashboard/invoices/${errorData.invoiceId}`)
+          return
+        }
+        alert(errorData.error || 'An invoice already exists for this estimate.')
+        return
+      }
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Failed to create invoice' }))
         alert(errorData.error || 'Failed to create invoice')
@@ -1217,6 +1257,7 @@ export default function NewInvoicePage() {
       alert('Failed to create invoice. Please try again.')
     } finally {
       setLoading(false)
+      submittingRef.current = false
     }
   }
 

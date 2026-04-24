@@ -170,6 +170,37 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Client not found' }, { status: 404 })
     }
 
+    // Idempotency guard: if an invoice already exists for this estimate, return it rather
+    // than creating a duplicate. This prevents double-click / retry from creating multiple
+    // invoices for the same estimate.
+    if (estimateId) {
+      const existing = await prisma.invoice.findFirst({
+        where: { estimateId, tenantId: user.tenantId },
+        select: { id: true, invoiceNumber: true },
+      })
+      if (existing) {
+        console.log(`[invoice-create] duplicate prevented for estimateId=${estimateId} → existing invoice ${existing.invoiceNumber}`)
+        return NextResponse.json(
+          {
+            error: `An invoice already exists for this estimate (${existing.invoiceNumber}).`,
+            invoiceId: existing.id,
+          },
+          { status: 409 }
+        )
+      }
+    }
+
+    // Defensive: prevent creating an empty invoice from an estimate conversion
+    if (estimateId) {
+      const realItems = lineItems.filter((item: any) => !item.isSubtotal)
+      if (realItems.length === 0) {
+        return NextResponse.json(
+          { error: 'Cannot create invoice: no line items were provided from the estimate.' },
+          { status: 400 }
+        )
+      }
+    }
+
     const normalizeInvoiceNumber = (val: any) => {
       if (val === null || val === undefined) return null
       const raw = String(val).trim()
@@ -219,15 +250,130 @@ export async function POST(request: NextRequest) {
       qboAchEnabled: true,
     }
 
+    // Helper to create groups + line items + optional items given a prisma client (tx or global)
+    const buildLineData = (inv: any, inGroups: any[], inLineItems: any[], inOptionalItems: any[]) => {
+      const ops: Promise<any>[] = []
+      const groupMap = new Map<string, string>()
+
+      // We build operations sequentially inside the transaction helper below.
+      return { groupMap, inv, inGroups, inLineItems, inOptionalItems }
+    }
+
+    const runCreationTx = async (tx: any, inv: any) => {
+      const groupMap = new Map<string, string>()
+
+      // Create document line groups first (for bundles)
+      if (groups && Array.isArray(groups)) {
+        for (const group of groups) {
+          const dbGroup = await tx.documentLineGroup.create({
+            data: {
+              tenantId: user.tenantId,
+              documentType: 'INVOICE',
+              documentId: inv.id,
+              name: group.name || 'Bundle',
+              sourceBundleId: group.sourceBundleId || null,
+              sourceBundleName: group.name || null,
+            },
+          })
+          groupMap.set(group.groupId, dbGroup.id)
+        }
+      }
+
+      // Create line items
+      console.log(`[invoice-create] creating ${lineItems.length} line items for invoice ${inv.id}`)
+      for (let i = 0; i < lineItems.length; i++) {
+        const item = lineItems[i]
+        const qty = typeof item.quantity === 'number' ? item.quantity : parseFloat(item.quantity || 0)
+        const price = typeof item.unitPrice === 'number' ? item.unitPrice : parseFloat(item.unitPrice || 0)
+        const itemTotal = qty * price
+        const dbGroupId = item.groupId ? groupMap.get(item.groupId) || null : null
+        const isSubtotalItem = Boolean(item.isSubtotal)
+        await tx.invoiceLineItem.create({
+          data: {
+            invoiceId: inv.id,
+            groupId: dbGroupId,
+            description: isSubtotalItem ? 'Subtotal' : item.description,
+            quantity: isSubtotalItem ? 0 : qty,
+            unitPrice: isSubtotalItem ? 0 : price,
+            unitCost: isSubtotalItem ? null : (item.unitCost ? (typeof item.unitCost === 'number' ? item.unitCost : parseFloat(item.unitCost)) : null),
+            total: isSubtotalItem ? 0 : itemTotal,
+            sortOrder: i,
+            isSubtotal: isSubtotalItem,
+            isVisibleToClient: item.isVisibleToClient !== undefined ? Boolean(item.isVisibleToClient) : true,
+            showDescriptionToCustomer: item.showDescriptionToCustomer !== undefined ? Boolean(item.showDescriptionToCustomer) : true,
+            showCostToCustomer: item.showCostToCustomer !== undefined ? Boolean(item.showCostToCustomer) : false,
+            showPriceToCustomer: item.showPriceToCustomer !== undefined ? Boolean(item.showPriceToCustomer) : true,
+            showTaxToCustomer: item.showTaxToCustomer !== undefined ? Boolean(item.showTaxToCustomer) : true,
+            showNotesToCustomer: item.showNotesToCustomer !== undefined ? Boolean(item.showNotesToCustomer) : false,
+            vendorId: isSubtotalItem ? null : (item.vendorId || null),
+            taxable: isSubtotalItem ? false : (item.taxable !== undefined ? Boolean(item.taxable) : true),
+            taxRate: isSubtotalItem ? null : (item.taxRate ? (typeof item.taxRate === 'number' ? item.taxRate : parseFloat(item.taxRate)) : null),
+            notes: item.notes || null,
+            sourceItemId: item.sourceItemId || null,
+            sourceBundleId: item.sourceBundleId || null,
+          },
+        })
+      }
+
+      // Create optional line items (do NOT affect main totals)
+      if (optionalItems && Array.isArray(optionalItems) && optionalItems.length > 0) {
+        for (let i = 0; i < optionalItems.length; i++) {
+          const item = optionalItems[i]
+          const qty = typeof item.quantity === 'number' ? item.quantity : parseFloat(item.quantity || 0)
+          const price = typeof item.unitPrice === 'number' ? item.unitPrice : parseFloat(item.unitPrice || 0)
+          const itemTotal = qty * price
+          const dbGroupId = item.groupId ? groupMap.get(item.groupId) || null : null
+          await tx.invoiceOptionalLineItem.create({
+            data: {
+              invoiceId: inv.id,
+              groupId: dbGroupId,
+              description: item.description,
+              quantity: qty,
+              unitPrice: price,
+              unitCost: item.unitCost ? (typeof item.unitCost === 'number' ? item.unitCost : parseFloat(item.unitCost)) : null,
+              total: itemTotal,
+              sortOrder: i,
+              isVisibleToClient: item.isVisibleToClient !== undefined ? Boolean(item.isVisibleToClient) : true,
+              showDescriptionToCustomer: item.showDescriptionToCustomer !== undefined ? Boolean(item.showDescriptionToCustomer) : true,
+              showCostToCustomer: item.showCostToCustomer !== undefined ? Boolean(item.showCostToCustomer) : false,
+              showPriceToCustomer: item.showPriceToCustomer !== undefined ? Boolean(item.showPriceToCustomer) : true,
+              showTaxToCustomer: item.showTaxToCustomer !== undefined ? Boolean(item.showTaxToCustomer) : true,
+              showNotesToCustomer: item.showNotesToCustomer !== undefined ? Boolean(item.showNotesToCustomer) : false,
+              vendorId: item.vendorId || null,
+              taxable: item.taxable !== undefined ? Boolean(item.taxable) : true,
+              taxRate: item.taxRate ? (typeof item.taxRate === 'number' ? item.taxRate : parseFloat(item.taxRate)) : null,
+              notes: item.notes || null,
+              sourceItemId: item.sourceItemId || null,
+              sourceBundleId: item.sourceBundleId || null,
+            },
+          })
+        }
+      }
+
+      // Link estimate if provided
+      if (estimateId) {
+        await tx.estimate.update({
+          where: { id: estimateId },
+          data: { status: 'CONVERTED', jobId: jobId || null },
+        })
+      }
+    }
+
+    // Suppress unused variable lint warning
+    void buildLineData
+
     let invoiceNumber = ''
     let invoice: any = null
 
     if (invoiceNumberOverrideTrimmed) {
       invoiceNumber = invoiceNumberOverrideTrimmed
       try {
-        invoice = await prisma.invoice.create({
-          data: { ...baseInvoiceData, invoiceNumber },
-          include: { client: true, job: true },
+        await prisma.$transaction(async (tx) => {
+          invoice = await tx.invoice.create({
+            data: { ...baseInvoiceData, invoiceNumber },
+            include: { client: true, job: true },
+          })
+          await runCreationTx(tx, invoice)
         })
       } catch (err: any) {
         if (err?.code === 'P2002' && err?.meta?.target?.includes?.('invoiceNumber')) {
@@ -251,13 +397,17 @@ export async function POST(request: NextRequest) {
       for (let attempt = 0; attempt < 300; attempt++) {
         invoiceNumber = `INV-${String(startNum + 1 + attempt).padStart(6, '0')}`
         try {
-          invoice = await prisma.invoice.create({
-            data: { ...baseInvoiceData, invoiceNumber },
-            include: { client: true, job: true },
+          await prisma.$transaction(async (tx) => {
+            invoice = await tx.invoice.create({
+              data: { ...baseInvoiceData, invoiceNumber },
+              include: { client: true, job: true },
+            })
+            await runCreationTx(tx, invoice)
           })
           break
         } catch (err: any) {
           if (err?.code === 'P2002' && err?.meta?.target?.includes?.('invoiceNumber')) {
+            invoice = null
             continue
           }
           throw err
@@ -268,117 +418,12 @@ export async function POST(request: NextRequest) {
         // Last-resort unique fallback to guarantee create path never deadlocks on numbering.
         const suffix = crypto.randomBytes(3).toString('hex').toUpperCase()
         invoiceNumber = `INV-${String(startNum + 1).padStart(6, '0')}-${suffix}`
-        invoice = await prisma.invoice.create({
-          data: { ...baseInvoiceData, invoiceNumber },
-          include: { client: true, job: true },
-        })
-      }
-    }
-
-    // Link estimate if provided
-    if (estimateId) {
-      await prisma.estimate.update({
-        where: { id: estimateId },
-        data: {
-          status: 'CONVERTED',
-          jobId: jobId || null,
-        },
-      })
-    }
-
-    // Create document line groups first (for bundles)
-    const groupMap = new Map<string, string>() // groupId -> database group ID
-    if (groups && Array.isArray(groups)) {
-      for (const group of groups) {
-        const dbGroup = await prisma.documentLineGroup.create({
-          data: {
-            tenantId: user.tenantId,
-            documentType: 'INVOICE',
-            documentId: invoice.id,
-            name: group.name || 'Bundle',
-            sourceBundleId: group.sourceBundleId || null,
-            sourceBundleName: group.name || null,
-          },
-        })
-        groupMap.set(group.groupId, dbGroup.id)
-      }
-    }
-
-    // Create line items
-    for (let i = 0; i < lineItems.length; i++) {
-      const item = lineItems[i]
-      const qty = typeof item.quantity === 'number' ? item.quantity : parseFloat(item.quantity || 0)
-      const price = typeof item.unitPrice === 'number' ? item.unitPrice : parseFloat(item.unitPrice || 0)
-      const itemTotal = qty * price
-
-      // Get groupId from map if item has a groupId
-      const dbGroupId = item.groupId ? groupMap.get(item.groupId) || null : null
-
-      const isSubtotalItem = Boolean(item.isSubtotal)
-      await prisma.invoiceLineItem.create({
-        data: {
-          invoiceId: invoice.id,
-          groupId: dbGroupId,
-          description: isSubtotalItem ? 'Subtotal' : item.description,
-          quantity: isSubtotalItem ? 0 : qty,
-          unitPrice: isSubtotalItem ? 0 : price,
-          unitCost: isSubtotalItem ? null : (item.unitCost ? (typeof item.unitCost === 'number' ? item.unitCost : parseFloat(item.unitCost)) : null),
-          total: isSubtotalItem ? 0 : itemTotal,
-          sortOrder: i,
-          isSubtotal: isSubtotalItem,
-          isVisibleToClient: item.isVisibleToClient !== undefined ? Boolean(item.isVisibleToClient) : true,
-          // New per-field visibility flags
-          showDescriptionToCustomer:
-            item.showDescriptionToCustomer !== undefined ? Boolean(item.showDescriptionToCustomer) : true,
-          showCostToCustomer: item.showCostToCustomer !== undefined ? Boolean(item.showCostToCustomer) : false,
-          showPriceToCustomer: item.showPriceToCustomer !== undefined ? Boolean(item.showPriceToCustomer) : true,
-          showTaxToCustomer: item.showTaxToCustomer !== undefined ? Boolean(item.showTaxToCustomer) : true,
-          showNotesToCustomer: item.showNotesToCustomer !== undefined ? Boolean(item.showNotesToCustomer) : false,
-          // Additional fields
-          vendorId: isSubtotalItem ? null : (item.vendorId || null),
-          taxable: isSubtotalItem ? false : (item.taxable !== undefined ? Boolean(item.taxable) : true),
-          taxRate: isSubtotalItem ? null : (item.taxRate ? (typeof item.taxRate === 'number' ? item.taxRate : parseFloat(item.taxRate)) : null),
-          notes: item.notes || null,
-          sourceItemId: item.sourceItemId || null,
-          sourceBundleId: item.sourceBundleId || null,
-        },
-      })
-    }
-
-    // Create optional line items (do NOT affect main totals)
-    if (optionalItems && Array.isArray(optionalItems) && optionalItems.length > 0) {
-      for (let i = 0; i < optionalItems.length; i++) {
-        const item = optionalItems[i]
-        const qty = typeof item.quantity === 'number' ? item.quantity : parseFloat(item.quantity || 0)
-        const price = typeof item.unitPrice === 'number' ? item.unitPrice : parseFloat(item.unitPrice || 0)
-        const itemTotal = qty * price
-
-        const dbGroupId = item.groupId ? groupMap.get(item.groupId) || null : null
-
-        await prisma.invoiceOptionalLineItem.create({
-          data: {
-            invoiceId: invoice.id,
-            groupId: dbGroupId,
-            description: item.description,
-            quantity: qty,
-            unitPrice: price,
-            unitCost: item.unitCost ? (typeof item.unitCost === 'number' ? item.unitCost : parseFloat(item.unitCost)) : null,
-            total: itemTotal,
-            sortOrder: i,
-            isVisibleToClient: item.isVisibleToClient !== undefined ? Boolean(item.isVisibleToClient) : true,
-            showDescriptionToCustomer:
-              item.showDescriptionToCustomer !== undefined ? Boolean(item.showDescriptionToCustomer) : true,
-            showCostToCustomer: item.showCostToCustomer !== undefined ? Boolean(item.showCostToCustomer) : false,
-            showPriceToCustomer: item.showPriceToCustomer !== undefined ? Boolean(item.showPriceToCustomer) : true,
-            showTaxToCustomer: item.showTaxToCustomer !== undefined ? Boolean(item.showTaxToCustomer) : true,
-            showNotesToCustomer: item.showNotesToCustomer !== undefined ? Boolean(item.showNotesToCustomer) : false,
-            vendorId: item.vendorId || null,
-            taxable: item.taxable !== undefined ? Boolean(item.taxable) : true,
-            taxRate: item.taxRate ? (typeof item.taxRate === 'number' ? item.taxRate : parseFloat(item.taxRate)) : null,
-            notes: item.notes || null,
-            sourceItemId: item.sourceItemId || null,
-            sourceBundleId: item.sourceBundleId || null,
-          },
+        await prisma.$transaction(async (tx) => {
+          invoice = await tx.invoice.create({
+            data: { ...baseInvoiceData, invoiceNumber },
+            include: { client: true, job: true },
+          })
+          await runCreationTx(tx, invoice)
         })
       }
     }
