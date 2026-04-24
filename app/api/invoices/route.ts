@@ -170,22 +170,61 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Client not found' }, { status: 404 })
     }
 
+    let reusableEmptyInvoice: { id: string; invoiceNumber: string } | null = null
+
     // Idempotency guard: if an invoice already exists for this estimate, return it rather
-    // than creating a duplicate. This prevents double-click / retry from creating multiple
-    // invoices for the same estimate.
+    // than creating a duplicate. Old broken conversions left behind empty DRAFT invoices
+    // with zero items; those are treated as recoverable placeholders and will be reused.
     if (estimateId) {
-      const existing = await prisma.invoice.findFirst({
+      const existingInvoices = await prisma.invoice.findMany({
         where: { estimateId, tenantId: user.tenantId },
-        select: { id: true, invoiceNumber: true },
+        select: {
+          id: true,
+          invoiceNumber: true,
+          status: true,
+          createdAt: true,
+          _count: {
+            select: {
+              lineItems: true,
+              optionalItems: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
       })
-      if (existing) {
-        console.log(`[invoice-create] duplicate prevented for estimateId=${estimateId} → existing invoice ${existing.invoiceNumber}`)
+
+      const validExisting = existingInvoices.find(
+        (row) =>
+          row.status !== 'DRAFT' ||
+          row._count.lineItems > 0 ||
+          row._count.optionalItems > 0
+      )
+      if (validExisting) {
+        console.log(
+          `[invoice-create] duplicate prevented for estimateId=${estimateId} → existing invoice ${validExisting.invoiceNumber}`
+        )
         return NextResponse.json(
           {
-            error: `An invoice already exists for this estimate (${existing.invoiceNumber}).`,
-            invoiceId: existing.id,
+            error: `An invoice already exists for this estimate (${validExisting.invoiceNumber}).`,
+            invoiceId: validExisting.id,
           },
           { status: 409 }
+        )
+      }
+
+      const recoverablePlaceholders = existingInvoices.filter(
+        (row) =>
+          row.status === 'DRAFT' &&
+          row._count.lineItems === 0 &&
+          row._count.optionalItems === 0
+      )
+      if (recoverablePlaceholders.length > 0) {
+        reusableEmptyInvoice = {
+          id: recoverablePlaceholders[0].id,
+          invoiceNumber: recoverablePlaceholders[0].invoiceNumber,
+        }
+        console.log(
+          `[invoice-create] reusing empty placeholder invoice ${reusableEmptyInvoice.invoiceNumber} for estimateId=${estimateId} (${recoverablePlaceholders.length} placeholder(s) found)`
         )
       }
     }
@@ -248,15 +287,6 @@ export async function POST(request: NextRequest) {
       paymentToken: crypto.randomBytes(20).toString('hex'),
       // ACH should be available by default (hosted by QuickBooks; no bank info stored by TrimPro).
       qboAchEnabled: true,
-    }
-
-    // Helper to create groups + line items + optional items given a prisma client (tx or global)
-    const buildLineData = (inv: any, inGroups: any[], inLineItems: any[], inOptionalItems: any[]) => {
-      const ops: Promise<any>[] = []
-      const groupMap = new Map<string, string>()
-
-      // We build operations sequentially inside the transaction helper below.
-      return { groupMap, inv, inGroups, inLineItems, inOptionalItems }
     }
 
     const runCreationTx = async (tx: any, inv: any) => {
@@ -359,23 +389,101 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Suppress unused variable lint warning
-    void buildLineData
+    const ensureEstimateStillAvailable = async (tx: any) => {
+      if (!estimateId) return
+      const otherInvoices = await tx.invoice.findMany({
+        where: {
+          estimateId,
+          tenantId: user.tenantId,
+          ...(reusableEmptyInvoice ? { id: { not: reusableEmptyInvoice.id } } : {}),
+        },
+        select: {
+          id: true,
+          invoiceNumber: true,
+          status: true,
+          _count: {
+            select: {
+              lineItems: true,
+              optionalItems: true,
+            },
+          },
+        },
+      })
+
+      const blockingInvoice = otherInvoices.find(
+        (row: any) =>
+          row.status !== 'DRAFT' ||
+          row._count.lineItems > 0 ||
+          row._count.optionalItems > 0
+      )
+      if (blockingInvoice) {
+        const err: any = new Error(`Invoice already exists for estimate (${blockingInvoice.invoiceNumber})`)
+        err.code = 'ESTIMATE_INVOICE_EXISTS'
+        err.invoiceId = blockingInvoice.id
+        err.invoiceNumber = blockingInvoice.invoiceNumber
+        throw err
+      }
+    }
 
     let invoiceNumber = ''
     let invoice: any = null
 
-    if (invoiceNumberOverrideTrimmed) {
+    if (reusableEmptyInvoice) {
+      invoiceNumber = reusableEmptyInvoice.invoiceNumber
+      try {
+        await prisma.$transaction(async (tx) => {
+          await ensureEstimateStillAvailable(tx)
+          invoice = await tx.invoice.update({
+            where: { id: reusableEmptyInvoice!.id },
+            data: {
+              ...baseInvoiceData,
+              invoiceNumber: reusableEmptyInvoice!.invoiceNumber,
+            },
+            include: { client: true, job: true },
+          })
+          await tx.documentLineGroup.deleteMany({
+            where: {
+              documentType: 'INVOICE',
+              documentId: invoice.id,
+            },
+          })
+          await tx.invoiceLineItem.deleteMany({ where: { invoiceId: invoice.id } })
+          await tx.invoiceOptionalLineItem.deleteMany({ where: { invoiceId: invoice.id } })
+          await runCreationTx(tx, invoice)
+        }, { isolationLevel: 'Serializable' })
+      } catch (err: any) {
+        if (err?.code === 'ESTIMATE_INVOICE_EXISTS') {
+          return NextResponse.json(
+            {
+              error: `An invoice already exists for this estimate (${err.invoiceNumber}).`,
+              invoiceId: err.invoiceId,
+            },
+            { status: 409 }
+          )
+        }
+        throw err
+      }
+    } else if (invoiceNumberOverrideTrimmed) {
       invoiceNumber = invoiceNumberOverrideTrimmed
       try {
         await prisma.$transaction(async (tx) => {
+          await ensureEstimateStillAvailable(tx)
           invoice = await tx.invoice.create({
             data: { ...baseInvoiceData, invoiceNumber },
             include: { client: true, job: true },
           })
           await runCreationTx(tx, invoice)
-        })
+        }, { isolationLevel: 'Serializable' })
       } catch (err: any) {
+        if (err?.code === 'ESTIMATE_INVOICE_EXISTS') {
+          return NextResponse.json(
+            {
+              error: `An invoice already exists for this estimate (${err.invoiceNumber}).`,
+              invoiceId: err.invoiceId,
+            },
+            { status: 409 }
+          )
+        }
         if (err?.code === 'P2002' && err?.meta?.target?.includes?.('invoiceNumber')) {
           return NextResponse.json({ error: 'Invoice number already exists' }, { status: 400 })
         }
@@ -398,14 +506,24 @@ export async function POST(request: NextRequest) {
         invoiceNumber = `INV-${String(startNum + 1 + attempt).padStart(6, '0')}`
         try {
           await prisma.$transaction(async (tx) => {
+            await ensureEstimateStillAvailable(tx)
             invoice = await tx.invoice.create({
               data: { ...baseInvoiceData, invoiceNumber },
               include: { client: true, job: true },
             })
             await runCreationTx(tx, invoice)
-          })
+          }, { isolationLevel: 'Serializable' })
           break
         } catch (err: any) {
+          if (err?.code === 'ESTIMATE_INVOICE_EXISTS') {
+            return NextResponse.json(
+              {
+                error: `An invoice already exists for this estimate (${err.invoiceNumber}).`,
+                invoiceId: err.invoiceId,
+              },
+              { status: 409 }
+            )
+          }
           if (err?.code === 'P2002' && err?.meta?.target?.includes?.('invoiceNumber')) {
             invoice = null
             continue
@@ -419,12 +537,13 @@ export async function POST(request: NextRequest) {
         const suffix = crypto.randomBytes(3).toString('hex').toUpperCase()
         invoiceNumber = `INV-${String(startNum + 1).padStart(6, '0')}-${suffix}`
         await prisma.$transaction(async (tx) => {
+          await ensureEstimateStillAvailable(tx)
           invoice = await tx.invoice.create({
             data: { ...baseInvoiceData, invoiceNumber },
             include: { client: true, job: true },
           })
           await runCreationTx(tx, invoice)
-        })
+        }, { isolationLevel: 'Serializable' })
       }
     }
 
