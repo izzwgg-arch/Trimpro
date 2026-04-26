@@ -1124,7 +1124,7 @@ export default function EditInvoicePage() {
                         <button key={field} type="button"
                           onClick={() => setBulkFieldVisibility(field, !anyVisible)}
                           title={`${anyVisible ? 'Hide' : 'Show'} ${labels[field]} for ${bulkModeActive && selectedItemIndices.size > 0 ? 'selected' : 'all'} items`}
-                          className={`flex items-center gap-1 px-2 py-1 rounded border font-medium ${anyVisible ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-gray-50 border-gray-300 text-gray-500'}`}
+                          className={`flex items-center gap-1 px-2 py-1 rounded border font-medium transition-colors ${anyVisible ? 'bg-slate-800 border-slate-700 text-white shadow-sm hover:bg-slate-700 hover:border-slate-600' : 'bg-gray-50 border-gray-300 text-gray-500 hover:bg-gray-100'}`}
                         >
                           {anyVisible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
                           {labels[field]}
