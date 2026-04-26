@@ -43,8 +43,11 @@ const sizeMap = {
   lg: { height: 64, maxWidth: 240 },
 } as const
 
-/** Sidebar header is h-24; logo fills most of that row without clipping. */
-const SIDEBAR_LOGO_DIMS = { height: 80, maxWidth: 240 } as const
+/**
+ * Sidebar header stays compact (h-16). Logo is sized up to fill that row
+ * (~90% of header height) without increasing header padding or height.
+ */
+const SIDEBAR_LOGO_DIMS = { height: 58, maxWidth: 252 } as const
 
 function resolveLogoDims(variant: 'sidebar' | 'light', size: keyof typeof sizeMap) {
   if (variant === 'sidebar') return SIDEBAR_LOGO_DIMS

@@ -79,7 +79,7 @@ export function Sidebar() {
       style={{ backgroundColor: 'var(--brand-sidebar-color)' }}
     >
       <div
-        className="flex h-24 min-h-24 flex-shrink-0 items-center justify-between border-b px-4 py-2"
+        className="flex h-16 flex-shrink-0 items-center justify-between border-b px-4"
         style={{ borderColor: 'var(--brand-sidebar-border-color)' }}
       >
         <Link
