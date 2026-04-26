@@ -13,6 +13,7 @@ import Link from 'next/link'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
 import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
+import { cnCustomerVisibilityBulkPill } from '@/lib/ui/customer-visibility-bulk-pill'
 
 interface Job {
   id: string
@@ -733,10 +734,6 @@ export default function EditInvoicePage() {
     })
   }
 
-  const setAllLineItemsVisibility = (isVisibleToClient: boolean) => {
-    setLineItems((prev) => prev.map((item) => item.isGroupHeader ? item : { ...item, isVisibleToClient }))
-  }
-
   const setGroupLineItemsVisibility = (groupId: string, isVisibleToClient: boolean) => {
     setLineItems((prev) => prev.map((item) =>
       item.groupId === groupId && !item.isGroupHeader ? { ...item, isVisibleToClient } : item
@@ -1124,20 +1121,13 @@ export default function EditInvoicePage() {
                         <button key={field} type="button"
                           onClick={() => setBulkFieldVisibility(field, !anyVisible)}
                           title={`${anyVisible ? 'Hide' : 'Show'} ${labels[field]} for ${bulkModeActive && selectedItemIndices.size > 0 ? 'selected' : 'all'} items`}
-                          className={`flex items-center gap-1 px-2 py-1 rounded border font-medium transition-colors ${anyVisible ? 'bg-slate-800 border-slate-700 text-white shadow-sm hover:bg-slate-700 hover:border-slate-600' : 'bg-gray-50 border-gray-300 text-gray-500 hover:bg-gray-100'}`}
+                          className={cnCustomerVisibilityBulkPill(anyVisible)}
                         >
                           {anyVisible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
                           {labels[field]}
                         </button>
                       )
                     })}
-                    <span className="text-gray-300 self-center">|</span>
-                    <Button type="button" size="sm" variant="default" className="h-7 shrink-0 px-2.5 text-xs font-medium"
-                      onClick={() => setAllLineItemsVisibility(true)}
-                    >Show lines</Button>
-                    <Button type="button" size="sm" variant="default" className="h-7 shrink-0 px-2.5 text-xs font-medium"
-                      onClick={() => setAllLineItemsVisibility(false)}
-                    >Hide lines</Button>
                     <span className="text-gray-300 self-center">|</span>
                     <button type="button"
                       onClick={() => { setBulkModeActive(!bulkModeActive); setSelectedItemIndices(new Set()) }}

@@ -15,6 +15,7 @@ import { SearchableClientSelect } from '@/components/ui/searchable-client-select
 import { refreshAccessToken } from '@/lib/auth/client'
 import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
 import { useCreateContextPrefill } from '@/src/hooks/useCreateContextPrefill'
+import { cnCustomerVisibilityBulkPill } from '@/lib/ui/customer-visibility-bulk-pill'
 
 interface LineItem {
   id?: string
@@ -560,12 +561,6 @@ export default function NewEstimatePage() {
     })
   }
 
-  const setAllLineItemsVisibility = (isVisibleToClient: boolean) => {
-    setLineItems((prev) =>
-      prev.map((item) => (item.isGroupHeader ? item : { ...item, isVisibleToClient }))
-    )
-  }
-
   const setGroupLineItemsVisibility = (groupId: string, isVisibleToClient: boolean) => {
     setLineItems((prev) =>
       prev.map((item) =>
@@ -667,12 +662,6 @@ export default function NewEstimatePage() {
       next.splice(toIndex, 0, moved)
       return next
     })
-  }
-
-  const setAllOptionalItemsVisibility = (isVisibleToClient: boolean) => {
-    setOptionalItems((prev) =>
-      prev.map((item) => (item.isGroupHeader ? item : { ...item, isVisibleToClient }))
-    )
   }
 
   const setGroupOptionalItemsVisibility = (groupId: string, isVisibleToClient: boolean) => {
@@ -1141,22 +1130,13 @@ export default function NewEstimatePage() {
                         <button key={field} type="button"
                           onClick={() => setBulkFieldVisibility(field, !anyVisible)}
                           title={`${anyVisible ? 'Hide' : 'Show'} ${labels[field]} for ${bulkModeActive && selectedItemIndices.size > 0 ? 'selected' : 'all'} items`}
-                          className={`flex items-center gap-1 px-2 py-1 rounded border font-medium transition-colors ${anyVisible ? 'bg-slate-800 border-slate-700 text-white shadow-sm hover:bg-slate-700 hover:border-slate-600' : 'bg-gray-50 border-gray-300 text-gray-500 hover:bg-gray-100'}`}
+                          className={cnCustomerVisibilityBulkPill(anyVisible)}
                         >
                           {anyVisible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
                           {labels[field]}
                         </button>
                       )
                     })}
-                    <span className="text-gray-300 self-center">|</span>
-                    <Button type="button" size="sm" variant="default"
-                      className="h-7 shrink-0 px-2.5 text-xs font-medium"
-                      onClick={() => { setAllLineItemsVisibility(true); setAllOptionalItemsVisibility(true) }}
-                    >Show lines</Button>
-                    <Button type="button" size="sm" variant="default"
-                      className="h-7 shrink-0 px-2.5 text-xs font-medium"
-                      onClick={() => { setAllLineItemsVisibility(false); setAllOptionalItemsVisibility(false) }}
-                    >Hide lines</Button>
                     <span className="text-gray-300 self-center">|</span>
                     <button type="button"
                       onClick={() => { setBulkModeActive(!bulkModeActive); setSelectedItemIndices(new Set()) }}
@@ -1622,20 +1602,13 @@ export default function NewEstimatePage() {
                         <button key={field} type="button"
                           onClick={() => setBulkFieldVisibility(field, !anyVisible)}
                           title={`${anyVisible ? 'Hide' : 'Show'} ${labels[field]} for all optional items`}
-                          className={`flex items-center gap-1 px-2 py-1 rounded border font-medium transition-colors ${anyVisible ? 'bg-slate-800 border-slate-700 text-white shadow-sm hover:bg-slate-700 hover:border-slate-600' : 'bg-gray-50 border-gray-300 text-gray-500 hover:bg-gray-100'}`}
+                          className={cnCustomerVisibilityBulkPill(anyVisible)}
                         >
                           {anyVisible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
                           {labels[field]}
                         </button>
                       )
                     })}
-                    <span className="text-gray-300 self-center">|</span>
-                    <Button type="button" size="sm" variant="default" className="h-7 shrink-0 px-2.5 text-xs font-medium"
-                      onClick={() => setAllOptionalItemsVisibility(true)}
-                    >Show lines</Button>
-                    <Button type="button" size="sm" variant="default" className="h-7 shrink-0 px-2.5 text-xs font-medium"
-                      onClick={() => setAllOptionalItemsVisibility(false)}
-                    >Hide lines</Button>
                   </div>
                 </div>
               </CardHeader>
