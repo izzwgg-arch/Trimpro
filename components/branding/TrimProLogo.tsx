@@ -34,19 +34,27 @@ interface TrimProLogoProps {
 
 /**
  * Height caps per size — width is always `auto` so the logo renders at its
- * natural aspect ratio without squishing.  A max-width guard prevents very
+ * natural aspect ratio without squishing. A max-width guard prevents very
  * wide panoramic logos from overflowing the sidebar.
  */
 const sizeMap = {
   sm: { height: 36, maxWidth: 160 },
   md: { height: 52, maxWidth: 200 },
   lg: { height: 64, maxWidth: 240 },
+} as const
+
+/** Sidebar header is h-24; logo fills most of that row without clipping. */
+const SIDEBAR_LOGO_DIMS = { height: 80, maxWidth: 240 } as const
+
+function resolveLogoDims(variant: 'sidebar' | 'light', size: keyof typeof sizeMap) {
+  if (variant === 'sidebar') return SIDEBAR_LOGO_DIMS
+  return sizeMap[size]
 }
 
 const DEFAULT_LOGO = '/branding/trimpro-logo.svg'
 
 export function TrimProLogo({ variant = 'light', size = 'md', className }: TrimProLogoProps) {
-  const { height, maxWidth } = sizeMap[size]
+  const { height, maxWidth } = resolveLogoDims(variant, size)
   const { webLogoUrl } = useBranding()
   const [errored, setErrored] = useState(false)
 
@@ -59,19 +67,14 @@ export function TrimProLogo({ variant = 'light', size = 'md', className }: TrimP
 
   return (
     <div
-      className={cn('inline-flex items-center', className)}
+      className={cn('inline-flex min-h-0 max-w-full items-center justify-start', className)}
       style={{ height, maxWidth }}
     >
       <img
         src={src}
         alt="TrimPro"
-        className="block h-full w-auto"
-        style={{
-          maxHeight: height,
-          maxWidth,
-          objectFit: 'contain',
-          objectPosition: 'left center',
-        }}
+        className="block h-full w-auto max-h-full max-w-full object-contain object-left"
+        style={{ objectPosition: 'left center' }}
         onError={() => setErrored(true)}
       />
     </div>

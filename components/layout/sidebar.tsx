@@ -79,13 +79,13 @@ export function Sidebar() {
       style={{ backgroundColor: 'var(--brand-sidebar-color)' }}
     >
       <div
-        className="flex h-[72px] flex-shrink-0 items-center justify-between px-4 border-b"
+        className="flex h-24 min-h-24 flex-shrink-0 items-center justify-between border-b px-4 py-2"
         style={{ borderColor: 'var(--brand-sidebar-border-color)' }}
       >
         <Link
           href="/dashboard"
           aria-label="Go to dashboard"
-          className="inline-flex items-center min-w-0 flex-1 pr-2"
+          className="inline-flex h-full min-h-0 min-w-0 flex-1 items-center justify-start pr-2"
         >
           <TrimProLogo variant="sidebar" size="md" />
         </Link>
