@@ -1098,12 +1098,12 @@ export default function EditEstimatePage() {
                       )
                     })}
                     <span className="text-gray-300 self-center">|</span>
-                    <button type="button" onClick={() => setAllLineItemsVisibility(true)}
-                      className="px-2 py-1 rounded border bg-gray-50 border-gray-300 text-gray-600 font-medium hover:bg-gray-100"
-                    >Show lines</button>
-                    <button type="button" onClick={() => setAllLineItemsVisibility(false)}
-                      className="px-2 py-1 rounded border bg-gray-50 border-gray-300 text-gray-600 font-medium hover:bg-gray-100"
-                    >Hide lines</button>
+                    <Button type="button" size="sm" variant="default" className="h-7 shrink-0 px-2.5 text-xs font-medium"
+                      onClick={() => setAllLineItemsVisibility(true)}
+                    >Show lines</Button>
+                    <Button type="button" size="sm" variant="default" className="h-7 shrink-0 px-2.5 text-xs font-medium"
+                      onClick={() => setAllLineItemsVisibility(false)}
+                    >Hide lines</Button>
                     <span className="text-gray-300 self-center">|</span>
                     <button type="button"
                       onClick={() => { setBulkModeActive(!bulkModeActive); setSelectedItemIndices(new Set()) }}

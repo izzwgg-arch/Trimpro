@@ -1402,14 +1402,14 @@ export default function NewInvoicePage() {
                       )
                     })}
                     <span className="text-gray-300 self-center">|</span>
-                    <button type="button"
+                    <Button type="button" size="sm" variant="default"
+                      className="h-7 shrink-0 px-2.5 text-xs font-medium"
                       onClick={() => { setAllLineItemsVisibility(true); setAllOptionalItemsVisibility(true) }}
-                      className="px-2 py-1 rounded border bg-gray-50 border-gray-300 text-gray-600 font-medium hover:bg-gray-100"
-                    >Show lines</button>
-                    <button type="button"
+                    >Show lines</Button>
+                    <Button type="button" size="sm" variant="default"
+                      className="h-7 shrink-0 px-2.5 text-xs font-medium"
                       onClick={() => { setAllLineItemsVisibility(false); setAllOptionalItemsVisibility(false) }}
-                      className="px-2 py-1 rounded border bg-gray-50 border-gray-300 text-gray-600 font-medium hover:bg-gray-100"
-                    >Hide lines</button>
+                    >Hide lines</Button>
                     <span className="text-gray-300 self-center">|</span>
                     <button type="button"
                       onClick={() => { setBulkModeActive(!bulkModeActive); setSelectedItemIndices(new Set()) }}
@@ -1936,12 +1936,12 @@ export default function NewInvoicePage() {
                       )
                     })}
                     <span className="text-gray-300 self-center">|</span>
-                    <button type="button" onClick={() => setAllOptionalItemsVisibility(true)}
-                      className="px-2 py-1 rounded border bg-gray-50 border-gray-300 text-gray-600 font-medium hover:bg-gray-100"
-                    >Show lines</button>
-                    <button type="button" onClick={() => setAllOptionalItemsVisibility(false)}
-                      className="px-2 py-1 rounded border bg-gray-50 border-gray-300 text-gray-600 font-medium hover:bg-gray-100"
-                    >Hide lines</button>
+                    <Button type="button" size="sm" variant="default" className="h-7 shrink-0 px-2.5 text-xs font-medium"
+                      onClick={() => setAllOptionalItemsVisibility(true)}
+                    >Show lines</Button>
+                    <Button type="button" size="sm" variant="default" className="h-7 shrink-0 px-2.5 text-xs font-medium"
+                      onClick={() => setAllOptionalItemsVisibility(false)}
+                    >Hide lines</Button>
                   </div>
                 </div>
               </CardHeader>
