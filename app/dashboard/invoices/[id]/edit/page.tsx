@@ -8,7 +8,8 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ArrowLeft, Save, Plus, Trash2, Eye, EyeOff, Copy, GripVertical } from 'lucide-react'
+import { ArrowLeft, Save, Plus, Trash2, Eye, EyeOff, Copy } from 'lucide-react'
+import { LineItemDragHandle } from '@/components/documents/line-item-drag-handle'
 import Link from 'next/link'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
@@ -207,6 +208,7 @@ export default function EditInvoicePage() {
           processedGroups.add(group.id)
         }
 
+        const isSubtotalRow = Boolean((li as any).isSubtotal)
         mappedItems.push({
           id: li.id,
           description: li.description,
@@ -218,16 +220,20 @@ export default function EditInvoicePage() {
           vendorName: li.vendorName || undefined,
           taxable: li.taxable ?? true,
           taxRate: li.taxRate ? (parseFloat(li.taxRate) * 100).toString() : undefined,
-          showDescriptionToCustomer: li.showDescriptionToCustomer ?? true,
+          showDescriptionToCustomer: isSubtotalRow
+            ? (li.showDescriptionToCustomer ?? true)
+            : (li.showDescriptionToCustomer ?? false),
           showCostToCustomer: li.showCostToCustomer ?? false,
           showPriceToCustomer: li.showPriceToCustomer ?? true,
           showTaxToCustomer: li.showTaxToCustomer ?? true,
-          showNotesToCustomer: li.showNotesToCustomer ?? false,
+          showNotesToCustomer: isSubtotalRow
+            ? (li.showNotesToCustomer ?? false)
+            : (li.showNotesToCustomer ?? true),
           groupId: li.groupId || undefined,
           sourceItemId: li.sourceItemId || undefined,
           sourceBundleId: li.sourceBundleId || undefined,
           isVisibleToClient: li.isVisibleToClient !== false,
-          isSubtotal: Boolean((li as any).isSubtotal),
+          isSubtotal: isSubtotalRow,
         })
       })
 
@@ -238,11 +244,11 @@ export default function EditInvoicePage() {
           unitPrice: '0',
           taxable: true,
           isVisibleToClient: true,
-          showDescriptionToCustomer: true,
+          showDescriptionToCustomer: false,
           showCostToCustomer: false,
           showPriceToCustomer: true,
           showTaxToCustomer: true,
-          showNotesToCustomer: false,
+          showNotesToCustomer: true,
         })
       }
 
@@ -261,11 +267,11 @@ export default function EditInvoicePage() {
           vendorName: li.vendorName || undefined,
           taxable: li.taxable ?? true,
           taxRate: li.taxRate ? (parseFloat(li.taxRate) * 100).toString() : undefined,
-          showDescriptionToCustomer: li.showDescriptionToCustomer ?? true,
+          showDescriptionToCustomer: li.showDescriptionToCustomer ?? false,
           showCostToCustomer: li.showCostToCustomer ?? false,
           showPriceToCustomer: li.showPriceToCustomer ?? true,
           showTaxToCustomer: li.showTaxToCustomer ?? true,
-          showNotesToCustomer: li.showNotesToCustomer ?? false,
+          showNotesToCustomer: li.showNotesToCustomer ?? true,
           groupId: li.groupId || undefined,
           sourceItemId: li.sourceItemId || undefined,
           sourceBundleId: li.sourceBundleId || undefined,
@@ -304,11 +310,11 @@ export default function EditInvoicePage() {
         unitPrice: '0',
         taxable: true,
         isVisibleToClient: true,
-        showDescriptionToCustomer: true,
+        showDescriptionToCustomer: false,
         showCostToCustomer: false,
         showPriceToCustomer: true,
         showTaxToCustomer: true,
-        showNotesToCustomer: false,
+        showNotesToCustomer: true,
       },
     ])
   }
@@ -322,11 +328,11 @@ export default function EditInvoicePage() {
         unitPrice: '0',
         taxable: true,
         isVisibleToClient: true,
-        showDescriptionToCustomer: true,
+        showDescriptionToCustomer: false,
         showCostToCustomer: false,
         showPriceToCustomer: true,
         showTaxToCustomer: true,
-        showNotesToCustomer: false,
+        showNotesToCustomer: true,
       },
     ])
   }
@@ -360,6 +366,86 @@ export default function EditInvoicePage() {
       })
       return next
     })
+  }
+
+  const insertLineItemAfter = (index: number) => {
+    setLineItems((prev) => {
+      const row = prev[index]
+      const next = [...prev]
+      const blank: LineItem = {
+        description: '',
+        quantity: '1',
+        unitPrice: '0',
+        taxable: true,
+        isVisibleToClient: true,
+        showDescriptionToCustomer: false,
+        showCostToCustomer: false,
+        showPriceToCustomer: true,
+        showTaxToCustomer: true,
+        showNotesToCustomer: true,
+      }
+      if (!row.isSubtotal && row.groupId) {
+        blank.groupId = row.groupId
+        blank.groupName = row.groupName
+      }
+      next.splice(index + 1, 0, blank)
+      return next
+    })
+    const newIndex = index + 1
+    setTimeout(() => {
+      const nextInput = pickerInputRefs.current[newIndex]
+      if (nextInput) {
+        nextInput.focus()
+        nextInput.dispatchEvent(new Event('focus', { bubbles: true }))
+      } else {
+        const nextContainer = lineItemRefs.current[newIndex]
+        const fallbackInput = nextContainer?.querySelector<HTMLInputElement>('[data-picker-input="true"]')
+        if (fallbackInput) {
+          fallbackInput.focus()
+          fallbackInput.dispatchEvent(new Event('focus', { bubbles: true }))
+        }
+      }
+    }, 100)
+  }
+
+  const insertOptionalLineItemAfter = (index: number) => {
+    setOptionalItems((prev) => {
+      const row = prev[index]
+      const next = [...prev]
+      const blank: LineItem = {
+        description: '',
+        quantity: '1',
+        unitPrice: '0',
+        taxable: true,
+        isVisibleToClient: true,
+        showDescriptionToCustomer: false,
+        showCostToCustomer: false,
+        showPriceToCustomer: true,
+        showTaxToCustomer: true,
+        showNotesToCustomer: true,
+      }
+      if (row.groupId) {
+        blank.groupId = row.groupId
+        blank.groupName = row.groupName
+      }
+      next.splice(index + 1, 0, blank)
+      return next
+    })
+    const newIndex = index + 1
+    setTimeout(() => {
+      const nextInput = optionalPickerInputRefs.current[newIndex]
+      if (nextInput) {
+        nextInput.focus()
+        nextInput.dispatchEvent(new Event('focus', { bubbles: true }))
+      } else {
+        const nextContainer = optionalItemRefs.current[newIndex]
+        const fallbackInput = nextContainer?.querySelector<HTMLInputElement>('[data-picker-input="true"]')
+        if (fallbackInput) {
+          fallbackInput.focus()
+          fallbackInput.dispatchEvent(new Event('focus', { bubbles: true }))
+        }
+      }
+    }, 100)
   }
 
   const updateLineItem = (index: number, field: keyof LineItem, value: any) => {
@@ -413,6 +499,7 @@ export default function EditInvoicePage() {
             unitPrice: '0',
             taxable: item.taxable,
             taxRate: item.taxRate?.toString() || '',
+            showDescriptionToCustomer: true,
             showCostToCustomer: false,
             showPriceToCustomer: true,
             showTaxToCustomer: true,
@@ -451,10 +538,11 @@ export default function EditInvoicePage() {
               vendorName: comp.vendor?.name || null,
               taxable: sourceItem?.taxable ?? true,
               taxRate: sourceItem?.taxRate?.toString() || '',
+              showDescriptionToCustomer: false,
               showCostToCustomer: false,
               showPriceToCustomer: true,
               showTaxToCustomer: true,
-              showNotesToCustomer: false,
+              showNotesToCustomer: true,
               groupId,
               sourceItemId: comp.componentItemId || null,
               sourceBundleId: comp.componentBundleId || null,
@@ -472,6 +560,8 @@ export default function EditInvoicePage() {
             taxable: item.taxable,
             taxRate: item.taxRate?.toString() || '',
             sourceBundleId: bundleDefId,
+            showDescriptionToCustomer: false,
+            showNotesToCustomer: true,
           }
         }
       } catch (error) {
@@ -485,6 +575,8 @@ export default function EditInvoicePage() {
           taxable: item.taxable,
           taxRate: item.taxRate?.toString() || '',
           sourceBundleId: item.bundleId || undefined,
+          showDescriptionToCustomer: false,
+          showNotesToCustomer: true,
         }
       }
     } else {
@@ -504,6 +596,8 @@ export default function EditInvoicePage() {
         taxable: item.taxable,
         taxRate: item.taxRate?.toString() || '',
         sourceItemId: item.id,
+        showDescriptionToCustomer: false,
+        showNotesToCustomer: true,
       }
     }
 
@@ -580,11 +674,11 @@ export default function EditInvoicePage() {
               vendorName: comp.vendor?.name || null,
               taxable: sourceItem?.taxable ?? true,
               taxRate: sourceItem?.taxRate?.toString() || '',
-              showDescriptionToCustomer: true,
+              showDescriptionToCustomer: false,
               showCostToCustomer: false,
               showPriceToCustomer: true,
               showTaxToCustomer: true,
-              showNotesToCustomer: false,
+              showNotesToCustomer: true,
               groupId,
               groupName: bundle?.name || item.name,
               sourceItemId: comp.componentItemId || null,
@@ -618,6 +712,8 @@ export default function EditInvoicePage() {
       taxable: item.taxable,
       taxRate: item.taxRate?.toString() || '',
       sourceItemId: item.id,
+      showDescriptionToCustomer: false,
+      showNotesToCustomer: true,
     }
 
     setOptionalItems(updated)
@@ -634,10 +730,11 @@ export default function EditInvoicePage() {
           quantity: '1',
           unitPrice: '0',
           taxable: true,
+          showDescriptionToCustomer: false,
           showCostToCustomer: false,
           showPriceToCustomer: true,
           showTaxToCustomer: true,
-          showNotesToCustomer: false,
+          showNotesToCustomer: true,
         },
       ]
     })
@@ -657,6 +754,46 @@ export default function EditInvoicePage() {
     }, 100)
   }
 
+  const handleShiftEnterOnRow = (rowIndex: number, col: 'description' | 'quantity' | 'unitPrice' | 'unitCost' | 'notes') => {
+    const nextIndex = rowIndex + 1
+    const needsNewRow = nextIndex >= lineItems.length
+    if (needsNewRow) {
+      setLineItems((prev) => [
+        ...prev,
+        {
+          description: '',
+          quantity: '1',
+          unitPrice: '0',
+          taxable: true,
+          showDescriptionToCustomer: false,
+          showCostToCustomer: false,
+          showPriceToCustomer: true,
+          showTaxToCustomer: true,
+          showNotesToCustomer: true,
+        },
+      ])
+    }
+    setTimeout(() => {
+      if (col === 'description') {
+        const picker =
+          pickerInputRefs.current[nextIndex] ??
+          lineItemRefs.current[nextIndex]?.querySelector<HTMLInputElement>('[data-picker-input="true"]') ??
+          null
+        if (picker) {
+          picker.focus()
+          picker.dispatchEvent(new Event('focus', { bubbles: true }))
+        }
+      } else {
+        const container = lineItemRefs.current[nextIndex]
+        const input = container?.querySelector<HTMLInputElement>(`[data-col="${col}"]`) ?? null
+        if (input) {
+          input.focus()
+          input.select()
+        }
+      }
+    }, needsNewRow ? 100 : 16)
+  }
+
   const handleNextOptionalLine = (currentIndex: number) => {
     const nextIndex = currentIndex + 1
     setOptionalItems((prev) => {
@@ -668,11 +805,11 @@ export default function EditInvoicePage() {
           quantity: '1',
           unitPrice: '0',
           taxable: true,
-          showDescriptionToCustomer: true,
+          showDescriptionToCustomer: false,
           showCostToCustomer: false,
           showPriceToCustomer: true,
           showTaxToCustomer: true,
-          showNotesToCustomer: false,
+          showNotesToCustomer: true,
         },
       ]
     })
@@ -820,7 +957,7 @@ export default function EditInvoicePage() {
       }, 0)
 
       const discount = parseFloat(formData.discount || '0')
-      const subtotalAfterDiscount = Math.max(0, subtotal - discount)
+      const subtotalAfterDiscount = subtotal - discount
       const taxRate = parseFloat(formData.taxRate || '0') / 100
       const tax = subtotalAfterDiscount * taxRate
       const total = subtotalAfterDiscount + tax
@@ -965,7 +1102,7 @@ export default function EditInvoicePage() {
   }, 0)
   
   const discount = parseFloat(formData.discount || '0')
-  const subtotalAfterDiscount = Math.max(0, subtotal - discount)
+  const subtotalAfterDiscount = subtotal - discount
   const taxRate = parseFloat(formData.taxRate || '0') / 100
   const tax = subtotalAfterDiscount * taxRate
   const total = subtotalAfterDiscount + tax
@@ -1172,11 +1309,6 @@ export default function EditInvoicePage() {
                       return (
                         <div
                           key={index}
-                          draggable
-                          onDragStart={(e) => {
-                            e.dataTransfer.setData('text/line-index', String(index))
-                            e.dataTransfer.effectAllowed = 'move'
-                          }}
                           onDragOver={(e) => {
                             e.preventDefault()
                             e.dataTransfer.dropEffect = 'move'
@@ -1188,12 +1320,22 @@ export default function EditInvoicePage() {
                             if (!Number.isFinite(from)) return
                             reorderLineItems(from, index)
                           }}
-                          className="flex items-center justify-between p-2 rounded border border-slate-300 bg-slate-50"
+                          className="flex items-center gap-2 p-2 rounded border border-slate-300 bg-slate-50"
                         >
-                          <span className="text-sm font-semibold text-slate-700">Subtotal</span>
+                          <LineItemDragHandle transferKey="text/line-index" index={index} />
+                          <span className="text-sm font-semibold text-slate-700 flex-1">Subtotal</span>
                           <div className="flex items-center gap-2">
                             <span className="font-bold text-slate-800">${subtotalDisplay.toFixed(2)}</span>
-                            <GripVertical className="h-4 w-4 text-slate-400" aria-hidden />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              title="Insert line below"
+                              onClick={() => insertLineItemAfter(index)}
+                              className="text-green-600 hover:text-green-800 p-1 h-auto"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
                             <Button
                               type="button"
                               variant="ghost"
@@ -1214,14 +1356,10 @@ export default function EditInvoicePage() {
                         ref={(el) => {
                           lineItemRefs.current[index] = el
                         }}
-                        draggable
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData('text/line-index', String(index))
-                          e.dataTransfer.effectAllowed = 'move'
-                        }}
                         onDragOver={(e) => {
                           e.preventDefault()
                           e.dataTransfer.dropEffect = 'move'
+                          maybeAutoScrollDuringDrag(e.clientY)
                         }}
                         onDrop={(e) => {
                           e.preventDefault()
@@ -1248,17 +1386,23 @@ export default function EditInvoicePage() {
                           </div>
                         )}
 
-                        {!isGroupHeader && (
-                          <div className="flex flex-col gap-1 items-center">
-                            <button
+                        {isGroupHeader ? (
+                          <div className="flex flex-col gap-1 items-center shrink-0 self-center">
+                            <LineItemDragHandle transferKey="text/line-index" index={index} />
+                            <Button
                               type="button"
-                              title="Drag to reorder"
-                              className="cursor-grab text-gray-400 hover:text-gray-600 p-0.5"
-                              aria-label="Drag to reorder"
-                              onMouseDown={(e) => e.stopPropagation()}
+                              variant="ghost"
+                              size="sm"
+                              title="Insert line below"
+                              onClick={() => insertLineItemAfter(index)}
+                              className="p-1 h-7 text-green-600 hover:text-green-800"
                             >
-                              <GripVertical className="h-4 w-4" />
-                            </button>
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-1 items-center shrink-0">
+                            <LineItemDragHandle transferKey="text/line-index" index={index} />
                             <Button
                               type="button"
                               variant="ghost"
@@ -1338,6 +1482,7 @@ export default function EditInvoicePage() {
                                 onChange={(value) => updateLineItem(index, 'description', value)}
                                 onSelect={(selectedItem) => handleItemSelect(selectedItem, index)}
                                 onNextLine={() => handleNextLine(index)}
+                                onShiftEnter={() => handleShiftEnterOnRow(index, 'description')}
                                 items={pickerItems}
                                 bundles={pickerBundles}
                                 placeholder="Type to search items..."
@@ -1369,6 +1514,8 @@ export default function EditInvoicePage() {
                                 onChange={(e) => updateLineItem(index, 'notes', e.target.value)}
                                 placeholder="Description (optional)"
                                 className="w-full text-sm"
+                                data-col="notes"
+                                onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); handleShiftEnterOnRow(index, 'notes') } }}
                               />
                             </>
                           )}
@@ -1385,6 +1532,8 @@ export default function EditInvoicePage() {
                                 value={item.quantity}
                                 onChange={(e) => updateLineItem(index, 'quantity', e.target.value)}
                                 required
+                                data-col="quantity"
+                                onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); handleShiftEnterOnRow(index, 'quantity') } }}
                               />
                             </div>
 
@@ -1409,11 +1558,12 @@ export default function EditInvoicePage() {
                               <Input
                                 type="number"
                                 step="0.01"
-                                min="0"
                                 placeholder="0.00"
                                 value={item.unitPrice}
                                 onChange={(e) => updateLineItem(index, 'unitPrice', e.target.value)}
                                 required
+                                data-col="unitPrice"
+                                onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); handleShiftEnterOnRow(index, 'unitPrice') } }}
                               />
                             </div>
 
@@ -1443,6 +1593,8 @@ export default function EditInvoicePage() {
                                 value={item.unitCost || ''}
                                 onChange={(e) => updateLineItem(index, 'unitCost', e.target.value)}
                                 className="bg-gray-50"
+                                data-col="unitCost"
+                                onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); handleShiftEnterOnRow(index, 'unitCost') } }}
                               />
                             </div>
 
@@ -1496,16 +1648,28 @@ export default function EditInvoicePage() {
                         )}
 
                         {!isGroupHeader && !isSubtotalRow && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            title="Insert subtotal after this item"
-                            onClick={() => insertSubtotalAfter(index)}
-                            className="text-blue-500 hover:text-blue-700 px-1.5"
-                          >
-                            Σ
-                          </Button>
+                          <div className="flex items-center gap-0.5 shrink-0">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              title="Insert line below"
+                              onClick={() => insertLineItemAfter(index)}
+                              className="text-green-600 hover:text-green-800 px-1.5"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              title="Insert subtotal after this item"
+                              onClick={() => insertSubtotalAfter(index)}
+                              className="text-blue-500 hover:text-blue-700 px-1.5"
+                            >
+                              Σ
+                            </Button>
+                          </div>
                         )}
                         {lineItems.length > 1 && !isGroupHeader && (
                           <Button
@@ -1583,14 +1747,10 @@ export default function EditInvoicePage() {
                           ref={(el) => {
                             optionalItemRefs.current[index] = el
                           }}
-                          draggable
-                          onDragStart={(e) => {
-                            e.dataTransfer.setData('text/opt-line-index', String(index))
-                            e.dataTransfer.effectAllowed = 'move'
-                          }}
                           onDragOver={(e) => {
                             e.preventDefault()
                             e.dataTransfer.dropEffect = 'move'
+                            maybeAutoScrollDuringDrag(e.clientY)
                           }}
                           onDrop={(e) => {
                             e.preventDefault()
@@ -1606,17 +1766,23 @@ export default function EditInvoicePage() {
                                 : 'border-gray-300'
                           } ${!isGroupHeader && !isVisible ? 'opacity-70' : ''}`}
                         >
-                          {!isGroupHeader && (
-                            <div className="flex flex-col gap-1 items-center">
-                              <button
+                          {isGroupHeader ? (
+                            <div className="flex flex-col gap-1 items-center shrink-0 self-center">
+                              <LineItemDragHandle transferKey="text/opt-line-index" index={index} />
+                              <Button
                                 type="button"
-                                title="Drag to reorder"
-                                className="cursor-grab text-gray-400 hover:text-gray-600 p-0.5"
-                                aria-label="Drag to reorder"
-                                onMouseDown={(ev) => ev.stopPropagation()}
+                                variant="ghost"
+                                size="sm"
+                                title="Insert line below"
+                                onClick={() => insertOptionalLineItemAfter(index)}
+                                className="p-1 h-7 text-green-600 hover:text-green-800"
                               >
-                                <GripVertical className="h-4 w-4" />
-                              </button>
+                                <Plus className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col gap-1 items-center shrink-0">
+                              <LineItemDragHandle transferKey="text/opt-line-index" index={index} />
                               <Button
                                 type="button"
                                 variant="ghost"
@@ -1744,7 +1910,6 @@ export default function EditInvoicePage() {
                                 <Input
                                   type="number"
                                   step="0.01"
-                                  min="0"
                                   placeholder="0.00"
                                   value={item.unitPrice}
                                   onChange={(e) => updateOptionalItem(index, 'unitPrice', e.target.value)}
@@ -1830,9 +1995,21 @@ export default function EditInvoicePage() {
                           )}
 
                           {!isGroupHeader && (
-                            <Button type="button" variant="ghost" size="sm" onClick={() => removeOptionalItem(index)}>
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            <div className="flex items-center gap-0.5 shrink-0 self-start pt-6">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                title="Insert line below"
+                                onClick={() => insertOptionalLineItemAfter(index)}
+                                className="text-green-600 hover:text-green-800 px-1.5"
+                              >
+                                <Plus className="h-4 w-4" />
+                              </Button>
+                              <Button type="button" variant="ghost" size="sm" onClick={() => removeOptionalItem(index)}>
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
                           )}
                         </div>
                       )

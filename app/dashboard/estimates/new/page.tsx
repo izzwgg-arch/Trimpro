@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -8,7 +8,8 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ArrowLeft, Save, Plus, Trash2, Eye, EyeOff, GripVertical } from 'lucide-react'
+import { ArrowLeft, Save, Plus, Trash2, Eye, EyeOff } from 'lucide-react'
+import { LineItemDragHandle } from '@/components/documents/line-item-drag-handle'
 import Link from 'next/link'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
@@ -56,6 +57,9 @@ export default function NewEstimatePage() {
     useCreateContextPrefill('estimate')
   
   const [loading, setLoading] = useState(false)
+  const [nextEstimatePreview, setNextEstimatePreview] = useState<string | null>(null)
+  const [nextEstimatePreviewLoading, setNextEstimatePreviewLoading] = useState(true)
+  const [nextEstimatePreviewError, setNextEstimatePreviewError] = useState(false)
   const [bulkModeActive, setBulkModeActive] = useState(false)
   const [selectedItemIndices, setSelectedItemIndices] = useState<Set<number>>(new Set())
   const [clients, setClients] = useState<PickerClient[]>([])
@@ -67,11 +71,11 @@ export default function NewEstimatePage() {
       quantity: '1',
       unitPrice: '0',
       taxable: true,
-      showDescriptionToCustomer: true,
+      showDescriptionToCustomer: false,
       showCostToCustomer: false,
       showPriceToCustomer: true,
       showTaxToCustomer: true,
-      showNotesToCustomer: false,
+      showNotesToCustomer: true,
     },
   ])
   const [optionalItems, setOptionalItems] = useState<LineItem[]>([
@@ -81,11 +85,11 @@ export default function NewEstimatePage() {
       unitPrice: '0',
       taxable: true,
       isVisibleToClient: true,
-      showDescriptionToCustomer: true,
+      showDescriptionToCustomer: false,
       showCostToCustomer: false,
       showPriceToCustomer: true,
       showTaxToCustomer: true,
-      showNotesToCustomer: false,
+      showNotesToCustomer: true,
     },
   ])
   const [focusedLineIndex, setFocusedLineIndex] = useState<number | null>(null)
@@ -119,6 +123,39 @@ export default function NewEstimatePage() {
     fetchClients()
     fetchPickerData()
   }, [])
+
+  const loadNextEstimateNumberPreview = useCallback(async () => {
+    setNextEstimatePreviewLoading(true)
+    setNextEstimatePreviewError(false)
+    try {
+      let token = localStorage.getItem('accessToken')
+      let response = await fetch('/api/estimates/next-number', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (response.status === 401) {
+        const ok = await refreshAccessToken()
+        if (!ok) throw new Error('Unauthorized')
+        token = localStorage.getItem('accessToken')
+        response = await fetch('/api/estimates/next-number', {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      }
+      if (!response.ok) throw new Error('Failed to load next estimate number')
+      const data = await response.json()
+      setNextEstimatePreview(typeof data.estimateNumber === 'string' ? data.estimateNumber : null)
+    } catch (e) {
+      console.error('Next estimate number preview:', e)
+      setNextEstimatePreviewError(true)
+      setNextEstimatePreview(null)
+    } finally {
+      setNextEstimatePreviewLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (formData.estimateNumber.trim() !== '') return
+    loadNextEstimateNumberPreview()
+  }, [formData.estimateNumber, loadNextEstimateNumberPreview])
 
   useEffect(() => {
     // Context-aware autofill (from inside Request/Job/Estimate/etc).
@@ -295,11 +332,11 @@ export default function NewEstimatePage() {
         quantity: '1',
         unitPrice: '0',
         taxable: true,
-        showDescriptionToCustomer: true,
+        showDescriptionToCustomer: false,
         showCostToCustomer: false,
         showPriceToCustomer: true,
         showTaxToCustomer: true,
-        showNotesToCustomer: false,
+        showNotesToCustomer: true,
       },
     ])
   }
@@ -326,6 +363,85 @@ export default function NewEstimatePage() {
       })
       return next
     })
+  }
+
+  const insertLineItemAfter = (index: number) => {
+    setLineItems((prev) => {
+      const row = prev[index]
+      const next = [...prev]
+      const blank: LineItem = {
+        description: '',
+        quantity: '1',
+        unitPrice: '0',
+        taxable: true,
+        showDescriptionToCustomer: false,
+        showCostToCustomer: false,
+        showPriceToCustomer: true,
+        showTaxToCustomer: true,
+        showNotesToCustomer: true,
+      }
+      if (!row.isSubtotal && row.groupId) {
+        blank.groupId = row.groupId
+        blank.groupName = row.groupName
+      }
+      next.splice(index + 1, 0, blank)
+      return next
+    })
+    const newIndex = index + 1
+    setTimeout(() => {
+      const nextInput = pickerInputRefs.current[newIndex]
+      if (nextInput) {
+        nextInput.focus()
+        nextInput.dispatchEvent(new Event('focus', { bubbles: true }))
+      } else {
+        const nextContainer = lineItemRefs.current[newIndex]
+        const fallbackInput = nextContainer?.querySelector<HTMLInputElement>('[data-picker-input="true"]')
+        if (fallbackInput) {
+          fallbackInput.focus()
+          fallbackInput.dispatchEvent(new Event('focus', { bubbles: true }))
+        }
+      }
+    }, 100)
+  }
+
+  const insertOptionalLineItemAfter = (index: number) => {
+    setOptionalItems((prev) => {
+      const row = prev[index]
+      const next = [...prev]
+      const blank: LineItem = {
+        description: '',
+        quantity: '1',
+        unitPrice: '0',
+        taxable: true,
+        isVisibleToClient: true,
+        showDescriptionToCustomer: false,
+        showCostToCustomer: false,
+        showPriceToCustomer: true,
+        showTaxToCustomer: true,
+        showNotesToCustomer: true,
+      }
+      if (row.groupId) {
+        blank.groupId = row.groupId
+        blank.groupName = row.groupName
+      }
+      next.splice(index + 1, 0, blank)
+      return next
+    })
+    const newIndex = index + 1
+    setTimeout(() => {
+      const nextInput = optionalPickerInputRefs.current[newIndex]
+      if (nextInput) {
+        nextInput.focus()
+        nextInput.dispatchEvent(new Event('focus', { bubbles: true }))
+      } else {
+        const nextContainer = optionalItemRefs.current[newIndex]
+        const fallbackInput = nextContainer?.querySelector<HTMLInputElement>('[data-picker-input="true"]')
+        if (fallbackInput) {
+          fallbackInput.focus()
+          fallbackInput.dispatchEvent(new Event('focus', { bubbles: true }))
+        }
+      }
+    }, 100)
   }
 
   const updateLineItem = (index: number, field: keyof LineItem, value: any) => {
@@ -408,11 +524,11 @@ export default function NewEstimatePage() {
               vendorName: comp.vendor?.name || null,
               taxable: sourceItem?.taxable ?? true,
               taxRate: sourceItem?.taxRate?.toString() || '',
-              showDescriptionToCustomer: true,
+              showDescriptionToCustomer: false,
               showCostToCustomer: false,
               showPriceToCustomer: true,
               showTaxToCustomer: true,
-              showNotesToCustomer: false,
+              showNotesToCustomer: true,
               groupId,
               sourceItemId: comp.componentItemId || null,
               sourceBundleId: comp.componentBundleId || null,
@@ -432,6 +548,8 @@ export default function NewEstimatePage() {
             taxable: item.taxable,
             taxRate: item.taxRate?.toString() || '',
             sourceBundleId: item.bundleId,
+            showDescriptionToCustomer: false,
+            showNotesToCustomer: true,
           }
         }
       } catch (error) {
@@ -446,6 +564,8 @@ export default function NewEstimatePage() {
           taxable: item.taxable,
           taxRate: item.taxRate?.toString() || '',
           sourceBundleId: item.bundleId,
+          showDescriptionToCustomer: false,
+          showNotesToCustomer: true,
         }
       }
     } else {
@@ -468,6 +588,8 @@ export default function NewEstimatePage() {
         taxable: item.taxable,
         taxRate: item.taxRate?.toString() || '',
         sourceItemId: item.id,
+        showDescriptionToCustomer: false,
+        showNotesToCustomer: true,
       }
     }
 
@@ -496,11 +618,11 @@ export default function NewEstimatePage() {
           quantity: '1',
           unitPrice: '0',
           taxable: true,
-          showDescriptionToCustomer: true,
+          showDescriptionToCustomer: false,
           showCostToCustomer: false,
           showPriceToCustomer: true,
           showTaxToCustomer: true,
-          showNotesToCustomer: false,
+          showNotesToCustomer: true,
         },
       ]
     })
@@ -521,6 +643,46 @@ export default function NewEstimatePage() {
         }
       }
     }, 100)
+  }
+
+  const handleShiftEnterOnRow = (rowIndex: number, col: 'description' | 'quantity' | 'unitPrice' | 'unitCost' | 'notes') => {
+    const nextIndex = rowIndex + 1
+    const needsNewRow = nextIndex >= lineItems.length
+    if (needsNewRow) {
+      setLineItems((prev) => [
+        ...prev,
+        {
+          description: '',
+          quantity: '1',
+          unitPrice: '0',
+          taxable: true,
+          showDescriptionToCustomer: false,
+          showCostToCustomer: false,
+          showPriceToCustomer: true,
+          showTaxToCustomer: true,
+          showNotesToCustomer: true,
+        },
+      ])
+    }
+    setTimeout(() => {
+      if (col === 'description') {
+        const picker =
+          pickerInputRefs.current[nextIndex] ??
+          lineItemRefs.current[nextIndex]?.querySelector<HTMLInputElement>('[data-picker-input="true"]') ??
+          null
+        if (picker) {
+          picker.focus()
+          picker.dispatchEvent(new Event('focus', { bubbles: true }))
+        }
+      } else {
+        const container = lineItemRefs.current[nextIndex]
+        const input = container?.querySelector<HTMLInputElement>(`[data-col="${col}"]`) ?? null
+        if (input) {
+          input.focus()
+          input.select()
+        }
+      }
+    }, needsNewRow ? 100 : 16)
   }
 
   const toggleVisibility = (index: number, field: 'description' | 'cost' | 'price' | 'tax' | 'notes') => {
@@ -615,11 +777,11 @@ export default function NewEstimatePage() {
         unitPrice: '0',
         taxable: true,
         isVisibleToClient: true,
-        showDescriptionToCustomer: true,
+        showDescriptionToCustomer: false,
         showCostToCustomer: false,
         showPriceToCustomer: true,
         showTaxToCustomer: true,
-        showNotesToCustomer: false,
+        showNotesToCustomer: true,
       },
     ])
   }
@@ -740,11 +902,11 @@ export default function NewEstimatePage() {
               taxable: sourceItem?.taxable ?? true,
               taxRate: sourceItem?.taxRate?.toString() || '',
               isVisibleToClient: true,
-              showDescriptionToCustomer: true,
+              showDescriptionToCustomer: false,
               showCostToCustomer: false,
               showPriceToCustomer: true,
               showTaxToCustomer: true,
-              showNotesToCustomer: false,
+              showNotesToCustomer: true,
               groupId,
               sourceItemId: comp.componentItemId || null,
               sourceBundleId: comp.componentBundleId || null,
@@ -762,6 +924,8 @@ export default function NewEstimatePage() {
             taxable: item.taxable,
             taxRate: item.taxRate?.toString() || '',
             sourceBundleId: item.bundleId,
+            showDescriptionToCustomer: false,
+            showNotesToCustomer: true,
           }
         }
       } catch (error) {
@@ -775,6 +939,8 @@ export default function NewEstimatePage() {
           taxable: item.taxable,
           taxRate: item.taxRate?.toString() || '',
           sourceBundleId: item.bundleId,
+          showDescriptionToCustomer: false,
+          showNotesToCustomer: true,
         }
       }
     } else {
@@ -794,6 +960,8 @@ export default function NewEstimatePage() {
         taxable: item.taxable,
         taxRate: item.taxRate?.toString() || '',
         sourceItemId: item.id,
+        showDescriptionToCustomer: false,
+        showNotesToCustomer: true,
       }
     }
 
@@ -818,11 +986,11 @@ export default function NewEstimatePage() {
           unitPrice: '0',
           taxable: true,
           isVisibleToClient: true,
-          showDescriptionToCustomer: true,
+          showDescriptionToCustomer: false,
           showCostToCustomer: false,
           showPriceToCustomer: true,
           showTaxToCustomer: true,
-          showNotesToCustomer: false,
+          showNotesToCustomer: true,
         },
       ]
     })
@@ -881,7 +1049,7 @@ export default function NewEstimatePage() {
       }, 0)
       
       const discount = parseFloat(formData.discount || '0')
-      const subtotalAfterDiscount = Math.max(0, subtotal - discount)
+      const subtotalAfterDiscount = subtotal - discount
       const taxRate = parseFloat(formData.taxRate || '0') / 100
       const tax = subtotalAfterDiscount * taxRate
       const total = subtotalAfterDiscount + tax
@@ -1021,7 +1189,7 @@ export default function NewEstimatePage() {
   }, 0)
   
   const discount = parseFloat(formData.discount || '0')
-  const subtotalAfterDiscount = Math.max(0, subtotal - discount)
+  const subtotalAfterDiscount = subtotal - discount
   const taxRate = parseFloat(formData.taxRate || '0') / 100
   const tax = subtotalAfterDiscount * taxRate
   const total = subtotalAfterDiscount + tax
@@ -1038,6 +1206,23 @@ export default function NewEstimatePage() {
         <div>
           <h1 className="text-3xl font-bold text-gray-900">New Estimate</h1>
           <p className="mt-2 text-gray-600">Create a new estimate for a client</p>
+          {formData.estimateNumber.trim() === '' && (
+            <p className="mt-2 text-sm text-gray-700">
+              {nextEstimatePreviewLoading ? (
+                <span className="text-gray-500">Loading next estimate number…</span>
+              ) : nextEstimatePreviewError ? (
+                <span className="text-amber-800">
+                  Next estimate number will be assigned when you save (preview unavailable).
+                </span>
+              ) : nextEstimatePreview ? (
+                <>
+                  Next estimate number:{' '}
+                  <span className="font-mono font-semibold text-gray-900">{nextEstimatePreview}</span>
+                  <span className="text-gray-500"> (if you leave Estimate # blank)</span>
+                </>
+              ) : null}
+            </p>
+          )}
         </div>
       </div>
 
@@ -1074,11 +1259,30 @@ export default function NewEstimatePage() {
                     id="estimateNumber"
                     value={formData.estimateNumber}
                     onChange={(e) => setFormData({ ...formData, estimateNumber: e.target.value })}
-                    placeholder="Leave blank to auto-generate (ex: EST-000123)"
+                    placeholder={
+                      nextEstimatePreview && !formData.estimateNumber.trim()
+                        ? `Default: ${nextEstimatePreview}`
+                        : 'Leave blank to auto-generate (ex: EST-000123)'
+                    }
                   />
-                  <p className="mt-1 text-xs text-gray-500">
-                    If you enter a number, future estimates continue upward from the highest number.
-                  </p>
+                  {formData.estimateNumber.trim() === '' ? (
+                    <p className="mt-1 text-xs text-gray-600">
+                      {nextEstimatePreviewLoading ? (
+                        'Checking next available number…'
+                      ) : nextEstimatePreview ? (
+                        <>
+                          Will be saved as <span className="font-mono font-medium">{nextEstimatePreview}</span> unless
+                          you type a custom number above.
+                        </>
+                      ) : nextEstimatePreviewError ? (
+                        'A number will be chosen when you save.'
+                      ) : null}
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-xs text-gray-500">
+                      Using your custom number. Future auto-generated estimates still follow the highest used number.
+                    </p>
+                  )}
                 </div>
                 <div>
                   <Label htmlFor="title">Title *</Label>
@@ -1182,11 +1386,6 @@ export default function NewEstimatePage() {
                       return (
                         <div
                           key={index}
-                          draggable
-                          onDragStart={(e) => {
-                            e.dataTransfer.setData('text/line-index', String(index))
-                            e.dataTransfer.effectAllowed = 'move'
-                          }}
                           onDragOver={(e) => {
                             e.preventDefault()
                             e.dataTransfer.dropEffect = 'move'
@@ -1198,12 +1397,22 @@ export default function NewEstimatePage() {
                             if (!Number.isFinite(from)) return
                             reorderLineItems(from, index)
                           }}
-                          className="flex items-center justify-between p-2 rounded border border-slate-300 bg-slate-50"
+                          className="flex items-center gap-2 p-2 rounded border border-slate-300 bg-slate-50"
                         >
-                          <span className="text-sm font-semibold text-slate-700">Subtotal</span>
+                          <LineItemDragHandle transferKey="text/line-index" index={index} />
+                          <span className="text-sm font-semibold text-slate-700 flex-1">Subtotal</span>
                           <div className="flex items-center gap-3">
                             <span className="font-bold text-slate-800">${subtotalDisplay.toFixed(2)}</span>
-                            <GripVertical className="h-4 w-4 text-slate-400" aria-hidden />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              title="Insert line below"
+                              onClick={() => insertLineItemAfter(index)}
+                              className="text-green-600 hover:text-green-800"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
                             <Button
                               type="button"
                               variant="ghost"
@@ -1222,11 +1431,6 @@ export default function NewEstimatePage() {
                         key={index}
                         ref={(el) => {
                           lineItemRefs.current[index] = el
-                        }}
-                        draggable
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData('text/line-index', String(index))
-                          e.dataTransfer.effectAllowed = 'move'
                         }}
                         onDragOver={(e) => {
                           e.preventDefault()
@@ -1258,17 +1462,23 @@ export default function NewEstimatePage() {
                           </div>
                         )}
 
-                        {!isGroupHeader && (
-                          <div className="flex flex-col gap-1 items-center">
-                            <button
+                        {isGroupHeader ? (
+                          <div className="flex flex-col gap-1 items-center shrink-0 self-center">
+                            <LineItemDragHandle transferKey="text/line-index" index={index} />
+                            <Button
                               type="button"
-                              title="Drag to reorder"
-                              className="cursor-grab text-gray-400 hover:text-gray-600 p-0.5"
-                              aria-label="Drag to reorder"
-                              onMouseDown={(e) => e.stopPropagation()}
+                              variant="ghost"
+                              size="sm"
+                              title="Insert line below"
+                              onClick={() => insertLineItemAfter(index)}
+                              className="p-1 h-7 text-green-600 hover:text-green-800"
                             >
-                              <GripVertical className="h-4 w-4" />
-                            </button>
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-1 items-center shrink-0">
+                            <LineItemDragHandle transferKey="text/line-index" index={index} />
                             <Button
                               type="button"
                               variant="ghost"
@@ -1349,6 +1559,7 @@ export default function NewEstimatePage() {
                                 onChange={(value) => updateLineItem(index, 'description', value)}
                                 onSelect={(selectedItem) => handleItemSelect(selectedItem, index)}
                                 onNextLine={() => handleNextLine(index)}
+                                onShiftEnter={() => handleShiftEnterOnRow(index, 'description')}
                                 items={pickerItems}
                                 bundles={pickerBundles}
                                 placeholder="Type to search items..."
@@ -1380,6 +1591,8 @@ export default function NewEstimatePage() {
                                 onChange={(e) => updateLineItem(index, 'notes', e.target.value)}
                                 placeholder="Description (optional)"
                                 className="w-full text-sm"
+                                data-col="notes"
+                                onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); handleShiftEnterOnRow(index, 'notes') } }}
                               />
                             </>
                           )}
@@ -1397,6 +1610,8 @@ export default function NewEstimatePage() {
                               value={item.quantity}
                               onChange={(e) => updateLineItem(index, 'quantity', e.target.value)}
                               required
+                              data-col="quantity"
+                              onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); handleShiftEnterOnRow(index, 'quantity') } }}
                             />
                           </div>
                         )}
@@ -1424,11 +1639,12 @@ export default function NewEstimatePage() {
                             <Input
                               type="number"
                               step="0.01"
-                              min="0"
                               placeholder="0.00"
                               value={item.unitPrice}
                               onChange={(e) => updateLineItem(index, 'unitPrice', e.target.value)}
                               required
+                              data-col="unitPrice"
+                              onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); handleShiftEnterOnRow(index, 'unitPrice') } }}
                             />
                           </div>
                         )}
@@ -1461,6 +1677,8 @@ export default function NewEstimatePage() {
                               value={item.unitCost || ''}
                               onChange={(e) => updateLineItem(index, 'unitCost', e.target.value)}
                               className="bg-gray-50"
+                              data-col="unitCost"
+                              onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); handleShiftEnterOnRow(index, 'unitCost') } }}
                             />
                           </div>
                         )}
@@ -1517,18 +1735,30 @@ export default function NewEstimatePage() {
                           </div>
                         )}
 
-                        {/* Insert subtotal after this row */}
+                        {/* Insert line / subtotal after this row */}
                         {!isGroupHeader && !isSubtotalRow && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            title="Insert subtotal after this item"
-                            onClick={() => insertSubtotalAfter(index)}
-                            className="text-blue-500 hover:text-blue-700 px-1.5"
-                          >
-                            Σ
-                          </Button>
+                          <div className="flex items-center gap-0.5 shrink-0">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              title="Insert line below"
+                              onClick={() => insertLineItemAfter(index)}
+                              className="text-green-600 hover:text-green-800 px-1.5"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              title="Insert subtotal after this item"
+                              onClick={() => insertSubtotalAfter(index)}
+                              className="text-blue-500 hover:text-blue-700 px-1.5"
+                            >
+                              Σ
+                            </Button>
+                          </div>
                         )}
                         {/* Remove button */}
                         {lineItems.length > 1 && !isGroupHeader && (
@@ -1625,11 +1855,6 @@ export default function NewEstimatePage() {
                         ref={(el) => {
                           optionalItemRefs.current[index] = el
                         }}
-                        draggable
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData('text/opt-line-index', String(index))
-                          e.dataTransfer.effectAllowed = 'move'
-                        }}
                         onDragOver={(e) => {
                           e.preventDefault()
                           e.dataTransfer.dropEffect = 'move'
@@ -1649,17 +1874,23 @@ export default function NewEstimatePage() {
                               : 'border-gray-300'
                         } ${!isGroupHeader && !isVisible ? 'opacity-70' : ''}`}
                       >
-                        {!isGroupHeader && (
-                          <div className="flex flex-col gap-1 items-center">
-                            <button
+                        {isGroupHeader ? (
+                          <div className="flex flex-col gap-1 items-center shrink-0 self-center">
+                            <LineItemDragHandle transferKey="text/opt-line-index" index={index} />
+                            <Button
                               type="button"
-                              title="Drag to reorder"
-                              className="cursor-grab text-gray-400 hover:text-gray-600 p-0.5"
-                              aria-label="Drag to reorder"
-                              onMouseDown={(ev) => ev.stopPropagation()}
+                              variant="ghost"
+                              size="sm"
+                              title="Insert line below"
+                              onClick={() => insertOptionalLineItemAfter(index)}
+                              className="p-1 h-7 text-green-600 hover:text-green-800"
                             >
-                              <GripVertical className="h-4 w-4" />
-                            </button>
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-1 items-center shrink-0">
+                            <LineItemDragHandle transferKey="text/opt-line-index" index={index} />
                             <Button
                               type="button"
                               variant="ghost"
@@ -1812,7 +2043,6 @@ export default function NewEstimatePage() {
                             <Input
                               type="number"
                               step="0.01"
-                              min="0"
                               placeholder="0.00"
                               value={item.unitPrice}
                               onChange={(e) => updateOptionalItem(index, 'unitPrice', e.target.value)}
@@ -1907,24 +2137,37 @@ export default function NewEstimatePage() {
                           </div>
                         )}
 
-                        {/* Remove button */}
-                        {optionalItems.length > 1 && !isGroupHeader && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              if (item.groupId) {
-                                setOptionalItems(
-                                  optionalItems.filter((li, i) => li.groupId !== item.groupId || i === index)
-                                )
-                              } else {
-                                removeOptionalItem(index)
-                              }
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                        {!isGroupHeader && (
+                          <div className="flex items-center gap-0.5 shrink-0 self-start pt-6">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              title="Insert line below"
+                              onClick={() => insertOptionalLineItemAfter(index)}
+                              className="text-green-600 hover:text-green-800 px-1.5"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                            {optionalItems.length > 1 && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  if (item.groupId) {
+                                    setOptionalItems(
+                                      optionalItems.filter((li, i) => li.groupId !== item.groupId || i === index)
+                                    )
+                                  } else {
+                                    removeOptionalItem(index)
+                                  }
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
                         )}
                       </div>
                     )
