@@ -15,6 +15,7 @@ import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
 import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
 import { cnCustomerVisibilityBulkPill } from '@/lib/ui/customer-visibility-bulk-pill'
+import { focusSameColumnNextRow, type LineItemColumn } from '@/lib/ui/line-item-grid-nav'
 
 interface Job {
   id: string
@@ -892,45 +893,26 @@ export default function NewInvoicePage() {
     }, 100)
   }
 
-  const handleShiftEnterOnRow = (rowIndex: number, col: 'description' | 'quantity' | 'unitPrice' | 'unitCost' | 'notes') => {
-    const nextIndex = rowIndex + 1
-    const needsNewRow = nextIndex >= lineItems.length
-    if (needsNewRow) {
-      setLineItems((prev) => [
-        ...prev,
-        {
-          description: '',
-          quantity: '1',
-          unitPrice: '0',
-          taxable: true,
-          isVisibleToClient: true,
-          showDescriptionToCustomer: false,
-          showCostToCustomer: false,
-          showPriceToCustomer: true,
-          showTaxToCustomer: true,
-          showNotesToCustomer: true,
-        },
-      ])
-    }
-    setTimeout(() => {
-      if (col === 'description') {
-        const picker =
-          pickerInputRefs.current[nextIndex] ??
-          lineItemRefs.current[nextIndex]?.querySelector<HTMLInputElement>('[data-picker-input="true"]') ??
-          null
-        if (picker) {
-          picker.focus()
-          picker.dispatchEvent(new Event('focus', { bubbles: true }))
-        }
-      } else {
-        const container = lineItemRefs.current[nextIndex]
-        const input = container?.querySelector<HTMLInputElement>(`[data-col="${col}"]`) ?? null
-        if (input) {
-          input.focus()
-          input.select()
-        }
-      }
-    }, needsNewRow ? 100 : 16)
+  const shiftEnterVerticalNav = (rowIndex: number, col: LineItemColumn) => {
+    focusSameColumnNextRow(rowIndex, col, {
+      onCreateRow: () => {
+        setLineItems((prev) => [
+          ...prev,
+          {
+            description: '',
+            quantity: '1',
+            unitPrice: '0',
+            taxable: true,
+            isVisibleToClient: true,
+            showDescriptionToCustomer: false,
+            showCostToCustomer: false,
+            showPriceToCustomer: true,
+            showTaxToCustomer: true,
+            showNotesToCustomer: true,
+          },
+        ])
+      },
+    })
   }
 
   const toggleVisibility = (index: number, field: 'description' | 'cost' | 'price' | 'tax' | 'notes') => {
@@ -1573,6 +1555,7 @@ export default function NewInvoicePage() {
                       return (
                         <div
                           key={index}
+                          data-line-item-row={index}
                           onDragOver={(e) => {
                             e.preventDefault()
                             e.dataTransfer.dropEffect = 'move'
@@ -1620,6 +1603,7 @@ export default function NewInvoicePage() {
                         ref={(el) => {
                           lineItemRefs.current[index] = el
                         }}
+                        data-line-item-row={index}
                         onDragOver={(e) => {
                           e.preventDefault()
                           e.dataTransfer.dropEffect = 'move'
@@ -1746,7 +1730,7 @@ export default function NewInvoicePage() {
                                 onChange={(value) => updateLineItem(index, 'description', value)}
                                 onSelect={(selectedItem) => handleItemSelect(selectedItem, index)}
                                 onNextLine={() => handleNextLine(index)}
-                                onShiftEnter={() => handleShiftEnterOnRow(index, 'description')}
+                                onShiftEnter={() => shiftEnterVerticalNav(index, 'description')}
                                 items={pickerItems}
                                 bundles={pickerBundles}
                                 placeholder="Type to search items..."
@@ -1779,7 +1763,7 @@ export default function NewInvoicePage() {
                                 placeholder="Description (optional)"
                                 className="w-full text-sm"
                                 data-col="notes"
-                                onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); handleShiftEnterOnRow(index, 'notes') } }}
+                                onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); shiftEnterVerticalNav(index, 'notes') } }}
                               />
                               {showProgressControls && (
                                 <div className="flex flex-wrap items-end gap-2 pt-1 border-t border-dashed border-gray-200 mt-1">
@@ -1853,7 +1837,7 @@ export default function NewInvoicePage() {
                                 onChange={(e) => updateLineItem(index, 'quantity', e.target.value)}
                                 required
                                 data-col="quantity"
-                                onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); handleShiftEnterOnRow(index, 'quantity') } }}
+                                onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); shiftEnterVerticalNav(index, 'quantity') } }}
                               />
                             </div>
 
@@ -1883,7 +1867,7 @@ export default function NewInvoicePage() {
                                 onChange={(e) => updateLineItem(index, 'unitPrice', e.target.value)}
                                 required
                                 data-col="unitPrice"
-                                onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); handleShiftEnterOnRow(index, 'unitPrice') } }}
+                                onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); shiftEnterVerticalNav(index, 'unitPrice') } }}
                               />
                             </div>
 
@@ -1914,7 +1898,7 @@ export default function NewInvoicePage() {
                                 onChange={(e) => updateLineItem(index, 'unitCost', e.target.value)}
                                 className="bg-gray-50"
                                 data-col="unitCost"
-                                onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); handleShiftEnterOnRow(index, 'unitCost') } }}
+                                onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); shiftEnterVerticalNav(index, 'unitCost') } }}
                               />
                             </div>
 

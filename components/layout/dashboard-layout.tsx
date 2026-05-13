@@ -43,17 +43,6 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     if (loading) return
     const onDocKeyDown = (e: KeyboardEvent) => {
       if (pathname?.startsWith('/auth')) return
-      if (e.key === 'Enter' && e.shiftKey) {
-        const t = e.target as HTMLElement | null
-        // eslint-disable-next-line no-console
-        console.log('[SE] 1. dashboard-layout CAPTURE listener', {
-          tag: t?.tagName,
-          'data-col': t?.getAttribute?.('data-col'),
-          'data-picker-input': t?.getAttribute?.('data-picker-input'),
-          'inside-line-item-row': !!t?.closest?.('[data-line-item-row="true"]'),
-          defaultPrevented: e.defaultPrevented,
-        })
-      }
       tryMoveFocusToNextFormField(e)
     }
     document.addEventListener('keydown', onDocKeyDown, true)

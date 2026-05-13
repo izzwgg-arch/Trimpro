@@ -17,6 +17,7 @@ import { refreshAccessToken } from '@/lib/auth/client'
 import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
 import { useCreateContextPrefill } from '@/src/hooks/useCreateContextPrefill'
 import { cnCustomerVisibilityBulkPill } from '@/lib/ui/customer-visibility-bulk-pill'
+import { focusSameColumnNextRow, type LineItemColumn } from '@/lib/ui/line-item-grid-nav'
 
 interface LineItem {
   id?: string
@@ -607,8 +608,6 @@ export default function NewEstimatePage() {
   }
 
   const handleNextLine = (currentIndex: number) => {
-    // eslint-disable-next-line no-console
-    console.log('[SE] 6. handleNextLine CALLED (next-line add-row, focuses description)', { currentIndex })
     // Auto-advance to next line's description field
     const nextIndex = currentIndex + 1
     setLineItems((prev) => {
@@ -647,138 +646,25 @@ export default function NewEstimatePage() {
     }, 100)
   }
 
-  const handleShiftEnterOnRow = (rowIndex: number, col: 'description' | 'quantity' | 'unitPrice' | 'unitCost' | 'notes') => {
-    const nextIndex = rowIndex + 1
-    const needsNewRow = nextIndex >= lineItems.length
-    const beforeActive = document.activeElement as HTMLElement | null
-    // eslint-disable-next-line no-console
-    console.log('[SE] 7a. handleShiftEnterOnRow ENTER', {
-      rowIndex,
-      nextIndex,
-      col,
-      currentLineItemsLength: lineItems.length,
-      needsNewRow,
-      activeBefore: beforeActive?.tagName,
-      activeBeforeCol: beforeActive?.getAttribute?.('data-col'),
+  const shiftEnterVerticalNav = (rowIndex: number, col: LineItemColumn) => {
+    focusSameColumnNextRow(rowIndex, col, {
+      onCreateRow: () => {
+        setLineItems((prev) => [
+          ...prev,
+          {
+            description: '',
+            quantity: '1',
+            unitPrice: '0',
+            taxable: true,
+            showDescriptionToCustomer: false,
+            showCostToCustomer: false,
+            showPriceToCustomer: true,
+            showTaxToCustomer: true,
+            showNotesToCustomer: true,
+          },
+        ])
+      },
     })
-    if (needsNewRow) {
-      setLineItems((prev) => [
-        ...prev,
-        {
-          description: '',
-          quantity: '1',
-          unitPrice: '0',
-          taxable: true,
-          showDescriptionToCustomer: false,
-          showCostToCustomer: false,
-          showPriceToCustomer: true,
-          showTaxToCustomer: true,
-          showNotesToCustomer: true,
-        },
-      ])
-      // eslint-disable-next-line no-console
-      console.log('[SE] 7b. new row queued (setLineItems called)')
-    }
-
-    // Detect focus events that fire AFTER our focus() call (anything stealing focus).
-    const stealWatcher = (ev: FocusEvent) => {
-      const t = ev.target as HTMLElement | null
-      // eslint-disable-next-line no-console
-      console.log('[SE] 7z. focusin observed on document', {
-        tag: t?.tagName,
-        'data-col': t?.getAttribute?.('data-col'),
-        'data-picker-input': t?.getAttribute?.('data-picker-input'),
-        id: t?.id,
-        name: (t as HTMLInputElement | null)?.name,
-      })
-    }
-    document.addEventListener('focusin', stealWatcher, true)
-    setTimeout(() => document.removeEventListener('focusin', stealWatcher, true), 250)
-
-    const delay = needsNewRow ? 100 : 16
-    // eslint-disable-next-line no-console
-    console.log('[SE] 7c. scheduling focus in ms', delay)
-
-    setTimeout(() => {
-      const containerEl = lineItemRefs.current[nextIndex]
-      // eslint-disable-next-line no-console
-      console.log('[SE] 7d. focus phase begin', {
-        nextIndex,
-        col,
-        containerExists: !!containerEl,
-        containerTag: containerEl?.tagName,
-        currentLineItemsLengthAtRun: lineItems.length,
-        pickerInputRefAtNext: !!pickerInputRefs.current[nextIndex],
-        activeElementNow: (document.activeElement as HTMLElement | null)?.tagName,
-      })
-
-      let target: HTMLInputElement | null = null
-      let selectorUsed = ''
-      if (col === 'description') {
-        selectorUsed = 'pickerInputRefs[next] ?? container [data-picker-input="true"]'
-        target =
-          pickerInputRefs.current[nextIndex] ??
-          containerEl?.querySelector<HTMLInputElement>('[data-picker-input="true"]') ??
-          null
-      } else {
-        selectorUsed = `container [data-col="${col}"]`
-        target = containerEl?.querySelector<HTMLInputElement>(`[data-col="${col}"]`) ?? null
-      }
-
-      // eslint-disable-next-line no-console
-      console.log('[SE] 7e. target lookup', {
-        selectorUsed,
-        targetFound: !!target,
-        targetTag: target?.tagName,
-        targetType: target?.type,
-        targetDataCol: target?.getAttribute('data-col'),
-        targetDataPickerInput: target?.getAttribute('data-picker-input'),
-        targetIsInDom: target ? document.body.contains(target) : null,
-      })
-
-      if (!target) {
-        // eslint-disable-next-line no-console
-        console.log('[SE] 7f. TARGET NOT FOUND - aborting focus')
-        return
-      }
-
-      target.focus()
-      // eslint-disable-next-line no-console
-      console.log('[SE] 7g. focus() called', {
-        activeAfterFocus: (document.activeElement as HTMLElement | null)?.tagName,
-        activeAfterFocusCol: (document.activeElement as HTMLElement | null)?.getAttribute?.('data-col'),
-        focusLanded: document.activeElement === target,
-      })
-
-      if (col === 'description') {
-        target.dispatchEvent(new Event('focus', { bubbles: true }))
-      } else {
-        target.select()
-      }
-
-      setTimeout(() => {
-        const a = document.activeElement as HTMLElement | null
-        // eslint-disable-next-line no-console
-        console.log('[SE] 7h. activeElement after 50ms', {
-          tag: a?.tagName,
-          'data-col': a?.getAttribute?.('data-col'),
-          'data-picker-input': a?.getAttribute?.('data-picker-input'),
-          isTarget: a === target,
-        })
-      }, 50)
-
-      setTimeout(() => {
-        const a = document.activeElement as HTMLElement | null
-        // eslint-disable-next-line no-console
-        console.log('[SE] 7i. activeElement after 150ms', {
-          tag: a?.tagName,
-          'data-col': a?.getAttribute?.('data-col'),
-          'data-picker-input': a?.getAttribute?.('data-picker-input'),
-          isTarget: a === target,
-          targetStillInDom: document.body.contains(target),
-        })
-      }, 150)
-    }, delay)
   }
 
   const toggleVisibility = (index: number, field: 'description' | 'cost' | 'price' | 'tax' | 'notes') => {
@@ -1482,6 +1368,7 @@ export default function NewEstimatePage() {
                       return (
                         <div
                           key={index}
+                          data-line-item-row={index}
                           onDragOver={(e) => {
                             e.preventDefault()
                             e.dataTransfer.dropEffect = 'move'
@@ -1528,6 +1415,7 @@ export default function NewEstimatePage() {
                         ref={(el) => {
                           lineItemRefs.current[index] = el
                         }}
+                        data-line-item-row={index}
                         onDragOver={(e) => {
                           e.preventDefault()
                           e.dataTransfer.dropEffect = 'move'
@@ -1655,7 +1543,7 @@ export default function NewEstimatePage() {
                                 onChange={(value) => updateLineItem(index, 'description', value)}
                                 onSelect={(selectedItem) => handleItemSelect(selectedItem, index)}
                                 onNextLine={() => handleNextLine(index)}
-                                onShiftEnter={() => { console.log('[SE] 5a. estimates/new FastPicker onShiftEnter wired (description)', { index }); handleShiftEnterOnRow(index, 'description') }}
+                                onShiftEnter={() => shiftEnterVerticalNav(index, 'description')}
                                 items={pickerItems}
                                 bundles={pickerBundles}
                                 placeholder="Type to search items..."
@@ -1688,7 +1576,7 @@ export default function NewEstimatePage() {
                                 placeholder="Description (optional)"
                                 className="w-full text-sm"
                                 data-col="notes"
-                                onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { console.log('[SE] 4. line-item input onKeyDown', { col: 'notes', index, defaultPrevented: e.defaultPrevented }); e.preventDefault(); e.stopPropagation(); handleShiftEnterOnRow(index, 'notes') } }}
+                                onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); shiftEnterVerticalNav(index, 'notes') } }}
                               />
                             </>
                           )}
@@ -1707,7 +1595,7 @@ export default function NewEstimatePage() {
                               onChange={(e) => updateLineItem(index, 'quantity', e.target.value)}
                               required
                               data-col="quantity"
-                              onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { console.log('[SE] 4. line-item input onKeyDown', { col: 'quantity', index, defaultPrevented: e.defaultPrevented }); e.preventDefault(); e.stopPropagation(); handleShiftEnterOnRow(index, 'quantity') } }}
+                              onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); shiftEnterVerticalNav(index, 'quantity') } }}
                             />
                           </div>
                         )}
@@ -1740,7 +1628,7 @@ export default function NewEstimatePage() {
                               onChange={(e) => updateLineItem(index, 'unitPrice', e.target.value)}
                               required
                               data-col="unitPrice"
-                              onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { console.log('[SE] 4. line-item input onKeyDown', { col: 'unitPrice', index, defaultPrevented: e.defaultPrevented }); e.preventDefault(); e.stopPropagation(); handleShiftEnterOnRow(index, 'unitPrice') } }}
+                              onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); shiftEnterVerticalNav(index, 'unitPrice') } }}
                             />
                           </div>
                         )}
@@ -1774,7 +1662,7 @@ export default function NewEstimatePage() {
                               onChange={(e) => updateLineItem(index, 'unitCost', e.target.value)}
                               className="bg-gray-50"
                               data-col="unitCost"
-                              onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { console.log('[SE] 4. line-item input onKeyDown', { col: 'unitCost', index, defaultPrevented: e.defaultPrevented }); e.preventDefault(); e.stopPropagation(); handleShiftEnterOnRow(index, 'unitCost') } }}
+                              onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); shiftEnterVerticalNav(index, 'unitCost') } }}
                             />
                           </div>
                         )}

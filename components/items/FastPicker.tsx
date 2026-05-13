@@ -311,15 +311,6 @@ export function FastPicker({
         break
 
       case 'Enter':
-        if (e.shiftKey) {
-          // eslint-disable-next-line no-console
-          console.log('[SE] 3. FastPicker handleKeyDown Enter+Shift', {
-            tag: (e.target as HTMLElement)?.tagName,
-            'data-picker-input': (e.target as HTMLElement)?.getAttribute('data-picker-input'),
-            hasOnShiftEnter: !!onShiftEnter,
-            isOpen,
-          })
-        }
         e.preventDefault()
         e.stopPropagation()
         // Shift+Enter = spreadsheet "next row, same column" — do NOT commit selection.
@@ -329,8 +320,6 @@ export function FastPicker({
             setSearchQuery('')
             setSelectedIndex(0)
           }
-          // eslint-disable-next-line no-console
-          console.log('[SE] 5. FastPicker calling onShiftEnter()')
           onShiftEnter?.()
           break
         }
