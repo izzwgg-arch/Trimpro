@@ -7,7 +7,6 @@ import Link from 'next/link'
 import { Menu } from 'lucide-react'
 import { QboSyncFailureNotifier } from '@/components/qbo/QboSyncFailureNotifier'
 import { GlobalSearch } from '@/components/search/GlobalSearch'
-import { tryMoveFocusToNextFormField } from '@/lib/ui/enter-as-tab'
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -37,17 +36,6 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
     setLoading(false)
   }, [router])
-
-  // Shift+Enter advances to next field like Tab (plain Enter unchanged for pickers, etc.; opt out: data-no-enter-tab on <form>).
-  useEffect(() => {
-    if (loading) return
-    const onDocKeyDown = (e: KeyboardEvent) => {
-      if (pathname?.startsWith('/auth')) return
-      tryMoveFocusToNextFormField(e)
-    }
-    document.addEventListener('keydown', onDocKeyDown, true)
-    return () => document.removeEventListener('keydown', onDocKeyDown, true)
-  }, [loading, pathname])
 
   if (loading) {
     return (
