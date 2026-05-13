@@ -45,14 +45,20 @@ export function tryMoveFocusToNextFormField(e: KeyboardEvent): boolean {
   const target = e.target
   if (!isEnterAsTabTarget(target)) return false
 
-  // Line-item inputs (estimate/invoice/PO grids) own Shift+Enter for spreadsheet-style
-  // vertical navigation (same column, next row). Identified by data-col or
-  // data-picker-input. Bail out here so the local React onKeyDown can take over.
-  if (
-    target.hasAttribute('data-col') ||
-    target.hasAttribute('data-picker-input') ||
-    target.closest('[data-line-item-row="true"]')
-  ) {
+  const t = target as HTMLElement
+  const hasDataCol = t.hasAttribute('data-col')
+  const hasPickerInput = t.hasAttribute('data-picker-input')
+  const insideLineRow = !!t.closest('[data-line-item-row="true"]')
+  // eslint-disable-next-line no-console
+  console.log('[SE] 2. tryMoveFocusToNextFormField entered', {
+    tag: t.tagName,
+    'data-col': t.getAttribute('data-col'),
+    'data-picker-input': t.getAttribute('data-picker-input'),
+    insideLineRow,
+    willBailOut: hasDataCol || hasPickerInput || insideLineRow,
+  })
+
+  if (hasDataCol || hasPickerInput || insideLineRow) {
     return false
   }
 

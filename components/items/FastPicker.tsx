@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback, KeyboardEvent, useMemo } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, KeyboardEvent, useMemo } from 'react'
 import { Input } from '@/components/ui/input'
 import { Package } from 'lucide-react'
+import { scrollPickerRowIntoComfortZone } from '@/lib/ui/scroll-picker-row'
 
 export interface FastPickerItem {
   id: string
@@ -31,6 +32,8 @@ interface FastPickerProps {
   onChange: (value: string) => void
   onSelect: (item: FastPickerItem) => void
   onNextLine?: () => void // Called after Enter to move to next line
+  /** Called when Shift+Enter is pressed — spreadsheet-style "move to same column, next row" */
+  onShiftEnter?: () => void
   items: FastPickerItem[]
   bundles: FastPickerItem[]
   placeholder?: string
@@ -49,6 +52,7 @@ export function FastPicker({
   onChange,
   onSelect,
   onNextLine,
+  onShiftEnter,
   items = [],
   bundles = [],
   placeholder = 'Type to search items...',
@@ -155,18 +159,13 @@ export function FastPicker({
     setSelectedIndex(0)
   }, [filteredByQuery])
 
-  // Scroll selected item into view
-  useEffect(() => {
-    if (isOpen && listRef.current && selectedIndex >= 0 && itemRefs.current[selectedIndex]) {
-      const selectedElement = itemRefs.current[selectedIndex]
-      if (selectedElement) {
-        selectedElement.scrollIntoView({
-          block: 'nearest',
-          behavior: 'auto',
-        })
-      }
-    }
-  }, [selectedIndex, isOpen])
+  // Keep highlighted row in a comfortable viewport (not flush to top/bottom edges)
+  useLayoutEffect(() => {
+    if (!isOpen || !listRef.current || selectedIndex < 0) return
+    const selectedElement = itemRefs.current[selectedIndex]
+    if (!selectedElement) return
+    scrollPickerRowIntoComfortZone(selectedElement, listRef.current, { edgeMarginPx: 20 })
+  }, [selectedIndex, isOpen, filteredItems.length, showTagColumn])
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -312,13 +311,29 @@ export function FastPicker({
         break
 
       case 'Enter':
+        if (e.shiftKey) {
+          // eslint-disable-next-line no-console
+          console.log('[SE] 3. FastPicker handleKeyDown Enter+Shift', {
+            tag: (e.target as HTMLElement)?.tagName,
+            'data-picker-input': (e.target as HTMLElement)?.getAttribute('data-picker-input'),
+            hasOnShiftEnter: !!onShiftEnter,
+            isOpen,
+          })
+        }
         e.preventDefault()
         e.stopPropagation()
-        console.log('FAST_PICKER_ENTER', {
-          isOpen,
-          selectedIndex,
-          filteredCount: filteredItems.length,
-        })
+        // Shift+Enter = spreadsheet "next row, same column" — do NOT commit selection.
+        if (e.shiftKey) {
+          if (isOpen) {
+            setIsOpen(false)
+            setSearchQuery('')
+            setSelectedIndex(0)
+          }
+          // eslint-disable-next-line no-console
+          console.log('[SE] 5. FastPicker calling onShiftEnter()')
+          onShiftEnter?.()
+          break
+        }
         if (isOpen) {
           commitHighlightedSelection()
         } else {
@@ -362,7 +377,7 @@ export function FastPicker({
         }
         break
     }
-  }, [isOpen, filteredItems.length, selectedIndex, disabled, handleCommitCustom, commitHighlightedSelection])
+  }, [isOpen, filteredItems.length, selectedIndex, disabled, handleCommitCustom, commitHighlightedSelection, onShiftEnter])
 
   // Handle input focus - opens dropdown immediately
   const handleInputFocus = useCallback(() => {

@@ -607,6 +607,8 @@ export default function NewEstimatePage() {
   }
 
   const handleNextLine = (currentIndex: number) => {
+    // eslint-disable-next-line no-console
+    console.log('[SE] 6. handleNextLine CALLED (next-line add-row, focuses description)', { currentIndex })
     // Auto-advance to next line's description field
     const nextIndex = currentIndex + 1
     setLineItems((prev) => {
@@ -646,6 +648,8 @@ export default function NewEstimatePage() {
   }
 
   const handleShiftEnterOnRow = (rowIndex: number, col: 'description' | 'quantity' | 'unitPrice' | 'unitCost' | 'notes') => {
+    // eslint-disable-next-line no-console
+    console.log('[SE] 7. handleShiftEnterOnRow CALLED (same-column focus)', { rowIndex, col })
     const nextIndex = rowIndex + 1
     const needsNewRow = nextIndex >= lineItems.length
     if (needsNewRow) {
@@ -1559,7 +1563,7 @@ export default function NewEstimatePage() {
                                 onChange={(value) => updateLineItem(index, 'description', value)}
                                 onSelect={(selectedItem) => handleItemSelect(selectedItem, index)}
                                 onNextLine={() => handleNextLine(index)}
-                                onShiftEnter={() => handleShiftEnterOnRow(index, 'description')}
+                                onShiftEnter={() => { console.log('[SE] 5a. estimates/new FastPicker onShiftEnter wired (description)', { index }); handleShiftEnterOnRow(index, 'description') }}
                                 items={pickerItems}
                                 bundles={pickerBundles}
                                 placeholder="Type to search items..."
@@ -1592,7 +1596,7 @@ export default function NewEstimatePage() {
                                 placeholder="Description (optional)"
                                 className="w-full text-sm"
                                 data-col="notes"
-                                onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); handleShiftEnterOnRow(index, 'notes') } }}
+                                onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { console.log('[SE] 4. line-item input onKeyDown', { col: 'notes', index, defaultPrevented: e.defaultPrevented }); e.preventDefault(); e.stopPropagation(); handleShiftEnterOnRow(index, 'notes') } }}
                               />
                             </>
                           )}
@@ -1611,7 +1615,7 @@ export default function NewEstimatePage() {
                               onChange={(e) => updateLineItem(index, 'quantity', e.target.value)}
                               required
                               data-col="quantity"
-                              onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); handleShiftEnterOnRow(index, 'quantity') } }}
+                              onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { console.log('[SE] 4. line-item input onKeyDown', { col: 'quantity', index, defaultPrevented: e.defaultPrevented }); e.preventDefault(); e.stopPropagation(); handleShiftEnterOnRow(index, 'quantity') } }}
                             />
                           </div>
                         )}
@@ -1644,7 +1648,7 @@ export default function NewEstimatePage() {
                               onChange={(e) => updateLineItem(index, 'unitPrice', e.target.value)}
                               required
                               data-col="unitPrice"
-                              onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); handleShiftEnterOnRow(index, 'unitPrice') } }}
+                              onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { console.log('[SE] 4. line-item input onKeyDown', { col: 'unitPrice', index, defaultPrevented: e.defaultPrevented }); e.preventDefault(); e.stopPropagation(); handleShiftEnterOnRow(index, 'unitPrice') } }}
                             />
                           </div>
                         )}
@@ -1678,7 +1682,7 @@ export default function NewEstimatePage() {
                               onChange={(e) => updateLineItem(index, 'unitCost', e.target.value)}
                               className="bg-gray-50"
                               data-col="unitCost"
-                              onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); handleShiftEnterOnRow(index, 'unitCost') } }}
+                              onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { console.log('[SE] 4. line-item input onKeyDown', { col: 'unitCost', index, defaultPrevented: e.defaultPrevented }); e.preventDefault(); e.stopPropagation(); handleShiftEnterOnRow(index, 'unitCost') } }}
                             />
                           </div>
                         )}
