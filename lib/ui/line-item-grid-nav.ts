@@ -66,8 +66,25 @@ function findTargetInput(
   return row.querySelector<HTMLInputElement>(selectorForColumn(col))
 }
 
-function focusInput(input: HTMLInputElement): void {
+function focusInput(input: HTMLInputElement, col: LineItemColumn): void {
+  // For the description picker (FastPicker), suppress its onFocus auto-open
+  // so Shift+Enter lands cleanly on the field WITHOUT opening the dropdown.
+  // The picker still opens normally when the user starts typing or clicks.
+  const isPicker = col === 'description'
+  if (isPicker) {
+    input.setAttribute('data-suppress-autoopen', 'true')
+  }
+
   input.focus()
+
+  if (isPicker) {
+    // Clear after the focus event has been processed.
+    requestAnimationFrame(() => {
+      input.removeAttribute('data-suppress-autoopen')
+    })
+    return
+  }
+
   // Select existing contents on numeric/text inputs so the user can overtype.
   const t = input.type
   if (t === 'number' || t === 'text' || t === '' || t === undefined) {
@@ -96,7 +113,7 @@ export function focusSameColumnNextRow(
   const tryFocus = (attemptsLeft: number) => {
     const target = findTargetInput(targetIndex, col)
     if (target && document.body.contains(target)) {
-      focusInput(target)
+      focusInput(target, col)
       return
     }
     if (attemptsLeft <= 0) return

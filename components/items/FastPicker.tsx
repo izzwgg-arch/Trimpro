@@ -368,11 +368,14 @@ export function FastPicker({
     }
   }, [isOpen, filteredItems.length, selectedIndex, disabled, handleCommitCustom, commitHighlightedSelection, onShiftEnter])
 
-  // Handle input focus - opens dropdown immediately
+  // Handle input focus - opens dropdown immediately, UNLESS focused
+  // programmatically via the spreadsheet-style Shift+Enter helper, which sets
+  // data-suppress-autoopen="true" so we don't reopen the picker on next-row
+  // navigation.
   const handleInputFocus = useCallback(() => {
-    if (!disabled && !isOpen) {
-      setIsOpen(true)
-    }
+    if (disabled || isOpen) return
+    if (inputRef.current?.getAttribute('data-suppress-autoopen') === 'true') return
+    setIsOpen(true)
   }, [disabled, isOpen])
 
   // Handle input click - ensures dropdown opens
