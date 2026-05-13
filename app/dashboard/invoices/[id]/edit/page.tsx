@@ -1473,7 +1473,7 @@ export default function EditInvoicePage() {
                               <textarea
                                 value={item.notes || ''}
                                 onChange={(e) => updateLineItem(index, 'notes', e.target.value)}
-                                placeholder="Description (optional) — Shift+Enter or Enter for a new line"
+                                placeholder="Description (optional)"
                                 rows={1}
                                 className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
                                 data-col="notes"
@@ -1823,11 +1823,12 @@ export default function EditInvoicePage() {
                                     )}
                                   </Button>
                                 </div>
-                                <Input
+                                <textarea
                                   value={item.notes || ''}
                                   onChange={(e) => updateOptionalItem(index, 'notes', e.target.value)}
                                   placeholder="Description (optional)"
-                                  className="w-full text-sm"
+                                  rows={1}
+                                  className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
                                 />
                               </>
                             )}
