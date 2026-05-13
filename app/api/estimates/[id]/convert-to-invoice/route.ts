@@ -5,6 +5,12 @@ import { solaService } from '@/lib/services/sola'
 import crypto from 'crypto'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
+import { calculateOrderedSubtotalRows } from '@/lib/documents/subtotals'
+import {
+  assertEstimateWillNotOverConvert,
+  getEstimateConversionSummary,
+} from '@/lib/documents/conversion'
+import { allocateNextInvoiceNumber } from '@/lib/qbo/doc-numbers'
 
 type BillingMode = 'FULL' | 'PERCENTAGE' | 'MANUAL'
 
@@ -99,6 +105,7 @@ export async function POST(
       unitCost: number | null
       total: number
       sortOrder: number
+      isSubtotal?: boolean
       isVisibleToClient: boolean
       showDescriptionToCustomer: boolean
       showCostToCustomer: boolean
@@ -176,9 +183,9 @@ export async function POST(
           showTaxToCustomer: line.showTaxToCustomer,
           showNotesToCustomer: line.showNotesToCustomer,
           notes: line.notes || null,
-          vendorId: line.vendorId || null,
-          taxable: line.taxable,
-          taxRate: line.taxRate ? Number(line.taxRate) : null,
+          vendorId: isSubtotal ? null : (line.vendorId || null),
+          taxable: isSubtotal ? false : line.taxable,
+          taxRate: isSubtotal ? null : (line.taxRate ? Number(line.taxRate) : null),
           sourceItemId: line.sourceItemId || null,
           sourceBundleId: line.sourceBundleId || null,
         })
@@ -190,7 +197,7 @@ export async function POST(
     } else {
       // For FULL billing: include all regular lines + all approved optional items
       // For MANUAL billing: include selected regular lines + any approved optional items whose IDs are in selectedLineItemIds
-      let sourceLines: typeof estimate.lineItems
+      let sourceLines: any[]
       if (billingMode === 'MANUAL') {
         const regularSelected = estimate.lineItems.filter((li) => selectedLineItemIds.includes(li.id))
         const optionalSelected = approvedOptionalItems.filter((li) => selectedLineItemIds.includes(li.id))
@@ -204,16 +211,18 @@ export async function POST(
         return NextResponse.json({ error: 'No line items selected to bill.' }, { status: 400 })
       }
 
-      invoiceLineItems = sourceLines.map((line, idx) => {
-        const lineTotal = Number(line.total)
-        subtotalCents += toCents(lineTotal)
+      invoiceLineItems = calculateOrderedSubtotalRows(sourceLines as any[]).map((line: any, idx) => {
+        const isSubtotal = Boolean(line.isSubtotal)
+        const lineTotal = isSubtotal ? line.calculatedSubtotalTotal : Number(line.total)
+        if (!isSubtotal) subtotalCents += toCents(lineTotal)
         return {
           description: line.description,
-          quantity: Number(line.quantity),
-          unitPrice: Number(line.unitPrice),
-          unitCost: line.unitCost ? Number(line.unitCost) : null,
+          quantity: isSubtotal ? 0 : Number(line.quantity),
+          unitPrice: isSubtotal ? 0 : Number(line.unitPrice),
+          unitCost: isSubtotal ? null : (line.unitCost ? Number(line.unitCost) : null),
           total: lineTotal,
           sortOrder: idx,
+          isSubtotal,
           isVisibleToClient: line.isVisibleToClient,
           showDescriptionToCustomer: (line as any).showDescriptionToCustomer ?? true,
           showCostToCustomer: line.showCostToCustomer,
@@ -240,16 +249,14 @@ export async function POST(
     let result: any = null
     for (let attempt = 0; attempt < 300; attempt++) {
       try {
+        const invoiceNumber = await allocateNextInvoiceNumber({ tenantId: user.tenantId })
         result = await prisma.$transaction(async (tx) => {
-          const latestInvoice = await tx.invoice.findFirst({
-            where: { invoiceNumber: { startsWith: 'INV-' } },
-            orderBy: { invoiceNumber: 'desc' },
-            select: { invoiceNumber: true },
+          await assertEstimateWillNotOverConvert(tx, {
+            estimateId: estimate.id,
+            tenantId: user.tenantId,
+            estimateTotal: estimate.total,
+            newInvoiceTotal: total,
           })
-          const latestNumMatch = latestInvoice?.invoiceNumber?.match(/^INV-(\d+)/)
-          const latestNum = latestNumMatch ? parseInt(latestNumMatch[1], 10) : 0
-          const baseNum = Number.isFinite(latestNum) ? latestNum : 0
-          const invoiceNumber = `INV-${String(baseNum + 1 + attempt).padStart(6, '0')}`
 
           const invoice = await tx.invoice.create({
             data: {
@@ -328,11 +335,10 @@ export async function POST(
             },
           })
 
-          // Mark estimate as CONVERTED with percentage
-          const pct = billingMode === 'PERCENTAGE' ? Math.round(percentage) : billingMode === 'FULL' ? 100 : Math.round((subtotal / Number(estimate.total)) * 100)
+          const conversion = await getEstimateConversionSummary(tx, estimate.id, estimate.total, user.tenantId)
           await tx.estimate.update({
             where: { id: estimate.id },
-            data: { status: 'CONVERTED', convertedPercent: pct },
+            data: { status: 'CONVERTED', convertedPercent: conversion.convertedPercent },
           })
 
           return invoice
@@ -389,8 +395,11 @@ export async function POST(
     }
 
     return NextResponse.json({ invoice: result }, { status: 201 })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Convert estimate to invoice error:', error)
+    if (String(error?.message || '').includes('cannot exceed 100%')) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

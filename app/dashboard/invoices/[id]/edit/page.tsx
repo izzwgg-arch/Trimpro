@@ -15,7 +15,6 @@ import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
 import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
 import { cnCustomerVisibilityBulkPill } from '@/lib/ui/customer-visibility-bulk-pill'
-import { focusSameColumnNextRow, type LineItemColumn } from '@/lib/ui/line-item-grid-nav'
 
 interface Job {
   id: string
@@ -755,27 +754,6 @@ export default function EditInvoicePage() {
     }, 100)
   }
 
-  const shiftEnterVerticalNav = (rowIndex: number, col: LineItemColumn) => {
-    focusSameColumnNextRow(rowIndex, col, {
-      onCreateRow: () => {
-        setLineItems((prev) => [
-          ...prev,
-          {
-            description: '',
-            quantity: '1',
-            unitPrice: '0',
-            taxable: true,
-            showDescriptionToCustomer: false,
-            showCostToCustomer: false,
-            showPriceToCustomer: true,
-            showTaxToCustomer: true,
-            showNotesToCustomer: true,
-          },
-        ])
-      },
-    })
-  }
-
   const handleNextOptionalLine = (currentIndex: number) => {
     const nextIndex = currentIndex + 1
     setOptionalItems((prev) => {
@@ -1466,7 +1444,6 @@ export default function EditInvoicePage() {
                                 onChange={(value) => updateLineItem(index, 'description', value)}
                                 onSelect={(selectedItem) => handleItemSelect(selectedItem, index)}
                                 onNextLine={() => handleNextLine(index)}
-                                onShiftEnter={() => shiftEnterVerticalNav(index, 'description')}
                                 items={pickerItems}
                                 bundles={pickerBundles}
                                 placeholder="Type to search items..."
@@ -1493,13 +1470,13 @@ export default function EditInvoicePage() {
                                   )}
                                 </Button>
                               </div>
-                              <Input
+                              <textarea
                                 value={item.notes || ''}
                                 onChange={(e) => updateLineItem(index, 'notes', e.target.value)}
-                                placeholder="Description (optional)"
-                                className="w-full text-sm"
+                                placeholder="Description (optional) — Shift+Enter or Enter for a new line"
+                                rows={1}
+                                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
                                 data-col="notes"
-                                onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); shiftEnterVerticalNav(index, 'notes') } }}
                               />
                             </>
                           )}
@@ -1517,7 +1494,6 @@ export default function EditInvoicePage() {
                                 onChange={(e) => updateLineItem(index, 'quantity', e.target.value)}
                                 required
                                 data-col="quantity"
-                                onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); shiftEnterVerticalNav(index, 'quantity') } }}
                               />
                             </div>
 
@@ -1547,7 +1523,6 @@ export default function EditInvoicePage() {
                                 onChange={(e) => updateLineItem(index, 'unitPrice', e.target.value)}
                                 required
                                 data-col="unitPrice"
-                                onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); shiftEnterVerticalNav(index, 'unitPrice') } }}
                               />
                             </div>
 
@@ -1578,7 +1553,6 @@ export default function EditInvoicePage() {
                                 onChange={(e) => updateLineItem(index, 'unitCost', e.target.value)}
                                 className="bg-gray-50"
                                 data-col="unitCost"
-                                onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); shiftEnterVerticalNav(index, 'unitCost') } }}
                               />
                             </div>
 

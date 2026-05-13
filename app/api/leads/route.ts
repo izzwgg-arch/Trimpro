@@ -17,6 +17,19 @@ export async function GET(request: NextRequest) {
   const page = parseInt(searchParams.get('page') || '1')
   const limit = parseInt(searchParams.get('limit') || '50')
   const skip = (page - 1) * limit
+  const sortByRaw = searchParams.get('sortBy') || 'updatedAt'
+  const sortDirectionRaw = searchParams.get('sortDirection') || 'desc'
+  const sortDirection = sortDirectionRaw === 'asc' ? 'asc' : 'desc'
+  const sortMap: Record<string, any> = {
+    name: [{ firstName: sortDirection }, { lastName: sortDirection }],
+    status: { status: sortDirection },
+    source: { source: sortDirection },
+    assigned: { assignedTo: { firstName: sortDirection } },
+    probability: { probability: sortDirection },
+    createdAt: { createdAt: sortDirection },
+    updatedAt: { updatedAt: sortDirection },
+  }
+  const orderBy = sortMap[sortByRaw] || sortMap.updatedAt
 
   try {
     const where: any = {
@@ -86,9 +99,7 @@ export async function GET(request: NextRequest) {
             },
           },
         },
-        orderBy: {
-          updatedAt: 'desc',
-        },
+        orderBy,
         skip,
         take: limit,
       }),

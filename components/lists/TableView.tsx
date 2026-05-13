@@ -18,11 +18,24 @@ interface TableViewProps<T> {
   columns: TableColumn<T>[]
   rowKey: (item: T) => string
   onRowClick?: (item: T) => void
+  sortKey?: string | null
+  sortDirection?: 'asc' | 'desc'
+  onSortChange?: (sortKey: string, sortDirection: 'asc' | 'desc') => void
 }
 
-export function TableView<T>({ data, columns, rowKey, onRowClick }: TableViewProps<T>) {
-  const [sortKey, setSortKey] = useState<string | null>(null)
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
+export function TableView<T>({
+  data,
+  columns,
+  rowKey,
+  onRowClick,
+  sortKey: controlledSortKey,
+  sortDirection: controlledSortDirection,
+  onSortChange,
+}: TableViewProps<T>) {
+  const [localSortKey, setLocalSortKey] = useState<string | null>(null)
+  const [localSortDirection, setLocalSortDirection] = useState<'asc' | 'desc'>('asc')
+  const sortKey = controlledSortKey ?? localSortKey
+  const sortDirection = controlledSortDirection ?? localSortDirection
 
   const sortedData = useMemo(() => {
     if (!sortKey) return data
@@ -46,12 +59,17 @@ export function TableView<T>({ data, columns, rowKey, onRowClick }: TableViewPro
   }, [columns, data, sortDirection, sortKey])
 
   const toggleSort = (key: string) => {
-    if (sortKey !== key) {
-      setSortKey(key)
-      setSortDirection('asc')
+    const nextDirection = sortKey === key && sortDirection === 'asc' ? 'desc' : 'asc'
+    if (onSortChange) {
+      onSortChange(key, nextDirection)
       return
     }
-    setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+    if (sortKey !== key) {
+      setLocalSortKey(key)
+      setLocalSortDirection('asc')
+      return
+    }
+    setLocalSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'))
   }
 
   return (

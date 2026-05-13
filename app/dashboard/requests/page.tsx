@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -74,13 +74,53 @@ const sourceColors: Record<string, string> = {
   OTHER: 'bg-gray-100 text-gray-800',
 }
 
+// ── persistent list state ─────────────────────────────────────────────────────
+const REQUESTS_LIST_KEY = 'trimpro.requests.listState'
+
+type RequestsListState = {
+  status: string
+  source: string
+  search: string
+  sortKey: string | null
+  sortDirection: 'asc' | 'desc'
+}
+
+const REQUESTS_DEFAULTS: RequestsListState = {
+  status: 'all',
+  source: 'all',
+  search: '',
+  sortKey: null,
+  sortDirection: 'asc',
+}
+
+function loadRequestsListState(): RequestsListState {
+  if (typeof window === 'undefined') return REQUESTS_DEFAULTS
+  try {
+    const raw = sessionStorage.getItem(REQUESTS_LIST_KEY)
+    if (!raw) return REQUESTS_DEFAULTS
+    const p = JSON.parse(raw) as Partial<RequestsListState>
+    return {
+      status: typeof p.status === 'string' ? p.status : REQUESTS_DEFAULTS.status,
+      source: typeof p.source === 'string' ? p.source : REQUESTS_DEFAULTS.source,
+      search: typeof p.search === 'string' ? p.search : REQUESTS_DEFAULTS.search,
+      sortKey: typeof p.sortKey === 'string' ? p.sortKey : null,
+      sortDirection: p.sortDirection === 'desc' ? 'desc' : 'asc',
+    }
+  } catch {
+    return REQUESTS_DEFAULTS
+  }
+}
+
+function saveRequestsListState(s: RequestsListState) {
+  sessionStorage.setItem(REQUESTS_LIST_KEY, JSON.stringify(s))
+}
+
 export default function RequestsPage() {
   const router = useRouter()
   const [requests, setRequests] = useState<Request[]>([])
   const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
-  const [status, setStatus] = useState('all')
-  const [source, setSource] = useState('all')
+  const [listState, setListStateRaw] = useState<RequestsListState>(loadRequestsListState)
+  const { status, source, search, sortKey, sortDirection } = listState
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
@@ -91,31 +131,19 @@ export default function RequestsPage() {
   const [urgentBusyById, setUrgentBusyById] = useState<Record<string, boolean>>({})
   const [viewMode, setViewMode] = useViewMode('requests', 'grid')
 
-  useEffect(() => {
-    setPage(1)
-  }, [search, status, source])
-
-  useEffect(() => {
-    fetchRequests()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, status, source, page])
-
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      fetchRequests(true)
-    }, 8000)
-    const onFocus = () => {
-      fetchRequests(true)
-    }
-    window.addEventListener('focus', onFocus)
-    return () => {
-      window.clearInterval(interval)
-      window.removeEventListener('focus', onFocus)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  const setListState = useCallback((updates: Partial<RequestsListState>) => {
+    setListStateRaw((prev) => {
+      const next = { ...prev, ...updates }
+      saveRequestsListState(next)
+      return next
+    })
   }, [])
 
-  const fetchRequests = async (silent = false) => {
+  useEffect(() => {
+    setPage(1)
+  }, [search, status, source, sortKey, sortDirection])
+
+  const fetchRequests = useCallback(async (silent = false) => {
     try {
       const token = localStorage.getItem('accessToken')
       const params = new URLSearchParams({
@@ -125,6 +153,10 @@ export default function RequestsPage() {
         page: String(page),
         limit: '50',
       })
+      if (sortKey) {
+        params.set('sortBy', sortKey)
+        params.set('sortDirection', sortDirection)
+      }
 
       const response = await fetch(`/api/leads?${params}`, {
         headers: {
@@ -146,6 +178,35 @@ export default function RequestsPage() {
     } finally {
       if (!silent) setLoading(false)
     }
+  }, [page, router, search, sortDirection, sortKey, source, status])
+
+  useEffect(() => {
+    fetchRequests()
+  }, [fetchRequests])
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      fetchRequests(true)
+    }, 8000)
+    const onFocus = () => {
+      fetchRequests(true)
+    }
+    window.addEventListener('focus', onFocus)
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [fetchRequests])
+
+  // Clear persisted state on a real full-page reload / tab close
+  useEffect(() => {
+    const clear = () => sessionStorage.removeItem(REQUESTS_LIST_KEY)
+    window.addEventListener('beforeunload', clear)
+    return () => window.removeEventListener('beforeunload', clear)
+  }, [])
+
+  const handleTableSortChange = (nextSortKey: string, nextSortDirection: 'asc' | 'desc') => {
+    setListState({ sortKey: nextSortKey, sortDirection: nextSortDirection })
   }
 
   const handleDelete = async (requestId: string, requestName: string) => {
@@ -413,13 +474,13 @@ export default function RequestsPage() {
               <Input
                 placeholder="Search by request #, client name, or address..."
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => setListState({ search: e.target.value })}
                 className="pl-10"
               />
             </div>
             <div className="flex items-center space-x-2">
               <Filter className="h-4 w-4 text-gray-400" />
-              <Select value={status} onValueChange={setStatus}>
+              <Select value={status} onValueChange={(v) => setListState({ status: v })}>
                 <SelectTrigger className="w-[150px]">
                   <SelectValue placeholder="All Status" />
                 </SelectTrigger>
@@ -434,7 +495,7 @@ export default function RequestsPage() {
                   <SelectItem value="LOST">Lost</SelectItem>
                 </SelectContent>
               </Select>
-              <Select value={source} onValueChange={setSource}>
+              <Select value={source} onValueChange={(v) => setListState({ source: v })}>
                 <SelectTrigger className="w-[150px]">
                   <SelectValue placeholder="All Sources" />
                 </SelectTrigger>
@@ -719,6 +780,9 @@ export default function RequestsPage() {
           data={requests}
           rowKey={(request) => request.id}
           onRowClick={(request) => router.push(`/dashboard/requests/${request.id}`)}
+          sortKey={sortKey}
+          sortDirection={sortDirection}
+          onSortChange={handleTableSortChange}
           columns={[
             {
               key: 'select',

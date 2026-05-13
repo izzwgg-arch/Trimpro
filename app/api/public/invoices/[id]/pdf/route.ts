@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { renderPdfFromHtml } from '@/lib/pdf/render-html-to-pdf'
 import { getPdfBranding } from '@/lib/branding/pdf'
+import { calculateOrderedSubtotalRows } from '@/lib/documents/subtotals'
 
 export const runtime = 'nodejs'
 
@@ -51,7 +52,7 @@ export async function GET(
     const logoUrl = brand.logoUrl
     const accentColor = brand.accentColor
     const accentTextColor = brand.accentTextColor
-    const visibleRegularItems = invoice.lineItems.filter((li) => li.isVisibleToClient !== false)
+    const visibleRegularItems = calculateOrderedSubtotalRows(invoice.lineItems.filter((li) => li.isVisibleToClient !== false) as any[])
     const visibleOptionalItems = invoice.optionalItems.filter((li) => li.isVisibleToClient !== false)
     // All items on an invoice are being billed — merge optional items into the main table
     const visibleLineItems = [...visibleRegularItems, ...visibleOptionalItems]
@@ -72,6 +73,15 @@ export async function GET(
       (visibleLineItems.length === 0 && visibleOptionalItems.length === 0)
 
     function buildRow(li: (typeof visibleLineItems)[0]) {
+      if (li.isSubtotal) {
+        const colSpan = 1 + (showNotesCol ? 1 : 0) + 1 + (showCostCol ? 1 : 0) + (showPriceCol ? 1 : 0)
+        return `
+        <tr style="background:#f8fafc;font-weight:700;">
+          <td colspan="${colSpan}" style="text-align:right">Subtotal</td>
+          <td style="text-align:right">$${Number(li.calculatedSubtotalTotal).toFixed(2)}</td>
+        </tr>
+      `
+      }
       const descCell = li.showDescriptionToCustomer !== false ? escapeHtml(li.description) : ''
       return `
         <tr>

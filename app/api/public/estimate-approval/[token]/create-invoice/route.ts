@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { rateLimitOrThrow } from '@/lib/security/rate-limit'
 import { hashApprovalToken } from '@/lib/estimate-approval'
+import { allocateNextInvoiceNumber, normalizeInvoiceNumber } from '@/lib/qbo/doc-numbers'
 
 export const runtime = 'nodejs'
 
@@ -14,35 +15,6 @@ const paramsSchema = z.object({
 function toNumber(value: any): number {
   const n = Number(value)
   return Number.isFinite(n) ? n : 0
-}
-
-function normalizeInvoiceNumber(raw: string): string {
-  const s = String(raw || '').trim()
-  if (!s) return ''
-  if (/^\d+$/.test(s)) return `INV-${s.padStart(6, '0')}`
-  const m = s.match(/^INV-(\d+)$/i)
-  if (m) return `INV-${m[1].padStart(6, '0')}`
-  return s
-}
-
-async function allocateInvoiceNumber(tx: any) {
-  const latest = await tx.invoice.findFirst({
-    where: { invoiceNumber: { startsWith: 'INV-' } },
-    orderBy: { invoiceNumber: 'desc' },
-    select: { invoiceNumber: true },
-  })
-  const latestNum = latest?.invoiceNumber ? parseInt(String(latest.invoiceNumber).replace(/^INV-/, ''), 10) : 0
-  const startNum = Number.isFinite(latestNum) ? latestNum : 0
-
-  for (let attempt = 0; attempt < 300; attempt++) {
-    const candidate = `INV-${String(startNum + 1 + attempt).padStart(6, '0')}`
-    const exists = await tx.invoice.findFirst({ where: { invoiceNumber: candidate }, select: { id: true } })
-    if (!exists) return candidate
-  }
-
-  // Fallback
-  const suffix = crypto.randomBytes(3).toString('hex').toUpperCase()
-  return `INV-${String(startNum + 1).padStart(6, '0')}-${suffix}`
 }
 
 export async function POST(request: NextRequest, ctx: { params: { token: string } }) {
@@ -142,11 +114,11 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
 
       const discountAmount = isAllApproved ? toNumber(estimate.discount) : 0
       const taxRateValue = toNumber(estimate.taxRate)
-      const subtotalAfterDiscount = Math.max(0, subtotal - discountAmount)
+      const subtotalAfterDiscount = subtotal - discountAmount
       const tax = subtotalAfterDiscount * taxRateValue
       const total = subtotalAfterDiscount + tax
 
-      const invoiceNumber = await allocateInvoiceNumber(tx)
+      const invoiceNumber = await allocateNextInvoiceNumber({ tenantId: tokenRow.tenantId, db: tx })
 
       const invoice = await tx.invoice.create({
         data: {
@@ -154,7 +126,7 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
           clientId: estimate.clientId,
           jobId: estimate.jobId || null,
           estimateId: estimate.id,
-          invoiceNumber: normalizeInvoiceNumber(invoiceNumber),
+          invoiceNumber: normalizeInvoiceNumber(invoiceNumber) || invoiceNumber,
           title: `Invoice from approved items (${estimate.estimateNumber})`,
           status: 'DRAFT',
           subtotal,

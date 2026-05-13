@@ -3,6 +3,7 @@ import { decryptSecrets } from '@/lib/integrations/secrets'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { testEmailProvider } from '@/lib/integrations/providers/email'
 import { sendEmail } from '@/lib/email/provider'
+import { mergeConfiguredGlobalCc, normalizeRecipients } from '@/lib/email/recipients'
 
 type SenderSource = 'assigned_integration' | 'tenant_email_integration' | 'system_default'
 type ExtendedSenderSource = SenderSource | 'user_profile_google_workspace'
@@ -28,17 +29,9 @@ interface SendDocumentEmailInput {
 const SYSTEM_FROM = process.env.EMAIL_FROM || process.env.EMAIL_FROM_NAME || 'noreply@trimpro.com'
 const SYSTEM_FROM_NAME = process.env.FROM_NAME || 'Trim Pro'
 const SYSTEM_REPLY_TO = process.env.EMAIL_REPLY_TO || SYSTEM_FROM
-const ADMIN_CC_EMAIL = process.env.ADMIN_CC_EMAIL || 'Trimpronyinc@gmail.com'
 
 function formatFromHeader(fromName: string, fromEmail: string) {
   return `${fromName} <${fromEmail}>`
-}
-
-function normalizeRecipients(to: string | string[]) {
-  if (Array.isArray(to)) {
-    return to.map((v) => String(v || '').trim()).filter(Boolean)
-  }
-  return [String(to || '').trim()].filter(Boolean)
 }
 
 async function getAssignedIntegrationSender(tenantId: string, userId: string): Promise<ResolvedSender | null> {
@@ -140,6 +133,7 @@ async function sendViaUserProfile(
   html: string,
   text?: string
 ) {
+  const recipients = mergeConfiguredGlobalCc({ to })
   const db = prisma as any
   if (typeof db.userEmailSenderProfile?.findUnique !== 'function') {
     throw new Error('userEmailSenderProfile model not available')
@@ -162,8 +156,8 @@ async function sendViaUserProfile(
 
   const info = await transporter.sendMail({
     from: formatFromHeader(sender.fromName, sender.fromEmail),
-    to: to.join(', '),
-    cc: ADMIN_CC_EMAIL,
+    to: recipients.to.join(', '),
+    cc: recipients.cc.length ? recipients.cc.join(', ') : undefined,
     subject,
     html,
     text,
@@ -189,6 +183,7 @@ async function sendViaAssignedIntegration(
   html: string,
   text?: string
 ) {
+  const recipients = mergeConfiguredGlobalCc({ to })
   const db = prisma as any
   if (typeof db.emailIntegration?.findUnique !== 'function') {
     throw new Error('emailIntegration model not available')
@@ -216,8 +211,8 @@ async function sendViaAssignedIntegration(
 
   const info = await transporter.sendMail({
     from: formatFromHeader(sender.fromName, sender.fromEmail),
-    to: to.join(', '),
-    cc: ADMIN_CC_EMAIL,
+    to: recipients.to.join(', '),
+    cc: recipients.cc.length ? recipients.cc.join(', ') : undefined,
     subject,
     html,
     text,
@@ -295,14 +290,12 @@ export async function sendDocumentEmailWithResolvedSender(input: SendDocumentEma
   if (sender.source === 'tenant_email_integration') {
     const secrets = await getIntegrationSecrets(tenantId, 'email')
     if (secrets) {
-      for (const recipient of recipients) {
-        const result = await testEmailProvider(secrets, recipient, subject, html)
-        if (!result.success) {
-          return {
-            success: false,
-            sender,
-            error: result.error || result.message || 'Failed to send through tenant email integration',
-          }
+      const result = await testEmailProvider(secrets, recipients, subject, html)
+      if (!result.success) {
+        return {
+          success: false,
+          sender,
+          error: result.error || result.message || 'Failed to send through tenant email integration',
         }
       }
       return { success: true, sender, messageId: '' }

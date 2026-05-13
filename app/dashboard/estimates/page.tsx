@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -66,12 +66,50 @@ const statusColors: Record<string, string> = {
   CONVERTED: 'bg-indigo-100 text-indigo-800',
 }
 
+// ── persistent list state (survives back-navigation within the same tab) ──────
+const ESTIMATES_LIST_KEY = 'trimpro.estimates.listState'
+
+type EstimatesListState = {
+  status: string
+  search: string
+  sortKey: string | null
+  sortDirection: 'asc' | 'desc'
+}
+
+const LIST_DEFAULTS: EstimatesListState = {
+  status: 'all',
+  search: '',
+  sortKey: null,
+  sortDirection: 'asc',
+}
+
+function loadEstimatesListState(): EstimatesListState {
+  if (typeof window === 'undefined') return LIST_DEFAULTS
+  try {
+    const raw = sessionStorage.getItem(ESTIMATES_LIST_KEY)
+    if (!raw) return LIST_DEFAULTS
+    const p = JSON.parse(raw) as Partial<EstimatesListState>
+    return {
+      status: typeof p.status === 'string' ? p.status : LIST_DEFAULTS.status,
+      search: typeof p.search === 'string' ? p.search : LIST_DEFAULTS.search,
+      sortKey: typeof p.sortKey === 'string' ? p.sortKey : null,
+      sortDirection: p.sortDirection === 'desc' ? 'desc' : 'asc',
+    }
+  } catch {
+    return LIST_DEFAULTS
+  }
+}
+
+function saveEstimatesListState(s: EstimatesListState) {
+  sessionStorage.setItem(ESTIMATES_LIST_KEY, JSON.stringify(s))
+}
+
 export default function EstimatesPage() {
   const router = useRouter()
   const [estimates, setEstimates] = useState<Estimate[]>([])
   const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
-  const [status, setStatus] = useState('all')
+  const [listState, setListStateRaw] = useState<EstimatesListState>(loadEstimatesListState)
+  const { status, search, sortKey, sortDirection } = listState
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
@@ -81,20 +119,31 @@ export default function EstimatesPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [viewMode, setViewMode] = useViewMode('estimates', 'grid')
 
+  // Update list state + immediately persist so back-navigation restores it
+  const setListState = useCallback((updates: Partial<EstimatesListState>) => {
+    setListStateRaw((prev) => {
+      const next = { ...prev, ...updates }
+      saveEstimatesListState(next)
+      return next
+    })
+  }, [])
+
   const toggleSelected = (id: string, checked: boolean) => {
     setSelectedIds((prev) => (checked ? (prev.includes(id) ? prev : [...prev, id]) : prev.filter((x) => x !== id)))
   }
 
   useEffect(() => {
     setPage(1)
-  }, [search, status])
+  }, [search, status, sortKey, sortDirection])
 
+  // Clear persisted state on a real full-page reload / tab close
   useEffect(() => {
-    fetchEstimates()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, status, page])
+    const clear = () => sessionStorage.removeItem(ESTIMATES_LIST_KEY)
+    window.addEventListener('beforeunload', clear)
+    return () => window.removeEventListener('beforeunload', clear)
+  }, [])
 
-  const fetchEstimates = async () => {
+  const fetchEstimates = useCallback(async () => {
     try {
       const token = localStorage.getItem('accessToken')
       const params = new URLSearchParams({
@@ -103,11 +152,13 @@ export default function EstimatesPage() {
         page: String(page),
         limit: '50',
       })
+      if (sortKey) {
+        params.set('sortBy', sortKey)
+        params.set('sortDirection', sortDirection)
+      }
 
       const response = await fetch(`/api/estimates?${params}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       })
 
       if (response.status === 401) {
@@ -124,6 +175,14 @@ export default function EstimatesPage() {
     } finally {
       setLoading(false)
     }
+  }, [page, router, search, sortDirection, sortKey, status])
+
+  useEffect(() => {
+    fetchEstimates()
+  }, [fetchEstimates])
+
+  const handleTableSortChange = (nextSortKey: string, nextSortDirection: 'asc' | 'desc') => {
+    setListState({ sortKey: nextSortKey, sortDirection: nextSortDirection })
   }
 
   const handleDelete = async (estimate: Estimate) => {
@@ -289,13 +348,13 @@ export default function EstimatesPage() {
               <Input
                 placeholder="Search estimates by number or title..."
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => setListState({ search: e.target.value })}
                 className="pl-10"
               />
             </div>
             <div className="flex items-center space-x-2">
               <Filter className="h-4 w-4 text-gray-400" />
-              <Select value={status} onValueChange={setStatus}>
+              <Select value={status} onValueChange={(v) => setListState({ status: v })}>
                 <SelectTrigger className="w-[150px]">
                   <SelectValue placeholder="All Status" />
                 </SelectTrigger>
@@ -492,6 +551,9 @@ export default function EstimatesPage() {
           data={estimates}
           rowKey={(estimate) => estimate.id}
           onRowClick={(estimate) => router.push(`/dashboard/estimates/${estimate.id}`)}
+          sortKey={sortKey}
+          sortDirection={sortDirection}
+          onSortChange={handleTableSortChange}
           columns={[
             {
               key: 'select',

@@ -3,6 +3,7 @@ import crypto from 'crypto'
 import { prisma } from '@/lib/prisma'
 import { renderPdfFromHtml } from '@/lib/pdf/render-html-to-pdf'
 import { getPdfBranding } from '@/lib/branding/pdf'
+import { calculateOrderedSubtotalRows, mergeApprovedOptionalItemsForSubtotals } from '@/lib/documents/subtotals'
 
 export const runtime = 'nodejs'
 
@@ -94,7 +95,9 @@ export async function GET(
     const approvedOptionalItems = allVisibleOptionalItems.filter((li) => approvedIdSet.has(li.id))
     const pendingOptionalItems = allVisibleOptionalItems.filter((li) => !approvedIdSet.has(li.id))
     // Main items = regular items + approved add-ons
-    const mainItems = [...visibleLineItems, ...approvedOptionalItems]
+    const mainItems = calculateOrderedSubtotalRows(
+      mergeApprovedOptionalItemsForSubtotals(visibleLineItems as any[], approvedOptionalItems as any[])
+    )
     const optionalSubtotal = pendingOptionalItems.reduce(
       (sum, item) => sum + Number(item.quantity) * Number(item.unitPrice),
       0
@@ -113,6 +116,15 @@ export async function GET(
       (mainItems.length === 0 && pendingOptionalItems.length === 0)
 
     function buildEstRow(li: (typeof mainItems)[0]) {
+      if (li.isSubtotal) {
+        const colSpan = 1 + (showNotesCol ? 1 : 0) + 1 + (showCostCol ? 1 : 0) + (showPriceCol ? 1 : 0)
+        return `
+        <tr style="background:#f8fafc;font-weight:700;">
+          <td colspan="${colSpan}" style="text-align:right">Subtotal</td>
+          <td style="text-align:right">$${Number(li.calculatedSubtotalTotal).toFixed(2)}</td>
+        </tr>
+      `
+      }
       const descCell = li.showDescriptionToCustomer !== false ? escapeHtml(li.description) : ''
       return `
         <tr>

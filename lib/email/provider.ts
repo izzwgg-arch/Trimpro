@@ -2,6 +2,7 @@
  * Email Provider Service
  * Supports multiple providers (Resend, SendGrid, AWS SES)
  */
+import { mergeConfiguredGlobalCc } from '@/lib/email/recipients'
 
 interface SendEmailOptions {
   to: string | string[]
@@ -11,11 +12,9 @@ interface SendEmailOptions {
   from?: string
   replyTo?: string
   cc?: string | string[]
+  bcc?: string | string[]
   metadata?: Record<string, any>
 }
-
-// Every outbound email is CC'd to this address so the business always has a copy.
-const ADMIN_CC_EMAIL = process.env.ADMIN_CC_EMAIL || 'Trimpronyinc@gmail.com'
 
 interface SendEmailResult {
   success: boolean
@@ -34,22 +33,35 @@ const EMAIL_REPLY_TO = process.env.EMAIL_REPLY_TO || EMAIL_FROM
 export async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult> {
   const { to, subject, html, text, from = EMAIL_FROM, replyTo = EMAIL_REPLY_TO, metadata } = options
 
-  // Always include the admin CC unless it's already in the list
-  const ccInput = options.cc ? (Array.isArray(options.cc) ? options.cc : [options.cc]) : []
-  const cc = ccInput.includes(ADMIN_CC_EMAIL) ? ccInput : [...ccInput, ADMIN_CC_EMAIL]
+  const { to: normalizedTo, cc, bcc, globalCc } = mergeConfiguredGlobalCc({
+    to,
+    cc: options.cc,
+    bcc: options.bcc,
+  })
 
   try {
+    console.info('email.send', {
+      emailType: metadata?.emailType || 'generic',
+      entityId: metadata?.entityId || metadata?.invoiceId || metadata?.estimateId || metadata?.paymentId || null,
+      sendSource: metadata?.sendSource || 'lib/email/provider',
+      toCount: normalizedTo.length,
+      ccCount: cc.length,
+      cc,
+      globalCcCount: globalCc.length,
+      idempotencyKey: metadata?.idempotencyKey || null,
+    })
+
     switch (EMAIL_PROVIDER.toLowerCase()) {
       case 'resend':
-        return await sendViaResend({ to, subject, html, text, from, replyTo, cc, metadata })
+        return await sendViaResend({ to: normalizedTo, subject, html, text, from, replyTo, cc, bcc, metadata })
       case 'sendgrid':
-        return await sendViaSendGrid({ to, subject, html, text, from, replyTo, cc, metadata })
+        return await sendViaSendGrid({ to: normalizedTo, subject, html, text, from, replyTo, cc, bcc, metadata })
       case 'ses':
       case 'aws':
-        return await sendViaSES({ to, subject, html, text, from, replyTo, cc, metadata })
+        return await sendViaSES({ to: normalizedTo, subject, html, text, from, replyTo, cc, bcc, metadata })
       default:
         console.warn(`Unknown email provider: ${EMAIL_PROVIDER}, falling back to Resend`)
-        return await sendViaResend({ to, subject, html, text, from, replyTo, cc, metadata })
+        return await sendViaResend({ to: normalizedTo, subject, html, text, from, replyTo, cc, bcc, metadata })
     }
   } catch (error: any) {
     console.error('Email send error:', error)
@@ -72,6 +84,7 @@ async function sendViaResend(options: SendEmailOptions): Promise<SendEmailResult
 
   const toArray = Array.isArray(options.to) ? options.to : [options.to]
   const ccArray = options.cc ? (Array.isArray(options.cc) ? options.cc : [options.cc]) : undefined
+  const bccArray = options.bcc ? (Array.isArray(options.bcc) ? options.bcc : [options.bcc]) : undefined
 
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -83,6 +96,7 @@ async function sendViaResend(options: SendEmailOptions): Promise<SendEmailResult
       from: options.from,
       to: toArray,
       cc: ccArray?.length ? ccArray : undefined,
+      bcc: bccArray?.length ? bccArray : undefined,
       subject: options.subject,
       html: options.html,
       text: options.text,
@@ -115,6 +129,7 @@ async function sendViaSendGrid(options: SendEmailOptions): Promise<SendEmailResu
 
   const toArray = Array.isArray(options.to) ? options.to : [options.to]
   const ccArray = options.cc ? (Array.isArray(options.cc) ? options.cc : [options.cc]) : undefined
+  const bccArray = options.bcc ? (Array.isArray(options.bcc) ? options.bcc : [options.bcc]) : undefined
 
   const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
     method: 'POST',
@@ -127,6 +142,7 @@ async function sendViaSendGrid(options: SendEmailOptions): Promise<SendEmailResu
         {
           to: toArray.map((email) => ({ email })),
           ...(ccArray?.length ? { cc: ccArray.map((email) => ({ email })) } : {}),
+          ...(bccArray?.length ? { bcc: bccArray.map((email) => ({ email })) } : {}),
         },
       ],
       from: { email: options.from },

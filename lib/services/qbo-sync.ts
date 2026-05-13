@@ -3,6 +3,7 @@ import { quickBooksService } from '@/lib/services/quickbooks'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { encryptSecrets } from '@/lib/integrations/secrets'
 import { getPrimaryEmail } from '@/lib/email'
+import { calculateOrderedSubtotalRows } from '@/lib/documents/subtotals'
 import crypto from 'crypto'
 
 const LOOKUP_CACHE_TTL_MS = 5 * 60 * 1000
@@ -98,6 +99,43 @@ function qboDate(value: Date | string | null | undefined): string {
 
 function esc(value: string): string {
   return String(value || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+}
+
+async function findQboTransactionByDocNumber(params: {
+  accessToken: string
+  realmId: string
+  tenantId: string
+  entityType: 'invoice' | 'estimate'
+  localEntityId: string
+  docNumber: string
+}) {
+  const qboType = params.entityType === 'invoice' ? 'Invoice' : 'Estimate'
+  const query = `select Id, SyncToken, DocNumber, TotalAmt, CustomerRef from ${qboType} where DocNumber = '${esc(params.docNumber)}' maxresults 10`
+  const result = await quickBooksService.query(params.accessToken, params.realmId, query, {
+    tenantId: params.tenantId,
+    entityType: params.entityType,
+    entityId: params.localEntityId,
+    triggerSource: `${params.entityType}_docnumber_lookup_before_create`,
+  })
+  const matches = result?.QueryResponse?.[qboType] || []
+  return Array.isArray(matches) ? matches : []
+}
+
+function assertQboTransactionMatchIsSafe(params: {
+  qboTxn: any
+  expectedCustomerQboId: string
+  expectedTotal: number
+  entityType: 'invoice' | 'estimate'
+  docNumber: string
+}) {
+  const qboCustomerId = String(params.qboTxn?.CustomerRef?.value || '')
+  const qboTotal = toNumber(params.qboTxn?.TotalAmt)
+  const totalMatches = Math.abs(qboTotal - params.expectedTotal) < 0.01
+  if (qboCustomerId !== String(params.expectedCustomerQboId) || !totalMatches) {
+    throw new Error(
+      `QuickBooks ${params.entityType} DocNumber ${params.docNumber} already exists as QBO Id ${params.qboTxn?.Id || 'unknown'} but does not match this local record (QBO customer=${qboCustomerId || 'none'}, local customer=${params.expectedCustomerQboId}, QBO total=${qboTotal.toFixed(2)}, local total=${params.expectedTotal.toFixed(2)}). Relink manually or choose a new document number.`
+    )
+  }
 }
 
 async function logSync(params: {
@@ -627,7 +665,7 @@ function buildImportedEstimateLineRows(qboEstimate: any) {
 async function allocateImportedEstimateNumber(qboEstimate: any) {
   const rawDocNumber = String(qboEstimate?.DocNumber || '').trim()
   const rawQboId = String(qboEstimate?.Id || '').trim()
-  const base = rawDocNumber ? `QB-EST-${rawDocNumber}` : `QB-EST-${rawQboId}`
+  const base = rawDocNumber || `QB-EST-${rawQboId}`
 
   let candidate = base
   for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -954,11 +992,11 @@ function extractAllQboLines(qboLines: any): any[] {
 
 /** Build the QBO Line array from TrimPro line items. Subtotal rows become SubTotalLineDetail. */
 function buildQboLines(lineItems: any[], serviceItemId: string): any[] {
-  return lineItems.map((li: any) => {
+  return calculateOrderedSubtotalRows(lineItems as any[]).map((li: any) => {
     if (li.isSubtotal) {
       return {
         DetailType: 'SubTotalLineDetail',
-        Amount: toNumber(li.total),
+        Amount: li.calculatedSubtotalTotal,
         SubTotalLineDetail: {},
       }
     }
@@ -992,12 +1030,12 @@ function buildQboLinesWithIds(params: {
   let salesIdx = 0
   let subtotalIdx = 0
 
-  return local.map((li: any) => {
+  return calculateOrderedSubtotalRows(local as any[]).map((li: any) => {
     if (li.isSubtotal) {
       const existingLine = existingSubtotals[subtotalIdx++] || null
       const out: any = {
         DetailType: 'SubTotalLineDetail',
-        Amount: toNumber(li.total),
+        Amount: li.calculatedSubtotalTotal,
         SubTotalLineDetail: {},
       }
       if (existingLine?.Id) out.Id = String(existingLine.Id)
@@ -1455,17 +1493,17 @@ async function ensureClientCustomer(params: {
         for (const candidate of linkCandidates) {
           const found = await findCustomerByDisplayName(params.accessToken, params.realmId, candidate, {
             tenantId: params.tenantId,
-            entityId: client.id,
+            entityId: client!.id,
             triggerSource: 'client_relink_after_duplicate',
           })
-          if (found?.Id && (!client.parentId || found.Job)) {
+          if (found?.Id && (!client!.parentId || found.Job)) {
             const qboId = String(found.Id)
             await logSync({
               integrationId: params.integrationId,
               type: 'client',
               action: 'link',
               status: 'success',
-              entityId: client.id,
+              entityId: client!.id,
               qboId,
               data: { matchedDisplayName: candidate, reason: 'relink_after_6240' },
             })
@@ -1725,6 +1763,8 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
     await logQboSessionUnavailable(tenantId, 'estimate', estimateId)
     return
   }
+  let attemptedAction = 'create'
+  let attemptedDocNumber: string | null = null
   try {
     const estimate = await prisma.estimate.findFirst({
       where: { id: estimateId, tenantId },
@@ -1766,7 +1806,7 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
       )
     }
 
-    const existingQboId = await getMappedQboId(session.integrationId, 'estimate', estimate.id)
+    let existingQboId = await getMappedQboId(session.integrationId, 'estimate', estimate.id)
 
     const serviceItemId = await ensureDefaultServiceItem({
       accessToken: session.accessToken,
@@ -1787,6 +1827,7 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
           },
         ]
 
+    attemptedDocNumber = estimate.estimateNumber
     const payload: any = {
       DocNumber: estimate.estimateNumber,
       CustomerRef: { value: customerQboId },
@@ -1796,7 +1837,30 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
       Line: buildQboLines(lineItems, serviceItemId),
     }
 
+    if (!existingQboId) {
+      const matches = await findQboTransactionByDocNumber({
+        accessToken: session.accessToken,
+        realmId: session.realmId,
+        tenantId,
+        entityType: 'estimate',
+        localEntityId: estimate.id,
+        docNumber: estimate.estimateNumber,
+      })
+      if (matches.length > 0) {
+        const match = matches[0]
+        assertQboTransactionMatchIsSafe({
+          qboTxn: match,
+          expectedCustomerQboId: customerQboId,
+          expectedTotal: toNumber(estimate.total),
+          entityType: 'estimate',
+          docNumber: estimate.estimateNumber,
+        })
+        existingQboId = String(match.Id)
+      }
+    }
+
     if (existingQboId) {
+      attemptedAction = 'update'
       const fetched = await quickBooksService.makeAPIRequest(
         session.accessToken,
         session.realmId,
@@ -1880,11 +1944,13 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
     await logSync({
       integrationId: session.integrationId,
       type: 'estimate',
-      action: 'create',
+      action: attemptedAction,
       status: 'error',
       entityId: estimateId,
       error: error?.message || 'QuickBooks estimate sync failed',
+      data: { docNumber: attemptedDocNumber },
     })
+    throw error
   }
 }
 
@@ -1894,6 +1960,8 @@ export async function syncInvoiceToQuickBooks(tenantId: string, invoiceId: strin
     await logQboSessionUnavailable(tenantId, 'invoice', invoiceId)
     return
   }
+  let attemptedAction = 'create'
+  let attemptedDocNumber: string | null = null
   try {
     const invoice = await prisma.invoice.findFirst({
       where: { id: invoiceId, tenantId },
@@ -1950,6 +2018,7 @@ export async function syncInvoiceToQuickBooks(tenantId: string, invoiceId: strin
           },
         ]
 
+    attemptedDocNumber = invoice.invoiceNumber
     const payload: any = {
       DocNumber: invoice.invoiceNumber,
       CustomerRef: { value: customerQboId },
@@ -1978,11 +2047,39 @@ export async function syncInvoiceToQuickBooks(tenantId: string, invoiceId: strin
       if (estimateQboId) payload.LinkedTxn = [{ TxnId: estimateQboId, TxnType: 'Estimate' }]
     }
 
-    if (invoice.qboSyncId) {
+    let invoiceQboId = invoice.qboSyncId || null
+    if (!invoiceQboId) {
+      const matches = await findQboTransactionByDocNumber({
+        accessToken: session.accessToken,
+        realmId: session.realmId,
+        tenantId,
+        entityType: 'invoice',
+        localEntityId: invoice.id,
+        docNumber: invoice.invoiceNumber,
+      })
+      if (matches.length > 0) {
+        const match = matches[0]
+        assertQboTransactionMatchIsSafe({
+          qboTxn: match,
+          expectedCustomerQboId: customerQboId,
+          expectedTotal: toNumber(invoice.total),
+          entityType: 'invoice',
+          docNumber: invoice.invoiceNumber,
+        })
+        invoiceQboId = String(match.Id)
+        await prisma.invoice.update({
+          where: { id: invoice.id },
+          data: { qboSyncId: invoiceQboId },
+        })
+      }
+    }
+
+    if (invoiceQboId) {
+      attemptedAction = 'update'
       const fetched = await quickBooksService.makeAPIRequest(
         session.accessToken,
         session.realmId,
-        `/invoice/${invoice.qboSyncId}`,
+        `/invoice/${invoiceQboId}`,
         'GET',
         undefined,
         {
@@ -1996,14 +2093,15 @@ export async function syncInvoiceToQuickBooks(tenantId: string, invoiceId: strin
       const syncToken = qboInvoice?.SyncToken
       if (!syncToken) throw new Error('QuickBooks invoice SyncToken missing (cannot update)')
 
-      const existingSalesLines = extractSalesItemLines(qboInvoice?.Line)
+      const existingQboLines = extractAllQboLines(qboInvoice?.Line)
       const updatePayload: any = {
         ...payload,
-        Id: invoice.qboSyncId,
+        Id: invoiceQboId,
         SyncToken: String(syncToken),
-        Line: buildSalesItemLinesWithIds({
+        // Preserve all customer-facing line IDs, including subtotal lines.
+        Line: buildQboLinesWithIds({
           localLineItems: lineItems,
-          existingQboSalesLines: existingSalesLines,
+          existingQboLines,
           serviceItemId,
         }),
       }
@@ -2021,11 +2119,12 @@ export async function syncInvoiceToQuickBooks(tenantId: string, invoiceId: strin
           triggerSource: 'invoice_sync',
         }
       )
-      const qboId = String(updated?.Invoice?.Id || invoice.qboSyncId)
+      const qboId = String(updated?.Invoice?.Id || invoiceQboId)
       await prisma.invoice.update({
         where: { id: invoice.id },
         data: {
           qboSyncAt: new Date(),
+          qboSyncId: qboId,
         },
       })
       await logSync({
@@ -2073,11 +2172,13 @@ export async function syncInvoiceToQuickBooks(tenantId: string, invoiceId: strin
     await logSync({
       integrationId: session.integrationId,
       type: 'invoice',
-      action: 'create',
+      action: attemptedAction,
       status: 'error',
       entityId: invoiceId,
       error: error?.message || 'QuickBooks invoice sync failed',
+      data: { docNumber: attemptedDocNumber },
     })
+    throw error
   }
 }
 
@@ -2178,8 +2279,8 @@ export async function syncPaymentToQuickBooks(tenantId: string, paymentId: strin
       TotalAmt: amount,
       TxnDate: qboDate(payment.processedAt || payment.createdAt),
       PrivateNote: paymentNote,
-      // RefNumber maps to "Conf ID" in QuickBooks for card transaction reference
-      ...(isCardPayment && transactionId ? { RefNumber: transactionId } : {}),
+      // PaymentRefNum maps to the payment reference/confirmation number in QBO.
+      ...(isCardPayment && transactionId ? { PaymentRefNum: transactionId } : {}),
       ...(paymentMethodRef ? { PaymentMethodRef: paymentMethodRef } : {}),
       Line: [
         {
@@ -2225,6 +2326,7 @@ export async function syncPaymentToQuickBooks(tenantId: string, paymentId: strin
       entityId: paymentId,
       error: error?.message || 'QuickBooks payment sync failed',
     })
+    throw error
   }
 }
 

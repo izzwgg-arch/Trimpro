@@ -272,7 +272,8 @@ export const createInvoiceSchema = z.object({
   items: z.array(z.object({
     description: z.string(),
     quantity: z.number().positive(),
-    unitPrice: z.number().nonnegative(),
+    // Allow negative unit price (credit / adjustment lines)
+    unitPrice: z.number().finite(),
   })).min(1).optional(),
   optionalItems: z
     .array(

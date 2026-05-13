@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
+import { getEstimateConversionSummary } from '@/lib/documents/conversion'
 
 function normalizePhone(value: string | null | undefined) {
   return (value || '').replace(/\D/g, '')
@@ -158,12 +159,14 @@ export async function POST(
         })
       }
 
+      const conversion = await getEstimateConversionSummary(tx, estimate.id, estimate.total, user.tenantId)
       await tx.estimate.update({
         where: { id: estimate.id },
         data: {
           clientId,
           jobId: createdJob.id,
           status: 'CONVERTED',
+          convertedPercent: conversion.convertedPercent > 0 ? conversion.convertedPercent : null,
         },
       })
 

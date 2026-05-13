@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
+import { calculateOrderedSubtotalRows } from '@/lib/documents/subtotals'
+import { calculateEstimateConversionSummary } from '@/lib/documents/conversion'
+import {
+  allocateNextEstimateNumber,
+  assertEstimateNumberAvailableInQuickBooks,
+  normalizeEstimateNumber,
+} from '@/lib/qbo/doc-numbers'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -15,6 +22,17 @@ export async function GET(request: NextRequest) {
   const page = parseInt(searchParams.get('page') || '1')
   const limit = parseInt(searchParams.get('limit') || '50')
   const skip = (page - 1) * limit
+  const sortByRaw = searchParams.get('sortBy') || 'createdAt'
+  const sortDirectionRaw = searchParams.get('sortDirection') || 'desc'
+  const sortDirection = sortDirectionRaw === 'asc' ? 'asc' : 'desc'
+  const sortMap: Record<string, any> = {
+    estimate: [{ estimateNumber: sortDirection }, { title: sortDirection }],
+    status: { status: sortDirection },
+    client: { client: { name: sortDirection } },
+    total: { total: sortDirection },
+    createdAt: { createdAt: sortDirection },
+  }
+  const orderBy = sortMap[sortByRaw] || sortMap.createdAt
 
   try {
     const where: any = {
@@ -65,10 +83,16 @@ export async function GET(request: NextRequest) {
               lineItems: true,
             },
           },
+          invoices: {
+            where: {
+              status: { notIn: ['CANCELLED', 'REFUNDED'] },
+            },
+            select: {
+              total: true,
+            },
+          },
         },
-        orderBy: {
-          createdAt: 'desc',
-        },
+        orderBy,
         skip,
         take: limit,
       }),
@@ -76,7 +100,17 @@ export async function GET(request: NextRequest) {
     ])
 
     return NextResponse.json({
-      estimates,
+      estimates: estimates.map((estimate) => {
+        const conversion = calculateEstimateConversionSummary(
+          estimate.total,
+          estimate.invoices.map((invoice) => invoice.total)
+        )
+        const { invoices, ...rest } = estimate
+        return {
+          ...rest,
+          convertedPercent: conversion.convertedPercent > 0 ? conversion.convertedPercent : null,
+        }
+      }),
       pagination: {
         page,
         limit,
@@ -133,15 +167,6 @@ export async function POST(request: NextRequest) {
     const tax = taxRate ? (subtotalAfterDiscount * parseFloat(taxRate)) : 0
     const total = subtotalAfterDiscount + tax
 
-    const normalizeEstimateNumber = (val: any) => {
-      if (val === null || val === undefined) return null
-      const raw = String(val).trim()
-      if (!raw) return null
-      if (/^\d+$/.test(raw)) return `EST-${raw.padStart(6, '0')}`
-      const m = raw.match(/^EST-(\d+)$/i)
-      if (m) return `EST-${m[1].padStart(6, '0')}`
-      return raw
-    }
     const estimateNumberOverrideTrimmed = normalizeEstimateNumber(estimateNumberOverride)
 
     const baseEstimateData = {
@@ -170,6 +195,11 @@ export async function POST(request: NextRequest) {
     if (estimateNumberOverrideTrimmed) {
       estimateNumber = estimateNumberOverrideTrimmed
       try {
+        await assertEstimateNumberAvailableInQuickBooks(user.tenantId, estimateNumber)
+      } catch (err: any) {
+        return NextResponse.json({ error: err?.message || 'Estimate number already exists in QuickBooks' }, { status: 400 })
+      }
+      try {
         estimate = await prisma.estimate.create({
           data: { ...baseEstimateData, estimateNumber },
           include: { client: true, lead: true },
@@ -181,17 +211,9 @@ export async function POST(request: NextRequest) {
         throw err
       }
     } else {
-      // Generate estimate number with global collision-safe retry.
+      // Generate estimate number with local + QuickBooks collision-safe retry.
       for (let attempt = 0; attempt < 300; attempt++) {
-        const latestEstimate = await prisma.estimate.findFirst({
-          where: { estimateNumber: { startsWith: 'EST-' } },
-          orderBy: { estimateNumber: 'desc' },
-          select: { estimateNumber: true },
-        })
-        const latestNumMatch = latestEstimate?.estimateNumber?.match(/^EST-(\d+)/)
-        const latestNum = latestNumMatch ? parseInt(latestNumMatch[1], 10) : 0
-        const baseNum = Number.isFinite(latestNum) ? latestNum : 0
-        estimateNumber = `EST-${String(baseNum + 1 + attempt).padStart(6, '0')}`
+        estimateNumber = await allocateNextEstimateNumber({ tenantId: user.tenantId })
 
         try {
           estimate = await prisma.estimate.create({
@@ -230,22 +252,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Create line items (draft estimates may be created with no items)
-    // For subtotal rows, compute the running sum of items since the previous subtotal
-    let runningSinceLastSubtotal = 0
-    for (let i = 0; i < effectiveLineItems.length; i++) {
-      const item = effectiveLineItems[i]
+    const calculatedLineItems = calculateOrderedSubtotalRows(effectiveLineItems as any[])
+    for (let i = 0; i < calculatedLineItems.length; i++) {
+      const item = calculatedLineItems[i]
       const isSubtotal = Boolean(item.isSubtotal)
-
-      let itemTotal: number
-      if (isSubtotal) {
-        itemTotal = runningSinceLastSubtotal
-        runningSinceLastSubtotal = 0
-      } else {
-        const qty = parseFloat(item.quantity || 0)
-        const price = parseFloat(item.unitPrice || 0)
-        itemTotal = qty * price
-        runningSinceLastSubtotal += itemTotal
-      }
+      const itemTotal = item.calculatedSubtotalTotal
 
       const qty = isSubtotal ? 0 : parseFloat(item.quantity || 0)
       const price = isSubtotal ? 0 : parseFloat(item.unitPrice || 0)

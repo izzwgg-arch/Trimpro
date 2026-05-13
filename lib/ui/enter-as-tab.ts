@@ -45,9 +45,11 @@ export function tryMoveFocusToNextFormField(e: KeyboardEvent): boolean {
   const target = e.target
   if (!isEnterAsTabTarget(target)) return false
 
-  // Line-item inputs (estimate/invoice/PO grids) own Shift+Enter for spreadsheet-style
-  // vertical navigation (same column, next row) — see lib/ui/line-item-grid-nav.ts.
-  // Bail out so the local React onKeyDown handles it.
+  // Line-item inputs (estimate/invoice/PO grids) opt out of global Shift+Enter-as-Tab.
+  // Inside line-item rows:
+  //   - the "Description (optional)" textarea handles Shift+Enter natively (newline)
+  //   - other inputs simply ignore Shift+Enter (stays in field)
+  // Identified by data-col / data-picker-input / data-line-item-row containers.
   if (
     target.hasAttribute('data-col') ||
     target.hasAttribute('data-picker-input') ||

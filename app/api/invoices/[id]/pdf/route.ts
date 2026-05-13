@@ -3,6 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { renderPdfFromHtml } from '@/lib/pdf/render-html-to-pdf'
 import { getPdfBranding } from '@/lib/branding/pdf'
+import { calculateOrderedSubtotalRows } from '@/lib/documents/subtotals'
 
 export const runtime = 'nodejs'
 
@@ -90,7 +91,7 @@ export async function GET(
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
     }
 
-    const visibleRegularItems = invoice.lineItems.filter((item) => item.isVisibleToClient !== false)
+    const visibleRegularItems = calculateOrderedSubtotalRows(invoice.lineItems.filter((item) => item.isVisibleToClient !== false) as any[])
     const visibleOptionalItems = invoice.optionalItems.filter((item) => item.isVisibleToClient !== false)
     // Merge optional items into the main items — all items on an invoice are being billed
     const visibleLineItems = [...visibleRegularItems, ...visibleOptionalItems]
@@ -110,6 +111,13 @@ export async function GET(
       visibleOptionalItems.some((li) => li.showPriceToCustomer !== false)
 
     const buildRow = (item: typeof visibleLineItems[0]) => {
+      if (item.isSubtotal) {
+        const colSpan = (showNameCol ? 1 : 0) + (showNotesCol ? 1 : 0) + 1 + (showCostCol ? 1 : 0) + (showPriceCol ? 1 : 0)
+        return `<tr style="background:#f8fafc;font-weight:700;">
+        <td colspan="${colSpan}" style="text-align:right">Subtotal</td>
+        <td class="text-right">$${Number(item.calculatedSubtotalTotal).toFixed(2)}</td>
+      </tr>`
+      }
       const nameCell = item.showDescriptionToCustomer !== false ? escapeHtml(item.description) : ''
       const notesCell = item.showNotesToCustomer !== false ? escapeHtml(item.notes || '') : ''
       const costCell = item.showCostToCustomer === true ? `$${Number((item as any).unitCost || 0).toFixed(2)}` : ''

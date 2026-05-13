@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
+import { allocateNextInvoiceNumber } from '@/lib/qbo/doc-numbers'
 
 export async function POST(
   request: NextRequest,
@@ -31,10 +32,7 @@ export async function POST(
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
     }
 
-    const invoiceCount = await prisma.invoice.count({
-      where: { tenantId: user.tenantId },
-    })
-    const invoiceNumber = `INV-${String(invoiceCount + 1).padStart(6, '0')}`
+    const invoiceNumber = await allocateNextInvoiceNumber({ tenantId: user.tenantId })
 
     const duplicate = await prisma.invoice.create({
       data: {

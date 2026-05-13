@@ -58,6 +58,10 @@ echo "🏗️  Step 4: Building Next.js application..."
 NEXT_TELEMETRY_DISABLED=1 npm run build
 
 echo ""
+echo "🔑 Fixing public directory permissions (nginx needs read access)..."
+chmod 755 public 2>/dev/null || true
+
+echo ""
 echo "🔄 Step 5: Stopping existing PM2 process (if any)..."
 pm2 stop $APP_NAME 2>/dev/null || true
 pm2 delete $APP_NAME 2>/dev/null || true

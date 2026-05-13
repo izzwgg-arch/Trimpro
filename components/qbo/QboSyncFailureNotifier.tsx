@@ -81,9 +81,7 @@ export function QboSyncFailureNotifier() {
   useEffect(() => {
     // Record the moment this component mounts so we only alert on failures
     // that happen after the current session started (avoids spamming on every login).
-    if (!localStorage.getItem(INIT_KEY)) {
-      localStorage.setItem(INIT_KEY, new Date().toISOString())
-    }
+    localStorage.setItem(INIT_KEY, new Date().toISOString())
     notifiedIdsRef.current = loadNotifiedIds()
 
     fetchAndNotify()

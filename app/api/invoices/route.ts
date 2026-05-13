@@ -6,6 +6,16 @@ import { validateRequest, createInvoiceSchema } from '@/lib/validation'
 import crypto from 'crypto'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { createAchPaymentSession } from '@/lib/qbo/payments-ach'
+import { calculateOrderedSubtotalRows } from '@/lib/documents/subtotals'
+import {
+  assertEstimateWillNotOverConvert,
+  getEstimateConversionSummary,
+} from '@/lib/documents/conversion'
+import {
+  allocateNextInvoiceNumber,
+  assertInvoiceNumberAvailableInQuickBooks,
+  normalizeInvoiceNumber,
+} from '@/lib/qbo/doc-numbers'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -240,15 +250,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const normalizeInvoiceNumber = (val: any) => {
-      if (val === null || val === undefined) return null
-      const raw = String(val).trim()
-      if (!raw) return null
-      if (/^\d+$/.test(raw)) return `INV-${raw.padStart(6, '0')}`
-      const m = raw.match(/^INV-(\d+)$/i)
-      if (m) return `INV-${m[1].padStart(6, '0')}`
-      return raw
-    }
     const invoiceNumberOverrideTrimmed = normalizeInvoiceNumber(invoiceNumberOverride)
 
     // Calculate totals
@@ -309,13 +310,14 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Create line items
+      // Create line items. Subtotal rows are calculated from the preceding ordered segment.
       console.log(`[invoice-create] creating ${lineItems.length} line items for invoice ${inv.id}`)
-      for (let i = 0; i < lineItems.length; i++) {
-        const item = lineItems[i]
+      const calculatedLineItems = calculateOrderedSubtotalRows(lineItems as any[])
+      for (let i = 0; i < calculatedLineItems.length; i++) {
+        const item = calculatedLineItems[i]
         const qty = typeof item.quantity === 'number' ? item.quantity : parseFloat(item.quantity || 0)
         const price = typeof item.unitPrice === 'number' ? item.unitPrice : parseFloat(item.unitPrice || 0)
-        const itemTotal = qty * price
+        const itemTotal = item.calculatedSubtotalTotal
         const dbGroupId = item.groupId ? groupMap.get(item.groupId) || null : null
         const isSubtotalItem = Boolean(item.isSubtotal)
         await tx.invoiceLineItem.create({
@@ -326,7 +328,7 @@ export async function POST(request: NextRequest) {
             quantity: isSubtotalItem ? 0 : qty,
             unitPrice: isSubtotalItem ? 0 : price,
             unitCost: isSubtotalItem ? null : (item.unitCost ? (typeof item.unitCost === 'number' ? item.unitCost : parseFloat(item.unitCost)) : null),
-            total: isSubtotalItem ? 0 : itemTotal,
+            total: itemTotal,
             sortOrder: i,
             isSubtotal: isSubtotalItem,
             isVisibleToClient: item.isVisibleToClient !== undefined ? Boolean(item.isVisibleToClient) : true,
@@ -382,9 +384,24 @@ export async function POST(request: NextRequest) {
 
       // Link estimate if provided
       if (estimateId) {
+        const estimate = await tx.estimate.findFirst({
+          where: { id: estimateId, tenantId: user.tenantId },
+          select: { id: true, total: true },
+        })
+        if (!estimate) {
+          throw new Error('Estimate not found')
+        }
+        await assertEstimateWillNotOverConvert(tx, {
+          estimateId,
+          tenantId: user.tenantId,
+          estimateTotal: estimate.total,
+          newInvoiceTotal: total,
+          excludeInvoiceId: inv.id,
+        })
+        const conversion = await getEstimateConversionSummary(tx, estimateId, estimate.total, user.tenantId)
         await tx.estimate.update({
           where: { id: estimateId },
-          data: { status: 'CONVERTED', jobId: jobId || null },
+          data: { status: 'CONVERTED', convertedPercent: conversion.convertedPercent, jobId: jobId || null },
         })
       }
     }
@@ -466,6 +483,11 @@ export async function POST(request: NextRequest) {
     } else if (invoiceNumberOverrideTrimmed) {
       invoiceNumber = invoiceNumberOverrideTrimmed
       try {
+        await assertInvoiceNumberAvailableInQuickBooks(user.tenantId, invoiceNumber)
+      } catch (err: any) {
+        return NextResponse.json({ error: err?.message || 'Invoice number already exists in QuickBooks' }, { status: 400 })
+      }
+      try {
         await prisma.$transaction(async (tx) => {
           await ensureEstimateStillAvailable(tx)
           invoice = await tx.invoice.create({
@@ -490,20 +512,9 @@ export async function POST(request: NextRequest) {
         throw err
       }
     } else {
-      // Generate invoice number with global collision-safe retry.
-      // invoiceNumber is globally unique in schema, so tenant-local counters can collide.
-      const latestInvoice = await prisma.invoice.findFirst({
-        where: { invoiceNumber: { startsWith: 'INV-' } },
-        orderBy: { invoiceNumber: 'desc' },
-        select: { invoiceNumber: true },
-      })
-      const latestNum = latestInvoice?.invoiceNumber
-        ? parseInt(latestInvoice.invoiceNumber.replace(/^INV-/, ''), 10)
-        : 0
-      const startNum = Number.isFinite(latestNum) ? latestNum : 0
-
+      // Generate invoice number with local + QuickBooks collision-safe retry.
       for (let attempt = 0; attempt < 300; attempt++) {
-        invoiceNumber = `INV-${String(startNum + 1 + attempt).padStart(6, '0')}`
+        invoiceNumber = await allocateNextInvoiceNumber({ tenantId: user.tenantId })
         try {
           await prisma.$transaction(async (tx) => {
             await ensureEstimateStillAvailable(tx)
@@ -535,7 +546,7 @@ export async function POST(request: NextRequest) {
       if (!invoice) {
         // Last-resort unique fallback to guarantee create path never deadlocks on numbering.
         const suffix = crypto.randomBytes(3).toString('hex').toUpperCase()
-        invoiceNumber = `INV-${String(startNum + 1).padStart(6, '0')}-${suffix}`
+        invoiceNumber = `${await allocateNextInvoiceNumber({ tenantId: user.tenantId })}-${suffix}`
         await prisma.$transaction(async (tx) => {
           await ensureEstimateStillAvailable(tx)
           invoice = await tx.invoice.create({
@@ -602,8 +613,11 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ invoice }, { status: 201 })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Create invoice error:', error)
+    if (String(error?.message || '').includes('cannot exceed 100%')) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

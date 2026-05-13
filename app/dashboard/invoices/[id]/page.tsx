@@ -69,6 +69,7 @@ interface InvoiceDetail {
     id: string
     name: string
     companyName: string | null
+    email?: string | null
     contacts: Array<{
       id: string
       firstName: string
@@ -103,6 +104,7 @@ interface InvoiceDetail {
       name: string
       kind: string
     } | null
+    isSubtotal?: boolean
   }>
   optionalItems?: Array<{
     id: string
@@ -1074,6 +1076,19 @@ export default function InvoiceDetailPage() {
 
                       // Render ungrouped items
                       ungroupedItems.forEach((item) => {
+                        if (item.isSubtotal) {
+                          rows.push(
+                            <tr key={item.id} className="border-b bg-slate-50">
+                              <td colSpan={4} className="py-2 px-4 text-right text-sm font-semibold text-slate-700">
+                                Subtotal
+                              </td>
+                              <td className="py-2 px-4 text-right font-bold text-slate-800">
+                                {formatCurrency(parseFloat(item.total || '0'))}
+                              </td>
+                            </tr>
+                          )
+                          return
+                        }
                         rows.push(
                           <tr key={item.id} className="border-b">
                             <td className="py-3 px-4">{item.description}</td>

@@ -6,6 +6,8 @@ import { rateLimitOrThrow } from '@/lib/security/rate-limit'
 import { hashApprovalToken } from '@/lib/estimate-approval'
 import { createNotificationsForUsers } from '@/lib/notifications'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
+import { getEstimateConversionSummary } from '@/lib/documents/conversion'
+import { allocateNextInvoiceNumber } from '@/lib/qbo/doc-numbers'
 
 export const runtime = 'nodejs'
 
@@ -31,25 +33,6 @@ function getAppUrl(): string {
 function toNumber(value: any): number {
   const n = Number(value)
   return Number.isFinite(n) ? n : 0
-}
-
-async function allocateInvoiceNumber(tx: any) {
-  const latest = await tx.invoice.findFirst({
-    where: { invoiceNumber: { startsWith: 'INV-' } },
-    orderBy: { invoiceNumber: 'desc' },
-    select: { invoiceNumber: true },
-  })
-  const latestNum = latest?.invoiceNumber ? parseInt(String(latest.invoiceNumber).replace(/^INV-/, ''), 10) : 0
-  const startNum = Number.isFinite(latestNum) ? latestNum : 0
-
-  for (let attempt = 0; attempt < 300; attempt++) {
-    const candidate = `INV-${String(startNum + 1 + attempt).padStart(6, '0')}`
-    const exists = await tx.invoice.findFirst({ where: { invoiceNumber: candidate }, select: { id: true } })
-    if (!exists) return candidate
-  }
-
-  const suffix = crypto.randomBytes(3).toString('hex').toUpperCase()
-  return `INV-${String(startNum + 1).padStart(6, '0')}-${suffix}`
 }
 
 export async function POST(request: NextRequest, ctx: { params: { token: string } }) {
@@ -257,7 +240,7 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
       if (allApprovedItems.length > 0) {
         try {
           autoCreatedInvoice = await prisma.$transaction(async (tx) => {
-            const invoiceNumber = await allocateInvoiceNumber(tx)
+            const invoiceNumber = await allocateNextInvoiceNumber({ tenantId: tokenRow.tenantId, db: tx })
 
             // Build per-item line items at 50%.
             const lineItemsData = allApprovedItems.map((li, idx) => {
@@ -354,10 +337,10 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
               skipDuplicates: true,
             })
 
-            // Mark estimate as CONVERTED with 50% billed
+            const conversion = await getEstimateConversionSummary(tx, estimate.id, estimate.total, tokenRow.tenantId)
             await tx.estimate.update({
               where: { id: estimate.id },
-              data: { status: 'CONVERTED', convertedPercent: 50 },
+              data: { status: 'CONVERTED', convertedPercent: conversion.convertedPercent },
             })
 
             paymentUrl = `${getAppUrl()}/portal/pay/${inv.id}?token=${paymentToken}`
@@ -367,15 +350,7 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
           console.error('Failed to auto-create 50% invoice:', invoiceErr)
         }
       } else {
-        // No line items but still mark as converted
-        try {
-          await prisma.estimate.update({
-            where: { id: estimate.id },
-            data: { status: 'CONVERTED', convertedPercent: 50 },
-          })
-        } catch (e) {
-          console.error('Failed to mark estimate as converted:', e)
-        }
+        // No invoice was created, so do not mark the estimate as converted.
       }
     }
 

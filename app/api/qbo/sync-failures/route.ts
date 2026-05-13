@@ -2,6 +2,19 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 
+async function localEntityExists(type: string, entityId: string | null): Promise<boolean> {
+  if (!entityId) return true
+  if (type === 'estimate') return Boolean(await prisma.estimate.findUnique({ where: { id: entityId }, select: { id: true } }))
+  if (type === 'invoice') return Boolean(await prisma.invoice.findUnique({ where: { id: entityId }, select: { id: true } }))
+  if (type === 'payment') return Boolean(await prisma.payment.findUnique({ where: { id: entityId }, select: { id: true } }))
+  if (type === 'client') return Boolean(await prisma.client.findUnique({ where: { id: entityId }, select: { id: true } }))
+  if (type === 'vendor') return Boolean(await prisma.vendor.findUnique({ where: { id: entityId }, select: { id: true } }))
+  if (type === 'purchase_order') return Boolean(await prisma.purchaseOrder.findUnique({ where: { id: entityId }, select: { id: true } }))
+  if (type === 'project' || type === 'job') return Boolean(await prisma.job.findUnique({ where: { id: entityId }, select: { id: true } }))
+  if (type === 'lead') return Boolean(await prisma.lead.findUnique({ where: { id: entityId }, select: { id: true } }))
+  return true
+}
+
 /**
  * GET /api/qbo/sync-failures
  *
@@ -42,11 +55,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ failures: [], total: 0 })
     }
 
-    // Fetch recent error rows, deduplicated to the latest per (type, entityId)
+    // Fetch recent terminal rows, then only surface a failure if the newest
+    // row for that entity is still an error. A later success clears stale alerts.
     const rows = await prisma.quickBooksSyncLog.findMany({
       where: {
         integrationId: integration.id,
-        status: 'error',
+        status: { in: ['error', 'success'] },
         createdAt: { gt: since },
       },
       orderBy: { createdAt: 'desc' },
@@ -57,6 +71,7 @@ export async function GET(request: NextRequest) {
         action: true,
         entityId: true,
         error: true,
+        status: true,
         createdAt: true,
       },
     })
@@ -68,8 +83,10 @@ export async function GET(request: NextRequest) {
       const key = `${row.type}:${row.entityId ?? '__none__'}`
       if (!seen.has(key)) {
         seen.add(key)
-        deduped.push(row)
-        if (deduped.length >= limit) break
+        if (row.status === 'error' && await localEntityExists(row.type, row.entityId)) {
+          deduped.push(row)
+          if (deduped.length >= limit) break
+        }
       }
     }
 

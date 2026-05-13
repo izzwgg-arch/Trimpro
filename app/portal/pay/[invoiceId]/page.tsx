@@ -40,6 +40,7 @@ interface PublicInvoice {
     quantity: string
     unitPrice: string
     total: string
+    isSubtotal?: boolean
   }>
 }
 
@@ -191,7 +192,7 @@ export default function PublicPaymentPage() {
 
   useEffect(() => {
     if (!previewInvoice) return
-    setPreviewSelectedLineItemIds((prev) => (prev.length ? prev : (previewInvoice.lineItems || []).map((li) => li.id)))
+    setPreviewSelectedLineItemIds((prev) => (prev.length ? prev : (previewInvoice.lineItems || []).filter((li) => !li.isSubtotal).map((li) => li.id)))
   }, [previewInvoice])
 
   useEffect(() => {
@@ -412,6 +413,14 @@ export default function PublicPaymentPage() {
                   <div className="space-y-2">
                     {(previewInvoice.lineItems || []).map((li) => {
                       const checked = previewSelectedLineItemIds.includes(li.id)
+                      if (li.isSubtotal) {
+                        return (
+                          <div key={li.id} className="flex items-start justify-between rounded-xl border border-slate-200 bg-slate-50 p-3 font-semibold">
+                            <div className="text-sm text-slate-900">Subtotal</div>
+                            <div className="text-sm text-slate-900">{toCurrency(li.total)}</div>
+                          </div>
+                        )
+                      }
                       return (
                         <div key={li.id} className={`flex items-start gap-3 rounded-xl border p-3 transition-colors ${checked ? 'border-blue-200 bg-blue-50' : 'border-slate-200 bg-white'}`}>
                           <Checkbox
@@ -454,7 +463,7 @@ export default function PublicPaymentPage() {
                       <span className="font-semibold text-slate-700">
                         {toCurrency(
                           (previewInvoice.lineItems || [])
-                            .filter((li) => previewSelectedLineItemIds.includes(li.id))
+                            .filter((li) => !li.isSubtotal && previewSelectedLineItemIds.includes(li.id))
                             .reduce((sum, li) => sum + Math.max(0, Number(li.total || 0)), 0)
                         )}
                       </span>
@@ -470,7 +479,7 @@ export default function PublicPaymentPage() {
                         onClick={() => {
                           if (!previewInvoice?.id) return
                           const amount = (previewInvoice.lineItems || [])
-                            .filter((li) => previewSelectedLineItemIds.includes(li.id))
+                            .filter((li) => !li.isSubtotal && previewSelectedLineItemIds.includes(li.id))
                             .reduce((sum, li) => sum + Math.max(0, Number(li.total || 0)), 0)
                           if (!Number.isFinite(amount) || amount <= 0) { setError('Select at least one item to pay.'); return }
                           setSelectedInvoiceIds([previewInvoice.id])
@@ -790,13 +799,15 @@ export default function PublicPaymentPage() {
             <div className="border-t border-slate-100 px-4 pb-4 pt-3 space-y-2">
               <div className="md:hidden space-y-2">
               {invoice.lineItems.map((li) => (
-                <div key={li.id} className="rounded-xl bg-slate-50 px-3 py-2.5">
+                <div key={li.id} className={`rounded-xl px-3 py-2.5 ${li.isSubtotal ? 'bg-slate-100' : 'bg-slate-50'}`}>
                   <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm font-medium text-slate-900 leading-snug">{li.description}</p>
+                    <p className="text-sm font-medium text-slate-900 leading-snug">{li.isSubtotal ? 'Subtotal' : li.description}</p>
                     <p className="shrink-0 text-sm font-bold text-slate-900">{toCurrency(li.total)}</p>
                   </div>
-                  <p className="mt-0.5 text-xs text-slate-500">Qty {li.quantity} x {toCurrency(li.unitPrice)}</p>
-                  {li.notes && (
+                  {!li.isSubtotal && (
+                    <p className="mt-0.5 text-xs text-slate-500">Qty {li.quantity} x {toCurrency(li.unitPrice)}</p>
+                  )}
+                  {!li.isSubtotal && li.notes && (
                     <p className="mt-1 text-xs text-slate-500 italic">{li.notes}</p>
                   )}
                 </div>
@@ -814,17 +825,24 @@ export default function PublicPaymentPage() {
                   </thead>
                   <tbody>
                     {invoice.lineItems.map((li) => (
-                      <tr key={li.id} className="border-b last:border-b-0">
-                        <td className="px-3 py-2">
-                          <div>{li.description}</div>
-                          {li.notes && (
-                            <div className="text-xs text-slate-500 italic mt-0.5">{li.notes}</div>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-right">{li.quantity}</td>
-                        <td className="px-3 py-2 text-right">{toCurrency(li.unitPrice)}</td>
-                        <td className="px-3 py-2 text-right">{toCurrency(li.total)}</td>
-                      </tr>
+                      li.isSubtotal ? (
+                        <tr key={li.id} className="border-b last:border-b-0 bg-slate-50 font-semibold">
+                          <td colSpan={3} className="px-3 py-2 text-right">Subtotal</td>
+                          <td className="px-3 py-2 text-right">{toCurrency(li.total)}</td>
+                        </tr>
+                      ) : (
+                        <tr key={li.id} className="border-b last:border-b-0">
+                          <td className="px-3 py-2">
+                            <div>{li.description}</div>
+                            {li.notes && (
+                              <div className="text-xs text-slate-500 italic mt-0.5">{li.notes}</div>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-right">{li.quantity}</td>
+                          <td className="px-3 py-2 text-right">{toCurrency(li.unitPrice)}</td>
+                          <td className="px-3 py-2 text-right">{toCurrency(li.total)}</td>
+                        </tr>
+                      )
                     ))}
                   </tbody>
                 </table>

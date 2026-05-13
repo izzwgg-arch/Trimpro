@@ -73,6 +73,13 @@ interface ClientDetail {
     status: string
     dueDate: string | null
   }>
+  estimates: Array<{
+    id: string
+    estimateNumber: string
+    status: string
+    total: string | number | null
+    createdAt: string
+  }>
   calls: Array<{
     id: string
     direction: string
@@ -231,6 +238,7 @@ export default function ClientDetailPage() {
         addresses: Array.isArray(clientData.addresses) ? clientData.addresses : [],
         jobs: Array.isArray(clientData.jobs) ? clientData.jobs : [],
         invoices: Array.isArray(clientData.invoices) ? clientData.invoices : [],
+        estimates: Array.isArray(clientData.estimates) ? clientData.estimates : [],
         calls: Array.isArray(clientData.calls) ? clientData.calls : [],
         smsMessages: Array.isArray(clientData.smsMessages) ? clientData.smsMessages : [],
         emails: Array.isArray(clientData.emails) ? clientData.emails : [],
@@ -489,6 +497,7 @@ export default function ClientDetailPage() {
   const addresses = (client.addresses && Array.isArray(client.addresses)) ? client.addresses : []
   const jobs = (client.jobs && Array.isArray(client.jobs)) ? client.jobs : []
   const invoices = (client.invoices && Array.isArray(client.invoices)) ? client.invoices : []
+  const estimates = (client.estimates && Array.isArray(client.estimates)) ? client.estimates : []
   const calls = (client.calls && Array.isArray(client.calls)) ? client.calls : []
   const smsMessages = (client.smsMessages && Array.isArray(client.smsMessages)) ? client.smsMessages : []
   const emails = (client.emails && Array.isArray(client.emails)) ? client.emails : []
@@ -776,20 +785,40 @@ export default function ClientDetailPage() {
                 ))}
 
                 {/* Recent Emails */}
-                {emails.slice(0, 5).map((email) => (
-                  <div key={email.id} className="flex items-start space-x-3 border-b pb-3 last:border-0">
-                    <Mail className="h-5 w-5 text-purple-500 mt-0.5" />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">{email.subject}</p>
-                      <p className="text-xs text-gray-500">
-                        {email.direction === 'INBOUND' ? 'Received' : 'Sent'}
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        {email.sentAt ? formatDate(email.sentAt) : 'Draft'}
-                      </p>
+                {emails.slice(0, 5).map((email) => {
+                  // Try to match an estimate number in the subject (e.g. "EST-030045" or "QB-EST-8714")
+                  const estMatch = email.subject?.match(/(?:QB-)?EST-[\w\d]+/i)
+                  const linkedEstimate = estMatch
+                    ? estimates.find((e) => e.estimateNumber === estMatch[0])
+                    : null
+                  const emailContent = (
+                    <>
+                      <Mail className="h-5 w-5 text-purple-500 mt-0.5 shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">{email.subject}</p>
+                        <p className="text-xs text-gray-500">
+                          {email.direction === 'INBOUND' ? 'Received' : 'Sent'}
+                        </p>
+                        <p className="text-xs text-gray-400">
+                          {email.sentAt ? formatDate(email.sentAt) : 'Draft'}
+                        </p>
+                      </div>
+                    </>
+                  )
+                  return linkedEstimate ? (
+                    <Link
+                      key={email.id}
+                      href={`/dashboard/estimates/${linkedEstimate.id}`}
+                      className="flex items-start space-x-3 border-b pb-3 last:border-0 hover:bg-gray-50 rounded-md -mx-1 px-1 transition-colors"
+                    >
+                      {emailContent}
+                    </Link>
+                  ) : (
+                    <div key={email.id} className="flex items-start space-x-3 border-b pb-3 last:border-0">
+                      {emailContent}
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
 
                 {calls.length === 0 && smsMessages.length === 0 && emails.length === 0 && (
                   <p className="text-center text-gray-500 py-8">No communication history</p>
@@ -891,6 +920,55 @@ export default function ClientDetailPage() {
                       </p>
                     </Link>
                   ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Recent Estimates */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Recent Estimates</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {estimates.length === 0 ? (
+                  <p className="text-sm text-gray-500">No estimates yet</p>
+                ) : (
+                  estimates.slice(0, 5).map((estimate) => (
+                    <Link
+                      key={estimate.id}
+                      href={`/dashboard/estimates/${estimate.id}`}
+                      className="block p-3 rounded-lg border hover:bg-gray-50 transition-colors"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-medium">{estimate.estimateNumber}</p>
+                          {estimate.total != null && (
+                            <p className="text-xs text-gray-600">{formatCurrency(parseFloat(String(estimate.total)))}</p>
+                          )}
+                          <p className="text-xs text-gray-400 mt-0.5">{formatDate(estimate.createdAt)}</p>
+                        </div>
+                        <span className={`shrink-0 px-2 py-1 text-xs rounded ${
+                          estimate.status === 'APPROVED' ? 'bg-green-100 text-green-800' :
+                          estimate.status === 'SENT' ? 'bg-blue-100 text-blue-800' :
+                          estimate.status === 'DRAFT' ? 'bg-gray-100 text-gray-700' :
+                          estimate.status === 'DECLINED' ? 'bg-red-100 text-red-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {estimate.status}
+                        </span>
+                      </div>
+                    </Link>
+                  ))
+                )}
+                {estimates.length > 5 && (
+                  <Link
+                    href={`/dashboard/estimates?clientId=${clientId}`}
+                    className="block text-center text-xs text-blue-600 hover:underline pt-1"
+                  >
+                    View all {estimates.length} estimates
+                  </Link>
                 )}
               </div>
             </CardContent>

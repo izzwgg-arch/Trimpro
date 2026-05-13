@@ -35,6 +35,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { DocumentAttachments } from '@/components/common/document-attachments'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { buildCreateContextQuery } from '@/src/lib/create-context'
+import { calculateOrderedSubtotalRows, mergeApprovedOptionalItemsForSubtotals } from '@/lib/documents/subtotals'
 
 interface EstimateDetail {
   id: string
@@ -597,10 +598,19 @@ export default function EstimateDetailPage() {
   // Split optional items by customer approval status
   const approvedOptionalItems: any[] = Array.isArray(optionalItems) ? optionalItems.filter((i: any) => i.isApproved) : []
   const pendingOptionalItems: any[] = Array.isArray(optionalItems) ? optionalItems.filter((i: any) => !i.isApproved) : []
-  const optionalItemsSubtotal = Array.isArray(optionalItems)
-    ? optionalItems.reduce((sum: number, item: any) => sum + parseFloat(item.total || '0'), 0)
-    : 0
+  const displayLineItems = calculateOrderedSubtotalRows(
+    mergeApprovedOptionalItemsForSubtotals((estimate as any).lineItems || [], approvedOptionalItems)
+  ).map((item: any) => ({
+    ...item,
+    total: (item.isSubtotal ? item.calculatedSubtotalTotal : item.total).toString(),
+  }))
   const approvedOptionalSubtotal = approvedOptionalItems.reduce((sum: number, item: any) => sum + parseFloat(item.total || '0'), 0)
+  const displaySubtotal = parseFloat(estimate.subtotal || '0') + approvedOptionalSubtotal
+  const displayDiscount = parseFloat(estimate.discount || '0')
+  const displayTaxRate = parseFloat(estimate.taxRate || '0')
+  const displayNet = displaySubtotal - displayDiscount
+  const displayTaxAmount = Math.round(displayNet * displayTaxRate * 100) / 100
+  const displayTotal = Math.round((displayNet + displayTaxAmount) * 100) / 100
 
   return (
     <div className="space-y-6">
@@ -784,10 +794,10 @@ export default function EstimateDetailPage() {
                   <tbody>
                     {(() => {
                       // Group line items by groupId
-                      const groupedItems = new Map<string, typeof estimate.lineItems>()
-                      const ungroupedItems: typeof estimate.lineItems = []
+                      const groupedItems = new Map<string, any[]>()
+                      const ungroupedItems: any[] = []
 
-                      for (const item of estimate.lineItems) {
+                      for (const item of displayLineItems) {
                         if (item.groupId && item.group) {
                           if (!groupedItems.has(item.groupId)) {
                             groupedItems.set(item.groupId, [])
@@ -890,6 +900,9 @@ export default function EstimateDetailPage() {
                               >
                                 <td className="py-3 px-4 pl-8">
                                   {item.description}
+                                  {item.isApproved && (
+                                    <span className="ml-1 text-xs rounded bg-green-100 border border-green-200 px-1.5 py-0.5 text-green-700">add-on</span>
+                                  )}
                                   {!isVisibleToClient && (
                                     <span className="ml-2 text-xs text-gray-500">(Hidden from client)</span>
                                   )}
@@ -949,6 +962,9 @@ export default function EstimateDetailPage() {
                           <tr key={item.id} className={`border-b ${!isVisibleToClient ? 'bg-gray-50' : ''}`}>
                             <td className="py-3 px-4">
                               {item.description}
+                              {item.isApproved && (
+                                <span className="ml-1 text-xs rounded bg-green-100 border border-green-200 px-1.5 py-0.5 text-green-700">add-on</span>
+                              )}
                               {!isVisibleToClient && (
                                 <span className="ml-2 text-xs text-gray-500">(Hidden from client)</span>
                               )}
@@ -961,28 +977,6 @@ export default function EstimateDetailPage() {
                             <td className="py-3 px-4 text-right font-semibold">
                               {formatCurrency(parseFloat(item.total))}
                             </td>
-                          </tr>
-                        )
-                      })
-
-                      // Approved optional items are appended inline — they are no longer optional after approval
-                      approvedOptionalItems.forEach((item: any) => {
-                        const unitCost = item.unitCost ? parseFloat(item.unitCost) : 0
-                        const unitPrice = parseFloat(item.unitPrice || '0')
-                        const qty = parseFloat(item.quantity || '0')
-                        const marginTotal = (unitPrice - unitCost) * qty
-                        rows.push(
-                          <tr key={`approved-opt-${item.id}`} className="border-b">
-                            <td className="py-3 px-4">
-                              {item.description}
-                              <span className="ml-1 text-xs rounded bg-green-100 border border-green-200 px-1.5 py-0.5 text-green-700">add-on</span>
-                            </td>
-                            <td className="py-3 px-4">{item.notes || '-'}</td>
-                            <td className="py-3 px-4 text-right">{item.quantity}</td>
-                            <td className="py-3 px-4 text-right">{formatCurrency(unitPrice)}</td>
-                            <td className="py-3 px-4 text-right">{formatCurrency(unitCost)}</td>
-                            <td className="py-3 px-4 text-right">{formatCurrency(marginTotal)}</td>
-                            <td className="py-3 px-4 text-right font-semibold">{formatCurrency(parseFloat(item.total || '0'))}</td>
                           </tr>
                         )
                       })
@@ -1091,7 +1085,7 @@ export default function EstimateDetailPage() {
             <CardContent className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-gray-600">Subtotal:</span>
-                <span className="font-semibold">{formatCurrency(parseFloat(estimate.subtotal) + approvedOptionalSubtotal)}</span>
+                <span className="font-semibold">{formatCurrency(displaySubtotal)}</span>
               </div>
               {pendingOptionalItems.length > 0 && (
                 <div className="flex justify-between text-gray-500 text-sm">
@@ -1109,13 +1103,13 @@ export default function EstimateDetailPage() {
                 <>
                   <div className="flex justify-between text-gray-600">
                     <span>Tax ({parseFloat(estimate.taxRate) * 100}%):</span>
-                    <span>{formatCurrency(parseFloat(estimate.taxAmount))}</span>
+                    <span>{formatCurrency(displayTaxAmount)}</span>
                   </div>
                 </>
               )}
               <div className="flex justify-between text-lg font-bold border-t pt-3">
                 <span>Total:</span>
-                <span>{formatCurrency(parseFloat(estimate.total))}</span>
+                <span>{formatCurrency(displayTotal)}</span>
               </div>
             </CardContent>
           </Card>

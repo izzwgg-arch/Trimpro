@@ -32,8 +32,6 @@ interface FastPickerProps {
   onChange: (value: string) => void
   onSelect: (item: FastPickerItem) => void
   onNextLine?: () => void // Called after Enter to move to next line
-  /** Called when Shift+Enter is pressed — spreadsheet-style "move to same column, next row" */
-  onShiftEnter?: () => void
   items: FastPickerItem[]
   bundles: FastPickerItem[]
   placeholder?: string
@@ -52,7 +50,6 @@ export function FastPicker({
   onChange,
   onSelect,
   onNextLine,
-  onShiftEnter,
   items = [],
   bundles = [],
   placeholder = 'Type to search items...',
@@ -311,18 +308,16 @@ export function FastPicker({
         break
 
       case 'Enter':
-        e.preventDefault()
-        e.stopPropagation()
-        // Shift+Enter = spreadsheet "next row, same column" — do NOT commit selection.
         if (e.shiftKey) {
-          if (isOpen) {
-            setIsOpen(false)
-            setSearchQuery('')
-            setSelectedIndex(0)
-          }
-          onShiftEnter?.()
+          // Shift+Enter inside the item picker: do nothing. The item picker is
+          // a single-line autocomplete; multi-line input lives in the
+          // separate "Description (optional)" textarea below.
+          e.preventDefault()
+          e.stopPropagation()
           break
         }
+        e.preventDefault()
+        e.stopPropagation()
         if (isOpen) {
           commitHighlightedSelection()
         } else {
@@ -366,19 +361,13 @@ export function FastPicker({
         }
         break
     }
-  }, [isOpen, filteredItems.length, selectedIndex, disabled, handleCommitCustom, commitHighlightedSelection, onShiftEnter])
+  }, [isOpen, filteredItems.length, selectedIndex, disabled, handleCommitCustom, commitHighlightedSelection])
 
-  // Handle input focus - opens dropdown immediately, UNLESS focused
-  // programmatically via the spreadsheet-style Shift+Enter helper, which sets
-  // data-suppress-autoopen="true" so we don't reopen the picker on next-row
-  // navigation.
+  // Handle input focus - opens dropdown immediately
   const handleInputFocus = useCallback(() => {
-    const suppress = inputRef.current?.getAttribute('data-suppress-autoopen')
-    // eslint-disable-next-line no-console
-    console.log('FASTPICKER SUPPRESS CHECK LIVE', { suppress, disabled, isOpen })
-    if (disabled || isOpen) return
-    if (suppress === 'true') return
-    setIsOpen(true)
+    if (!disabled && !isOpen) {
+      setIsOpen(true)
+    }
   }, [disabled, isOpen])
 
   // Handle input click - ensures dropdown opens

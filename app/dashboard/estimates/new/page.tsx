@@ -17,7 +17,6 @@ import { refreshAccessToken } from '@/lib/auth/client'
 import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
 import { useCreateContextPrefill } from '@/src/hooks/useCreateContextPrefill'
 import { cnCustomerVisibilityBulkPill } from '@/lib/ui/customer-visibility-bulk-pill'
-import { focusSameColumnNextRow, type LineItemColumn } from '@/lib/ui/line-item-grid-nav'
 
 interface LineItem {
   id?: string
@@ -644,27 +643,6 @@ export default function NewEstimatePage() {
         }
       }
     }, 100)
-  }
-
-  const shiftEnterVerticalNav = (rowIndex: number, col: LineItemColumn) => {
-    focusSameColumnNextRow(rowIndex, col, {
-      onCreateRow: () => {
-        setLineItems((prev) => [
-          ...prev,
-          {
-            description: '',
-            quantity: '1',
-            unitPrice: '0',
-            taxable: true,
-            showDescriptionToCustomer: false,
-            showCostToCustomer: false,
-            showPriceToCustomer: true,
-            showTaxToCustomer: true,
-            showNotesToCustomer: true,
-          },
-        ])
-      },
-    })
   }
 
   const toggleVisibility = (index: number, field: 'description' | 'cost' | 'price' | 'tax' | 'notes') => {
@@ -1342,12 +1320,6 @@ export default function NewEstimatePage() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-2">
-                <div
-                  data-build-marker="shift-enter-fix-v3"
-                  className="mb-2 inline-block rounded bg-yellow-300 px-2 py-1 text-xs font-bold uppercase tracking-wide text-black"
-                >
-                  SHIFT+ENTER FIX BUILD ACTIVE (v3)
-                </div>
                 <div className="space-y-2">
                   {lineItems.map((item, index) => {
                     const isGroupHeader = item.isGroupHeader
@@ -1549,7 +1521,6 @@ export default function NewEstimatePage() {
                                 onChange={(value) => updateLineItem(index, 'description', value)}
                                 onSelect={(selectedItem) => handleItemSelect(selectedItem, index)}
                                 onNextLine={() => handleNextLine(index)}
-                                onShiftEnter={() => shiftEnterVerticalNav(index, 'description')}
                                 items={pickerItems}
                                 bundles={pickerBundles}
                                 placeholder="Type to search items..."
@@ -1576,13 +1547,13 @@ export default function NewEstimatePage() {
                                   )}
                                 </Button>
                               </div>
-                              <Input
+                              <textarea
                                 value={item.notes || ''}
                                 onChange={(e) => updateLineItem(index, 'notes', e.target.value)}
-                                placeholder="Description (optional)"
-                                className="w-full text-sm"
+                                placeholder="Description (optional) — Shift+Enter or Enter for a new line"
+                                rows={1}
+                                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
                                 data-col="notes"
-                                onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); shiftEnterVerticalNav(index, 'notes') } }}
                               />
                             </>
                           )}
@@ -1601,7 +1572,6 @@ export default function NewEstimatePage() {
                               onChange={(e) => updateLineItem(index, 'quantity', e.target.value)}
                               required
                               data-col="quantity"
-                              onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); shiftEnterVerticalNav(index, 'quantity') } }}
                             />
                           </div>
                         )}
@@ -1634,7 +1604,6 @@ export default function NewEstimatePage() {
                               onChange={(e) => updateLineItem(index, 'unitPrice', e.target.value)}
                               required
                               data-col="unitPrice"
-                              onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); shiftEnterVerticalNav(index, 'unitPrice') } }}
                             />
                           </div>
                         )}
@@ -1668,7 +1637,6 @@ export default function NewEstimatePage() {
                               onChange={(e) => updateLineItem(index, 'unitCost', e.target.value)}
                               className="bg-gray-50"
                               data-col="unitCost"
-                              onKeyDown={(e) => { if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); e.stopPropagation(); shiftEnterVerticalNav(index, 'unitCost') } }}
                             />
                           </div>
                         )}

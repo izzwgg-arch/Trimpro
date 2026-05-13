@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { reconcileSingleInvoiceAchPayment, shouldAttemptPublicInvoiceReconcile } from '@/lib/qbo/reconcile-ach'
+import { calculateOrderedSubtotalRows } from '@/lib/documents/subtotals'
 
 export async function GET(
   request: NextRequest,
@@ -87,7 +88,7 @@ export async function GET(
         title: freshInvoice.title,
         status: freshInvoice.status,
         subtotal: freshInvoice.subtotal.toString(),
-        taxAmount: freshInvoice.taxAmount.toString(),
+        taxAmount: freshInvoice.taxAmount?.toString() || '0',
         total: freshInvoice.total.toString(),
         balance: freshInvoice.balance.toString(),
         qboAchEnabled: freshInvoice.qboAchEnabled,
@@ -97,16 +98,16 @@ export async function GET(
           name: freshInvoice.client.name,
           companyName: freshInvoice.client.companyName,
         },
-        lineItems: freshInvoice.lineItems
-          .filter((li) => li.isVisibleToClient !== false)
-          .map((li) => ({
+        lineItems: calculateOrderedSubtotalRows(freshInvoice.lineItems.filter((li) => li.isVisibleToClient !== false) as any[])
+          .map((li: any) => ({
             id: li.id,
             description: li.showDescriptionToCustomer !== false ? li.description : '',
             notes: li.showNotesToCustomer !== false ? (li.notes || '') : '',
             quantity: li.quantity.toString(),
             unitPrice: li.showPriceToCustomer !== false ? li.unitPrice.toString() : '0',
             unitCost: li.showCostToCustomer === true ? li.unitCost?.toString() || '0' : null,
-            total: li.total.toString(),
+            total: (li.isSubtotal ? li.calculatedSubtotalTotal : li.total).toString(),
+            isSubtotal: li.isSubtotal === true,
             showPriceToCustomer: li.showPriceToCustomer !== false,
             showCostToCustomer: li.showCostToCustomer === true,
           })),

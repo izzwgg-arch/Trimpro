@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
       })
 
       try {
-        await enqueueQboSync(invoice.tenantId, 'payment', payment.id, { processImmediately: false })
+        await enqueueQboSync(invoice.tenantId, 'payment', payment.id, { processImmediately: true })
       } catch (error) {
         console.error('QuickBooks payment sync trigger error (legacy webhook):', error)
       }

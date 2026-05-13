@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
+import { allocateNextEstimateNumber } from '@/lib/qbo/doc-numbers'
 
 export async function POST(
   request: NextRequest,
@@ -31,10 +32,7 @@ export async function POST(
       return NextResponse.json({ error: 'Estimate not found' }, { status: 404 })
     }
 
-    const estimateCount = await prisma.estimate.count({
-      where: { tenantId: user.tenantId },
-    })
-    const estimateNumber = `EST-${String(estimateCount + 1).padStart(6, '0')}`
+    const estimateNumber = await allocateNextEstimateNumber({ tenantId: user.tenantId })
 
     const duplicate = await prisma.estimate.create({
       data: {

@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { testEmailProvider } from '@/lib/integrations/providers/email'
 import { isValidEmail } from '@/lib/email'
+import { parseEmailList } from '@/lib/email/recipients'
 import { getOrCreateEstimateApprovalToken } from '@/lib/estimate-approval'
 import { getEmailBranding } from '@/lib/email/branding'
 import { buildEstimateApprovalEmail } from '@/lib/email/templates/estimate-approval'
@@ -78,32 +79,15 @@ export async function POST(
       return NextResponse.json({ error: 'Estimate not found' }, { status: 404 })
     }
 
-    const normalizeEmails = (value: any): string[] => {
-      if (Array.isArray(value)) {
-        return value
-          .map((v) => String(v || '').trim())
-          .filter(Boolean)
-      }
-      if (typeof value === 'string') {
-        return value
-          .split(/[,\s;]+/g)
-          .map((v) => v.trim())
-          .filter(Boolean)
-      }
-      return []
-    }
-
     // Determine recipient email(s)
     const recipientEmails = [
-      ...normalizeEmails(emails),
-      ...normalizeEmails(email),
-      ...normalizeEmails(estimate.client?.email),
-      ...(estimate.client?.contacts || []).flatMap((c) => normalizeEmails(c.email)),
+      ...parseEmailList(emails),
+      ...parseEmailList(email),
+      ...parseEmailList(estimate.client?.email),
+      ...(estimate.client?.contacts || []).flatMap((c) => parseEmailList(c.email)),
     ]
-      .map((v) => v.trim())
-      .filter(Boolean)
 
-    const uniqueRecipientEmails = Array.from(new Set(recipientEmails))
+    const uniqueRecipientEmails = parseEmailList(recipientEmails)
 
     if (uniqueRecipientEmails.length === 0) {
       return NextResponse.json({ error: 'No email address found for client' }, { status: 400 })
@@ -172,8 +156,8 @@ export async function POST(
       error?: string
     }> = []
 
+    const sendResult = await testEmailProvider(emailSecrets, uniqueRecipientEmails, effectiveSubject, html)
     for (const recipientEmail of uniqueRecipientEmails) {
-      const sendResult = await testEmailProvider(emailSecrets, recipientEmail, effectiveSubject, html)
       results.push({
         recipient: recipientEmail,
         success: !!sendResult.success,

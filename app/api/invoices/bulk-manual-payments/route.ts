@@ -189,7 +189,7 @@ export async function POST(request: NextRequest) {
 
     for (const result of results) {
       try {
-        await enqueueQboSync(user.tenantId, 'payment', result.paymentId, { processImmediately: false })
+        await enqueueQboSync(user.tenantId, 'payment', result.paymentId, { processImmediately: true })
       } catch (error) {
         console.error('QuickBooks payment sync trigger error (bulk manual payment):', error)
       }

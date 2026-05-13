@@ -61,6 +61,7 @@ export async function enqueueQboSync(
   options?: { processImmediately?: boolean }
 ): Promise<void> {
   const processImmediately = options?.processImmediately !== false
+  const idempotencyKey = `${entityType}-sync:${entityId}`
 
   // Dedup: check for an existing pending job for this entity.
   const existing = await prisma.qboSyncJob.findFirst({
@@ -79,7 +80,7 @@ export async function enqueueQboSync(
     // Coalesce: just bump updatedAt so the worker knows there's fresh intent.
     await prisma.qboSyncJob.update({
       where: { id: existing.id },
-      data: { updatedAt: new Date(), nextRetryAt: new Date() },
+      data: { updatedAt: new Date(), nextRetryAt: new Date(), payloadHash: idempotencyKey },
     })
     jobId = existing.id
   } else {
@@ -90,6 +91,7 @@ export async function enqueueQboSync(
         entityId,
         status: 'pending',
         nextRetryAt: new Date(),
+        payloadHash: idempotencyKey,
       },
       select: { id: true },
     })
@@ -163,7 +165,7 @@ export async function runQboSyncWorker(options?: {
 
   const jobs = await prisma.qboSyncJob.findMany({
     where: {
-      status: { in: ['pending', 'processing'] },
+      status: 'pending',
       nextRetryAt: { lte: new Date() },
       ...(options?.tenantId ? { tenantId: options.tenantId } : {}),
     },

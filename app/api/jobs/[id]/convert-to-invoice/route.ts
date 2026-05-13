@@ -3,6 +3,8 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import crypto from 'crypto'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
+import { getEstimateConversionSummary } from '@/lib/documents/conversion'
+import { allocateNextInvoiceNumber } from '@/lib/qbo/doc-numbers'
 
 export async function POST(
   request: NextRequest,
@@ -50,11 +52,8 @@ export async function POST(
       )
     }
 
+    const invoiceNumber = await allocateNextInvoiceNumber({ tenantId: user.tenantId })
     const invoice = await prisma.$transaction(async (tx) => {
-      const invoiceCount = await tx.invoice.count({
-        where: { tenantId: user.tenantId },
-      })
-      const invoiceNumber = `INV-${String(invoiceCount + 1).padStart(6, '0')}`
 
       const estimateLineItems = job.estimate!.lineItems
       const subtotal = estimateLineItems.reduce((sum, line) => sum + Number(line.total), 0)
@@ -112,9 +111,10 @@ export async function POST(
         })
       }
 
+      const conversion = await getEstimateConversionSummary(tx, job.estimate!.id, job.estimate!.total, user.tenantId)
       await tx.estimate.update({
         where: { id: job.estimate!.id },
-        data: { status: 'CONVERTED' },
+        data: { status: 'CONVERTED', convertedPercent: conversion.convertedPercent },
       })
 
       await tx.job.update({

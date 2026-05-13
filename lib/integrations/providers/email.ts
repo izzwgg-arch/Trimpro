@@ -4,9 +4,7 @@
  */
 
 import { IntegrationTestResult } from '../types'
-
-// Every outbound customer email is automatically CC'd to this address.
-const ADMIN_CC_EMAIL = process.env.ADMIN_CC_EMAIL || 'Trimpronyinc@gmail.com'
+import { mergeConfiguredGlobalCc } from '@/lib/email/recipients'
 
 export interface EmailAttachment {
   filename: string
@@ -32,21 +30,31 @@ export async function sendEmailWithAttachments(
   input: SendEmailWithAttachmentsInput
 ): Promise<IntegrationTestResult> {
   const { secrets, to, subject, html, text, attachments } = input
-  // Always include the admin CC
-  const ccBase = input.cc ?? []
-  const cc = ccBase.includes(ADMIN_CC_EMAIL) ? ccBase : [...ccBase, ADMIN_CC_EMAIL]
+  const recipients = mergeConfiguredGlobalCc({ to, cc: input.cc })
+  const normalizedTo = recipients.to[0]
+  const cc = recipients.cc
+
+  console.info('email.send', {
+    emailType: 'provider-with-attachments',
+    sendSource: 'lib/integrations/providers/email.sendEmailWithAttachments',
+    toCount: recipients.to.length,
+    ccCount: cc.length,
+    cc,
+    globalCcCount: recipients.globalCc.length,
+  })
+
   try {
     const provider = secrets.provider || 'resend'
     switch (provider) {
       case 'sendgrid':
-        return await sendViaSendGrid({ secrets, to, subject, html, text, attachments, cc })
+        return await sendViaSendGrid({ secrets, to: normalizedTo, subject, html, text, attachments, cc })
       case 'mailgun':
-        return await sendViaMailgun({ secrets, to, subject, html, text, attachments, cc })
+        return await sendViaMailgun({ secrets, to: normalizedTo, subject, html, text, attachments, cc })
       case 'google':
-        return await sendViaGoogle({ secrets, to, subject, html, text, attachments, cc })
+        return await sendViaGoogle({ secrets, to: normalizedTo, subject, html, text, attachments, cc })
       case 'resend':
       default:
-        return await sendViaResend({ secrets, to, subject, html, text, attachments, cc })
+        return await sendViaResend({ secrets, to: normalizedTo, subject, html, text, attachments, cc })
     }
   } catch (error: any) {
     return { success: false, message: 'Email send failed', error: error.message || 'Unknown error' }
@@ -117,7 +125,7 @@ async function sendViaMailgun(input: Omit<SendEmailWithAttachmentsInput, 'secret
   if (attachments?.length) {
     for (const att of attachments) {
       const buf = Buffer.isBuffer(att.content) ? att.content : Buffer.from(att.content)
-      formData.append('attachment', new Blob([buf], { type: att.contentType || 'application/octet-stream' }), att.filename)
+      formData.append('attachment', new Blob([new Uint8Array(buf)], { type: att.contentType || 'application/octet-stream' }), att.filename)
     }
   }
 
@@ -210,29 +218,41 @@ function formatFromHeader(name: string, email: string) {
 
 export async function testEmailProvider(
   secrets: Record<string, any>,
-  to: string,
+  to: string | string[],
   subject: string,
   html: string,
   options?: { skipAdminCc?: boolean }
 ): Promise<IntegrationTestResult> {
-  const cc = options?.skipAdminCc ? [] : [ADMIN_CC_EMAIL]
+  const recipients = mergeConfiguredGlobalCc({ to, skipGlobalCc: options?.skipAdminCc })
+  const normalizedTo = recipients.to
+  const cc = recipients.cc
+
+  console.info('email.send', {
+    emailType: options?.skipAdminCc ? 'email-provider-test' : 'tenant-provider-email',
+    sendSource: 'lib/integrations/providers/email.testEmailProvider',
+    toCount: recipients.to.length,
+    ccCount: cc.length,
+    cc,
+    globalCcCount: recipients.globalCc.length,
+  })
+
   try {
     const provider = secrets.provider || 'resend'
     let result: any
 
     switch (provider) {
       case 'sendgrid':
-        result = await testSendGrid(secrets, to, subject, html, cc)
+        result = await testSendGrid(secrets, normalizedTo, subject, html, cc)
         break
       case 'mailgun':
-        result = await testMailgun(secrets, to, subject, html, cc)
+        result = await testMailgun(secrets, normalizedTo, subject, html, cc)
         break
       case 'google':
-        result = await testGoogle(secrets, to, subject, html, cc)
+        result = await testGoogle(secrets, normalizedTo, subject, html, cc)
         break
       case 'resend':
       default:
-        result = await testResend(secrets, to, subject, html, cc)
+        result = await testResend(secrets, normalizedTo, subject, html, cc)
         break
     }
 
@@ -248,7 +268,7 @@ export async function testEmailProvider(
 
 async function testSendGrid(
   secrets: Record<string, any>,
-  to: string,
+  to: string[],
   subject: string,
   html: string,
   cc?: string[]
@@ -261,7 +281,7 @@ async function testSendGrid(
   try {
     const fromName = getFromName(secrets)
     const fromEmail = getFromEmail(secrets, 'noreply@trimpro.com')
-    const personalization: Record<string, any> = { to: [{ email: to }] }
+    const personalization: Record<string, any> = { to: to.map((email) => ({ email })) }
     if (cc?.length) personalization.cc = cc.map((email) => ({ email }))
     const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
       method: 'POST',
@@ -289,7 +309,7 @@ async function testSendGrid(
 
     return {
       success: true,
-      message: `Test email sent successfully to ${to} via SendGrid`,
+      message: `Test email sent successfully to ${to.join(', ')} via SendGrid`,
     }
   } catch (error: any) {
     return {
@@ -302,7 +322,7 @@ async function testSendGrid(
 
 async function testMailgun(
   secrets: Record<string, any>,
-  to: string,
+  to: string[],
   subject: string,
   html: string,
   cc?: string[]
@@ -325,7 +345,7 @@ async function testMailgun(
     const fromEmail = getFromEmail(secrets, `noreply@${domain}`)
     const formData = new URLSearchParams()
     formData.append('from', formatFromHeader(fromName, fromEmail))
-    formData.append('to', to)
+    to.forEach((email) => formData.append('to', email))
     if (cc?.length) formData.append('cc', cc.join(','))
     formData.append('subject', subject)
     formData.append('html', html)
@@ -353,7 +373,7 @@ async function testMailgun(
 
     return {
       success: true,
-      message: `Test email sent successfully to ${to} via Mailgun`,
+      message: `Test email sent successfully to ${to.join(', ')} via Mailgun`,
     }
   } catch (error: any) {
     return {
@@ -366,7 +386,7 @@ async function testMailgun(
 
 async function testResend(
   secrets: Record<string, any>,
-  to: string,
+  to: string[],
   subject: string,
   html: string,
   cc?: string[]
@@ -387,7 +407,7 @@ async function testResend(
       },
       body: JSON.stringify({
         from: formatFromHeader(fromName, fromEmail),
-        to: [to],
+        to,
         cc: cc?.length ? cc : undefined,
         subject,
         html,
@@ -407,7 +427,7 @@ async function testResend(
     const data = await response.json()
     return {
       success: true,
-      message: `Test email sent successfully to ${to} via Resend`,
+      message: `Test email sent successfully to ${to.join(', ')} via Resend`,
     }
   } catch (error: any) {
     return {
@@ -420,7 +440,7 @@ async function testResend(
 
 async function testGoogle(
   secrets: Record<string, any>,
-  to: string,
+  to: string[],
   subject: string,
   html: string,
   cc?: string[]
@@ -452,7 +472,7 @@ async function testGoogle(
 
     await transporter.sendMail({
       from: formatFromHeader(fromName, fromEmail),
-      to,
+      to: to.join(', '),
       cc: cc?.length ? cc.join(', ') : undefined,
       subject,
       html,
@@ -461,7 +481,7 @@ async function testGoogle(
 
     return {
       success: true,
-      message: `Test email sent successfully to ${to} via Google`,
+      message: `Test email sent successfully to ${to.join(', ')} via Google`,
     }
   } catch (error: any) {
     return {

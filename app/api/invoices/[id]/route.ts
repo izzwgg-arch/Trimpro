@@ -5,6 +5,11 @@ import { notifyInvoiceOverdue } from '@/lib/notifications'
 import { formatAddressParts, parseAddressParts } from '@/lib/address/parse'
 import { geocodeAddressPartsFromString } from '@/lib/geocoding'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
+import { calculateOrderedSubtotalRows } from '@/lib/documents/subtotals'
+import {
+  assertInvoiceNumberAvailableInQuickBooks,
+  normalizeInvoiceNumber,
+} from '@/lib/qbo/doc-numbers'
 
 export async function GET(
   request: NextRequest,
@@ -125,12 +130,12 @@ export async function GET(
       paidAmount: invoice.paidAmount.toString(),
       progressBillingMode: invoice.progressBillingMode || null,
       progressBillingPercent: invoice.progressBillingPercent ? invoice.progressBillingPercent.toString() : null,
-      lineItems: invoice.lineItems.map(item => ({
+      lineItems: calculateOrderedSubtotalRows(invoice.lineItems as any[]).map((item: any) => ({
         ...item,
         quantity: item.quantity.toString(),
         unitPrice: item.unitPrice.toString(),
         unitCost: item.unitCost ? item.unitCost.toString() : null,
-        total: item.total.toString(),
+        total: (item.isSubtotal ? item.calculatedSubtotalTotal : item.total).toString(),
         isVisibleToClient: item.isVisibleToClient,
         // New visibility fields
         showDescriptionToCustomer: item.showDescriptionToCustomer ?? true,
@@ -244,16 +249,14 @@ export async function PUT(
       return NextResponse.json({ error: 'Cannot edit paid invoice' }, { status: 400 })
     }
 
-    const normalizeInvoiceNumber = (val: any) => {
-      if (val === null || val === undefined) return null
-      const raw = String(val).trim()
-      if (!raw) return null
-      if (/^\d+$/.test(raw)) return `INV-${raw.padStart(6, '0')}`
-      const m = raw.match(/^INV-(\d+)$/i)
-      if (m) return `INV-${m[1].padStart(6, '0')}`
-      return raw
-    }
     const normalizedInvoiceNumber = normalizeInvoiceNumber(invoiceNumber)
+    if (normalizedInvoiceNumber && normalizedInvoiceNumber !== existing.invoiceNumber) {
+      try {
+        await assertInvoiceNumberAvailableInQuickBooks(user.tenantId, normalizedInvoiceNumber)
+      } catch (err: any) {
+        return NextResponse.json({ error: err?.message || 'Invoice number already exists in QuickBooks' }, { status: 400 })
+      }
+    }
 
     // Recalculate totals if line items changed
     let subtotal = Number(existing.subtotal)
@@ -301,13 +304,14 @@ export async function PUT(
         }
       }
 
-      // Create new line items
-      for (let i = 0; i < lineItems.length; i++) {
-        const item = lineItems[i]
+      // Create new line items. Subtotal rows are calculated from the preceding ordered segment.
+      const calculatedLineItems = calculateOrderedSubtotalRows(lineItems as any[])
+      for (let i = 0; i < calculatedLineItems.length; i++) {
+        const item = calculatedLineItems[i]
         const isSubtotalItem = Boolean(item.isSubtotal)
         const qty = isSubtotalItem ? 0 : parseFloat(item.quantity || 0)
         const price = isSubtotalItem ? 0 : parseFloat(item.unitPrice || 0)
-        const itemTotal = isSubtotalItem ? 0 : (qty * price)
+        const itemTotal = item.calculatedSubtotalTotal
 
         // Get groupId from map if item has a groupId
         const dbGroupId = item.groupId ? groupMap.get(item.groupId) || null : null

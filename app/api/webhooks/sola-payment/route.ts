@@ -5,6 +5,7 @@ import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { testEmailProvider } from '@/lib/integrations/providers/email'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { getEmailBranding } from '@/lib/email/branding'
+import { getEstimateConversionSummary } from '@/lib/documents/conversion'
 
 function normalizePhone(value: string | null | undefined) {
   return (value || '').replace(/\D/g, '')
@@ -332,12 +333,14 @@ async function ensureJobFromInvoice(invoiceId: string): Promise<{
         }
 
         if (estimate) {
+          const conversion = await getEstimateConversionSummary(tx, estimate.id, estimate.total, invoice.tenantId)
           await tx.estimate.update({
             where: { id: estimate.id },
             data: {
               clientId,
               jobId: createdJob.id,
               status: 'CONVERTED',
+              convertedPercent: conversion.convertedPercent,
             },
           })
         }
@@ -523,7 +526,7 @@ export async function POST(request: NextRequest) {
         })
 
         try {
-          await enqueueQboSync(client.tenantId, 'payment', createdPayment.id, { processImmediately: false })
+          await enqueueQboSync(client.tenantId, 'payment', createdPayment.id, { processImmediately: true })
         } catch (error) {
           console.error('QuickBooks payment sync trigger error (bulk):', error)
         }
@@ -662,7 +665,7 @@ export async function POST(request: NextRequest) {
       })
 
       try {
-        await enqueueQboSync(invoice.tenantId, 'payment', createdPayment.id, { processImmediately: false })
+        await enqueueQboSync(invoice.tenantId, 'payment', createdPayment.id, { processImmediately: true })
       } catch (error) {
         console.error('QuickBooks payment sync trigger error:', error)
       }

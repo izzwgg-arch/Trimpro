@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { rateLimitOrThrow } from '@/lib/security/rate-limit'
 import { hashApprovalToken } from '@/lib/estimate-approval'
+import { calculateOrderedSubtotalRows, mergeApprovedOptionalItemsForSubtotals } from '@/lib/documents/subtotals'
 
 export const runtime = 'nodejs'
 
@@ -50,9 +51,6 @@ export async function GET(request: NextRequest, ctx: { params: { token: string }
       return NextResponse.json({ error: 'Estimate not found' }, { status: 404 })
     }
 
-    const visibleLineItems = estimate.lineItems.filter((li) => li.isVisibleToClient !== false)
-    const visibleOptionalItems = (estimate.optionalItems || []).filter((li) => li.isVisibleToClient !== false)
-
     const approvals = await prisma.estimateItemApproval.findMany({
       where: {
         tenantId: tokenRow.tenantId,
@@ -69,6 +67,13 @@ export async function GET(request: NextRequest, ctx: { params: { token: string }
       approvals
         .filter((a) => a.status === 'APPROVED')
         .map((a) => [a.estimateLineItemId, a])
+    )
+    const visibleRegularItems = estimate.lineItems.filter((li) => li.isVisibleToClient !== false)
+    const allVisibleOptionalItems = (estimate.optionalItems || []).filter((li) => li.isVisibleToClient !== false)
+    const approvedOptionalItems = allVisibleOptionalItems.filter((li) => approvedMap.has(li.id))
+    const pendingOptionalItems = allVisibleOptionalItems.filter((li) => !approvedMap.has(li.id))
+    const visibleLineItems = calculateOrderedSubtotalRows(
+      mergeApprovedOptionalItemsForSubtotals(visibleRegularItems as any[], approvedOptionalItems as any[])
     )
 
     const sources = await prisma.invoiceLineItemSource.findMany({
@@ -105,7 +110,7 @@ export async function GET(request: NextRequest, ctx: { params: { token: string }
           quantity: String(li.quantity),
           unitPrice: li.showPriceToCustomer !== false ? String(li.unitPrice) : '0',
           unitCost: li.showCostToCustomer === true ? (li.unitCost ? String(li.unitCost) : null) : null,
-          total: String(li.total),
+          total: String(li.isSubtotal ? li.calculatedSubtotalTotal : li.total),
           showPriceToCustomer: li.showPriceToCustomer !== false,
           isOptional: false,
           isSubtotal: (li as any).isSubtotal === true,
@@ -116,7 +121,7 @@ export async function GET(request: NextRequest, ctx: { params: { token: string }
           invoicedAt: invoiced?.createdAt || null,
         }
       }),
-      optionalItems: visibleOptionalItems.map((li) => {
+      optionalItems: pendingOptionalItems.map((li) => {
         const approved = approvedMap.get(li.id) || null
         const invoiced = invoicedMap.get(li.id) || null
         return {

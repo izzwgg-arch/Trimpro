@@ -4,6 +4,8 @@ import { prisma } from '@/lib/prisma'
 import { parseAddressParts } from '@/lib/address/parse'
 import { geocodeAddressPartsFromString } from '@/lib/geocoding'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
+import { calculateOrderedSubtotalRows } from '@/lib/documents/subtotals'
+import { calculateEstimateConversionSummary, getEstimateConversionSummary } from '@/lib/documents/conversion'
 
 export async function GET(
   request: NextRequest,
@@ -47,6 +49,14 @@ export async function GET(
         optionalItems: {
           orderBy: { sortOrder: 'asc' },
         },
+        invoices: {
+          where: {
+            status: { notIn: ['CANCELLED', 'REFUNDED'] },
+          },
+          select: {
+            total: true,
+          },
+        },
         attachments: {
           orderBy: { createdAt: 'desc' },
         },
@@ -84,23 +94,30 @@ export async function GET(
         ? `${derived.street || jobSiteAddress}, ${derived.city}, ${derived.state} ${derived.zipCode}`.trim()
         : jobSiteAddress
 
+    const conversion = calculateEstimateConversionSummary(
+      estimate.total,
+      estimate.invoices.map((invoice) => invoice.total)
+    )
+
     const estimateResponse = {
       ...estimate,
+      invoices: undefined,
+      convertedPercent: conversion.convertedPercent > 0 ? conversion.convertedPercent : null,
       jobSiteAddress: resolvedJobSiteAddress,
       jobSiteCity: (parsed?.city || derived.city || '').trim() || null,
       jobSiteState: (parsed?.state || derived.state || '').trim() || null,
       jobSiteZipCode: (parsed?.zipCode || derived.zipCode || '').trim() || null,
       subtotal: estimate.subtotal.toString(),
-      taxRate: estimate.taxRate.toString(),
-      taxAmount: estimate.taxAmount.toString(),
-      discount: estimate.discount.toString(),
+      taxRate: estimate.taxRate?.toString() || '0',
+      taxAmount: estimate.taxAmount?.toString() || '0',
+      discount: estimate.discount?.toString() || '0',
       total: estimate.total.toString(),
-      lineItems: estimate.lineItems.map(item => ({
+      lineItems: calculateOrderedSubtotalRows(estimate.lineItems as any[]).map((item: any) => ({
         ...item,
         quantity: item.quantity.toString(),
         unitPrice: item.unitPrice.toString(),
         unitCost: item.unitCost ? item.unitCost.toString() : null,
-        total: item.total.toString(),
+        total: (item.isSubtotal ? item.calculatedSubtotalTotal : item.total).toString(),
         isVisibleToClient: item.isVisibleToClient,
         // New visibility fields
         showDescriptionToCustomer: item.showDescriptionToCustomer ?? true,
@@ -260,22 +277,12 @@ export async function PUT(
         }
       }
 
-      // Create new line items; for subtotal rows compute running sum
-      let runningSinceLastSubtotal = 0
-      for (let i = 0; i < lineItems.length; i++) {
-        const item = lineItems[i]
+      // Create new line items; subtotal rows are calculated from the preceding ordered segment.
+      const calculatedLineItems = calculateOrderedSubtotalRows(lineItems as any[])
+      for (let i = 0; i < calculatedLineItems.length; i++) {
+        const item = calculatedLineItems[i]
         const isSubtotal = Boolean(item.isSubtotal)
-
-        let itemTotal: number
-        if (isSubtotal) {
-          itemTotal = runningSinceLastSubtotal
-          runningSinceLastSubtotal = 0
-        } else {
-          const qty = parseFloat(item.quantity || 0)
-          const price = parseFloat(item.unitPrice || 0)
-          itemTotal = qty * price
-          runningSinceLastSubtotal += itemTotal
-        }
+        const itemTotal = item.calculatedSubtotalTotal
 
         const qty = isSubtotal ? 0 : parseFloat(item.quantity || 0)
         const price = isSubtotal ? 0 : parseFloat(item.unitPrice || 0)
@@ -359,6 +366,9 @@ export async function PUT(
     const subtotalAfterDiscount = subtotal - discountAmount
     const tax = subtotalAfterDiscount * taxRateNum
     const total = subtotalAfterDiscount + tax
+    const convertedPercentUpdate = status === 'CONVERTED'
+      ? (await getEstimateConversionSummary(prisma, params.id, total, user.tenantId)).convertedPercent
+      : undefined
 
     // Update estimate
     let estimateRecord: any = null
@@ -380,6 +390,7 @@ export async function PUT(
         taxAmount: tax,
         discount: discountAmount,
         total: total,
+        convertedPercent: convertedPercentUpdate,
         status: status !== undefined ? status : existing.status,
         validUntil: validUntil !== undefined ? (validUntil ? new Date(validUntil) : null) : existing.validUntil,
         notes: notes !== undefined ? notes : existing.notes,

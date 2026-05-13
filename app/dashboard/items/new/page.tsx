@@ -145,7 +145,10 @@ export default function NewItemPage() {
         body: JSON.stringify({
           ...formData,
           defaultUnitCost: formData.defaultUnitCost ? parseFloat(formData.defaultUnitCost) : null,
-          defaultUnitPrice: parseFloat(formData.defaultUnitPrice) || 0,
+          defaultUnitPrice: (() => {
+            const p = parseFloat(formData.defaultUnitPrice)
+            return Number.isFinite(p) ? p : 0
+          })(),
           taxRate: formData.taxRate ? parseFloat(formData.taxRate) : null,
           vendorId: formData.vendorId || null,
           categoryId: formData.categoryId || null,
@@ -409,6 +412,9 @@ export default function NewItemPage() {
                     onChange={(e) => setFormData({ ...formData, defaultUnitPrice: e.target.value })}
                     placeholder="0.00"
                   />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Use a negative amount for credit-style items (reduces totals on estimates and invoices).
+                  </p>
                   {formData.defaultUnitCost && (
                     <Button
                       type="button"
