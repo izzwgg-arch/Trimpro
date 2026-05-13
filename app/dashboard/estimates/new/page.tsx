@@ -648,10 +648,19 @@ export default function NewEstimatePage() {
   }
 
   const handleShiftEnterOnRow = (rowIndex: number, col: 'description' | 'quantity' | 'unitPrice' | 'unitCost' | 'notes') => {
-    // eslint-disable-next-line no-console
-    console.log('[SE] 7. handleShiftEnterOnRow CALLED (same-column focus)', { rowIndex, col })
     const nextIndex = rowIndex + 1
     const needsNewRow = nextIndex >= lineItems.length
+    const beforeActive = document.activeElement as HTMLElement | null
+    // eslint-disable-next-line no-console
+    console.log('[SE] 7a. handleShiftEnterOnRow ENTER', {
+      rowIndex,
+      nextIndex,
+      col,
+      currentLineItemsLength: lineItems.length,
+      needsNewRow,
+      activeBefore: beforeActive?.tagName,
+      activeBeforeCol: beforeActive?.getAttribute?.('data-col'),
+    })
     if (needsNewRow) {
       setLineItems((prev) => [
         ...prev,
@@ -667,26 +676,109 @@ export default function NewEstimatePage() {
           showNotesToCustomer: true,
         },
       ])
+      // eslint-disable-next-line no-console
+      console.log('[SE] 7b. new row queued (setLineItems called)')
     }
+
+    // Detect focus events that fire AFTER our focus() call (anything stealing focus).
+    const stealWatcher = (ev: FocusEvent) => {
+      const t = ev.target as HTMLElement | null
+      // eslint-disable-next-line no-console
+      console.log('[SE] 7z. focusin observed on document', {
+        tag: t?.tagName,
+        'data-col': t?.getAttribute?.('data-col'),
+        'data-picker-input': t?.getAttribute?.('data-picker-input'),
+        id: t?.id,
+        name: (t as HTMLInputElement | null)?.name,
+      })
+    }
+    document.addEventListener('focusin', stealWatcher, true)
+    setTimeout(() => document.removeEventListener('focusin', stealWatcher, true), 250)
+
+    const delay = needsNewRow ? 100 : 16
+    // eslint-disable-next-line no-console
+    console.log('[SE] 7c. scheduling focus in ms', delay)
+
     setTimeout(() => {
+      const containerEl = lineItemRefs.current[nextIndex]
+      // eslint-disable-next-line no-console
+      console.log('[SE] 7d. focus phase begin', {
+        nextIndex,
+        col,
+        containerExists: !!containerEl,
+        containerTag: containerEl?.tagName,
+        currentLineItemsLengthAtRun: lineItems.length,
+        pickerInputRefAtNext: !!pickerInputRefs.current[nextIndex],
+        activeElementNow: (document.activeElement as HTMLElement | null)?.tagName,
+      })
+
+      let target: HTMLInputElement | null = null
+      let selectorUsed = ''
       if (col === 'description') {
-        const picker =
+        selectorUsed = 'pickerInputRefs[next] ?? container [data-picker-input="true"]'
+        target =
           pickerInputRefs.current[nextIndex] ??
-          lineItemRefs.current[nextIndex]?.querySelector<HTMLInputElement>('[data-picker-input="true"]') ??
+          containerEl?.querySelector<HTMLInputElement>('[data-picker-input="true"]') ??
           null
-        if (picker) {
-          picker.focus()
-          picker.dispatchEvent(new Event('focus', { bubbles: true }))
-        }
       } else {
-        const container = lineItemRefs.current[nextIndex]
-        const input = container?.querySelector<HTMLInputElement>(`[data-col="${col}"]`) ?? null
-        if (input) {
-          input.focus()
-          input.select()
-        }
+        selectorUsed = `container [data-col="${col}"]`
+        target = containerEl?.querySelector<HTMLInputElement>(`[data-col="${col}"]`) ?? null
       }
-    }, needsNewRow ? 100 : 16)
+
+      // eslint-disable-next-line no-console
+      console.log('[SE] 7e. target lookup', {
+        selectorUsed,
+        targetFound: !!target,
+        targetTag: target?.tagName,
+        targetType: target?.type,
+        targetDataCol: target?.getAttribute('data-col'),
+        targetDataPickerInput: target?.getAttribute('data-picker-input'),
+        targetIsInDom: target ? document.body.contains(target) : null,
+      })
+
+      if (!target) {
+        // eslint-disable-next-line no-console
+        console.log('[SE] 7f. TARGET NOT FOUND - aborting focus')
+        return
+      }
+
+      target.focus()
+      // eslint-disable-next-line no-console
+      console.log('[SE] 7g. focus() called', {
+        activeAfterFocus: (document.activeElement as HTMLElement | null)?.tagName,
+        activeAfterFocusCol: (document.activeElement as HTMLElement | null)?.getAttribute?.('data-col'),
+        focusLanded: document.activeElement === target,
+      })
+
+      if (col === 'description') {
+        target.dispatchEvent(new Event('focus', { bubbles: true }))
+      } else {
+        target.select()
+      }
+
+      setTimeout(() => {
+        const a = document.activeElement as HTMLElement | null
+        // eslint-disable-next-line no-console
+        console.log('[SE] 7h. activeElement after 50ms', {
+          tag: a?.tagName,
+          'data-col': a?.getAttribute?.('data-col'),
+          'data-picker-input': a?.getAttribute?.('data-picker-input'),
+          isTarget: a === target,
+        })
+      }, 50)
+
+      setTimeout(() => {
+        const a = document.activeElement as HTMLElement | null
+        // eslint-disable-next-line no-console
+        console.log('[SE] 7i. activeElement after 150ms', {
+          tag: a?.tagName,
+          'data-col': a?.getAttribute?.('data-col'),
+          'data-picker-input': a?.getAttribute?.('data-picker-input'),
+          isTarget: a === target,
+          targetStillInDom: document.body.contains(target),
+        })
+      }, 150)
+    }, delay)
   }
 
   const toggleVisibility = (index: number, field: 'description' | 'cost' | 'price' | 'tax' | 'notes') => {
