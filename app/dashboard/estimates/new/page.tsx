@@ -1342,6 +1342,12 @@ export default function NewEstimatePage() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-2">
+                <div
+                  data-build-marker="shift-enter-fix-v3"
+                  className="mb-2 inline-block rounded bg-yellow-300 px-2 py-1 text-xs font-bold uppercase tracking-wide text-black"
+                >
+                  SHIFT+ENTER FIX BUILD ACTIVE (v3)
+                </div>
                 <div className="space-y-2">
                   {lineItems.map((item, index) => {
                     const isGroupHeader = item.isGroupHeader

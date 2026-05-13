@@ -373,8 +373,11 @@ export function FastPicker({
   // data-suppress-autoopen="true" so we don't reopen the picker on next-row
   // navigation.
   const handleInputFocus = useCallback(() => {
+    const suppress = inputRef.current?.getAttribute('data-suppress-autoopen')
+    // eslint-disable-next-line no-console
+    console.log('FASTPICKER SUPPRESS CHECK LIVE', { suppress, disabled, isOpen })
     if (disabled || isOpen) return
-    if (inputRef.current?.getAttribute('data-suppress-autoopen') === 'true') return
+    if (suppress === 'true') return
     setIsOpen(true)
   }, [disabled, isOpen])
 
