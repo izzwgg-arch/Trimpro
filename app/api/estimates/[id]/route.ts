@@ -5,7 +5,7 @@ import { parseAddressParts } from '@/lib/address/parse'
 import { geocodeAddressPartsFromString } from '@/lib/geocoding'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { calculateOrderedSubtotalRows } from '@/lib/documents/subtotals'
-import { calculateEstimateConversionSummary, getEstimateConversionSummary } from '@/lib/documents/conversion'
+import { calculateEstimateConversionSummary, getEstimateConversionProgress, getEstimateConversionSummary } from '@/lib/documents/conversion'
 
 export async function GET(
   request: NextRequest,
@@ -98,11 +98,23 @@ export async function GET(
       estimate.total,
       estimate.invoices.map((invoice) => invoice.total)
     )
+    const conversionProgress = getEstimateConversionProgress(
+      estimate.total,
+      estimate.invoices.map((invoice) => invoice.total),
+    )
 
     const estimateResponse = {
       ...estimate,
       invoices: undefined,
       convertedPercent: conversion.convertedPercent > 0 ? conversion.convertedPercent : null,
+      conversionProgress: {
+        estimateTotal: conversionProgress.estimateTotal.toFixed(2),
+        invoicedTotal: conversionProgress.invoicedTotal.toFixed(2),
+        remainingAmount: conversionProgress.remainingAmount.toFixed(2),
+        convertedPercent: conversionProgress.convertedPercent,
+        remainingPercent: conversionProgress.remainingPercent,
+        isFullyInvoiced: conversionProgress.isFullyInvoiced,
+      },
       jobSiteAddress: resolvedJobSiteAddress,
       jobSiteCity: (parsed?.city || derived.city || '').trim() || null,
       jobSiteState: (parsed?.state || derived.state || '').trim() || null,

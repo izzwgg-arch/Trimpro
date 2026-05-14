@@ -8,6 +8,17 @@ export type EstimateConversionSummary = {
   convertedPercent: number
 }
 
+/** UI / validation: remaining billable headroom against estimate total (incl. tax). */
+export type EstimateConversionProgress = {
+  estimateTotal: number
+  invoicedTotal: number
+  convertedPercent: number
+  remainingAmount: number
+  /** Approximate % of estimate total not yet invoiced (0–100). */
+  remainingPercent: number
+  isFullyInvoiced: boolean
+}
+
 export function calculateEstimateConversionSummary(
   estimateTotal: unknown,
   invoiceTotals: readonly unknown[]
@@ -19,6 +30,26 @@ export function calculateEstimateConversionSummary(
   return {
     invoicedTotal,
     convertedPercent: Math.max(0, Math.min(100, Math.round(rawPercent))),
+  }
+}
+
+export function getEstimateConversionProgress(
+  estimateTotal: unknown,
+  invoiceTotals: readonly unknown[],
+): EstimateConversionProgress {
+  const est = toDocumentNumber(estimateTotal)
+  const invoicedTotal = invoiceTotals.reduce<number>((sum, value) => sum + toDocumentNumber(value), 0)
+  const remainingAmount = Math.max(0, est - invoicedTotal)
+  const rawInvoicedPct = est > 0 ? (invoicedTotal / est) * 100 : 0
+  const remainingPercent = est > 0 ? Math.max(0, Math.min(100, 100 - rawInvoicedPct)) : 0
+
+  return {
+    estimateTotal: est,
+    invoicedTotal,
+    convertedPercent: Math.max(0, Math.min(100, Math.round(rawInvoicedPct))),
+    remainingAmount,
+    remainingPercent: Number(remainingPercent.toFixed(4)),
+    isFullyInvoiced: remainingAmount <= OVER_CONVERSION_TOLERANCE,
   }
 }
 

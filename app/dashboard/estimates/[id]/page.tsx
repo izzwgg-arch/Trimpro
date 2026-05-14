@@ -44,6 +44,14 @@ interface EstimateDetail {
   jobSiteAddress: string | null
   status: string
   convertedPercent?: number | null
+  conversionProgress?: {
+    estimateTotal: string
+    invoicedTotal: string
+    remainingAmount: string
+    convertedPercent: number
+    remainingPercent: number
+    isFullyInvoiced: boolean
+  } | null
   subtotal: string
   taxRate: string
   taxAmount: string
@@ -433,8 +441,15 @@ export default function EstimateDetailPage() {
 
   const handleOpenConvertToInvoice = () => {
     if (!estimate) return
+    const cp = estimate.conversionProgress
+    const maxRem = cp ? Math.min(100, Math.max(0, Number(cp.remainingPercent) || 0)) : 100
+    if (cp?.isFullyInvoiced) {
+      alert('This estimate is fully invoiced. No further conversion is available.')
+      return
+    }
     setBillingMode('FULL')
-    setBillingPercent('50')
+    const defaultPct = Math.max(1, Math.min(50, Math.floor(maxRem)))
+    setBillingPercent(String(Math.min(defaultPct, Math.max(1, Math.floor(maxRem)))))
     setSelectedLineItemIds(estimate.lineItems.map((li) => li.id))
     // Initialise every non-subtotal line item to the global percentage mode
     const initial: Record<string, PerItemBilling> = {}
@@ -455,6 +470,15 @@ export default function EstimateDetailPage() {
         const pct = Number(billingPercent || 0)
         if (!Number.isFinite(pct) || pct <= 0 || pct > 100) {
           alert('Percentage must be between 0 and 100.')
+          return
+        }
+        const maxRem = estimate.conversionProgress
+          ? Math.min(100, Math.max(0, Number(estimate.conversionProgress.remainingPercent) || 0))
+          : 100
+        if (pct > maxRem + 0.0001) {
+          alert(
+            `That would exceed what is left to invoice. You can bill at most about ${maxRem.toFixed(2)}% more of this estimate's total (additional lines on a new invoice), or reduce the percentage.`,
+          )
           return
         }
       }
@@ -612,6 +636,10 @@ export default function EstimateDetailPage() {
   const displayTaxAmount = Math.round(displayNet * displayTaxRate * 100) / 100
   const displayTotal = Math.round((displayNet + displayTaxAmount) * 100) / 100
 
+  const maxAdditionalBillPct = estimate.conversionProgress
+    ? Math.min(100, Math.max(0, Number(estimate.conversionProgress.remainingPercent) || 0))
+    : 100
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -631,8 +659,10 @@ export default function EstimateDetailPage() {
         </div>
         <div className="flex items-center space-x-2">
           <span className={`px-3 py-1 text-sm rounded-full ${statusColors[estimate.status] || 'bg-gray-100 text-gray-800'}`}>
-            {estimate.status === 'CONVERTED' && estimate.convertedPercent
-              ? `CONVERTED (${estimate.convertedPercent}%)`
+            {estimate.status === 'CONVERTED' && estimate.convertedPercent != null
+              ? estimate.conversionProgress?.isFullyInvoiced
+                ? `FULLY INVOICED (${estimate.convertedPercent}%)`
+                : `PARTIALLY INVOICED (${estimate.convertedPercent}%)`
               : estimate.status}
           </span>
           <Button
@@ -674,7 +704,18 @@ export default function EstimateDetailPage() {
               {reimportingLines ? 'Re-importing...' : 'Sync Lines from QBO'}
             </Button>
           )}
-          <Button variant="outline" onClick={handleOpenConvertToInvoice}>
+          <Button
+            variant="outline"
+            onClick={handleOpenConvertToInvoice}
+            disabled={!estimate?.client || estimate.conversionProgress?.isFullyInvoiced === true}
+            title={
+              !estimate?.client
+                ? 'Link a client before converting to an invoice.'
+                : estimate.conversionProgress?.isFullyInvoiced
+                  ? 'Estimate is fully invoiced.'
+                  : 'Create another invoice from this estimate (progressive billing).'
+            }
+          >
             <DollarSign className="mr-2 h-4 w-4" />
             Convert to Invoice
           </Button>
@@ -1114,6 +1155,40 @@ export default function EstimateDetailPage() {
             </CardContent>
           </Card>
 
+          {estimate.conversionProgress && Number(estimate.conversionProgress.invoicedTotal) > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Invoicing progress</CardTitle>
+                <CardDescription>
+                  Each conversion creates a new invoice. Percentages are an additional portion of the estimate total (same as line scaling), not a running cumulative cap in the form field.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Estimate total</span>
+                  <span className="font-medium">{formatCurrency(Number(estimate.conversionProgress.estimateTotal))}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Invoiced so far</span>
+                  <span className="font-medium">
+                    {formatCurrency(Number(estimate.conversionProgress.invoicedTotal))}{' '}
+                    <span className="text-gray-500">(~{estimate.conversionProgress.convertedPercent}%)</span>
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Remaining</span>
+                  <span className="font-medium text-amber-800">
+                    {formatCurrency(Number(estimate.conversionProgress.remainingAmount))}{' '}
+                    <span className="text-gray-500">(~{Number(estimate.conversionProgress.remainingPercent).toFixed(1)}%)</span>
+                  </span>
+                </div>
+                {estimate.conversionProgress.isFullyInvoiced && (
+                  <p className="text-xs text-green-700 font-medium pt-1">Fully invoiced — no further conversion.</p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {/* Approvals */}
           <Card>
             <CardHeader>
@@ -1320,7 +1395,14 @@ export default function EstimateDetailPage() {
           <DialogHeader>
             <DialogTitle>Create Invoice from Estimate</DialogTitle>
             <DialogDescription>
-              Choose how much to bill now. Per-item overrides let you mix percentages on the same invoice.
+              Choose how much additional amount to bill on a new invoice (percent is an extra slice of the estimate
+              total, not the running total). Per-item overrides let you mix percentages on the same invoice.
+              {estimate.conversionProgress != null && (
+                <span className="mt-2 block text-xs font-normal text-muted-foreground">
+                  About {Number(estimate.conversionProgress.remainingPercent).toFixed(1)}% of the estimate remains to
+                  invoice ({formatCurrency(Number(estimate.conversionProgress.remainingAmount))}).
+                </span>
+              )}
             </DialogDescription>
           </DialogHeader>
 
@@ -1329,7 +1411,11 @@ export default function EstimateDetailPage() {
             <div className="flex flex-col gap-2">
               <div className="flex items-center gap-2">
                 <input type="radio" id="bill-full" checked={billingMode === 'FULL'} onChange={() => setBillingMode('FULL')} />
-                <Label htmlFor="bill-full">Full Amount (100%)</Label>
+                <Label htmlFor="bill-full">
+                  {maxAdditionalBillPct >= 99.99
+                    ? 'Full amount (100% of estimate)'
+                    : `Full remaining (~${maxAdditionalBillPct.toFixed(1)}% of estimate)`}
+                </Label>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -1339,13 +1425,15 @@ export default function EstimateDetailPage() {
                   className="w-24"
                   type="number"
                   min={1}
-                  max={100}
+                  max={Math.max(1, maxAdditionalBillPct)}
                   step={1}
                   value={billingPercent}
                   onChange={(e) => setBillingPercent(e.target.value)}
                   disabled={billingMode !== 'PERCENTAGE'}
                 />
-                <span className="text-sm text-gray-600">% (default — override per item below)</span>
+                <span className="text-sm text-gray-600">
+                  % additional (max ~{maxAdditionalBillPct.toFixed(1)}% — override per item below)
+                </span>
               </div>
 
               <div className="flex items-center gap-2">
@@ -1356,7 +1444,10 @@ export default function EstimateDetailPage() {
 
             {/* ── PERCENTAGE: per-item controls ── */}
             {billingMode === 'PERCENTAGE' && estimate && (() => {
-              const globalPct = Math.max(0, Math.min(100, Number(billingPercent || 50)))
+              const globalPct = Math.max(
+                0,
+                Math.min(maxAdditionalBillPct, Number(billingPercent || 50)),
+              )
               const billableLines = estimate.lineItems.filter((li) => !li.isSubtotal)
               const invoiceTotal = billableLines.reduce((sum, li) => sum + calcLinePreview(li, globalPct), 0)
 

@@ -162,7 +162,25 @@ export async function POST(request: NextRequest) {
     notes,
     terms,
     memo,
+    progressBillingMode,
+    progressBillingPercent,
   } = body
+
+  const progressPctParsed =
+    progressBillingPercent === null || progressBillingPercent === undefined
+      ? null
+      : typeof progressBillingPercent === 'number'
+        ? progressBillingPercent
+        : parseFloat(String(progressBillingPercent))
+
+  const progressModeForDb =
+    estimateId &&
+    progressBillingMode &&
+    ['FULL', 'PERCENTAGE', 'MANUAL'].includes(String(progressBillingMode))
+      ? String(progressBillingMode)
+      : null
+  const progressPercentForDb =
+    estimateId && Number.isFinite(progressPctParsed as number) ? (progressPctParsed as number) : null
 
   const lineItems = lineItemsFromData || items || []
 
@@ -182,9 +200,9 @@ export async function POST(request: NextRequest) {
 
     let reusableEmptyInvoice: { id: string; invoiceNumber: string } | null = null
 
-    // Idempotency guard: if an invoice already exists for this estimate, return it rather
-    // than creating a duplicate. Old broken conversions left behind empty DRAFT invoices
-    // with zero items; those are treated as recoverable placeholders and will be reused.
+    // Recoverable placeholders: empty DRAFT invoices with no line/optional items.
+    // Only reuse one when there is NO "real" conversion invoice yet (avoids
+    // attaching a new draft to stale empty rows after progressive billing).
     if (estimateId) {
       const existingInvoices = await prisma.invoice.findMany({
         where: { estimateId, tenantId: user.tenantId },
@@ -203,24 +221,12 @@ export async function POST(request: NextRequest) {
         orderBy: { createdAt: 'desc' },
       })
 
-      const validExisting = existingInvoices.find(
+      const hasRealInvoice = existingInvoices.some(
         (row) =>
           row.status !== 'DRAFT' ||
           row._count.lineItems > 0 ||
           row._count.optionalItems > 0
       )
-      if (validExisting) {
-        console.log(
-          `[invoice-create] duplicate prevented for estimateId=${estimateId} → existing invoice ${validExisting.invoiceNumber}`
-        )
-        return NextResponse.json(
-          {
-            error: `An invoice already exists for this estimate (${validExisting.invoiceNumber}).`,
-            invoiceId: validExisting.id,
-          },
-          { status: 409 }
-        )
-      }
 
       const recoverablePlaceholders = existingInvoices.filter(
         (row) =>
@@ -228,7 +234,8 @@ export async function POST(request: NextRequest) {
           row._count.lineItems === 0 &&
           row._count.optionalItems === 0
       )
-      if (recoverablePlaceholders.length > 0) {
+
+      if (!hasRealInvoice && recoverablePlaceholders.length > 0) {
         reusableEmptyInvoice = {
           id: recoverablePlaceholders[0].id,
           invoiceNumber: recoverablePlaceholders[0].invoiceNumber,
@@ -288,6 +295,8 @@ export async function POST(request: NextRequest) {
       paymentToken: crypto.randomBytes(20).toString('hex'),
       // ACH should be available by default (hosted by QuickBooks; no bank info stored by TrimPro).
       qboAchEnabled: true,
+      progressBillingMode: progressModeForDb,
+      progressBillingPercent: progressPercentForDb,
     }
 
     const runCreationTx = async (tx: any, inv: any) => {
@@ -406,80 +415,30 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const ensureEstimateStillAvailable = async (tx: any) => {
-      if (!estimateId) return
-      const otherInvoices = await tx.invoice.findMany({
-        where: {
-          estimateId,
-          tenantId: user.tenantId,
-          ...(reusableEmptyInvoice ? { id: { not: reusableEmptyInvoice.id } } : {}),
-        },
-        select: {
-          id: true,
-          invoiceNumber: true,
-          status: true,
-          _count: {
-            select: {
-              lineItems: true,
-              optionalItems: true,
-            },
-          },
-        },
-      })
-
-      const blockingInvoice = otherInvoices.find(
-        (row: any) =>
-          row.status !== 'DRAFT' ||
-          row._count.lineItems > 0 ||
-          row._count.optionalItems > 0
-      )
-      if (blockingInvoice) {
-        const err: any = new Error(`Invoice already exists for estimate (${blockingInvoice.invoiceNumber})`)
-        err.code = 'ESTIMATE_INVOICE_EXISTS'
-        err.invoiceId = blockingInvoice.id
-        err.invoiceNumber = blockingInvoice.invoiceNumber
-        throw err
-      }
-    }
-
     let invoiceNumber = ''
     let invoice: any = null
 
     if (reusableEmptyInvoice) {
       invoiceNumber = reusableEmptyInvoice.invoiceNumber
-      try {
-        await prisma.$transaction(async (tx) => {
-          await ensureEstimateStillAvailable(tx)
-          invoice = await tx.invoice.update({
-            where: { id: reusableEmptyInvoice!.id },
-            data: {
-              ...baseInvoiceData,
-              invoiceNumber: reusableEmptyInvoice!.invoiceNumber,
-            },
-            include: { client: true, job: true },
-          })
-          await tx.documentLineGroup.deleteMany({
-            where: {
-              documentType: 'INVOICE',
-              documentId: invoice.id,
-            },
-          })
-          await tx.invoiceLineItem.deleteMany({ where: { invoiceId: invoice.id } })
-          await tx.invoiceOptionalLineItem.deleteMany({ where: { invoiceId: invoice.id } })
-          await runCreationTx(tx, invoice)
-        }, { isolationLevel: 'Serializable' })
-      } catch (err: any) {
-        if (err?.code === 'ESTIMATE_INVOICE_EXISTS') {
-          return NextResponse.json(
-            {
-              error: `An invoice already exists for this estimate (${err.invoiceNumber}).`,
-              invoiceId: err.invoiceId,
-            },
-            { status: 409 }
-          )
-        }
-        throw err
-      }
+      await prisma.$transaction(async (tx) => {
+        invoice = await tx.invoice.update({
+          where: { id: reusableEmptyInvoice!.id },
+          data: {
+            ...baseInvoiceData,
+            invoiceNumber: reusableEmptyInvoice!.invoiceNumber,
+          },
+          include: { client: true, job: true },
+        })
+        await tx.documentLineGroup.deleteMany({
+          where: {
+            documentType: 'INVOICE',
+            documentId: invoice.id,
+          },
+        })
+        await tx.invoiceLineItem.deleteMany({ where: { invoiceId: invoice.id } })
+        await tx.invoiceOptionalLineItem.deleteMany({ where: { invoiceId: invoice.id } })
+        await runCreationTx(tx, invoice)
+      }, { isolationLevel: 'Serializable' })
     } else if (invoiceNumberOverrideTrimmed) {
       invoiceNumber = invoiceNumberOverrideTrimmed
       try {
@@ -489,7 +448,6 @@ export async function POST(request: NextRequest) {
       }
       try {
         await prisma.$transaction(async (tx) => {
-          await ensureEstimateStillAvailable(tx)
           invoice = await tx.invoice.create({
             data: { ...baseInvoiceData, invoiceNumber },
             include: { client: true, job: true },
@@ -497,15 +455,6 @@ export async function POST(request: NextRequest) {
           await runCreationTx(tx, invoice)
         }, { isolationLevel: 'Serializable' })
       } catch (err: any) {
-        if (err?.code === 'ESTIMATE_INVOICE_EXISTS') {
-          return NextResponse.json(
-            {
-              error: `An invoice already exists for this estimate (${err.invoiceNumber}).`,
-              invoiceId: err.invoiceId,
-            },
-            { status: 409 }
-          )
-        }
         if (err?.code === 'P2002' && err?.meta?.target?.includes?.('invoiceNumber')) {
           return NextResponse.json({ error: 'Invoice number already exists' }, { status: 400 })
         }
@@ -517,7 +466,6 @@ export async function POST(request: NextRequest) {
         invoiceNumber = await allocateNextInvoiceNumber({ tenantId: user.tenantId })
         try {
           await prisma.$transaction(async (tx) => {
-            await ensureEstimateStillAvailable(tx)
             invoice = await tx.invoice.create({
               data: { ...baseInvoiceData, invoiceNumber },
               include: { client: true, job: true },
@@ -526,15 +474,6 @@ export async function POST(request: NextRequest) {
           }, { isolationLevel: 'Serializable' })
           break
         } catch (err: any) {
-          if (err?.code === 'ESTIMATE_INVOICE_EXISTS') {
-            return NextResponse.json(
-              {
-                error: `An invoice already exists for this estimate (${err.invoiceNumber}).`,
-                invoiceId: err.invoiceId,
-              },
-              { status: 409 }
-            )
-          }
           if (err?.code === 'P2002' && err?.meta?.target?.includes?.('invoiceNumber')) {
             invoice = null
             continue
@@ -548,7 +487,6 @@ export async function POST(request: NextRequest) {
         const suffix = crypto.randomBytes(3).toString('hex').toUpperCase()
         invoiceNumber = `${await allocateNextInvoiceNumber({ tenantId: user.tenantId })}-${suffix}`
         await prisma.$transaction(async (tx) => {
-          await ensureEstimateStillAvailable(tx)
           invoice = await tx.invoice.create({
             data: { ...baseInvoiceData, invoiceNumber },
             include: { client: true, job: true },

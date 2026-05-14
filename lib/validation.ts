@@ -311,6 +311,8 @@ export const createInvoiceSchema = z.object({
   notes: z.string().max(5000).optional().nullable(),
   terms: z.string().max(1000).optional().nullable(),
   memo: z.string().max(1000).optional().nullable(),
+  progressBillingMode: z.enum(['FULL', 'PERCENTAGE', 'MANUAL']).optional().nullable(),
+  progressBillingPercent: z.union([z.string(), z.number()]).optional().nullable(),
 })
 
 /**

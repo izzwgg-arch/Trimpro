@@ -141,6 +141,11 @@ export default function NewInvoicePage() {
   // Guard: prevents loadFromEstimate from running more than once per estimateId param,
   // which would happen because loadFromEstimate sets formData.clientId → triggers re-render.
   const estimateLoadedRef = useRef<string | null>(null)
+  /** Billing mode from estimate conversion query (for progressBilling* on invoice create). */
+  const estimateConvertMetaRef = useRef<{
+    billingMode: 'FULL' | 'PERCENTAGE' | 'MANUAL' | null
+    percentage: number | null
+  }>({ billingMode: null, percentage: null })
 
   // Initial load: clients + picker items (does NOT include clientId so it doesn't re-run when client is set)
   useEffect(() => {
@@ -222,22 +227,60 @@ export default function NewInvoicePage() {
 
   const loadFromEstimate = async () => {
     if (!estimateIdParam) return
-    
+    estimateConvertMetaRef.current = { billingMode: null, percentage: null }
+
     try {
       const token = localStorage.getItem('accessToken')
       const response = await fetch(`/api/estimates/${estimateIdParam}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       
-      if (response.ok) {
+       if (response.ok) {
         const data = await response.json()
         const est = data.estimate
+        const cp = est?.conversionProgress
+        const remPct = cp
+          ? Math.min(100, Math.max(0, Number(cp.remainingPercent) || 0))
+          : 100
 
         const effectiveMode =
           billingModeParam === 'PERCENTAGE' || billingModeParam === 'MANUAL' || billingModeParam === 'FULL'
             ? (billingModeParam as 'FULL' | 'PERCENTAGE' | 'MANUAL')
             : 'FULL'
         const pct = percentageParam ? Number(percentageParam) : 0
+
+        if (estimateIdParam && cp?.isFullyInvoiced) {
+          alert('This estimate is fully invoiced. No further conversion is available.')
+          return
+        }
+
+        const isScaledEstimateConversion =
+          effectiveMode === 'PERCENTAGE' || (effectiveMode === 'FULL' && Boolean(estimateIdParam))
+
+        let safePct = 0
+        if (effectiveMode === 'PERCENTAGE') {
+          safePct = Number.isFinite(pct) ? pct : 0
+          if (!Number.isFinite(safePct) || safePct <= 0 || safePct > 100) {
+            alert('Percentage must be between 0 and 100.')
+            return
+          }
+          if (safePct > remPct + 0.0001) {
+            alert(
+              `That would exceed what is left to invoice. You can bill at most about ${remPct.toFixed(2)}% more of this estimate's total, or reduce the percentage.`,
+            )
+            return
+          }
+        }
+
+        const scaleDefault = isScaledEstimateConversion
+          ? effectiveMode === 'PERCENTAGE'
+            ? safePct / 100
+            : remPct / 100
+          : 1
+
+        /** Shown on line items / sent as progress metadata: % of original estimate this slice targets. */
+        const globalProgressPctForMeta =
+          effectiveMode === 'PERCENTAGE' ? safePct : remPct >= 99.99 ? 100 : remPct
 
         setFormData(prev => ({
           ...prev,
@@ -246,7 +289,9 @@ export default function NewInvoicePage() {
             prev.title ||
             `${est.title} - ${
               effectiveMode === 'FULL'
-                ? 'Full Billing'
+                ? remPct >= 99.99
+                  ? 'Full Billing'
+                  : `Full remaining (${remPct.toFixed(1)}% of estimate)`
                 : effectiveMode === 'PERCENTAGE'
                   ? `${(Number.isFinite(pct) ? pct : 0).toFixed(2)}% Billing`
                   : 'Partial Billing'
@@ -257,14 +302,6 @@ export default function NewInvoicePage() {
           notes: est.notes || prev.notes,
           terms: est.terms || prev.terms,
         }))
-
-        if (effectiveMode === 'PERCENTAGE') {
-          const safePct = Number.isFinite(pct) ? pct : 0
-          if (!Number.isFinite(safePct) || safePct <= 0 || safePct > 100) {
-            alert('Percentage must be between 0 and 100.')
-            return
-          }
-        }
 
         const sourceLines =
           effectiveMode === 'MANUAL' && selectedLineItemIdSet.size > 0
@@ -284,8 +321,6 @@ export default function NewInvoicePage() {
         })
 
         const processedGroups = new Set<string>()
-        const safePct = Number.isFinite(pct) ? pct : 0
-        const scaleDefault = effectiveMode === 'PERCENTAGE' ? safePct / 100 : 1
 
         // Read per-item overrides saved by the billing modal (estimate detail page)
         type PerItemMode = 'GLOBAL_PCT' | 'FULL' | 'CUSTOM_PCT' | 'CUSTOM_AMT'
@@ -305,7 +340,7 @@ export default function NewInvoicePage() {
           const b: PerItemBilling | undefined = perItemBillings[li.id]
           if (!b || b.mode === 'GLOBAL_PCT') {
             const scaled = Math.round(baseUp * scaleDefault * 10000) / 10000
-            return { unitPrice: (Math.round(scaled * 100) / 100).toFixed(2), mode: 'GLOBAL_PCT', customPct: safePct }
+            return { unitPrice: (Math.round(scaled * 100) / 100).toFixed(2), mode: 'GLOBAL_PCT', customPct: globalProgressPctForMeta }
           }
           if (b.mode === 'FULL') {
             return { unitPrice: baseUp.toFixed(2), mode: 'FULL', customPct: 100 }
@@ -321,11 +356,11 @@ export default function NewInvoicePage() {
             return { unitPrice: (amt / qty).toFixed(4), mode: 'CUSTOM_AMT', customPct: 0 }
           }
           const scaled = Math.round(baseUp * scaleDefault * 10000) / 10000
-          return { unitPrice: (Math.round(scaled * 100) / 100).toFixed(2), mode: 'GLOBAL_PCT', customPct: safePct }
+          return { unitPrice: (Math.round(scaled * 100) / 100).toFixed(2), mode: 'GLOBAL_PCT', customPct: globalProgressPctForMeta }
         }
 
         sourceLines.forEach((li: any) => {
-          if (effectiveMode === 'PERCENTAGE' && li.isSubtotal) return
+          if (isScaledEstimateConversion && li.isSubtotal) return
 
           const group = li.group
           if (group && !processedGroups.has(group.id)) {
@@ -377,7 +412,7 @@ export default function NewInvoicePage() {
 
           const baseUp = Number(li.unitPrice)
 
-          if (effectiveMode === 'PERCENTAGE') {
+          if (isScaledEstimateConversion) {
             const { unitPrice: unitPriceStr, mode: resolvedMode, customPct } = calcScaledUnit(li, baseUp)
             const progressBillMode: LineItem['progressBillMode'] =
               resolvedMode === 'FULL' ? 'FULL'
@@ -466,6 +501,18 @@ export default function NewInvoicePage() {
           })
         })
         if (mappedOptional.length > 0) setOptionalItems(mappedOptional)
+
+        estimateConvertMetaRef.current = {
+          billingMode: effectiveMode,
+          percentage:
+            effectiveMode === 'PERCENTAGE'
+              ? Number.isFinite(safePct) && safePct > 0
+                ? safePct
+                : null
+              : effectiveMode === 'FULL'
+                ? globalProgressPctForMeta
+                : null,
+        }
       }
     } catch (error) {
       console.error('Error loading from estimate:', error)
@@ -1308,6 +1355,14 @@ export default function NewInvoicePage() {
             groupId,
             ...group,
           })),
+          ...(formData.estimateId && estimateConvertMetaRef.current.billingMode
+            ? {
+                progressBillingMode: estimateConvertMetaRef.current.billingMode,
+                ...(estimateConvertMetaRef.current.percentage != null
+                  ? { progressBillingPercent: estimateConvertMetaRef.current.percentage }
+                  : {}),
+              }
+            : {}),
         }),
       })
 
