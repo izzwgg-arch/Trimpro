@@ -234,9 +234,22 @@ export async function POST(
                 </table>
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:22px;">
                   <tr>
-                    <td align="center">
-                      ${paymentLink ? `<a href="${escapeHtml(paymentLink)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:16px 48px;font-size:17px;font-weight:700;letter-spacing:0.2px;line-height:1.2;text-decoration:none;text-align:center;border-radius:12px;background:linear-gradient(135deg,#2a5f82 0%,#f0c974 100%);color:#1e2937;margin:0 6px 10px 0;">Pay Now</a>` : ''}
-                      <a href="${escapeHtml(pdfUrl)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:16px 48px;font-size:17px;font-weight:700;letter-spacing:0.2px;line-height:1.2;text-decoration:none;text-align:center;border-radius:12px;background:linear-gradient(135deg,#2a5f82 0%,#f0c974 100%);color:#1e2937;">View / Download Invoice</a>
+                    <td align="center" style="font-size:0;">
+                      ${paymentLink ? `
+                      <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="display:inline-table;margin:0 6px 10px 0;vertical-align:top;">
+                        <tr>
+                          <td bgcolor="#f0c974" style="border-radius:12px;background-color:#f0c974;">
+                            <a href="${escapeHtml(paymentLink)}" target="_blank" rel="noopener noreferrer" style="display:block;padding:16px 48px;font-size:17px;font-weight:700;letter-spacing:0.2px;line-height:1.2;text-align:center;text-decoration:none;color:#1e2937;background-color:#f0c974;border-radius:12px;">Pay Now</a>
+                          </td>
+                        </tr>
+                      </table>` : ''}
+                      <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="display:inline-table;margin:0 0 10px;vertical-align:top;">
+                        <tr>
+                          <td bgcolor="#f0c974" style="border-radius:12px;background-color:#f0c974;">
+                            <a href="${escapeHtml(pdfUrl)}" target="_blank" rel="noopener noreferrer" style="display:block;padding:16px 48px;font-size:17px;font-weight:700;letter-spacing:0.2px;line-height:1.2;text-align:center;text-decoration:none;color:#1e2937;background-color:#f0c974;border-radius:12px;">View / Download Invoice</a>
+                          </td>
+                        </tr>
+                      </table>
                     </td>
                   </tr>
                 </table>

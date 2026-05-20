@@ -527,10 +527,25 @@ export async function sendInvoiceEmail(
           ${customMessage ? `<p class="body-text" style="margin:0 0 18px;font-size:14px;line-height:1.7;color:#e3edf9;white-space:pre-wrap;">${escapeHtml(customMessage)}</p>` : ''}
           <p class="body-text" style="margin:0 0 22px;font-size:15px;color:#d5e1f1;"><strong style="color:#ffffff;">Total: ${escapeHtml(String(invoice.total || ''))}</strong></p>
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:18px;">
-            <tr><td align="center">
-              ${paymentLink ? `<a href="${safePaymentLink}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:16px 48px;font-size:17px;font-weight:700;letter-spacing:0.2px;line-height:1.2;text-decoration:none;text-align:center;border-radius:12px;background:linear-gradient(135deg,#2a5f82 0%,#f0c974 100%);color:#1e2937;margin:0 6px 10px 0;">Pay Now</a>` : ''}
-              <a href="${safePdfUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:16px 48px;font-size:17px;font-weight:700;letter-spacing:0.2px;line-height:1.2;text-decoration:none;text-align:center;border-radius:12px;background:linear-gradient(135deg,#2a5f82 0%,#f0c974 100%);color:#1e2937;">View Invoice</a>
-            </td></tr>
+            <tr>
+              <td align="center" style="font-size:0;">
+                ${paymentLink ? `
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="display:inline-table;margin:0 6px 10px 0;vertical-align:top;">
+                  <tr>
+                    <td bgcolor="#f0c974" style="border-radius:12px;background-color:#f0c974;">
+                      <a href="${safePaymentLink}" target="_blank" rel="noopener noreferrer" style="display:block;padding:16px 48px;font-size:17px;font-weight:700;letter-spacing:0.2px;line-height:1.2;text-align:center;text-decoration:none;color:#1e2937;background-color:#f0c974;border-radius:12px;">Pay Now</a>
+                    </td>
+                  </tr>
+                </table>` : ''}
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="display:inline-table;margin:0 0 10px;vertical-align:top;">
+                  <tr>
+                    <td bgcolor="#f0c974" style="border-radius:12px;background-color:#f0c974;">
+                      <a href="${safePdfUrl}" target="_blank" rel="noopener noreferrer" style="display:block;padding:16px 48px;font-size:17px;font-weight:700;letter-spacing:0.2px;line-height:1.2;text-align:center;text-decoration:none;color:#1e2937;background-color:#f0c974;border-radius:12px;">View Invoice</a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
           </table>
         </td></tr>
         <tr><td style="background-color:#223347;padding:20px 40px;border-top:1px solid #46627f;text-align:center;">
