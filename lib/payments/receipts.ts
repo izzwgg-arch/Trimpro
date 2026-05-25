@@ -98,6 +98,103 @@ export type PaymentReceiptContext = {
   invoiceUrl: string
 }
 
+const paymentReceiptInclude = {
+  invoice: {
+    include: {
+      tenant: { select: { name: true } },
+      client: {
+        select: {
+          name: true,
+          email: true,
+          contacts: {
+            where: { email: { not: null } },
+            orderBy: [{ isPrimary: 'desc' as const }, { createdAt: 'asc' as const }],
+            take: 1,
+            select: { email: true },
+          },
+        },
+      },
+    },
+  },
+} as const
+
+type PaymentWithReceiptInclude = {
+  id: string
+  amount: unknown
+  method: string
+  provider: string | null
+  notes: string | null
+  reference: string | null
+  providerPaymentId: string | null
+  providerInvoiceId: string | null
+  processedAt: Date | null
+  createdAt: Date
+  receiptToken: string | null
+  receiptTokenExpiresAt: Date | null
+  receiptEmailSentAt: Date | null
+  invoice: {
+    id: string
+    invoiceNumber: string
+    tenantId: string
+    tenant: { name: string } | null
+    client: {
+      name: string
+      email: string | null
+      contacts: { email: string | null }[]
+    } | null
+  }
+}
+
+function mapPaymentToReceiptContext(
+  payment: PaymentWithReceiptInclude,
+  tokenOverride?: { receiptToken: string; receiptTokenExpiresAt: Date }
+): PaymentReceiptContext {
+  const clientEmail =
+    splitEmailList(payment.invoice.client?.email || '')[0] ||
+    String(payment.invoice.client?.contacts?.[0]?.email || '').trim() ||
+    null
+
+  const appUrl = appBaseUrl()
+  const token = tokenOverride?.receiptToken || payment.receiptToken || ''
+
+  return {
+    payment: {
+      id: payment.id,
+      amount: Number(payment.amount || 0),
+      method: payment.method,
+      provider: payment.provider,
+      notes: payment.notes,
+      reference: payment.reference,
+      providerPaymentId: payment.providerPaymentId,
+      providerInvoiceId: payment.providerInvoiceId,
+      processedAt: payment.processedAt,
+      createdAt: payment.createdAt,
+      receiptToken: token || payment.receiptToken,
+      receiptTokenExpiresAt:
+        tokenOverride?.receiptTokenExpiresAt || payment.receiptTokenExpiresAt,
+      receiptEmailSentAt: payment.receiptEmailSentAt,
+    },
+    invoice: {
+      id: payment.invoice.id,
+      invoiceNumber: payment.invoice.invoiceNumber,
+      tenantId: payment.invoice.tenantId,
+    },
+    tenantName: payment.invoice.tenant?.name || 'TrimPro',
+    clientName: payment.invoice.client?.name || 'Customer',
+    clientEmail,
+    methodLabel: formatPaymentMethodLabel(payment),
+    receiptUrl: token ? `${appUrl}/pay/receipt/${encodeURIComponent(token)}` : '',
+    invoiceUrl: `${appUrl}/portal/pay/${payment.invoice.id}`,
+  }
+}
+
+export function isPaymentReceiptTokenValid(
+  payment: { receiptTokenExpiresAt: Date | null }
+): boolean {
+  if (!payment.receiptTokenExpiresAt) return true
+  return payment.receiptTokenExpiresAt.getTime() > Date.now()
+}
+
 export async function loadPaymentReceiptContext(
   paymentId: string,
   tenantId: string
@@ -107,25 +204,7 @@ export async function loadPaymentReceiptContext(
       id: paymentId,
       invoice: { tenantId },
     },
-    include: {
-      invoice: {
-        include: {
-          tenant: { select: { name: true } },
-          client: {
-            select: {
-              name: true,
-              email: true,
-              contacts: {
-                where: { email: { not: null } },
-                orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
-                take: 1,
-                select: { email: true },
-              },
-            },
-          },
-        },
-      },
-    },
+    include: paymentReceiptInclude,
   })
 
   if (!payment?.invoice) return null
@@ -141,42 +220,27 @@ export async function loadPaymentReceiptContext(
     })
   }
 
-  const clientEmail =
-    splitEmailList(payment.invoice.client?.email || '')[0] ||
-    String(payment.invoice.client?.contacts?.[0]?.email || '').trim() ||
-    null
+  return mapPaymentToReceiptContext(payment as PaymentWithReceiptInclude, {
+    receiptToken,
+    receiptTokenExpiresAt: payment.receiptTokenExpiresAt || receiptTokenExpiresAt,
+  })
+}
 
-  const appUrl = appBaseUrl()
-  const token = payment.receiptToken || receiptToken
+export async function loadPaymentReceiptContextByToken(
+  receiptToken: string
+): Promise<PaymentReceiptContext | null> {
+  const token = String(receiptToken || '').trim()
+  if (!token) return null
 
-  return {
-    payment: {
-      id: payment.id,
-      amount: Number(payment.amount || 0),
-      method: payment.method,
-      provider: payment.provider,
-      notes: payment.notes,
-      reference: payment.reference,
-      providerPaymentId: payment.providerPaymentId,
-      providerInvoiceId: payment.providerInvoiceId,
-      processedAt: payment.processedAt,
-      createdAt: payment.createdAt,
-      receiptToken: token,
-      receiptTokenExpiresAt: payment.receiptTokenExpiresAt || receiptTokenExpiresAt,
-      receiptEmailSentAt: payment.receiptEmailSentAt,
-    },
-    invoice: {
-      id: payment.invoice.id,
-      invoiceNumber: payment.invoice.invoiceNumber,
-      tenantId: payment.invoice.tenantId,
-    },
-    tenantName: payment.invoice.tenant?.name || 'TrimPro',
-    clientName: payment.invoice.client?.name || 'Customer',
-    clientEmail,
-    methodLabel: formatPaymentMethodLabel(payment),
-    receiptUrl: `${appUrl}/pay/receipt/${encodeURIComponent(token)}`,
-    invoiceUrl: `${appUrl}/portal/pay/${payment.invoice.id}`,
-  }
+  const payment = await prisma.payment.findFirst({
+    where: { receiptToken: token },
+    include: paymentReceiptInclude,
+  })
+
+  if (!payment?.invoice) return null
+  if (!isPaymentReceiptTokenValid(payment)) return null
+
+  return mapPaymentToReceiptContext(payment as PaymentWithReceiptInclude)
 }
 
 export function buildPaymentReceiptHtml(ctx: PaymentReceiptContext, logoUrl?: string | null) {
@@ -241,16 +305,49 @@ export function buildPaymentReceiptHtml(ctx: PaymentReceiptContext, logoUrl?: st
 </html>`
 }
 
-export async function generatePaymentReceiptPdf(paymentId: string, tenantId: string) {
-  const ctx = await loadPaymentReceiptContext(paymentId, tenantId)
-  if (!ctx) return null
-
-  const brand = await getPdfBranding(tenantId)
+async function buildPaymentReceiptPdfFromContext(ctx: PaymentReceiptContext) {
+  const brand = await getPdfBranding(ctx.invoice.tenantId)
   const html = buildPaymentReceiptHtml(ctx, brand.logoUrl)
   return {
     buffer: await renderPdfFromHtml(html, { waitUntil: 'load' }),
     filename: `receipt-${ctx.invoice.invoiceNumber}-${ctx.payment.id.slice(0, 8)}.pdf`,
+    html,
     ctx,
+  }
+}
+
+export async function getPaymentReceiptHtmlByToken(receiptToken: string) {
+  const ctx = await loadPaymentReceiptContextByToken(receiptToken)
+  if (!ctx) return null
+
+  const brand = await getPdfBranding(ctx.invoice.tenantId)
+  return {
+    html: buildPaymentReceiptHtml(ctx, brand.logoUrl),
+    ctx,
+  }
+}
+
+export async function generatePaymentReceiptPdf(paymentId: string, tenantId: string) {
+  const ctx = await loadPaymentReceiptContext(paymentId, tenantId)
+  if (!ctx) return null
+
+  const result = await buildPaymentReceiptPdfFromContext(ctx)
+  return {
+    buffer: result.buffer,
+    filename: result.filename,
+    ctx: result.ctx,
+  }
+}
+
+export async function generatePaymentReceiptPdfByToken(receiptToken: string) {
+  const ctx = await loadPaymentReceiptContextByToken(receiptToken)
+  if (!ctx) return null
+
+  const result = await buildPaymentReceiptPdfFromContext(ctx)
+  return {
+    buffer: result.buffer,
+    filename: result.filename,
+    ctx: result.ctx,
   }
 }
 
