@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
+import { bundleFlattenedItemToLineData } from '@/lib/bundles/expand-line-items'
 
 // Helper to flatten bundle (reuse from bundles API)
 async function flattenBundle(
@@ -164,18 +165,14 @@ export async function POST(
     for (const item of flattened) {
       currentSort++
       const total = item.unitPrice * item.quantity
+      const lineData = bundleFlattenedItemToLineData(item)
       const lineItem = await prisma.estimateLineItem.create({
         data: {
           estimateId: params.id,
           groupId: group.id,
-          sourceItemId: item.itemId,
-          description: item.description || item.name,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          unitCost: item.unitCost,
+          ...lineData,
           total,
           sortOrder: currentSort,
-          isVisibleToClient: true,
         },
       })
       lineItems.push(lineItem)

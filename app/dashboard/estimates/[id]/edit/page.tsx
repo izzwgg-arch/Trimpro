@@ -15,6 +15,7 @@ import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
 import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
 import { cnCustomerVisibilityBulkPill } from '@/lib/ui/customer-visibility-bulk-pill'
+import { expandBundleComponentsToLineItems } from '@/lib/bundles/expand-line-items'
 
 interface LineItem {
   id?: string
@@ -488,45 +489,11 @@ export default function EditEstimatePage() {
             sourceBundleId: bundleDefId,
           }
 
-          // Add bundle components as child lines
-          const childLines: LineItem[] = components.map((comp: any) => {
-            const sourceItem = comp.componentItem
-            const sourceBundle = comp.componentBundle
-            const sourceName = sourceItem?.name || sourceBundle?.item?.name || 'Unknown'
-            const sourcePrice = sourceItem?.defaultUnitPrice 
-              ? Number(sourceItem.defaultUnitPrice)
-              : (sourceBundle ? Number(bundle?.item?.defaultUnitPrice || 0) : 0)
-            const sourceCost = sourceItem?.defaultUnitCost 
-              ? Number(sourceItem.defaultUnitCost)
-              : (sourceBundle ? Number(bundle?.item?.defaultUnitCost || 0) : null)
-            
-            const overridePrice = comp.defaultUnitPriceOverride
-              ? Number(comp.defaultUnitPriceOverride)
-              : sourcePrice
-            const overrideCost = comp.defaultUnitCostOverride
-              ? Number(comp.defaultUnitCostOverride)
-              : sourceCost
-
-            return {
-              description: sourceName,
-              quantity: comp.quantity.toString(),
-              unitPrice: overridePrice.toString(),
-              unitCost: overrideCost?.toString() || '0',
-              notes: comp.notes || '',
-              vendorId: comp.vendorId || null,
-              vendorName: comp.vendor?.name || null,
-              taxable: sourceItem?.taxable ?? true,
-              taxRate: sourceItem?.taxRate?.toString() || '',
-              showDescriptionToCustomer: false,
-              showCostToCustomer: false,
-              showPriceToCustomer: true,
-              showTaxToCustomer: true,
-              showNotesToCustomer: true,
-              groupId,
-              sourceItemId: comp.componentItemId || null,
-              sourceBundleId: comp.componentBundleId || null,
-            }
-          })
+          const childLines: LineItem[] = await expandBundleComponentsToLineItems(
+            components,
+            groupId,
+            token || ''
+          )
 
           updated.splice(lineIndex + 1, 0, ...childLines)
         } else {
@@ -817,41 +784,11 @@ export default function EditEstimatePage() {
             sourceBundleId: bundleDefId,
           }
 
-          const childLines: LineItem[] = components.map((comp: any) => {
-            const sourceItem = comp.componentItem
-            const sourceBundle = comp.componentBundle
-            const sourceName = sourceItem?.name || sourceBundle?.item?.name || 'Unknown'
-            const sourcePrice = sourceItem?.defaultUnitPrice
-              ? Number(sourceItem.defaultUnitPrice)
-              : sourceBundle
-                ? Number(bundle?.item?.defaultUnitPrice || 0)
-                : 0
-            const sourceCost = sourceItem?.defaultUnitCost
-              ? Number(sourceItem.defaultUnitCost)
-              : sourceBundle
-                ? Number(bundle?.item?.defaultUnitCost || 0)
-                : null
-
-            const overridePrice = comp.defaultUnitPriceOverride ? Number(comp.defaultUnitPriceOverride) : sourcePrice
-            const overrideCost = comp.defaultUnitCostOverride ? Number(comp.defaultUnitCostOverride) : sourceCost
-
-            return {
-              description: sourceName,
-              quantity: comp.quantity.toString(),
-              unitPrice: overridePrice.toString(),
-              unitCost: overrideCost != null ? String(overrideCost) : undefined,
-              taxable: true,
-              showDescriptionToCustomer: false,
-              showCostToCustomer: false,
-              showPriceToCustomer: true,
-              showTaxToCustomer: true,
-              showNotesToCustomer: true,
-              groupId,
-              groupName: bundle?.name || item.name,
-              sourceItemId: sourceItem?.id || null || undefined,
-              sourceBundleId: sourceBundle?.id || null || undefined,
-            }
-          })
+          const childLines: LineItem[] = await expandBundleComponentsToLineItems(
+            components,
+            groupId,
+            token || ''
+          )
 
           updated.splice(lineIndex + 1, 0, ...childLines)
           setOptionalItems(updated)
