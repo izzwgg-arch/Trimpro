@@ -7,6 +7,11 @@ import { quickBooksService } from '@/lib/services/quickbooks'
 import { notifyInvoicePaid } from '@/lib/notifications'
 import { sendPaymentReceiptIfNeeded } from '@/lib/qbo/receipts'
 import { reconcileSingleInvoiceAchPayment } from '@/lib/qbo/reconcile-ach'
+import {
+  fetchQboPaymentMethodName,
+  mapInboundQboPaymentMethodFromName,
+  recordPaymentQboMapping,
+} from '@/lib/qbo/payment-method-mapping'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,6 +39,8 @@ async function applyInvoicePayment(params: {
   providerRealmId?: string
   reference: string
   rawEvent: any
+  method?: 'CARD' | 'CHECK' | 'CASH' | 'ACH' | 'BANK_TRANSFER' | 'OTHER'
+  notes?: string | null
 }) {
   const invoice = await prisma.invoice.findFirst({
     where: { id: params.invoiceId, tenantId: params.tenantId },
@@ -57,6 +64,11 @@ async function applyInvoicePayment(params: {
       providerPaymentId: params.providerPaymentId,
       existingPaymentId: existing.id,
     })
+    await recordPaymentQboMapping({
+      tenantId: params.tenantId,
+      localPaymentId: existing.id,
+      qboPaymentId: params.providerPaymentId,
+    })
     await notifyInvoicePaid(
       params.tenantId,
       invoice.id,
@@ -64,7 +76,7 @@ async function applyInvoicePayment(params: {
       Number(existing.amount || 0),
       invoice.client?.name || 'Customer',
       {
-        paymentMethod: 'ACH',
+        paymentMethod: existing.method || 'ACH',
         providerPaymentId: params.providerPaymentId,
         dedupeKey: `payment-received:${params.tenantId}:${invoice.id}:${params.providerPaymentId}`,
       }
@@ -84,7 +96,7 @@ async function applyInvoicePayment(params: {
         invoiceId: invoice.id,
         amount,
         status: 'COMPLETED',
-        method: 'ACH',
+        method: params.method || 'ACH',
         reference: params.reference,
         provider: 'quickbooks',
         providerPaymentId: params.providerPaymentId,
@@ -92,7 +104,7 @@ async function applyInvoicePayment(params: {
         providerRealmId: params.providerRealmId || null,
         rawPayload: params.rawEvent ?? undefined,
         processedAt: new Date(),
-        notes: 'QuickBooks Payments (ACH)',
+        notes: params.notes || 'QuickBooks payment',
       },
     })
     createdPaymentId = payment.id
@@ -124,6 +136,25 @@ async function applyInvoicePayment(params: {
     })
   })
 
+  if (createdPaymentId) {
+    await recordPaymentQboMapping({
+      tenantId: params.tenantId,
+      localPaymentId: createdPaymentId,
+      qboPaymentId: params.providerPaymentId,
+    })
+  }
+
+  const paymentMethodLabel =
+    params.method === 'ACH'
+      ? 'ACH'
+      : params.method === 'CARD'
+        ? 'Card'
+        : params.method === 'CHECK'
+          ? 'Check'
+          : params.method === 'CASH'
+            ? 'Cash'
+            : params.notes?.replace(/^QuickBooks — /i, '') || 'QuickBooks'
+
   await notifyInvoicePaid(
     params.tenantId,
     invoice.id,
@@ -131,7 +162,7 @@ async function applyInvoicePayment(params: {
     amount,
     invoice.client?.name || 'Customer',
     {
-      paymentMethod: 'ACH',
+      paymentMethod: paymentMethodLabel,
       providerPaymentId: params.providerPaymentId,
       dedupeKey: `payment-received:${params.tenantId}:${invoice.id}:${params.providerPaymentId}`,
     }
@@ -168,11 +199,26 @@ async function processPaymentEntity(params: {
   const linked = lines.flatMap((l) => (Array.isArray(l?.LinkedTxn) ? l.LinkedTxn : []))
   const linkedInvoices = linked.filter((t) => String(t?.TxnType || '').toLowerCase() === 'invoice')
 
+  let qboMethodName: string | null = null
+  const paymentMethodRefId = String(payment?.PaymentMethodRef?.value || '')
+  if (paymentMethodRefId) {
+    qboMethodName = await fetchQboPaymentMethodName({
+      tenantId: params.tenantId,
+      paymentId: params.paymentId,
+      accessToken: session.accessToken,
+      realmId: session.realmId,
+      paymentMethodRefId,
+    })
+  }
+  const inboundMethod = mapInboundQboPaymentMethodFromName(qboMethodName)
+
   logWebhook('payment_canonical_fetched', {
     tenantId: params.tenantId,
     realmId: params.realmId,
     paymentId: params.paymentId,
     linkedInvoiceCount: linkedInvoices.length,
+    qboPaymentMethod: qboMethodName,
+    mappedMethod: inboundMethod.method,
   })
 
   for (const li of linkedInvoices) {
@@ -202,6 +248,8 @@ async function processPaymentEntity(params: {
       providerRealmId: params.realmId,
       reference: `qbo_payment_${params.paymentId}`,
       rawEvent: params.payload,
+      method: inboundMethod.method,
+      notes: inboundMethod.notes,
     })
 
     await prisma.invoicePaymentIntent.updateMany({

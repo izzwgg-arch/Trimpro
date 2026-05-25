@@ -95,7 +95,12 @@ export async function POST(
         invoiceId: invoice.id,
         amount,
         status: 'COMPLETED',
-        method: method === 'CHECK' ? 'CHECK' : 'OTHER',
+        method:
+          method === 'CHECK'
+            ? 'CHECK'
+            : methodLabel.toLowerCase() === 'cash'
+              ? 'CASH'
+              : 'OTHER',
         provider: method === 'QUICK_PAY' ? 'quick_pay' : method === 'OTHER' ? methodLabel.toLowerCase().replace(/\s+/g, '_') : 'manual',
         reference: reference || null,
         processedAt,

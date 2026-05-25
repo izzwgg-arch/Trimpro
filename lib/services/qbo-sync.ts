@@ -4,10 +4,14 @@ import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { encryptSecrets } from '@/lib/integrations/secrets'
 import { getPrimaryEmail } from '@/lib/email'
 import { calculateOrderedSubtotalRows } from '@/lib/documents/subtotals'
+import {
+  resolveOutboundQboPaymentMethodNames,
+  resolveQboPaymentMethodId,
+  shouldSkipOutboundQboPaymentSync,
+} from '@/lib/qbo/payment-method-mapping'
 import crypto from 'crypto'
 
 const LOOKUP_CACHE_TTL_MS = 5 * 60 * 1000
-const PAYMENT_METHOD_CACHE_TTL_MS = 30 * 60 * 1000
 
 type CachedLookup = {
   id: string
@@ -16,7 +20,6 @@ type CachedLookup = {
 
 const customerLookupCache = new Map<string, CachedLookup>()
 const vendorLookupCache = new Map<string, CachedLookup>()
-const paymentMethodLookupCache = new Map<string, CachedLookup>()
 
 function readCachedLookup(cache: Map<string, CachedLookup>, key: string): string | null {
   const hit = cache.get(key)
@@ -1230,38 +1233,6 @@ async function ensureDefaultServiceItem(params: {
   return itemId
 }
 
-async function getCreditCardPaymentMethodId(params: {
-  tenantId: string
-  paymentId: string
-  accessToken: string
-  realmId: string
-}): Promise<string | null> {
-  const cacheKey = makeLookupCacheKey(['payment_method', params.tenantId, params.realmId, 'credit_card'])
-  const cachedId = readCachedLookup(paymentMethodLookupCache, cacheKey)
-  if (cachedId) return cachedId
-
-  const pmQuery = encodeURIComponent("select * from PaymentMethod where Name = 'Credit Card'")
-  const pmRes = await quickBooksService.makeAPIRequest(
-    params.accessToken,
-    params.realmId,
-    `/query?query=${pmQuery}&minorversion=65`,
-    'GET',
-    undefined,
-    {
-      tenantId: params.tenantId,
-      entityType: 'payment',
-      entityId: params.paymentId,
-      triggerSource: 'payment_method_lookup',
-    }
-  )
-  const pmId = pmRes?.QueryResponse?.PaymentMethod?.[0]?.Id
-  if (!pmId) return null
-
-  const normalized = String(pmId)
-  writeCachedLookup(paymentMethodLookupCache, cacheKey, normalized, PAYMENT_METHOD_CACHE_TTL_MS)
-  return normalized
-}
-
 async function ensureClientCustomer(params: {
   tenantId: string
   clientId: string
@@ -2198,6 +2169,8 @@ export async function syncPaymentToQuickBooks(tenantId: string, paymentId: strin
     })
     if (!payment || payment.invoice.tenantId !== tenantId) return
 
+    if (shouldSkipOutboundQboPaymentSync(payment)) return
+
     const existingQboId = await getMappedQboId(session.integrationId, 'payment', payment.id)
     if (existingQboId) return
 
@@ -2256,15 +2229,16 @@ export async function syncPaymentToQuickBooks(tenantId: string, paymentId: strin
       payment.reference ||
       ''
 
-    // For card payments, look up the QBO Credit Card payment method
     let paymentMethodRef: { value: string } | undefined
-    if (isCardPayment) {
+    const methodNames = resolveOutboundQboPaymentMethodNames(payment)
+    if (methodNames.length > 0) {
       try {
-        const pmId = await getCreditCardPaymentMethodId({
+        const pmId = await resolveQboPaymentMethodId({
           tenantId,
-          paymentId,
+          paymentId: payment.id,
           accessToken: session.accessToken,
           realmId: session.realmId,
+          names: methodNames,
         })
         if (pmId) {
           paymentMethodRef = { value: String(pmId) }

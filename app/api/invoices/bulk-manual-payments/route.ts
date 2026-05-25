@@ -150,7 +150,12 @@ export async function POST(request: NextRequest) {
             invoiceId: invoice.id,
             amount,
             status: 'COMPLETED',
-            method: method === 'CHECK' ? 'CHECK' : 'OTHER',
+            method:
+              method === 'CHECK'
+                ? 'CHECK'
+                : methodLabel.toLowerCase() === 'cash'
+                  ? 'CASH'
+                  : 'OTHER',
             provider:
               method === 'QUICK_PAY'
                 ? 'quick_pay'
