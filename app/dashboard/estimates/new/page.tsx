@@ -1031,7 +1031,12 @@ export default function NewEstimatePage() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Failed to create estimate' }))
-        alert(errorData.error || 'Failed to create estimate')
+        const message =
+          errorData.error ||
+          (response.status === 409
+            ? 'Estimate number already exists. Please use a different estimate number.'
+            : 'Failed to create estimate')
+        alert(message)
         return
       }
 

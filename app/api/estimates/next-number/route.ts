@@ -4,8 +4,8 @@ import { allocateNextEstimateNumber } from '@/lib/qbo/doc-numbers'
 
 /**
  * Returns the next estimate number that would be used if the client leaves
- * "Estimate #" blank on create. Same logic as POST /api/estimates (no DB row yet;
- * another save could still take this number first — server retries on collision).
+ * "Estimate #" blank on create. Local TrimPro only (no QuickBooks API).
+ * QBO DocNumber is checked once on POST /api/estimates at save time.
  */
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)

@@ -6,7 +6,9 @@ import { calculateOrderedSubtotalRows } from '@/lib/documents/subtotals'
 import { calculateEstimateConversionSummary } from '@/lib/documents/conversion'
 import {
   allocateNextEstimateNumber,
-  assertEstimateNumberAvailableInQuickBooks,
+  assertEstimateNumberAvailableForCreate,
+  EstimateDocNumberError,
+  mapEstimateDocNumberErrorToResponse,
   normalizeEstimateNumber,
 } from '@/lib/qbo/doc-numbers'
 
@@ -191,42 +193,46 @@ export async function POST(request: NextRequest) {
 
     let estimate: any = null
     let estimateNumber = ''
+    const useCustomNumber = Boolean(estimateNumberOverrideTrimmed)
 
-    if (estimateNumberOverrideTrimmed) {
-      estimateNumber = estimateNumberOverrideTrimmed
+    for (let attempt = 0; attempt < 300; attempt++) {
+      estimateNumber = useCustomNumber
+        ? estimateNumberOverrideTrimmed!
+        : await allocateNextEstimateNumber({ tenantId: user.tenantId })
+
       try {
-        await assertEstimateNumberAvailableInQuickBooks(user.tenantId, estimateNumber)
-      } catch (err: any) {
-        return NextResponse.json({ error: err?.message || 'Estimate number already exists in QuickBooks' }, { status: 400 })
+        await assertEstimateNumberAvailableForCreate(user.tenantId, estimateNumber)
+      } catch (err) {
+        const mapped = mapEstimateDocNumberErrorToResponse(err)
+        if (mapped) {
+          if (useCustomNumber || err instanceof EstimateDocNumberError && err.code === 'QBO_UNAVAILABLE') {
+            return NextResponse.json(mapped.body, { status: mapped.status })
+          }
+          if (
+            err instanceof EstimateDocNumberError &&
+            (err.code === 'ESTIMATE_NUMBER_QBO_CONFLICT' || err.code === 'ESTIMATE_NUMBER_LOCAL_CONFLICT')
+          ) {
+            continue
+          }
+          return NextResponse.json(mapped.body, { status: mapped.status })
+        }
+        throw err
       }
+
       try {
         estimate = await prisma.estimate.create({
           data: { ...baseEstimateData, estimateNumber },
           include: { client: true, lead: true },
         })
+        break
       } catch (err: any) {
         if (err?.code === 'P2002' && err?.meta?.target?.includes?.('estimateNumber')) {
-          return NextResponse.json({ error: 'Estimate number already exists' }, { status: 400 })
+          if (useCustomNumber) {
+            return NextResponse.json({ error: 'Estimate number already exists', code: 'ESTIMATE_NUMBER_LOCAL_CONFLICT', estimateNumber }, { status: 409 })
+          }
+          continue
         }
         throw err
-      }
-    } else {
-      // Generate estimate number with local + QuickBooks collision-safe retry.
-      for (let attempt = 0; attempt < 300; attempt++) {
-        estimateNumber = await allocateNextEstimateNumber({ tenantId: user.tenantId })
-
-        try {
-          estimate = await prisma.estimate.create({
-            data: { ...baseEstimateData, estimateNumber },
-            include: { client: true, lead: true },
-          })
-          break
-        } catch (err: any) {
-          if (err?.code === 'P2002' && err?.meta?.target?.includes?.('estimateNumber')) {
-            continue
-          }
-          throw err
-        }
       }
     }
     if (!estimate) {

@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
-import { allocateNextEstimateNumber } from '@/lib/qbo/doc-numbers'
+import {
+  allocateNextEstimateNumber,
+  assertEstimateNumberAvailableForCreate,
+  mapEstimateDocNumberErrorToResponse,
+} from '@/lib/qbo/doc-numbers'
 
 export async function POST(
   request: NextRequest,
@@ -33,6 +37,14 @@ export async function POST(
     }
 
     const estimateNumber = await allocateNextEstimateNumber({ tenantId: user.tenantId })
+
+    try {
+      await assertEstimateNumberAvailableForCreate(user.tenantId, estimateNumber)
+    } catch (err) {
+      const mapped = mapEstimateDocNumberErrorToResponse(err)
+      if (mapped) return NextResponse.json(mapped.body, { status: mapped.status })
+      throw err
+    }
 
     const duplicate = await prisma.estimate.create({
       data: {

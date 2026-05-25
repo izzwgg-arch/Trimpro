@@ -6,6 +6,11 @@ import { geocodeAddressPartsFromString } from '@/lib/geocoding'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { calculateOrderedSubtotalRows } from '@/lib/documents/subtotals'
 import { calculateEstimateConversionSummary, getEstimateConversionProgress, getEstimateConversionSummary } from '@/lib/documents/conversion'
+import {
+  assertEstimateNumberAvailableForCreate,
+  mapEstimateDocNumberErrorToResponse,
+  normalizeEstimateNumber,
+} from '@/lib/qbo/doc-numbers'
 
 export async function GET(
   request: NextRequest,
@@ -231,16 +236,21 @@ export async function PUT(
       return NextResponse.json({ error: 'Estimate not found' }, { status: 404 })
     }
 
-    const normalizeEstimateNumber = (val: any) => {
-      if (val === null || val === undefined) return null
-      const raw = String(val).trim()
-      if (!raw) return null
-      if (/^\d+$/.test(raw)) return `EST-${raw.padStart(6, '0')}`
-      const m = raw.match(/^EST-(\d+)$/i)
-      if (m) return `EST-${m[1].padStart(6, '0')}`
-      return raw
-    }
     const normalizedEstimateNumber = normalizeEstimateNumber(estimateNumber)
+    const estimateNumberChanging =
+      normalizedEstimateNumber && normalizedEstimateNumber !== existing.estimateNumber
+
+    if (estimateNumberChanging) {
+      try {
+        await assertEstimateNumberAvailableForCreate(user.tenantId, normalizedEstimateNumber, {
+          excludeEstimateId: params.id,
+        })
+      } catch (err) {
+        const mapped = mapEstimateDocNumberErrorToResponse(err)
+        if (mapped) return NextResponse.json(mapped.body, { status: mapped.status })
+        throw err
+      }
+    }
 
     // Recalculate totals if line items changed
     let subtotal = Number(existing.subtotal)
@@ -418,7 +428,14 @@ export async function PUT(
       })
     } catch (err: any) {
       if (err?.code === 'P2002' && err?.meta?.target?.includes?.('estimateNumber')) {
-        return NextResponse.json({ error: 'Estimate number already exists' }, { status: 400 })
+        return NextResponse.json(
+          {
+            error: 'Estimate number already exists',
+            code: 'ESTIMATE_NUMBER_LOCAL_CONFLICT',
+            estimateNumber: normalizedEstimateNumber || existing.estimateNumber,
+          },
+          { status: 409 }
+        )
       }
       throw err
     }
