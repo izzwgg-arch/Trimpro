@@ -356,68 +356,15 @@ export async function POST(
       // Non-fatal — send without PDF if rendering fails
     }
 
-    // Build branded email with View Statement button
-    const safeClientName = escapeHtml(clientName)
-    const safeTotalOutstanding = escapeHtml(formatCurrency(totalOutstanding))
-    const safeViewUrl = escapeHtml(viewUrl)
-    const safeRecipient = escapeHtml(recipientEmail)
-
-    const emailHtml = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-</head>
-<body style="margin:0;padding:0;background:#f0f4f8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f0f4f8;padding:24px 12px 40px;">
-    <tr><td align="center">
-      <table role="presentation" width="620" cellspacing="0" cellpadding="0" style="max-width:620px;width:100%;">
-
-        <!-- Header -->
-        <tr><td style="background:#243f53;padding:28px 36px 22px;border-radius:16px 16px 0 0;border-bottom:2px solid #f0c974;">
-          <p style="margin:0;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#f0c974;">Account Statement</p>
-          <h1 style="margin:8px 0 0;font-size:22px;font-weight:800;color:#ffffff;">Your balance with us</h1>
-        </td></tr>
-
-        <!-- Body -->
-        <tr><td style="background:#1e3345;padding:28px 36px;">
-          <p style="margin:0 0 10px;font-size:15px;line-height:1.7;color:#d5e1f1;">Hi ${safeClientName},</p>
-          <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#d5e1f1;">
-            Please find your account statement${pdfAttachment ? ' <strong style="color:#f0c974;">attached as a PDF</strong>' : ''}.
-            You currently have
-            <strong style="color:#f0c974;">${openCount} open invoice${openCount !== 1 ? 's' : ''}</strong>
-            with a total outstanding balance of
-            <strong style="color:#f0c974;">${safeTotalOutstanding}</strong>.
-          </p>
-
-          <!-- View Statement button -->
-          <table role="presentation" cellspacing="0" cellpadding="0" style="margin-bottom:24px;">
-            <tr><td>
-              <a href="${safeViewUrl}" target="_blank" rel="noopener noreferrer"
-                style="display:inline-block;padding:14px 32px;font-size:15px;font-weight:700;text-decoration:none;border-radius:10px;background:linear-gradient(135deg,#1e4d6e 0%,#c9a84c 100%);color:#ffffff;">
-                View Statement
-              </a>
-            </td></tr>
-          </table>
-
-          <p style="margin:0;font-size:13px;line-height:1.6;color:#8cb4cf;">
-            If you have any questions about your account or would like to arrange payment,
-            please don't hesitate to contact us.
-          </p>
-        </td></tr>
-
-        <!-- Footer -->
-        <tr><td style="background:#182d3d;padding:18px 36px;border-radius:0 0 16px 16px;text-align:center;">
-          <p style="margin:0;font-size:11px;color:#6b8fa8;">
-            This statement was sent to ${safeRecipient}. If you received this in error, please disregard.
-          </p>
-        </td></tr>
-
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`
+    const { buildStatementEmail } = await import('@/lib/email/templates/statement')
+    const emailHtml = buildStatementEmail({
+      clientName,
+      recipientEmail,
+      openCount,
+      totalOutstanding: formatCurrency(totalOutstanding),
+      viewUrl,
+      hasPdf: !!pdfAttachment,
+    })
 
     // Use the tenant's configured email integration (same as invoice/estimate emails)
     const emailSecrets = await getIntegrationSecrets(user.tenantId, 'email')

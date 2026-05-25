@@ -1,6 +1,10 @@
 // Email Service Abstraction
 // Supports SendGrid, Mailgun, and AWS SES
 import { getEmailBranding } from '@/lib/email/branding'
+import { buildPaymentReceiptEmail } from '@/lib/email/templates/payment-receipt'
+import { buildInvoiceEmail } from '@/lib/email/templates/invoice'
+import { buildEstimateApprovalEmail } from '@/lib/email/templates/estimate-approval'
+import { escapeHtml } from '@/lib/email/shell'
 import { mergeConfiguredGlobalCc } from '@/lib/email/recipients'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { sendEmailWithAttachments } from '@/lib/integrations/providers/email'
@@ -12,15 +16,6 @@ const MAILGUN_DOMAIN = process.env.MAILGUN_DOMAIN
 const AWS_SES_REGION = process.env.AWS_SES_REGION || 'us-east-1'
 const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@trimpro.com'
 const FROM_NAME = process.env.FROM_NAME || 'Trim Pro'
-
-function escapeHtml(value: string) {
-  return String(value || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
 
 function formatEmailDate(value: Date | number | string) {
   const date = value instanceof Date ? value : new Date(value)
@@ -426,57 +421,24 @@ export async function sendEstimateEmail(
   customMessage?: string
 ): Promise<void> {
   const emailService = new EmailService()
-  const safePdfUrl = escapeHtml(pdfUrl)
-  
+  const sentDisplay = formatEmailDate(new Date())
+
   await emailService.sendEmail({
     to,
     subject: `Estimate ${estimate.estimateNumber} from Trim Pro`,
-    html: `<!DOCTYPE html>
-<html lang="en" xmlns="http://www.w3.org/1999/xhtml" data-tp-lock-colors="1">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="color-scheme" content="light only" />
-  <meta name="supported-color-schemes" content="light only" />
-  <style>
-    @media (prefers-color-scheme:light){
-      .email-body{background-color:#f8f9fc !important;}
-      .main-card{background-color:#ffffff !important;}
-      .body-text{color:#1f2937 !important;}
-      .foot-copy{color:#475569 !important;}
-    }
-  </style>
-</head>
-<body class="email-body" style="margin:0;padding:0;background-color:#0f172a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#0f172a;padding:24px 12px 40px;">
-    <tr><td align="center" valign="top">
-      <table role="presentation" class="main-card" cellpadding="0" cellspacing="0" border="0"
-        style="max-width:580px;width:100%;background-color:#243f53;border-radius:16px;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,0.4);">
-        <tr><td style="background-color:#243f53;padding:34px 36px 26px;text-align:center;border-bottom:1px solid rgba(255,255,255,0.07);">
-          <div style="font-size:22px;font-weight:800;letter-spacing:-0.3px;color:#f8dea4;margin-bottom:10px;">TrimPro</div>
-          <p style="margin:0;font-size:11px;font-weight:600;letter-spacing:2.2px;text-transform:uppercase;color:#f5e3aa;">Estimate Ready</p>
-        </td></tr>
-        <tr><td style="padding:26px 40px;">
-          <p class="body-text" style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#d5e1f1;">
-            Your estimate ${escapeHtml(estimate.estimateNumber)} is ready to review.
-            ${estimate.validUntil ? ` Valid until ${new Date(estimate.validUntil).toLocaleDateString()}.` : ''}
-          </p>
-          ${customMessage ? `<p class="body-text" style="margin:0 0 18px;font-size:14px;line-height:1.7;color:#e3edf9;white-space:pre-wrap;">${escapeHtml(customMessage)}</p>` : ''}
-          <p class="body-text" style="margin:0 0 22px;font-size:15px;color:#d5e1f1;"><strong style="color:#ffffff;">Total: ${escapeHtml(String(estimate.total || ''))}</strong></p>
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:18px;">
-            <tr><td align="center">
-              <a href="${safePdfUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:16px 48px;font-size:17px;font-weight:700;letter-spacing:0.2px;line-height:1.2;text-decoration:none;text-align:center;border-radius:12px;background:linear-gradient(135deg,#2a5f82 0%,#f0c974 100%);color:#1e2937;">Download Estimate PDF</a>
-            </td></tr>
-          </table>
-        </td></tr>
-        <tr><td style="background-color:#223347;padding:20px 40px;border-top:1px solid #46627f;text-align:center;">
-          <p class="foot-copy" style="margin:0;font-size:11px;color:#93a9c2;">Estimate ${escapeHtml(estimate.estimateNumber)} — TrimPro</p>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`,
+    html: buildEstimateApprovalEmail({
+      recipientName: 'there',
+      customerName: 'Customer',
+      estimateNumber: estimate.estimateNumber,
+      total: String(estimate.total || ''),
+      sentDisplay,
+      approveUrl: pdfUrl,
+      pdfUrl,
+      message: customMessage,
+      validUntil: estimate.validUntil
+        ? new Date(estimate.validUntil).toLocaleDateString()
+        : undefined,
+    }),
     text: `Estimate ${estimate.estimateNumber}\n\n${customMessage || ''}\n\nTotal: ${estimate.total}\n${estimate.validUntil ? `Valid until: ${new Date(estimate.validUntil).toLocaleDateString()}\n` : ''}\nDownload: ${pdfUrl}`,
     attachments: [],
   })
@@ -490,74 +452,22 @@ export async function sendInvoiceEmail(
   customMessage?: string
 ): Promise<void> {
   const emailService = new EmailService()
-  const safePdfUrl = escapeHtml(pdfUrl)
-  const safePaymentLink = escapeHtml(paymentLink)
+  const sentDisplay = formatEmailDate(new Date())
 
   await emailService.sendEmail({
     to,
     subject: `Invoice ${invoice.invoiceNumber} from Trim Pro`,
-    html: `<!DOCTYPE html>
-<html lang="en" xmlns="http://www.w3.org/1999/xhtml" data-tp-lock-colors="1">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="color-scheme" content="light only" />
-  <meta name="supported-color-schemes" content="light only" />
-  <style>
-    @media (prefers-color-scheme:light){
-      .email-body{background-color:#f8f9fc !important;}
-      .main-card{background-color:#ffffff !important;}
-      .body-text{color:#1f2937 !important;}
-      .foot-copy{color:#475569 !important;}
-    }
-  </style>
-</head>
-<body class="email-body" style="margin:0;padding:0;background-color:#0f172a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#0f172a;padding:24px 12px 40px;">
-    <tr><td align="center" valign="top">
-      <table role="presentation" class="main-card" cellpadding="0" cellspacing="0" border="0"
-        style="max-width:580px;width:100%;background-color:#243f53;border-radius:16px;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,0.4);">
-        <tr><td style="background-color:#243f53;padding:34px 36px 26px;text-align:center;border-bottom:1px solid rgba(255,255,255,0.07);">
-          <div style="font-size:22px;font-weight:800;letter-spacing:-0.3px;color:#f8dea4;margin-bottom:10px;">TrimPro</div>
-          <p style="margin:0;font-size:11px;font-weight:600;letter-spacing:2.2px;text-transform:uppercase;color:#f5e3aa;">Invoice Delivery</p>
-        </td></tr>
-        <tr><td style="padding:26px 40px;">
-          <p class="body-text" style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#d5e1f1;">
-            Invoice ${escapeHtml(invoice.invoiceNumber)} is ready.
-            ${invoice.dueDate ? ` Due ${new Date(invoice.dueDate).toLocaleDateString()}.` : ''}
-          </p>
-          ${customMessage ? `<p class="body-text" style="margin:0 0 18px;font-size:14px;line-height:1.7;color:#e3edf9;white-space:pre-wrap;">${escapeHtml(customMessage)}</p>` : ''}
-          <p class="body-text" style="margin:0 0 22px;font-size:15px;color:#d5e1f1;"><strong style="color:#ffffff;">Total: ${escapeHtml(String(invoice.total || ''))}</strong></p>
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:18px;">
-            <tr>
-              <td align="center" style="font-size:0;">
-                ${paymentLink ? `
-                <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="display:inline-table;margin:0 6px 10px 0;vertical-align:top;">
-                  <tr>
-                    <td bgcolor="#f0c974" style="border-radius:12px;background-color:#f0c974;">
-                      <a href="${safePaymentLink}" target="_blank" rel="noopener noreferrer" style="display:block;padding:16px 48px;font-size:17px;font-weight:700;letter-spacing:0.2px;line-height:1.2;text-align:center;text-decoration:none;color:#1e2937;background-color:#f0c974;border-radius:12px;">Pay Now</a>
-                    </td>
-                  </tr>
-                </table>` : ''}
-                <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="display:inline-table;margin:0 0 10px;vertical-align:top;">
-                  <tr>
-                    <td bgcolor="#f0c974" style="border-radius:12px;background-color:#f0c974;">
-                      <a href="${safePdfUrl}" target="_blank" rel="noopener noreferrer" style="display:block;padding:16px 48px;font-size:17px;font-weight:700;letter-spacing:0.2px;line-height:1.2;text-align:center;text-decoration:none;color:#1e2937;background-color:#f0c974;border-radius:12px;">View Invoice</a>
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-          </table>
-        </td></tr>
-        <tr><td style="background-color:#223347;padding:20px 40px;border-top:1px solid #46627f;text-align:center;">
-          <p class="foot-copy" style="margin:0;font-size:11px;color:#93a9c2;">Invoice ${escapeHtml(invoice.invoiceNumber)} — TrimPro</p>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`,
+    html: buildInvoiceEmail({
+      invoiceNumber: invoice.invoiceNumber,
+      clientName: 'Customer',
+      dueDate: invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : undefined,
+      total: String(invoice.total || '0'),
+      balance: String(invoice.balance ?? invoice.total ?? '0'),
+      sentDisplay,
+      pdfUrl,
+      paymentLink: paymentLink || undefined,
+      message: customMessage,
+    }),
     text: `Invoice ${invoice.invoiceNumber}\n\n${customMessage || ''}\n\nTotal: ${invoice.total}\n${invoice.dueDate ? `Due date: ${new Date(invoice.dueDate).toLocaleDateString()}\n` : ''}\nDownload: ${pdfUrl}\n${paymentLink ? `Pay Online: ${paymentLink}` : ''}`,
     attachments: [],
   })
@@ -587,114 +497,23 @@ export async function sendPaymentReceiptEmail(params: {
   const company = params.companyName || FROM_NAME
   const method = params.paymentMethod || 'ACH'
   const providerPaymentId = params.providerPaymentId || params.reference || ''
-  const safeReceiptUrl = escapeHtml(params.receiptUrl || '')
-  const safeInvoiceUrl = escapeHtml(params.invoiceUrl || '')
-  const safeCompany = escapeHtml(company)
   const emailBranding = params.tenantId ? await getEmailBranding(params.tenantId) : null
   const effectiveLogoUrl = params.logoUrl || emailBranding?.emailLogoUrl || emailBranding?.webLogoUrl || ''
-  const safeLogoUrl = escapeHtml(effectiveLogoUrl)
-  const headerLogoBlock = safeLogoUrl
-    ? `<img src="${safeLogoUrl}" alt="Brand logo" width="200"
-         style="display:inline-block;height:auto;max-height:72px;width:auto;max-width:220px;border:0;margin-bottom:6px;"
-         onerror="this.style.display='none'" />`
-    : `<div style="font-size:22px;font-weight:800;letter-spacing:-0.3px;color:#f8dea4;margin-bottom:10px;">${safeCompany}</div>`
 
   const subject = `Payment receipt for invoice ${params.invoiceNumber}`
-  const html = `<!DOCTYPE html>
-<html lang="en" xmlns="http://www.w3.org/1999/xhtml" data-tp-lock-colors="1">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="color-scheme" content="light only" />
-  <meta name="supported-color-schemes" content="light only" />
-  <title>Payment receipt</title>
-  <style>
-    :root { color-scheme: dark; supported-color-schemes: dark; }
-    @media only screen and (max-width:600px){
-      .main-card{ border-radius:12px !important; }
-      .hero-pad{ padding:28px 20px 20px !important; }
-      .body-pad{ padding:22px 20px !important; }
-      .btn-cell{ display:block !important; width:100% !important; padding:0 0 10px !important; }
-      .btn-main{ padding:14px 20px !important; font-size:15px !important; }
-      .amount{ font-size:34px !important; }
-    }
-    @media (prefers-color-scheme: light){
-      :root { color-scheme: light; supported-color-schemes: light; }
-      .email-body { background-color:#f8f9fc !important; }
-      .main-card { background-color:#ffffff !important; box-shadow:0 8px 24px rgba(15,23,42,0.08),0 2px 8px rgba(15,23,42,0.05) !important; }
-      .headline { color:#1f2937 !important; }
-      .hero-meta { color:#475569 !important; }
-      .body-text { color:#1f2937 !important; }
-      .status-badge { background-color:#e5e7eb !important; color:#111827 !important; border-color:#f8dea4 !important; }
-      .support-card { background-color:#f1f5f9 !important; border-color:#d5dee8 !important; }
-      .support-text, .support-strong { color:#111827 !important; }
-      .foot-cell { background-color:#f8fafc !important; border-top-color:#e5e7eb !important; }
-      .foot-copy { color:#475569 !important; }
-    }
-  </style>
-</head>
-<body class="email-body" style="margin:0;padding:0;background-color:#0f172a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#0f172a;padding:24px 12px 40px;">
-    <tr>
-      <td align="center" valign="top">
-        <table role="presentation" class="main-card" cellpadding="0" cellspacing="0" border="0" style="max-width:580px;width:100%;background-color:#243f53;border-radius:16px;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,0.4),0 2px 8px rgba(0,0,0,0.25);">
-          <tr>
-            <td style="background-color:#243f53;padding:34px 36px 26px;text-align:center;border-bottom:1px solid rgba(255,255,255,0.07);">
-              ${headerLogoBlock}
-              <p style="margin:0;font-size:11px;font-weight:600;letter-spacing:2.2px;text-transform:uppercase;color:#f5e3aa;">Payment Receipt</p>
-            </td>
-          </tr>
-          <tr>
-            <td class="hero-pad" style="padding:30px 40px 22px;text-align:center;border-bottom:1px solid rgba(255,255,255,0.07);">
-              <div class="status-badge" style="display:inline-block;background-color:#334155;border:1px solid #f8dea4;border-radius:999px;padding:5px 16px;margin-bottom:18px;color:#ffffff;font-size:12px;font-weight:700;letter-spacing:0.3px;">Payment Confirmed</div>
-              <h1 class="headline" style="margin:0 0 10px;font-size:28px;font-weight:800;line-height:1.2;letter-spacing:-0.4px;color:#f8dea4;">Payment Received</h1>
-              <p class="hero-meta" style="margin:0;font-size:13px;font-weight:600;color:#c4d5e9;">Invoice ${escapeHtml(params.invoiceNumber)} &ensp;&bull;&ensp; ${escapeHtml(paidAtText)}</p>
-            </td>
-          </tr>
-          <tr>
-            <td class="body-pad" style="padding:26px 40px;">
-              <p class="body-text" style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#d5e1f1;">Thank you. We have processed your payment and applied it to your invoice.</p>
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#1e3345;border:1px solid #46627f;border-radius:12px;overflow:hidden;margin-bottom:22px;">
-                <tr><td style="padding:11px 18px;border-bottom:1px solid #46627f;background-color:#1e3345;"><p style="margin:0;font-size:10px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:#c2d1e3;">Receipt Details</p></td></tr>
-                <tr>
-                  <td style="padding:16px 18px 18px;background:#30495f;">
-                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-                      <td style="font-size:11px;color:#cdd9e8;font-weight:700;letter-spacing:1px;text-transform:uppercase;vertical-align:middle;">Amount Paid</td>
-                      <td class="amount" style="font-size:38px;font-weight:800;color:#ffffff;text-align:right;line-height:1;letter-spacing:-1.5px;vertical-align:middle;">${escapeHtml(amountText)}</td>
-                    </tr></table>
-                  </td>
-                </tr>
-                <tr><td style="padding:0 18px;"><div style="height:1px;background:#46627f;"></div></td></tr>
-                <tr><td style="padding:12px 18px 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="font-size:13px;color:#c2d1e3;font-weight:600;padding-bottom:12px;width:44%;">Method</td><td style="font-size:13px;color:#eff6ff;font-weight:700;text-align:right;padding-bottom:12px;">${escapeHtml(method)}</td></tr></table></td></tr>
-                <tr><td style="padding:0 18px;"><div style="height:1px;background:#46627f;"></div></td></tr>
-                <tr><td style="padding:12px 18px 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="font-size:13px;color:#c2d1e3;font-weight:600;padding-bottom:12px;width:44%;">Payment ID</td><td style="font-size:13px;color:#eff6ff;font-weight:700;text-align:right;padding-bottom:12px;">${escapeHtml(providerPaymentId || '-')}</td></tr></table></td></tr>
-              </table>
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:22px;">
-                <tr>
-                  <td align="center">
-                    ${params.receiptUrl ? `<a href="${safeReceiptUrl}" style="display:inline-block;padding:16px 48px;font-size:17px;font-weight:700;letter-spacing:0.2px;line-height:1.2;text-decoration:none;text-align:center;border-radius:12px;background:linear-gradient(135deg,#2a5f82 0%,#f0c974 100%);color:#1e2937;margin:0 6px 10px 0;">View Receipt</a>` : ''}
-                    ${params.invoiceUrl ? `<a href="${safeInvoiceUrl}" style="display:inline-block;padding:16px 48px;font-size:17px;font-weight:700;letter-spacing:0.2px;line-height:1.2;text-decoration:none;text-align:center;border-radius:12px;background:linear-gradient(135deg,#2a5f82 0%,#f0c974 100%);color:#1e2937;">View Invoice</a>` : ''}
-                  </td>
-                </tr>
-              </table>
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="support-card" style="background-color:#263f56;border:1px solid #46627f;border-radius:10px;">
-                <tr><td style="padding:13px 18px;text-align:center;"><p class="support-text" style="margin:0;font-size:13px;line-height:1.65;color:#d6e3f2;">Questions about this payment? <strong class="support-strong" style="color:#ffffff;">Reply to this email</strong>.</p></td></tr>
-              </table>
-            </td>
-          </tr>
-          <tr>
-            <td class="foot-cell" style="background-color:#223347;padding:22px 40px 24px;border-top:1px solid #46627f;text-align:center;">
-              <p style="margin:0 0 5px;font-size:13px;font-weight:700;color:#f8dea4;letter-spacing:0.2px;">${safeCompany}</p>
-              <p class="foot-copy" style="margin:0 0 5px;font-size:11px;line-height:1.7;color:#93a9c2;">Invoice ${escapeHtml(params.invoiceNumber)} &ensp;&bull;&ensp; Paid ${escapeHtml(paidAtText)}</p>
-              <p class="foot-copy" style="margin:0;font-size:11px;line-height:1.6;color:#93a9c2;">${params.providerInvoiceId ? `Provider Invoice ID: ${escapeHtml(params.providerInvoiceId)}. ` : ''}${params.reference ? `Reference: ${escapeHtml(params.reference)}.` : ''}</p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`
+  const html = buildPaymentReceiptEmail({
+    recipientName: 'there',
+    amountPaid: amountText,
+    paidAt: params.paidAt || new Date(),
+    transactionId: providerPaymentId || '-',
+    description: `Invoice ${params.invoiceNumber} (${method})`,
+    logoUrl: effectiveLogoUrl || undefined,
+    companyName: company,
+    receiptUrl: params.receiptUrl || undefined,
+    invoiceUrl: params.invoiceUrl || undefined,
+    invoiceNumber: params.invoiceNumber,
+  })
+
   const text = `
 Payment Receipt
 

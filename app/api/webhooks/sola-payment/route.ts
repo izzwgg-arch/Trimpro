@@ -5,6 +5,10 @@ import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { testEmailProvider } from '@/lib/integrations/providers/email'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { getEmailBranding } from '@/lib/email/branding'
+import {
+  buildBulkPaymentReceiptEmail,
+  buildInvoicePaymentReceiptEmail,
+} from '@/lib/email/templates/payment-receipt'
 import { getEstimateConversionSummary } from '@/lib/documents/conversion'
 
 function normalizePhone(value: string | null | undefined) {
@@ -66,57 +70,20 @@ async function sendPaymentReceiptEmail(params: {
   }`
   const emailBranding = await getEmailBranding(params.tenantId)
   const brandLogoUrl = String(emailBranding?.emailLogoUrl || emailBranding?.webLogoUrl || '').trim()
-  const headerBrandBlock = brandLogoUrl
-    ? `<img src="${brandLogoUrl}" alt="Brand logo" width="200" style="display:inline-block;height:auto;max-height:72px;width:auto;max-width:220px;border:0;margin-bottom:6px;" onerror="this.style.display='none'" />`
-    : `<div style="font-size:22px;font-weight:800;color:#f8dea4;">TrimPro</div>`
-  const html = `
-    <html lang="en">
-      <head>
-        <meta name="color-scheme" content="light only" />
-        <meta name="supported-color-schemes" content="light only" />
-        <style>
-          @media (prefers-color-scheme: light){
-            .email-body{ background:#f8f9fc !important; }
-            .main-card{ background:#ffffff !important; box-shadow:0 8px 24px rgba(15,23,42,0.08) !important; }
-            .headline{ color:#1f2937 !important; }
-            .hero-meta{ color:#475569 !important; }
-            .body-copy{ color:#1f2937 !important; }
-            .status-badge{ background:#e5e7eb !important; color:#111827 !important; border-color:#f8dea4 !important; }
-          }
-        </style>
-      </head>
-      <body class="email-body" style="margin:0;padding:0;background:#0f172a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#0f172a;padding:24px 12px 40px;">
-          <tr><td align="center">
-            <table role="presentation" width="580" class="main-card" cellspacing="0" cellpadding="0" style="max-width:580px;width:100%;background:#243f53;border-radius:16px;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,0.4);">
-              <tr><td style="background:#243f53;padding:34px 36px 26px;text-align:center;border-bottom:1px solid rgba(255,255,255,0.07);">
-                ${headerBrandBlock}
-                <p style="margin:8px 0 0;font-size:11px;font-weight:600;letter-spacing:2px;color:#f5e3aa;text-transform:uppercase;">Payment Receipt</p>
-              </td></tr>
-              <tr><td style="padding:30px 40px 22px;text-align:center;border-bottom:1px solid rgba(255,255,255,0.07);">
-                <div class="status-badge" style="display:inline-block;background:#334155;border:1px solid #f8dea4;border-radius:999px;padding:5px 16px;margin-bottom:18px;color:#fff;font-size:12px;font-weight:700;">Payment Confirmed</div>
-                <h1 class="headline" style="margin:0 0 10px;font-size:28px;line-height:1.2;font-weight:800;color:#f8dea4;">Payment Received</h1>
-                <p class="hero-meta" style="margin:0;color:#c4d5e9;font-size:13px;font-weight:600;">Invoice ${params.invoiceNumber} &bull; ${now.toLocaleString()}</p>
-              </td></tr>
-              <tr><td style="padding:26px 40px;">
-                <p class="body-copy" style="margin:0 0 18px;color:#d5e1f1;font-size:15px;line-height:1.7;">Hi ${params.clientName || 'there'}, we received your payment and applied it to your invoice.</p>
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#1e3345;border:1px solid #46627f;border-radius:12px;overflow:hidden;margin-bottom:22px;">
-                  <tr><td style="padding:11px 18px;border-bottom:1px solid #46627f;"><p style="margin:0;font-size:10px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:#c2d1e3;">Receipt Details</p></td></tr>
-                  <tr><td style="padding:16px 18px 18px;background:#30495f;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td style="font-size:11px;color:#cdd9e8;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Amount Paid</td><td align="right" style="font-size:38px;font-weight:800;color:#ffffff;line-height:1;">${money(params.amountPaid)}</td></tr></table></td></tr>
-                  <tr><td style="padding:0 18px;"><div style="height:1px;background:#46627f;"></div></td></tr>
-                  <tr><td style="padding:12px 18px 0;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td style="font-size:13px;color:#c2d1e3;font-weight:600;padding-bottom:12px;width:44%;">Paid to Date</td><td align="right" style="font-size:13px;color:#eff6ff;font-weight:700;padding-bottom:12px;">${money(params.paidToDate)}</td></tr></table></td></tr>
-                  <tr><td style="padding:0 18px;"><div style="height:1px;background:#46627f;"></div></td></tr>
-                  <tr><td style="padding:12px 18px 0;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td style="font-size:13px;color:#c2d1e3;font-weight:600;padding-bottom:12px;width:44%;">Balance</td><td align="right" style="font-size:13px;color:#eff6ff;font-weight:700;padding-bottom:12px;">${money(params.balance)}</td></tr></table></td></tr>
-                  ${params.transactionId ? `<tr><td style="padding:0 18px;"><div style="height:1px;background:#46627f;"></div></td></tr><tr><td style="padding:12px 18px 0;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td style="font-size:13px;color:#c2d1e3;font-weight:600;padding-bottom:12px;width:44%;">Transaction ID</td><td align="right" style="font-size:13px;color:#eff6ff;font-weight:700;padding-bottom:12px;">${params.transactionId}</td></tr></table></td></tr>` : ''}
-                </table>
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td align="center"><a href="${receiptUrl}" style="display:inline-block;padding:16px 48px;font-size:17px;font-weight:700;letter-spacing:0.2px;line-height:1.2;text-decoration:none;text-align:center;border-radius:12px;background:linear-gradient(135deg,#2a5f82 0%,#f0c974 100%);color:#1e2937;">View Receipt</a></td></tr></table>
-              </td></tr>
-            </table>
-          </td></tr>
-        </table>
-      </body>
-    </html>
-  `
+  const html = buildInvoicePaymentReceiptEmail({
+    clientName: params.clientName,
+    invoiceNumber: params.invoiceNumber,
+    amountPaid: money(params.amountPaid),
+    paidToDate: money(params.paidToDate),
+    balance: money(params.balance),
+    transactionId: params.transactionId,
+    receiptUrl,
+    logoUrl: brandLogoUrl || undefined,
+    companyName:
+      (emailBranding as { businessName?: string; companyName?: string } | null)?.businessName ||
+      (emailBranding as { companyName?: string } | null)?.companyName ||
+      'TrimPro',
+  })
 
   const result = await testEmailProvider(emailSecrets, params.to, subject, html)
   if (!result.success) {
@@ -139,56 +106,23 @@ async function sendBulkPaymentReceiptEmail(params: {
   const subject = `Payment Receipt • ${params.appliedCount} invoice(s) • ${now.toISOString()}`
   const emailBranding = await getEmailBranding(params.tenantId)
   const brandLogoUrl = String(emailBranding?.emailLogoUrl || emailBranding?.webLogoUrl || '').trim()
-  const headerBrandBlock = brandLogoUrl
-    ? `<img src="${brandLogoUrl}" alt="Brand logo" width="200" style="display:inline-block;height:auto;max-height:72px;width:auto;max-width:220px;border:0;margin-bottom:6px;" onerror="this.style.display='none'" />`
-    : `<div style="font-size:22px;font-weight:800;color:#f8dea4;">TrimPro</div>`
-  const html = `
-    <html lang="en">
-      <head>
-        <meta name="color-scheme" content="light only" />
-        <meta name="supported-color-schemes" content="light only" />
-        <style>
-          @media (prefers-color-scheme: light){
-            .email-body{ background:#f8f9fc !important; }
-            .main-card{ background:#ffffff !important; box-shadow:0 8px 24px rgba(15,23,42,0.08) !important; }
-            .headline{ color:#1f2937 !important; }
-            .hero-meta{ color:#475569 !important; }
-            .body-copy{ color:#1f2937 !important; }
-            .status-badge{ background:#e5e7eb !important; color:#111827 !important; border-color:#f8dea4 !important; }
-          }
-        </style>
-      </head>
-      <body class="email-body" style="margin:0;padding:0;background:#0f172a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#0f172a;padding:24px 12px 40px;">
-          <tr><td align="center">
-            <table role="presentation" width="580" class="main-card" cellspacing="0" cellpadding="0" style="max-width:580px;width:100%;background:#243f53;border-radius:16px;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,0.4);">
-              <tr><td style="background:#243f53;padding:34px 36px 26px;text-align:center;border-bottom:1px solid rgba(255,255,255,0.07);">
-                ${headerBrandBlock}
-                <p style="margin:8px 0 0;font-size:11px;font-weight:600;letter-spacing:2px;color:#f5e3aa;text-transform:uppercase;">Payment Receipt</p>
-              </td></tr>
-              <tr><td style="padding:30px 40px 22px;text-align:center;border-bottom:1px solid rgba(255,255,255,0.07);">
-                <div class="status-badge" style="display:inline-block;background:#334155;border:1px solid #f8dea4;border-radius:999px;padding:5px 16px;margin-bottom:18px;color:#fff;font-size:12px;font-weight:700;">Payment Applied</div>
-                <h1 class="headline" style="margin:0 0 10px;font-size:28px;line-height:1.2;font-weight:800;color:#f8dea4;">Bulk Payment Received</h1>
-                <p class="hero-meta" style="margin:0;color:#c4d5e9;font-size:13px;font-weight:600;">${params.appliedCount} invoice(s) &bull; ${now.toLocaleString()}</p>
-              </td></tr>
-              <tr><td style="padding:26px 40px;">
-                <p class="body-copy" style="margin:0 0 18px;color:#d5e1f1;font-size:15px;line-height:1.7;">Hi ${params.clientName || 'there'}, your payment was applied to multiple outstanding invoices.</p>
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#1e3345;border:1px solid #46627f;border-radius:12px;overflow:hidden;margin-bottom:22px;">
-                  <tr><td style="padding:11px 18px;border-bottom:1px solid #46627f;"><p style="margin:0;font-size:10px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:#c2d1e3;">Receipt Details</p></td></tr>
-                  <tr><td style="padding:16px 18px 18px;background:#30495f;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td style="font-size:11px;color:#cdd9e8;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Amount Paid</td><td align="right" style="font-size:38px;font-weight:800;color:#ffffff;line-height:1;">${money(params.amountPaid)}</td></tr></table></td></tr>
-                  <tr><td style="padding:0 18px;"><div style="height:1px;background:#46627f;"></div></td></tr>
-                  <tr><td style="padding:12px 18px 0;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td style="font-size:13px;color:#c2d1e3;font-weight:600;padding-bottom:12px;width:44%;">Invoices Applied</td><td align="right" style="font-size:13px;color:#eff6ff;font-weight:700;padding-bottom:12px;">${params.appliedCount}</td></tr></table></td></tr>
-                  ${params.transactionId ? `<tr><td style="padding:0 18px;"><div style="height:1px;background:#46627f;"></div></td></tr><tr><td style="padding:12px 18px 0;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td style="font-size:13px;color:#c2d1e3;font-weight:600;padding-bottom:12px;width:44%;">Transaction ID</td><td align="right" style="font-size:13px;color:#eff6ff;font-weight:700;padding-bottom:12px;">${params.transactionId}</td></tr></table></td></tr>` : ''}
-                </table>
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:18px;"><tr><td align="center"><a href="https://app.trimprony.com/portal" style="display:inline-block;padding:16px 48px;font-size:17px;font-weight:700;letter-spacing:0.2px;line-height:1.2;text-decoration:none;text-align:center;border-radius:12px;background:linear-gradient(135deg,#2a5f82 0%,#f0c974 100%);color:#1e2937;">View Account</a></td></tr></table>
-                <p style="margin:0;color:#d6e3f2;font-size:13px;line-height:1.65;text-align:center;">Questions? Reply to this email and we will help.</p>
-              </td></tr>
-            </table>
-          </td></tr>
-        </table>
-      </body>
-    </html>
-  `
+  const portalUrl =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.PUBLIC_APP_URL ||
+    process.env.APP_URL ||
+    'https://app.trimprony.com'
+  const html = buildBulkPaymentReceiptEmail({
+    clientName: params.clientName,
+    amountPaid: money(params.amountPaid),
+    appliedCount: params.appliedCount,
+    transactionId: params.transactionId,
+    portalUrl: `${portalUrl.replace(/\/$/, '')}/portal`,
+    logoUrl: brandLogoUrl || undefined,
+    companyName:
+      (emailBranding as { businessName?: string; companyName?: string } | null)?.businessName ||
+      (emailBranding as { companyName?: string } | null)?.companyName ||
+      'TrimPro',
+  })
 
   const result = await testEmailProvider(emailSecrets, params.to, subject, html)
   if (!result.success) {
