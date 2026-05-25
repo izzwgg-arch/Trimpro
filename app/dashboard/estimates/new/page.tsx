@@ -1488,7 +1488,6 @@ export default function NewEstimatePage() {
                             <Input
                               type="number"
                               step="0.01"
-                              min="1"
                               placeholder="1"
                               value={item.quantity}
                               onChange={(e) => updateLineItem(index, 'quantity', e.target.value)}
@@ -1891,7 +1890,6 @@ export default function NewEstimatePage() {
                             <Input
                               type="number"
                               step="0.01"
-                              min="1"
                               placeholder="1"
                               value={item.quantity}
                               onChange={(e) => updateOptionalItem(index, 'quantity', e.target.value)}
