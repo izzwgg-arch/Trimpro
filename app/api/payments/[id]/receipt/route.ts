@@ -15,6 +15,7 @@ async function assertReceiptAccess(request: NextRequest) {
   const hasAccess =
     user.role === 'ADMIN' ||
     (await hasAnyPermission(user.id, user.tenantId, [
+      'clients.view',
       'invoices.view',
       'invoices.send',
       'payments.view',
@@ -87,10 +88,15 @@ export async function POST(
       return NextResponse.json({ error: 'No recipient email address provided' }, { status: 400 })
     }
     if (!result.sent) {
-      return NextResponse.json(
-        { error: result.error || 'Failed to send receipt email' },
-        { status: 502 }
-      )
+      const message =
+        result.error ||
+        (result.reason === 'send_failed'
+          ? 'Failed to send receipt email'
+          : result.reason === 'already_sent'
+            ? 'Receipt was already sent for this payment'
+            : 'Failed to send receipt email')
+      const status = result.error?.includes('not configured') ? 400 : 502
+      return NextResponse.json({ error: message }, { status })
     }
 
     return NextResponse.json({

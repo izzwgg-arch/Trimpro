@@ -412,8 +412,16 @@ export default function ClientDetailPage() {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (!response.ok) {
-        const data = await response.json().catch(() => ({}))
-        alert(data.error || 'Failed to download receipt')
+        const contentType = response.headers.get('content-type') || ''
+        const data = contentType.includes('application/json')
+          ? await response.json().catch(() => ({}))
+          : {}
+        alert(
+          data.error ||
+            (response.status === 403
+              ? 'You do not have permission to download receipts.'
+              : `Failed to download receipt (${response.status})`)
+        )
         return
       }
       const blob = await response.blob()

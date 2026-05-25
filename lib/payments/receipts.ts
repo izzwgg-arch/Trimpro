@@ -1,6 +1,7 @@
 import crypto from 'crypto'
 import { prisma } from '@/lib/prisma'
 import { splitEmailList } from '@/lib/email'
+import { getPdfBranding } from '@/lib/branding/pdf'
 import { getEmailBranding } from '@/lib/email/branding'
 import { sendPaymentReceiptEmail } from '@/lib/services/email'
 import { renderPdfFromHtml } from '@/lib/pdf/render-html-to-pdf'
@@ -244,11 +245,10 @@ export async function generatePaymentReceiptPdf(paymentId: string, tenantId: str
   const ctx = await loadPaymentReceiptContext(paymentId, tenantId)
   if (!ctx) return null
 
-  const branding = await getEmailBranding(tenantId)
-  const logoUrl = branding?.emailLogoUrl || branding?.webLogoUrl || null
-  const html = buildPaymentReceiptHtml(ctx, logoUrl)
+  const brand = await getPdfBranding(tenantId)
+  const html = buildPaymentReceiptHtml(ctx, brand.logoUrl)
   return {
-    buffer: await renderPdfFromHtml(html),
+    buffer: await renderPdfFromHtml(html, { waitUntil: 'load' }),
     filename: `receipt-${ctx.invoice.invoiceNumber}-${ctx.payment.id.slice(0, 8)}.pdf`,
     ctx,
   }
@@ -281,6 +281,17 @@ export async function sendPaymentReceiptForPayment(
   }
 
   const branding = await getEmailBranding(tenantId)
+  let pdfAttachment: Buffer | undefined
+  let pdfFilename: string | undefined
+  try {
+    const pdf = await generatePaymentReceiptPdf(paymentId, tenantId)
+    if (pdf) {
+      pdfAttachment = pdf.buffer
+      pdfFilename = pdf.filename
+    }
+  } catch (pdfError) {
+    console.warn('Receipt PDF attachment skipped:', pdfError)
+  }
 
   try {
     await sendPaymentReceiptEmail({
@@ -297,6 +308,8 @@ export async function sendPaymentReceiptForPayment(
       providerPaymentId: ctx.payment.providerPaymentId || ctx.payment.reference,
       providerInvoiceId: ctx.payment.providerInvoiceId,
       logoUrl: branding?.emailLogoUrl || branding?.webLogoUrl || null,
+      pdfAttachment,
+      pdfFilename,
     })
 
     await prisma.payment.update({

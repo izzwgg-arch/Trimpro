@@ -2,6 +2,8 @@
 // Supports SendGrid, Mailgun, and AWS SES
 import { getEmailBranding } from '@/lib/email/branding'
 import { mergeConfiguredGlobalCc } from '@/lib/email/recipients'
+import { getIntegrationSecrets } from '@/lib/integrations/status'
+import { sendEmailWithAttachments } from '@/lib/integrations/providers/email'
 
 const EMAIL_PROVIDER = process.env.EMAIL_PROVIDER || 'sendgrid'
 const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY
@@ -575,8 +577,9 @@ export async function sendPaymentReceiptEmail(params: {
   providerPaymentId?: string | null
   providerInvoiceId?: string | null
   logoUrl?: string | null
+  pdfAttachment?: Buffer
+  pdfFilename?: string
 }): Promise<void> {
-  const emailService = new EmailService()
   const paidAtText = formatEmailDate(params.paidAt || new Date())
   const amountText = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(
     Number(params.amount || 0)
@@ -596,10 +599,8 @@ export async function sendPaymentReceiptEmail(params: {
          onerror="this.style.display='none'" />`
     : `<div style="font-size:22px;font-weight:800;letter-spacing:-0.3px;color:#f8dea4;margin-bottom:10px;">${safeCompany}</div>`
 
-  await emailService.sendEmail({
-    to: params.to,
-    subject: `Payment receipt for invoice ${params.invoiceNumber}`,
-    html: `<!DOCTYPE html>
+  const subject = `Payment receipt for invoice ${params.invoiceNumber}`
+  const html = `<!DOCTYPE html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml" data-tp-lock-colors="1">
 <head>
   <meta charset="utf-8" />
@@ -693,11 +694,11 @@ export async function sendPaymentReceiptEmail(params: {
     </tr>
   </table>
 </body>
-</html>`,
-    text: `
+</html>`
+  const text = `
 Payment Receipt
 
-Thank you. We received your ACH payment.
+Thank you. We received your payment.
 Invoice: ${params.invoiceNumber}
 Amount paid: ${amountText}
 Method: ${method}
@@ -709,6 +710,42 @@ ${params.receiptUrl ? `View receipt: ${params.receiptUrl}` : ''}
 ${params.invoiceUrl ? `View invoice: ${params.invoiceUrl}` : ''}
 
 — ${company}
-    `.trim(),
+  `.trim()
+
+  if (params.tenantId) {
+    const emailSecrets = await getIntegrationSecrets(params.tenantId, 'email')
+    if (!emailSecrets) {
+      throw new Error('Email is not configured. Set up email in Settings > Integrations.')
+    }
+
+    const sendResult = await sendEmailWithAttachments({
+      secrets: emailSecrets,
+      to: params.to,
+      subject,
+      html,
+      text,
+      attachments: params.pdfAttachment
+        ? [
+            {
+              filename: params.pdfFilename || `receipt-${params.invoiceNumber}.pdf`,
+              content: params.pdfAttachment,
+              contentType: 'application/pdf',
+            },
+          ]
+        : undefined,
+    })
+
+    if (!sendResult.success) {
+      throw new Error(sendResult.message || sendResult.error || 'Failed to send receipt email')
+    }
+    return
+  }
+
+  const emailService = new EmailService()
+  await emailService.sendEmail({
+    to: params.to,
+    subject,
+    html,
+    text,
   })
 }

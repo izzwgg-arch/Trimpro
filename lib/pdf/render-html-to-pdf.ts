@@ -12,12 +12,20 @@ async function getBrowser(): Promise<Browser> {
   return browserPromise
 }
 
-export async function renderPdfFromHtml(html: string): Promise<Buffer> {
+export async function renderPdfFromHtml(
+  html: string,
+  options?: { waitUntil?: 'load' | 'networkidle0' | 'domcontentloaded' }
+): Promise<Buffer> {
   const browser = await getBrowser()
   const page = await browser.newPage()
 
+  const waitUntil =
+    options?.waitUntil === 'load' || options?.waitUntil === 'domcontentloaded'
+      ? options.waitUntil
+      : (['load', 'networkidle0'] as const)
+
   try {
-    await page.setContent(html, { waitUntil: ['load', 'networkidle0'] })
+    await page.setContent(html, { waitUntil })
 
     const pdf = await page.pdf({
       format: 'Letter',
