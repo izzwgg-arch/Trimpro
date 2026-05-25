@@ -11,6 +11,7 @@
  */
 
 import { prisma } from '@/lib/prisma'
+import { formatAddressParts } from '@/lib/address/parse'
 import { computeScore, topN, expandQuery } from './scoring'
 
 export type { RawResult as SearchResult } from './scoring'
@@ -213,9 +214,24 @@ export async function runGlobalSearch({
               ...ilikeAny('jobNumber', terms),
               ...ilikeAny('title', terms),
               ...ilikeAny('description', terms),
+              {
+                client: {
+                  OR: [
+                    ...ilikeAny('name', terms),
+                    ...ilikeAny('companyName', terms),
+                  ],
+                },
+              },
             ],
           },
-          include: { client: { select: { name: true, companyName: true } } },
+          include: {
+            client: { select: { name: true, companyName: true } },
+            addresses: {
+              where: { type: 'job_site' },
+              select: { street: true, city: true, state: true, zipCode: true },
+              take: 1,
+            },
+          },
           take: fetch,
           orderBy: { updatedAt: 'desc' },
         })
@@ -436,15 +452,24 @@ export async function runGlobalSearch({
 
   // --- Projects / Jobs ------------------------------------------------------
   const jobResults = topN(
-    (jobRows as any[]).map((job) => ({
-      id: job.id,
-      entityType: 'job',
-      title: `${job.jobNumber} — ${job.title}`,
-      subtitle: job.client?.companyName || job.client?.name || job.status,
-      url: `/dashboard/jobs/${job.id}`,
-      score: computeScore(q, [job.jobNumber, job.title], [job.description, job.client?.name], job.updatedAt),
-      updatedAt: job.updatedAt,
-    })),
+    (jobRows as any[]).map((job) => {
+      const jobSiteAddress = formatAddressParts(job.addresses?.[0])
+      const clientLabel = job.client?.companyName || job.client?.name
+      return {
+        id: job.id,
+        entityType: 'job',
+        title: `${job.jobNumber} — ${job.title}`,
+        subtitle: [jobSiteAddress, clientLabel].filter(Boolean).join(' · ') || job.status,
+        url: `/dashboard/jobs/${job.id}`,
+        score: computeScore(
+          q,
+          [job.jobNumber, job.title],
+          [job.description, job.client?.name, job.client?.companyName, jobSiteAddress],
+          job.updatedAt
+        ),
+        updatedAt: job.updatedAt,
+      }
+    }),
     limitPerGroup
   )
   if (jobResults.length > 0) {
