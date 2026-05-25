@@ -166,6 +166,25 @@ export async function expandBundleComponentsToLineItems(
   return lines
 }
 
+/** Map expanded bundle row to purchase order line item fields. */
+export function bundleExpandedLineToPurchaseOrderLine(
+  line: BundleExpandedLine,
+  overrides?: { vendorId?: string | null; vendorName?: string | null; sourceBundleId?: string | null }
+) {
+  return {
+    description: line.description,
+    quantity: line.quantity,
+    unitCost: line.unitCost,
+    unitPrice: line.unitPrice,
+    notes: line.notes,
+    vendorId: line.vendorId ?? overrides?.vendorId ?? null,
+    vendorName: line.vendorName ?? overrides?.vendorName ?? null,
+    groupId: line.groupId,
+    sourceItemId: line.sourceItemId,
+    sourceBundleId: line.sourceBundleId ?? overrides?.sourceBundleId ?? null,
+  }
+}
+
 /** Server-side: map flattened catalog item to persisted line fields. */
 export function bundleFlattenedItemToLineData(item: {
   itemId: string

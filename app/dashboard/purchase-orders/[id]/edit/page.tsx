@@ -10,6 +10,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ArrowLeft, Save, Plus, Trash2, Copy } from 'lucide-react'
 import Link from 'next/link'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
+import {
+  catalogNotesFromItem,
+  expandBundleComponentsToLineItems,
+  bundleExpandedLineToPurchaseOrderLine,
+} from '@/lib/bundles/expand-line-items'
 
 interface Vendor {
   id: string
@@ -294,31 +299,18 @@ export default function EditPurchaseOrderPage() {
             sourceBundleId: bundleDefId,
           }
 
-          const childLines: LineItem[] = components.map((comp: any) => {
-            const sourceItem = comp.componentItem
-            const sourceBundle = comp.componentBundle
-            const sourceName = sourceItem?.name || sourceBundle?.item?.name || 'Unknown'
-            const sourceCost = sourceItem?.defaultUnitCost 
-              ? Number(sourceItem.defaultUnitCost)
-              : (sourceBundle ? Number(bundle?.item?.defaultUnitCost || 0) : 0)
-            
-            const overrideCost = comp.defaultUnitCostOverride
-              ? Number(comp.defaultUnitCostOverride)
-              : sourceCost
-
-            return {
-              description: sourceName,
-              quantity: comp.quantity.toString(),
-              unitCost: overrideCost.toString(),
-              unitPrice: sourceItem?.defaultUnitPrice?.toString() || '0',
-              notes: comp.notes || '',
-              vendorId: comp.vendorId || item.vendorId || null,
-              vendorName: comp.vendor?.name || item.vendorName || null,
-              groupId,
-              sourceItemId: comp.componentItemId || null,
-              sourceBundleId: comp.componentBundleId || null,
-            }
-          })
+          const expanded = await expandBundleComponentsToLineItems(
+            components,
+            groupId,
+            token || ''
+          )
+          const childLines: LineItem[] = expanded.map((line) =>
+            bundleExpandedLineToPurchaseOrderLine(line, {
+              vendorId: item.vendorId,
+              vendorName: item.vendorName,
+              sourceBundleId: bundleDefId,
+            })
+          )
 
           updated.splice(lineIndex + 1, 0, ...childLines)
         } else {
@@ -355,11 +347,7 @@ export default function EditPurchaseOrderPage() {
         quantity: '1',
         unitCost: item.defaultUnitCost?.toString() || '0',
         unitPrice: item.defaultUnitPrice.toString(),
-        notes:
-          (item.description && item.description.trim()) ||
-          (item.notes && item.notes.trim() && item.notes !== 'Imported from QuickBooks historical import'
-            ? item.notes
-            : ''),
+        notes: catalogNotesFromItem(item),
         vendorId: item.vendorId || null,
         vendorName: item.vendorName || null,
         sourceItemId: item.id,
@@ -670,7 +658,7 @@ export default function EditPurchaseOrderPage() {
                         ref={(el) => {
                           lineItemRefs.current[index] = el
                         }}
-                        className={`flex gap-2 items-end p-2 rounded border ${
+                        className={`flex gap-2 items-start p-2 rounded border ${
                           isGroupHeader
                             ? 'bg-purple-50 border-purple-200'
                             : isInGroup
@@ -678,7 +666,7 @@ export default function EditPurchaseOrderPage() {
                             : 'border-gray-300'
                         }`}
                       >
-                        <div className="flex-1">
+                        <div className="flex-1 min-w-0 flex flex-col gap-1">
                           {isGroupHeader ? (
                             <div className="flex items-center gap-2">
                               <Input
@@ -693,25 +681,34 @@ export default function EditPurchaseOrderPage() {
                               </span>
                             </div>
                           ) : (
-                            <FastPicker
-                              value={item.description}
-                              onChange={(value) => updateLineItem(index, 'description', value)}
-                              onSelect={(selectedItem) => handleItemSelect(selectedItem, index)}
-                              onNextLine={() => handleNextLine(index)}
-                              items={pickerItems}
-                              bundles={pickerBundles}
-                              placeholder="Type to search items..."
-                              className="w-full"
-                              showTagColumn
-                              inputRef={(el) => {
-                                pickerInputRefs.current[index] = el
-                              }}
-                            />
+                            <>
+                              <FastPicker
+                                value={item.description}
+                                onChange={(value) => updateLineItem(index, 'description', value)}
+                                onSelect={(selectedItem) => handleItemSelect(selectedItem, index)}
+                                onNextLine={() => handleNextLine(index)}
+                                items={pickerItems}
+                                bundles={pickerBundles}
+                                placeholder="Type to search items..."
+                                className="w-full"
+                                showTagColumn
+                                inputRef={(el) => {
+                                  pickerInputRefs.current[index] = el
+                                }}
+                              />
+                              <textarea
+                                value={item.notes || ''}
+                                onChange={(e) => updateLineItem(index, 'notes', e.target.value)}
+                                placeholder="Description (optional)"
+                                rows={1}
+                                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
+                              />
+                            </>
                           )}
                         </div>
 
                         {!isGroupHeader && (
-                          <>
+                          <div className="flex gap-2 items-end shrink-0">
                             <div className="w-20">
                               <Input
                                 type="number"
@@ -763,7 +760,7 @@ export default function EditPurchaseOrderPage() {
                                 />
                               </div>
                             )}
-                          </>
+                          </div>
                         )}
 
                         {lineItems.length > 1 && !isGroupHeader && (

@@ -95,7 +95,10 @@ export async function POST(
                 <tbody>
                   ${purchaseOrder.lineItems.map((item) => `
                     <tr>
-                      <td style="padding: 10px; border: 1px solid #ddd;">${item.description}</td>
+                      <td style="padding: 10px; border: 1px solid #ddd;">
+                        ${item.description}
+                        ${item.notes?.trim() ? `<div style="font-size:12px;color:#64748b;margin-top:4px;">${item.notes.trim().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>` : ''}
+                      </td>
                       <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">${item.quantity}</td>
                       <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">$${Number(item.unitPrice).toFixed(2)}</td>
                       <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">$${Number(item.total).toFixed(2)}</td>
@@ -129,7 +132,12 @@ export async function POST(
           Please find attached purchase order ${purchaseOrder.poNumber}.
           
           Order Summary:
-          ${purchaseOrder.lineItems.map((item) => `${item.description} - Qty: ${item.quantity} @ $${Number(item.unitPrice).toFixed(2)} = $${Number(item.total).toFixed(2)}`).join('\n')}
+          ${purchaseOrder.lineItems.map((item) => {
+            const desc = item.notes?.trim()
+              ? `${item.description}\n  ${item.notes.trim()}`
+              : item.description
+            return `${desc} - Qty: ${item.quantity} @ $${Number(item.unitPrice).toFixed(2)} = $${Number(item.total).toFixed(2)}`
+          }).join('\n')}
           
           Subtotal: $${subtotal.toFixed(2)}
           Total: $${total.toFixed(2)}

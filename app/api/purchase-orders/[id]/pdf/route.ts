@@ -154,6 +154,7 @@ export async function GET(
               line-height: 1.7;
             }
             .muted { color: #6b7280; font-size: 12px; }
+            .line-notes { color: #64748b; font-size: 12px; margin-top: 4px; white-space: pre-wrap; }
             .grid {
               display: grid;
               grid-template-columns: 1fr 1fr;
@@ -290,7 +291,10 @@ export async function GET(
               <tbody>
                 ${purchaseOrder.lineItems.map((item) => `
                   <tr>
-                    <td>${escapeHtml(item.description)}</td>
+                    <td>
+                      ${escapeHtml(item.description)}
+                      ${item.notes?.trim() ? `<div class="line-notes">${escapeHtml(item.notes.trim())}</div>` : ''}
+                    </td>
                     <td class="text-right">${Number(item.quantity).toFixed(2)}</td>
                     <td class="text-right">$${Number(item.unitPrice).toFixed(2)}</td>
                     <td class="text-right">$${Number(item.total).toFixed(2)}</td>

@@ -60,6 +60,7 @@ interface PurchaseOrderDetail {
   lineItems: Array<{
     id: string
     description: string
+    notes?: string | null
     quantity: number
     unitPrice: number
     total: number
@@ -536,7 +537,14 @@ export default function PurchaseOrderDetailPage() {
                   <tbody>
                     {po.lineItems.map((item) => (
                       <tr key={item.id} className="border-b">
-                        <td className="py-2 px-3">{item.description}</td>
+                        <td className="py-2 px-3">
+                          <div>{item.description}</div>
+                          {item.notes?.trim() ? (
+                            <div className="text-sm text-gray-500 mt-0.5 whitespace-pre-wrap">
+                              {item.notes}
+                            </div>
+                          ) : null}
+                        </td>
                         <td className="text-right py-2 px-3">{item.quantity}</td>
                         <td className="text-right py-2 px-3">{formatCurrency(item.unitPrice)}</td>
                         <td className="text-right py-2 px-3 font-medium">{formatCurrency(item.total)}</td>
