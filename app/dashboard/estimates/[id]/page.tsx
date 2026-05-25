@@ -750,7 +750,6 @@ export default function EstimateDetailPage() {
                     .filter(Boolean)
                 )
               )
-              if (emailsOnFile.length <= 1) return null
               return (
                 <div className="space-y-2">
                   <Label>Choose email</Label>

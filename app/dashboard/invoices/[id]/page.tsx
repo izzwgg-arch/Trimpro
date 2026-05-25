@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { splitEmailList } from '@/lib/email'
 import {
   ArrowLeft,
   Calendar,
@@ -610,7 +611,10 @@ export default function InvoiceDetailPage() {
     if (!invoice || sending) return
     const emailsOnFile = Array.from(
       new Set(
-        [invoice.client?.email || '', ...(invoice.client?.contacts || []).map((c) => c.email || '')]
+        [
+          ...splitEmailList(invoice.client?.email || ''),
+          ...(invoice.client?.contacts || []).map((c) => c.email || ''),
+        ]
           .map((v) => String(v || '').trim())
           .filter(Boolean)
       )
@@ -860,14 +864,13 @@ export default function InvoiceDetailPage() {
               const emailsOnFile = Array.from(
                 new Set(
                   [
-                    invoice?.client?.email || '',
+                    ...splitEmailList(invoice?.client?.email || ''),
                     ...(invoice?.client?.contacts || []).map((c) => c.email || ''),
                   ]
                     .map((v) => String(v || '').trim())
                     .filter(Boolean)
                 )
               )
-              if (emailsOnFile.length <= 1) return null
               return (
                 <div className="space-y-2">
                   <Label>Choose email</Label>
