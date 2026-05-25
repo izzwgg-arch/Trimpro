@@ -252,7 +252,9 @@ async function getPaymentNotificationRecipientUserIds(tenantId: string): Promise
                 isActive: true,
                 permissions: {
                   some: {
-                    permission: { key: { in: PAYMENT_NOTIFICATION_PERMISSION_KEYS } } },
+                    permission: {
+                      key: { in: PAYMENT_NOTIFICATION_PERMISSION_KEYS },
+                    },
                   },
                 },
               },
