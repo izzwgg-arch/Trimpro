@@ -149,6 +149,41 @@ interface ClientDetail {
   }>
 }
 
+interface ClientPayment {
+  id: string
+  amount: number
+  currency: string
+  status: string
+  refundStatus: string
+  refundedAmount: number
+  method: string
+  reference: string | null
+  provider: string | null
+  providerPaymentId: string | null
+  processedAt: string | null
+  createdAt: string
+  invoiceId: string | null
+  invoiceNumber: string
+}
+
+function paymentStatusClass(status: string) {
+  switch (status) {
+    case 'COMPLETED':
+      return 'bg-green-100 text-green-800'
+    case 'REFUNDED':
+    case 'PARTIALLY_REFUNDED':
+      return 'bg-orange-100 text-orange-800'
+    case 'FAILED':
+    case 'CANCELLED':
+      return 'bg-red-100 text-red-800'
+    case 'PENDING':
+    case 'PROCESSING':
+      return 'bg-yellow-100 text-yellow-800'
+    default:
+      return 'bg-gray-100 text-gray-800'
+  }
+}
+
 export default function ClientDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -170,9 +205,52 @@ export default function ClientDetailPage() {
   const [bulkPaymentOtherLabel, setBulkPaymentOtherLabel] = useState('')
   const [bulkPaymentSaving, setBulkPaymentSaving] = useState(false)
   const [bulkPaymentError, setBulkPaymentError] = useState('')
+  const [payments, setPayments] = useState<ClientPayment[]>([])
+  const [paymentsLoading, setPaymentsLoading] = useState(false)
+  const [paymentsError, setPaymentsError] = useState<string | null>(null)
+  const [paymentsPage, setPaymentsPage] = useState(1)
+  const [paymentsTotalPages, setPaymentsTotalPages] = useState(1)
+  const [paymentsTotal, setPaymentsTotal] = useState(0)
+  const [paymentsTotalPaid, setPaymentsTotalPaid] = useState(0)
 
   // Defensive: Validate params before using
   const clientId = params?.id as string | undefined
+
+  const fetchPayments = async (page = 1) => {
+    if (!clientId) return
+
+    setPaymentsLoading(true)
+    setPaymentsError(null)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+
+      const response = await fetch(`/api/clients/${clientId}/payments?page=${page}&limit=25`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        setPaymentsError(data.error || 'Failed to load payments')
+        return
+      }
+
+      const data = await response.json()
+      setPayments(Array.isArray(data.payments) ? data.payments : [])
+      setPaymentsPage(data.pagination?.page || page)
+      setPaymentsTotalPages(data.pagination?.totalPages || 1)
+      setPaymentsTotal(data.pagination?.total || 0)
+      setPaymentsTotalPaid(Number(data.summary?.totalPaid || 0))
+    } catch (err) {
+      console.error('Failed to load client payments:', err)
+      setPaymentsError('Failed to load payments')
+    } finally {
+      setPaymentsLoading(false)
+    }
+  }
 
   useEffect(() => {
     // Validate clientId exists
@@ -183,6 +261,7 @@ export default function ClientDetailPage() {
     }
 
     fetchClient()
+    fetchPayments(1)
   }, [clientId, router])
 
   const fetchClient = async () => {
@@ -452,6 +531,7 @@ export default function ClientDetailPage() {
       setShowBulkPayment(false)
       setSelectedInvoiceIds([])
       await fetchClient()
+      await fetchPayments(1)
     } catch (error) {
       console.error('Bulk client payment error:', error)
       setBulkPaymentError('Failed to apply payment.')
@@ -824,6 +904,103 @@ export default function ClientDetailPage() {
                   <p className="text-center text-gray-500 py-8">No communication history</p>
                 )}
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Past Payments */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <CardTitle>Past Payments</CardTitle>
+                  <CardDescription>
+                    {paymentsTotal > 0
+                      ? `${paymentsTotal} payment${paymentsTotal !== 1 ? 's' : ''} • ${formatCurrency(paymentsTotalPaid)} total received`
+                      : 'Payment history across all invoices'}
+                  </CardDescription>
+                </div>
+                <Link href="/dashboard/reports/payments">
+                  <Button variant="outline" size="sm">
+                    All Payments
+                  </Button>
+                </Link>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {paymentsLoading ? (
+                <p className="text-sm text-gray-500 py-6 text-center">Loading payments...</p>
+              ) : paymentsError ? (
+                <p className="text-sm text-red-600 py-4">{paymentsError}</p>
+              ) : payments.length === 0 ? (
+                <p className="text-sm text-gray-500 py-6 text-center">No payments recorded yet</p>
+              ) : (
+                <div className="space-y-3">
+                  {payments.map((payment) => {
+                    const paidAt = payment.processedAt || payment.createdAt
+                    return (
+                      <div
+                        key={payment.id}
+                        className="flex items-start justify-between gap-3 rounded-lg border p-3 hover:bg-gray-50 transition-colors"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-semibold text-gray-900">
+                              {formatCurrency(payment.amount)}
+                            </p>
+                            {payment.invoiceId ? (
+                              <Link
+                                href={`/dashboard/invoices/${payment.invoiceId}`}
+                                className="text-xs font-medium text-blue-600 hover:underline"
+                              >
+                                {payment.invoiceNumber || 'View invoice'}
+                              </Link>
+                            ) : (
+                              <span className="text-xs text-gray-500">{payment.invoiceNumber || '—'}</span>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-600 mt-0.5">
+                            {payment.method.replace(/_/g, ' ')}
+                            {payment.reference ? ` • Ref ${payment.reference}` : ''}
+                            {payment.providerPaymentId ? ` • ${payment.providerPaymentId}` : ''}
+                          </p>
+                          <p className="text-xs text-gray-400 mt-0.5">{formatDate(paidAt)}</p>
+                          {payment.refundedAmount > 0 && (
+                            <p className="text-xs text-orange-700 mt-0.5">
+                              Refunded {formatCurrency(payment.refundedAmount)}
+                            </p>
+                          )}
+                        </div>
+                        <span className={`shrink-0 px-2 py-1 text-xs rounded ${paymentStatusClass(payment.status)}`}>
+                          {payment.status.replace(/_/g, ' ')}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+              {paymentsTotalPages > 1 && (
+                <div className="flex items-center justify-between pt-4 mt-2 border-t">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={paymentsPage <= 1 || paymentsLoading}
+                    onClick={() => fetchPayments(paymentsPage - 1)}
+                  >
+                    Previous
+                  </Button>
+                  <span className="text-xs text-gray-500">
+                    Page {paymentsPage} of {paymentsTotalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={paymentsPage >= paymentsTotalPages || paymentsLoading}
+                    onClick={() => fetchPayments(paymentsPage + 1)}
+                  >
+                    Next
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
 
