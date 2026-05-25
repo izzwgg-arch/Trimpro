@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
+import { appBaseUrl } from '@/lib/payments/receipts'
 
 export async function GET(
   request: NextRequest,
@@ -58,6 +59,8 @@ export async function GET(
       }),
     ])
 
+    const appUrl = appBaseUrl()
+
     const payments = items.map((p) => {
       const displayStatus =
         p.refundStatus === 'FULLY_REFUNDED'
@@ -65,6 +68,11 @@ export async function GET(
           : p.refundStatus === 'PARTIALLY_REFUNDED'
             ? 'PARTIALLY_REFUNDED'
             : p.status
+
+      const canReceipt =
+        displayStatus === 'COMPLETED' ||
+        displayStatus === 'REFUNDED' ||
+        displayStatus === 'PARTIALLY_REFUNDED'
 
       return {
         id: p.id,
@@ -81,6 +89,11 @@ export async function GET(
         createdAt: p.createdAt,
         invoiceId: p.invoice?.id || null,
         invoiceNumber: p.invoice?.invoiceNumber || '',
+        receiptEmailSentAt: p.receiptEmailSentAt,
+        receiptUrl: p.receiptToken
+          ? `${appUrl}/pay/receipt/${encodeURIComponent(p.receiptToken)}`
+          : null,
+        canReceipt,
       }
     })
 
