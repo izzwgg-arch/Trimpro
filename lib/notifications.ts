@@ -204,6 +204,69 @@ const REQUEST_NOTIFICATION_TARGET_NAME_FALLBACKS = [
   { firstName: 'Shalomy', lastName: 'Falkowitz' },
 ]
 
+const PAYMENT_NOTIFICATION_PERMISSION_KEYS = [
+  'payments.view',
+  'payments.manage',
+  'manage_payments',
+]
+
+const PAYMENT_NOTIFICATION_ROLES = ['ADMIN', 'ACCOUNTING', 'OFFICE', 'MANAGER'] as const
+
+async function getPaymentNotificationRecipientUserIds(tenantId: string): Promise<string[]> {
+  const configuredUserIds = new Set(
+    parseNotificationTargetEnv(process.env.PAYMENT_NOTIFICATION_TARGET_USER_IDS)
+  )
+  const configuredEmails = new Set(
+    parseNotificationTargetEnv(process.env.PAYMENT_NOTIFICATION_TARGET_EMAILS).map((email) =>
+      email.toLowerCase()
+    )
+  )
+
+  if (configuredUserIds.size > 0 || configuredEmails.size > 0) {
+    const configured = await prisma.user.findMany({
+      where: {
+        tenantId,
+        status: 'ACTIVE',
+        OR: [
+          ...(configuredUserIds.size > 0 ? [{ id: { in: Array.from(configuredUserIds) } }] : []),
+          ...(configuredEmails.size > 0
+            ? [{ email: { in: Array.from(configuredEmails) } }]
+            : []),
+        ],
+      },
+      select: { id: true },
+    })
+    return configured.map((user) => user.id)
+  }
+
+  const users = await prisma.user.findMany({
+    where: {
+      tenantId,
+      status: 'ACTIVE',
+      OR: [
+        { role: { in: [...PAYMENT_NOTIFICATION_ROLES] } },
+        {
+          userRoles: {
+            some: {
+              role: {
+                isActive: true,
+                permissions: {
+                  some: {
+                    permission: { key: { in: PAYMENT_NOTIFICATION_PERMISSION_KEYS } } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      ],
+    },
+    select: { id: true },
+  })
+
+  return Array.from(new Set(users.map((user) => user.id)))
+}
+
 async function getRequestNotificationRecipientUserIds(tenantId: string) {
   const configuredUserIds = new Set(parseNotificationTargetEnv(process.env.REQUEST_NOTIFICATION_TARGET_USER_IDS))
   const configuredEmails = new Set(
@@ -322,29 +385,41 @@ export async function notifyInvoicePaid(
   invoiceId: string,
   invoiceNumber: string,
   amount: number,
-  clientName: string
-) {
-  // Notify office/admin/accounting users (anyone watching payments in the web app).
-  const accountingUsers = await prisma.user.findMany({
-    where: {
-      tenantId,
-      role: { in: ['ADMIN', 'ACCOUNTING', 'OFFICE'] },
-      status: 'ACTIVE',
-    },
-    select: { id: true },
-  })
-
-  if (accountingUsers.length > 0) {
-    await createNotificationsForUsers(tenantId, accountingUsers.map((u) => u.id), {
-      type: 'PAYMENT_RECEIVED',
-      title: 'Payment Received',
-      message: `${clientName} paid ${amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' })} for invoice ${invoiceNumber}`,
-      linkUrl: `/dashboard/invoices/${invoiceId}`,
-      linkType: 'invoice',
-      linkId: invoiceId,
-      requiresAck: true,
-    })
+  clientName: string,
+  options?: {
+    paymentMethod?: 'ACH' | 'CARD' | 'OTHER' | string
+    providerPaymentId?: string | null
+    dedupeKey?: string | null
   }
+) {
+  const recipientIds = await getPaymentNotificationRecipientUserIds(tenantId)
+  if (recipientIds.length === 0) return
+
+  const methodLabel =
+    options?.paymentMethod === 'ACH'
+      ? 'ACH'
+      : options?.paymentMethod === 'CARD'
+        ? 'card'
+        : options?.paymentMethod
+          ? String(options.paymentMethod)
+          : 'payment'
+
+  const amountText = amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+  const dedupeKey =
+    options?.dedupeKey ||
+    `payment-received:${tenantId}:${invoiceId}:${options?.providerPaymentId || invoiceNumber}`
+
+  await createNotificationsForUsers(tenantId, recipientIds, {
+    type: 'PAYMENT_RECEIVED',
+    title: 'Payment Received',
+    message: `${clientName} paid ${amountText} via ${methodLabel} for invoice ${invoiceNumber}`,
+    linkUrl: `/dashboard/invoices/${invoiceId}`,
+    linkType: 'invoice',
+    linkId: invoiceId,
+    requiresAck: true,
+    action: 'payment_received',
+    dedupeKey,
+  })
 }
 
 /**

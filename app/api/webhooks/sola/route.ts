@@ -161,7 +161,12 @@ export async function POST(request: NextRequest) {
         invoice.id,
         invoice.invoiceNumber,
         amount || Number(invoice.balance),
-        invoice.client.name
+        invoice.client.name,
+        {
+          paymentMethod: 'CARD',
+          providerPaymentId: transactionId || null,
+          dedupeKey: `payment-received:${invoice.tenantId}:${invoice.id}:${transactionId || invoice.id}`,
+        }
       )
 
       // Trigger automations

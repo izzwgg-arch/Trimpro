@@ -57,6 +57,18 @@ async function applyInvoicePayment(params: {
       providerPaymentId: params.providerPaymentId,
       existingPaymentId: existing.id,
     })
+    await notifyInvoicePaid(
+      params.tenantId,
+      invoice.id,
+      invoice.invoiceNumber,
+      Number(existing.amount || 0),
+      invoice.client?.name || 'Customer',
+      {
+        paymentMethod: 'ACH',
+        providerPaymentId: params.providerPaymentId,
+        dedupeKey: `payment-received:${params.tenantId}:${invoice.id}:${params.providerPaymentId}`,
+      }
+    )
     return existing.id
   }
 
@@ -117,7 +129,12 @@ async function applyInvoicePayment(params: {
     invoice.id,
     invoice.invoiceNumber,
     amount,
-    invoice.client?.name || 'Customer'
+    invoice.client?.name || 'Customer',
+    {
+      paymentMethod: 'ACH',
+      providerPaymentId: params.providerPaymentId,
+      dedupeKey: `payment-received:${params.tenantId}:${invoice.id}:${params.providerPaymentId}`,
+    }
   )
   return createdPaymentId
 }

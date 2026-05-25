@@ -563,24 +563,20 @@ export async function POST(request: NextRequest) {
 
       // Notify office/admin/accounting once (avoid spamming N notifications)
       try {
-        const users = await prisma.user.findMany({
-          where: {
-            tenantId: client.tenantId,
-            role: { in: ['ADMIN', 'ACCOUNTING', 'OFFICE'] },
-            status: 'ACTIVE',
-          },
-          select: { id: true },
-        })
-        if (users.length) {
-          await createNotificationsForUsers(client.tenantId, users.map((u) => u.id), {
-            type: 'PAYMENT_RECEIVED' as any,
-            title: 'Payment Received (Multiple Invoices)',
-            message: `${client.name} paid ${money(appliedTotal)} applied to ${appliedCount} invoice(s).`,
-            linkUrl: '/dashboard/invoices',
-            linkType: 'invoice',
-            linkId: null as any,
-            requiresAck: true,
-          } as any)
+        const firstInvoice = openInvoices[0]
+        if (firstInvoice && appliedCount > 0) {
+          await notifyInvoicePaid(
+            client.tenantId,
+            firstInvoice.id,
+            appliedCount > 1 ? `${firstInvoice.invoiceNumber} (+${appliedCount - 1} more)` : firstInvoice.invoiceNumber,
+            appliedTotal,
+            client.name || 'Customer',
+            {
+              paymentMethod: 'CARD',
+              providerPaymentId: transactionId || null,
+              dedupeKey: `payment-received-bulk:${client.tenantId}:${transactionId || 'bulk'}`,
+            }
+          )
         }
       } catch {
         // ignore
@@ -711,7 +707,12 @@ export async function POST(request: NextRequest) {
         invoice.id,
         invoice.invoiceNumber,
         amount,
-        invoice.client.name
+        invoice.client.name,
+        {
+          paymentMethod: 'CARD',
+          providerPaymentId: transactionId || null,
+          dedupeKey: `payment-received:${invoice.tenantId}:${invoice.id}:${transactionId || invoice.id}`,
+        }
       )
     }
 

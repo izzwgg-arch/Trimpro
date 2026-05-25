@@ -274,7 +274,12 @@ export async function reconcileSingleInvoiceAchPayment(
     invoice.id,
     invoice.invoiceNumber,
     appliedAmount,
-    invoice.client?.name || 'Customer'
+    invoice.client?.name || 'Customer',
+    {
+      paymentMethod: 'ACH',
+      providerPaymentId: reference,
+      dedupeKey: `payment-received:${invoice.tenantId}:${invoice.id}:${reference}`,
+    }
   )
 
   const payment = await prisma.payment.findFirst({
