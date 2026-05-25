@@ -79,20 +79,7 @@ export default function NewEstimatePage() {
       showNotesToCustomer: true,
     },
   ])
-  const [optionalItems, setOptionalItems] = useState<LineItem[]>([
-    {
-      description: '',
-      quantity: '1',
-      unitPrice: '0',
-      taxable: true,
-      isVisibleToClient: true,
-      showDescriptionToCustomer: false,
-      showCostToCustomer: false,
-      showPriceToCustomer: true,
-      showTaxToCustomer: true,
-      showNotesToCustomer: true,
-    },
-  ])
+  const [optionalItems, setOptionalItems] = useState<LineItem[]>([])
   const [focusedLineIndex, setFocusedLineIndex] = useState<number | null>(null)
   const [isNotesVisibleToClient, setIsNotesVisibleToClient] = useState(true)
   
@@ -710,7 +697,6 @@ export default function NewEstimatePage() {
 
   const removeOptionalItem = (index: number) => {
     setOptionalItems((prev) => {
-      if (prev.length <= 1) return prev
       const item = prev[index]
       if (item?.groupId && item.isGroupHeader) {
         return prev.filter((li, i) => li.groupId !== item.groupId || i === index)
@@ -1722,6 +1708,9 @@ export default function NewEstimatePage() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-2">
+                {optionalItems.length === 0 ? (
+                  <p className="text-sm text-gray-500">No optional items yet.</p>
+                ) : (
                 <div className="space-y-2">
                   {optionalItems.map((item, index) => {
                     const isGroupHeader = item.isGroupHeader
@@ -1893,7 +1882,6 @@ export default function NewEstimatePage() {
                               placeholder="1"
                               value={item.quantity}
                               onChange={(e) => updateOptionalItem(index, 'quantity', e.target.value)}
-                              required
                             />
                           </div>
                         )}
@@ -1925,7 +1913,6 @@ export default function NewEstimatePage() {
                               placeholder="0.00"
                               value={item.unitPrice}
                               onChange={(e) => updateOptionalItem(index, 'unitPrice', e.target.value)}
-                              required
                             />
                           </div>
                         )}
@@ -2028,30 +2015,29 @@ export default function NewEstimatePage() {
                             >
                               <Plus className="h-4 w-4" />
                             </Button>
-                            {optionalItems.length > 1 && (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  if (item.groupId) {
-                                    setOptionalItems(
-                                      optionalItems.filter((li, i) => li.groupId !== item.groupId || i === index)
-                                    )
-                                  } else {
-                                    removeOptionalItem(index)
-                                  }
-                                }}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            )}
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                if (item.groupId) {
+                                  setOptionalItems(
+                                    optionalItems.filter((li, i) => li.groupId !== item.groupId || i === index)
+                                  )
+                                } else {
+                                  removeOptionalItem(index)
+                                }
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </div>
                         )}
                       </div>
                     )
                   })}
                 </div>
+                )}
                 <Button type="button" variant="outline" onClick={addOptionalItem}>
                   <Plus className="mr-2 h-4 w-4" />
                   Add Optional Item

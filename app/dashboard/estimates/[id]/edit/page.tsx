@@ -1745,7 +1745,6 @@ export default function EditEstimatePage() {
                                   placeholder="Qty"
                                   value={item.quantity}
                                   onChange={(e) => updateOptionalItem(index, 'quantity', e.target.value)}
-                                  required
                                 />
                               </div>
 
@@ -1773,7 +1772,6 @@ export default function EditEstimatePage() {
                                   placeholder="0.00"
                                   value={item.unitPrice}
                                   onChange={(e) => updateOptionalItem(index, 'unitPrice', e.target.value)}
-                                  required
                                 />
                               </div>
 
