@@ -206,6 +206,7 @@ export async function PUT(
   try {
     const body = await request.json()
     const {
+      clientId,
       estimateNumber,
       title,
       jobSiteAddress,
@@ -250,6 +251,21 @@ export async function PUT(
         if (mapped) return NextResponse.json(mapped.body, { status: mapped.status })
         throw err
       }
+    }
+
+    let resolvedClientId: string | null | undefined = undefined
+    if (clientId !== undefined) {
+      const nextClientId = clientId ? String(clientId) : null
+      if (nextClientId) {
+        const client = await prisma.client.findFirst({
+          where: { id: nextClientId, tenantId: user.tenantId },
+          select: { id: true },
+        })
+        if (!client) {
+          return NextResponse.json({ error: 'Client not found' }, { status: 404 })
+        }
+      }
+      resolvedClientId = nextClientId
     }
 
     // Recalculate totals if line items changed
@@ -403,6 +419,7 @@ export async function PUT(
               ? normalizedEstimateNumber
               : undefined,
           title: title !== undefined ? title : existing.title,
+          clientId: resolvedClientId !== undefined ? resolvedClientId : undefined,
         jobSiteAddress:
           jobSiteAddress !== undefined
             ? (jobSiteAddress || null)
@@ -421,6 +438,7 @@ export async function PUT(
         terms: terms !== undefined ? terms : existing.terms,
         },
         include: {
+          client: true,
           lineItems: {
             orderBy: { sortOrder: 'asc' },
           },

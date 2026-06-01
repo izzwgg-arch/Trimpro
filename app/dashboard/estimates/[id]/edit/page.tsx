@@ -915,6 +915,7 @@ export default function EditEstimatePage() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
+          clientId: formData.clientId || null,
           estimateNumber,
           title: formData.title,
           jobSiteAddress: formData.jobSiteAddress || null,
@@ -1041,9 +1042,7 @@ export default function EditEstimatePage() {
                     value={formData.clientId}
                     onSelect={(value) => setFormData({ ...formData, clientId: value })}
                     placeholder="Select a client..."
-                    disabled
                   />
-                  <p className="text-xs text-gray-500 mt-1">Client cannot be changed after creation</p>
                 </div>
                 <div>
                   <Label htmlFor="estimateNumber">Estimate #</Label>
