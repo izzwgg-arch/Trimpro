@@ -928,6 +928,7 @@ export default function EditInvoicePage() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
+          clientId: formData.clientId || null,
           invoiceNumber,
           title: formData.title,
           taxRate: taxRate,
@@ -1053,9 +1054,7 @@ export default function EditInvoicePage() {
                       if (value) fetchJobs()
                     }}
                     placeholder="Select a client..."
-                    disabled
                   />
-                  <p className="text-xs text-gray-500 mt-1">Client cannot be changed after creation</p>
                 </div>
                 <div>
                   <Label htmlFor="invoiceNumber">Invoice #</Label>

@@ -209,6 +209,7 @@ export async function PUT(
   try {
     const body = await request.json()
     const {
+      clientId,
       invoiceNumber,
       title,
       lineItems,
@@ -256,6 +257,22 @@ export async function PUT(
       } catch (err: any) {
         return NextResponse.json({ error: err?.message || 'Invoice number already exists in QuickBooks' }, { status: 400 })
       }
+    }
+
+    let resolvedClientId: string | undefined = undefined
+    if (clientId !== undefined) {
+      const nextClientId = clientId ? String(clientId) : null
+      if (!nextClientId) {
+        return NextResponse.json({ error: 'Client is required' }, { status: 400 })
+      }
+      const client = await prisma.client.findFirst({
+        where: { id: nextClientId, tenantId: user.tenantId },
+        select: { id: true },
+      })
+      if (!client) {
+        return NextResponse.json({ error: 'Client not found' }, { status: 404 })
+      }
+      resolvedClientId = nextClientId
     }
 
     // Recalculate totals if line items changed
@@ -409,6 +426,11 @@ export async function PUT(
               ? normalizedInvoiceNumber
               : undefined,
           title: title !== undefined ? title : existing.title,
+          clientId: resolvedClientId !== undefined ? resolvedClientId : undefined,
+          jobId:
+            resolvedClientId !== undefined && resolvedClientId !== existing.clientId
+              ? null
+              : undefined,
         subtotal: subtotal,
         taxRate: taxRateNum,
         taxAmount: tax,
@@ -433,6 +455,7 @@ export async function PUT(
           documentSnapshotJson !== undefined ? documentSnapshotJson : existing.renderSnapshot,
         },
         include: {
+          client: true,
           lineItems: {
             orderBy: { sortOrder: 'asc' },
           },
