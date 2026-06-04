@@ -1,10 +1,13 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
 import Script from 'next/script'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
+import { parsePublicPaymentAmount } from '@/lib/payments/bulk-card-allocation'
+
+const SOLA_PAYMENT_INTENT_KEY = 'sola_payment_intent_ref'
 
 interface PublicInvoice {
   id: string
@@ -64,6 +67,8 @@ export default function PublicPaymentPage() {
     ''
   const gatewayInvoice = searchParams.get('xInvoice') || searchParams.get('invoiceId') || ''
   const gatewayAmount = searchParams.get('xAmount') || searchParams.get('amount') || ''
+  const gatewayCustom =
+    searchParams.get('xCustom1') || searchParams.get('xCustom') || searchParams.get('Custom1') || ''
 
   const [invoice, setInvoice] = useState<PublicInvoice | null>(null)
   const [loading, setLoading] = useState(true)
@@ -84,6 +89,7 @@ export default function PublicPaymentPage() {
   } | null>(null)
   const [customPrevAmount, setCustomPrevAmount] = useState<string>('')
   const [customPrevEnabled, setCustomPrevEnabled] = useState(false)
+  const [customApplyBusy, setCustomApplyBusy] = useState(false)
   const [processing, setProcessing] = useState(false)
   const [confirmation, setConfirmation] = useState<string | null>(null)
   const [reconcilingPayment, setReconcilingPayment] = useState(false)
@@ -142,6 +148,12 @@ export default function PublicPaymentPage() {
     return String(t)
   }
   const captchaReady = Boolean(recaptchaSiteKey && recaptchaScriptLoaded)
+  const reconciledReturnRef = useRef(false)
+
+  const parsedCustomAmount = useMemo(
+    () => parsePublicPaymentAmount(customPrevAmount),
+    [customPrevAmount]
+  )
 
   useEffect(() => {
     const fetchInvoice = async () => {
@@ -223,10 +235,11 @@ export default function PublicPaymentPage() {
       ['failed','declined','canceled','cancelled','error'].includes(normalizedStatus)
     const hasGatewayProof = Boolean(gatewayResult || gatewayStatus || gatewayRef || gatewayAmount)
     const shouldReconcile = Boolean(token && hasGatewayProof && !looksFailed)
-    if (!shouldReconcile || reconcilingPayment) return
+    if (!shouldReconcile || reconcilingPayment || reconciledReturnRef.current) return
     const reconcileFromReturn = async () => {
       try {
         setReconcilingPayment(true)
+        reconciledReturnRef.current = true
         const body = new URLSearchParams()
         if (gatewayResult) body.set('xResult', gatewayResult)
         if (gatewayRef) body.set('xRefnum', gatewayRef)
@@ -236,14 +249,17 @@ export default function PublicPaymentPage() {
         if (!gatewayResult && (gatewayRef || gatewayStatus)) body.set('status', 'approved')
         body.set('invoiceId', gatewayInvoice || invoiceId)
         body.set('xInvoice', gatewayInvoice || invoiceId)
+        const storedIntentRef = sessionStorage.getItem(SOLA_PAYMENT_INTENT_KEY) || gatewayCustom
+        if (storedIntentRef) body.set('xCustom1', storedIntentRef)
         await fetch('/api/webhooks/sola-payment', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() })
+        sessionStorage.removeItem(SOLA_PAYMENT_INTENT_KEY)
         const response = await fetch(`/api/public/invoices/${invoiceId}?token=${encodeURIComponent(token)}`)
         const data = await response.json().catch(() => ({}))
         if (response.ok && data.invoice) { setInvoice(data.invoice); setConfirmation('Payment received. Invoice status was updated.') }
       } catch { /* ignore */ } finally { setReconcilingPayment(false) }
     }
     reconcileFromReturn()
-  }, [token, invoiceId, gatewayResult, gatewayRef, gatewayInvoice, gatewayAmount, reconcilingPayment])
+  }, [token, invoiceId, gatewayResult, gatewayRef, gatewayInvoice, gatewayAmount, gatewayStatus, gatewayCustom, reconcilingPayment])
 
   const isPaid = useMemo(() => Number(invoice?.balance || 0) <= 0, [invoice?.balance])
   const outstandingCount = Number(invoice?.outstanding?.count || 0)
@@ -254,23 +270,27 @@ export default function PublicPaymentPage() {
     if (partialSelection && selectedInvoiceIds.length === 1 && selectedInvoiceIds[0] === partialSelection.invoiceId)
       return Number(partialSelection.amount || 0)
     if (customPrevEnabled) {
-      const n = Number(String(customPrevAmount || '').replace(/[^0-9.]/g, ''))
-      return Number.isFinite(n) ? Math.max(0, n) : 0
+      return parsedCustomAmount ?? 0
     }
     const byId = new Map(openInvoices.map((i) => [String(i.id), Number(i.balance || 0)]))
     return selectedInvoiceIds.reduce((sum, id) => sum + Math.max(0, Number(byId.get(String(id)) || 0)), 0)
-  }, [openInvoices, selectedInvoiceIds, partialSelection, customPrevEnabled, customPrevAmount])
+  }, [openInvoices, selectedInvoiceIds, partialSelection, customPrevEnabled, parsedCustomAmount])
   const selectAllChecked = openInvoices.length > 0 && selectedInvoiceIds.length === openInvoices.length
   const selectAllIndeterminate = selectedInvoiceIds.length > 0 && selectedInvoiceIds.length < openInvoices.length
 
   const handlePayNow = async () => {
     if (!invoice || !approved || processing) return
     if (selectedInvoiceIds.length === 0 && !customPrevEnabled) { setError('Select at least one invoice to pay.'); return }
+    if (customPrevEnabled && parsedCustomAmount == null) { setError('Enter a valid custom amount and click Apply.'); return }
     setProcessing(true)
+    setError(null)
     try {
       const recaptchaToken = await getRecaptchaToken('public_invoice_pay_card')
       const payload: any = { token, recaptchaToken, selectedInvoiceIds }
-      if (customPrevEnabled) { payload.customPrevOnly = true; payload.customPrevAmount = customPrevAmount }
+      if (customPrevEnabled && parsedCustomAmount != null) {
+        payload.customPrevOnly = true
+        payload.customPrevAmount = parsedCustomAmount
+      }
       if (partialSelection && selectedInvoiceIds.length === 1 && selectedInvoiceIds[0] === partialSelection.invoiceId && partialSelection.lineItemIds.length > 0) {
         payload.partialInvoiceId = partialSelection.invoiceId
         payload.partialLineItemIds = partialSelection.lineItemIds
@@ -278,6 +298,7 @@ export default function PublicPaymentPage() {
       const response = await fetch(`/api/public/invoices/${invoice.id}/payment-link`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       const data = await response.json().catch(() => ({}))
       if (!response.ok || !data.paymentUrl) { setError(data.error || 'Unable to create payment link.'); return }
+      if (data.reference) sessionStorage.setItem(SOLA_PAYMENT_INTENT_KEY, String(data.reference))
       window.location.href = data.paymentUrl
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to redirect to payment.')
@@ -319,7 +340,12 @@ export default function PublicPaymentPage() {
   }
 
   const achDisabled = !approved || achProcessing || !captchaReady || selectedInvoiceIds.length === 0
-  const cardDisabled = !approved || processing || !captchaReady
+  const cardDisabled =
+    !approved ||
+    processing ||
+    !captchaReady ||
+    (customPrevEnabled && parsedCustomAmount == null) ||
+    (!customPrevEnabled && selectedInvoiceIds.length === 0 && !partialSelection)
 
   // ── Loading / error / paid states ──────────────────────────────────────────
   if (loading) {
@@ -703,15 +729,24 @@ export default function PublicPaymentPage() {
                         inputMode="decimal"
                       />
                       <button
-                        disabled={!approved}
-                        onClick={() => {
-                          const n = Number(String(customPrevAmount || '').replace(/[^0-9.]/g, ''))
-                          if (!Number.isFinite(n) || n <= 0) { setError('Enter a valid amount greater than 0.'); return }
-                          setError(null); setCustomPrevEnabled(true); setSelectedInvoiceIds([])
+                        disabled={!approved || customApplyBusy}
+                        onClick={async () => {
+                          const amount = parsePublicPaymentAmount(customPrevAmount)
+                          if (amount == null) { setError('Enter a valid amount greater than 0.'); return }
+                          setCustomApplyBusy(true)
+                          setError(null)
+                          try {
+                            setCustomPrevAmount(String(amount))
+                            setCustomPrevEnabled(true)
+                            setPartialSelection(null)
+                            setSelectedInvoiceIds([])
+                          } finally {
+                            setCustomApplyBusy(false)
+                          }
                         }}
                         className="rounded-xl bg-slate-900 px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
                       >
-                        Apply
+                        {customApplyBusy ? 'Applying...' : 'Apply'}
                       </button>
                     </div>
                     {!approved && <p className="mt-1 text-xs text-slate-400">Check the approval box above to enable.</p>}

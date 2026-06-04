@@ -10,6 +10,7 @@ import {
   buildInvoicePaymentReceiptEmail,
 } from '@/lib/email/templates/payment-receipt'
 import { getEstimateConversionSummary } from '@/lib/documents/conversion'
+import { orderInvoicesByStoredIds } from '@/lib/payments/bulk-card-allocation'
 
 function normalizePhone(value: string | null | undefined) {
   return (value || '').replace(/\D/g, '')
@@ -347,11 +348,44 @@ export async function POST(request: NextRequest) {
     const intentRefRaw = String(body?.xCustom1 || body?.xCustom || '')
     const invoiceRefRaw = String(body?.invoiceId || body?.xInvoice || body?.InvoiceID || '')
     // Prefer the explicit intent ref; fall back to xInvoice if it contains the TPINTENT prefix
-    const invoiceRef = intentRefRaw.startsWith('TPINTENT:')
+    let invoiceRef = intentRefRaw.startsWith('TPINTENT:')
       ? intentRefRaw
       : invoiceRefRaw.startsWith('TPINTENT:')
         ? invoiceRefRaw
         : invoiceRefRaw
+
+    // Cardknox sometimes omits xCustom1 on return/webhook while xInvoice lists multiple numbers.
+    if (!invoiceRef.startsWith('TPINTENT:') && invoiceRef.includes(',')) {
+      const invoiceNumbers = invoiceRef
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean)
+      if (invoiceNumbers.length > 1) {
+        const recentIntents = await prisma.idempotencyKey.findMany({
+          where: {
+            scope: 'public_payment_intent',
+            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 30,
+          select: { key: true, response: true },
+        })
+        for (const row of recentIntents) {
+          const resp = (row.response || {}) as any
+          const nums = Array.isArray(resp?.invoiceNumbers)
+            ? resp.invoiceNumbers.map((n: any) => String(n || '').trim()).filter(Boolean)
+            : []
+          if (!nums.length) continue
+          const matches =
+            invoiceNumbers.length === nums.length &&
+            invoiceNumbers.every((num) => nums.includes(num))
+          if (matches) {
+            invoiceRef = `TPINTENT:${row.key}`
+            break
+          }
+        }
+      }
+    }
 
     if (!invoiceRef) {
       return NextResponse.json({ error: 'Missing invoice reference' }, { status: 400 })
@@ -400,16 +434,18 @@ export async function POST(request: NextRequest) {
       })
       if (!client) return NextResponse.json({ error: 'Client not found' }, { status: 404 })
 
-      const openInvoices = await prisma.invoice.findMany({
-        where: {
-          tenantId: intent.tenantId,
-          clientId: client.id,
-          id: { in: invoiceIds },
-          balance: { gt: 0 } as any,
-          status: { notIn: ['PAID', 'CANCELLED', 'REFUNDED'] as any },
-        },
-        orderBy: [{ dueDate: 'asc' }, { invoiceDate: 'asc' }],
-      })
+      const openInvoices = orderInvoicesByStoredIds(
+        invoiceIds,
+        await prisma.invoice.findMany({
+          where: {
+            tenantId: intent.tenantId,
+            clientId: client.id,
+            id: { in: invoiceIds },
+            balance: { gt: 0 } as any,
+            status: { notIn: ['PAID', 'CANCELLED', 'REFUNDED'] as any },
+          },
+        })
+      )
 
       const totalOutstanding = openInvoices.reduce((sum, inv) => sum + Math.max(0, Number(inv.balance || 0)), 0)
       const plannedTotal = plannedAmountsByInvoice

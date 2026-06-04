@@ -4,6 +4,11 @@ import { solaService } from '@/lib/services/sola'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { parseAddressParts } from '@/lib/address/parse'
 import { requireRecaptchaV3 } from '@/lib/security/recaptcha'
+import {
+  buildWaterfallPlannedAmounts,
+  orderInvoicesDominantFirst,
+  parsePublicPaymentAmount,
+} from '@/lib/payments/bulk-card-allocation'
 import crypto from 'crypto'
 
 function resolvePublicAppUrl() {
@@ -38,8 +43,7 @@ export async function POST(
         ? Array.from(new Set(selectedInvoiceIdsRaw.map((v: any) => String(v || '').trim()).filter(Boolean)))
         : []
     const customPrevOnly = Boolean(body?.customPrevOnly)
-    const customPrevAmountRaw = body?.customPrevAmount
-    const customPrevAmount = customPrevAmountRaw == null ? null : Number(customPrevAmountRaw)
+    const customPrevAmount = parsePublicPaymentAmount(body?.customPrevAmount)
     const partialInvoiceId = String(body?.partialInvoiceId || '').trim()
     const partialLineItemIdsRaw = Array.isArray(body?.partialLineItemIds) ? body.partialLineItemIds : null
     const partialLineItemIds = partialLineItemIdsRaw
@@ -149,8 +153,8 @@ export async function POST(
       lineItemIdsByInvoice = { [partialInvoiceId]: items.map((i) => i.id) }
       allocationMode = 'planned'
       maxTotalAmount = capped
-    } else if (customPrevOnly && customPrevAmount != null) {
-      if (!Number.isFinite(customPrevAmount) || customPrevAmount <= 0) {
+    } else if (customPrevOnly) {
+      if (customPrevAmount == null) {
         return NextResponse.json({ error: 'Custom amount must be greater than 0.' }, { status: 400 })
       }
       // Waterfall order: current invoice first, then older invoices by due date asc.
@@ -177,26 +181,32 @@ export async function POST(
         return NextResponse.json({ error: 'No open invoices with a balance due.' }, { status: 400 })
       }
       maxTotalAmount = Math.min(customPrevAmount, totalOutstanding)
+      plannedAmountsByInvoice = buildWaterfallPlannedAmounts(invoicesToPay, maxTotalAmount)
       allocationMode = 'waterfall'
     } else if (selectedInvoiceIds.length) {
-      invoicesToPay = await prisma.invoice.findMany({
+      const selectedRows = await prisma.invoice.findMany({
         where: {
           ...(openWhere as any),
           id: { in: selectedInvoiceIds },
         },
         select: { id: true, balance: true, dueDate: true, invoiceDate: true, invoiceNumber: true, qboSyncId: true },
       })
+      invoicesToPay = orderInvoicesDominantFirst(invoice.id, selectedRows)
     } else if (payAllOutstanding) {
-      invoicesToPay = await prisma.invoice.findMany({
+      const allRows = await prisma.invoice.findMany({
         where: openWhere as any,
         select: { id: true, balance: true, dueDate: true, invoiceDate: true, invoiceNumber: true, qboSyncId: true },
       })
+      invoicesToPay = orderInvoicesDominantFirst(invoice.id, allRows)
     } else {
       invoicesToPay = [{ id: invoice.id, balance: invoice.balance, dueDate: invoice.dueDate, invoiceDate: invoice.invoiceDate, invoiceNumber: invoice.invoiceNumber, qboSyncId: invoice.qboSyncId }]
     }
 
     // Ensure we're only paying open invoices with balance > 0
     invoicesToPay = invoicesToPay.filter((i) => Number(i.balance) > 0)
+    if (invoicesToPay.length > 1) {
+      invoicesToPay = orderInvoicesDominantFirst(invoice.id, invoicesToPay)
+    }
     const sumBalances = invoicesToPay.reduce((sum, i) => sum + Math.max(0, Number(i.balance || 0)), 0)
     const amountToPay = maxTotalAmount != null ? Math.min(maxTotalAmount, sumBalances) : sumBalances
 
@@ -230,6 +240,7 @@ export async function POST(
         scope: 'public_payment_intent',
         response: {
           clientId: invoice.clientId,
+          dominantInvoiceId: invoice.id,
           invoiceIds: invoicesToPay.map((i) => i.id),
           invoiceNumbers,
           qboInvoiceIds,
