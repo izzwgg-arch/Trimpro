@@ -9,6 +9,7 @@ import {
   resolveQboPaymentMethodId,
   shouldSkipOutboundQboPaymentSync,
 } from '@/lib/qbo/payment-method-mapping'
+import { buildQboPaymentRefNum } from '@/lib/qbo/payment-ref-num'
 import crypto from 'crypto'
 
 const LOOKUP_CACHE_TTL_MS = 5 * 60 * 1000
@@ -2223,11 +2224,13 @@ export async function syncPaymentToQuickBooks(tenantId: string, paymentId: strin
       (payment as any).method === 'CARD' ||
       (payment as any).provider === 'sola' ||
       !!(payment as any).solaTransactionId
-    const transactionId =
-      (payment as any).providerPaymentId ||
-      (payment as any).solaTransactionId ||
-      payment.reference ||
-      ''
+    const paymentRefNum = buildQboPaymentRefNum({
+      providerPaymentId: (payment as any).providerPaymentId,
+      solaTransactionId: (payment as any).solaTransactionId,
+      reference: payment.reference,
+      invoiceNumber: payment.invoice.invoiceNumber,
+      paymentId: payment.id,
+    })
 
     let paymentMethodRef: { value: string } | undefined
     const methodNames = resolveOutboundQboPaymentMethodNames(payment)
@@ -2253,8 +2256,8 @@ export async function syncPaymentToQuickBooks(tenantId: string, paymentId: strin
       TotalAmt: amount,
       TxnDate: qboDate(payment.processedAt || payment.createdAt),
       PrivateNote: paymentNote,
-      // PaymentRefNum maps to the payment reference/confirmation number in QBO.
-      ...(isCardPayment && transactionId ? { PaymentRefNum: transactionId } : {}),
+      // PaymentRefNum maps to doc_num in QBO (21 char max).
+      ...(isCardPayment && paymentRefNum ? { PaymentRefNum: paymentRefNum } : {}),
       ...(paymentMethodRef ? { PaymentMethodRef: paymentMethodRef } : {}),
       Line: [
         {

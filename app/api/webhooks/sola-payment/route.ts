@@ -481,13 +481,16 @@ export async function POST(request: NextRequest) {
         if (exists) continue
 
         const invoiceRef = inv.invoiceNumber ? `Invoice ${inv.invoiceNumber}` : `Invoice ${inv.id}`
+        const cleanTxnId = transactionId ? String(transactionId).trim() : ''
         const createdPayment = await prisma.payment.create({
           data: {
             invoiceId: inv.id,
             amount: amountForThis,
             status: 'COMPLETED',
             method: 'CARD',
-            reference: transactionId ? `${transactionId} - ${invoiceRef}` : invoiceRef,
+            provider: 'sola',
+            providerPaymentId: cleanTxnId || null,
+            reference: cleanTxnId ? `${cleanTxnId} - ${invoiceRef}` : invoiceRef,
             solaTransactionId: uniqueTxn,
             solaWebhookData: body,
             processedAt: new Date(),
