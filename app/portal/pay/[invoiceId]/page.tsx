@@ -150,6 +150,16 @@ export default function PublicPaymentPage() {
   const captchaReady = Boolean(recaptchaSiteKey && recaptchaScriptLoaded)
   const reconciledReturnRef = useRef(false)
 
+  // Warm up reCAPTCHA after the script loads so the pay action gets a better score.
+  useEffect(() => {
+    if (!captchaReady) return
+    const grecaptcha = (window as any).grecaptcha
+    if (!grecaptcha?.execute) return
+    grecaptcha.ready(() => {
+      grecaptcha.execute(recaptchaSiteKey, { action: 'public_invoice_pay_pageview' }).catch(() => {})
+    })
+  }, [captchaReady, recaptchaSiteKey])
+
   const parsedCustomAmount = useMemo(
     () => parsePublicPaymentAmount(customPrevAmount),
     [customPrevAmount]
@@ -285,8 +295,7 @@ export default function PublicPaymentPage() {
     setProcessing(true)
     setError(null)
     try {
-      const recaptchaToken = await getRecaptchaToken('public_invoice_pay_card')
-      const payload: any = { token, recaptchaToken, selectedInvoiceIds }
+      const payload: any = { token, selectedInvoiceIds }
       if (customPrevEnabled && parsedCustomAmount != null) {
         payload.customPrevOnly = true
         payload.customPrevAmount = parsedCustomAmount
@@ -295,8 +304,26 @@ export default function PublicPaymentPage() {
         payload.partialInvoiceId = partialSelection.invoiceId
         payload.partialLineItemIds = partialSelection.lineItemIds
       }
-      const response = await fetch(`/api/public/invoices/${invoice.id}/payment-link`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-      const data = await response.json().catch(() => ({}))
+
+      const postPaymentLink = async (recaptchaToken: string) => {
+        return fetch(`/api/public/invoices/${invoice.id}/payment-link`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...payload, recaptchaToken }),
+        })
+      }
+
+      let recaptchaToken = await getRecaptchaToken('public_invoice_pay_card')
+      let response = await postPaymentLink(recaptchaToken)
+      let data = await response.json().catch(() => ({}))
+
+      if (!response.ok && data.error === 'reCAPTCHA score too low') {
+        await new Promise((resolve) => setTimeout(resolve, 800))
+        recaptchaToken = await getRecaptchaToken('public_invoice_pay_card')
+        response = await postPaymentLink(recaptchaToken)
+        data = await response.json().catch(() => ({}))
+      }
+
       if (!response.ok || !data.paymentUrl) { setError(data.error || 'Unable to create payment link.'); return }
       if (data.reference) sessionStorage.setItem(SOLA_PAYMENT_INTENT_KEY, String(data.reference))
       window.location.href = data.paymentUrl

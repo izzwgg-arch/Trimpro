@@ -191,7 +191,7 @@ REDIS_URL="redis://localhost:6379"
 RECAPTCHA_SECRET_KEY="<google-recaptcha-v3-secret>"
 NEXT_PUBLIC_RECAPTCHA_SITE_KEY="<google-recaptcha-v3-site-key>"
 RECAPTCHA_SITE_KEY="<same-as-above>"    # server-side fallback
-# Optional: RECAPTCHA_MIN_SCORE="0.5"
+# Optional: RECAPTCHA_MIN_SCORE="0.3"  # default; raise to 0.5 for stricter checks
 ```
 
 ### Email
