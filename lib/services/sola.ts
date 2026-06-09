@@ -49,34 +49,32 @@ interface SolaWebhookPayload {
 }
 
 export class SolaService {
+  private primaryEmail(email?: string): string {
+    return String(email || '')
+      .split(/[;,]/)
+      .map((part) => part.trim())
+      .find(Boolean) || ''
+  }
+
   private buildCardknoxFallbackUrl(request: SolaPaymentLinkRequest): string {
     const url = new URL(CARDKNOX_HOSTED_FORM_URL)
     const amountStr = Number(request.amount || 0).toFixed(2)
     const invoiceRef = request.invoiceNumber || request.invoiceId
+    const email = this.primaryEmail(request.clientEmail)
 
-    // Send Cardknox billing field names (xBill*), generic xField names, and
-    // plain names — to maximize pre-fill compatibility across Cardknox form templates.
+    // Keep the fallback URL below Cardknox/IIS query limits. The hosted form
+    // accepts these x* fields directly; older aliases caused long invoice URLs
+    // to 404 before Cardknox rendered the payment page.
     const params: Record<string, string> = {
-      // Invoice / amount
       xInvoice: invoiceRef,
       xAmount: amountStr,
       xDescription: request.description || '',
-      invoice: invoiceRef,
-      estimate_invoice: invoiceRef,
-      amount: amountStr,
-      // Hidden intent key — sent back by Cardknox in webhook so we can reconcile multi-invoice payments
-      // without showing the ugly internal key to the customer in xInvoice.
       ...(request.intentRef ? { xCustom1: request.intentRef } : {}),
 
-      // Customer identity
       xName: request.clientName || '',
-      xEmail: request.clientEmail || '',
+      xEmail: email,
       xPhone: request.clientPhone || '',
-      customer_name: request.clientName || '',
-      customer_email: request.clientEmail || '',
-      customer_phone: request.clientPhone || '',
 
-      // Cardknox standard billing block (xBill* — primary pre-fill keys)
       xBillStreet: request.billingStreet || '',
       xBillCity: request.billingCity || '',
       xBillState: request.billingState || '',
@@ -84,29 +82,11 @@ export class SolaService {
       xBillCountry: request.billingCountry || 'US',
       xBillPhone: request.clientPhone || '',
 
-      // Cardknox xBilling* variants used by some form templates
-      xBillingStreet: request.billingStreet || '',
-      xBillingAddress: request.billingStreet || '',
-      xBillingCity: request.billingCity || '',
-      xBillingState: request.billingState || '',
-      xBillingZip: request.billingZip || '',
-      xBillingPhone: request.clientPhone || '',
-
-      // Generic / legacy aliases
       xAddress: request.billingStreet || '',
-      xStreet: request.billingStreet || '',
       xCity: request.billingCity || '',
       xState: request.billingState || '',
       xZip: request.billingZip || '',
-      xPostalCode: request.billingZip || '',
       xCountry: request.billingCountry || 'US',
-
-      // Plain keys for older templates
-      address: request.billingStreet || '',
-      city: request.billingCity || '',
-      state: request.billingState || '',
-      zip: request.billingZip || '',
-      country: request.billingCountry || 'US',
     }
 
     for (const [key, value] of Object.entries(params)) {
@@ -114,19 +94,10 @@ export class SolaService {
     }
     if (request.returnUrl) {
       url.searchParams.set('xReturnURL', request.returnUrl)
-      // Cardknox merchant templates sometimes use different return key names.
       url.searchParams.set('xRedirectURL', request.returnUrl)
-      url.searchParams.set('xRedirect', request.returnUrl)
-      url.searchParams.set('ReturnURL', request.returnUrl)
-      url.searchParams.set('returnUrl', request.returnUrl)
-      url.searchParams.set('return_url', request.returnUrl)
     }
     if (request.webhookUrl) {
-      // Add multiple aliases so hosted forms that support server callbacks can post back.
       url.searchParams.set('xWebhookURL', request.webhookUrl)
-      url.searchParams.set('WebhookURL', request.webhookUrl)
-      url.searchParams.set('webhookUrl', request.webhookUrl)
-      url.searchParams.set('postbackUrl', request.webhookUrl)
     }
     return url.toString()
   }
