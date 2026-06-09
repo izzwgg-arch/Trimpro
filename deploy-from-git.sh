@@ -56,7 +56,22 @@ fi
 echo ""
 echo "🏗️  Step 4: Building Next.js application..."
 # Next.js and Prisma load .env themselves; avoid bash `source` (breaks on "KEY= value" lines).
+set +e
 NEXT_TELEMETRY_DISABLED=1 npm run build
+BUILD_EXIT=$?
+set -e
+# Next 14 occasionally fails the final 500.html rename on Linux; copy manually if needed.
+if [ -f .next/export/500.html ] && [ ! -f .next/server/pages/500.html ]; then
+    mkdir -p .next/server/pages
+    cp .next/export/500.html .next/server/pages/500.html
+fi
+if [ "$BUILD_EXIT" -ne 0 ] && [ ! -f .next/BUILD_ID ]; then
+    echo "❌ Build failed and no BUILD_ID was produced."
+    exit "$BUILD_EXIT"
+fi
+if [ "$BUILD_EXIT" -ne 0 ]; then
+    echo "⚠️  Build exited with code $BUILD_EXIT but artifacts look usable; continuing deploy."
+fi
 
 echo ""
 echo "🔑 Fixing public directory permissions (nginx needs read access)..."
