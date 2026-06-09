@@ -55,6 +55,7 @@ fi
 
 echo ""
 echo "🏗️  Step 4: Building Next.js application..."
+# Next.js and Prisma load .env themselves; avoid bash `source` (breaks on "KEY= value" lines).
 NEXT_TELEMETRY_DISABLED=1 npm run build
 
 echo ""
@@ -68,13 +69,7 @@ pm2 delete $APP_NAME 2>/dev/null || true
 
 echo ""
 echo "🚀 Step 6: Starting application with PM2..."
-# Load environment variables from .env file if it exists and export them
-if [ -f .env ]; then
-    set -a
-    source .env
-    set +a
-fi
-# Use ecosystem file if it exists, otherwise start directly
+# ecosystem.config.js loads .env via Node (handles spaces after = and special chars in values)
 if [ -f ecosystem.config.js ]; then
     pm2 start ecosystem.config.js
 else

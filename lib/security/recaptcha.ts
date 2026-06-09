@@ -19,8 +19,9 @@ function getClientIp(request: NextRequest): string | undefined {
 
 function minScore(): number {
   const raw = process.env.RECAPTCHA_MIN_SCORE
-  const n = raw ? Number(raw) : 0.5
-  return Number.isFinite(n) ? n : 0.5
+  // 0.3 is a common floor for public payment flows that also require a payment-link token.
+  const n = raw ? Number(raw) : 0.3
+  return Number.isFinite(n) ? n : 0.3
 }
 
 /**
@@ -86,7 +87,15 @@ export async function requireRecaptchaV3(params: {
   }
 
   const score = typeof data.score === 'number' ? data.score : 0
-  if (score < minScore()) {
+  const threshold = minScore()
+  if (score < threshold) {
+    console.warn('[reCAPTCHA] Score below threshold:', {
+      score,
+      threshold,
+      action: data.action || params.expectedAction,
+      hostname: data.hostname,
+      ip,
+    })
     return NextResponse.json({ error: 'reCAPTCHA score too low' }, { status: 403 })
   }
 
