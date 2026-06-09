@@ -1,12 +1,16 @@
 // SOLA/Cardknox Payment API Integration
 
+import {
+  buildCardknoxFallbackUrl,
+  CARDKNOX_HOSTED_FORM_URL,
+  validatePaymentUrlForStorage,
+} from '@/lib/services/cardknox-url'
+
 const SOLA_API_BASE =
   process.env.SOLA_API_URL ||
   process.env.SOLA_API_BASE_URL ||
   process.env.CARDKNOX_API_BASE_URL ||
   'https://api.cardknox.com/v2'
-const CARDKNOX_HOSTED_FORM_URL =
-  process.env.CARDKNOX_HOSTED_FORM_URL || 'https://secure.cardknox.com/trimprony'
 const SOLA_API_KEY = process.env.SOLA_API_KEY
 const SOLA_API_SECRET = process.env.SOLA_API_SECRET
 
@@ -49,57 +53,37 @@ interface SolaWebhookPayload {
 }
 
 export class SolaService {
-  private primaryEmail(email?: string): string {
-    return String(email || '')
-      .split(/[;,]/)
-      .map((part) => part.trim())
-      .find(Boolean) || ''
+  private urlContext(request: SolaPaymentLinkRequest) {
+    return {
+      invoiceId: request.invoiceId,
+      invoiceNumber: request.invoiceNumber,
+    }
   }
 
   private buildCardknoxFallbackUrl(request: SolaPaymentLinkRequest): string {
-    const url = new URL(CARDKNOX_HOSTED_FORM_URL)
-    const amountStr = Number(request.amount || 0).toFixed(2)
-    const invoiceRef = request.invoiceNumber || request.invoiceId
-    const email = this.primaryEmail(request.clientEmail)
+    return buildCardknoxFallbackUrl(
+      {
+        invoiceRef: request.invoiceNumber || request.invoiceId,
+        amountStr: Number(request.amount || 0).toFixed(2),
+        description: request.description || '',
+        intentRef: request.intentRef,
+        clientName: request.clientName,
+        clientEmail: request.clientEmail,
+        clientPhone: request.clientPhone,
+        billingStreet: request.billingStreet,
+        billingCity: request.billingCity,
+        billingState: request.billingState,
+        billingZip: request.billingZip,
+        billingCountry: request.billingCountry || 'US',
+        returnUrl: request.returnUrl,
+        webhookUrl: request.webhookUrl,
+      },
+      this.urlContext(request)
+    )
+  }
 
-    // Keep the fallback URL below Cardknox/IIS query limits. The hosted form
-    // accepts these x* fields directly; older aliases caused long invoice URLs
-    // to 404 before Cardknox rendered the payment page.
-    const params: Record<string, string> = {
-      xInvoice: invoiceRef,
-      xAmount: amountStr,
-      xDescription: request.description || '',
-      ...(request.intentRef ? { xCustom1: request.intentRef } : {}),
-
-      xName: request.clientName || '',
-      xEmail: email,
-      xPhone: request.clientPhone || '',
-
-      xBillStreet: request.billingStreet || '',
-      xBillCity: request.billingCity || '',
-      xBillState: request.billingState || '',
-      xBillZip: request.billingZip || '',
-      xBillCountry: request.billingCountry || 'US',
-      xBillPhone: request.clientPhone || '',
-
-      xAddress: request.billingStreet || '',
-      xCity: request.billingCity || '',
-      xState: request.billingState || '',
-      xZip: request.billingZip || '',
-      xCountry: request.billingCountry || 'US',
-    }
-
-    for (const [key, value] of Object.entries(params)) {
-      if (value) url.searchParams.set(key, value)
-    }
-    if (request.returnUrl) {
-      url.searchParams.set('xReturnURL', request.returnUrl)
-      url.searchParams.set('xRedirectURL', request.returnUrl)
-    }
-    if (request.webhookUrl) {
-      url.searchParams.set('xWebhookURL', request.webhookUrl)
-    }
-    return url.toString()
+  private safePaymentUrl(url: string, request: SolaPaymentLinkRequest): string {
+    return validatePaymentUrlForStorage(url, this.urlContext(request))
   }
 
   private async makeRequest(
@@ -209,7 +193,7 @@ export class SolaService {
         if (url) {
           return {
             id: String(raw.id || raw.transactionId || raw.TransactionID || raw.xRefnum || request.invoiceId),
-            url,
+            url: this.safePaymentUrl(url, request),
             expiresAt: String(
               raw.expiresAt ||
                 raw.expiration ||
@@ -232,7 +216,7 @@ export class SolaService {
       const fallbackUrl = this.buildCardknoxFallbackUrl(request)
       return {
         id: request.invoiceId,
-        url: fallbackUrl,
+        url: this.safePaymentUrl(fallbackUrl, request),
         expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString(),
       }
     }

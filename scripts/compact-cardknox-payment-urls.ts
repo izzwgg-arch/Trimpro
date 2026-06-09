@@ -1,6 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { authenticateRequest, getAuthUser } from '@/lib/middleware'
-import { prisma } from '@/lib/prisma'
+import { PrismaClient } from '@prisma/client'
 import {
   CARDKNOX_HOSTED_FORM_URL,
   CARDKNOX_LONG_URL_THRESHOLD,
@@ -9,26 +7,12 @@ import {
   enforceCardknoxUrlLength,
 } from '@/lib/services/cardknox-url'
 
-export const dynamic = 'force-dynamic'
+const prisma = new PrismaClient()
 
-export async function POST(request: NextRequest) {
-  const authError = await authenticateRequest(request)
-  if (authError) return authError
-
-  const user = getAuthUser(request)
-  if (user.role !== 'ADMIN') {
-    return NextResponse.json(
-      { error: 'Admin access required to run this repair tool' },
-      { status: 403 }
-    )
-  }
-
-  const body = await request.json().catch(() => ({}))
-  const write = Boolean(body?.write)
-
+async function main() {
+  const write = process.argv.includes('--write')
   const invoices = await prisma.invoice.findMany({
     where: {
-      tenantId: user.tenantId,
       solaPaymentUrl: {
         startsWith: `${CARDKNOX_HOSTED_FORM_URL}?`,
       },
@@ -54,7 +38,11 @@ export async function POST(request: NextRequest) {
           invoiceId: invoice.id,
           invoiceNumber: invoice.invoiceNumber,
         })
-      } catch {
+      } catch (error) {
+        console.error(
+          `[Cardknox URL] Skipping invoice ${invoice.invoiceNumber || invoice.id}:`,
+          error instanceof Error ? error.message : error
+        )
         return null
       }
       return {
@@ -81,19 +69,34 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({
-    mode: write ? 'write' : 'dry-run',
-    maxUrlLength: CARDKNOX_MAX_URL_LENGTH,
-    longUrlThreshold: CARDKNOX_LONG_URL_THRESHOLD,
-    scanned: invoices.length,
-    affected: affected.length,
-    invoices: affected.map((invoice) => ({
-      id: invoice.id,
-      invoiceNumber: invoice.invoiceNumber,
-      status: invoice.status,
-      balance: invoice.balance.toString(),
-      before: invoice.currentLength,
-      after: invoice.compactLength,
-    })),
-  })
+  console.log(
+    JSON.stringify(
+      {
+        mode: write ? 'write' : 'dry-run',
+        maxUrlLength: CARDKNOX_MAX_URL_LENGTH,
+        longUrlThreshold: CARDKNOX_LONG_URL_THRESHOLD,
+        scanned: invoices.length,
+        affected: affected.length,
+        invoices: affected.map((invoice) => ({
+          id: invoice.id,
+          invoiceNumber: invoice.invoiceNumber,
+          status: invoice.status,
+          balance: String(invoice.balance),
+          before: invoice.currentLength,
+          after: invoice.compactLength,
+        })),
+      },
+      null,
+      2
+    )
+  )
 }
+
+main()
+  .catch((error) => {
+    console.error(error)
+    process.exitCode = 1
+  })
+  .finally(async () => {
+    await prisma.$disconnect()
+  })
