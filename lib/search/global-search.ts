@@ -39,6 +39,93 @@ function ilikeAny(field: string, terms: string[]): Record<string, unknown>[] {
   return terms.map((t) => ({ [field]: ilike(t) }))
 }
 
+/** Collect all descendant sub-client IDs below the given parent client IDs. */
+async function getDescendantClientIds(
+  tenantId: string,
+  parentIds: string[]
+): Promise<string[]> {
+  const all = new Set<string>()
+  let frontier = [...parentIds]
+  while (frontier.length > 0) {
+    const children = await prisma.client.findMany({
+      where: { tenantId, isActive: true, parentId: { in: frontier } },
+      select: { id: true },
+    })
+    frontier = []
+    for (const child of children) {
+      if (!all.has(child.id)) {
+        all.add(child.id)
+        frontier.push(child.id)
+      }
+    }
+  }
+  return Array.from(all)
+}
+
+/** Score related records so they surface when a parent client matched the query. */
+function relatedScore(baseScore: number, updatedAt?: Date | null): number {
+  let recency = 0
+  if (updatedAt) {
+    const days = (Date.now() - new Date(updatedAt).getTime()) / 86_400_000
+    if (days < 7) recency = 15
+    else if (days < 30) recency = 10
+    else if (days < 90) recency = 5
+  }
+  return Math.round(baseScore * 0.85 + recency)
+}
+
+type AddressParts = {
+  street?: string | null
+  city?: string | null
+  state?: string | null
+  zipCode?: string | null
+}
+
+function resolveEstimateAddress(estimate: {
+  jobSiteAddress?: string | null
+  job?: { addresses?: AddressParts[] } | null
+}): string {
+  const fromJob = formatAddressParts(estimate.job?.addresses?.[0])
+  if (fromJob) return fromJob
+  return estimate.jobSiteAddress?.trim() || ''
+}
+
+function resolveInvoiceAddress(invoice: {
+  job?: { addresses?: AddressParts[] } | null
+  estimate?: { jobSiteAddress?: string | null } | null
+}): string {
+  const fromJob = formatAddressParts(invoice.job?.addresses?.[0])
+  if (fromJob) return fromJob
+  return invoice.estimate?.jobSiteAddress?.trim() || ''
+}
+
+const estimateInclude = {
+  client: { select: { name: true, companyName: true } },
+  job: {
+    select: {
+      addresses: {
+        where: { type: 'job_site' as const },
+        select: { street: true, city: true, state: true, zipCode: true },
+        take: 1,
+      },
+    },
+  },
+}
+
+const invoiceInclude = {
+  client: { select: { name: true, companyName: true } },
+  job: {
+    select: {
+      addresses: {
+        where: { type: 'job_site' as const },
+        select: { street: true, city: true, state: true, zipCode: true },
+        take: 1,
+      },
+    },
+  },
+  estimate: { select: { jobSiteAddress: true } },
+}
+
 // ---- main export ------------------------------------------------------------
 
 export async function runGlobalSearch({
@@ -136,7 +223,7 @@ export async function runGlobalSearch({
               ...ilikeAny('notes', terms),
             ],
           },
-          include: { client: { select: { name: true, companyName: true } } },
+          include: estimateInclude,
           take: fetch,
           orderBy: { updatedAt: 'desc' },
         })
@@ -154,7 +241,7 @@ export async function runGlobalSearch({
               ...ilikeAny('memo', terms),
             ],
           },
-          include: { client: { select: { name: true, companyName: true } } },
+          include: invoiceInclude,
           take: fetch,
           orderBy: { updatedAt: 'desc' },
         })
@@ -292,6 +379,86 @@ export async function runGlobalSearch({
     }),
   ])
 
+  // ── related entities for matched clients ──────────────────────────────────
+  const matchedClientIds = new Set<string>()
+  let maxClientScore = 0
+
+  for (const c of clientRows as any[]) {
+    matchedClientIds.add(c.id)
+    maxClientScore = Math.max(
+      maxClientScore,
+      computeScore(q, [c.name, c.companyName], [c.email, c.phone], c.updatedAt)
+    )
+  }
+  for (const ct of contactRows as any[]) {
+    if (ct.client?.id) {
+      matchedClientIds.add(ct.client.id)
+      const fullName = `${ct.firstName} ${ct.lastName}`.trim()
+      maxClientScore = Math.max(
+        maxClientScore,
+        computeScore(q, [ct.firstName, ct.lastName, fullName], [ct.email, ct.phone], ct.updatedAt)
+      )
+    }
+  }
+
+  const rootClientIds = Array.from(matchedClientIds)
+  const descendantClientIds =
+    rootClientIds.length > 0 && can('clients.view')
+      ? await getDescendantClientIds(tenantId, rootClientIds)
+      : []
+  const relatedClientIds = Array.from(new Set([...rootClientIds, ...descendantClientIds]))
+
+  const [subClientRows, relatedEstimateRows, relatedInvoiceRows, relatedJobRows] =
+    relatedClientIds.length > 0
+      ? await Promise.all([
+          descendantClientIds.length > 0 && can('clients.view')
+            ? prisma.client.findMany({
+                where: {
+                  tenantId,
+                  isActive: true,
+                  id: { in: descendantClientIds },
+                },
+                include: {
+                  parent: { select: { name: true, companyName: true } },
+                },
+                take: fetch,
+                orderBy: { updatedAt: 'desc' },
+              })
+            : Promise.resolve([]),
+          can('estimates.view')
+            ? prisma.estimate.findMany({
+                where: { tenantId, clientId: { in: relatedClientIds } },
+                include: estimateInclude,
+                take: fetch,
+                orderBy: { updatedAt: 'desc' },
+              })
+            : Promise.resolve([]),
+          can('invoices.view')
+            ? prisma.invoice.findMany({
+                where: { tenantId, clientId: { in: relatedClientIds } },
+                include: invoiceInclude,
+                take: fetch,
+                orderBy: { updatedAt: 'desc' },
+              })
+            : Promise.resolve([]),
+          can('jobs.view')
+            ? prisma.job.findMany({
+                where: { tenantId, clientId: { in: relatedClientIds } },
+                include: {
+                  client: { select: { name: true, companyName: true } },
+                  addresses: {
+                    where: { type: 'job_site' },
+                    select: { street: true, city: true, state: true, zipCode: true },
+                    take: 1,
+                  },
+                },
+                take: fetch,
+                orderBy: { updatedAt: 'desc' },
+              })
+            : Promise.resolve([]),
+        ])
+      : [[], [], [], []]
+
   // ── map rows → scored results ─────────────────────────────────────────────
   const groups: SearchGroup[] = []
 
@@ -335,6 +502,20 @@ export async function runGlobalSearch({
     }
   }
 
+  for (const sc of subClientRows as any[]) {
+    if (customerMap.has(sc.id)) continue
+    const parentLabel = sc.parent?.companyName || sc.parent?.name || 'parent client'
+    customerMap.set(sc.id, {
+      id: sc.id,
+      entityType: 'client',
+      title: sc.companyName || sc.name,
+      subtitle: `Sub-client of ${parentLabel}`,
+      url: `/dashboard/clients/${sc.id}`,
+      score: relatedScore(maxClientScore, sc.updatedAt),
+      updatedAt: sc.updatedAt,
+    })
+  }
+
   const customerResults = topN(Array.from(customerMap.values()), limitPerGroup)
   if (customerResults.length > 0) {
     groups.push({ type: 'customer', label: 'Customers', results: customerResults })
@@ -358,35 +539,71 @@ export async function runGlobalSearch({
   }
 
   // --- Estimates ------------------------------------------------------------
-  const estimateResults = topN(
-    (estimateRows as any[]).map((e) => ({
+  const estimateMap = new Map<string, SearchGroup['results'][0]>()
+  const mapEstimate = (e: any, score: number) => {
+    const address = resolveEstimateAddress(e)
+    const clientLabel = e.client?.companyName || e.client?.name
+    estimateMap.set(e.id, {
       id: e.id,
       entityType: 'estimate',
       title: `${e.estimateNumber} — ${e.title}`,
-      subtitle: e.client?.companyName || e.client?.name || e.status,
+      subtitle: [address, clientLabel].filter(Boolean).join(' · ') || e.status,
       url: `/dashboard/estimates/${e.id}`,
-      score: computeScore(q, [e.estimateNumber, e.title], [e.notes, e.client?.name, e.client?.companyName], e.updatedAt),
+      score,
       updatedAt: e.updatedAt,
-    })),
-    limitPerGroup
-  )
+    })
+  }
+  for (const e of estimateRows as any[]) {
+    mapEstimate(
+      e,
+      computeScore(
+        q,
+        [e.estimateNumber, e.title],
+        [e.notes, e.client?.name, e.client?.companyName, resolveEstimateAddress(e)],
+        e.updatedAt
+      )
+    )
+  }
+  for (const e of relatedEstimateRows as any[]) {
+    if (estimateMap.has(e.id)) continue
+    mapEstimate(e, relatedScore(maxClientScore, e.updatedAt))
+  }
+  const estimateResults = topN(Array.from(estimateMap.values()), limitPerGroup)
   if (estimateResults.length > 0) {
     groups.push({ type: 'estimate', label: 'Estimates', results: estimateResults })
   }
 
   // --- Invoices -------------------------------------------------------------
-  const invoiceResults = topN(
-    (invoiceRows as any[]).map((inv) => ({
+  const invoiceMap = new Map<string, SearchGroup['results'][0]>()
+  const mapInvoice = (inv: any, score: number) => {
+    const address = resolveInvoiceAddress(inv)
+    const clientLabel = inv.client?.companyName || inv.client?.name
+    invoiceMap.set(inv.id, {
       id: inv.id,
       entityType: 'invoice',
       title: `${inv.invoiceNumber} — ${inv.title}`,
-      subtitle: inv.client?.companyName || inv.client?.name || inv.status,
+      subtitle: [address, clientLabel].filter(Boolean).join(' · ') || inv.status,
       url: `/dashboard/invoices/${inv.id}`,
-      score: computeScore(q, [inv.invoiceNumber, inv.title], [inv.notes, inv.memo, inv.client?.name], inv.updatedAt),
+      score,
       updatedAt: inv.updatedAt,
-    })),
-    limitPerGroup
-  )
+    })
+  }
+  for (const inv of invoiceRows as any[]) {
+    mapInvoice(
+      inv,
+      computeScore(
+        q,
+        [inv.invoiceNumber, inv.title],
+        [inv.notes, inv.memo, inv.client?.name, resolveInvoiceAddress(inv)],
+        inv.updatedAt
+      )
+    )
+  }
+  for (const inv of relatedInvoiceRows as any[]) {
+    if (invoiceMap.has(inv.id)) continue
+    mapInvoice(inv, relatedScore(maxClientScore, inv.updatedAt))
+  }
+  const invoiceResults = topN(Array.from(invoiceMap.values()), limitPerGroup)
   if (invoiceResults.length > 0) {
     groups.push({ type: 'invoice', label: 'Invoices', results: invoiceResults })
   }
@@ -451,27 +668,37 @@ export async function runGlobalSearch({
   }
 
   // --- Projects / Jobs ------------------------------------------------------
-  const jobResults = topN(
-    (jobRows as any[]).map((job) => {
-      const jobSiteAddress = formatAddressParts(job.addresses?.[0])
-      const clientLabel = job.client?.companyName || job.client?.name
-      return {
-        id: job.id,
-        entityType: 'job',
-        title: `${job.jobNumber} — ${job.title}`,
-        subtitle: [jobSiteAddress, clientLabel].filter(Boolean).join(' · ') || job.status,
-        url: `/dashboard/jobs/${job.id}`,
-        score: computeScore(
-          q,
-          [job.jobNumber, job.title],
-          [job.description, job.client?.name, job.client?.companyName, jobSiteAddress],
-          job.updatedAt
-        ),
-        updatedAt: job.updatedAt,
-      }
-    }),
-    limitPerGroup
-  )
+  const jobMap = new Map<string, SearchGroup['results'][0]>()
+  const mapJob = (job: any, score: number) => {
+    const jobSiteAddress = formatAddressParts(job.addresses?.[0])
+    const clientLabel = job.client?.companyName || job.client?.name
+    jobMap.set(job.id, {
+      id: job.id,
+      entityType: 'job',
+      title: `${job.jobNumber} — ${job.title}`,
+      subtitle: [jobSiteAddress, clientLabel].filter(Boolean).join(' · ') || job.status,
+      url: `/dashboard/jobs/${job.id}`,
+      score,
+      updatedAt: job.updatedAt,
+    })
+  }
+  for (const job of jobRows as any[]) {
+    const jobSiteAddress = formatAddressParts(job.addresses?.[0])
+    mapJob(
+      job,
+      computeScore(
+        q,
+        [job.jobNumber, job.title],
+        [job.description, job.client?.name, job.client?.companyName, jobSiteAddress],
+        job.updatedAt
+      )
+    )
+  }
+  for (const job of relatedJobRows as any[]) {
+    if (jobMap.has(job.id)) continue
+    mapJob(job, relatedScore(maxClientScore, job.updatedAt))
+  }
+  const jobResults = topN(Array.from(jobMap.values()), limitPerGroup)
   if (jobResults.length > 0) {
     groups.push({ type: 'job', label: 'Projects', results: jobResults })
   }
