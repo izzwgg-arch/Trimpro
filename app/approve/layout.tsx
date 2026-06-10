@@ -11,7 +11,10 @@ export default function ApproveLayout({ children }: { children: ReactNode }) {
   // The app disables body scrolling globally (see `app/globals.css`) and relies on route-level
   // scroll containers. Public approval pages should scroll naturally, so we provide one here.
   return (
-    <div className="overflow-y-auto overscroll-y-contain bg-gray-100" style={scrollStyle}>
+    <div
+      className="overflow-y-auto overscroll-y-contain bg-gray-100 pb-[env(safe-area-inset-bottom)]"
+      style={scrollStyle}
+    >
       {children}
     </div>
   )

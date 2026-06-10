@@ -63,7 +63,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
           {/* Hamburger — mobile only */}
           <button
             onClick={() => setMobileMenuOpen(true)}
-            className="lg:hidden p-2 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors shrink-0"
+            className="lg:hidden flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md p-2 text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 shrink-0"
             aria-label="Open menu"
           >
             <Menu className="h-5 w-5" />
@@ -75,8 +75,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto bg-gray-100">
-        <div className="p-6 bg-gray-100 min-h-full flex flex-col">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden bg-gray-100">
+        <div className="min-h-full flex flex-col bg-gray-100 p-4 sm:p-6">
           <div className="flex-1">{children}</div>
           <footer className="mt-10 border-t border-gray-200 pt-4 text-xs text-muted-foreground flex flex-wrap items-center justify-between gap-3">
             <div>© {new Date().getFullYear()} TrimPro</div>

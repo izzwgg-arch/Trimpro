@@ -180,7 +180,7 @@ export default function NewVendorPage() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="vendorCode">Vendor Code</Label>
                     <Input
@@ -215,7 +215,7 @@ export default function NewVendorPage() {
                 <CardTitle>Contact Information</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="email">Email</Label>
                     <Input
@@ -268,7 +268,7 @@ export default function NewVendorPage() {
                         placeholder="123 Main St"
                       />
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <Label htmlFor="billingCity">City</Label>
                         <Input
@@ -288,7 +288,7 @@ export default function NewVendorPage() {
                         />
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <Label htmlFor="billingZip">ZIP Code</Label>
                         <Input
@@ -334,7 +334,7 @@ export default function NewVendorPage() {
                         disabled={sameAsBilling}
                       />
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <Label htmlFor="shippingCity">City</Label>
                         <Input
@@ -356,7 +356,7 @@ export default function NewVendorPage() {
                         />
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <Label htmlFor="shippingZip">ZIP Code</Label>
                         <Input
@@ -490,7 +490,7 @@ export default function NewVendorPage() {
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
                             <Label>Name *</Label>
                             <Input

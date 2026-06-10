@@ -11,6 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ArrowLeft, Save, Plus, Trash2, Eye, EyeOff } from 'lucide-react'
 import { LineItemDragHandle } from '@/components/documents/line-item-drag-handle'
 import Link from 'next/link'
+import { ResponsivePage } from '@/components/layout/ResponsivePage'
+import { MobileActionBar } from '@/components/layout/MobileActionBar'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
 import { refreshAccessToken } from '@/lib/auth/client'
@@ -1068,7 +1070,7 @@ export default function NewEstimatePage() {
   const total = subtotalAfterDiscount + tax
 
   return (
-    <div className="space-y-6">
+    <ResponsivePage>
       <div className="flex items-center space-x-4">
         <Link href="/dashboard/estimates">
           <Button variant="ghost" size="sm">
@@ -1376,7 +1378,7 @@ export default function NewEstimatePage() {
                         )}
 
                         {/* Item Name with FastPicker */}
-                        <div className="flex-1 space-y-1">
+                        <div className="line-item-field-wide flex-1 space-y-1">
                           {isGroupHeader ? (
                             <div className="flex items-center gap-2">
                               <Input
@@ -1420,7 +1422,7 @@ export default function NewEstimatePage() {
                                   tabIndex={-1}
                                   onClick={() => toggleVisibility(index, 'description')}
                                   title={item.showDescriptionToCustomer ? 'Hide item name from customer' : 'Show item name to customer'}
-                                  className="p-0 h-3 w-3"
+                                  className="visibility-toggle-btn"
                                 >
                                   {item.showDescriptionToCustomer ? (
                                     <Eye className="h-3 w-3 text-gray-600" />
@@ -1451,7 +1453,7 @@ export default function NewEstimatePage() {
                                   tabIndex={-1}
                                   onClick={() => toggleVisibility(index, 'notes')}
                                   title={item.showNotesToCustomer ? 'Hide description from customer' : 'Show description to customer'}
-                                  className="p-0 h-3 w-3"
+                                  className="visibility-toggle-btn"
                                 >
                                   {item.showNotesToCustomer ? (
                                     <Eye className="h-3 w-3 text-gray-600" />
@@ -1474,7 +1476,7 @@ export default function NewEstimatePage() {
 
                         {/* Quantity */}
                         {!isGroupHeader && (
-                          <div className="w-24">
+                          <div className="line-item-field-numeric">
                             <Label className="text-xs text-gray-500 mb-1 block">Quantity</Label>
                             <Input
                               type="number"
@@ -1490,7 +1492,7 @@ export default function NewEstimatePage() {
 
                         {/* Unit Price with visibility toggle */}
                         {!isGroupHeader && (
-                          <div className="w-28 relative">
+                          <div className="line-item-field-numeric relative">
                             <div className="flex items-center gap-1 mb-1">
                               <Label className="text-xs text-gray-500">Price</Label>
                               <Button
@@ -1499,7 +1501,7 @@ export default function NewEstimatePage() {
                                 size="sm"
                                 onClick={() => toggleVisibility(index, 'price')}
                                 title={item.showPriceToCustomer ? 'Hide price from customer' : 'Show price to customer'}
-                                className="p-0 h-3 w-3"
+                                className="visibility-toggle-btn"
                               >
                                 {item.showPriceToCustomer ? (
                                   <Eye className="h-3 w-3 text-gray-600" />
@@ -1522,7 +1524,7 @@ export default function NewEstimatePage() {
 
                         {/* Unit Cost with visibility toggle */}
                         {!isGroupHeader && (
-                          <div className="w-28 relative">
+                          <div className="line-item-field-numeric relative">
                             <div className="flex items-center gap-1 mb-1">
                               <Label className="text-xs text-gray-500">Cost</Label>
                               <Button
@@ -1531,7 +1533,7 @@ export default function NewEstimatePage() {
                                 size="sm"
                                 onClick={() => toggleVisibility(index, 'cost')}
                                 title={item.showCostToCustomer ? 'Hide cost from customer' : 'Show cost to customer'}
-                                className="p-0 h-3 w-3"
+                                className="visibility-toggle-btn"
                               >
                                 {item.showCostToCustomer ? (
                                   <Eye className="h-3 w-3 text-gray-600" />
@@ -1555,7 +1557,7 @@ export default function NewEstimatePage() {
 
                         {/* Tax with visibility toggle */}
                         {!isGroupHeader && (
-                          <div className="w-24 relative">
+                          <div className="line-item-field-numeric relative">
                             <div className="flex items-center gap-1 mb-1">
                               <Label className="text-xs text-gray-500">Tax</Label>
                               <Button
@@ -1564,7 +1566,7 @@ export default function NewEstimatePage() {
                                 size="sm"
                                 onClick={() => toggleVisibility(index, 'tax')}
                                 title={item.showTaxToCustomer ? 'Hide tax from customer' : 'Show tax to customer'}
-                                className="p-0 h-3 w-3"
+                                className="visibility-toggle-btn"
                               >
                                 {item.showTaxToCustomer ? (
                                   <Eye className="h-3 w-3 text-gray-600" />
@@ -1597,7 +1599,7 @@ export default function NewEstimatePage() {
 
                         {/* Total (Quantity × Unit Price) */}
                         {!isGroupHeader && (
-                          <div className="w-28">
+                          <div className="line-item-field-numeric">
                             <Label className="text-xs text-gray-500 mb-1 block">Total</Label>
                             <div className="px-3 py-2 bg-gray-50 rounded border text-right font-medium">
                               ${(parseFloat(item.quantity || '0') * parseFloat(item.unitPrice || '0')).toFixed(2)}
@@ -1782,7 +1784,7 @@ export default function NewEstimatePage() {
                         )}
 
                         {/* Item Name with FastPicker */}
-                        <div className="flex-1 space-y-1">
+                        <div className="line-item-field-wide flex-1 space-y-1">
                           {isGroupHeader ? (
                             <div className="flex items-center gap-2">
                               <Input
@@ -1826,7 +1828,7 @@ export default function NewEstimatePage() {
                                   tabIndex={-1}
                                   onClick={() => toggleOptionalFieldVisibility(index, 'description')}
                                   title={item.showDescriptionToCustomer ? 'Hide item name from customer' : 'Show item name to customer'}
-                                  className="p-0 h-3 w-3"
+                                  className="visibility-toggle-btn"
                                 >
                                   {item.showDescriptionToCustomer ? (
                                     <Eye className="h-3 w-3 text-gray-600" />
@@ -1857,7 +1859,7 @@ export default function NewEstimatePage() {
                                   tabIndex={-1}
                                   onClick={() => toggleOptionalFieldVisibility(index, 'notes')}
                                   title={item.showNotesToCustomer ? 'Hide description from customer' : 'Show description to customer'}
-                                  className="p-0 h-3 w-3"
+                                  className="visibility-toggle-btn"
                                 >
                                   {item.showNotesToCustomer ? (
                                     <Eye className="h-3 w-3 text-gray-600" />
@@ -1879,7 +1881,7 @@ export default function NewEstimatePage() {
 
                         {/* Quantity */}
                         {!isGroupHeader && (
-                          <div className="w-24">
+                          <div className="line-item-field-numeric">
                             <Label className="text-xs text-gray-500 mb-1 block">Quantity</Label>
                             <Input
                               type="number"
@@ -1893,7 +1895,7 @@ export default function NewEstimatePage() {
 
                         {/* Unit Price with visibility toggle */}
                         {!isGroupHeader && (
-                          <div className="w-28 relative">
+                          <div className="line-item-field-numeric relative">
                             <div className="flex items-center gap-1 mb-1">
                               <Label className="text-xs text-gray-500">Price</Label>
                               <Button
@@ -1903,7 +1905,7 @@ export default function NewEstimatePage() {
                                 tabIndex={-1}
                                 onClick={() => toggleOptionalFieldVisibility(index, 'price')}
                                 title={item.showPriceToCustomer ? 'Hide price from customer' : 'Show price to customer'}
-                                className="p-0 h-3 w-3"
+                                className="visibility-toggle-btn"
                               >
                                 {item.showPriceToCustomer ? (
                                   <Eye className="h-3 w-3 text-gray-600" />
@@ -1924,7 +1926,7 @@ export default function NewEstimatePage() {
 
                         {/* Unit Cost with visibility toggle */}
                         {!isGroupHeader && (
-                          <div className="w-28 relative">
+                          <div className="line-item-field-numeric relative">
                             <div className="flex items-center gap-1 mb-1">
                               <Label className="text-xs text-gray-500">Cost</Label>
                               <Button
@@ -1934,7 +1936,7 @@ export default function NewEstimatePage() {
                                 tabIndex={-1}
                                 onClick={() => toggleOptionalFieldVisibility(index, 'cost')}
                                 title={item.showCostToCustomer ? 'Hide cost from customer' : 'Show cost to customer'}
-                                className="p-0 h-3 w-3"
+                                className="visibility-toggle-btn"
                               >
                                 {item.showCostToCustomer ? (
                                   <Eye className="h-3 w-3 text-gray-600" />
@@ -1957,7 +1959,7 @@ export default function NewEstimatePage() {
 
                         {/* Tax with visibility toggle */}
                         {!isGroupHeader && (
-                          <div className="w-24 relative">
+                          <div className="line-item-field-numeric relative">
                             <div className="flex items-center gap-1 mb-1">
                               <Label className="text-xs text-gray-500">Tax</Label>
                               <Button
@@ -1967,7 +1969,7 @@ export default function NewEstimatePage() {
                                 tabIndex={-1}
                                 onClick={() => toggleOptionalFieldVisibility(index, 'tax')}
                                 title={item.showTaxToCustomer ? 'Hide tax from customer' : 'Show tax to customer'}
-                                className="p-0 h-3 w-3"
+                                className="visibility-toggle-btn"
                               >
                                 {item.showTaxToCustomer ? (
                                   <Eye className="h-3 w-3 text-gray-600" />
@@ -2000,7 +2002,7 @@ export default function NewEstimatePage() {
 
                         {/* Total (Quantity × Unit Price) */}
                         {!isGroupHeader && (
-                          <div className="w-28">
+                          <div className="line-item-field-numeric">
                             <Label className="text-xs text-gray-500 mb-1 block">Total</Label>
                             <div className="px-3 py-2 bg-gray-50 rounded border text-right font-medium">
                               ${(parseFloat(item.quantity || '0') * parseFloat(item.unitPrice || '0')).toFixed(2)}
@@ -2157,18 +2159,18 @@ export default function NewEstimatePage() {
               </CardContent>
             </Card>
 
-            <div className="flex flex-col space-y-2">
-              <Button type="submit" disabled={loading} className="w-full">
+            <MobileActionBar className="max-lg:mx-0 max-lg:flex-col">
+              <Button type="submit" disabled={loading} className="w-full sm:w-auto">
                 <Save className="mr-2 h-4 w-4" />
                 {loading ? 'Creating...' : 'Create Estimate'}
               </Button>
-              <Button type="button" variant="outline" onClick={() => router.back()} className="w-full">
+              <Button type="button" variant="outline" onClick={() => router.back()} className="w-full sm:w-auto">
                 Cancel
               </Button>
-            </div>
+            </MobileActionBar>
           </div>
         </div>
       </form>
-    </div>
+    </ResponsivePage>
   )
 }

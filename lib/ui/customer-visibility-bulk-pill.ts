@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
  */
 export function cnCustomerVisibilityBulkPill(active: boolean) {
   return cn(
-    'flex items-center gap-1 px-2 py-1 rounded-md border font-medium transition-colors text-xs shrink-0',
+    'flex items-center gap-1 px-2.5 py-2 min-h-[44px] rounded-md border font-medium transition-colors text-xs shrink-0',
     active
       ? 'bg-primary text-primary-foreground border-primary shadow-sm hover:bg-primary/90'
       : 'bg-white text-gray-500 border-gray-300 hover:bg-gray-50'

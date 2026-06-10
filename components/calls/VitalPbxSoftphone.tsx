@@ -46,6 +46,16 @@ function getUserPart(value: any): string {
   return ''
 }
 
+function normalizeDialTarget(value: string): string {
+  const trimmed = value.trim()
+  // For phone numbers, tolerate common formatting characters. For named SIP
+  // extensions (for example tenant-prefixed endpoints), preserve the user part.
+  if (/^\+?[\d\s().-]+$/.test(trimmed)) {
+    return trimmed.replace(/[^\d+]/g, '')
+  }
+  return trimmed
+}
+
 export function VitalPbxSoftphone({
   config,
   canCall,
@@ -147,6 +157,10 @@ export function VitalPbxSoftphone({
     if (!canCall) {
       setError('You do not have permission to make calls.')
       setStatus('error')
+      return
+    }
+    if (!config.password.trim()) {
+      setError('Enter the SIP password before connecting.')
       return
     }
 
@@ -252,7 +266,13 @@ export function VitalPbxSoftphone({
       setError('Not connected. Click Connect first.')
       return
     }
-    if (!dial.trim()) return
+    if (status !== 'registered') {
+      setError('Wait until the softphone status is registered before calling.')
+      return
+    }
+
+    const dialTarget = normalizeDialTarget(dial)
+    if (!dialTarget) return
 
     setError('')
     setStatus('calling_out')
@@ -261,10 +281,14 @@ export function VitalPbxSoftphone({
       const Inviter = ua.__Inviter
       const SessionState = ua.__SessionState
 
-      const target = (await import('sip.js') as any).UserAgent.makeURI(`sip:${dial}@${config.sipDomain}`)
+      const target = (await import('sip.js') as any).UserAgent.makeURI(`sip:${dialTarget}@${config.sipDomain}`)
       if (!target) throw new Error('Invalid destination')
 
-      const inviter = new Inviter(ua, target)
+      const inviter = new Inviter(ua, target, {
+        sessionDescriptionHandlerOptions: {
+          constraints: { audio: true, video: false },
+        },
+      })
       inviter.direction = 'outgoing'
       sessionRef.current = inviter
       callStartRef.current = new Date()
@@ -282,7 +306,18 @@ export function VitalPbxSoftphone({
         }
       })
 
-      await inviter.invite()
+      await inviter.invite({
+        requestDelegate: {
+          onReject: (response: any) => {
+            const message = response?.message
+            const statusCode = message?.statusCode
+            const reasonPhrase = message?.reasonPhrase
+            setError(
+              `Call rejected${statusCode ? ` (${statusCode}${reasonPhrase ? ` ${reasonPhrase}` : ''})` : ''}`
+            )
+          },
+        },
+      })
     } catch (e: any) {
       setError(e?.message || 'Call failed')
       setStatus('registered')
@@ -366,6 +401,7 @@ export function VitalPbxSoftphone({
   const canConnect = status === 'idle' || status === 'error'
   const connected = status !== 'idle' && status !== 'error'
   const inCall = status === 'in_call' || status === 'calling_out' || status === 'ringing_in'
+  const canStartCall = status === 'registered'
 
   return (
     <>
@@ -403,9 +439,9 @@ export function VitalPbxSoftphone({
               value={dial}
               onChange={(e) => setDial(e.target.value)}
               placeholder="Dial number or extension (e.g. 1002 or +15551234567)"
-              disabled={!connected || inCall}
+              disabled={!canStartCall || inCall}
             />
-            <Button onClick={startCall} disabled={!connected || inCall || !dial.trim() || !canCall}>
+            <Button onClick={startCall} disabled={!canStartCall || inCall || !dial.trim() || !canCall}>
               <PhoneCall className="h-4 w-4" />
             </Button>
             <Button variant="destructive" onClick={hangup} disabled={!connected || !inCall}>

@@ -28,6 +28,9 @@ import {
   Copy,
 } from 'lucide-react'
 import Link from 'next/link'
+import { MobileActionBar } from '@/components/layout/MobileActionBar'
+import { ResponsivePage } from '@/components/layout/ResponsivePage'
+import { ResponsiveTableContainer } from '@/components/layout/ResponsiveTableContainer'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -641,23 +644,23 @@ export default function EstimateDetailPage() {
     : 100
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
+    <ResponsivePage>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex min-w-0 items-start gap-3 sm:items-center sm:gap-4">
           <Link href="/dashboard/estimates">
             <Button variant="ghost" size="sm">
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back
             </Button>
           </Link>
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">{estimate.title}</h1>
-            <p className="mt-1 text-gray-600">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold text-gray-900 break-words sm:text-3xl">{estimate.title}</h1>
+            <p className="mt-1 text-sm text-gray-600 sm:text-base">
               {estimate.estimateNumber}{' \u2022 '}Created {formatDate(estimate.createdAt)}
             </p>
           </div>
         </div>
-        <div className="flex items-center space-x-2">
+        <MobileActionBar>
           <span className={`px-3 py-1 text-sm rounded-full ${statusColors[estimate.status] || 'bg-gray-100 text-gray-800'}`}>
             {estimate.status === 'CONVERTED' && estimate.convertedPercent != null
               ? estimate.conversionProgress?.isFullyInvoiced
@@ -727,7 +730,7 @@ export default function EstimateDetailPage() {
             <Send className="mr-2 h-4 w-4" />
             {sending ? 'Sending...' : 'Send'}
           </Button>
-        </div>
+        </MobileActionBar>
       </div>
 
       <Dialog open={showSendModal} onOpenChange={setShowSendModal}>
@@ -818,8 +821,8 @@ export default function EstimateDetailPage() {
               <CardTitle>Line Items</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full">
+              <ResponsiveTableContainer>
+                <table className="w-full min-w-[720px]">
                   <thead>
                     <tr className="border-b">
                       <th className="text-left py-2 px-4 font-semibold">Item</th>
@@ -1025,7 +1028,7 @@ export default function EstimateDetailPage() {
                     })()}
                   </tbody>
                 </table>
-              </div>
+              </ResponsiveTableContainer>
             </CardContent>
           </Card>
 
@@ -1037,8 +1040,8 @@ export default function EstimateDetailPage() {
                 <CardDescription>Optional items are not included in the estimate total unless approved by the customer.</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="overflow-x-auto">
-                  <table className="w-full">
+                <ResponsiveTableContainer>
+                  <table className="w-full min-w-[720px]">
                     <thead>
                       <tr className="border-b">
                         <th className="text-left py-2 px-4 font-semibold">Item</th>
@@ -1078,7 +1081,7 @@ export default function EstimateDetailPage() {
                       })}
                     </tbody>
                   </table>
-                </div>
+                </ResponsiveTableContainer>
               </CardContent>
             </Card>
           )}
@@ -1581,6 +1584,6 @@ export default function EstimateDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </ResponsivePage>
   )
 }

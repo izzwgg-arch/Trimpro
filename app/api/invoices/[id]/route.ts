@@ -124,7 +124,7 @@ export async function GET(
       subtotal: invoice.subtotal.toString(),
       taxRate: invoice.taxRate.toString(),
       taxAmount: invoice.taxAmount.toString(),
-      discount: invoice.discount.toString(),
+      discount: invoice.discount?.toString() || '0',
       total: invoice.total.toString(),
       balance: invoice.balance.toString(),
       paidAmount: invoice.paidAmount.toString(),

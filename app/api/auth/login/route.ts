@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { verifyPassword, generateAccessToken, generateRefreshToken, createRefreshToken } from '@/lib/auth'
+import { verifyPassword } from '@/lib/auth'
+import { completeLoginResponse } from '@/lib/auth/complete-login'
 
 export async function POST(request: NextRequest) {
   try {
@@ -55,63 +56,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'This user is not allowed to log in to the web app.' }, { status: 403 })
     }
 
-    // Generate tokens
-    const payload = {
-      userId: user.id,
-      tenantId: user.tenantId,
-      email: user.email,
-      role: user.role,
-    }
-
-    const accessToken = generateAccessToken(payload)
-    const refreshToken = generateRefreshToken(payload)
-    const normalizedDeviceId =
-      typeof deviceId === 'string' && deviceId.trim().length > 0
-        ? deviceId.trim()
-        : crypto.randomUUID()
-
-    // Save refresh token
-    await createRefreshToken(user.id, refreshToken, normalizedDeviceId)
-
-    // Update last login
-    const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown'
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        lastLoginAt: new Date(),
-        lastLoginIp: ipAddress,
-      },
-    })
-
-    // Create audit log
-    await prisma.auditLog.create({
-      data: {
-        tenantId: user.tenantId,
-        userId: user.id,
-        action: 'LOGIN',
-        entityType: 'User',
-        entityId: user.id,
-        ipAddress: ipAddress,
-        userAgent: request.headers.get('user-agent') || undefined,
-      },
-    })
-
-    return NextResponse.json({
-      accessToken,
-      refreshToken,
-      user: {
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        avatar: user.avatar,
-        role: user.role,
-        tenantId: user.tenantId,
-        tenantName: user.tenant.name,
-        allowWebLogin: user.allowWebLogin,
-        allowMobileLogin: user.allowMobileLogin,
-      },
-    })
+    return completeLoginResponse(request, user, normalizedClientType, deviceId)
   } catch (error) {
     console.error('Login error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

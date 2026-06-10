@@ -15,13 +15,13 @@ const modeMeta: Record<ViewMode, { label: string; icon: React.ComponentType<{ cl
 
 const sizeClasses: Record<SelectorSize, { wrapper: string; item: string; icon: string }> = {
   sm: {
-    wrapper: 'h-8',
-    item: 'px-2.5 text-xs',
-    icon: 'h-3.5 w-3.5',
+    wrapper: 'h-11 min-h-[44px]',
+    item: 'px-2.5 text-xs min-h-[44px]',
+    icon: 'h-4 w-4',
   },
   md: {
-    wrapper: 'h-9',
-    item: 'px-3 text-sm',
+    wrapper: 'h-11 min-h-[44px]',
+    item: 'px-3 text-sm min-h-[44px]',
     icon: 'h-4 w-4',
   },
 }
@@ -56,7 +56,7 @@ export function ViewModeSelector({
             className={cn(
               'inline-flex items-center gap-1.5 rounded-sm transition-colors',
               classes.item,
-              active ? 'bg-[#2E4A59] text-white' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+              active ? 'bg-[#2E4A59] text-white' : 'text-muted-foreground active:bg-muted sm:hover:bg-muted sm:hover:text-foreground'
             )}
             aria-pressed={active}
             title={meta.label}

@@ -358,7 +358,7 @@ export default function EditClientPage() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="email">Email</Label>
                 <Input
@@ -470,7 +470,7 @@ export default function EditClientPage() {
                 />
               </GoogleMapsLoader>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="billingCity">City</Label>
                 <Input
@@ -492,7 +492,7 @@ export default function EditClientPage() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="billingZip">Zip Code</Label>
                 <Input
@@ -559,7 +559,7 @@ export default function EditClientPage() {
                 />
               </GoogleMapsLoader>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="shippingCity">City</Label>
                 <Input
@@ -581,7 +581,7 @@ export default function EditClientPage() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="shippingZip">Zip Code</Label>
                 <Input

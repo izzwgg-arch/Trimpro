@@ -8,6 +8,38 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { TrimProLogo } from '@/components/branding/TrimProLogo'
+import { isDevEnvironment } from '@/lib/dev'
+
+type LoginResponse = {
+  accessToken: string
+  refreshToken: string
+  user: Record<string, unknown>
+}
+
+const LOGIN_TIMEOUT_MS = 30_000
+
+async function postJsonWithTimeout(url: string, body?: unknown) {
+  const controller = new AbortController()
+  const timeoutId = window.setTimeout(() => controller.abort(), LOGIN_TIMEOUT_MS)
+
+  try {
+    return await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: controller.signal,
+    })
+  } finally {
+    window.clearTimeout(timeoutId)
+  }
+}
+
+function loginFetchErrorMessage(err: unknown, action: 'Login' | 'Dev login') {
+  if (err instanceof DOMException && err.name === 'AbortError') {
+    return `${action} timed out. Check that the dev server is running and try again.`
+  }
+  return 'An error occurred. Please try again.'
+}
 
 function LoginForm() {
   const router = useRouter()
@@ -15,6 +47,16 @@ function LoginForm() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [devLoading, setDevLoading] = useState(false)
+  const showDevLogin = isDevEnvironment()
+
+  const storeSessionAndRedirect = (data: LoginResponse) => {
+    localStorage.setItem('accessToken', data.accessToken)
+    localStorage.setItem('refreshToken', data.refreshToken)
+    localStorage.setItem('user', JSON.stringify(data.user))
+    // Hard navigation avoids a stuck "Signing in..." if client routing hangs.
+    window.location.assign('/dashboard')
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -22,10 +64,10 @@ function LoginForm() {
     setLoading(true)
 
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, clientType: 'web' }),
+      const response = await postJsonWithTimeout('/api/auth/login', {
+        email,
+        password,
+        clientType: 'web',
       })
 
       const data = await response.json()
@@ -37,20 +79,36 @@ function LoginForm() {
           return
         }
         setError(data.error || 'Login failed')
-        setLoading(false)
         return
       }
 
-      // Store tokens
-      localStorage.setItem('accessToken', data.accessToken)
-      localStorage.setItem('refreshToken', data.refreshToken)
-      localStorage.setItem('user', JSON.stringify(data.user))
-
-      // Redirect to dashboard
-      router.push('/dashboard')
+      storeSessionAndRedirect(data)
     } catch (err) {
-      setError('An error occurred. Please try again.')
+      setError(loginFetchErrorMessage(err, 'Login'))
+    } finally {
       setLoading(false)
+    }
+  }
+
+  const handleDevLogin = async () => {
+    setError('')
+    setDevLoading(true)
+
+    try {
+      const response = await postJsonWithTimeout('/api/auth/dev-login')
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        setError(data.error || 'Dev login failed')
+        return
+      }
+
+      storeSessionAndRedirect(data)
+    } catch (err) {
+      setError(loginFetchErrorMessage(err, 'Dev login'))
+    } finally {
+      setDevLoading(false)
     }
   }
 
@@ -102,10 +160,21 @@ function LoginForm() {
               type="submit"
               className="w-full"
               style={{ backgroundColor: 'var(--brand-button-color)', color: 'var(--brand-button-text-color)' }}
-              disabled={loading}
+              disabled={loading || devLoading}
             >
               {loading ? 'Signing in...' : 'Sign in'}
             </Button>
+            {showDevLogin && (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                disabled={loading || devLoading}
+                onClick={handleDevLogin}
+              >
+                {devLoading ? 'Signing in...' : 'Dev Login'}
+              </Button>
+            )}
             <div className="text-center">
               <a
                 href="/auth/forgot-password"

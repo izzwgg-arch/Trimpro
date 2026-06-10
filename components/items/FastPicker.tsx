@@ -431,10 +431,10 @@ export function FastPicker({
                 ref={(el) => {
                   itemRefs.current[index] = el
                 }}
-                className={`px-4 py-2 cursor-pointer transition-colors ${
+                className={`px-4 py-3 cursor-pointer transition-colors touch-manipulation min-h-[48px] flex items-center ${
                   isSelected
                     ? 'bg-blue-100 border-l-2 border-blue-500'
-                    : 'hover:bg-gray-50'
+                    : 'active:bg-gray-100 sm:hover:bg-gray-50'
                 }`}
                 onClick={(e) => {
                   e.preventDefault()

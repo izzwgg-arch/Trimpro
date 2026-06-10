@@ -31,6 +31,9 @@ import {
   CreditCard,
 } from 'lucide-react'
 import Link from 'next/link'
+import { MobileActionBar } from '@/components/layout/MobileActionBar'
+import { ResponsivePage } from '@/components/layout/ResponsivePage'
+import { ResponsiveTableContainer } from '@/components/layout/ResponsiveTableContainer'
 import { ItemPicker } from '@/components/items/ItemPicker'
 import { Checkbox } from '@/components/ui/checkbox'
 import { DocumentAttachments } from '@/components/common/document-attachments'
@@ -161,6 +164,7 @@ export default function InvoiceDetailPage() {
   // Add Payment modal state
   const [showAddPayment, setShowAddPayment] = useState(false)
   const [addPaymentAmount, setAddPaymentAmount] = useState('')
+  const [addPaymentDate, setAddPaymentDate] = useState(() => new Date().toISOString().split('T')[0])
   const [addPaymentMethod, setAddPaymentMethod] = useState<'CHECK' | 'QUICK_PAY' | 'OTHER'>('CHECK')
   const [addPaymentOtherLabel, setAddPaymentOtherLabel] = useState('')
   const [addPaymentSaving, setAddPaymentSaving] = useState(false)
@@ -578,6 +582,15 @@ export default function InvoiceDetailPage() {
       setAddPaymentError('Please enter a payment type name.')
       return
     }
+    if (!addPaymentDate) {
+      setAddPaymentError('Please enter a payment date.')
+      return
+    }
+    const parsedPaymentDate = new Date(addPaymentDate)
+    if (Number.isNaN(parsedPaymentDate.getTime())) {
+      setAddPaymentError('Please enter a valid payment date.')
+      return
+    }
     setAddPaymentSaving(true)
     try {
       const token = localStorage.getItem('accessToken')
@@ -588,6 +601,7 @@ export default function InvoiceDetailPage() {
           method: addPaymentMethod,
           methodLabel: addPaymentMethod === 'OTHER' ? addPaymentOtherLabel.trim() : undefined,
           amount,
+          paidAt: addPaymentDate,
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -597,6 +611,7 @@ export default function InvoiceDetailPage() {
       }
       setShowAddPayment(false)
       setAddPaymentAmount('')
+      setAddPaymentDate(new Date().toISOString().split('T')[0])
       setAddPaymentMethod('CHECK')
       setAddPaymentOtherLabel('')
       await fetchInvoice()
@@ -708,18 +723,18 @@ export default function InvoiceDetailPage() {
     : 0
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
+    <ResponsivePage>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex min-w-0 items-start gap-3 sm:items-center sm:gap-4">
           <Link href="/dashboard/invoices">
             <Button variant="ghost" size="sm">
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back
             </Button>
           </Link>
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">{invoice.title}</h1>
-            <p className="mt-1 text-gray-600">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold text-gray-900 break-words sm:text-3xl">{invoice.title}</h1>
+            <p className="mt-1 text-sm text-gray-600 sm:text-base">
               {invoice.invoiceNumber}{' \u2022 '}Created {formatDate(invoice.createdAt)}
               {isOverdue && (
                 <span className="ml-2 text-red-600 font-semibold flex items-center">
@@ -730,7 +745,7 @@ export default function InvoiceDetailPage() {
             </p>
           </div>
         </div>
-        <div className="flex items-center space-x-2">
+        <MobileActionBar>
           <span className={`px-3 py-1 text-sm rounded-full ${statusColors[invoice.status] || 'bg-gray-100 text-gray-800'}`}>
             {invoice.status}
           </span>
@@ -760,6 +775,7 @@ export default function InvoiceDetailPage() {
                 variant="outline"
                 onClick={() => {
                   setAddPaymentAmount(invoice.balance)
+                  setAddPaymentDate(new Date().toISOString().split('T')[0])
                   setAddPaymentMethod('CHECK')
                   setAddPaymentOtherLabel('')
                   setAddPaymentError('')
@@ -775,7 +791,7 @@ export default function InvoiceDetailPage() {
             <Send className="mr-2 h-4 w-4" />
             {sending ? 'Sending...' : 'Send'}
           </Button>
-        </div>
+        </MobileActionBar>
       </div>
 
       {/* Add Payment Modal */}
@@ -806,6 +822,15 @@ export default function InvoiceDetailPage() {
               {invoice && (
                 <p className="text-xs text-gray-500">Balance due: ${parseFloat(invoice.balance).toFixed(2)}</p>
               )}
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="add-payment-date">Payment Date</Label>
+              <Input
+                id="add-payment-date"
+                type="date"
+                value={addPaymentDate}
+                onChange={(e) => setAddPaymentDate(e.target.value)}
+              />
             </div>
             <div className="space-y-1">
               <Label>Payment Type</Label>
@@ -939,8 +964,8 @@ export default function InvoiceDetailPage() {
               <CardTitle>Line Items</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full">
+              <ResponsiveTableContainer>
+                <table className="w-full min-w-[720px]">
                   <thead>
                     <tr className="border-b">
                       <th className="text-left py-2 px-4 font-semibold">Item</th>
@@ -1129,7 +1154,7 @@ export default function InvoiceDetailPage() {
                     })()}
                   </tbody>
                 </table>
-              </div>
+              </ResponsiveTableContainer>
             </CardContent>
           </Card>
 
@@ -1452,6 +1477,6 @@ export default function InvoiceDetailPage() {
           }}
         />
       )}
-    </div>
+    </ResponsivePage>
   )
 }

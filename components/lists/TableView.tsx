@@ -3,6 +3,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { ArrowDown, ArrowUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { ResponsiveTableContainer } from '@/components/layout/ResponsiveTableContainer'
 
 export interface TableColumn<T> {
   key: string
@@ -73,8 +74,8 @@ export function TableView<T>({
   }
 
   return (
-    <div className="overflow-x-auto rounded-md border bg-card">
-      <table className="w-full text-sm">
+    <ResponsiveTableContainer className="rounded-md border bg-card">
+      <table className="w-full min-w-[640px] text-sm">
         <thead className="sticky top-0 z-10 bg-muted/60">
           <tr>
             {columns.map((column) => (
@@ -85,7 +86,7 @@ export function TableView<T>({
                 {column.sortValue ? (
                   <button
                     type="button"
-                    className="inline-flex items-center gap-1 hover:text-foreground"
+                    className="inline-flex min-h-[44px] items-center gap-1 rounded-md px-1 active:text-foreground"
                     onClick={() => toggleSort(column.key)}
                   >
                     <span>{column.header}</span>
@@ -104,7 +105,10 @@ export function TableView<T>({
           {sortedData.map((item) => (
             <tr
               key={rowKey(item)}
-              className={cn('border-t hover:bg-muted/30', onRowClick ? 'cursor-pointer' : '')}
+              className={cn(
+                'border-t active:bg-muted/40 sm:hover:bg-muted/30',
+                onRowClick ? 'cursor-pointer touch-active-row' : ''
+              )}
               onClick={() => onRowClick?.(item)}
             >
               {columns.map((column) => (
@@ -116,7 +120,7 @@ export function TableView<T>({
           ))}
         </tbody>
       </table>
-    </div>
+    </ResponsiveTableContainer>
   )
 }
 

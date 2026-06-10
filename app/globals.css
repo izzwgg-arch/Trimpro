@@ -88,6 +88,9 @@
     margin: 0;
     padding: 0;
     overflow: hidden; /* Prevent body scroll, let main handle it */
+    -webkit-tap-highlight-color: transparent;
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
   }
   /* Allow body scrolling on public portal pages that need natural page scroll. */
   body[data-allow-scroll='true'] {
@@ -149,5 +152,69 @@
   select option:active {
     background: var(--brand-primary-color) !important;
     color: var(--brand-button-text-color) !important;
+  }
+
+  /* Prevent Android Chrome zoom-on-focus; keep inputs comfortably tappable. */
+  @media (pointer: coarse) {
+    input:not([type='checkbox']):not([type='radio']),
+    select,
+    textarea {
+      font-size: 16px;
+      min-height: 44px;
+    }
+  }
+
+  /* Line-item editor: stack numeric fields on narrow screens. */
+  [data-line-item-row] {
+    flex-wrap: wrap;
+  }
+
+  [data-line-item-row] > .line-item-field-wide {
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+  }
+
+  @media (min-width: 640px) {
+    [data-line-item-row] > .line-item-field-wide {
+      flex: 1 1 12rem;
+      width: auto;
+    }
+  }
+
+  [data-line-item-row] .line-item-field-numeric {
+    flex: 1 1 calc(50% - 0.25rem);
+    width: calc(50% - 0.25rem);
+    min-width: 6rem;
+  }
+
+  @media (min-width: 640px) {
+    [data-line-item-row] .line-item-field-numeric {
+      flex: 0 0 auto;
+      width: 6rem;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    [data-line-item-row] .line-item-field-numeric {
+      width: 7rem;
+    }
+  }
+
+  .visibility-toggle-btn {
+    @apply inline-flex items-center justify-center rounded-md;
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0.5rem;
+  }
+
+  .visibility-toggle-btn svg {
+    height: 1rem;
+    width: 1rem;
+  }
+
+  /* Active state for touch (avoid hover-only feedback). */
+  .touch-active-row:active {
+    @apply bg-muted/40;
   }
 }

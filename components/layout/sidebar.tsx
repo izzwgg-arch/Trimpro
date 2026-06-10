@@ -137,7 +137,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
           {onMobileClose && (
             <button
               onClick={onMobileClose}
-              className="flex lg:hidden items-center justify-center h-7 w-7 rounded-md text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+              className="flex lg:hidden items-center justify-center min-h-[44px] min-w-[44px] h-11 w-11 rounded-md text-white/70 hover:text-white hover:bg-white/10 transition-colors"
               aria-label="Close menu"
             >
               <X className="h-4 w-4" />
@@ -228,7 +228,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
             aria-hidden="true"
           />
           {/* Drawer — always full width on mobile */}
-          <div className="relative flex h-full w-64 flex-col text-white shadow-xl"
+          <div className="relative flex h-full w-[min(100vw,16rem)] max-w-[85vw] flex-col text-white shadow-xl"
             style={{ backgroundColor: 'var(--brand-sidebar-color)' }}
           >
             <div
@@ -242,7 +242,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
                 <NotificationBell />
                 <button
                   onClick={onMobileClose}
-                  className="flex items-center justify-center h-7 w-7 rounded-md text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                  className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-white/70 transition-colors hover:bg-white/10 hover:text-white"
                   aria-label="Close menu"
                 >
                   <X className="h-4 w-4" />

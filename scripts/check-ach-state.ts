@@ -18,6 +18,7 @@ async function main() {
       total: true,
       paidAmount: true,
       balance: true,
+      qboSyncId: true,
       updatedAt: true,
     },
   })
@@ -73,6 +74,30 @@ async function main() {
     },
   })
   console.log('payment_transactions', paymentTx)
+
+  const intents = await prisma.invoicePaymentIntent.findMany({
+    where: { invoiceId: invoice.id, provider: 'qbo', method: 'ach' },
+    orderBy: { createdAt: 'desc' },
+    take: 3,
+    select: { id: true, status: true, publicToken: true, qboPaymentId: true, createdAt: true },
+  })
+  console.log('ach_intents', intents)
+
+  const qbPayments = payments.filter((p) => p.reference?.startsWith('qbo_'))
+  console.log(
+    'receipt_status',
+    qbPayments.length
+      ? await prisma.payment.findMany({
+          where: { id: { in: qbPayments.map((p) => p.id) } },
+          select: {
+            id: true,
+            receiptEmailSentAt: true,
+            receiptEmailError: true,
+            receiptEmailAttempts: true,
+          },
+        })
+      : '(no quickbooks payments)'
+  )
 }
 
 main()

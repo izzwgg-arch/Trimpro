@@ -489,7 +489,8 @@ export async function POST(request: NextRequest) {
             status: 'COMPLETED',
             method: 'CARD',
             provider: 'sola',
-            providerPaymentId: cleanTxnId || null,
+            // Unique per invoice — same card txn pays multiple invoices.
+            providerPaymentId: uniqueTxn || null,
             reference: cleanTxnId ? `${cleanTxnId} - ${invoiceRef}` : invoiceRef,
             solaTransactionId: uniqueTxn,
             solaWebhookData: body,

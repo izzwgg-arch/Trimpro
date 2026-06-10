@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import {
+  reconcileSingleInvoiceAchPayment,
+  shouldAttemptPublicInvoiceReconcile,
+} from '@/lib/qbo/reconcile-ach'
 
 export const dynamic = 'force-dynamic'
 
@@ -41,6 +45,33 @@ export async function GET(request: NextRequest) {
     data: { returnTokenUsedAt: intent.returnTokenUsedAt || new Date() },
   })
 
+  // Pull payment state from QuickBooks when webhook delivery is delayed or missing.
+  try {
+    if (await shouldAttemptPublicInvoiceReconcile(intent.invoice.id)) {
+      await reconcileSingleInvoiceAchPayment(intent.invoice.id, {
+        source: 'qbo_return_status_poll',
+      })
+    }
+  } catch (e) {
+    console.error('[QBO ACH] Reconcile on return-status failed:', e)
+  }
+
+  const freshIntent = await prisma.invoicePaymentIntent.findUnique({
+    where: { id: intent.id },
+    include: {
+      invoice: {
+        select: {
+          id: true,
+          invoiceNumber: true,
+          total: true,
+          balance: true,
+          status: true,
+        },
+      },
+    },
+  })
+  const invoiceRow = freshIntent?.invoice || intent.invoice
+
   const payment = await prisma.payment.findFirst({
     where: {
       invoiceId: intent.invoice.id,
@@ -59,9 +90,10 @@ export async function GET(request: NextRequest) {
     },
   })
 
-  const invoiceBalance = Number(intent.invoice.balance || 0)
-  const isPaid = invoiceBalance <= 0 || intent.status === 'SUCCEEDED'
-  const isFailed = ['FAILED', 'CANCELLED'].includes(String(intent.status))
+  const invoiceBalance = Number(invoiceRow.balance || 0)
+  const intentStatus = String(freshIntent?.status || intent.status)
+  const isPaid = invoiceBalance <= 0 || intentStatus === 'SUCCEEDED'
+  const isFailed = ['FAILED', 'CANCELLED'].includes(intentStatus)
   const finalState = isPaid ? 'confirmed' : isFailed ? 'failed' : 'pending'
   const appUrl = (
     process.env.PUBLIC_APP_URL ||
@@ -72,12 +104,12 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     finalState,
-    intentStatus: intent.status,
+    intentStatus,
     invoice: {
-      id: intent.invoice.id,
-      invoiceNumber: intent.invoice.invoiceNumber,
-      status: intent.invoice.status,
-      total: Number(intent.invoice.total || 0),
+      id: invoiceRow.id,
+      invoiceNumber: invoiceRow.invoiceNumber,
+      status: invoiceRow.status,
+      total: Number(invoiceRow.total || 0),
       balance: invoiceBalance,
     },
     payment: payment

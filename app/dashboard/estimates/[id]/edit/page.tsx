@@ -1288,7 +1288,7 @@ export default function EditEstimatePage() {
                           </div>
                         )}
 
-                        <div className="flex-1 space-y-1">
+                        <div className="line-item-field-wide flex-1 space-y-1">
                           {isGroupHeader ? (
                             <div className="flex items-center gap-2">
                               <Input
@@ -1332,7 +1332,7 @@ export default function EditEstimatePage() {
                                   tabIndex={-1}
                                   onClick={() => toggleVisibility(index, 'description')}
                                   title={item.showDescriptionToCustomer ? 'Hide item name from customer' : 'Show item name to customer'}
-                                  className="p-0 h-3 w-3"
+                                  className="visibility-toggle-btn"
                                 >
                                   {item.showDescriptionToCustomer ? (
                                     <Eye className="h-3 w-3 text-gray-600" />
@@ -1363,7 +1363,7 @@ export default function EditEstimatePage() {
                                   tabIndex={-1}
                                   onClick={() => toggleVisibility(index, 'notes')}
                                   title={item.showNotesToCustomer ? 'Hide description from customer' : 'Show description to customer'}
-                                  className="p-0 h-3 w-3"
+                                  className="visibility-toggle-btn"
                                 >
                                   {item.showNotesToCustomer ? (
                                     <Eye className="h-3 w-3 text-gray-600" />
@@ -1398,7 +1398,7 @@ export default function EditEstimatePage() {
                               />
                             </div>
 
-                            <div className="w-28 relative">
+                            <div className="line-item-field-numeric relative">
                               <div className="flex items-center gap-1 mb-1">
                                 <Label className="text-xs text-gray-500">Price</Label>
                                 <Button
@@ -1407,7 +1407,7 @@ export default function EditEstimatePage() {
                                   size="sm"
                                   onClick={() => toggleVisibility(index, 'price')}
                                   title={item.showPriceToCustomer ? 'Hide price from customer' : 'Show price to customer'}
-                                  className="p-0 h-3 w-3"
+                                  className="visibility-toggle-btn"
                                 >
                                   {item.showPriceToCustomer ? (
                                     <Eye className="h-3 w-3 text-gray-600" />
@@ -1427,7 +1427,7 @@ export default function EditEstimatePage() {
                               />
                             </div>
 
-                            <div className="w-28 relative">
+                            <div className="line-item-field-numeric relative">
                               <div className="flex items-center gap-1 mb-1">
                                 <Label className="text-xs text-gray-500">Cost</Label>
                                 <Button
@@ -1436,7 +1436,7 @@ export default function EditEstimatePage() {
                                   size="sm"
                                   onClick={() => toggleVisibility(index, 'cost')}
                                   title={item.showCostToCustomer ? 'Hide cost from customer' : 'Show cost to customer'}
-                                  className="p-0 h-3 w-3"
+                                  className="visibility-toggle-btn"
                                 >
                                   {item.showCostToCustomer ? (
                                     <Eye className="h-3 w-3 text-gray-600" />
@@ -1457,7 +1457,7 @@ export default function EditEstimatePage() {
                               />
                             </div>
 
-                            <div className="w-24 relative">
+                            <div className="line-item-field-numeric relative">
                               <div className="flex items-center gap-1 mb-1">
                                 <Label className="text-xs text-gray-500">Tax</Label>
                                 <Button
@@ -1466,7 +1466,7 @@ export default function EditEstimatePage() {
                                   size="sm"
                                   onClick={() => toggleVisibility(index, 'tax')}
                                   title={item.showTaxToCustomer ? 'Hide tax from customer' : 'Show tax to customer'}
-                                  className="p-0 h-3 w-3"
+                                  className="visibility-toggle-btn"
                                 >
                                   {item.showTaxToCustomer ? (
                                     <Eye className="h-3 w-3 text-gray-600" />
@@ -1497,7 +1497,7 @@ export default function EditEstimatePage() {
                             </div>
 
                             {/* Total (Quantity × Unit Price) */}
-                            <div className="w-28">
+                            <div className="line-item-field-numeric">
                               <Label className="text-xs text-gray-500 mb-1 block">Total</Label>
                               <div className="px-3 py-2 bg-gray-50 rounded border text-right font-medium">
                                 ${(parseFloat(item.quantity || '0') * parseFloat(item.unitPrice || '0')).toFixed(2)}
@@ -1661,7 +1661,7 @@ export default function EditEstimatePage() {
                             </div>
                           )}
 
-                          <div className="flex-1 space-y-1">
+                          <div className="line-item-field-wide flex-1 space-y-1">
                             {isGroupHeader ? (
                               <div className="flex items-center gap-2">
                                 <Input
@@ -1684,7 +1684,7 @@ export default function EditEstimatePage() {
                                     tabIndex={-1}
                                     onClick={() => toggleOptionalVisibility(index, 'description')}
                                     title={item.showDescriptionToCustomer ? 'Hide item name from customer' : 'Show item name to customer'}
-                                    className="p-0 h-3 w-3"
+                                    className="visibility-toggle-btn"
                                   >
                                     {item.showDescriptionToCustomer ? (
                                       <Eye className="h-3 w-3 text-gray-600" />
@@ -1715,7 +1715,7 @@ export default function EditEstimatePage() {
                                     tabIndex={-1}
                                     onClick={() => toggleOptionalVisibility(index, 'notes')}
                                     title={item.showNotesToCustomer ? 'Hide description from customer' : 'Show description to customer'}
-                                    className="p-0 h-3 w-3"
+                                    className="visibility-toggle-btn"
                                   >
                                     {item.showNotesToCustomer ? (
                                       <Eye className="h-3 w-3 text-gray-600" />
@@ -1747,7 +1747,7 @@ export default function EditEstimatePage() {
                                 />
                               </div>
 
-                              <div className="w-28 relative">
+                              <div className="line-item-field-numeric relative">
                                 <div className="flex items-center gap-1 mb-1">
                                   <Label className="text-xs text-gray-500">Price</Label>
                                   <Button
@@ -1756,7 +1756,7 @@ export default function EditEstimatePage() {
                                     size="sm"
                                     onClick={() => toggleOptionalVisibility(index, 'price')}
                                     title={item.showPriceToCustomer ? 'Hide price from customer' : 'Show price to customer'}
-                                    className="p-0 h-3 w-3"
+                                    className="visibility-toggle-btn"
                                   >
                                     {item.showPriceToCustomer ? (
                                       <Eye className="h-3 w-3 text-gray-600" />
@@ -1774,7 +1774,7 @@ export default function EditEstimatePage() {
                                 />
                               </div>
 
-                              <div className="w-28 relative">
+                              <div className="line-item-field-numeric relative">
                                 <div className="flex items-center gap-1 mb-1">
                                   <Label className="text-xs text-gray-500">Cost</Label>
                                   <Button
@@ -1783,7 +1783,7 @@ export default function EditEstimatePage() {
                                     size="sm"
                                     onClick={() => toggleOptionalVisibility(index, 'cost')}
                                     title={item.showCostToCustomer ? 'Hide cost from customer' : 'Show cost to customer'}
-                                    className="p-0 h-3 w-3"
+                                    className="visibility-toggle-btn"
                                   >
                                     {item.showCostToCustomer ? (
                                       <Eye className="h-3 w-3 text-gray-600" />
@@ -1802,7 +1802,7 @@ export default function EditEstimatePage() {
                                 />
                               </div>
 
-                              <div className="w-28">
+                              <div className="line-item-field-numeric">
                                 <div className="flex items-center gap-1 mb-1">
                                   <Label className="text-xs text-gray-500">Tax</Label>
                                   <Button
@@ -1811,7 +1811,7 @@ export default function EditEstimatePage() {
                                     size="sm"
                                     onClick={() => toggleOptionalVisibility(index, 'tax')}
                                     title={item.showTaxToCustomer ? 'Hide tax from customer' : 'Show tax to customer'}
-                                    className="p-0 h-3 w-3"
+                                    className="visibility-toggle-btn"
                                   >
                                     {item.showTaxToCustomer ? (
                                       <Eye className="h-3 w-3 text-gray-600" />
@@ -1842,7 +1842,7 @@ export default function EditEstimatePage() {
                               </div>
 
                               {/* Total (Quantity × Unit Price) */}
-                              <div className="w-28">
+                              <div className="line-item-field-numeric">
                                 <Label className="text-xs text-gray-500 mb-1 block">Total</Label>
                                 <div className="px-3 py-2 bg-gray-50 rounded border text-right font-medium">
                                   ${(parseFloat(item.quantity || '0') * parseFloat(item.unitPrice || '0')).toFixed(2)}

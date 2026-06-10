@@ -277,12 +277,12 @@ export default function ClientsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Clients</h1>
+          <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Clients</h1>
           <p className="mt-2 text-gray-600">Manage your clients and contacts</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <ViewModeSelector value={viewMode} onChange={setViewMode} />
           <Button
             variant="outline"
