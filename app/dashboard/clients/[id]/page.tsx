@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -25,6 +25,8 @@ import {
   Download,
   Printer,
   X,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react'
 import Link from 'next/link'
 import { AddressMapSection } from './map-section'
@@ -147,6 +149,34 @@ interface ClientDetail {
     createdAt: string
     openInvoiceBalance?: string
   }>
+  subClientEstimates?: Array<{
+    id: string
+    estimateNumber: string
+    title: string
+    status: string
+    total: string
+    createdAt: string
+    clientId: string | null
+    client: {
+      id: string
+      name: string
+    } | null
+  }>
+  subClientInvoices?: Array<{
+    id: string
+    invoiceNumber: string
+    title: string
+    status: string
+    total: string
+    balance: string
+    dueDate: string | null
+    createdAt: string
+    clientId: string
+    client: {
+      id: string
+      name: string
+    } | null
+  }>
 }
 
 interface ClientPayment {
@@ -167,6 +197,94 @@ interface ClientPayment {
   receiptEmailSentAt?: string | null
   receiptUrl?: string | null
   canReceipt?: boolean
+}
+
+function CollapsibleClientCard({
+  title,
+  description,
+  count,
+  open,
+  onToggle,
+  headerAction,
+  children,
+}: {
+  title: string
+  description?: string
+  count?: number
+  open: boolean
+  onToggle: () => void
+  headerAction?: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-3">
+          <button
+            type="button"
+            onClick={onToggle}
+            className="flex min-w-0 flex-1 items-start gap-2 text-left"
+          >
+            {open ? (
+              <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
+            ) : (
+              <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
+            )}
+            <div className="min-w-0">
+              <CardTitle className="text-base">
+                {title}
+                {count != null ? ` (${count})` : ''}
+              </CardTitle>
+              {description && <CardDescription className="mt-1">{description}</CardDescription>}
+            </div>
+          </button>
+          {headerAction}
+        </div>
+      </CardHeader>
+      {open && <CardContent>{children}</CardContent>}
+    </Card>
+  )
+}
+
+function estimateStatusClass(status: string) {
+  switch (status) {
+    case 'ACCEPTED':
+    case 'APPROVED':
+      return 'bg-green-100 text-green-800'
+    case 'SENT':
+    case 'VIEWED':
+      return 'bg-blue-100 text-blue-800'
+    case 'DRAFT':
+      return 'bg-gray-100 text-gray-700'
+    case 'REJECTED':
+    case 'DECLINED':
+      return 'bg-red-100 text-red-800'
+    case 'CONVERTED':
+      return 'bg-purple-100 text-purple-800'
+    case 'EXPIRED':
+      return 'bg-orange-100 text-orange-800'
+    default:
+      return 'bg-gray-100 text-gray-800'
+  }
+}
+
+function invoiceStatusClass(status: string) {
+  switch (status) {
+    case 'PAID':
+      return 'bg-green-100 text-green-800'
+    case 'OVERDUE':
+      return 'bg-red-100 text-red-800'
+    case 'SENT':
+    case 'VIEWED':
+      return 'bg-blue-100 text-blue-800'
+    case 'DRAFT':
+      return 'bg-gray-100 text-gray-700'
+    case 'CANCELLED':
+    case 'REFUNDED':
+      return 'bg-orange-100 text-orange-800'
+    default:
+      return 'bg-gray-100 text-gray-800'
+  }
 }
 
 function paymentStatusClass(status: string) {
@@ -204,6 +322,9 @@ export default function ClientDetailPage() {
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([])
   const [showBulkPayment, setShowBulkPayment] = useState(false)
   const [bulkPaymentAmounts, setBulkPaymentAmounts] = useState<Record<string, string>>({})
+  const [subClientsOpen, setSubClientsOpen] = useState(true)
+  const [subClientEstimatesOpen, setSubClientEstimatesOpen] = useState(false)
+  const [subClientInvoicesOpen, setSubClientInvoicesOpen] = useState(false)
   const [bulkPaymentMethod, setBulkPaymentMethod] = useState<'CHECK' | 'QUICK_PAY' | 'OTHER'>('CHECK')
   const [bulkPaymentOtherLabel, setBulkPaymentOtherLabel] = useState('')
   const [bulkPaymentSaving, setBulkPaymentSaving] = useState(false)
@@ -334,6 +455,9 @@ export default function ClientDetailPage() {
         tasks: Array.isArray(clientData.tasks) ? clientData.tasks : [],
         issues: Array.isArray(clientData.issues) ? clientData.issues : [],
         tags: Array.isArray(clientData.tags) ? clientData.tags : [],
+        subClients: Array.isArray(clientData.subClients) ? clientData.subClients : [],
+        subClientEstimates: Array.isArray(clientData.subClientEstimates) ? clientData.subClientEstimates : [],
+        subClientInvoices: Array.isArray(clientData.subClientInvoices) ? clientData.subClientInvoices : [],
         _count: clientData._count || {
           jobs: 0,
           invoices: 0,
@@ -673,6 +797,13 @@ export default function ClientDetailPage() {
   const tasks = (client.tasks && Array.isArray(client.tasks)) ? client.tasks : []
   const issues = (client.issues && Array.isArray(client.issues)) ? client.issues : []
   const subClients = (client.subClients && Array.isArray(client.subClients)) ? client.subClients : []
+  const subClientEstimates = (client.subClientEstimates && Array.isArray(client.subClientEstimates))
+    ? client.subClientEstimates
+    : []
+  const subClientInvoices = (client.subClientInvoices && Array.isArray(client.subClientInvoices))
+    ? client.subClientInvoices
+    : []
+  const hasSubClients = subClients.length > 0
   const selectedInvoices = invoices.filter((invoice) => selectedInvoiceIds.includes(invoice.id))
   const bulkPaymentTotal = selectedInvoices.reduce((sum, invoice) => {
     const amount = parseFloat(bulkPaymentAmounts[invoice.id] || '0')
@@ -811,25 +942,28 @@ export default function ClientDetailPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Sub-Clients</CardTitle>
-                  <CardDescription>
-                    Child clients attached to this parent client{subClients.length > 0 ? ` · ${subClients.length} total` : ''}
-                  </CardDescription>
-                </div>
-                <Button variant="outline" onClick={() => router.push(`/dashboard/clients/new?parentId=${clientId}`)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Sub-Client
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {subClients.length === 0 ? (
-                <p className="text-sm text-gray-500">No sub-clients yet.</p>
-              ) : (
+          {hasSubClients && (
+            <>
+              <CollapsibleClientCard
+                title="Sub-Clients"
+                description="Child clients attached to this parent client"
+                count={subClients.length}
+                open={subClientsOpen}
+                onToggle={() => setSubClientsOpen((prev) => !prev)}
+                headerAction={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      router.push(`/dashboard/clients/new?parentId=${clientId}`)
+                    }}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Sub-Client
+                  </Button>
+                }
+              >
                 <div className="space-y-3">
                   <div className="flex items-center justify-between rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
                     <span className="font-medium text-slate-700">Combined child open balance</span>
@@ -864,9 +998,131 @@ export default function ClientDetailPage() {
                     </Link>
                   ))}
                 </div>
-              )}
-            </CardContent>
-          </Card>
+              </CollapsibleClientCard>
+
+              <CollapsibleClientCard
+                title="Sub-Client Estimates"
+                description="Estimates across all sub-clients"
+                count={subClientEstimates.length}
+                open={subClientEstimatesOpen}
+                onToggle={() => setSubClientEstimatesOpen((prev) => !prev)}
+              >
+                {subClientEstimates.length === 0 ? (
+                  <p className="text-sm text-gray-500">No estimates on sub-clients yet.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {subClientEstimates.map((estimate) => (
+                      <div
+                        key={estimate.id}
+                        className="rounded-lg border p-3 hover:bg-gray-50 transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <Link
+                              href={`/dashboard/estimates/${estimate.id}`}
+                              className="text-sm font-medium text-primary hover:underline"
+                            >
+                              {estimate.estimateNumber}
+                            </Link>
+                            {estimate.title && (
+                              <p className="text-xs text-gray-600 truncate">{estimate.title}</p>
+                            )}
+                            {estimate.client && (
+                              <Link
+                                href={`/dashboard/clients/${estimate.client.id}`}
+                                className="mt-1 inline-block text-xs font-medium text-slate-700 hover:text-primary hover:underline"
+                              >
+                                Sub-client: {estimate.client.name}
+                              </Link>
+                            )}
+                            <p className="text-xs text-gray-600 mt-1">
+                              {formatCurrency(parseFloat(String(estimate.total)))}
+                            </p>
+                            <p className="text-xs text-gray-400 mt-0.5">{formatDate(estimate.createdAt)}</p>
+                          </div>
+                          <span className={`shrink-0 px-2 py-1 text-xs rounded ${estimateStatusClass(estimate.status)}`}>
+                            {estimate.status}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CollapsibleClientCard>
+
+              <CollapsibleClientCard
+                title="Sub-Client Invoices"
+                description="Invoices across all sub-clients"
+                count={subClientInvoices.length}
+                open={subClientInvoicesOpen}
+                onToggle={() => setSubClientInvoicesOpen((prev) => !prev)}
+              >
+                {subClientInvoices.length === 0 ? (
+                  <p className="text-sm text-gray-500">No invoices on sub-clients yet.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {subClientInvoices.map((invoice) => (
+                      <div
+                        key={invoice.id}
+                        className="rounded-lg border p-3 hover:bg-gray-50 transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <Link
+                              href={`/dashboard/invoices/${invoice.id}`}
+                              className="text-sm font-medium text-primary hover:underline"
+                            >
+                              {invoice.invoiceNumber}
+                            </Link>
+                            {invoice.title && (
+                              <p className="text-xs text-gray-600 truncate">{invoice.title}</p>
+                            )}
+                            {invoice.client && (
+                              <Link
+                                href={`/dashboard/clients/${invoice.client.id}`}
+                                className="mt-1 inline-block text-xs font-medium text-slate-700 hover:text-primary hover:underline"
+                              >
+                                Sub-client: {invoice.client.name}
+                              </Link>
+                            )}
+                            <p className="text-xs text-gray-600 mt-1">
+                              Total {formatCurrency(parseFloat(invoice.total))} • Balance {formatCurrency(parseFloat(invoice.balance))}
+                            </p>
+                            {invoice.dueDate && (
+                              <p className="text-xs text-gray-500">Due {formatDate(invoice.dueDate)}</p>
+                            )}
+                          </div>
+                          <span className={`shrink-0 px-2 py-1 text-xs rounded ${invoiceStatusClass(invoice.status)}`}>
+                            {invoice.status}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CollapsibleClientCard>
+            </>
+          )}
+
+          {!hasSubClients && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Sub-Clients</CardTitle>
+                    <CardDescription>Child clients attached to this parent client</CardDescription>
+                  </div>
+                  <Button variant="outline" onClick={() => router.push(`/dashboard/clients/new?parentId=${clientId}`)}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Sub-Client
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-gray-500">No sub-clients yet.</p>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Addresses */}
           {addresses.length > 0 && (

@@ -244,6 +244,57 @@ export async function GET(
       0
     )
 
+    const [subClientEstimates, subClientInvoices] = allSubClientIds.length
+      ? await Promise.all([
+          prisma.estimate.findMany({
+            where: {
+              tenantId: user.tenantId,
+              clientId: { in: allSubClientIds },
+            },
+            select: {
+              id: true,
+              estimateNumber: true,
+              title: true,
+              status: true,
+              total: true,
+              createdAt: true,
+              clientId: true,
+              client: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+            orderBy: { createdAt: 'desc' },
+          }),
+          prisma.invoice.findMany({
+            where: {
+              tenantId: user.tenantId,
+              clientId: { in: allSubClientIds },
+            },
+            select: {
+              id: true,
+              invoiceNumber: true,
+              title: true,
+              status: true,
+              total: true,
+              balance: true,
+              dueDate: true,
+              createdAt: true,
+              clientId: true,
+              client: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+            orderBy: { createdAt: 'desc' },
+          }),
+        ])
+      : [[], []]
+
     // Ensure all arrays are present (defensive)
     const safeClient = {
       ...client,
@@ -262,6 +313,15 @@ export async function GET(
       issues: client.issues || [],
       parent: client.parent || null,
       subClients: subClientsWithBalances,
+      subClientEstimates: subClientEstimates.map((estimate) => ({
+        ...estimate,
+        total: estimate.total.toString(),
+      })),
+      subClientInvoices: subClientInvoices.map((invoice) => ({
+        ...invoice,
+        total: invoice.total.toString(),
+        balance: invoice.balance.toString(),
+      })),
       _count: client._count || {
         jobs: 0,
         invoices: 0,
