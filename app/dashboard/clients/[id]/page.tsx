@@ -206,6 +206,8 @@ function CollapsibleClientCard({
   open,
   onToggle,
   headerAction,
+  scrollable = false,
+  scrollMaxClass = 'max-h-72',
   children,
 }: {
   title: string
@@ -214,6 +216,8 @@ function CollapsibleClientCard({
   open: boolean
   onToggle: () => void
   headerAction?: ReactNode
+  scrollable?: boolean
+  scrollMaxClass?: string
   children: ReactNode
 }) {
   return (
@@ -241,7 +245,17 @@ function CollapsibleClientCard({
           {headerAction}
         </div>
       </CardHeader>
-      {open && <CardContent>{children}</CardContent>}
+      {open && (
+        <CardContent className={scrollable ? 'pt-0' : undefined}>
+          {scrollable ? (
+            <div className={`${scrollMaxClass} overflow-y-auto overscroll-contain pr-1`}>
+              {children}
+            </div>
+          ) : (
+            children
+          )}
+        </CardContent>
+      )}
     </Card>
   )
 }
@@ -942,8 +956,7 @@ export default function ClientDetailPage() {
             </CardContent>
           </Card>
 
-          {hasSubClients && (
-            <>
+          {hasSubClients ? (
               <CollapsibleClientCard
                 title="Sub-Clients"
                 description="Child clients attached to this parent client"
@@ -999,112 +1012,7 @@ export default function ClientDetailPage() {
                   ))}
                 </div>
               </CollapsibleClientCard>
-
-              <CollapsibleClientCard
-                title="Sub-Client Estimates"
-                description="Estimates across all sub-clients"
-                count={subClientEstimates.length}
-                open={subClientEstimatesOpen}
-                onToggle={() => setSubClientEstimatesOpen((prev) => !prev)}
-              >
-                {subClientEstimates.length === 0 ? (
-                  <p className="text-sm text-gray-500">No estimates on sub-clients yet.</p>
-                ) : (
-                  <div className="space-y-3">
-                    {subClientEstimates.map((estimate) => (
-                      <div
-                        key={estimate.id}
-                        className="rounded-lg border p-3 hover:bg-gray-50 transition-colors"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <Link
-                              href={`/dashboard/estimates/${estimate.id}`}
-                              className="text-sm font-medium text-primary hover:underline"
-                            >
-                              {estimate.estimateNumber}
-                            </Link>
-                            {estimate.title && (
-                              <p className="text-xs text-gray-600 truncate">{estimate.title}</p>
-                            )}
-                            {estimate.client && (
-                              <Link
-                                href={`/dashboard/clients/${estimate.client.id}`}
-                                className="mt-1 inline-block text-xs font-medium text-slate-700 hover:text-primary hover:underline"
-                              >
-                                Sub-client: {estimate.client.name}
-                              </Link>
-                            )}
-                            <p className="text-xs text-gray-600 mt-1">
-                              {formatCurrency(parseFloat(String(estimate.total)))}
-                            </p>
-                            <p className="text-xs text-gray-400 mt-0.5">{formatDate(estimate.createdAt)}</p>
-                          </div>
-                          <span className={`shrink-0 px-2 py-1 text-xs rounded ${estimateStatusClass(estimate.status)}`}>
-                            {estimate.status}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CollapsibleClientCard>
-
-              <CollapsibleClientCard
-                title="Sub-Client Invoices"
-                description="Invoices across all sub-clients"
-                count={subClientInvoices.length}
-                open={subClientInvoicesOpen}
-                onToggle={() => setSubClientInvoicesOpen((prev) => !prev)}
-              >
-                {subClientInvoices.length === 0 ? (
-                  <p className="text-sm text-gray-500">No invoices on sub-clients yet.</p>
-                ) : (
-                  <div className="space-y-3">
-                    {subClientInvoices.map((invoice) => (
-                      <div
-                        key={invoice.id}
-                        className="rounded-lg border p-3 hover:bg-gray-50 transition-colors"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <Link
-                              href={`/dashboard/invoices/${invoice.id}`}
-                              className="text-sm font-medium text-primary hover:underline"
-                            >
-                              {invoice.invoiceNumber}
-                            </Link>
-                            {invoice.title && (
-                              <p className="text-xs text-gray-600 truncate">{invoice.title}</p>
-                            )}
-                            {invoice.client && (
-                              <Link
-                                href={`/dashboard/clients/${invoice.client.id}`}
-                                className="mt-1 inline-block text-xs font-medium text-slate-700 hover:text-primary hover:underline"
-                              >
-                                Sub-client: {invoice.client.name}
-                              </Link>
-                            )}
-                            <p className="text-xs text-gray-600 mt-1">
-                              Total {formatCurrency(parseFloat(invoice.total))} • Balance {formatCurrency(parseFloat(invoice.balance))}
-                            </p>
-                            {invoice.dueDate && (
-                              <p className="text-xs text-gray-500">Due {formatDate(invoice.dueDate)}</p>
-                            )}
-                          </div>
-                          <span className={`shrink-0 px-2 py-1 text-xs rounded ${invoiceStatusClass(invoice.status)}`}>
-                            {invoice.status}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CollapsibleClientCard>
-            </>
-          )}
-
-          {!hasSubClients && (
+          ) : (
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
@@ -1442,6 +1350,116 @@ export default function ClientDetailPage() {
               </div>
             </CardContent>
           </Card>
+
+          {hasSubClients && (
+            <>
+              <CollapsibleClientCard
+                title="Sub-Client Estimates"
+                description="Estimates across all sub-clients"
+                count={subClientEstimates.length}
+                open={subClientEstimatesOpen}
+                onToggle={() => setSubClientEstimatesOpen((prev) => !prev)}
+                scrollable
+                scrollMaxClass="max-h-72"
+              >
+                {subClientEstimates.length === 0 ? (
+                  <p className="text-sm text-gray-500">No estimates on sub-clients yet.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {subClientEstimates.map((estimate) => (
+                      <div
+                        key={estimate.id}
+                        className="rounded-lg border p-3 hover:bg-gray-50 transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <Link
+                              href={`/dashboard/estimates/${estimate.id}`}
+                              className="text-sm font-medium text-primary hover:underline"
+                            >
+                              {estimate.estimateNumber}
+                            </Link>
+                            {estimate.title && (
+                              <p className="text-xs text-gray-600 truncate">{estimate.title}</p>
+                            )}
+                            {estimate.client && (
+                              <Link
+                                href={`/dashboard/clients/${estimate.client.id}`}
+                                className="mt-1 inline-block text-xs font-medium text-slate-700 hover:text-primary hover:underline"
+                              >
+                                Sub-client: {estimate.client.name}
+                              </Link>
+                            )}
+                            <p className="text-xs text-gray-600 mt-1">
+                              {formatCurrency(parseFloat(String(estimate.total)))}
+                            </p>
+                            <p className="text-xs text-gray-400 mt-0.5">{formatDate(estimate.createdAt)}</p>
+                          </div>
+                          <span className={`shrink-0 px-2 py-1 text-xs rounded ${estimateStatusClass(estimate.status)}`}>
+                            {estimate.status}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CollapsibleClientCard>
+
+              <CollapsibleClientCard
+                title="Sub-Client Invoices"
+                description="Invoices across all sub-clients"
+                count={subClientInvoices.length}
+                open={subClientInvoicesOpen}
+                onToggle={() => setSubClientInvoicesOpen((prev) => !prev)}
+                scrollable
+                scrollMaxClass="max-h-72"
+              >
+                {subClientInvoices.length === 0 ? (
+                  <p className="text-sm text-gray-500">No invoices on sub-clients yet.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {subClientInvoices.map((invoice) => (
+                      <div
+                        key={invoice.id}
+                        className="rounded-lg border p-3 hover:bg-gray-50 transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <Link
+                              href={`/dashboard/invoices/${invoice.id}`}
+                              className="text-sm font-medium text-primary hover:underline"
+                            >
+                              {invoice.invoiceNumber}
+                            </Link>
+                            {invoice.title && (
+                              <p className="text-xs text-gray-600 truncate">{invoice.title}</p>
+                            )}
+                            {invoice.client && (
+                              <Link
+                                href={`/dashboard/clients/${invoice.client.id}`}
+                                className="mt-1 inline-block text-xs font-medium text-slate-700 hover:text-primary hover:underline"
+                              >
+                                Sub-client: {invoice.client.name}
+                              </Link>
+                            )}
+                            <p className="text-xs text-gray-600 mt-1">
+                              Total {formatCurrency(parseFloat(invoice.total))} • Balance {formatCurrency(parseFloat(invoice.balance))}
+                            </p>
+                            {invoice.dueDate && (
+                              <p className="text-xs text-gray-500">Due {formatDate(invoice.dueDate)}</p>
+                            )}
+                          </div>
+                          <span className={`shrink-0 px-2 py-1 text-xs rounded ${invoiceStatusClass(invoice.status)}`}>
+                            {invoice.status}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CollapsibleClientCard>
+            </>
+          )}
 
           {/* Recent Jobs */}
           <Card>
