@@ -19,7 +19,7 @@ export interface EstimateApprovalEmailOptions {
   total: string
   sentDisplay: string
   approveUrl: string
-  pdfUrl: string
+  viewUrl: string
   message?: string
   validUntil?: string
   logoUrl?: string
@@ -37,7 +37,7 @@ export function buildEstimateApprovalEmail(opts: EstimateApprovalEmailOptions): 
     total,
     sentDisplay,
     approveUrl,
-    pdfUrl,
+    viewUrl,
     message,
     validUntil,
     logoUrl,
@@ -68,7 +68,7 @@ export function buildEstimateApprovalEmail(opts: EstimateApprovalEmailOptions): 
     }),
     buildEmailButtonGroup([
       { label: 'Approve Estimate', href: approveUrl },
-      { label: 'Download PDF', href: pdfUrl },
+      { label: 'View Estimate', href: viewUrl },
     ]),
     buildEmailSupportNote(
       'Questions or need changes? <strong style="color:#ffffff;">Just reply to this email</strong> &mdash; we&rsquo;re happy to assist.'

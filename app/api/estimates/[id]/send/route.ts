@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import crypto from 'crypto'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
@@ -35,11 +34,6 @@ function formatEmailSentDate(value: Date | number | string) {
   return `${datePart} \u2022 ${timePart}`
 }
 
-function getPublicLinkSecret(): string {
-  const secret = String(process.env.ENCRYPTION_KEY || process.env.NEXTAUTH_SECRET || '').trim()
-  if (!secret) throw new Error('ENCRYPTION_KEY (or NEXTAUTH_SECRET) is required for public estimate PDF links')
-  return secret
-}
 
 export async function POST(
   request: NextRequest,
@@ -107,17 +101,13 @@ export async function POST(
     const sentEpoch = Date.now()
     const sentIso = new Date(sentEpoch).toISOString()
     const sentDisplay = formatEmailSentDate(sentEpoch)
-    const sig = crypto
-      .createHmac('sha256', getPublicLinkSecret())
-      .update(`${params.id}.${sentEpoch}`)
-      .digest('hex')
-    // Public signed link so recipients do not need dashboard auth.
-    const pdfUrl = `${appUrl}/api/public/estimates/${params.id}/pdf?sent=${sentEpoch}&sig=${sig}`
     const approvalToken = await getOrCreateEstimateApprovalToken({
       tenantId: user.tenantId,
       estimateId: estimate.id,
     })
     const approveUrl = approvalToken.url
+    // View portal — works on every device without needing a PDF viewer.
+    const viewUrl = `${appUrl}/portal/estimates/${approvalToken.rawToken}`
     const effectiveSubject = `${subject || `Estimate ${estimate.estimateNumber}`} - ${sentDisplay || sentIso}`
     
     const emailSecrets = await getIntegrationSecrets(user.tenantId, 'email')
@@ -141,7 +131,7 @@ export async function POST(
       total: `$${Number(estimate.total || 0).toFixed(2)}`,
       sentDisplay: sentDisplay || sentIso,
       approveUrl,
-      pdfUrl,
+      viewUrl,
       message: message ? String(message) : undefined,
       validUntil: validUntil || undefined,
       logoUrl: logoUrl || undefined,
