@@ -536,6 +536,35 @@ export default function InvoiceDetailPage() {
     setCreatingPaymentLink(true)
     try {
       const token = localStorage.getItem('accessToken')
+      const response = await fetch(`/api/invoices/${invoice.id}/portal-pay-url`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok || !data?.portalUrl) {
+        alert(data.error || 'Unable to open payment portal')
+        return
+      }
+
+      window.open(data.portalUrl, '_blank', 'noopener,noreferrer')
+      await fetchInvoice()
+    } catch (error) {
+      console.error('Open payment portal error:', error)
+      alert('Failed to open payment portal')
+    } finally {
+      setCreatingPaymentLink(false)
+    }
+  }
+
+  const handleBillRestLink = async () => {
+    if (!invoice || parseFloat(invoice.balance) <= 0) return
+
+    setCreatingPaymentLink(true)
+    try {
+      const token = localStorage.getItem('accessToken')
       const response = await fetch('/api/payments/sola/link', {
         method: 'POST',
         headers: {
@@ -545,7 +574,7 @@ export default function InvoiceDetailPage() {
         body: JSON.stringify({
           invoiceId: invoice.id,
           billRest,
-          returnUrl: `${window.location.origin}/portal/pay/${invoice.id}?token=${invoice.paymentToken || ''}`,
+          returnUrl: `${window.location.origin}/portal/pay/${invoice.id}?token=${invoice.paymentToken || ''}&invoices=1`,
         }),
       })
 
@@ -1275,7 +1304,7 @@ export default function InvoiceDetailPage() {
                 <span>{formatCurrency(parseFloat(invoice.balance))}</span>
               </div>
               {invoice.estimateId && (
-                <Button className="w-full" variant="outline" onClick={handlePayNow} disabled={creatingPaymentLink}>
+                <Button className="w-full" variant="outline" onClick={handleBillRestLink} disabled={creatingPaymentLink}>
                   <CreditCard className="mr-2 h-4 w-4" />
                   {creatingPaymentLink
                     ? 'Updating...'

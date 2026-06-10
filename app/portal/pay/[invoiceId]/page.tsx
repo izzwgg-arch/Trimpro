@@ -6,6 +6,7 @@ import Script from 'next/script'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
 import { parsePublicPaymentAmount } from '@/lib/payments/bulk-card-allocation'
+import { isDevEnvironment } from '@/lib/dev'
 
 const SOLA_PAYMENT_INTENT_KEY = 'sola_payment_intent_ref'
 
@@ -89,6 +90,7 @@ export default function PublicPaymentPage() {
   } | null>(null)
   const [customPrevAmount, setCustomPrevAmount] = useState<string>('')
   const [customPrevEnabled, setCustomPrevEnabled] = useState(false)
+  const [invoicePayAmounts, setInvoicePayAmounts] = useState<Record<string, string>>({})
   const [customApplyBusy, setCustomApplyBusy] = useState(false)
   const [processing, setProcessing] = useState(false)
   const [confirmation, setConfirmation] = useState<string | null>(null)
@@ -128,6 +130,7 @@ export default function PublicPaymentPage() {
   }, [recaptchaSiteKey])
 
   const getRecaptchaToken = async (action: string): Promise<string> => {
+    if (isDevEnvironment() && !recaptchaSiteKey) return 'dev-bypass'
     if (!recaptchaSiteKey) throw new Error('reCAPTCHA is not configured')
     const grecaptcha = (window as any).grecaptcha
     if (!grecaptcha) throw new Error('reCAPTCHA script not loaded. Please refresh the page.')
@@ -147,8 +150,16 @@ export default function PublicPaymentPage() {
     if (!t) throw new Error('Failed to generate reCAPTCHA token')
     return String(t)
   }
-  const captchaReady = Boolean(recaptchaSiteKey && recaptchaScriptLoaded)
+  const captchaReady =
+    (isDevEnvironment() && !recaptchaSiteKey) ||
+    Boolean(recaptchaSiteKey && recaptchaScriptLoaded)
   const reconciledReturnRef = useRef(false)
+
+  useEffect(() => {
+    if (searchParams.get('invoices') === '1') {
+      setShowOutstanding(true)
+    }
+  }, [searchParams])
 
   // Warm up reCAPTCHA after the script loads so the pay action gets a better score.
   useEffect(() => {
@@ -276,22 +287,47 @@ export default function PublicPaymentPage() {
   const outstandingTotal = Number(invoice?.outstanding?.total || 0)
   const openInvoices = Array.isArray(invoice?.outstanding?.invoices) ? invoice!.outstanding!.invoices : []
   const previousInvoices = openInvoices.filter((i) => !i.isCurrent)
+  const parsedPerInvoiceAmounts = useMemo(() => {
+    const out: Record<string, number> = {}
+    for (const id of selectedInvoiceIds) {
+      const amount = parsePublicPaymentAmount(invoicePayAmounts[id])
+      if (amount != null) out[id] = amount
+    }
+    return out
+  }, [selectedInvoiceIds, invoicePayAmounts])
+  const hasPerInvoiceAmounts = Object.keys(parsedPerInvoiceAmounts).length > 0
+
   const selectedTotal = useMemo(() => {
     if (partialSelection && selectedInvoiceIds.length === 1 && selectedInvoiceIds[0] === partialSelection.invoiceId)
       return Number(partialSelection.amount || 0)
-    if (customPrevEnabled) {
-      return parsedCustomAmount ?? 0
+    if (customPrevEnabled && parsedCustomAmount != null) {
+      return parsedCustomAmount
+    }
+    if (hasPerInvoiceAmounts) {
+      const byId = new Map(openInvoices.map((i) => [String(i.id), Number(i.balance || 0)]))
+      return selectedInvoiceIds.reduce((sum, id) => {
+        const custom = parsedPerInvoiceAmounts[id]
+        if (custom == null) return sum
+        return sum + Math.min(custom, Number(byId.get(String(id)) || 0))
+      }, 0)
     }
     const byId = new Map(openInvoices.map((i) => [String(i.id), Number(i.balance || 0)]))
     return selectedInvoiceIds.reduce((sum, id) => sum + Math.max(0, Number(byId.get(String(id)) || 0)), 0)
-  }, [openInvoices, selectedInvoiceIds, partialSelection, customPrevEnabled, parsedCustomAmount])
+  }, [openInvoices, selectedInvoiceIds, partialSelection, customPrevEnabled, parsedCustomAmount, hasPerInvoiceAmounts, parsedPerInvoiceAmounts])
   const selectAllChecked = openInvoices.length > 0 && selectedInvoiceIds.length === openInvoices.length
   const selectAllIndeterminate = selectedInvoiceIds.length > 0 && selectedInvoiceIds.length < openInvoices.length
 
   const handlePayNow = async () => {
     if (!invoice || !approved || processing) return
     if (selectedInvoiceIds.length === 0 && !customPrevEnabled) { setError('Select at least one invoice to pay.'); return }
-    if (customPrevEnabled && parsedCustomAmount == null) { setError('Enter a valid custom amount and click Apply.'); return }
+    if (customPrevEnabled && parsedCustomAmount == null && !hasPerInvoiceAmounts) {
+      setError('Enter a valid custom amount and click Apply.')
+      return
+    }
+    if (hasPerInvoiceAmounts && !customPrevEnabled && selectedTotal <= 0) {
+      setError('Enter a valid payment amount for at least one selected invoice.')
+      return
+    }
     setProcessing(true)
     setError(null)
     try {
@@ -299,6 +335,9 @@ export default function PublicPaymentPage() {
       if (customPrevEnabled && parsedCustomAmount != null) {
         payload.customPrevOnly = true
         payload.customPrevAmount = parsedCustomAmount
+      }
+      if (hasPerInvoiceAmounts) {
+        payload.plannedAmountsByInvoice = parsedPerInvoiceAmounts
       }
       if (partialSelection && selectedInvoiceIds.length === 1 && selectedInvoiceIds[0] === partialSelection.invoiceId && partialSelection.lineItemIds.length > 0) {
         payload.partialInvoiceId = partialSelection.invoiceId
@@ -371,8 +410,9 @@ export default function PublicPaymentPage() {
     !approved ||
     processing ||
     !captchaReady ||
-    (customPrevEnabled && parsedCustomAmount == null) ||
-    (!customPrevEnabled && selectedInvoiceIds.length === 0 && !partialSelection)
+    (customPrevEnabled && parsedCustomAmount == null && !hasPerInvoiceAmounts) ||
+    (!customPrevEnabled && !hasPerInvoiceAmounts && selectedInvoiceIds.length === 0 && !partialSelection) ||
+    (hasPerInvoiceAmounts && !customPrevEnabled && selectedTotal <= 0)
 
   // ── Loading / error / paid states ──────────────────────────────────────────
   if (loading) {
@@ -629,7 +669,7 @@ export default function PublicPaymentPage() {
         {customPrevEnabled && (
           <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl bg-amber-50 px-4 py-3 text-sm">
             <span className="text-amber-900">
-              Custom amount: <span className="font-semibold">{toCurrency(selectedTotal)}</span>
+              Custom total: <span className="font-semibold">{toCurrency(selectedTotal)}</span>
             </span>
             <button onClick={() => { setCustomPrevEnabled(false); setCustomPrevAmount('') }} className="text-xs text-amber-700 underline">Clear</button>
           </div>
@@ -710,9 +750,15 @@ export default function PublicPaymentPage() {
             </button>
           </div>
           {!recaptchaSiteKey ? (
-            <p className="mt-2 text-xs text-red-600">
-              Payment security check is not configured. Please contact support.
-            </p>
+            isDevEnvironment() ? (
+              <p className="mt-2 text-xs text-amber-600">
+                Development mode: security check bypassed so you can test Pay by Card locally.
+              </p>
+            ) : (
+              <p className="mt-2 text-xs text-red-600">
+                Payment security check is not configured. Please contact support.
+              </p>
+            )
           ) : !recaptchaScriptLoaded ? (
             <p className="mt-2 text-xs text-slate-500">Loading security check...</p>
           ) : null}
@@ -745,13 +791,15 @@ export default function PublicPaymentPage() {
                 {/* Custom previous amount */}
                 {previousInvoices.length > 0 && (
                   <div className="rounded-xl bg-slate-50 p-3">
-                    <p className="text-xs font-semibold text-slate-700">Pay a custom amount</p>
-                    <p className="mt-0.5 text-xs text-slate-500">Pays current invoice first, then applies remaining balance to older invoices in order until the amount runs out.</p>
+                    <p className="text-xs font-semibold text-slate-700">Pay a custom total</p>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      Applies to selected invoices only. Pays the current invoice first, then works down the list. Any invoice not fully covered is marked partial in Trim Pro and QuickBooks.
+                    </p>
                     <div className="mt-2 flex gap-2">
                       <input
                         value={customPrevAmount}
                         onChange={(e) => setCustomPrevAmount(e.target.value)}
-                        placeholder="Amount (e.g. 2500)"
+                        placeholder="Total amount (e.g. 2500)"
                         className="h-9 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-sm"
                         inputMode="decimal"
                       />
@@ -766,7 +814,7 @@ export default function PublicPaymentPage() {
                             setCustomPrevAmount(String(amount))
                             setCustomPrevEnabled(true)
                             setPartialSelection(null)
-                            setSelectedInvoiceIds([])
+                            setInvoicePayAmounts({})
                           } finally {
                             setCustomApplyBusy(false)
                           }
@@ -791,6 +839,7 @@ export default function PublicPaymentPage() {
                         const next = Boolean(checked)
                         setSelectedInvoiceIds(next ? openInvoices.map((i) => String(i.id)) : [])
                         setCustomPrevEnabled(false)
+                        if (!next) setInvoicePayAmounts({})
                       }}
                       disabled={customPrevEnabled}
                     />
@@ -799,17 +848,21 @@ export default function PublicPaymentPage() {
                 </div>
 
                 {/* Invoice rows */}
+                <p className="text-xs text-slate-500">
+                  Optional: enter a custom amount on any invoice. Leave blank to use the full balance, or use Pay a custom total above to pay down from the current invoice first.
+                </p>
                 <div className="space-y-1.5">
                   {openInvoices.map((inv) => {
                     const id = String(inv.id)
                     const checked = selectedInvoiceIds.includes(id)
+                    const balance = Number(inv.balance || 0)
+                    const customAmount = parsePublicPaymentAmount(invoicePayAmounts[id])
                     return (
                       <div
                         key={id}
-                        className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 transition-colors ${
+                        className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 transition-colors ${
                           checked && !customPrevEnabled ? 'border-slate-900 bg-slate-900/5' : 'border-slate-200 bg-white hover:border-slate-300'
                         }`}
-                        onClick={() => setPreviewInvoiceId(id)}
                       >
                         <Checkbox
                           checked={checked}
@@ -817,17 +870,48 @@ export default function PublicPaymentPage() {
                             const next = Boolean(v)
                             setCustomPrevEnabled(false)
                             setSelectedInvoiceIds((prev) => next ? Array.from(new Set([...prev, id])) : prev.filter((x) => x !== id))
+                            if (!next) {
+                              setInvoicePayAmounts((prev) => {
+                                const copy = { ...prev }
+                                delete copy[id]
+                                return copy
+                              })
+                            }
                           }}
-                          onClick={(e) => e.stopPropagation()}
-                          disabled={customPrevEnabled}
+                          className="shrink-0"
                         />
-                        <div className="flex-1 min-w-0">
+                        <button
+                          type="button"
+                          className="flex-1 min-w-0 text-left"
+                          onClick={() => setPreviewInvoiceId(id)}
+                        >
                           <p className="text-sm font-medium text-slate-900 truncate">
                             {inv.invoiceNumber}{inv.isCurrent ? ' - Current' : ''}
                           </p>
                           <p className="text-xs text-slate-400">Tap to preview</p>
+                        </button>
+                        <div className="flex flex-col items-end gap-1 shrink-0">
+                          <p className="text-sm font-semibold text-slate-900">{toCurrency(inv.balance)}</p>
+                          {checked && !customPrevEnabled && (
+                            <div className="relative" onClick={(e) => e.stopPropagation()}>
+                              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">$</span>
+                              <input
+                                value={invoicePayAmounts[id] || ''}
+                                onChange={(e) => {
+                                  setCustomPrevEnabled(false)
+                                  setInvoicePayAmounts((prev) => ({ ...prev, [id]: e.target.value }))
+                                }}
+                                placeholder={balance.toFixed(2)}
+                                className="h-8 w-28 rounded-lg border border-slate-200 bg-white pl-5 pr-2 text-right text-xs"
+                                inputMode="decimal"
+                                aria-label={`Custom payment amount for ${inv.invoiceNumber}`}
+                              />
+                            </div>
+                          )}
+                          {checked && customAmount != null && customAmount < balance && (
+                            <p className="text-[10px] font-medium text-amber-700">Partial</p>
+                          )}
                         </div>
-                        <p className="text-sm font-semibold text-slate-900">{toCurrency(inv.balance)}</p>
                       </div>
                     )
                   })}
@@ -836,6 +920,16 @@ export default function PublicPaymentPage() {
                 <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
                   Selected: <span className="font-semibold">{selectedInvoiceIds.length}</span> invoice(s) -{' '}
                   Total: <span className="font-semibold">{toCurrency(selectedTotal)}</span>
+                  {customPrevEnabled && parsedCustomAmount != null && (
+                    <span className="block mt-1 text-slate-500">
+                      Custom total {toCurrency(parsedCustomAmount)} will pay the current invoice first, then continue down the list.
+                    </span>
+                  )}
+                  {hasPerInvoiceAmounts && !customPrevEnabled && (
+                    <span className="block mt-1 text-slate-500">
+                      Custom amounts apply only to invoices where you entered a value.
+                    </span>
+                  )}
                 </div>
               </div>
             )}

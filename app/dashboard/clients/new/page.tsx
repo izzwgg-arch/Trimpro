@@ -12,6 +12,7 @@ import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
 import { PlaceAutocompleteInput } from '@/components/maps/PlaceAutocompleteInput'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
 import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
+import { collectClientEmailsOnFile, collectClientPhonesOnFile } from '@/lib/clients/contact-on-file'
 
 export default function NewClientPage() {
   const router = useRouter()
@@ -87,23 +88,29 @@ export default function NewClientPage() {
         const parent = data.client
         setParentClientName(parent?.name || '')
 
+        const parentEmails = collectClientEmailsOnFile(parent)
+        const parentPhones = collectClientPhonesOnFile(parent)
+
         const parentBilling = (parent?.addresses || []).find((addr: any) => addr.type === 'billing')
-        if (parentBilling) {
-          setFormData((prev) => ({
-            ...prev,
-            billingAddress: prev.billingAddress.street
-              ? prev.billingAddress
-              : {
+        setFormData((prev) => ({
+          ...prev,
+          email: parentEmails,
+          phone: parentPhones,
+          billingAddress: prev.billingAddress.street
+            ? prev.billingAddress
+            : parentBilling
+              ? {
                   street: parentBilling.street || '',
                   city: parentBilling.city || '',
                   state: parentBilling.state || '',
                   zipCode: parentBilling.zipCode || '',
                   country: parentBilling.country || 'US',
-                },
-          }))
-          if (!formData.billingAddress.street) {
-            setBillingPlaceId(parentBilling.street ? 'existing' : null)
-          }
+                }
+              : prev.billingAddress,
+        }))
+
+        if (parentBilling?.street) {
+          setBillingPlaceId('existing')
         }
       } catch (error) {
         console.error('Error loading parent client for sub-client defaults:', error)
@@ -111,7 +118,7 @@ export default function NewClientPage() {
     }
 
     fetchParentClient()
-  }, [selectedParentId, formData.billingAddress.street])
+  }, [selectedParentId])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -225,7 +232,9 @@ export default function NewClientPage() {
                     onSelect={setSelectedParentId}
                     placeholder="Select a parent client..."
                   />
-                  <p className="text-xs text-gray-500">Billing defaults can be inherited from the selected parent.</p>
+                  <p className="text-xs text-gray-500">
+                    Billing address, email, and phone can be inherited from the selected parent.
+                  </p>
                 </div>
               )}
             </div>

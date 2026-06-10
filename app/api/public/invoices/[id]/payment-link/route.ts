@@ -7,11 +7,24 @@ import { requireRecaptchaV3 } from '@/lib/security/recaptcha'
 import {
   buildWaterfallPlannedAmounts,
   orderInvoicesDominantFirst,
+  parsePerInvoiceAmountMap,
   parsePublicPaymentAmount,
+  resolvePublicPaymentPlan,
 } from '@/lib/payments/bulk-card-allocation'
+import { buildCardknoxFallbackUrl } from '@/lib/services/cardknox-url'
 import crypto from 'crypto'
 
-function resolvePublicAppUrl() {
+function resolvePublicAppUrl(request?: NextRequest) {
+  if (process.env.NODE_ENV !== 'production' && request) {
+    const origin = String(request.headers.get('origin') || '').trim()
+    if (origin) return origin.replace(/\/+$/, '')
+    const host = String(request.headers.get('x-forwarded-host') || request.headers.get('host') || '').trim()
+    if (host && !host.includes('154.12.235.86')) {
+      const proto = String(request.headers.get('x-forwarded-proto') || 'http').trim()
+      return `${proto}://${host}`.replace(/\/+$/, '')
+    }
+  }
+
   const candidates = [
     process.env.NEXT_PUBLIC_APP_URL,
     process.env.PUBLIC_APP_URL,
@@ -44,6 +57,7 @@ export async function POST(
         : []
     const customPrevOnly = Boolean(body?.customPrevOnly)
     const customPrevAmount = parsePublicPaymentAmount(body?.customPrevAmount)
+    const perInvoiceAmounts = parsePerInvoiceAmountMap(body?.plannedAmountsByInvoice ?? body?.perInvoiceAmounts)
     const partialInvoiceId = String(body?.partialInvoiceId || '').trim()
     const partialLineItemIdsRaw = Array.isArray(body?.partialLineItemIds) ? body.partialLineItemIds : null
     const partialLineItemIds = partialLineItemIdsRaw
@@ -153,45 +167,48 @@ export async function POST(
       lineItemIdsByInvoice = { [partialInvoiceId]: items.map((i) => i.id) }
       allocationMode = 'planned'
       maxTotalAmount = capped
-    } else if (customPrevOnly) {
-      if (customPrevAmount == null) {
+    } else if (customPrevOnly || selectedInvoiceIds.length) {
+      if (customPrevOnly && customPrevAmount == null && Object.keys(perInvoiceAmounts).length === 0) {
         return NextResponse.json({ error: 'Custom amount must be greater than 0.' }, { status: 400 })
       }
-      // Waterfall order: current invoice first, then older invoices by due date asc.
-      const otherInvoices = await prisma.invoice.findMany({
-        where: {
-          ...(openWhere as any),
-          id: { not: invoice.id },
-        },
-        select: { id: true, balance: true, dueDate: true, invoiceDate: true, invoiceNumber: true, qboSyncId: true },
-        orderBy: [{ dueDate: 'asc' }, { invoiceDate: 'asc' }],
-      })
-      // Put current invoice at the front so it gets paid first
-      const currentInvoice = {
-        id: invoice.id,
-        balance: invoice.balance,
-        dueDate: invoice.dueDate,
-        invoiceDate: invoice.invoiceDate,
-        invoiceNumber: invoice.invoiceNumber,
-        qboSyncId: invoice.qboSyncId,
+
+      let selectedRows: Array<{
+        id: string
+        balance: any
+        dueDate: any
+        invoiceDate: any
+        invoiceNumber: any
+        qboSyncId: any
+      }> = []
+
+      if (selectedInvoiceIds.length) {
+        selectedRows = await prisma.invoice.findMany({
+          where: {
+            ...(openWhere as any),
+            id: { in: selectedInvoiceIds },
+          },
+          select: { id: true, balance: true, dueDate: true, invoiceDate: true, invoiceNumber: true, qboSyncId: true },
+        })
+      } else {
+        const allRows = await prisma.invoice.findMany({
+          where: openWhere as any,
+          select: { id: true, balance: true, dueDate: true, invoiceDate: true, invoiceNumber: true, qboSyncId: true },
+        })
+        selectedRows = orderInvoicesDominantFirst(invoice.id, allRows)
       }
-      invoicesToPay = [currentInvoice, ...otherInvoices].filter((i) => Number(i.balance) > 0)
-      const totalOutstanding = invoicesToPay.reduce((sum, i) => sum + Math.max(0, Number(i.balance || 0)), 0)
-      if (totalOutstanding <= 0) {
-        return NextResponse.json({ error: 'No open invoices with a balance due.' }, { status: 400 })
-      }
-      maxTotalAmount = Math.min(customPrevAmount, totalOutstanding)
-      plannedAmountsByInvoice = buildWaterfallPlannedAmounts(invoicesToPay, maxTotalAmount)
-      allocationMode = 'waterfall'
-    } else if (selectedInvoiceIds.length) {
-      const selectedRows = await prisma.invoice.findMany({
-        where: {
-          ...(openWhere as any),
-          id: { in: selectedInvoiceIds },
-        },
-        select: { id: true, balance: true, dueDate: true, invoiceDate: true, invoiceNumber: true, qboSyncId: true },
+
+      const plan = resolvePublicPaymentPlan(invoice.id, selectedRows, {
+        perInvoiceAmounts,
+        globalAmount: customPrevOnly ? customPrevAmount : null,
       })
-      invoicesToPay = orderInvoicesDominantFirst(invoice.id, selectedRows)
+      if ('error' in plan) {
+        return NextResponse.json({ error: plan.error }, { status: 400 })
+      }
+
+      invoicesToPay = plan.invoices
+      plannedAmountsByInvoice = plan.plannedAmountsByInvoice
+      allocationMode = plan.mode === 'full' ? null : plan.mode
+      maxTotalAmount = plan.maxTotalAmount
     } else if (payAllOutstanding) {
       const allRows = await prisma.invoice.findMany({
         where: openWhere as any,
@@ -215,11 +232,12 @@ export async function POST(
     }
 
     const solaSecrets = await getIntegrationSecrets(invoice.tenantId, 'sola')
-    if (!solaSecrets?.secretKey) {
+    const isDev = process.env.NODE_ENV !== 'production'
+    if (!solaSecrets?.secretKey && !isDev) {
       return NextResponse.json({ error: 'Sola integration is not configured (missing secret key).' }, { status: 400 })
     }
 
-    const appUrl = resolvePublicAppUrl()
+    const appUrl = resolvePublicAppUrl(request)
 
     // Address priority: job site → estimate job site → client billing → any client address
     const jobAddress = invoice.job?.addresses?.[0]
@@ -285,17 +303,15 @@ export async function POST(
           : `Selected invoices for ${invoice.client.name}`
         : `Invoice ${invoice.invoiceNumber} - ${invoice.title}`
 
-    const paymentLink = await solaService.createPaymentLink({
+    const paymentLinkRequest = {
       invoiceId: invoice.id,
-      invoiceNumber: xInvoiceRef,          // human-readable, shown on Cardknox form
-      intentRef: isSingleFullInvoice ? undefined : ref,  // hidden field; webhook uses this for multi-invoice reconciliation
+      invoiceNumber: xInvoiceRef,
+      intentRef: isSingleFullInvoice ? undefined : ref,
       amount: amountToPay,
       description: description,
       clientEmail: invoice.client.email || invoice.client.contacts?.[0]?.email || undefined,
       clientName: invoice.client.name,
-      // Phone always from client profile
       clientPhone: invoice.client.phone || invoice.client.contacts?.[0]?.phone || undefined,
-      // Address from job site first, then estimate job site, then client billing address
       billingStreet: jobAddress?.street || estimateAddress?.street || billingAddress?.street || undefined,
       billingCity: jobAddress?.city || estimateAddress?.city || billingAddress?.city || undefined,
       billingState: jobAddress?.state || estimateAddress?.state || billingAddress?.state || undefined,
@@ -303,21 +319,52 @@ export async function POST(
       billingCountry: jobAddress?.country || billingAddress?.country || 'US',
       returnUrl: `${appUrl}/portal/pay/${invoice.id}?token=${invoice.paymentToken || ''}`,
       webhookUrl: `${appUrl}/api/webhooks/sola-payment`,
-      apiKey: solaSecrets.secretKey,
-    })
+      apiKey: solaSecrets?.secretKey,
+    }
+
+    let paymentUrl = ''
+    let paymentId = invoice.id
+    let expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString()
+
+    if (solaSecrets?.secretKey) {
+      const paymentLink = await solaService.createPaymentLink(paymentLinkRequest)
+      paymentUrl = paymentLink.url
+      paymentId = paymentLink.id
+      expiresAt = paymentLink.expiresAt
+    } else {
+      paymentUrl = buildCardknoxFallbackUrl(
+        {
+          invoiceRef: xInvoiceRef,
+          amountStr: amountToPay.toFixed(2),
+          description,
+          intentRef: isSingleFullInvoice ? undefined : ref,
+          clientName: invoice.client.name,
+          clientEmail: invoice.client.email || invoice.client.contacts?.[0]?.email || undefined,
+          clientPhone: invoice.client.phone || invoice.client.contacts?.[0]?.phone || undefined,
+          billingStreet: jobAddress?.street || estimateAddress?.street || billingAddress?.street || undefined,
+          billingCity: jobAddress?.city || estimateAddress?.city || billingAddress?.city || undefined,
+          billingState: jobAddress?.state || estimateAddress?.state || billingAddress?.state || undefined,
+          billingZip: jobAddress?.zipCode || estimateAddress?.zipCode || billingAddress?.zipCode || undefined,
+          billingCountry: jobAddress?.country || billingAddress?.country || 'US',
+          returnUrl: `${appUrl}/portal/pay/${invoice.id}?token=${invoice.paymentToken || ''}`,
+          webhookUrl: `${appUrl}/api/webhooks/sola-payment`,
+        },
+        { invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber }
+      )
+    }
 
     await prisma.invoice.update({
       where: { id: invoice.id },
       data: {
-        solaPaymentUrl: paymentLink.url || null,
-        solaTransactionId: paymentLink.id || null,
+        solaPaymentUrl: paymentUrl || null,
+        solaTransactionId: paymentId || null,
       },
     })
 
     return NextResponse.json({
-      paymentUrl: paymentLink.url,
-      paymentId: paymentLink.id,
-      expiresAt: paymentLink.expiresAt,
+      paymentUrl,
+      paymentId,
+      expiresAt,
       mode: invoicesToPay.length > 1 ? 'multi' : 'single',
       reference: ref,
       label: displayRef,

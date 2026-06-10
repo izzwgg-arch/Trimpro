@@ -5,6 +5,7 @@
   "description": "Production-ready Field Service Management platform for millwork/trim/molding companies",
   "scripts": {
     "dev": "next dev",
+    "dev:3001": "next dev -p 3001",
     "build": "next build",
     "start": "next start -H 0.0.0.0 -p 3000",
     "start:prod": "node -r dotenv/config node_modules/.bin/next start -H 0.0.0.0 -p 3000",

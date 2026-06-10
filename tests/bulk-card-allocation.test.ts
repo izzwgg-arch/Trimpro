@@ -5,6 +5,7 @@ import {
   orderInvoicesByStoredIds,
   orderInvoicesDominantFirst,
   parsePublicPaymentAmount,
+  resolvePublicPaymentPlan,
 } from '../lib/payments/bulk-card-allocation'
 
 test('parsePublicPaymentAmount accepts formatted currency input', () => {
@@ -42,4 +43,32 @@ test('orderInvoicesByStoredIds preserves intent order', () => {
   ]
   const ordered = orderInvoicesByStoredIds(['a', 'c', 'b'], rows)
   assert.deepEqual(ordered.map((r) => r.id), ['a', 'c', 'b'])
+})
+
+test('resolvePublicPaymentPlan supports explicit per-invoice amounts', () => {
+  const rows = [
+    { id: 'current', balance: 20000, invoiceNumber: 'INV-1' },
+    { id: 'older', balance: 5000, invoiceNumber: 'INV-2' },
+  ]
+  const plan = resolvePublicPaymentPlan('current', rows, {
+    perInvoiceAmounts: { current: 10000, older: 10000 },
+  })
+  assert.ok(!('error' in plan))
+  if ('error' in plan) return
+  assert.equal(plan.mode, 'planned')
+  assert.equal(plan.total, 15000)
+  assert.deepEqual(plan.plannedAmountsByInvoice, { current: 10000, older: 5000 })
+})
+
+test('resolvePublicPaymentPlan waterfalls a custom total from the dominant invoice down', () => {
+  const rows = [
+    { id: 'current', balance: 20000, invoiceNumber: 'INV-1' },
+    { id: 'older', balance: 5000, invoiceNumber: 'INV-2' },
+  ]
+  const plan = resolvePublicPaymentPlan('current', rows, { globalAmount: 15000 })
+  assert.ok(!('error' in plan))
+  if ('error' in plan) return
+  assert.equal(plan.mode, 'waterfall')
+  assert.deepEqual(plan.plannedAmountsByInvoice, { current: 15000 })
+  assert.equal(plan.total, 15000)
 })

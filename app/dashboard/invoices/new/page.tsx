@@ -17,7 +17,11 @@ import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
 import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
 import { cnCustomerVisibilityBulkPill } from '@/lib/ui/customer-visibility-bulk-pill'
-import { expandBundleComponentsToLineItems } from '@/lib/bundles/expand-line-items'
+import { applyBundleSelectionToLines } from '@/lib/bundles/expand-line-items'
+import {
+  addItemToDocumentBundle,
+  removeDocumentLineItem,
+} from '@/lib/bundles/document-line-item-actions'
 
 interface Job {
   id: string
@@ -540,8 +544,56 @@ export default function NewInvoicePage() {
     ])
   }
 
+  const createBlankLineItem = (): LineItem => ({
+    description: '',
+    quantity: '1',
+    unitPrice: '0',
+    taxable: true,
+    isVisibleToClient: true,
+    showDescriptionToCustomer: false,
+    showCostToCustomer: false,
+    showPriceToCustomer: true,
+    showTaxToCustomer: true,
+    showNotesToCustomer: true,
+  })
+
+  const focusLinePickerAt = (index: number, optional = false) => {
+    setTimeout(() => {
+      const refs = optional ? optionalPickerInputRefs : pickerInputRefs
+      const containerRefs = optional ? optionalItemRefs : lineItemRefs
+      const nextInput = refs.current[index]
+      if (nextInput) {
+        nextInput.focus()
+        nextInput.dispatchEvent(new Event('focus', { bubbles: true }))
+      } else {
+        const nextContainer = containerRefs.current[index]
+        const fallbackInput = nextContainer?.querySelector<HTMLInputElement>('[data-picker-input="true"]')
+        if (fallbackInput) {
+          fallbackInput.focus()
+          fallbackInput.dispatchEvent(new Event('focus', { bubbles: true }))
+        }
+      }
+    }, 100)
+  }
+
   const removeLineItem = (index: number) => {
-    setLineItems((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== index) : prev))
+    setLineItems((prev) => removeDocumentLineItem(prev, index))
+  }
+
+  const addItemToBundle = (groupId: string) => {
+    setLineItems((prev) => {
+      const result = addItemToDocumentBundle(prev, groupId, createBlankLineItem)
+      focusLinePickerAt(result.focusIndex)
+      return result.items
+    })
+  }
+
+  const addOptionalItemToBundle = (groupId: string) => {
+    setOptionalItems((prev) => {
+      const result = addItemToDocumentBundle(prev, groupId, createBlankLineItem)
+      focusLinePickerAt(result.focusIndex, true)
+      return result.items
+    })
   }
 
   const insertSubtotalAfter = (index: number) => {
@@ -781,34 +833,30 @@ export default function NewInvoicePage() {
         if (response.ok) {
           const bundleData = await response.json()
           const bundle = bundleData.bundle
-          const components = bundle?.components || []
-          
-          const groupId = `group-${Date.now()}`
-          updated[lineIndex] = {
-            ...updated[lineIndex],
-            description: bundle?.name || item.name,
-            quantity: '1',
-            unitPrice: '0',
-            taxable: item.taxable,
-            taxRate: item.taxRate?.toString() || '',
-            showDescriptionToCustomer: true,
-            showCostToCustomer: false,
-            showPriceToCustomer: true,
-            showTaxToCustomer: true,
-            showNotesToCustomer: false,
-            groupId,
-            groupName: bundle?.name || item.name,
-            isGroupHeader: true,
-            sourceBundleId: bundleDefId,
-          }
-
-          const childLines: LineItem[] = await expandBundleComponentsToLineItems(
-            components,
-            groupId,
-            token || ''
+          const newLines = await applyBundleSelectionToLines(
+            updated,
+            lineIndex,
+            { name: bundle?.name || item.name, components: bundle?.components || [] },
+            bundleDefId,
+            token || '',
+            {
+              headerExtras: {
+                taxable: item.taxable,
+                taxRate: item.taxRate?.toString() || '',
+                showDescriptionToCustomer: true,
+                showCostToCustomer: false,
+                showPriceToCustomer: true,
+                showTaxToCustomer: true,
+                showNotesToCustomer: false,
+              },
+            }
           )
-
-          updated.splice(lineIndex + 1, 0, ...childLines)
+          setLineItems(newLines)
+          return new Promise<void>((resolve) => {
+            requestAnimationFrame(() => {
+              setTimeout(() => resolve(), 0)
+            })
+          })
         } else {
           updated[lineIndex] = {
             ...updated[lineIndex],
@@ -946,14 +994,7 @@ export default function NewInvoicePage() {
   }
 
   const removeOptionalItem = (index: number) => {
-    setOptionalItems((prev) => {
-      if (prev.length <= 1) return prev
-      const item = prev[index]
-      if (item?.groupId && item.isGroupHeader) {
-        return prev.filter((li, i) => li.groupId !== item.groupId || i === index)
-      }
-      return prev.filter((_, i) => i !== index)
-    })
+    setOptionalItems((prev) => removeDocumentLineItem(prev, index))
   }
 
   const updateOptionalItem = (index: number, field: keyof LineItem, value: any) => {
@@ -1008,32 +1049,36 @@ export default function NewInvoicePage() {
         if (response.ok) {
           const bundleData = await response.json()
           const bundle = bundleData.bundle
-          const components = bundle?.components || []
-
-          const groupId = `opt-group-${Date.now()}`
-          updated[lineIndex] = {
-            description: bundle?.name || item.name,
-            quantity: '1',
-            unitPrice: '0',
-            taxable: item.taxable,
-            taxRate: item.taxRate?.toString() || '',
-            isVisibleToClient: true,
-            showDescriptionToCustomer: true,
-            showCostToCustomer: false,
-            showPriceToCustomer: true,
-            showTaxToCustomer: true,
-            showNotesToCustomer: false,
-            groupId,
-            groupName: bundle?.name || item.name,
-            isGroupHeader: true,
-            sourceBundleId: bundleDefId,
-          }
-
-          const childLines: LineItem[] = (
-            await expandBundleComponentsToLineItems(components, groupId, token || '')
-          ).map((line) => ({ ...line, isVisibleToClient: true }))
-
-          updated.splice(lineIndex + 1, 0, ...childLines)
+          const newLines = await applyBundleSelectionToLines(
+            updated,
+            lineIndex,
+            { name: bundle?.name || item.name, components: bundle?.components || [] },
+            bundleDefId,
+            token || '',
+            {
+              groupIdPrefix: 'opt-group-',
+              headerExtras: {
+                taxable: item.taxable,
+                taxRate: item.taxRate?.toString() || '',
+                isVisibleToClient: true,
+                showDescriptionToCustomer: true,
+                showCostToCustomer: false,
+                showPriceToCustomer: true,
+                showTaxToCustomer: true,
+                showNotesToCustomer: false,
+              },
+            }
+          ).then((lines) =>
+            lines.map((line) =>
+              line.isGroupHeader || !line.groupId ? line : { ...line, isVisibleToClient: true }
+            )
+          )
+          setOptionalItems(newLines)
+          return new Promise<void>((resolve) => {
+            requestAnimationFrame(() => {
+              setTimeout(() => resolve(), 0)
+            })
+          })
         } else {
           updated[lineIndex] = {
             ...updated[lineIndex],
@@ -1649,6 +1694,17 @@ export default function NewInvoicePage() {
                               </span>
                               <Button
                                 type="button"
+                                variant="outline"
+                                size="sm"
+                                title="Add item to this bundle (this invoice only)"
+                                onClick={() => item.groupId && addItemToBundle(item.groupId)}
+                                className="h-7 text-xs shrink-0"
+                              >
+                                <Plus className="h-3 w-3 mr-1" />
+                                Add item
+                              </Button>
+                              <Button
+                                type="button"
                                 variant="ghost"
                                 size="sm"
                                 onClick={() =>
@@ -1932,18 +1988,13 @@ export default function NewInvoicePage() {
                             </Button>
                           </div>
                         )}
-                        {lineItems.length > 1 && !isGroupHeader && (
+                        {lineItems.length > 1 && (
                           <Button
                             type="button"
                             variant="ghost"
                             size="sm"
-                            onClick={() => {
-                              if (item.groupId) {
-                                setLineItems(lineItems.filter((li, i) => li.groupId !== item.groupId || i === index))
-                              } else {
-                                removeLineItem(index)
-                              }
-                            }}
+                            title={isGroupHeader ? 'Remove entire bundle' : 'Remove line'}
+                            onClick={() => removeLineItem(index)}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -2092,6 +2143,17 @@ export default function NewInvoicePage() {
                               <span className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded">
                                 Bundle
                               </span>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                title="Add item to this bundle (this invoice only)"
+                                onClick={() => item.groupId && addOptionalItemToBundle(item.groupId)}
+                                className="h-7 text-xs shrink-0"
+                              >
+                                <Plus className="h-3 w-3 mr-1" />
+                                Add item
+                              </Button>
                               <Button
                                 type="button"
                                 variant="ghost"
@@ -2313,15 +2375,8 @@ export default function NewInvoicePage() {
                                 type="button"
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => {
-                                  if (item.groupId) {
-                                    setOptionalItems(
-                                      optionalItems.filter((li, i) => li.groupId !== item.groupId || i === index)
-                                    )
-                                  } else {
-                                    removeOptionalItem(index)
-                                  }
-                                }}
+                                title="Remove line"
+                                onClick={() => removeOptionalItem(index)}
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>

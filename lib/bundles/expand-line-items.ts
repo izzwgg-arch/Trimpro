@@ -166,6 +166,61 @@ export async function expandBundleComponentsToLineItems(
   return lines
 }
 
+/**
+ * Apply a bundle picker selection to document line items.
+ * Creates a new group when picking on a standalone row; expands into the existing group when picking inside a bundle.
+ */
+export async function applyBundleSelectionToLines<
+  T extends { groupId?: string; isGroupHeader?: boolean; groupName?: string },
+>(
+  lines: T[],
+  lineIndex: number,
+  bundle: { name: string; components: any[] },
+  bundleDefId: string,
+  authToken: string,
+  options?: { headerExtras?: Partial<T>; groupIdPrefix?: string }
+): Promise<T[]> {
+  const updated = [...lines]
+  const current = updated[lineIndex]
+  const insideExistingGroup = Boolean(current?.groupId && !current?.isGroupHeader)
+
+  if (insideExistingGroup && current.groupId) {
+    const childLines = await expandBundleComponentsToLineItems(
+      bundle.components,
+      current.groupId,
+      authToken
+    )
+    if (childLines.length === 0) return updated
+    updated.splice(lineIndex, 1, ...(childLines as unknown as T[]))
+    return updated
+  }
+
+  const prefix = options?.groupIdPrefix ?? 'group-'
+  const groupId = `${prefix}${Date.now()}`
+  updated[lineIndex] = {
+    ...updated[lineIndex],
+    description: bundle.name,
+    quantity: '1',
+    unitPrice: '0',
+    unitCost: '0',
+    notes: '',
+    groupId,
+    groupName: bundle.name,
+    isGroupHeader: true,
+    sourceBundleId: bundleDefId,
+    sourceItemId: null,
+    ...(options?.headerExtras ?? {}),
+  } as T
+
+  const childLines = await expandBundleComponentsToLineItems(
+    bundle.components,
+    groupId,
+    authToken
+  )
+  updated.splice(lineIndex + 1, 0, ...(childLines as unknown as T[]))
+  return updated
+}
+
 /** Map expanded bundle row to purchase order line item fields. */
 export function bundleExpandedLineToPurchaseOrderLine(
   line: BundleExpandedLine,

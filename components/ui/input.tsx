@@ -1,12 +1,13 @@
 import * as React from "react"
 
 import { cn } from "@/lib/utils"
+import { handleNumberInputWheel } from "@/lib/ui/prevent-number-input-wheel-change"
 
 export interface InputProps
   extends React.InputHTMLAttributes<HTMLInputElement> {}
 
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, ...props }, ref) => {
+  ({ className, type, onWheel, ...props }, ref) => {
     return (
       <input
         type={type}
@@ -15,6 +16,12 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           className
         )}
         ref={ref}
+        onWheel={(e) => {
+          if (type === "number") {
+            handleNumberInputWheel(e)
+          }
+          onWheel?.(e)
+        }}
         {...props}
       />
     )

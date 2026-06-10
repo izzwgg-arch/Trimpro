@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ArrowLeft, Save, Plus, Trash2, Copy } from 'lucide-react'
 import Link from 'next/link'
+import { LineItemDragHandle } from '@/components/documents/line-item-drag-handle'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
 import {
   catalogNotesFromItem,
@@ -268,6 +269,26 @@ export default function EditPurchaseOrderPage() {
       updated[index] = { ...updated[index], [field]: value }
       return updated
     })
+  }
+
+  const reorderLineItems = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return
+    setLineItems((prev) => {
+      const next = [...prev]
+      const [moved] = next.splice(fromIndex, 1)
+      next.splice(toIndex, 0, moved)
+      return next
+    })
+  }
+
+  const maybeAutoScrollDuringDrag = (clientY: number) => {
+    const edge = 120
+    const step = 26
+    if (clientY > window.innerHeight - edge) {
+      window.scrollBy({ top: step, behavior: 'auto' })
+    } else if (clientY < edge) {
+      window.scrollBy({ top: -step, behavior: 'auto' })
+    }
   }
 
   const handleItemSelect = async (item: FastPickerItem, lineIndex: number) => {
@@ -658,7 +679,19 @@ export default function EditPurchaseOrderPage() {
                         ref={(el) => {
                           lineItemRefs.current[index] = el
                         }}
-                        className={`flex gap-2 items-start p-2 rounded border ${
+                        data-line-item-row={index}
+                        onDragOver={(e) => {
+                          e.preventDefault()
+                          e.dataTransfer.dropEffect = 'move'
+                          maybeAutoScrollDuringDrag(e.clientY)
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault()
+                          const from = parseInt(e.dataTransfer.getData('text/line-index'), 10)
+                          if (!Number.isFinite(from)) return
+                          reorderLineItems(from, index)
+                        }}
+                        className={`flex gap-2 ${isGroupHeader ? 'items-center' : 'items-start'} p-2 rounded border ${
                           isGroupHeader
                             ? 'bg-purple-50 border-purple-200'
                             : isInGroup
@@ -666,6 +699,11 @@ export default function EditPurchaseOrderPage() {
                             : 'border-gray-300'
                         }`}
                       >
+                        <div
+                          className={`flex flex-col gap-1 items-center shrink-0 ${isGroupHeader ? 'self-center' : 'self-start pt-1'}`}
+                        >
+                          <LineItemDragHandle transferKey="text/line-index" index={index} />
+                        </div>
                         <div className="flex-1 min-w-0 flex flex-col gap-1">
                           {isGroupHeader ? (
                             <div className="flex items-center gap-2">
