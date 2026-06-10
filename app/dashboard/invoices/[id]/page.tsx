@@ -156,6 +156,7 @@ export default function InvoiceDetailPage() {
   // Add Payment modal state
   const [showAddPayment, setShowAddPayment] = useState(false)
   const [addPaymentAmount, setAddPaymentAmount] = useState('')
+  const [addPaymentDate, setAddPaymentDate] = useState(() => new Date().toISOString().split('T')[0])
   const [addPaymentMethod, setAddPaymentMethod] = useState<'CHECK' | 'QUICK_PAY' | 'OTHER'>('CHECK')
   const [addPaymentOtherLabel, setAddPaymentOtherLabel] = useState('')
   const [addPaymentSaving, setAddPaymentSaving] = useState(false)
@@ -573,6 +574,15 @@ export default function InvoiceDetailPage() {
       setAddPaymentError('Please enter a payment type name.')
       return
     }
+    if (!addPaymentDate) {
+      setAddPaymentError('Please enter a payment date.')
+      return
+    }
+    const parsedPaymentDate = new Date(addPaymentDate)
+    if (Number.isNaN(parsedPaymentDate.getTime())) {
+      setAddPaymentError('Please enter a valid payment date.')
+      return
+    }
     setAddPaymentSaving(true)
     try {
       const token = localStorage.getItem('accessToken')
@@ -583,6 +593,7 @@ export default function InvoiceDetailPage() {
           method: addPaymentMethod,
           methodLabel: addPaymentMethod === 'OTHER' ? addPaymentOtherLabel.trim() : undefined,
           amount,
+          paidAt: addPaymentDate,
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -592,6 +603,7 @@ export default function InvoiceDetailPage() {
       }
       setShowAddPayment(false)
       setAddPaymentAmount('')
+      setAddPaymentDate(new Date().toISOString().split('T')[0])
       setAddPaymentMethod('CHECK')
       setAddPaymentOtherLabel('')
       await fetchInvoice()
@@ -752,6 +764,7 @@ export default function InvoiceDetailPage() {
                 variant="outline"
                 onClick={() => {
                   setAddPaymentAmount(invoice.balance)
+                  setAddPaymentDate(new Date().toISOString().split('T')[0])
                   setAddPaymentMethod('CHECK')
                   setAddPaymentOtherLabel('')
                   setAddPaymentError('')
@@ -800,6 +813,15 @@ export default function InvoiceDetailPage() {
               )}
             </div>
             <div className="space-y-1">
+              <Label htmlFor="add-payment-date">Payment Date</Label>
+              <Input
+                id="add-payment-date"
+                type="date"
+                value={addPaymentDate}
+                onChange={(e) => setAddPaymentDate(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
               <Label>Payment Type</Label>
               <div className="flex flex-col gap-2">
                 {(['CHECK', 'QUICK_PAY', 'OTHER'] as const).map((m) => (
@@ -811,7 +833,7 @@ export default function InvoiceDetailPage() {
                       className="accent-blue-600"
                     />
                     <span className="text-sm font-medium">
-                      {m === 'CHECK' ? 'Check' : m === 'QUICK_PAY' ? 'QuickPay' : 'Other'}
+                      {m === 'CHECK' ? 'Check' : m === 'QUICK_PAY' ? 'QuickPay' : 'Custom'}
                     </span>
                   </label>
                 ))}
