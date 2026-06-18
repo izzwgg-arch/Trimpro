@@ -10,6 +10,10 @@ const nullableString = z.preprocess(
   z.string().nullable().optional()
 )
 
+/** Strips newlines/tabs from a string field — prevents control chars from reaching QBO queries. */
+const singleLineString = (schema: z.ZodString) =>
+  z.preprocess((val) => (typeof val === 'string' ? val.replace(/[\r\n\t]+/g, ' ').trim() : val), schema)
+
 // Branding settings payload (partial updates are allowed).
 export const brandingSettingsSchema = z
   .object({
@@ -168,7 +172,7 @@ export const createClientSchema = z.object({
 // Job creation
 export const createJobSchema = z.object({
   clientId: z.string().min(1),
-  title: z.string().min(1).max(255),
+  title: singleLineString(z.string().min(1).max(255)),
   description: z.string().max(5000).optional().nullable(),
   status: z.enum([
     'QUOTE',

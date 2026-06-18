@@ -329,10 +329,12 @@ export async function PUT(
     }
 
     // Update job
+    const sanitizedTitle =
+      title !== undefined ? String(title).replace(/[\r\n\t]+/g, ' ').trim() : undefined
     const job = await prisma.job.update({
       where: { id: params.id },
       data: {
-        title: title !== undefined ? title : existing.title,
+        title: sanitizedTitle !== undefined ? sanitizedTitle : existing.title,
         description: description !== undefined ? description : existing.description,
         status: status !== undefined ? status : existing.status,
         priority: priority !== undefined ? priority : existing.priority,

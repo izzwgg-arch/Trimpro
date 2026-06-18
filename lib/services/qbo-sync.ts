@@ -102,7 +102,7 @@ function qboDate(value: Date | string | null | undefined): string {
 }
 
 function esc(value: string): string {
-  return String(value || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+  return String(value || '').replace(/[\r\n\t]/g, ' ').replace(/\\/g, '\\\\').replace(/'/g, "\\'")
 }
 
 async function findQboTransactionByDocNumber(params: {
@@ -1708,7 +1708,7 @@ export async function syncJobToQuickBooksProject(tenantId: string, jobId: string
     })
     if (!parentQboCustomerId) return
 
-    const displayName = `${job.jobNumber} - ${job.title}`.slice(0, 100)
+    const displayName = `${job.jobNumber} - ${job.title}`.replace(/[\r\n\t]+/g, ' ').trim().slice(0, 100)
     await ensureProjectCustomer({
       integrationId: session.integrationId,
       accessToken: session.accessToken,
