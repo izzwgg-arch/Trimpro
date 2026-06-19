@@ -4,6 +4,7 @@ import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { verifySolaWebhookSignature } from '@/lib/integrations/providers/sola'
 import { notifyInvoicePaid } from '@/lib/notifications'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
+import { afterInvoicePayment } from '@/lib/payments/after-invoice-payment'
 
 export async function POST(request: NextRequest) {
   try {
@@ -169,8 +170,9 @@ export async function POST(request: NextRequest) {
         }
       )
 
-      // Trigger automations
-      // TODO: Check for automations with PAYMENT_RECEIVED trigger
+      await afterInvoicePayment(invoice.id).catch((error) => {
+        console.error('[sola-legacy-webhook] afterInvoicePayment failed:', { invoiceId: invoice.id, error })
+      })
     }
 
     return NextResponse.json({ message: 'Webhook processed successfully' })

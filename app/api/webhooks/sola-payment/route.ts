@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { notifyInvoicePaid, createNotificationsForUsers } from '@/lib/notifications'
+import { notifyInvoicePaid } from '@/lib/notifications'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { testEmailProvider } from '@/lib/integrations/providers/email'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
@@ -9,32 +9,8 @@ import {
   buildBulkPaymentReceiptEmail,
   buildInvoicePaymentReceiptEmail,
 } from '@/lib/email/templates/payment-receipt'
-import { getEstimateConversionSummary } from '@/lib/documents/conversion'
 import { orderInvoicesByStoredIds } from '@/lib/payments/bulk-card-allocation'
-
-function normalizePhone(value: string | null | undefined) {
-  return (value || '').replace(/\D/g, '')
-}
-
-function parseJobSiteAddress(address: string | null | undefined) {
-  if (!address) return null
-  const trimmed = address.trim()
-  if (!trimmed) return null
-  const parts = trimmed.split(',').map((p) => p.trim()).filter(Boolean)
-  const street = parts[0] || trimmed
-  const city = parts[1] || ''
-  const stateZip = parts[2] || ''
-  const stateZipMatch = stateZip.match(/^([A-Za-z]{2})\s+(.+)$/)
-  const state = stateZipMatch ? stateZipMatch[1] : stateZip
-  const zipCode = stateZipMatch ? stateZipMatch[2] : ''
-  return {
-    street,
-    city,
-    state,
-    zipCode,
-    country: 'US',
-  }
-}
+import { afterInvoicePayment } from '@/lib/payments/after-invoice-payment'
 
 function money(value: number) {
   return `$${Number(value || 0).toFixed(2)}`
@@ -129,193 +105,6 @@ async function sendBulkPaymentReceiptEmail(params: {
   if (!result.success) {
     console.error('Failed to send bulk payment receipt email:', result.error || result.message)
   }
-}
-
-async function ensureJobFromInvoice(invoiceId: string): Promise<{
-  job: { id: string; jobNumber: string; title: string } | null
-  created: boolean
-}> {
-  const invoice = await prisma.invoice.findFirst({
-    where: { id: invoiceId },
-    include: {
-      job: {
-        select: { id: true, jobNumber: true, title: true },
-      },
-      estimate: {
-        include: {
-          lead: true,
-          job: {
-            select: { id: true, jobNumber: true, title: true },
-          },
-        },
-      },
-    },
-  })
-
-  if (!invoice) return { job: null, created: false }
-  if (invoice.jobId && invoice.job) return { job: invoice.job, created: false }
-
-  const estimate = invoice.estimate
-  if (estimate?.jobId && estimate.job) {
-    if (invoice.jobId !== estimate.job.id) {
-      await prisma.invoice.update({
-        where: { id: invoice.id },
-        data: { jobId: estimate.job.id },
-      })
-    }
-    return { job: estimate.job, created: false }
-  }
-
-  let clientId = invoice.clientId || estimate?.clientId || null
-  if (!clientId && estimate?.lead?.convertedToClientId) {
-    clientId = estimate.lead.convertedToClientId
-  }
-
-  if (!clientId && estimate?.lead) {
-    const fullName = `${estimate.lead.firstName} ${estimate.lead.lastName}`.trim()
-    const normalizedEmail = (estimate.lead.email || '').trim().toLowerCase()
-    const normalizedPhone = normalizePhone(estimate.lead.phone)
-    const existingClient = await prisma.client.findFirst({
-      where: {
-        tenantId: invoice.tenantId,
-        OR: [
-          ...(normalizedEmail
-            ? [{ email: { equals: normalizedEmail, mode: 'insensitive' as const } }]
-            : []),
-          ...(normalizedPhone ? [{ phone: { contains: normalizedPhone } }] : []),
-          {
-            AND: [
-              { name: { equals: fullName, mode: 'insensitive' } },
-              ...(estimate.lead.company
-                ? [{ companyName: { equals: estimate.lead.company, mode: 'insensitive' } }]
-                : []),
-            ],
-          },
-        ],
-      },
-      orderBy: { updatedAt: 'desc' },
-    })
-
-    if (existingClient) {
-      clientId = existingClient.id
-    } else {
-      const createdClient = await prisma.client.create({
-        data: {
-          tenantId: invoice.tenantId,
-          name: fullName,
-          companyName: estimate.lead.company || null,
-          email: estimate.lead.email || null,
-          phone: estimate.lead.phone || null,
-          notes: estimate.lead.notes || null,
-          isActive: true,
-        },
-      })
-      clientId = createdClient.id
-    }
-  }
-
-  if (!clientId) return { job: null, created: false }
-
-  for (let attempt = 0; attempt < 300; attempt++) {
-    try {
-      const createdJob = await prisma.$transaction(async (tx) => {
-        const latestJob = await tx.job.findFirst({
-          where: { tenantId: invoice.tenantId, jobNumber: { startsWith: 'JOB-' } },
-          orderBy: { jobNumber: 'desc' },
-          select: { jobNumber: true },
-        })
-        const latestJobNum = latestJob?.jobNumber
-          ? parseInt(String(latestJob.jobNumber).replace(/^JOB-/, ''), 10)
-          : 0
-        const baseNum = Number.isFinite(latestJobNum) ? latestJobNum : 0
-        const jobNumber = `JOB-${String(baseNum + 1 + attempt).padStart(6, '0')}`
-        const mergedDescription = [
-          estimate?.notes ? `Estimate Notes: ${estimate.notes}` : null,
-          invoice.notes ? `Invoice Notes: ${invoice.notes}` : null,
-          estimate?.lead?.notes ? `Request Notes: ${estimate.lead.notes}` : null,
-        ]
-          .filter(Boolean)
-          .join('\n\n')
-          .trim()
-
-        const createdJob = await tx.job.create({
-          data: {
-            tenantId: invoice.tenantId,
-            clientId,
-            jobNumber,
-            title: invoice.title || estimate?.title || `Job for ${invoice.invoiceNumber}`,
-            description: mergedDescription || null,
-            status: 'SCHEDULED',
-            priority: 3,
-            estimateAmount: estimate?.total || invoice.total,
-          },
-          select: { id: true, jobNumber: true, title: true },
-        })
-
-        const parsedAddress = parseJobSiteAddress(estimate?.jobSiteAddress || estimate?.lead?.jobSiteAddress)
-        if (parsedAddress) {
-          await tx.address.create({
-            data: {
-              jobId: createdJob.id,
-              type: 'job_site',
-              street: parsedAddress.street,
-              city: parsedAddress.city,
-              state: parsedAddress.state,
-              zipCode: parsedAddress.zipCode,
-              country: parsedAddress.country,
-            },
-          })
-        }
-
-        if (estimate) {
-          const conversion = await getEstimateConversionSummary(tx, estimate.id, estimate.total, invoice.tenantId)
-          await tx.estimate.update({
-            where: { id: estimate.id },
-            data: {
-              clientId,
-              jobId: createdJob.id,
-              status: 'CONVERTED',
-              convertedPercent: conversion.convertedPercent,
-            },
-          })
-        }
-
-        await tx.invoice.update({
-          where: { id: invoice.id },
-          data: { jobId: createdJob.id },
-        })
-
-        if (estimate?.leadId) {
-          await tx.lead.update({
-            where: { id: estimate.leadId },
-            data: { status: 'CONVERTED' },
-          })
-        }
-
-        await tx.activity.create({
-          data: {
-            tenantId: invoice.tenantId,
-            type: 'JOB_CREATED',
-            description: `Payment received. Invoice "${invoice.invoiceNumber}" converted to job ${createdJob.jobNumber}`,
-            clientId,
-            invoiceId: invoice.id,
-            estimateId: estimate?.id,
-            leadId: estimate?.leadId || null,
-            jobId: createdJob.id,
-          },
-        })
-
-        return createdJob
-      })
-      return { job: createdJob, created: true }
-    } catch (err: any) {
-      if (err?.code === 'P2002' && err?.meta?.target?.includes?.('jobNumber')) {
-        continue
-      }
-      throw err
-    }
-  }
-  throw new Error('Unable to allocate a unique job number')
 }
 
 export async function POST(request: NextRequest) {
@@ -523,11 +312,13 @@ export async function POST(request: NextRequest) {
           } as any,
         })
 
-        // Best-effort: keep lifecycle consistent (creates job if needed).
         try {
-          await ensureJobFromInvoice(inv.id)
-        } catch {
-          // ignore
+          await afterInvoicePayment(inv.id)
+        } catch (error) {
+          console.error('[sola-payment] afterInvoicePayment failed (bulk):', {
+            invoiceId: inv.id,
+            error,
+          })
         }
 
         appliedCount += 1
@@ -690,45 +481,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Auto-create/link job as soon as any payment succeeds (partial or full).
-    // This enforces lifecycle: Request -> Estimate -> Invoice -> Job.
     if (newPaidAmount > 0) {
-      const { job, created } = await ensureJobFromInvoice(invoice.id)
-
-      if (created && job) {
-        // Only notify + QBO-sync when a brand-new job was just created.
-        const users = await prisma.user.findMany({
-          where: {
-            tenantId: invoice.tenantId,
-            role: { in: ['ADMIN', 'ACCOUNTING', 'OFFICE', 'OWNER', 'MANAGER'] },
-            status: 'ACTIVE',
-          },
-          select: { id: true },
-        })
-        if (users.length > 0) {
-          const clientName = invoice.client?.name || 'Unknown Client'
-          const jobTitle = job.title || `Job ${job.jobNumber || ''}`
-          const paymentStatus = newBalance <= 0 ? 'paid in full' : 'partially paid'
-          await createNotificationsForUsers(
-            invoice.tenantId,
-            users.map((u) => u.id),
-            {
-              type: 'SYSTEM',
-              title: 'Job Created From Paid Invoice',
-              message: `Invoice #${invoice.invoiceNumber} (${clientName}) was ${paymentStatus}. Job "${jobTitle}" has been automatically created.`,
-              linkUrl: `/dashboard/jobs/${job.id}`,
-              linkType: 'job',
-              linkId: job.id,
-              requiresAck: true,
-            }
-          )
-        }
-        try {
-          await enqueueQboSync(invoice.tenantId, 'job', job.id, { processImmediately: false })
-        } catch (error) {
-          console.error('QuickBooks job/project sync trigger error (payment lifecycle):', error)
-        }
-      }
+      await afterInvoicePayment(invoice.id)
     }
 
     return NextResponse.json({ ok: true })

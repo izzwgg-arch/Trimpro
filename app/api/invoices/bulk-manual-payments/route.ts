@@ -3,6 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { notifyInvoicePaid } from '@/lib/notifications'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
+import { afterInvoicePayment } from '@/lib/payments/after-invoice-payment'
 
 const ALLOWED_METHODS = new Set(['CHECK', 'QUICK_PAY', 'OTHER'])
 
@@ -206,6 +207,13 @@ export async function POST(request: NextRequest) {
         result.amount,
         result.clientName
       ).catch(() => null)
+
+      await afterInvoicePayment(result.invoiceId).catch((error) => {
+        console.error('[bulk-manual-payments] afterInvoicePayment failed:', {
+          invoiceId: result.invoiceId,
+          error,
+        })
+      })
     }
 
     return NextResponse.json({

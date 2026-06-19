@@ -126,7 +126,7 @@ interface InvoiceDetail {
     method: string
     status: string
     processedAt: string | null
-    referenceNumber: string | null
+    reference: string | null
   }>
 }
 
@@ -167,6 +167,7 @@ export default function InvoiceDetailPage() {
   const [addPaymentDate, setAddPaymentDate] = useState(() => new Date().toISOString().split('T')[0])
   const [addPaymentMethod, setAddPaymentMethod] = useState<'CHECK' | 'QUICK_PAY' | 'OTHER'>('CHECK')
   const [addPaymentOtherLabel, setAddPaymentOtherLabel] = useState('')
+  const [addPaymentReference, setAddPaymentReference] = useState('')
   const [addPaymentSaving, setAddPaymentSaving] = useState(false)
   const [addPaymentError, setAddPaymentError] = useState('')
 
@@ -631,6 +632,7 @@ export default function InvoiceDetailPage() {
           methodLabel: addPaymentMethod === 'OTHER' ? addPaymentOtherLabel.trim() : undefined,
           amount,
           paidAt: addPaymentDate,
+          reference: addPaymentReference.trim() || undefined,
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -643,6 +645,7 @@ export default function InvoiceDetailPage() {
       setAddPaymentDate(new Date().toISOString().split('T')[0])
       setAddPaymentMethod('CHECK')
       setAddPaymentOtherLabel('')
+      setAddPaymentReference('')
       await fetchInvoice()
     } catch {
       setAddPaymentError('Failed to record payment. Please try again.')
@@ -807,6 +810,7 @@ export default function InvoiceDetailPage() {
                   setAddPaymentDate(new Date().toISOString().split('T')[0])
                   setAddPaymentMethod('CHECK')
                   setAddPaymentOtherLabel('')
+                  setAddPaymentReference('')
                   setAddPaymentError('')
                   setShowAddPayment(true)
                 }}
@@ -890,6 +894,15 @@ export default function InvoiceDetailPage() {
                 />
               </div>
             )}
+            <div className="space-y-1">
+              <Label htmlFor="add-payment-reference">Reference Number</Label>
+              <Input
+                id="add-payment-reference"
+                placeholder="e.g. check number, transaction ID..."
+                value={addPaymentReference}
+                onChange={(e) => setAddPaymentReference(e.target.value)}
+              />
+            </div>
             {addPaymentError && (
               <p className="text-sm text-red-600">{addPaymentError}</p>
             )}
@@ -1203,8 +1216,8 @@ export default function InvoiceDetailPage() {
                           {payment.method}{' \u2022 '}{payment.status}
                           {payment.processedAt && ` \u2022 ${formatDate(payment.processedAt)}`}
                         </div>
-                        {payment.referenceNumber && (
-                          <div className="text-xs text-gray-500">Ref: {payment.referenceNumber}</div>
+                        {payment.reference && (
+                          <div className="text-xs text-gray-500">Ref: {payment.reference}</div>
                         )}
                       </div>
                       {payment.status === 'COMPLETED' && (

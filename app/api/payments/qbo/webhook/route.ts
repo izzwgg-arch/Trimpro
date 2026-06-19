@@ -7,6 +7,7 @@ import { quickBooksService } from '@/lib/services/quickbooks'
 import { notifyInvoicePaid } from '@/lib/notifications'
 import { sendPaymentReceiptIfNeeded } from '@/lib/qbo/receipts'
 import { reconcileSingleInvoiceAchPayment } from '@/lib/qbo/reconcile-ach'
+import { afterInvoicePayment } from '@/lib/payments/after-invoice-payment'
 import {
   fetchQboPaymentMethodName,
   mapInboundQboPaymentMethodFromName,
@@ -167,6 +168,13 @@ async function applyInvoicePayment(params: {
       dedupeKey: `payment-received:${params.tenantId}:${invoice.id}:${params.providerPaymentId}`,
     }
   )
+
+  if (createdPaymentId) {
+    await afterInvoicePayment(invoice.id).catch((error) => {
+      console.error('[qbo-webhook] afterInvoicePayment failed:', { invoiceId: invoice.id, error })
+    })
+  }
+
   return createdPaymentId
 }
 

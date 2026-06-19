@@ -3,6 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { notifyInvoicePaid } from '@/lib/notifications'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
+import { afterInvoicePayment } from '@/lib/payments/after-invoice-payment'
 
 const ALLOWED_METHODS = new Set(['CHECK', 'QUICK_PAY', 'OTHER'])
 
@@ -131,6 +132,10 @@ export async function POST(
       amount,
       invoice.client?.name || 'Customer'
     ).catch(() => null)
+
+    await afterInvoicePayment(invoice.id).catch((error) => {
+      console.error('[mark-paid] afterInvoicePayment failed:', { invoiceId: invoice.id, error })
+    })
 
     return NextResponse.json({
       ok: true,

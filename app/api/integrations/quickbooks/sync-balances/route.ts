@@ -3,6 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { getQboSessionForTenant } from '@/lib/qbo/session'
 import { quickBooksService } from '@/lib/services/quickbooks'
+import { afterInvoicePayment } from '@/lib/payments/after-invoice-payment'
 
 export const dynamic = 'force-dynamic'
 
@@ -124,6 +125,10 @@ export async function POST(request: NextRequest) {
         applied: appliedAmount,
       })
       synced++
+
+      await afterInvoicePayment(invoice.id).catch((error) => {
+        console.error('[sync-balances] afterInvoicePayment failed:', { invoiceId: invoice.id, error })
+      })
     } catch (e: any) {
       if (e?.code !== 'P2002') {
         console.error('[QB sync-balances] Error on invoice', invoice.id, e?.message)

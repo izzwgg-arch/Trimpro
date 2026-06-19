@@ -3,6 +3,7 @@ import { getQboSessionForTenant } from '@/lib/qbo/session'
 import { quickBooksService } from '@/lib/services/quickbooks'
 import { notifyInvoicePaid } from '@/lib/notifications'
 import { sendPaymentReceiptIfNeeded } from '@/lib/qbo/receipts'
+import { afterInvoicePayment } from '@/lib/payments/after-invoice-payment'
 
 function toMoney(n: number) {
   return Math.round(n * 100) / 100
@@ -281,6 +282,10 @@ export async function reconcileSingleInvoiceAchPayment(
       dedupeKey: `payment-received:${invoice.tenantId}:${invoice.id}:${reference}`,
     }
   )
+
+  await afterInvoicePayment(invoice.id).catch((error) => {
+    console.error('[qbo-reconcile-ach] afterInvoicePayment failed:', { invoiceId: invoice.id, error })
+  })
 
   const payment = await prisma.payment.findFirst({
     where: {
