@@ -4,6 +4,8 @@ import { prisma } from '@/lib/prisma'
 import { notifyInvoicePaid } from '@/lib/notifications'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { afterInvoicePayment } from '@/lib/payments/after-invoice-payment'
+import { applyInvoicePayment } from '@/lib/payments/apply-payment'
+import crypto from 'crypto'
 
 const ALLOWED_METHODS = new Set(['CHECK', 'QUICK_PAY', 'OTHER'])
 
@@ -25,7 +27,7 @@ export async function POST(request: NextRequest) {
     const paidAtRaw = body?.paidAt ? new Date(String(body.paidAt)) : null
     const processedAt =
       paidAtRaw && !Number.isNaN(paidAtRaw.getTime()) ? paidAtRaw : new Date()
-    const items = Array.isArray(body?.items) ? body.items : []
+    const items: any[] = Array.isArray(body?.items) ? body.items : []
 
     if (!ALLOWED_METHODS.has(method)) {
       return NextResponse.json(
@@ -127,6 +129,10 @@ export async function POST(request: NextRequest) {
           ? 'Manually marked as paid by Quick Pay'
           : `Manually marked as paid — ${methodLabel}`
 
+    // One manual entry (e.g. a single check) covering several invoices is ONE
+    // payment group, so QuickBooks records it as a single distributed payment.
+    const paymentGroupId = `pg_manual_${crypto.randomBytes(12).toString('hex')}`
+
     const results = await prisma.$transaction(async (tx) => {
       const created: Array<{
         paymentId: string
@@ -141,16 +147,11 @@ export async function POST(request: NextRequest) {
 
       for (const item of preparedItems) {
         const invoice = item.invoice!
-        const amount = item.requestedAmount
-        const newPaidAmount = toNumber(invoice.paidAmount) + amount
-        const newBalance = Math.max(0, toNumber(invoice.total) - newPaidAmount)
-        const nextStatus = newBalance <= 0 ? 'PAID' : 'PARTIAL'
-
-        const payment = await tx.payment.create({
-          data: {
+        const res = await applyInvoicePayment(
+          {
             invoiceId: invoice.id,
-            amount,
-            status: 'COMPLETED',
+            tenantId: user.tenantId,
+            amount: item.requestedAmount,
             method:
               method === 'CHECK'
                 ? 'CHECK'
@@ -165,41 +166,37 @@ export async function POST(request: NextRequest) {
                   : 'manual',
             processedAt,
             notes: paymentNotes,
+            paymentGroupId,
           },
-        })
-
-        await tx.invoice.update({
-          where: { id: invoice.id },
-          data: {
-            paidAmount: newPaidAmount,
-            balance: newBalance,
-            status: nextStatus as any,
-            paidAt: newBalance <= 0 ? processedAt : invoice.paidAt,
-          },
-        })
+          { tx }
+        )
+        if (!res.created || !res.paymentId || !res.invoice) continue
 
         created.push({
-          paymentId: payment.id,
+          paymentId: res.paymentId,
           invoiceId: invoice.id,
           invoiceNumber: invoice.invoiceNumber,
           clientName: invoice.client?.name || 'Customer',
-          amount,
-          newPaidAmount,
-          newBalance,
-          nextStatus,
+          amount: Math.max(0, toNumber(res.invoice.paidAmount) - toNumber(invoice.paidAmount)),
+          newPaidAmount: toNumber(res.invoice.paidAmount),
+          newBalance: toNumber(res.invoice.balance),
+          nextStatus: res.invoice.status,
         })
       }
 
       return created
     })
 
-    for (const result of results) {
+    // Sync the whole group once -> a single QuickBooks payment across invoices.
+    if (results.length > 0) {
       try {
-        await enqueueQboSync(user.tenantId, 'payment', result.paymentId, { processImmediately: true })
+        await enqueueQboSync(user.tenantId, 'payment', results[0].paymentId, { processImmediately: true })
       } catch (error) {
-        console.error('QuickBooks payment sync trigger error (bulk manual payment):', error)
+        console.error('QuickBooks payment sync trigger error (bulk manual payment group):', error)
       }
+    }
 
+    for (const result of results) {
       await notifyInvoicePaid(
         user.tenantId,
         result.invoiceId,

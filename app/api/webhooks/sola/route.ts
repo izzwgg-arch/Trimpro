@@ -5,6 +5,7 @@ import { verifySolaWebhookSignature } from '@/lib/integrations/providers/sola'
 import { notifyInvoicePaid } from '@/lib/notifications'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { afterInvoicePayment } from '@/lib/payments/after-invoice-payment'
+import { applyInvoicePayment } from '@/lib/payments/apply-payment'
 
 export async function POST(request: NextRequest) {
   try {
@@ -70,110 +71,112 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
     }
 
-    // Check if payment already exists
-    const existingPayment = await prisma.payment.findFirst({
-      where: {
-        solaTransactionId: String(transactionId || paymentId || ''),
-      },
-    })
-
-    if (existingPayment) {
-      // Update existing payment
-      await prisma.payment.update({
-        where: { id: existingPayment.id },
-        data: {
-          status: status === 'completed' ? 'COMPLETED' :
-                  status === 'paid' ? 'COMPLETED' :
-                  status === 'approved' ? 'COMPLETED' :
-                  status === 's' ? 'COMPLETED' :
-                  status === 'a' ? 'COMPLETED' :
-                  status === 'pending' ? 'PENDING' :
-                  status === 'failed' ? 'FAILED' :
-                  'PENDING',
-          processedAt:
-            status === 'completed' || status === 'paid' || status === 'approved' || status === 's' || status === 'a'
-              ? new Date(timestamp)
-              : existingPayment.processedAt,
-          solaWebhookData: body,
-        },
+    const isSuccess =
+      status === 'completed' || status === 'paid' || status === 'approved' || status === 's' || status === 'a'
+    if (!isSuccess) {
+      // Only update the stored status on an existing record; never move money.
+      const existingPayment = await prisma.payment.findFirst({
+        where: { solaTransactionId: String(transactionId || paymentId || '') },
+        select: { id: true },
       })
-
-      return NextResponse.json({ message: 'Payment updated' })
+      if (existingPayment) {
+        await prisma.payment.update({
+          where: { id: existingPayment.id },
+          data: {
+            status: status === 'pending' ? 'PENDING' : status === 'failed' ? 'FAILED' : 'PENDING',
+            solaWebhookData: body,
+          },
+        })
+        return NextResponse.json({ message: 'Payment updated' })
+      }
+      return NextResponse.json({ ok: true, ignored: true })
     }
 
-    // Create new payment record
-    if (status === 'completed' || status === 'paid' || status === 'approved' || status === 's' || status === 'a') {
-      const payment = await prisma.payment.create({
-        data: {
-          invoiceId: invoice.id,
-          amount: amount || Number(invoice.balance),
-          status: 'COMPLETED',
-          method: 'CARD', // SOLA typically processes card payments
-          provider: 'sola',
-          providerPaymentId: String(transactionId || paymentId || ''),
-          providerInvoiceId: String(invoiceId || invoice.invoiceNumber || ''),
-          reference: transactionId || paymentId,
-          solaTransactionId: transactionId || paymentId,
-          solaWebhookData: body,
-          processedAt: new Date(timestamp),
+    const txnId = String(transactionId || paymentId || '')
+
+    // Idempotency across BOTH webhook routes. The modern /api/webhooks/sola-payment
+    // route records single-invoice payments as "txn" and distributed (multi-invoice)
+    // payments as "txn:invoiceId". Matching either prefix here guarantees this legacy
+    // endpoint can never create a duplicate / phantom payment for a transaction the
+    // modern route already handled (or vice versa).
+    if (txnId) {
+      const already = await prisma.payment.findFirst({
+        where: {
+          OR: [
+            { solaTransactionId: txnId },
+            { solaTransactionId: { startsWith: `${txnId}:` } },
+            { provider: 'sola', providerPaymentId: txnId },
+            { provider: 'sola', providerPaymentId: { startsWith: `${txnId}:` } },
+          ],
         },
+        select: { id: true },
       })
+      if (already) return NextResponse.json({ message: 'Payment already recorded', deduped: true })
+    }
 
-      try {
-        await enqueueQboSync(invoice.tenantId, 'payment', payment.id, { processImmediately: true })
-      } catch (error) {
-        console.error('QuickBooks payment sync trigger error (legacy webhook):', error)
-      }
+    // Never invent an amount. A success confirmation with no amount must not move money.
+    if (!(amount > 0)) {
+      return NextResponse.json({ ok: true, ignored: 'missing_amount' })
+    }
 
-      // Update invoice
-      const newPaidAmount = Number(invoice.paidAmount) + (amount || Number(invoice.balance))
-      const newBalance = Number(invoice.total) - newPaidAmount
+    // All money application goes through the single authoritative, idempotent,
+    // clamped function — identical to every other payment path.
+    const result = await applyInvoicePayment({
+      invoiceId: invoice.id,
+      tenantId: invoice.tenantId,
+      amount,
+      method: 'CARD',
+      provider: 'sola',
+      providerPaymentId: txnId,
+      providerInvoiceId: String(invoiceId || invoice.invoiceNumber || ''),
+      reference: txnId || null,
+      solaTransactionId: txnId || null,
+      solaWebhookData: body,
+      processedAt: new Date(timestamp),
+      dedupeWhere: txnId ? { solaTransactionId: txnId } : undefined,
+    })
 
-      await prisma.invoice.update({
-        where: { id: invoice.id },
-        data: {
-          paidAmount: newPaidAmount,
-          balance: newBalance,
-          status:
-            newBalance <= 0
-              ? (invoice.progressBillingMode && invoice.progressBillingMode !== 'FULL' ? 'PARTIAL' : 'PAID')
-              : newPaidAmount > 0
-                ? 'PARTIAL'
-                : invoice.status,
-          paidAt: newBalance <= 0 ? new Date(timestamp) : invoice.paidAt,
-        },
-      })
+    if (!result.created || !result.paymentId || !result.invoice) {
+      return NextResponse.json({ message: 'Payment already recorded' })
+    }
 
-      // Create activity
-      await prisma.activity.create({
+    const appliedAmount = Math.max(0, Number(result.invoice.paidAmount) - Number(invoice.paidAmount))
+
+    try {
+      await enqueueQboSync(invoice.tenantId, 'payment', result.paymentId, { processImmediately: true })
+    } catch (error) {
+      console.error('QuickBooks payment sync trigger error (legacy webhook):', error)
+    }
+
+    await prisma.activity
+      .create({
         data: {
           tenantId: invoice.tenantId,
           type: 'PAYMENT_RECEIVED',
-          description: `Payment of ${amount} received for invoice ${invoice.invoiceNumber}`,
+          description: `Payment of ${appliedAmount} received for invoice ${invoice.invoiceNumber}`,
           invoiceId: invoice.id,
-          paymentId: payment.id,
+          paymentId: result.paymentId,
           clientId: invoice.clientId,
         },
       })
+      .catch(() => undefined)
 
-      // Notify accounting users about payment
-      await notifyInvoicePaid(
-        invoice.tenantId,
-        invoice.id,
-        invoice.invoiceNumber,
-        amount || Number(invoice.balance),
-        invoice.client.name,
-        {
-          paymentMethod: 'CARD',
-          providerPaymentId: transactionId || null,
-          dedupeKey: `payment-received:${invoice.tenantId}:${invoice.id}:${transactionId || invoice.id}`,
-        }
-      )
+    await notifyInvoicePaid(
+      invoice.tenantId,
+      invoice.id,
+      invoice.invoiceNumber,
+      appliedAmount,
+      invoice.client.name,
+      {
+        paymentMethod: 'CARD',
+        providerPaymentId: txnId || null,
+        dedupeKey: `payment-received:${invoice.tenantId}:${invoice.id}:${txnId || invoice.id}`,
+      }
+    )
 
-      await afterInvoicePayment(invoice.id).catch((error) => {
-        console.error('[sola-legacy-webhook] afterInvoicePayment failed:', { invoiceId: invoice.id, error })
-      })
-    }
+    await afterInvoicePayment(invoice.id).catch((error) => {
+      console.error('[sola-legacy-webhook] afterInvoicePayment failed:', { invoiceId: invoice.id, error })
+    })
 
     return NextResponse.json({ message: 'Webhook processed successfully' })
   } catch (error) {

@@ -70,6 +70,7 @@ interface ClientDetail {
   invoices: Array<{
     id: string
     invoiceNumber: string
+    title?: string | null
     total: string
     balance: string
     status: string
@@ -78,6 +79,7 @@ interface ClientDetail {
   estimates: Array<{
     id: string
     estimateNumber: string
+    title?: string | null
     status: string
     total: string | number | null
     createdAt: string
@@ -1506,8 +1508,11 @@ export default function ClientDetailPage() {
                       className="block p-3 rounded-lg border hover:bg-gray-50 transition-colors"
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <div>
+                        <div className="min-w-0">
                           <p className="text-sm font-medium">{estimate.estimateNumber}</p>
+                          {estimate.title && (
+                            <p className="text-xs text-gray-600 truncate">{estimate.title}</p>
+                          )}
                           {estimate.total != null && (
                             <p className="text-xs text-gray-600">{formatCurrency(parseFloat(String(estimate.total)))}</p>
                           )}
@@ -1573,8 +1578,11 @@ export default function ClientDetailPage() {
                         />
                         <Link href={`/dashboard/invoices/${invoice.id}`} className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-3">
-                            <div>
+                            <div className="min-w-0">
                               <p className="text-sm font-medium">{invoice.invoiceNumber}</p>
+                              {invoice.title && (
+                                <p className="text-xs text-gray-600 truncate">{invoice.title}</p>
+                              )}
                               <p className="text-xs text-gray-600">
                                 Total {formatCurrency(parseFloat(invoice.total))} • Balance {formatCurrency(parseFloat(invoice.balance))}
                               </p>

@@ -73,6 +73,7 @@ export default function EditEstimatePage() {
     jobSiteAddress: '',
     taxRate: '0',
     discount: '0',
+    depositPercent: '',
     validUntil: '',
     notes: '',
     terms: '',
@@ -157,6 +158,7 @@ export default function EditEstimatePage() {
         jobSiteAddress: est.jobSiteAddress || '',
         taxRate: taxRatePercent,
         discount: est.discount || '0',
+        depositPercent: (est as any).depositPercent != null ? String((est as any).depositPercent) : '',
         validUntil: est.validUntil ? new Date(est.validUntil).toISOString().split('T')[0] : '',
         notes: est.notes || '',
         terms: est.terms || '',
@@ -945,6 +947,7 @@ export default function EditEstimatePage() {
           jobSiteAddress: formData.jobSiteAddress || null,
           taxRate: taxRate,
           discount,
+          depositPercent: formData.depositPercent ? Number(formData.depositPercent) : null,
           status: formData.status,
           validUntil: formData.validUntil || null,
           notes: formData.notes || null,
@@ -1973,6 +1976,23 @@ export default function EditEstimatePage() {
                     value={formData.validUntil}
                     onChange={(e) => setFormData({ ...formData, validUntil: e.target.value })}
                   />
+                </div>
+                <div>
+                  <Label htmlFor="depositPercent">Required Deposit (%)</Label>
+                  <Input
+                    id="depositPercent"
+                    type="number"
+                    step="1"
+                    min="1"
+                    max="100"
+                    placeholder="50"
+                    value={formData.depositPercent}
+                    onChange={(e) => setFormData({ ...formData, depositPercent: e.target.value })}
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Initial payment requested when the customer approves online. The invoice is created for the full
+                    amount and stays partially paid until the balance is collected. Defaults to 50% if blank.
+                  </p>
                 </div>
               </CardContent>
             </Card>

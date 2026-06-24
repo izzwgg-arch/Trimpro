@@ -11,6 +11,8 @@ import {
 } from '@/lib/email/templates/payment-receipt'
 import { orderInvoicesByStoredIds } from '@/lib/payments/bulk-card-allocation'
 import { afterInvoicePayment } from '@/lib/payments/after-invoice-payment'
+import { applyInvoicePayment } from '@/lib/payments/apply-payment'
+import crypto from 'crypto'
 
 function money(value: number) {
   return `$${Number(value || 0).toFixed(2)}`
@@ -185,6 +187,35 @@ export async function POST(request: NextRequest) {
       body?.transactionId || body?.TransactionID || body?.xRefNum || body?.xRefnum || ''
     )
 
+    // ------------------------------------------------------------------
+    // Idempotency guard (per gateway transaction).
+    //
+    // A single successful charge is delivered to us MORE THAN ONCE: Cardknox
+    // posts a server-side webhook AND the customer's browser posts a "return"
+    // confirmation to this same endpoint. Those deliveries can land in different
+    // branches (single vs. distributed/TPINTENT) and historically used
+    // non-colliding ids, which is how one $5,000 payment produced a second
+    // phantom full-balance payment. Once ANY payment row exists for this
+    // transaction (single "txn" or distributed "txn:invoiceId"), every later
+    // delivery is a no-op.
+    // ------------------------------------------------------------------
+    if (transactionId) {
+      const alreadyProcessed = await prisma.payment.findFirst({
+        where: {
+          OR: [
+            { solaTransactionId: transactionId },
+            { solaTransactionId: { startsWith: `${transactionId}:` } },
+            { provider: 'sola', providerPaymentId: transactionId },
+            { provider: 'sola', providerPaymentId: { startsWith: `${transactionId}:` } },
+          ],
+        },
+        select: { id: true },
+      })
+      if (alreadyProcessed) {
+        return NextResponse.json({ ok: true, deduped: true })
+      }
+    }
+
     // Bulk payment reference format: "TPINTENT:<intentKey>"
     if (invoiceRef.startsWith('TPINTENT:')) {
       const intentKey = invoiceRef.slice('TPINTENT:'.length).trim()
@@ -249,6 +280,11 @@ export async function POST(request: NextRequest) {
       }
       let appliedCount = 0
       let appliedTotal = 0
+      // One customer card charge -> one payment group, even across many invoices.
+      // This lets the QuickBooks sync record it as a SINGLE payment distributed
+      // across the invoices instead of many separate payments.
+      const paymentGroupId = `pg_${transactionId || crypto.randomBytes(12).toString('hex')}`
+      const groupedPaymentIds: string[] = []
 
       for (const inv of openInvoices) {
         if (remaining <= 0) break
@@ -263,54 +299,30 @@ export async function POST(request: NextRequest) {
         if (amountForThis <= 0) continue
 
         const uniqueTxn = transactionId ? `${transactionId}:${inv.id}` : `BULK:${Date.now()}:${inv.id}`
-        const exists = await prisma.payment.findFirst({
-          where: { solaTransactionId: uniqueTxn },
-          select: { id: true },
-        })
-        if (exists) continue
-
         const invoiceRef = inv.invoiceNumber ? `Invoice ${inv.invoiceNumber}` : `Invoice ${inv.id}`
         const cleanTxnId = transactionId ? String(transactionId).trim() : ''
-        const createdPayment = await prisma.payment.create({
-          data: {
-            invoiceId: inv.id,
-            amount: amountForThis,
-            status: 'COMPLETED',
-            method: 'CARD',
-            provider: 'sola',
-            // Unique per invoice — same card txn pays multiple invoices.
-            providerPaymentId: uniqueTxn || null,
-            reference: cleanTxnId ? `${cleanTxnId} - ${invoiceRef}` : invoiceRef,
-            solaTransactionId: uniqueTxn,
-            solaWebhookData: body,
-            processedAt: new Date(),
-            notes: `Bulk payment for ${invoiceRef}`,
-          } as any,
-        })
 
-        try {
-          await enqueueQboSync(client.tenantId, 'payment', createdPayment.id, { processImmediately: true })
-        } catch (error) {
-          console.error('QuickBooks payment sync trigger error (bulk):', error)
-        }
-
-        const newPaidAmount = Number(inv.paidAmount || 0) + amountForThis
-        const newBalance = Math.max(0, Number(inv.total || 0) - newPaidAmount)
-        await prisma.invoice.update({
-          where: { id: inv.id },
-          data: {
-            paidAmount: newPaidAmount,
-            balance: newBalance,
-            status:
-              newBalance <= 0
-                ? (inv.progressBillingMode && inv.progressBillingMode !== 'FULL' ? 'PARTIAL' : 'PAID')
-                : newPaidAmount > 0
-                  ? 'PARTIAL'
-                  : inv.status,
-            paidAt: newBalance <= 0 ? new Date() : inv.paidAt,
-            solaTransactionId: transactionId || inv.solaTransactionId,
-          } as any,
+        const result = await applyInvoicePayment({
+          invoiceId: inv.id,
+          amount: amountForThis,
+          method: 'CARD',
+          provider: 'sola',
+          // Unique per invoice — same card txn pays multiple invoices.
+          providerPaymentId: uniqueTxn || null,
+          reference: cleanTxnId ? `${cleanTxnId} - ${invoiceRef}` : invoiceRef,
+          solaTransactionId: uniqueTxn,
+          solaWebhookData: body,
+          processedAt: new Date(),
+          notes: `Bulk payment for ${invoiceRef}`,
+          paymentGroupId,
+          dedupeWhere: { solaTransactionId: uniqueTxn },
         })
+        if (!result.created || !result.paymentId) continue
+        groupedPaymentIds.push(result.paymentId)
+
+        const appliedThis = result.invoice
+          ? Math.max(0, Number(result.invoice.paidAmount) - (Number(inv.paidAmount || 0)))
+          : amountForThis
 
         try {
           await afterInvoicePayment(inv.id)
@@ -322,8 +334,17 @@ export async function POST(request: NextRequest) {
         }
 
         appliedCount += 1
-        appliedTotal += amountForThis
-        remaining -= amountForThis
+        appliedTotal += appliedThis
+        remaining -= appliedThis
+      }
+
+      // Sync the whole group to QuickBooks as ONE payment (multiple invoice lines).
+      if (groupedPaymentIds.length > 0) {
+        try {
+          await enqueueQboSync(client.tenantId, 'payment', groupedPaymentIds[0], { processImmediately: true })
+        } catch (error) {
+          console.error('QuickBooks payment sync trigger error (bulk group):', error)
+        }
       }
 
       // Notify office/admin/accounting once (avoid spamming N notifications)
@@ -395,62 +416,52 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
     }
 
-    const remainingBeforePayment = Math.max(0, Number(invoice.total) - Number(invoice.paidAmount))
-    const requestedAmount = paidAmount > 0 ? paidAmount : Number(invoice.balance)
-    const amount = Math.max(0, Math.min(requestedAmount, remainingBeforePayment))
+    // Only ever record the amount the gateway actually reported. A success
+    // confirmation with no amount (which the browser "return" callback can
+    // produce) must NEVER move money — inventing the full balance here is what
+    // recorded a phantom full-balance payment and flipped deposits to PAID. The
+    // authoritative gateway webhook always carries the amount, so we safely
+    // record nothing and let that delivery (or QBO reconcile) apply it.
+    if (!(paidAmount > 0)) {
+      return NextResponse.json({ ok: true, ignored: 'missing_amount' })
+    }
+    const requestedAmount = paidAmount
 
-    const existingPayment = transactionId
-      ? await prisma.payment.findFirst({
-          where: { solaTransactionId: transactionId },
-        })
-      : null
+    const result = await applyInvoicePayment({
+      invoiceId: invoice.id,
+      amount: requestedAmount,
+      method: 'CARD',
+      provider: 'sola',
+      providerPaymentId: String(transactionId || ''),
+      providerInvoiceId: String(invoiceRef || invoice.invoiceNumber || ''),
+      reference: transactionId || null,
+      solaTransactionId: transactionId || null,
+      solaWebhookData: body,
+      processedAt: new Date(),
+      dedupeWhere: transactionId ? { solaTransactionId: transactionId } : undefined,
+    })
 
-    let newPaidAmount = Number(invoice.paidAmount)
-    let newBalance = Number(invoice.balance)
+    const amount = result.invoice
+      ? Math.max(0, Number(result.invoice.paidAmount) - Number(invoice.paidAmount))
+      : 0
+    const newPaidAmount = result.invoice ? Number(result.invoice.paidAmount) : Number(invoice.paidAmount)
+    const newBalance = result.invoice ? Number(result.invoice.balance) : Number(invoice.balance)
 
-    if (!existingPayment && amount > 0) {
-      const createdPayment = await prisma.payment.create({
-        data: {
-          invoiceId: invoice.id,
-          amount,
-          status: 'COMPLETED',
-          method: 'CARD',
-          provider: 'sola',
-          providerPaymentId: String(transactionId || ''),
-          providerInvoiceId: String(invoiceRef || invoice.invoiceNumber || ''),
-          reference: transactionId || null,
-          solaTransactionId: transactionId || null,
-          solaWebhookData: body,
-          processedAt: new Date(),
-        },
-      })
+    if (result.created && result.paymentId) {
+      if (transactionId) {
+        await prisma.invoice
+          .update({ where: { id: invoice.id }, data: { solaTransactionId: transactionId } })
+          .catch(() => undefined)
+      }
 
       try {
-        await enqueueQboSync(invoice.tenantId, 'payment', createdPayment.id, { processImmediately: true })
+        await enqueueQboSync(invoice.tenantId, 'payment', result.paymentId, { processImmediately: true })
       } catch (error) {
         console.error('QuickBooks payment sync trigger error:', error)
       }
-      newPaidAmount = Number(invoice.paidAmount) + amount
-      newBalance = Math.max(0, Number(invoice.total) - newPaidAmount)
-
-      await prisma.invoice.update({
-        where: { id: invoice.id },
-        data: {
-          paidAmount: newPaidAmount,
-          balance: newBalance,
-          status:
-            newBalance <= 0
-              ? (invoice.progressBillingMode && invoice.progressBillingMode !== 'FULL' ? 'PARTIAL' : 'PAID')
-              : newPaidAmount > 0
-                ? 'PARTIAL'
-                : invoice.status,
-          paidAt: newBalance <= 0 ? new Date() : invoice.paidAt,
-          solaTransactionId: transactionId || invoice.solaTransactionId,
-        },
-      })
 
       const recipientEmail = invoice.client.email || invoice.client.contacts?.[0]?.email
-      if (recipientEmail) {
+      if (recipientEmail && amount > 0) {
         await sendPaymentReceiptEmail({
           tenantId: invoice.tenantId,
           to: recipientEmail,
@@ -464,9 +475,7 @@ export async function POST(request: NextRequest) {
           transactionId: transactionId || undefined,
         })
       }
-    }
 
-    if (!existingPayment) {
       await notifyInvoicePaid(
         invoice.tenantId,
         invoice.id,
@@ -479,9 +488,7 @@ export async function POST(request: NextRequest) {
           dedupeKey: `payment-received:${invoice.tenantId}:${invoice.id}:${transactionId || invoice.id}`,
         }
       )
-    }
 
-    if (newPaidAmount > 0) {
       await afterInvoicePayment(invoice.id)
     }
 

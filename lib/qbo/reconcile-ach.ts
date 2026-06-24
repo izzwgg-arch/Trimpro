@@ -4,6 +4,7 @@ import { quickBooksService } from '@/lib/services/quickbooks'
 import { notifyInvoicePaid } from '@/lib/notifications'
 import { sendPaymentReceiptIfNeeded } from '@/lib/qbo/receipts'
 import { afterInvoicePayment } from '@/lib/payments/after-invoice-payment'
+import { applyInvoicePayment } from '@/lib/payments/apply-payment'
 
 function toMoney(n: number) {
   return Math.round(n * 100) / 100
@@ -189,39 +190,30 @@ export async function reconcileSingleInvoiceAchPayment(
       const delta = toMoney(curBalance - qboBalance)
       if (delta <= 0) return
 
-      const exists = await tx.payment.findFirst({ where: { reference } })
-      if (exists) return
-
       appliedAmount = Math.min(curBalance, delta)
       if (appliedAmount <= 0) return
 
-      await tx.payment.create({
-        data: {
+      const res = await applyInvoicePayment(
+        {
           invoiceId: current.id,
           amount: appliedAmount,
-          status: 'COMPLETED',
           method: 'ACH',
-          reference,
           provider: 'quickbooks',
+          reference,
           providerPaymentId: reference,
           providerInvoiceId: invoice.qboSyncId || null,
           providerRealmId: session.realmId,
           processedAt: new Date(),
           notes: 'QuickBooks ACH reconcile',
+          dedupeWhere: { reference },
         },
-      })
-
-      const newPaidAmount = Number(current.paidAmount) + appliedAmount
-      const newBalance = Math.max(0, Number(current.total) - newPaidAmount)
-      await tx.invoice.update({
-        where: { id: current.id },
-        data: {
-          paidAmount: newPaidAmount,
-          balance: newBalance,
-          status: newBalance <= 0 ? 'PAID' : newPaidAmount > 0 ? 'PARTIAL' : current.status,
-          paidAt: newBalance <= 0 ? new Date() : current.paidAt,
-        },
-      })
+        { tx }
+      )
+      if (!res.created || !res.invoice) {
+        appliedAmount = 0
+        return
+      }
+      appliedAmount = Math.max(0, Number(res.invoice.paidAmount) - Number(current.paidAmount))
 
       await tx.paymentTransaction.create({
         data: {

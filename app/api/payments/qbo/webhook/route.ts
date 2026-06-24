@@ -8,6 +8,7 @@ import { notifyInvoicePaid } from '@/lib/notifications'
 import { sendPaymentReceiptIfNeeded } from '@/lib/qbo/receipts'
 import { reconcileSingleInvoiceAchPayment } from '@/lib/qbo/reconcile-ach'
 import { afterInvoicePayment } from '@/lib/payments/after-invoice-payment'
+import { applyInvoicePayment as applyPaymentCore } from '@/lib/payments/apply-payment'
 import {
   fetchQboPaymentMethodName,
   mapInboundQboPaymentMethodFromName,
@@ -85,42 +86,30 @@ async function applyInvoicePayment(params: {
     return existing.id
   }
 
-  const remainingBeforePayment = Math.max(0, Number(invoice.total) - Number(invoice.paidAmount))
-  const amount = Math.max(0, Math.min(params.amount, remainingBeforePayment))
-  if (amount <= 0) return null
-
   let createdPaymentId: string | null = null
+  let amount = 0
 
   await prisma.$transaction(async (tx) => {
-    const payment = await tx.payment.create({
-      data: {
+    const res = await applyPaymentCore(
+      {
         invoiceId: invoice.id,
-        amount,
-        status: 'COMPLETED',
+        amount: params.amount,
         method: params.method || 'ACH',
-        reference: params.reference,
         provider: 'quickbooks',
+        reference: params.reference,
         providerPaymentId: params.providerPaymentId,
         providerInvoiceId: params.providerInvoiceId || null,
         providerRealmId: params.providerRealmId || null,
         rawPayload: params.rawEvent ?? undefined,
         processedAt: new Date(),
         notes: params.notes || 'QuickBooks payment',
+        dedupeWhere: { provider: 'quickbooks', providerPaymentId: params.providerPaymentId },
       },
-    })
-    createdPaymentId = payment.id
-
-    const newPaidAmount = Number(invoice.paidAmount) + amount
-    const newBalance = Math.max(0, Number(invoice.total) - newPaidAmount)
-    await tx.invoice.update({
-      where: { id: invoice.id },
-      data: {
-        paidAmount: newPaidAmount,
-        balance: newBalance,
-        status: newBalance <= 0 ? 'PAID' : newPaidAmount > 0 ? 'PARTIAL' : invoice.status,
-        paidAt: newBalance <= 0 ? new Date() : invoice.paidAt,
-      },
-    })
+      { tx }
+    )
+    if (!res.created || !res.paymentId || !res.invoice) return
+    createdPaymentId = res.paymentId
+    amount = Math.max(0, Number(res.invoice.paidAmount) - Number(invoice.paidAmount))
 
     await tx.paymentTransaction.create({
       data: {
@@ -136,6 +125,8 @@ async function applyInvoicePayment(params: {
       },
     })
   })
+
+  if (!createdPaymentId || amount <= 0) return createdPaymentId
 
   if (createdPaymentId) {
     await recordPaymentQboMapping({

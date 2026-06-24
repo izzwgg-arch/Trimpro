@@ -125,6 +125,7 @@ export async function GET(
       jobSiteState: (parsed?.state || derived.state || '').trim() || null,
       jobSiteZipCode: (parsed?.zipCode || derived.zipCode || '').trim() || null,
       subtotal: estimate.subtotal.toString(),
+      depositPercent: (estimate as any).depositPercent != null ? Number((estimate as any).depositPercent) : null,
       taxRate: estimate.taxRate?.toString() || '0',
       taxAmount: estimate.taxAmount?.toString() || '0',
       discount: estimate.discount?.toString() || '0',
@@ -220,7 +221,18 @@ export async function PUT(
       notes,
       isNotesVisibleToClient,
       terms,
+      depositPercent,
     } = body
+
+    const normalizedDepositPercent =
+      depositPercent === undefined
+        ? undefined
+        : depositPercent === null || depositPercent === ''
+          ? null
+          : (() => {
+              const n = Number(depositPercent)
+              return Number.isFinite(n) && n > 0 && n <= 100 ? n : null
+            })()
 
     // Get existing estimate
     const existing = await prisma.estimate.findFirst({
@@ -431,6 +443,7 @@ export async function PUT(
         total: total,
         convertedPercent: convertedPercentUpdate,
         status: status !== undefined ? status : existing.status,
+        depositPercent: normalizedDepositPercent !== undefined ? normalizedDepositPercent : (existing as any).depositPercent,
         validUntil: validUntil !== undefined ? (validUntil ? new Date(validUntil) : null) : existing.validUntil,
         notes: notes !== undefined ? notes : existing.notes,
         isNotesVisibleToClient:

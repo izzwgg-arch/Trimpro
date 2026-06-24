@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { notifyInvoicePaid } from '@/lib/notifications'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { afterInvoicePayment } from '@/lib/payments/after-invoice-payment'
+import { applyInvoicePayment } from '@/lib/payments/apply-payment'
 
 const ALLOWED_METHODS = new Set(['CHECK', 'QUICK_PAY', 'OTHER'])
 
@@ -79,11 +80,6 @@ export async function POST(
       return NextResponse.json({ error: 'Payment amount must be greater than zero.' }, { status: 400 })
     }
 
-    const amount = Math.min(requestedAmount, remaining)
-    const newPaidAmount = toNumber(invoice.paidAmount) + amount
-    const newBalance = Math.max(0, toNumber(invoice.total) - newPaidAmount)
-    const nextStatus = newBalance <= 0 ? 'PAID' : 'PARTIAL'
-
     const paymentNotes =
       method === 'CHECK'
         ? 'Manually marked as paid by check'
@@ -91,33 +87,31 @@ export async function POST(
           ? 'Manually marked as paid by Quick Pay'
           : `Manually marked as paid — ${methodLabel}`
 
-    const createdPayment = await prisma.payment.create({
-      data: {
-        invoiceId: invoice.id,
-        amount,
-        status: 'COMPLETED',
-        method:
-          method === 'CHECK'
-            ? 'CHECK'
-            : methodLabel.toLowerCase() === 'cash'
-              ? 'CASH'
-              : 'OTHER',
-        provider: method === 'QUICK_PAY' ? 'quick_pay' : method === 'OTHER' ? methodLabel.toLowerCase().replace(/\s+/g, '_') : 'manual',
-        reference: reference || null,
-        processedAt,
-        notes: paymentNotes,
-      },
+    const result = await applyInvoicePayment({
+      invoiceId: invoice.id,
+      tenantId: user.tenantId,
+      amount: requestedAmount,
+      method:
+        method === 'CHECK'
+          ? 'CHECK'
+          : methodLabel.toLowerCase() === 'cash'
+            ? 'CASH'
+            : 'OTHER',
+      provider: method === 'QUICK_PAY' ? 'quick_pay' : method === 'OTHER' ? methodLabel.toLowerCase().replace(/\s+/g, '_') : 'manual',
+      reference: reference || null,
+      processedAt,
+      notes: paymentNotes,
     })
 
-    await prisma.invoice.update({
-      where: { id: invoice.id },
-      data: {
-        paidAmount: newPaidAmount,
-        balance: newBalance,
-        status: nextStatus as any,
-        paidAt: newBalance <= 0 ? processedAt : invoice.paidAt,
-      },
-    })
+    if (!result.created || !result.paymentId || !result.invoice) {
+      return NextResponse.json({ error: 'Unable to record this payment.' }, { status: 400 })
+    }
+
+    const createdPayment = { id: result.paymentId }
+    const amount = Math.max(0, toNumber(result.invoice.paidAmount) - toNumber(invoice.paidAmount))
+    const newPaidAmount = toNumber(result.invoice.paidAmount)
+    const newBalance = toNumber(result.invoice.balance)
+    const nextStatus = result.invoice.status
 
     try {
       await enqueueQboSync(user.tenantId, 'payment', createdPayment.id)

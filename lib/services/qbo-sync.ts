@@ -2154,146 +2154,182 @@ export async function syncInvoiceToQuickBooks(tenantId: string, invoiceId: strin
   }
 }
 
-export async function syncPaymentToQuickBooks(tenantId: string, paymentId: string) {
-  const session = await getQboSession(tenantId)
-  if (!session) return
-  try {
-    const payment = await prisma.payment.findFirst({
-      where: { id: paymentId },
-      include: {
-        invoice: {
-          include: {
-            client: true,
-          },
-        },
-      },
-    })
-    if (!payment || payment.invoice.tenantId !== tenantId) return
+type QboSession = NonNullable<Awaited<ReturnType<typeof getQboSession>>>
+type PaymentWithInvoice = Awaited<
+  ReturnType<
+    typeof prisma.payment.findFirst<{ include: { invoice: { include: { client: true } } } }>
+  >
+>
 
-    if (shouldSkipOutboundQboPaymentSync(payment)) return
+/**
+ * Create ONE QuickBooks payment that is distributed across one or more invoices.
+ * Every payment row in `payments` must belong to the same QuickBooks customer.
+ * On success, all of them are mapped to the single created QBO payment id.
+ */
+async function createGroupedQboPayment(params: {
+  tenantId: string
+  session: QboSession
+  payments: NonNullable<PaymentWithInvoice>[]
+}) {
+  const { tenantId, session, payments } = params
+  if (payments.length === 0) return
 
-    const existingQboId = await getMappedQboId(session.integrationId, 'payment', payment.id)
-    if (existingQboId) return
+  const lines: Array<Record<string, unknown>> = []
+  let customerQboId = ''
 
-    let invoiceQboId = payment.invoice.qboSyncId
+  for (const pay of payments) {
+    let invoiceQboId = pay.invoice.qboSyncId
     if (!invoiceQboId) {
-      await syncInvoiceToQuickBooks(tenantId, payment.invoice.id)
+      await syncInvoiceToQuickBooks(tenantId, pay.invoice.id)
       const refreshed = await prisma.invoice.findUnique({
-        where: { id: payment.invoice.id },
+        where: { id: pay.invoice.id },
         select: { qboSyncId: true },
       })
       invoiceQboId = refreshed?.qboSyncId || null
     }
     if (!invoiceQboId) throw new Error('Unable to sync payment: local invoice has no QuickBooks id')
 
-    // IMPORTANT: To ensure QBO applies the payment to the *existing* invoice (and shows PARTIALLY PAID
-    // when balance remains), we must use the same CustomerRef as the invoice in QBO. Otherwise QBO
-    // may reject or mis-apply the payment.
-    const qboInvoiceRes = await quickBooksService.makeAPIRequest(
-      session.accessToken,
-      session.realmId,
-      `/invoice/${invoiceQboId}`,
-      'GET',
-      undefined,
-      {
-        tenantId,
-        entityType: 'payment',
-        entityId: payment.id,
-        triggerSource: 'payment_sync',
-      }
-    )
-    const customerQboId =
-      String(qboInvoiceRes?.Invoice?.CustomerRef?.value || '') ||
-      (await ensureClientCustomer({
-        tenantId,
-        clientId: payment.invoice.clientId,
-        accessToken: session.accessToken,
-        realmId: session.realmId,
-        integrationId: session.integrationId,
-        // Do not create a customer as a side-effect of payment sync.
-        createIfMissing: false,
-      }))
-    if (!customerQboId) throw new Error('Unable to resolve customer in QuickBooks for payment')
-
-    const amount = toNumber(payment.amount)
-    const invoiceNumber = payment.invoice.invoiceNumber || payment.invoice.id
-    const paymentNote = payment.reference || payment.notes || `Payment for Invoice ${invoiceNumber}`
-
-    // Determine if this is a card payment and get the transaction ID for "Conf ID"
-    const isCardPayment =
-      (payment as any).method === 'CARD' ||
-      (payment as any).provider === 'sola' ||
-      !!(payment as any).solaTransactionId
-    const paymentRefNum = buildQboPaymentRefNum({
-      providerPaymentId: (payment as any).providerPaymentId,
-      solaTransactionId: (payment as any).solaTransactionId,
-      reference: payment.reference,
-      invoiceNumber: payment.invoice.invoiceNumber,
-      paymentId: payment.id,
-    })
-
-    let paymentMethodRef: { value: string } | undefined
-    const methodNames = resolveOutboundQboPaymentMethodNames(payment)
-    if (methodNames.length > 0) {
-      try {
-        const pmId = await resolveQboPaymentMethodId({
+    // Resolve the customer once from the first invoice (all share one customer).
+    if (!customerQboId) {
+      const qboInvoiceRes = await quickBooksService.makeAPIRequest(
+        session.accessToken,
+        session.realmId,
+        `/invoice/${invoiceQboId}`,
+        'GET',
+        undefined,
+        { tenantId, entityType: 'payment', entityId: pay.id, triggerSource: 'payment_sync' }
+      )
+      customerQboId =
+        String(qboInvoiceRes?.Invoice?.CustomerRef?.value || '') ||
+        (await ensureClientCustomer({
           tenantId,
-          paymentId: payment.id,
+          clientId: pay.invoice.clientId,
           accessToken: session.accessToken,
           realmId: session.realmId,
-          names: methodNames,
-        })
-        if (pmId) {
-          paymentMethodRef = { value: String(pmId) }
-        }
-      } catch {
-        // Non-fatal: proceed without PaymentMethodRef
-      }
+          integrationId: session.integrationId,
+          createIfMissing: false,
+        })) ||
+        ''
     }
 
-    const payload: Record<string, unknown> = {
-      CustomerRef: { value: customerQboId },
-      TotalAmt: amount,
-      TxnDate: qboDate(payment.processedAt || payment.createdAt),
-      PrivateNote: paymentNote,
-      // PaymentRefNum maps to doc_num in QBO (21 char max).
-      ...(isCardPayment && paymentRefNum ? { PaymentRefNum: paymentRefNum } : {}),
-      ...(paymentMethodRef ? { PaymentMethodRef: paymentMethodRef } : {}),
-      Line: [
-        {
-          Amount: amount,
-          LinkedTxn: [
-            {
-              TxnId: invoiceQboId,
-              TxnType: 'Invoice',
-            },
-          ],
-        },
-      ],
-    }
+    lines.push({
+      Amount: toNumber(pay.amount),
+      LinkedTxn: [{ TxnId: invoiceQboId, TxnType: 'Invoice' }],
+    })
+  }
 
-    const created = await quickBooksService.createPayment(
-      session.accessToken,
-      session.realmId,
-      payload,
-      {
+  if (!customerQboId) throw new Error('Unable to resolve customer in QuickBooks for payment')
+
+  const primary = payments[0]
+  const totalAmt = toNumber(payments.reduce((sum, p) => sum + toNumber(p.amount), 0))
+  const paymentNote =
+    payments.length > 1
+      ? `Payment applied across ${payments.length} invoices`
+      : primary.reference || primary.notes || `Payment for Invoice ${primary.invoice.invoiceNumber || primary.invoice.id}`
+
+  const isCardPayment =
+    (primary as any).method === 'CARD' ||
+    (primary as any).provider === 'sola' ||
+    !!(primary as any).solaTransactionId
+  const paymentRefNum = buildQboPaymentRefNum({
+    providerPaymentId: (primary as any).providerPaymentId,
+    solaTransactionId: (primary as any).solaTransactionId,
+    reference: primary.reference,
+    invoiceNumber: primary.invoice.invoiceNumber,
+    paymentId: primary.id,
+  })
+
+  let paymentMethodRef: { value: string } | undefined
+  const methodNames = resolveOutboundQboPaymentMethodNames(primary)
+  if (methodNames.length > 0) {
+    try {
+      const pmId = await resolveQboPaymentMethodId({
         tenantId,
-        entityType: 'payment',
-        entityId: payment.id,
-        triggerSource: 'payment_sync',
-      }
-    )
-    const qboId = String(created?.Payment?.Id || '')
-    if (!qboId) throw new Error('QuickBooks did not return payment id')
+        paymentId: primary.id,
+        accessToken: session.accessToken,
+        realmId: session.realmId,
+        names: methodNames,
+      })
+      if (pmId) paymentMethodRef = { value: String(pmId) }
+    } catch {
+      // Non-fatal: proceed without PaymentMethodRef
+    }
+  }
 
+  const payload: Record<string, unknown> = {
+    CustomerRef: { value: customerQboId },
+    TotalAmt: totalAmt,
+    TxnDate: qboDate(primary.processedAt || primary.createdAt),
+    PrivateNote: paymentNote,
+    ...(isCardPayment && paymentRefNum ? { PaymentRefNum: paymentRefNum } : {}),
+    ...(paymentMethodRef ? { PaymentMethodRef: paymentMethodRef } : {}),
+    Line: lines,
+  }
+
+  const created = await quickBooksService.createPayment(
+    session.accessToken,
+    session.realmId,
+    payload,
+    { tenantId, entityType: 'payment', entityId: primary.id, triggerSource: 'payment_sync' }
+  )
+  const qboId = String(created?.Payment?.Id || '')
+  if (!qboId) throw new Error('QuickBooks did not return payment id')
+
+  // Map EVERY payment in the group to the single created QBO payment.
+  for (const pay of payments) {
     await logSync({
       integrationId: session.integrationId,
       type: 'payment',
       action: 'create',
       status: 'success',
-      entityId: payment.id,
+      entityId: pay.id,
       qboId,
     })
+  }
+}
+
+export async function syncPaymentToQuickBooks(tenantId: string, paymentId: string) {
+  const session = await getQboSession(tenantId)
+  if (!session) return
+  try {
+    const trigger = await prisma.payment.findFirst({
+      where: { id: paymentId },
+      include: { invoice: { include: { client: true } } },
+    })
+    if (!trigger || trigger.invoice.tenantId !== tenantId) return
+
+    // Resolve the full payment group: one customer transaction can pay several
+    // invoices, and must become ONE QuickBooks payment distributed across them.
+    const groupId = (trigger as any).paymentGroupId as string | null
+    const groupPayments = groupId
+      ? await prisma.payment.findMany({
+          where: { paymentGroupId: groupId, invoice: { tenantId } },
+          include: { invoice: { include: { client: true } } },
+          orderBy: { createdAt: 'asc' },
+        })
+      : [trigger]
+
+    // Idempotency: if any member is already synced, the group is done.
+    for (const gp of groupPayments) {
+      const mapped = await getMappedQboId(session.integrationId, 'payment', gp.id)
+      if (mapped) return
+    }
+
+    const syncable = groupPayments.filter((gp) => !shouldSkipOutboundQboPaymentSync(gp))
+    if (syncable.length === 0) return
+
+    // Subgroup by client so each QBO payment carries a single CustomerRef.
+    const byClient = new Map<string, NonNullable<PaymentWithInvoice>[]>()
+    for (const gp of syncable) {
+      const key = gp.invoice.clientId
+      const arr = byClient.get(key) || []
+      arr.push(gp)
+      byClient.set(key, arr)
+    }
+
+    for (const clientPayments of byClient.values()) {
+      await createGroupedQboPayment({ tenantId, session, payments: clientPayments })
+    }
   } catch (error: any) {
     await logSync({
       integrationId: session.integrationId,

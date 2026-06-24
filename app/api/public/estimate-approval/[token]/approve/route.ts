@@ -216,7 +216,14 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
         console.error('Failed to auto-create job from approval:', jobErr)
       }
 
-      // Auto-create 50% deposit invoice with per-item breakdown
+      // Auto-create a FULL-amount invoice for the approved work. The deposit % is
+      // the requested initial payment — it is collected as a PARTIAL payment, so
+      // the invoice represents the whole job and stays PARTIAL until fully paid.
+      const depositPct = (() => {
+        const raw = Number((estimate as any).depositPercent)
+        if (!Number.isFinite(raw) || raw <= 0 || raw > 100) return 50
+        return raw
+      })()
       const selectedForThisApproval = Array.from(new Set(normalizedSelected))
       const alreadyInvoiced = await prisma.invoiceLineItemSource.findMany({
         where: {
@@ -242,18 +249,16 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
           autoCreatedInvoice = await prisma.$transaction(async (tx) => {
             const invoiceNumber = await allocateNextInvoiceNumber({ tenantId: tokenRow.tenantId, db: tx })
 
-            // Build per-item line items at 50%.
+            // Build per-item line items at FULL price (the whole job).
             const lineItemsData = allApprovedItems.map((li, idx) => {
               const fullPrice = toNumber(li.unitPrice)
               const qty = toNumber(li.quantity || 1)
-              const charged = Math.round(fullPrice * 50) / 100
-              const outstanding = Math.round((fullPrice - charged) * 100) / 100
-              const lineTotal = Math.round(charged * qty * 100) / 100
+              const lineTotal = Math.round(fullPrice * qty * 100) / 100
               return {
                 sourceId: li.id,
                 description: li.description,
                 quantity: qty,
-                unitPrice: charged,
+                unitPrice: fullPrice,
                 total: lineTotal,
                 sortOrder: idx,
                 isVisibleToClient: li.isVisibleToClient !== false,
@@ -276,6 +281,7 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
             const taxRate = Number(estimate.taxRate || 0)
             const taxAmount = Math.round(subtotal * taxRate * 100) / 100
             const total = Math.round((subtotal + taxAmount) * 100) / 100
+            const depositAmount = Math.round(total * depositPct) / 100
             const paymentToken = crypto.randomBytes(32).toString('hex')
 
             const inv = await tx.invoice.create({
@@ -285,7 +291,7 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
                 jobId: autoCreatedJob?.id || estimate.jobId || null,
                 estimateId: estimate.id,
                 invoiceNumber,
-                title: `${estimate.title} - 50% Deposit`,
+                title: estimate.title,
                 status: 'SENT',
                 subtotal,
                 taxRate,
@@ -297,7 +303,10 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
                 invoiceDate: now,
                 qboAchEnabled: true,
                 paymentToken,
-                notes: `50% deposit invoice from approved estimate ${estimate.estimateNumber}. Remaining 50% due upon completion.`,
+                // Track the requested initial payment so the pay page / staff can
+                // see the expected deposit; the invoice total remains the full job.
+                progressBillingPercent: depositPct,
+                notes: `Invoice from approved estimate ${estimate.estimateNumber}. Requested initial deposit: ${depositPct}% ($${depositAmount.toFixed(2)}). Remaining balance due upon completion.`,
               },
             })
 
@@ -347,7 +356,7 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
             return { ...inv, paymentToken }
           })
         } catch (invoiceErr) {
-          console.error('Failed to auto-create 50% invoice:', invoiceErr)
+          console.error('Failed to auto-create deposit invoice:', invoiceErr)
         }
       } else {
         // No invoice was created, so do not mark the estimate as converted.
@@ -370,7 +379,7 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
             estimate.client?.companyName || estimate.client?.name || parsedBody.data.signerName
           const extraInfo = [
             autoCreatedJob ? `Job ${autoCreatedJob.jobNumber} created.` : null,
-            autoCreatedInvoice ? `50% deposit invoice ${autoCreatedInvoice.invoiceNumber} created.` : null,
+            autoCreatedInvoice ? `Invoice ${autoCreatedInvoice.invoiceNumber} created.` : null,
           ].filter(Boolean).join(' ')
           await createNotificationsForUsers(
             tokenRow.tenantId,

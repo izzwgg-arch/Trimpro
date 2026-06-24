@@ -150,11 +150,18 @@ export async function POST(request: NextRequest) {
       notes,
       isNotesVisibleToClient,
       terms,
+      depositPercent,
     } = body
 
     if (!title) {
       return NextResponse.json({ error: 'Title is required' }, { status: 400 })
     }
+
+    const normalizedDepositPercent = (() => {
+      if (depositPercent === undefined || depositPercent === null || depositPercent === '') return null
+      const n = Number(depositPercent)
+      return Number.isFinite(n) && n > 0 && n <= 100 ? n : null
+    })()
 
     // Calculate totals
     const effectiveLineItems = Array.isArray(lineItems) ? lineItems : []
@@ -184,6 +191,7 @@ export async function POST(request: NextRequest) {
       taxAmount: tax,
       discount: discountAmount,
       total: total,
+      depositPercent: normalizedDepositPercent,
       validUntil: validUntil ? new Date(validUntil) : null,
       notes: notes || null,
       isNotesVisibleToClient: isNotesVisibleToClient !== undefined ? Boolean(isNotesVisibleToClient) : true,

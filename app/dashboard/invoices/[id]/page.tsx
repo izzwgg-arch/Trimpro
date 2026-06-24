@@ -29,6 +29,7 @@ import {
   Printer,
   Copy,
   CreditCard,
+  Pencil,
 } from 'lucide-react'
 import Link from 'next/link'
 import { MobileActionBar } from '@/components/layout/MobileActionBar'
@@ -127,6 +128,8 @@ interface InvoiceDetail {
     status: string
     processedAt: string | null
     reference: string | null
+    provider: string | null
+    notes: string | null
   }>
 }
 
@@ -170,6 +173,16 @@ export default function InvoiceDetailPage() {
   const [addPaymentReference, setAddPaymentReference] = useState('')
   const [addPaymentSaving, setAddPaymentSaving] = useState(false)
   const [addPaymentError, setAddPaymentError] = useState('')
+
+  // Edit Payment modal state
+  const [editPaymentId, setEditPaymentId] = useState<string | null>(null)
+  const [editPaymentAmount, setEditPaymentAmount] = useState('')
+  const [editPaymentDate, setEditPaymentDate] = useState('')
+  const [editPaymentMethod, setEditPaymentMethod] = useState<'CHECK' | 'QUICK_PAY' | 'OTHER'>('CHECK')
+  const [editPaymentOtherLabel, setEditPaymentOtherLabel] = useState('')
+  const [editPaymentReference, setEditPaymentReference] = useState('')
+  const [editPaymentSaving, setEditPaymentSaving] = useState(false)
+  const [editPaymentError, setEditPaymentError] = useState('')
 
   // QuickBooks ACH (hosted) UI state
   const [qboAchLoading, setQboAchLoading] = useState<boolean>(false)
@@ -654,6 +667,86 @@ export default function InvoiceDetailPage() {
     }
   }
 
+  const EDITABLE_PROVIDERS = new Set(['manual', 'quick_pay', 'check', null, undefined, ''])
+  const EDITABLE_METHODS = new Set(['CHECK', 'CASH', 'OTHER'])
+
+  function isPaymentEditable(payment: { method: string; provider: string | null; status: string }) {
+    return (
+      payment.status === 'COMPLETED' &&
+      EDITABLE_PROVIDERS.has(payment.provider as any) &&
+      EDITABLE_METHODS.has(payment.method)
+    )
+  }
+
+  function openEditPayment(payment: { id: string; amount: string; method: string; processedAt: string | null; reference: string | null; provider: string | null; notes: string | null }) {
+    setEditPaymentId(payment.id)
+    setEditPaymentAmount(parseFloat(payment.amount).toFixed(2))
+    setEditPaymentDate(
+      payment.processedAt
+        ? new Date(payment.processedAt).toISOString().split('T')[0]
+        : new Date().toISOString().split('T')[0]
+    )
+    const method = payment.method === 'CASH' ? 'QUICK_PAY' : (payment.method as 'CHECK' | 'QUICK_PAY' | 'OTHER')
+    setEditPaymentMethod(['CHECK', 'QUICK_PAY', 'OTHER'].includes(method) ? method : 'OTHER')
+    // Derive the custom label for OTHER from the notes or provider.
+    const label = (payment.notes || '')
+      .replace(/^manually marked as paid\s*[—-]\s*/i, '')
+      .replace(/^manually marked as paid by\s*/i, '')
+      .trim()
+    setEditPaymentOtherLabel(method === 'OTHER' || method === 'CASH' ? label : '')
+    setEditPaymentReference(payment.reference || '')
+    setEditPaymentError('')
+  }
+
+  const handleEditPaymentSubmit = async () => {
+    if (!editPaymentId || !invoice) return
+    setEditPaymentError('')
+    const amount = parseFloat(editPaymentAmount)
+    if (!editPaymentAmount || isNaN(amount) || amount <= 0) {
+      setEditPaymentError('Please enter a valid amount.')
+      return
+    }
+    if (editPaymentMethod === 'OTHER' && !editPaymentOtherLabel.trim()) {
+      setEditPaymentError('Please enter a payment type name.')
+      return
+    }
+    if (!editPaymentDate) {
+      setEditPaymentError('Please enter a payment date.')
+      return
+    }
+    const parsedDate = new Date(editPaymentDate)
+    if (Number.isNaN(parsedDate.getTime())) {
+      setEditPaymentError('Please enter a valid payment date.')
+      return
+    }
+    setEditPaymentSaving(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const res = await fetch(`/api/payments/${editPaymentId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          method: editPaymentMethod,
+          methodLabel: editPaymentMethod === 'OTHER' ? editPaymentOtherLabel.trim() : undefined,
+          amount,
+          paidAt: editPaymentDate,
+          reference: editPaymentReference.trim() || null,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setEditPaymentError(data.error || 'Failed to update payment.')
+        return
+      }
+      setEditPaymentId(null)
+      await fetchInvoice()
+    } catch {
+      setEditPaymentError('Failed to update payment. Please try again.')
+    } finally {
+      setEditPaymentSaving(false)
+    }
+  }
+
   const handleSendInvoice = async () => {
     if (!invoice || sending) return
     const emailsOnFile = Array.from(
@@ -913,6 +1006,94 @@ export default function InvoiceDetailPage() {
             </Button>
             <Button onClick={handleAddPaymentSubmit} disabled={addPaymentSaving}>
               {addPaymentSaving ? 'Saving...' : 'Save Payment'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Payment Modal */}
+      <Dialog open={Boolean(editPaymentId)} onOpenChange={(open) => { if (!open) setEditPaymentId(null) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Payment</DialogTitle>
+            <DialogDescription>
+              Update the details of this manually recorded payment.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1">
+              <Label htmlFor="edit-payment-amount">Amount</Label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
+                <Input
+                  id="edit-payment-amount"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  className="pl-7"
+                  placeholder="0.00"
+                  value={editPaymentAmount}
+                  onChange={(e) => setEditPaymentAmount(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="edit-payment-date">Payment Date</Label>
+              <Input
+                id="edit-payment-date"
+                type="date"
+                value={editPaymentDate}
+                onChange={(e) => setEditPaymentDate(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Payment Type</Label>
+              <div className="flex flex-col gap-2">
+                {(['CHECK', 'QUICK_PAY', 'OTHER'] as const).map((m) => (
+                  <label key={m} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      checked={editPaymentMethod === m}
+                      onChange={() => setEditPaymentMethod(m)}
+                      className="accent-blue-600"
+                    />
+                    <span className="text-sm font-medium">
+                      {m === 'CHECK' ? 'Check' : m === 'QUICK_PAY' ? 'QuickPay' : 'Other'}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            {editPaymentMethod === 'OTHER' && (
+              <div className="space-y-1">
+                <Label htmlFor="edit-payment-other">Payment Type Name</Label>
+                <Input
+                  id="edit-payment-other"
+                  placeholder="e.g. Cash, Zelle, Venmo..."
+                  value={editPaymentOtherLabel}
+                  onChange={(e) => setEditPaymentOtherLabel(e.target.value)}
+                />
+              </div>
+            )}
+            <div className="space-y-1">
+              <Label htmlFor="edit-payment-reference">Reference Number</Label>
+              <Input
+                id="edit-payment-reference"
+                placeholder="Check #, transaction ID, etc."
+                value={editPaymentReference}
+                onChange={(e) => setEditPaymentReference(e.target.value)}
+              />
+            </div>
+            {editPaymentError && (
+              <p className="text-sm text-red-600">{editPaymentError}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditPaymentId(null)} disabled={editPaymentSaving}>
+              Cancel
+            </Button>
+            <Button onClick={handleEditPaymentSubmit} disabled={editPaymentSaving}>
+              {editPaymentSaving ? 'Saving...' : 'Save Changes'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1209,7 +1390,7 @@ export default function InvoiceDetailPage() {
               <CardContent>
                 <div className="space-y-3">
                   {invoice.payments.map((payment) => (
-                    <div key={payment.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div key={payment.id} className="group flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
                       <div>
                         <div className="font-semibold">{formatCurrency(parseFloat(payment.amount))}</div>
                         <div className="text-sm text-gray-600">
@@ -1220,9 +1401,20 @@ export default function InvoiceDetailPage() {
                           <div className="text-xs text-gray-500">Ref: {payment.reference}</div>
                         )}
                       </div>
-                      {payment.status === 'COMPLETED' && (
-                        <CheckCircle className="h-5 w-5 text-green-600" />
-                      )}
+                      <div className="flex items-center gap-2">
+                        {payment.status === 'COMPLETED' && (
+                          <CheckCircle className="h-5 w-5 text-green-600" />
+                        )}
+                        {isPaymentEditable(payment) && (
+                          <button
+                            onClick={() => openEditPayment(payment)}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-gray-200 text-gray-500 hover:text-gray-800"
+                            title="Edit payment"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>

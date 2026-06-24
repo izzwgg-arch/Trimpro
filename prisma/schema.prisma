@@ -533,6 +533,11 @@ model Estimate {
   status           EstimateStatus @default(DRAFT)
   convertedPercent Int?
 
+  // Required initial deposit % the customer must pay when approving online.
+  // When set, approval creates a FULL-amount invoice and the deposit is collected
+  // as a partial payment (invoice stays PARTIAL until the full balance is paid).
+  depositPercent Decimal? @db.Decimal(5, 2)
+
   // Financials
   subtotal  Decimal  @db.Decimal(10, 2)
   taxRate   Decimal? @default(0) @db.Decimal(5, 4)
@@ -921,6 +926,10 @@ model Payment {
   providerRealmId   String?
   rawPayload        Json?
 
+  // Groups sibling payments that belong to ONE customer transaction spread across
+  // multiple invoices (so it can be reported/synced to QuickBooks as one payment).
+  paymentGroupId String?
+
   // SOLA API
   solaTransactionId String? @unique
   solaWebhookData   Json?
@@ -955,6 +964,7 @@ model Payment {
   @@index([solaTransactionId])
   @@index([provider])
   @@index([providerPaymentId])
+  @@index([paymentGroupId])
   @@index([refundStatus])
   @@unique([provider, providerPaymentId], map: "payments_provider_payment_id_unique_idx")
   @@map("payments")
