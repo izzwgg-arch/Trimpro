@@ -2,12 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
-import { testEmailProvider } from '@/lib/integrations/providers/email'
+import { sendEmailWithAttachments } from '@/lib/integrations/providers/email'
 import { isValidEmail } from '@/lib/email'
 import { parseEmailList } from '@/lib/email/recipients'
 import { getOrCreateEstimateApprovalToken } from '@/lib/estimate-approval'
 import { getEmailBranding } from '@/lib/email/branding'
 import { buildEstimateApprovalEmail } from '@/lib/email/templates/estimate-approval'
+import { getPdfBranding } from '@/lib/branding/pdf'
+import { renderEstimateEmailPdfAttachment } from '@/lib/documents/email-pdf-attachments'
+
+export const runtime = 'nodejs'
 
 function escapeHtml(value: string) {
   return String(value || '')
@@ -64,6 +68,9 @@ export async function POST(
           },
         },
         lineItems: {
+          orderBy: { sortOrder: 'asc' },
+        },
+        optionalItems: {
           orderBy: { sortOrder: 'asc' },
         },
       },
@@ -146,7 +153,29 @@ export async function POST(
       error?: string
     }> = []
 
-    const sendResult = await testEmailProvider(emailSecrets, uniqueRecipientEmails, effectiveSubject, html)
+    const itemApprovals = await prisma.estimateItemApproval.findMany({
+      where: { estimateId: estimate.id, status: 'APPROVED' },
+      select: { estimateLineItemId: true },
+    })
+    const approvedOptionalItemIds = new Set(itemApprovals.map((approval) => approval.estimateLineItemId))
+    const pdfBranding = await getPdfBranding(user.tenantId)
+    const pdfAttachment = await renderEstimateEmailPdfAttachment(estimate, pdfBranding, approvedOptionalItemIds)
+    const text = `Estimate ${estimate.estimateNumber}
+
+${message ? String(message) : `Please review estimate ${estimate.estimateNumber}.`}
+
+Total: $${Number(estimate.total || 0).toFixed(2)}
+${validUntil ? `Valid until: ${validUntil}\n` : ''}View estimate: ${viewUrl}
+Approve estimate: ${approveUrl}`.trim()
+
+    const sendResult = await sendEmailWithAttachments({
+      secrets: emailSecrets,
+      to: uniqueRecipientEmails,
+      subject: effectiveSubject,
+      html,
+      text,
+      attachments: [pdfAttachment],
+    })
     for (const recipientEmail of uniqueRecipientEmails) {
       results.push({
         recipient: recipientEmail,

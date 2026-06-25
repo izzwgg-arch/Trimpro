@@ -3,10 +3,14 @@ import { randomUUID } from 'crypto'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
-import { testEmailProvider } from '@/lib/integrations/providers/email'
+import { sendEmailWithAttachments } from '@/lib/integrations/providers/email'
 import { getEmailBranding } from '@/lib/email/branding'
 import { parseEmailList } from '@/lib/email/recipients'
 import { buildInvoiceEmail } from '@/lib/email/templates/invoice'
+import { getPdfBranding } from '@/lib/branding/pdf'
+import { renderInvoiceEmailPdfAttachment } from '@/lib/documents/email-pdf-attachments'
+
+export const runtime = 'nodejs'
 
 function formatEmailSentDate(value: Date | number | string) {
   const date = value instanceof Date ? value : new Date(value)
@@ -53,6 +57,9 @@ export async function POST(
           },
         },
         lineItems: {
+          orderBy: { sortOrder: 'asc' },
+        },
+        optionalItems: {
           orderBy: { sortOrder: 'asc' },
         },
       },
@@ -136,7 +143,25 @@ export async function POST(
         'TrimPro',
     })
 
-    const sendResult = await testEmailProvider(emailSecrets, uniqueRecipientEmails, effectiveSubject, html)
+    const pdfBranding = await getPdfBranding(user.tenantId)
+    const pdfAttachment = await renderInvoiceEmailPdfAttachment(invoice, pdfBranding)
+    const text = `Invoice ${invoice.invoiceNumber}
+
+${message ? String(message) : `Please review invoice ${invoice.invoiceNumber}.`}
+
+Total: $${total}
+Balance: $${balance}
+${dueDate ? `Due date: ${dueDate}\n` : ''}Download PDF: ${pdfUrl}
+${paymentLink ? `Pay Online: ${paymentLink}` : ''}`.trim()
+
+    const sendResult = await sendEmailWithAttachments({
+      secrets: emailSecrets,
+      to: uniqueRecipientEmails,
+      subject: effectiveSubject,
+      html,
+      text,
+      attachments: [pdfAttachment],
+    })
     if (!sendResult.success) {
       console.error('Failed to send invoice email:', sendResult.error || sendResult.message)
       return NextResponse.json(

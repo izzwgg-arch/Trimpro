@@ -14,7 +14,7 @@ export interface EmailAttachment {
 
 export interface SendEmailWithAttachmentsInput {
   secrets: Record<string, any>
-  to: string
+  to: string | string[]
   subject: string
   html: string
   text?: string
@@ -31,7 +31,7 @@ export async function sendEmailWithAttachments(
 ): Promise<IntegrationTestResult> {
   const { secrets, to, subject, html, text, attachments } = input
   const recipients = mergeConfiguredGlobalCc({ to, cc: input.cc })
-  const normalizedTo = recipients.to[0]
+  const normalizedTo = recipients.to
   const cc = recipients.cc
 
   console.info('email.send', {
@@ -65,7 +65,12 @@ function toBase64(content: Buffer | string) {
   return Buffer.isBuffer(content) ? content.toString('base64') : Buffer.from(content).toString('base64')
 }
 
-async function sendViaSendGrid(input: Omit<SendEmailWithAttachmentsInput, 'secrets'> & { secrets: Record<string, any> }): Promise<IntegrationTestResult> {
+type ProviderSendInput = Omit<SendEmailWithAttachmentsInput, 'secrets' | 'to'> & {
+  secrets: Record<string, any>
+  to: string[]
+}
+
+async function sendViaSendGrid(input: ProviderSendInput): Promise<IntegrationTestResult> {
   const { secrets, to, subject, html, text, attachments, cc } = input
   const apiKey = secrets.apiKey
   if (!apiKey) return { success: false, message: 'SendGrid API key not configured', error: 'Missing apiKey' }
@@ -73,7 +78,7 @@ async function sendViaSendGrid(input: Omit<SendEmailWithAttachmentsInput, 'secre
   const fromName = getFromName(secrets)
   const fromEmail = getFromEmail(secrets, 'noreply@trimpro.com')
 
-  const personalization: Record<string, any> = { to: [{ email: to }] }
+  const personalization: Record<string, any> = { to: to.map((email) => ({ email })) }
   if (cc?.length) personalization.cc = cc.map((email) => ({ email }))
 
   const body: Record<string, any> = {
@@ -101,10 +106,10 @@ async function sendViaSendGrid(input: Omit<SendEmailWithAttachmentsInput, 'secre
     const err = await response.text()
     return { success: false, message: 'SendGrid send failed', error: `${response.status} - ${err}` }
   }
-  return { success: true, message: `Email sent to ${to} via SendGrid` }
+  return { success: true, message: `Email sent to ${to.join(', ')} via SendGrid` }
 }
 
-async function sendViaMailgun(input: Omit<SendEmailWithAttachmentsInput, 'secrets'> & { secrets: Record<string, any> }): Promise<IntegrationTestResult> {
+async function sendViaMailgun(input: ProviderSendInput): Promise<IntegrationTestResult> {
   const { secrets, to, subject, html, text, attachments, cc } = input
   const apiKey = secrets.apiKey
   const domain = secrets.mailgunDomain
@@ -117,7 +122,7 @@ async function sendViaMailgun(input: Omit<SendEmailWithAttachmentsInput, 'secret
 
   const formData = new FormData()
   formData.append('from', formatFromHeader(fromName, fromEmail))
-  formData.append('to', to)
+  to.forEach((recipient) => formData.append('to', recipient))
   if (cc?.length) cc.forEach((c) => formData.append('cc', c))
   formData.append('subject', subject)
   formData.append('html', html)
@@ -138,10 +143,10 @@ async function sendViaMailgun(input: Omit<SendEmailWithAttachmentsInput, 'secret
     const err = await response.text()
     return { success: false, message: 'Mailgun send failed', error: `${response.status} - ${err}` }
   }
-  return { success: true, message: `Email sent to ${to} via Mailgun` }
+  return { success: true, message: `Email sent to ${to.join(', ')} via Mailgun` }
 }
 
-async function sendViaResend(input: Omit<SendEmailWithAttachmentsInput, 'secrets'> & { secrets: Record<string, any> }): Promise<IntegrationTestResult> {
+async function sendViaResend(input: ProviderSendInput): Promise<IntegrationTestResult> {
   const { secrets, to, subject, html, text, attachments, cc } = input
   const apiKey = secrets.apiKey
   if (!apiKey) return { success: false, message: 'Resend API key not configured', error: 'Missing apiKey' }
@@ -151,7 +156,7 @@ async function sendViaResend(input: Omit<SendEmailWithAttachmentsInput, 'secrets
 
   const body: Record<string, any> = {
     from: formatFromHeader(fromName, fromEmail),
-    to: [to],
+    to,
     subject,
     html,
   }
@@ -173,10 +178,10 @@ async function sendViaResend(input: Omit<SendEmailWithAttachmentsInput, 'secrets
     const err = await response.json().catch(() => ({ message: response.statusText }))
     return { success: false, message: 'Resend send failed', error: (err as any).message || `${response.status}` }
   }
-  return { success: true, message: `Email sent to ${to} via Resend` }
+  return { success: true, message: `Email sent to ${to.join(', ')} via Resend` }
 }
 
-async function sendViaGoogle(input: Omit<SendEmailWithAttachmentsInput, 'secrets'> & { secrets: Record<string, any> }): Promise<IntegrationTestResult> {
+async function sendViaGoogle(input: ProviderSendInput): Promise<IntegrationTestResult> {
   const { secrets, to, subject, html, text, attachments, cc } = input
   const user = (secrets.googleEmail || secrets.fromEmail || '').trim()
   const pass = (secrets.googleAppPassword || '').trim()
@@ -189,7 +194,7 @@ async function sendViaGoogle(input: Omit<SendEmailWithAttachmentsInput, 'secrets
 
   await transporter.sendMail({
     from: formatFromHeader(fromName, fromEmail),
-    to,
+    to: to.join(', '),
     cc: cc?.length ? cc.join(', ') : undefined,
     subject,
     html,
@@ -200,7 +205,7 @@ async function sendViaGoogle(input: Omit<SendEmailWithAttachmentsInput, 'secrets
       contentType: a.contentType,
     })),
   })
-  return { success: true, message: `Email sent to ${to} via Google` }
+  return { success: true, message: `Email sent to ${to.join(', ')} via Google` }
 }
 
 function getFromName(secrets: Record<string, any>) {
