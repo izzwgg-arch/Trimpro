@@ -11,14 +11,24 @@
 import fs from 'fs'
 import path from 'path'
 
-const MAX_LOGO_BYTES = 500 * 1024 // 500 KB
+// Logos may be moderately large (high-res PNG/JPG). Allow up to 5 MB so we
+// embed them as data URIs instead of falling back to an unfetchable URL.
+const MAX_LOGO_BYTES = 5 * 1024 * 1024 // 5 MB
 
 function getAppUrl(): string {
   return (
+    String(process.env.PUBLIC_APP_URL || '').trim() ||
     String(process.env.NEXT_PUBLIC_APP_URL || '').trim() ||
     String(process.env.APP_URL || '').trim() ||
     'https://app.trimprony.com'
   )
+}
+
+/** Build an absolute URL for a possibly-relative logo path. */
+function toAbsoluteUrl(url: string): string {
+  if (/^https?:\/\//i.test(url)) return url
+  const base = getAppUrl().replace(/\/$/, '')
+  return url.startsWith('/') ? `${base}${url}` : `${base}/${url}`
 }
 
 function extractUploadsPath(url: string): string | null {
@@ -70,22 +80,22 @@ export async function embedLogoAsDataUri(logoUrl: string | null | undefined): Pr
       const base64 = buf.toString('base64')
       return `data:${contentType};base64,${base64}`
     }
-    // File too large or not found — fall through to HTTP or return URL
-    if (buf && buf.byteLength > MAX_LOGO_BYTES) return url
-    // File not found — try HTTP
+    // File too large — cannot embed; let caller decide a safe fallback.
+    if (buf && buf.byteLength > MAX_LOGO_BYTES) return null
+    // File not found locally — fall through to HTTP using an absolute URL.
   }
 
-  // HTTP fallback for external logos
+  // HTTP fallback for external logos (and local paths not on this host's disk).
   try {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 5000)
-    const res = await fetch(url, { signal: controller.signal })
+    const res = await fetch(toAbsoluteUrl(url), { signal: controller.signal })
     clearTimeout(timeout)
 
-    if (!res.ok) return url // fall back to original URL
+    if (!res.ok) return null // unreachable — caller falls back
 
     const buffer = await res.arrayBuffer()
-    if (buffer.byteLength > MAX_LOGO_BYTES) return url // too large — use URL
+    if (buffer.byteLength > MAX_LOGO_BYTES) return null // too large to embed
 
     const contentType =
       res.headers.get('content-type')?.split(';')[0].trim() || guessContentType(url)
@@ -93,7 +103,7 @@ export async function embedLogoAsDataUri(logoUrl: string | null | undefined): Pr
     const base64 = Buffer.from(buffer).toString('base64')
     return `data:${contentType};base64,${base64}`
   } catch {
-    return url // network error — fall back to original URL
+    return null // network error — caller falls back to a safe branded logo
   }
 }
 

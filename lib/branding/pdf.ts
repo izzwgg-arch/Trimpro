@@ -74,7 +74,10 @@ export async function getPdfBranding(tenantId: string): Promise<PdfBranding> {
     // Normalize: strip /api/public prefix that older uploads may have
     const normalizedUrl = rawLogoUrl.replace(/^\/api\/public(\/uploads\/)/, '$1')
     const embedded = await embedLogoAsDataUri(normalizedUrl)
-    logoUrl = embedded || rawLogoUrl
+    // Never emit a non-embedded (relative/unreachable) URL into a PDF — puppeteer
+    // renders those as a broken image. Fall back to a branded data-URI logo so
+    // every document still shows branding instead of a broken image icon.
+    logoUrl = embedded || buildDefaultLogoDataUri(accentColor, accentTextColor)
   } else {
     logoUrl = buildDefaultLogoDataUri(accentColor, accentTextColor)
   }

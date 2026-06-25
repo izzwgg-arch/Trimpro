@@ -62,6 +62,22 @@ export async function POST(
         optionalItems: {
           orderBy: { sortOrder: 'asc' },
         },
+        job: {
+          select: {
+            id: true,
+            jobNumber: true,
+            title: true,
+            addresses: {
+              where: { type: 'job_site' },
+              take: 1,
+            },
+          },
+        },
+        estimate: {
+          select: {
+            jobSiteAddress: true,
+          },
+        },
       },
     })
 
