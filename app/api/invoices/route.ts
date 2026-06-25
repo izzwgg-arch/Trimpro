@@ -270,8 +270,8 @@ export async function POST(request: NextRequest) {
     const discountAmount = discount ? (typeof discount === 'number' ? discount : parseFloat(discount)) : 0
     const subtotalAfterDiscount = subtotal - discountAmount
     const taxRateValue = taxRate ? (typeof taxRate === 'number' ? taxRate : parseFloat(taxRate)) : 0
-    const tax = subtotalAfterDiscount * taxRateValue
-    const total = subtotalAfterDiscount + tax
+    const tax = Math.round(subtotalAfterDiscount * taxRateValue * 100) / 100
+    const total = Math.round((subtotalAfterDiscount + tax) * 100) / 100
 
     const baseInvoiceData = {
       tenantId: user.tenantId,

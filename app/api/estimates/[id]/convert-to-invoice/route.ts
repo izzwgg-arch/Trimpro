@@ -10,6 +10,7 @@ import {
   assertEstimateWillNotOverConvert,
   getEstimateConversionSummary,
 } from '@/lib/documents/conversion'
+import { toCents, fromCents, reconcileProgressLines } from '@/lib/documents/progress-billing'
 import { allocateNextInvoiceNumber } from '@/lib/qbo/doc-numbers'
 
 type BillingMode = 'FULL' | 'PERCENTAGE' | 'MANUAL'
@@ -23,13 +24,6 @@ type LineBillingInput = {
   amount?: number
 }
 
-function toCents(value: number) {
-  return Math.round((Number.isFinite(value) ? value : 0) * 100)
-}
-
-function fromCents(cents: number) {
-  return Number((cents / 100).toFixed(2))
-}
 
 export async function POST(
   request: NextRequest,
@@ -239,11 +233,10 @@ export async function POST(
       })
     }
 
-    const subtotal = fromCents(subtotalCents)
     const taxRate = Number(estimate.taxRate || 0)
-    const taxAmount = fromCents(Math.round(subtotalCents * taxRate))
+    const taxAmountDraft = fromCents(Math.round(subtotalCents * taxRate))
+    const totalDraft = fromCents(subtotalCents + toCents(taxAmountDraft))
     const discount = 0
-    const total = fromCents(subtotalCents + toCents(taxAmount))
     const paymentToken = crypto.randomBytes(20).toString('hex')
 
     let result: any = null
@@ -251,12 +244,47 @@ export async function POST(
       try {
         const invoiceNumber = await allocateNextInvoiceNumber({ tenantId: user.tenantId })
         result = await prisma.$transaction(async (tx) => {
+          // --- FINAL-INVOICE RECONCILIATION ---
+          // For PERCENTAGE billing: individually-rounded line items can sum to slightly more
+          // than estimateTotal × pct/100. When the cumulative invoiced amount would exceed
+          // the estimate total, cap this invoice to the exact remaining amount and adjust
+          // the last line item so that sum(lineItems) == subtotal == total - tax exactly.
+          let finalSubtotalCents = subtotalCents
+          let finalTaxAmount = taxAmountDraft
+          let finalTotal = totalDraft
+          let finalInvoiceLineItems = invoiceLineItems
+
+          if (billingMode === 'PERCENTAGE') {
+            const existingConv = await getEstimateConversionSummary(
+              tx, estimate.id, estimate.total, user.tenantId
+            )
+            const estimateCents = Math.round(Number(estimate.total) * 100)
+            const existingCents = Math.round(existingConv.invoicedTotal * 100)
+            const maxAllowedCents = Math.max(0, estimateCents - existingCents)
+
+            if (toCents(totalDraft) > maxAllowedCents) {
+              const reconciled = reconcileProgressLines(
+                invoiceLineItems,
+                subtotalCents,
+                taxRate,
+                maxAllowedCents
+              )
+              finalInvoiceLineItems = reconciled.lineItems
+              finalSubtotalCents = reconciled.subtotalCents
+              finalTaxAmount = fromCents(reconciled.taxCents)
+              finalTotal = fromCents(reconciled.totalCents)
+            }
+          }
+          // --- END RECONCILIATION ---
+
           await assertEstimateWillNotOverConvert(tx, {
             estimateId: estimate.id,
             tenantId: user.tenantId,
             estimateTotal: estimate.total,
-            newInvoiceTotal: total,
+            newInvoiceTotal: finalTotal,
           })
+
+          const finalSubtotal = fromCents(finalSubtotalCents)
 
           const invoice = await tx.invoice.create({
             data: {
@@ -266,13 +294,13 @@ export async function POST(
               invoiceNumber,
               title: `${estimate.title} - ${billingMode === 'FULL' ? 'Full Billing' : billingMode === 'PERCENTAGE' ? `${percentage.toFixed(2)}% Billing` : 'Partial Billing'}`,
               status: 'DRAFT',
-              subtotal,
+              subtotal: finalSubtotal,
               taxRate,
-              taxAmount,
+              taxAmount: finalTaxAmount,
               discount,
-              total,
+              total: finalTotal,
               paidAmount: 0,
-              balance: total,
+              balance: finalTotal,
               progressBillingMode: billingMode,
               progressBillingPercent: progressPercent || null,
               paymentToken,
@@ -282,7 +310,7 @@ export async function POST(
             },
           })
 
-          for (const line of invoiceLineItems) {
+          for (const line of finalInvoiceLineItems) {
             await tx.invoiceLineItem.create({
               data: {
                 invoiceId: invoice.id,
@@ -342,7 +370,7 @@ export async function POST(
           })
 
           return invoice
-        })
+        }, { isolationLevel: 'Serializable' })
         break
       } catch (err: any) {
         if (err?.code === 'P2002' && err?.meta?.target?.includes?.('invoiceNumber')) {

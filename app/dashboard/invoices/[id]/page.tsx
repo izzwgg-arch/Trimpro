@@ -30,6 +30,7 @@ import {
   Copy,
   CreditCard,
   Pencil,
+  Eye,
 } from 'lucide-react'
 import Link from 'next/link'
 import { MobileActionBar } from '@/components/layout/MobileActionBar'
@@ -499,6 +500,22 @@ export default function InvoiceDetailPage() {
     }
   }
 
+  const handleViewPDF = async () => {
+    try {
+      const { blob } = await fetchPdfBlob()
+      const url = URL.createObjectURL(blob)
+      const win = window.open(url, '_blank', 'noopener,noreferrer')
+      // Revoke the blob URL after the tab has had time to load it.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000)
+      if (!win) {
+        alert('Popup blocked — please allow popups to open the PDF preview.')
+      }
+    } catch (error) {
+      console.error('View invoice PDF error:', error)
+      alert('Failed to open PDF preview')
+    }
+  }
+
   const handlePrint = async () => {
     try {
       const html = await fetchPdfHtml(true)
@@ -874,6 +891,10 @@ export default function InvoiceDetailPage() {
           <span className={`px-3 py-1 text-sm rounded-full ${statusColors[invoice.status] || 'bg-gray-100 text-gray-800'}`}>
             {invoice.status}
           </span>
+          <Button variant="outline" onClick={handleViewPDF}>
+            <Eye className="mr-2 h-4 w-4" />
+            View PDF
+          </Button>
           <Button variant="outline" onClick={handleDownloadPDF}>
             <Download className="mr-2 h-4 w-4" />
             Download PDF
