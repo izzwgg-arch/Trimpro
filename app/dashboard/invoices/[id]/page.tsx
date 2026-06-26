@@ -1640,24 +1640,11 @@ export default function InvoiceDetailPage() {
             </Card>
           )}
 
-          {/* Job Information */}
-          {invoice.job && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Job</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Link href={`/dashboard/jobs/${invoice.job.id}`} className="text-primary hover:underline">
-                  {invoice.job.jobNumber} - {invoice.job.title}
-                </Link>
-              </CardContent>
-            </Card>
-          )}
-
+          {/* Job Address - displayed prominently below Client */}
           {invoice.jobSiteAddress && (
             <Card>
               <CardHeader>
-                <CardTitle>Job Site</CardTitle>
+                <CardTitle>Job Address</CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-gray-700">{invoice.jobSiteAddress}</p>
@@ -1668,6 +1655,20 @@ export default function InvoiceDetailPage() {
                   referrerPolicy="no-referrer-when-downgrade"
                   src={`https://maps.google.com/maps?q=${encodeURIComponent(invoice.jobSiteAddress)}&output=embed`}
                 />
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Job Information */}
+          {invoice.job && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Job</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Link href={`/dashboard/jobs/${invoice.job.id}`} className="text-primary hover:underline">
+                  {invoice.job.jobNumber} - {invoice.job.title}
+                </Link>
               </CardContent>
             </Card>
           )}

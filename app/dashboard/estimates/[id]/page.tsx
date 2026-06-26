@@ -1299,6 +1299,25 @@ export default function EstimateDetailPage() {
             </Card>
           )}
 
+          {/* Job Address - displayed prominently below Client */}
+          {estimate.jobSiteAddress && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Job Address</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-gray-700">{estimate.jobSiteAddress}</p>
+                <iframe
+                  title="Estimate Job Site Map"
+                  className="mt-3 h-48 w-full rounded-md border"
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                  src={`https://maps.google.com/maps?q=${encodeURIComponent(estimate.jobSiteAddress)}&output=embed`}
+                />
+              </CardContent>
+            </Card>
+          )}
+
           {/* Lead Information */}
           {estimate.lead && (
             <Card>
@@ -1361,23 +1380,6 @@ export default function EstimateDetailPage() {
             </CardContent>
           </Card>
 
-          {estimate.jobSiteAddress && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Job Site</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-gray-700">{estimate.jobSiteAddress}</p>
-                <iframe
-                  title="Estimate Job Site Map"
-                  className="mt-3 h-48 w-full rounded-md border"
-                  loading="lazy"
-                  referrerPolicy="no-referrer-when-downgrade"
-                  src={`https://maps.google.com/maps?q=${encodeURIComponent(estimate.jobSiteAddress)}&output=embed`}
-                />
-              </CardContent>
-            </Card>
-          )}
         </div>
       </div>
 

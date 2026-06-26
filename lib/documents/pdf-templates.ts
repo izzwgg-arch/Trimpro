@@ -318,6 +318,7 @@ export function buildInvoicePdfHtml(
               ${invoice.client?.email ? `<div class="muted">${escapeHtml(invoice.client.email)}</div>` : ''}
               ${primaryContact?.email ? `<div class="muted">${escapeHtml(primaryContact.email)}</div>` : ''}
               ${primaryContact?.phone ? `<div class="muted">${escapeHtml(primaryContact.phone)}</div>` : ''}
+              ${jobSiteAddress ? `<div class="muted" style="margin-top:10px;font-weight:600;">Job Address</div><div>${escapeHtml(jobSiteAddress)}</div>` : ''}
             </div>
             <div class="panel">
               <h3>Document Details</h3>
@@ -326,11 +327,6 @@ export function buildInvoicePdfHtml(
               ${
                 invoice.job
                   ? `<div class="muted" style="margin-top:8px;">Job</div><div>${escapeHtml(invoice.job.jobNumber)} - ${escapeHtml(invoice.job.title)}</div>`
-                  : ''
-              }
-              ${
-                jobSiteAddress
-                  ? `<div class="muted" style="margin-top:8px;">Job Address</div><div>${escapeHtml(jobSiteAddress)}</div>`
                   : ''
               }
             </div>
@@ -501,6 +497,7 @@ export function buildEstimatePdfHtml(
               <div>${escapeHtml(clientName)}</div>
               ${estimate.client?.email ? `<div class="muted">${escapeHtml(estimate.client.email)}</div>` : ''}
               ${estimate.client?.phone ? `<div class="muted">${escapeHtml(estimate.client.phone)}</div>` : ''}
+              ${estimate.jobSiteAddress ? `<div class="muted" style="margin-top:10px;font-weight:600;">Job Address</div><div>${escapeHtml(String(estimate.jobSiteAddress))}</div>` : ''}
             </div>
             <div class="panel">
               <h3>Document Details</h3>
