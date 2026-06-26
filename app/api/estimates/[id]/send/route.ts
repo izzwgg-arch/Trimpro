@@ -203,6 +203,21 @@ Approve estimate: ${approveUrl}`.trim()
       },
     })
 
+    // Advance linked request status from ESTIMATE_CREATED → ESTIMATE_SENT (idempotent: skip if already sent or further along)
+    const ADVANCE_FROM_STATUSES = ['NEW', 'CONTACTED', 'QUALIFIED', 'ESTIMATE_CREATED'] as const
+    if (estimate.leadId) {
+      const linkedLead = await prisma.lead.findUnique({
+        where: { id: estimate.leadId },
+        select: { id: true, status: true },
+      })
+      if (linkedLead && (ADVANCE_FROM_STATUSES as readonly string[]).includes(linkedLead.status)) {
+        await prisma.lead.update({
+          where: { id: linkedLead.id },
+          data: { status: 'ESTIMATE_SENT' },
+        })
+      }
+    }
+
     // Create email record
     await prisma.email.create({
       data: {
@@ -236,6 +251,7 @@ Approve estimate: ${approveUrl}`.trim()
           : `Estimate "${estimate.title}" sent to ${sentRecipients.join(', ')}`,
         estimateId: estimate.id,
         clientId: estimate.clientId || undefined,
+        leadId: estimate.leadId || undefined,
       },
     })
 

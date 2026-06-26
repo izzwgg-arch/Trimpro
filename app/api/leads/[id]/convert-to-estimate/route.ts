@@ -147,10 +147,10 @@ export async function POST(
         },
       })
 
-      if (lead.status !== 'CONVERTED') {
+      if (lead.status !== 'CONVERTED' && lead.status !== 'ESTIMATE_SENT' && lead.status !== 'ESTIMATE_CREATED') {
         await tx.lead.update({
           where: { id: lead.id },
-          data: { status: 'ESTIMATE_SENT' },
+          data: { status: 'ESTIMATE_CREATED' },
         })
       }
 
@@ -158,8 +158,8 @@ export async function POST(
         data: {
           tenantId: user.tenantId,
           userId: user.id,
-          type: 'ESTIMATE_SENT',
-          description: `Request "${requestName}" converted to estimate ${estimateNumber}`,
+          type: 'ESTIMATE_CREATED',
+          description: `Estimate ${estimateNumber} created from request "${requestName}"`,
           leadId: lead.id,
           estimateId: created.id,
           clientId: created.clientId || undefined,

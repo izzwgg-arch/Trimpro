@@ -587,6 +587,7 @@ export default function EditRequestPage() {
                     <SelectItem value="NEW">New</SelectItem>
                     <SelectItem value="CONTACTED">Contacted</SelectItem>
                     <SelectItem value="QUALIFIED">Qualified</SelectItem>
+                    <SelectItem value="ESTIMATE_CREATED">Estimate Created</SelectItem>
                     <SelectItem value="ESTIMATE_SENT">Estimate Sent</SelectItem>
                     <SelectItem value="FOLLOW_UP">Follow Up</SelectItem>
                     <SelectItem value="CONVERTED">Converted</SelectItem>

@@ -344,7 +344,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // If estimate is created from a request (lead), convert the request
+    // If estimate is created from a request (lead), advance request to Estimate Created
     if (leadId) {
       const lead = await prisma.lead.findFirst({
         where: {
@@ -352,10 +352,10 @@ export async function POST(request: NextRequest) {
           tenantId: user.tenantId,
         },
       })
-      if (lead && lead.status !== 'CONVERTED') {
+      if (lead && lead.status !== 'CONVERTED' && lead.status !== 'ESTIMATE_SENT' && lead.status !== 'ESTIMATE_CREATED') {
         await prisma.lead.update({
           where: { id: leadId },
-          data: { status: 'ESTIMATE_SENT' },
+          data: { status: 'ESTIMATE_CREATED' },
         })
       }
     }
@@ -365,7 +365,7 @@ export async function POST(request: NextRequest) {
       data: {
         tenantId: user.tenantId,
         userId: user.id,
-        type: 'ESTIMATE_SENT',
+        type: 'ESTIMATE_CREATED',
         description: `Estimate "${title}" created`,
         estimateId: estimate.id,
         clientId: estimate.clientId || undefined,

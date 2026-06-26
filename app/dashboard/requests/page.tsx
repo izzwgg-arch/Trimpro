@@ -59,10 +59,22 @@ const statusColors: Record<string, string> = {
   NEW: 'bg-blue-100 text-blue-800',
   CONTACTED: 'bg-yellow-100 text-yellow-800',
   QUALIFIED: 'bg-green-100 text-green-800',
+  ESTIMATE_CREATED: 'bg-teal-100 text-teal-800',
   ESTIMATE_SENT: 'bg-purple-100 text-purple-800',
   FOLLOW_UP: 'bg-orange-100 text-orange-800',
   CONVERTED: 'bg-indigo-100 text-indigo-800',
   LOST: 'bg-red-100 text-red-800',
+}
+
+const statusLabels: Record<string, string> = {
+  NEW: 'New',
+  CONTACTED: 'Contacted',
+  QUALIFIED: 'Qualified',
+  ESTIMATE_CREATED: 'Estimate Created',
+  ESTIMATE_SENT: 'Estimate Sent',
+  FOLLOW_UP: 'Follow Up',
+  CONVERTED: 'Converted',
+  LOST: 'Lost',
 }
 
 const sourceColors: Record<string, string> = {
@@ -489,6 +501,7 @@ export default function RequestsPage() {
                   <SelectItem value="NEW">New</SelectItem>
                   <SelectItem value="CONTACTED">Contacted</SelectItem>
                   <SelectItem value="QUALIFIED">Qualified</SelectItem>
+                  <SelectItem value="ESTIMATE_CREATED">Estimate Created</SelectItem>
                   <SelectItem value="ESTIMATE_SENT">Estimate Sent</SelectItem>
                   <SelectItem value="FOLLOW_UP">Follow Up</SelectItem>
                   <SelectItem value="CONVERTED">Converted</SelectItem>
@@ -565,7 +578,7 @@ export default function RequestsPage() {
                         title="Select for duplicate"
                       />
                       <span className={`px-2 py-1 text-xs rounded-full ${statusColors[request.status] || 'bg-gray-100 text-gray-800'}`}>
-                        {request.status.replace('_', ' ')}
+                        {statusLabels[request.status] ?? request.status.replace(/_/g, ' ')}
                       </span>
                       <span className={`px-2 py-1 text-xs rounded ${sourceColors[request.source] || 'bg-gray-100 text-gray-800'}`}>
                         {request.source}
@@ -736,7 +749,7 @@ export default function RequestsPage() {
                     : 'Assigned: Unassigned',
                   request.createdBy ? `by ${request.createdBy.firstName} ${request.createdBy.lastName}` : null,
                 ].filter(Boolean).join(' · ')}
-                status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[request.status] || 'bg-gray-100 text-gray-800'}`}>{request.status.replace('_', ' ')}</span>}
+                status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[request.status] || 'bg-gray-100 text-gray-800'}`}>{statusLabels[request.status] ?? request.status.replace(/_/g, ' ')}</span>}
                 amount={<span>{request.probability}%</span>}
                 date={<span>{formatDate(request.createdAt)}</span>}
                 className="pl-10"
@@ -759,7 +772,7 @@ export default function RequestsPage() {
               <RowDetailedItem
                 href={`/dashboard/requests/${request.id}`}
                 primary={`${request.firstName} ${request.lastName}${request.isUrgent ? ' • URGENT' : ''}`.trim()}
-                status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[request.status] || 'bg-gray-100 text-gray-800'}`}>{request.status.replace('_', ' ')}</span>}
+                status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[request.status] || 'bg-gray-100 text-gray-800'}`}>{statusLabels[request.status] ?? request.status.replace(/_/g, ' ')}</span>}
                 line2={[
                   request.company || request.email || request.phone || 'No contact info',
                   request.assignedTo
@@ -817,7 +830,7 @@ export default function RequestsPage() {
               key: 'status',
               header: 'Status',
               sortValue: (request) => request.status,
-              render: (request) => <span className={`px-2 py-1 text-xs rounded-full ${statusColors[request.status] || 'bg-gray-100 text-gray-800'}`}>{request.status.replace('_', ' ')}</span>,
+              render: (request) => <span className={`px-2 py-1 text-xs rounded-full ${statusColors[request.status] || 'bg-gray-100 text-gray-800'}`}>{statusLabels[request.status] ?? request.status.replace(/_/g, ' ')}</span>,
             },
             {
               key: 'source',
