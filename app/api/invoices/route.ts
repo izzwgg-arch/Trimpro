@@ -16,6 +16,7 @@ import {
   assertInvoiceNumberAvailableInQuickBooks,
   normalizeInvoiceNumber,
 } from '@/lib/qbo/doc-numbers'
+import { ensureJobFromInvoice } from '@/lib/jobs/ensure-job-from-invoice'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -548,6 +549,24 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       // Don't block invoice creation if QBO Payments isn't enabled/configured yet.
       console.warn('QuickBooks ACH session auto-create skipped:', (error as any)?.message || error)
+    }
+
+    // When the invoice is linked to an estimate, create the job immediately.
+    // ensureJobFromInvoice is idempotent — it is safe to call even if a job already exists.
+    if (estimateId) {
+      try {
+        const { job, created } = await ensureJobFromInvoice(invoice.id)
+        if (created && job) {
+          try {
+            await enqueueQboSync(user.tenantId, 'job', job.id, { processImmediately: false })
+          } catch (qboErr) {
+            console.error('QuickBooks job/project sync trigger error (invoice create):', qboErr)
+          }
+        }
+      } catch (jobErr) {
+        // Job creation failure must not fail the invoice — log and continue.
+        console.error('Failed to auto-create job from invoice creation:', jobErr)
+      }
     }
 
     return NextResponse.json({ invoice }, { status: 201 })

@@ -12,6 +12,8 @@ import {
 } from '@/lib/documents/conversion'
 import { toCents, fromCents, reconcileProgressLines } from '@/lib/documents/progress-billing'
 import { allocateNextInvoiceNumber } from '@/lib/qbo/doc-numbers'
+import { ensureJobFromInvoice } from '@/lib/jobs/ensure-job-from-invoice'
+import { createNotificationsForUsers } from '@/lib/notifications'
 
 type BillingMode = 'FULL' | 'PERCENTAGE' | 'MANUAL'
 
@@ -420,6 +422,49 @@ export async function POST(
       await enqueueQboSync(user.tenantId, 'invoice', result.id)
     } catch (error) {
       console.error('QuickBooks invoice sync trigger error (estimate convert):', error)
+    }
+
+    // Create the job immediately upon estimate→invoice conversion (not on payment).
+    try {
+      const { job, created } = await ensureJobFromInvoice(result.id)
+
+      if (created && job) {
+        // Notify staff that a new job has been created.
+        const users = await prisma.user.findMany({
+          where: {
+            tenantId: user.tenantId,
+            role: { in: ['ADMIN', 'ACCOUNTING', 'OFFICE', 'MANAGER'] },
+            status: 'ACTIVE',
+          },
+          select: { id: true },
+        })
+        if (users.length > 0) {
+          const clientName = estimate.client?.name || 'Unknown Client'
+          const jobTitle = job.title || `Job ${job.jobNumber}`
+          await createNotificationsForUsers(
+            user.tenantId,
+            users.map((u) => u.id),
+            {
+              type: 'SYSTEM',
+              title: 'Job Created From Estimate Conversion',
+              message: `Estimate converted to invoice ${result.invoiceNumber} (${clientName}). Job "${jobTitle}" has been automatically created.`,
+              linkUrl: `/dashboard/jobs/${job.id}`,
+              linkType: 'job',
+              linkId: job.id,
+              requiresAck: false,
+            }
+          )
+        }
+
+        try {
+          await enqueueQboSync(user.tenantId, 'job', job.id, { processImmediately: false })
+        } catch (qboErr) {
+          console.error('QuickBooks job/project sync trigger error (estimate convert):', qboErr)
+        }
+      }
+    } catch (jobErr) {
+      // Job creation failure must not roll back the invoice — log and continue.
+      console.error('Failed to auto-create job from estimate conversion:', jobErr)
     }
 
     return NextResponse.json({ invoice: result }, { status: 201 })

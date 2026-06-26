@@ -32,8 +32,9 @@ export type EnsureJobFromInvoiceResult = {
 }
 
 /**
- * Ensures a paid (or partially paid) invoice has a linked job.
- * Idempotent: safe to call on every payment event.
+ * Ensures an invoice has a linked job.
+ * Called at estimate→invoice conversion time, NOT on payment.
+ * Idempotent: safe to call multiple times for the same invoice.
  */
 export async function ensureJobFromInvoice(invoiceId: string): Promise<EnsureJobFromInvoiceResult> {
   const invoice = await prisma.invoice.findFirst({
@@ -204,7 +205,7 @@ export async function ensureJobFromInvoice(invoiceId: string): Promise<EnsureJob
           data: {
             tenantId: invoice.tenantId,
             type: 'JOB_CREATED',
-            description: `Payment received. Invoice "${invoice.invoiceNumber}" converted to job ${createdJob.jobNumber}`,
+            description: `Estimate converted to invoice "${invoice.invoiceNumber}". Job ${createdJob.jobNumber} created automatically.`,
             clientId,
             invoiceId: invoice.id,
             estimateId: estimate?.id,
