@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { hasPermissionKey } from '@/lib/permission-aliases'
 
 interface PermissionState {
   permissions: string[]
@@ -59,19 +60,19 @@ export function usePermissions(): PermissionState {
  * Check if user has a specific permission
  */
 export function hasPermission(permissions: string[], permission: string): boolean {
-  return permissions.includes(permission)
+  return hasPermissionKey(permissions, permission)
 }
 
 /**
  * Check if user has any of the specified permissions
  */
 export function hasAnyPermission(permissions: string[], requiredPermissions: string[]): boolean {
-  return requiredPermissions.some((perm) => permissions.includes(perm))
+  return requiredPermissions.some((perm) => hasPermissionKey(permissions, perm))
 }
 
 /**
  * Check if user has all of the specified permissions
  */
 export function hasAllPermissions(permissions: string[], requiredPermissions: string[]): boolean {
-  return requiredPermissions.every((perm) => permissions.includes(perm))
+  return requiredPermissions.every((perm) => hasPermissionKey(permissions, perm))
 }

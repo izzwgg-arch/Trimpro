@@ -22,6 +22,10 @@ function escapeHtml(value: unknown) {
     .replace(/'/g, '&#39;')
 }
 
+function escapeHtmlMultiline(value: unknown) {
+  return escapeHtml(value).replace(/\r?\n/g, '<br/>')
+}
+
 function formatAddress(address: {
   street?: string
   city?: string
@@ -169,6 +173,11 @@ const SHARED_DOC_CSS = (accentColor: string, accentTextColor: string) => `
     border-radius: 10px;
     line-height: 1.5;
     margin-top: 20px;
+  }
+  .address-block {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    line-height: 1.45;
   }
   .section { margin-top: 20px; }
   @media print {
@@ -318,7 +327,7 @@ export function buildInvoicePdfHtml(
               ${invoice.client?.email ? `<div class="muted">${escapeHtml(invoice.client.email)}</div>` : ''}
               ${primaryContact?.email ? `<div class="muted">${escapeHtml(primaryContact.email)}</div>` : ''}
               ${primaryContact?.phone ? `<div class="muted">${escapeHtml(primaryContact.phone)}</div>` : ''}
-              ${jobSiteAddress ? `<div class="muted" style="margin-top:10px;font-weight:600;">Job Address</div><div>${escapeHtml(jobSiteAddress)}</div>` : ''}
+              ${jobSiteAddress ? `<div class="muted" style="margin-top:10px;font-weight:600;">Job Site Address</div><div class="address-block">${escapeHtmlMultiline(jobSiteAddress)}</div>` : ''}
             </div>
             <div class="panel">
               <h3>Document Details</h3>
@@ -562,6 +571,142 @@ export function buildEstimatePdfHtml(
           ` : ''}
 
           ${brand.footerText ? `<div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:12px;color:#6b7280;text-align:center;">${escapeHtml(brand.footerText)}</div>` : ''}
+        </div>
+      </body>
+    </html>
+  `
+}
+
+export interface PurchaseOrderPdfBranding {
+  logoUrl: string | null
+  businessName?: string | null
+}
+
+export interface PurchaseOrderPdfBuildOptions {
+  shouldPrint?: boolean
+}
+
+export function buildPurchaseOrderPdfHtml(
+  purchaseOrder: AnyRecord,
+  branding: PurchaseOrderPdfBranding,
+  options: PurchaseOrderPdfBuildOptions = {}
+): string {
+  const { shouldPrint = false } = options
+  const lineItems = Array.isArray(purchaseOrder.lineItems) ? purchaseOrder.lineItems : []
+  const subtotal = lineItems.reduce((sum: number, item: AnyRecord) => {
+    return sum + Number(item.quantity) * Number(item.unitPrice)
+  }, 0)
+  const total = Number(purchaseOrder.total || 0)
+  const generatedAt = new Date().toLocaleString()
+  const orderDate = purchaseOrder.orderDate
+    ? new Date(purchaseOrder.orderDate).toLocaleDateString()
+    : new Date().toLocaleDateString()
+  const expectedDate = purchaseOrder.expectedDate
+    ? new Date(purchaseOrder.expectedDate).toLocaleDateString()
+    : 'N/A'
+  const jobSiteAddress = formatAddress(purchaseOrder.job?.addresses?.[0] || null)
+
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Purchase Order ${escapeHtml(purchaseOrder.poNumber)}</title>
+        <style>${SHARED_DOC_CSS('#12344d', '#f5e7b8')}
+          .line-notes { color: #64748b; font-size: 12px; margin-top: 4px; white-space: pre-wrap; }
+          .footer {
+            margin-top: 22px;
+            padding-top: 12px;
+            border-top: 1px solid #e5e7eb;
+            font-size: 12px;
+            color: #6b7280;
+          }
+        </style>
+        ${shouldPrint ? '<script>window.addEventListener("load", () => window.print());</script>' : ''}
+      </head>
+      <body>
+        <div class="page">
+          <div class="header">
+            <div>
+              <div class="brand">
+                ${
+                  branding.logoUrl
+                    ? `<img class="logo-image" src="${escapeHtml(branding.logoUrl)}" alt="Trim Pro Logo" />`
+                    : '<div class="logo-fallback">trimpro</div>'
+                }
+              </div>
+              <h1 class="doc-title">Purchase Order</h1>
+              <div class="muted">Generated on ${generatedAt}</div>
+            </div>
+            <div class="meta">
+              ${branding.businessName ? `<div style="font-weight:700;font-size:14px;margin-bottom:4px;">${escapeHtml(branding.businessName)}</div>` : ''}
+              <div><strong>No.</strong> ${escapeHtml(purchaseOrder.poNumber)}</div>
+              <div><strong>Order Date:</strong> ${escapeHtml(orderDate)}</div>
+              <div><strong>Expected:</strong> ${escapeHtml(expectedDate)}</div>
+            </div>
+          </div>
+
+          <div class="grid">
+            <div class="panel">
+              <h3>Vendor</h3>
+              <div><strong>${escapeHtml(purchaseOrder.vendorRef?.name || purchaseOrder.vendor || 'N/A')}</strong></div>
+              ${purchaseOrder.vendorRef?.contactPerson ? `<div class="muted">Contact: ${escapeHtml(purchaseOrder.vendorRef.contactPerson)}</div>` : ''}
+              ${purchaseOrder.vendorRef?.email ? `<div class="muted">${escapeHtml(purchaseOrder.vendorRef.email)}</div>` : ''}
+              ${purchaseOrder.vendorRef?.phone ? `<div class="muted">${escapeHtml(purchaseOrder.vendorRef.phone)}</div>` : ''}
+            </div>
+            <div class="panel">
+              <h3>Job</h3>
+              ${
+                purchaseOrder.job
+                  ? `
+                    <div><strong>${escapeHtml(purchaseOrder.job.jobNumber)}</strong></div>
+                    <div>${escapeHtml(purchaseOrder.job.title)}</div>
+                    <div class="muted">Client: ${escapeHtml(purchaseOrder.job.client?.name || '')}</div>
+                    ${jobSiteAddress ? `<div class="muted" style="margin-top:10px;font-weight:600;">Job Site Address</div><div class="address-block">${escapeHtmlMultiline(jobSiteAddress)}</div>` : ''}
+                  `
+                  : '<div class="muted">No linked job</div>'
+              }
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Description</th>
+                <th class="text-right">Quantity</th>
+                <th class="text-right">Unit Price</th>
+                <th class="text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${lineItems
+                .map(
+                  (item: AnyRecord) => `
+                    <tr>
+                      <td>
+                        ${escapeHtml(item.description)}
+                        ${item.notes?.trim() ? `<div class="line-notes">${escapeHtml(item.notes.trim())}</div>` : ''}
+                      </td>
+                      <td class="text-right">${Number(item.quantity).toFixed(2)}</td>
+                      <td class="text-right">$${Number(item.unitPrice).toFixed(2)}</td>
+                      <td class="text-right">$${Number(item.total).toFixed(2)}</td>
+                    </tr>
+                  `
+                )
+                .join('')}
+            </tbody>
+          </table>
+
+          <div class="summary">
+            <h4>Summary</h4>
+            <div class="summary-row"><span>Subtotal</span><span>$${subtotal.toFixed(2)}</span></div>
+            <div class="summary-row total"><span>Total</span><span>$${total.toFixed(2)}</span></div>
+          </div>
+
+          <div class="footer">
+            <p>This is an official purchase order from Trim Pro.</p>
+            <p>Generated on ${generatedAt}</p>
+          </div>
         </div>
       </body>
     </html>

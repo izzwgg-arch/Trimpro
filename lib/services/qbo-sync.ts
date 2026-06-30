@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma'
-import { quickBooksService } from '@/lib/services/quickbooks'
+import { QuickBooksApiError, quickBooksService } from '@/lib/services/quickbooks'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { encryptSecrets } from '@/lib/integrations/secrets'
 import { getPrimaryEmail } from '@/lib/email'
@@ -67,6 +67,9 @@ function getErrorMessage(error: any): string {
 }
 
 function isQboMissingOrDeletedEntityError(error: any): boolean {
+  if (error instanceof QuickBooksApiError) {
+    return error.hasFaultCode('610') || error.status === 404
+  }
   const msg = getErrorMessage(error).toLowerCase()
   return (
     msg.includes('has been deleted') ||
@@ -86,6 +89,198 @@ function isQboDeletedListReferenceError(error: any): boolean {
 function isQboDuplicateNameError(error: any): boolean {
   const msg = getErrorMessage(error).toLowerCase()
   return msg.includes('duplicate name exists') || msg.includes('code=6240') || msg.includes('the name supplied already exists')
+}
+
+type EstimateQboRefEntry = {
+  field:
+    | 'CustomerRef'
+    | 'ItemRef'
+    | 'AccountRef'
+    | 'TaxCodeRef'
+    | 'ClassRef'
+    | 'DepartmentRef'
+    | 'PaymentTermRef'
+    | 'VendorRef'
+    | 'EmployeeRef'
+  value: string
+  name?: string | null
+  lineDescription?: string | null
+}
+
+type EstimateQboReferenceSnapshot = {
+  estimateId: string
+  refs: EstimateQboRefEntry[]
+}
+
+function dedupeEstimateRefs(refs: EstimateQboRefEntry[]): EstimateQboRefEntry[] {
+  const seen = new Set<string>()
+  const out: EstimateQboRefEntry[] = []
+  for (const ref of refs) {
+    const key = `${ref.field}|${ref.value}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(ref)
+  }
+  return out
+}
+
+function buildEstimateQboReferenceSnapshot(params: {
+  estimateId: string
+  payload: any
+  lineItems: any[]
+  customerName: string | null
+}): EstimateQboReferenceSnapshot {
+  const refs: EstimateQboRefEntry[] = []
+  const customerValue = String(params.payload?.CustomerRef?.value || '').trim()
+  if (customerValue) {
+    refs.push({
+      field: 'CustomerRef',
+      value: customerValue,
+      name: params.customerName || null,
+    })
+  }
+  const payloadLines = Array.isArray(params.payload?.Line) ? params.payload.Line : []
+  for (let i = 0; i < payloadLines.length; i++) {
+    const line = payloadLines[i]
+    const itemValue = String(line?.SalesItemLineDetail?.ItemRef?.value || '').trim()
+    if (!itemValue) continue
+    const local = params.lineItems?.[i]
+    refs.push({
+      field: 'ItemRef',
+      value: itemValue,
+      lineDescription: String(local?.notes || local?.description || line?.Description || '').trim() || null,
+    })
+    const accountValue = String(line?.SalesItemLineDetail?.AccountRef?.value || '').trim()
+    if (accountValue) refs.push({ field: 'AccountRef', value: accountValue })
+    const taxCodeValue = String(line?.SalesItemLineDetail?.TaxCodeRef?.value || '').trim()
+    if (taxCodeValue) refs.push({ field: 'TaxCodeRef', value: taxCodeValue })
+    const classValue = String(line?.SalesItemLineDetail?.ClassRef?.value || '').trim()
+    if (classValue) refs.push({ field: 'ClassRef', value: classValue })
+  }
+  const txnTaxCode = String(params.payload?.TxnTaxDetail?.TxnTaxCodeRef?.value || '').trim()
+  if (txnTaxCode) refs.push({ field: 'TaxCodeRef', value: txnTaxCode })
+  const classRef = String(params.payload?.ClassRef?.value || '').trim()
+  if (classRef) refs.push({ field: 'ClassRef', value: classRef })
+  const departmentRef = String(params.payload?.DepartmentRef?.value || '').trim()
+  if (departmentRef) refs.push({ field: 'DepartmentRef', value: departmentRef })
+  const paymentTermRef = String(params.payload?.SalesTermRef?.value || '').trim()
+  if (paymentTermRef) refs.push({ field: 'PaymentTermRef', value: paymentTermRef })
+  return { estimateId: params.estimateId, refs: dedupeEstimateRefs(refs) }
+}
+
+function qboRefLabel(field: EstimateQboRefEntry['field']): string {
+  const map: Record<EstimateQboRefEntry['field'], string> = {
+    CustomerRef: 'Customer',
+    ItemRef: 'Product/Service',
+    AccountRef: 'Account',
+    TaxCodeRef: 'Tax code',
+    ClassRef: 'Class',
+    DepartmentRef: 'Department',
+    PaymentTermRef: 'Payment term',
+    VendorRef: 'Vendor',
+    EmployeeRef: 'Employee',
+  }
+  return map[field]
+}
+
+function formatInactiveReferenceMessage(ref: EstimateQboRefEntry): string {
+  const label = qboRefLabel(ref.field)
+  const displayName = String(ref.name || ref.lineDescription || '').trim()
+  if (displayName) {
+    return `${label} "${displayName}" is inactive in QuickBooks. Reactivate it in QuickBooks Online or choose another ${label.toLowerCase()} and try syncing again.`
+  }
+  return `${label} (QuickBooks ID ${ref.value}) is inactive in QuickBooks. Reactivate it in QuickBooks Online or choose another ${label.toLowerCase()} and try syncing again.`
+}
+
+function normalizeQboObjectName(obj: any): string | null {
+  const candidates = [
+    obj?.FullyQualifiedName,
+    obj?.DisplayName,
+    obj?.Name,
+    obj?.PrintOnCheckName,
+    obj?.Description,
+  ]
+  for (const candidate of candidates) {
+    const text = String(candidate || '').trim()
+    if (text) return text
+  }
+  return null
+}
+
+function getIntuitTidFromError(error: any): string | null {
+  if (error instanceof QuickBooksApiError) return error.intuitTid
+  const message = String(error?.message || '')
+  const match = /intuit_tid:\s*([A-Za-z0-9-]+)/i.exec(message)
+  return match?.[1] || null
+}
+
+async function validateEstimateQboReferences(params: {
+  tenantId: string
+  realmId: string
+  accessToken: string
+  estimateId: string
+  refs: EstimateQboRefEntry[]
+}) {
+  const endpointByField: Partial<Record<EstimateQboRefEntry['field'], string>> = {
+    CustomerRef: 'customer',
+    ItemRef: 'item',
+    AccountRef: 'account',
+    TaxCodeRef: 'taxcode',
+    ClassRef: 'class',
+    DepartmentRef: 'department',
+    PaymentTermRef: 'term',
+    VendorRef: 'vendor',
+    EmployeeRef: 'employee',
+  }
+  const responseKeyByField: Partial<Record<EstimateQboRefEntry['field'], string>> = {
+    CustomerRef: 'Customer',
+    ItemRef: 'Item',
+    AccountRef: 'Account',
+    TaxCodeRef: 'TaxCode',
+    ClassRef: 'Class',
+    DepartmentRef: 'Department',
+    PaymentTermRef: 'Term',
+    VendorRef: 'Vendor',
+    EmployeeRef: 'Employee',
+  }
+
+  for (const ref of params.refs) {
+    const endpoint = endpointByField[ref.field]
+    if (!endpoint || !ref.value) continue
+    try {
+      const response = await quickBooksService.makeAPIRequest(
+        params.accessToken,
+        params.realmId,
+        `/${endpoint}/${encodeURIComponent(ref.value)}`,
+        'GET',
+        undefined,
+        {
+          tenantId: params.tenantId,
+          entityType: 'estimate',
+          entityId: params.estimateId,
+          triggerSource: `estimate_sync_prevalidate_${ref.field.toLowerCase()}`,
+        }
+      )
+      const responseKey = responseKeyByField[ref.field]
+      const entity =
+        (responseKey ? response?.[responseKey] : null) ||
+        Object.values(response || {}).find((value: any) => value && typeof value === 'object' && String(value?.Id || '') === ref.value) ||
+        null
+      const activeRaw = entity?.Active
+      const active = typeof activeRaw === 'boolean' ? activeRaw : String(activeRaw || '').toLowerCase() !== 'false'
+      if (entity) {
+        ref.name = ref.name || normalizeQboObjectName(entity)
+      }
+      if (!active) {
+        throw new Error(formatInactiveReferenceMessage(ref))
+      }
+    } catch (error: any) {
+      if (error instanceof QuickBooksApiError && (error.hasFaultCode('610') || isQboMissingOrDeletedEntityError(error))) {
+        throw new Error(formatInactiveReferenceMessage(ref))
+      }
+      throw error
+    }
+  }
 }
 
 function invalidateCustomerLookupCache(realmId: string, names: Array<string | null | undefined>) {
@@ -1082,13 +1277,36 @@ async function findCustomerByDisplayName(
     tenantId?: string
     entityId?: string
     triggerSource?: string
+    /** When true, includes inactive (deleted/made-inactive) QBO customers in the search.
+     *  Use this as a fallback after a 6240 duplicate-name error to detect customers that
+     *  were inactivated in QBO and can no longer be found via the default active-only query. */
+    includeInactive?: boolean
   }
 ) {
+  // Only cache active-customer lookups — inactive results must not pollute the cache.
   const cacheKey = makeLookupCacheKey(['customer', realmId, displayName])
-  const cachedId = readCachedLookup(customerLookupCache, cacheKey)
-  if (cachedId) return { Id: cachedId }
+  if (!context?.includeInactive) {
+    const cachedId = readCachedLookup(customerLookupCache, cacheKey)
+    if (cachedId) return { Id: cachedId }
+  }
 
-  const query = `select * from Customer where DisplayName='${esc(displayName)}' maxresults 1`
+  // QBO IDS default queries only return Active=true records.  When includeInactive is
+  // requested we widen the filter so we can detect customers that were inactivated
+  // (which still block new creates via the duplicate-name 6240 error).
+  const activeFilter = context?.includeInactive ? `Active IN (true, false) AND ` : ''
+  const query = `select * from Customer where ${activeFilter}DisplayName='${esc(displayName)}' maxresults 1`
+
+  console.info(JSON.stringify({
+    area: 'qbo_customer_sync',
+    step: 'find_customer_by_display_name',
+    displayName,
+    includeInactive: context?.includeInactive ?? false,
+    query,
+    tenantId: context?.tenantId ?? null,
+    entityId: context?.entityId ?? null,
+    triggerSource: context?.triggerSource ?? 'client_lookup_by_name',
+  }))
+
   const res = await quickBooksService.query(accessToken, realmId, query, {
     tenantId: context?.tenantId ?? null,
     entityType: 'client',
@@ -1096,7 +1314,19 @@ async function findCustomerByDisplayName(
     triggerSource: context?.triggerSource ?? 'client_lookup_by_name',
   })
   const customer = res?.QueryResponse?.Customer?.[0] || null
-  if (customer?.Id) {
+
+  console.info(JSON.stringify({
+    area: 'qbo_customer_sync',
+    step: 'find_customer_by_display_name_result',
+    displayName,
+    found: !!customer?.Id,
+    qboCustomerId: customer?.Id ?? null,
+    qboActive: customer?.Active ?? null,
+    tenantId: context?.tenantId ?? null,
+    entityId: context?.entityId ?? null,
+  }))
+
+  if (customer?.Id && !context?.includeInactive) {
     writeCachedLookup(customerLookupCache, cacheKey, String(customer.Id), LOOKUP_CACHE_TTL_MS)
   }
   return customer
@@ -1252,7 +1482,48 @@ async function ensureClientCustomer(params: {
       },
     },
   })
-  if (!client) return null
+  if (!client) {
+    console.info(JSON.stringify({
+      area: 'qbo_customer_sync',
+      step: 'client_not_found',
+      clientId: params.clientId,
+      tenantId: params.tenantId,
+    }))
+    return null
+  }
+
+  console.info(JSON.stringify({
+    area: 'qbo_customer_sync',
+    step: 'ensure_client_customer_start',
+    clientId: client.id,
+    clientName: client.name,
+    companyName: client.companyName,
+    isActive: client.isActive,
+    parentId: client.parentId,
+    tenantId: params.tenantId,
+    createIfMissing: params.createIfMissing !== false,
+  }))
+
+  // Skip inactive clients — syncing a deactivated customer could create a ghost
+  // record in QuickBooks that blocks future re-activation.
+  if (!client.isActive) {
+    await logSync({
+      integrationId: params.integrationId,
+      type: 'client',
+      action: 'skip',
+      status: 'success',
+      entityId: client.id,
+      error: 'Client is marked inactive in TrimPro. Skipping QuickBooks sync.',
+    })
+    console.info(JSON.stringify({
+      area: 'qbo_customer_sync',
+      step: 'skip_inactive_client',
+      clientId: client.id,
+      clientName: client.name,
+      tenantId: params.tenantId,
+    }))
+    return null
+  }
 
   // If this is a sub-client, ensure the parent is synced to QBO first so we
   // can set ParentRef on the child customer.
@@ -1275,6 +1546,16 @@ async function ensureClientCustomer(params: {
   }
 
   let mappedId = await getMappedQboId(params.integrationId, 'client', client.id)
+
+  console.info(JSON.stringify({
+    area: 'qbo_customer_sync',
+    step: 'mapped_qbo_id_resolved',
+    clientId: client.id,
+    clientName: client.name,
+    mappedQboCustomerId: mappedId,
+    tenantId: params.tenantId,
+  }))
+
   const createIfMissing = params.createIfMissing !== false
   const billing = client.addresses?.[0]
   const primaryEmail = getPrimaryEmail(client.email)
@@ -1348,8 +1629,24 @@ async function ensureClientCustomer(params: {
       const lastHash = (lastSync?.data as any)?.dataHash
       if (lastHash && lastHash === dataHash && lastSync?.qboId && !params.verifyMappedId) {
         // Nothing changed — skip the QBO update entirely.
+        console.info(JSON.stringify({
+          area: 'qbo_customer_sync',
+          step: 'skip_update_hash_match',
+          clientId: client.id,
+          clientName: client.name,
+          qboCustomerId: lastSync.qboId,
+          dataHash,
+        }))
         return String(lastSync.qboId)
       }
+
+      console.info(JSON.stringify({
+        area: 'qbo_customer_sync',
+        step: 'fetch_existing_qbo_customer',
+        clientId: client.id,
+        clientName: client.name,
+        qboCustomerId: mappedId,
+      }))
 
       const current = await quickBooksService.makeAPIRequest(
         params.accessToken,
@@ -1359,18 +1656,49 @@ async function ensureClientCustomer(params: {
         undefined,
         customerCtx
       )
+
+      console.info(JSON.stringify({
+        area: 'qbo_customer_sync',
+        step: 'qbo_customer_fetched',
+        clientId: client.id,
+        clientName: client.name,
+        qboCustomerId: mappedId,
+        qboActive: current?.Customer?.Active ?? null,
+        qboSyncToken: current?.Customer?.SyncToken ?? null,
+      }))
+
       if (lastHash && lastHash === dataHash && lastSync?.qboId) {
         return String(lastSync.qboId)
       }
       const syncToken = current?.Customer?.SyncToken || '0'
+      const updatePayload = { ...buildUpdatePayload(), SyncToken: syncToken, sparse: true }
+
+      console.info(JSON.stringify({
+        area: 'qbo_customer_sync',
+        step: 'update_qbo_customer',
+        clientId: client.id,
+        clientName: client.name,
+        qboCustomerId: mappedId,
+        payload: updatePayload,
+      }))
+
       const updated = await quickBooksService.updateCustomer(
         params.accessToken,
         params.realmId,
         mappedId,
-        { ...buildUpdatePayload(), SyncToken: syncToken, sparse: true },
+        updatePayload,
         customerCtx
       )
       const qboId = String(updated?.Customer?.Id || mappedId)
+
+      console.info(JSON.stringify({
+        area: 'qbo_customer_sync',
+        step: 'update_qbo_customer_success',
+        clientId: client.id,
+        clientName: client.name,
+        qboCustomerId: qboId,
+      }))
+
       await logSync({
         integrationId: params.integrationId,
         type: 'client',
@@ -1385,6 +1713,14 @@ async function ensureClientCustomer(params: {
   } catch (error: any) {
     if (mappedId && (isQboMissingOrDeletedEntityError(error) || isQboDeletedListReferenceError(error))) {
       invalidateCustomerLookupCache(params.realmId, [client.name, client.companyName])
+      console.info(JSON.stringify({
+        area: 'qbo_customer_sync',
+        step: 'recover_stale_mapping',
+        clientId: client.id,
+        clientName: client.name,
+        staleMappedQboId: mappedId,
+        error: getErrorMessage(error),
+      }))
       await logSync({
         integrationId: params.integrationId,
         type: 'client',
@@ -1396,6 +1732,14 @@ async function ensureClientCustomer(params: {
       })
       mappedId = null
     } else {
+      console.error(JSON.stringify({
+        area: 'qbo_customer_sync',
+        step: 'update_qbo_customer_error',
+        clientId: client.id,
+        clientName: client.name,
+        qboCustomerId: mappedId,
+        error: getErrorMessage(error),
+      }))
       await logSync({
         integrationId: params.integrationId,
         type: 'client',
@@ -1414,6 +1758,15 @@ async function ensureClientCustomer(params: {
   const linkCandidates = Array.from(
     new Set([client.name, client.companyName].map((v) => String(v || '').trim()).filter(Boolean))
   )
+
+  console.info(JSON.stringify({
+    area: 'qbo_customer_sync',
+    step: 'pre_create_link_by_name',
+    clientId: client.id,
+    clientName: client.name,
+    linkCandidates,
+  }))
+
   for (const candidate of linkCandidates) {
     const existing = await findCustomerByDisplayName(params.accessToken, params.realmId, candidate, {
       tenantId: params.tenantId,
@@ -1423,6 +1776,14 @@ async function ensureClientCustomer(params: {
     // For sub-clients only accept a Job match to avoid hijacking unrelated top-level customers
     if (existing?.Id && (!client.parentId || existing.Job)) {
       const qboId = String(existing.Id)
+      console.info(JSON.stringify({
+        area: 'qbo_customer_sync',
+        step: 'linked_by_display_name',
+        clientId: client.id,
+        clientName: client.name,
+        qboCustomerId: qboId,
+        matchedDisplayName: candidate,
+      }))
       await logSync({
         integrationId: params.integrationId,
         type: 'client',
@@ -1452,16 +1813,49 @@ async function ensureClientCustomer(params: {
   /**
    * Helper: if create fails with "duplicate name" (code=6240), fall back to a name lookup
    * and link the pre-existing QBO customer rather than failing.
+   *
+   * Root-cause fix for "Shimmy's Enterprises"-style failures: QBO enforces DisplayName
+   * uniqueness across BOTH active and inactive customers, but the default IDS query only
+   * returns active records.  When a customer has been inactivated in QBO we would
+   * previously get a 6240 error, fail to re-find the customer (because it's inactive),
+   * and re-throw — causing permanent sync failure.
+   *
+   * Fix: after a 6240 we now perform a second lookup with `Active IN (true, false)`.
+   * If an inactive customer is found we reactivate it before linking, so subsequent
+   * invoice syncs work correctly.
    */
   async function createOrRelink(payload: any): Promise<string> {
+    console.info(JSON.stringify({
+      area: 'qbo_customer_sync',
+      step: 'create_qbo_customer_attempt',
+      clientId: client!.id,
+      clientName: client!.name,
+      displayName: payload.DisplayName,
+    }))
     try {
       const res = await quickBooksService.createCustomer(params.accessToken, params.realmId, payload, customerCtx)
       const id = String(res?.Customer?.Id || '')
       if (!id) throw new Error('QuickBooks did not return customer id after create')
+      console.info(JSON.stringify({
+        area: 'qbo_customer_sync',
+        step: 'create_qbo_customer_success',
+        clientId: client!.id,
+        clientName: client!.name,
+        qboCustomerId: id,
+      }))
       return id
     } catch (createErr: any) {
       if (isQboDuplicateNameError(createErr)) {
-        // Customer already exists in QBO — find it by name and link
+        console.info(JSON.stringify({
+          area: 'qbo_customer_sync',
+          step: 'duplicate_name_6240_received',
+          clientId: client!.id,
+          clientName: client!.name,
+          error: getErrorMessage(createErr),
+        }))
+
+        // Phase 1: try to find the active customer by name (covers the case where
+        // the initial link-by-name step missed it due to a cache or race).
         for (const candidate of linkCandidates) {
           const found = await findCustomerByDisplayName(params.accessToken, params.realmId, candidate, {
             tenantId: params.tenantId,
@@ -1482,7 +1876,85 @@ async function ensureClientCustomer(params: {
             return qboId
           }
         }
+
+        // Phase 2 (the fix): search including inactive customers.  QBO blocks creation
+        // even when the matching customer is inactive, so we must handle this case.
+        for (const candidate of linkCandidates) {
+          const inactiveFound = await findCustomerByDisplayName(
+            params.accessToken,
+            params.realmId,
+            candidate,
+            {
+              tenantId: params.tenantId,
+              entityId: client!.id,
+              triggerSource: 'client_relink_inactive_after_duplicate',
+              includeInactive: true,
+            }
+          )
+          if (inactiveFound?.Id && (!client!.parentId || inactiveFound.Job)) {
+            const qboId = String(inactiveFound.Id)
+            console.info(JSON.stringify({
+              area: 'qbo_customer_sync',
+              step: 'inactive_customer_found_reactivating',
+              clientId: client!.id,
+              clientName: client!.name,
+              qboCustomerId: qboId,
+              qboActive: inactiveFound.Active,
+            }))
+
+            // Reactivate the customer so invoices can be created against it.
+            try {
+              await quickBooksService.updateCustomer(
+                params.accessToken,
+                params.realmId,
+                qboId,
+                {
+                  Active: true,
+                  SyncToken: inactiveFound.SyncToken || '0',
+                  sparse: true,
+                },
+                { ...customerCtx, triggerSource: 'client_reactivate_inactive' }
+              )
+              console.info(JSON.stringify({
+                area: 'qbo_customer_sync',
+                step: 'inactive_customer_reactivated',
+                clientId: client!.id,
+                clientName: client!.name,
+                qboCustomerId: qboId,
+              }))
+            } catch (reactivateErr: any) {
+              // Non-fatal: proceed with linking even if reactivation fails.
+              // The customer may already be active or the SyncToken may have changed.
+              console.warn(JSON.stringify({
+                area: 'qbo_customer_sync',
+                step: 'inactive_customer_reactivation_failed',
+                clientId: client!.id,
+                clientName: client!.name,
+                qboCustomerId: qboId,
+                error: getErrorMessage(reactivateErr),
+              }))
+            }
+
+            await logSync({
+              integrationId: params.integrationId,
+              type: 'client',
+              action: 'link',
+              status: 'success',
+              entityId: client!.id,
+              qboId,
+              data: { matchedDisplayName: candidate, reason: 'relink_after_6240_inactive' },
+            })
+            return qboId
+          }
+        }
       }
+      console.error(JSON.stringify({
+        area: 'qbo_customer_sync',
+        step: 'create_qbo_customer_error',
+        clientId: client!.id,
+        clientName: client!.name,
+        error: getErrorMessage(createErr),
+      }))
       throw createErr
     }
   }
@@ -1516,6 +1988,13 @@ async function ensureClientCustomer(params: {
     }
   }
   if (!qboId) throw new Error('QuickBooks did not return customer id')
+  console.info(JSON.stringify({
+    area: 'qbo_customer_sync',
+    step: 'create_qbo_customer_logged',
+    clientId: client.id,
+    clientName: client.name,
+    qboCustomerId: qboId,
+  }))
   await logSync({
     integrationId: params.integrationId,
     type: 'client',
@@ -1737,6 +2216,7 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
   }
   let attemptedAction = 'create'
   let attemptedDocNumber: string | null = null
+  let qboReferenceSnapshot: EstimateQboReferenceSnapshot | null = null
   try {
     const estimate = await prisma.estimate.findFirst({
       where: { id: estimateId, tenantId },
@@ -1808,6 +2288,20 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
       PrivateNote: estimate.notes || undefined,
       Line: buildQboLines(lineItems, serviceItemId),
     }
+    qboReferenceSnapshot = buildEstimateQboReferenceSnapshot({
+      estimateId: estimate.id,
+      payload,
+      lineItems,
+      customerName: estimate.client?.companyName || estimate.client?.name || null,
+    })
+
+    await validateEstimateQboReferences({
+      tenantId,
+      realmId: session.realmId,
+      accessToken: session.accessToken,
+      estimateId: estimate.id,
+      refs: qboReferenceSnapshot.refs,
+    })
 
     if (!existingQboId) {
       const matches = await findQboTransactionByDocNumber({
@@ -1913,16 +2407,67 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
       qboId,
     })
   } catch (error: any) {
+    const quickBooksError = error instanceof QuickBooksApiError ? error : null
+    const faultRefs = quickBooksError?.faults?.flatMap((fault) =>
+      (fault.references || [])
+        .map((ref) => {
+          const match = qboReferenceSnapshot?.refs.find((candidate) => candidate.field === ref.field)
+          return match || null
+        })
+        .filter(Boolean) as EstimateQboRefEntry[]
+    ) || []
+    const firstKnownRef = faultRefs[0] || null
+    const firstFault = quickBooksError?.faults?.[0] || null
+    const isInactiveRefError = Boolean(
+      quickBooksError &&
+        quickBooksError.isValidationFault() &&
+        (quickBooksError.hasFaultCode('610') || isQboMissingOrDeletedEntityError(quickBooksError))
+    )
+    const friendlyError = isInactiveRefError
+      ? (firstKnownRef
+          ? formatInactiveReferenceMessage(firstKnownRef)
+          : 'A QuickBooks reference on this estimate is inactive or missing. Reactivate the linked object in QuickBooks Online and try syncing again.')
+      : (error?.message || 'QuickBooks estimate sync failed')
+
+    console.error(
+      JSON.stringify({
+        area: 'qbo_estimate_sync_error',
+        tenantId,
+        estimateId,
+        docNumber: attemptedDocNumber,
+        action: attemptedAction,
+        intuit_tid: quickBooksError?.intuitTid || getIntuitTidFromError(error),
+        customerRef: qboReferenceSnapshot?.refs.find((ref) => ref.field === 'CustomerRef') || null,
+        itemRefs: qboReferenceSnapshot?.refs.filter((ref) => ref.field === 'ItemRef'),
+        accountRefs: qboReferenceSnapshot?.refs.filter((ref) => ref.field === 'AccountRef'),
+        taxCodeRefs: qboReferenceSnapshot?.refs.filter((ref) => ref.field === 'TaxCodeRef'),
+        classRefs: qboReferenceSnapshot?.refs.filter((ref) => ref.field === 'ClassRef'),
+        departmentRefs: qboReferenceSnapshot?.refs.filter((ref) => ref.field === 'DepartmentRef'),
+        paymentTermRefs: qboReferenceSnapshot?.refs.filter((ref) => ref.field === 'PaymentTermRef'),
+        qboFaultCode: firstFault?.code || null,
+        qboFaultType: firstFault?.type || null,
+        qboFaultElement: firstFault?.element || null,
+        qboFaultDetail: firstFault?.detail || null,
+        qboErrorResponse: quickBooksError?.payload || null,
+        originalError: error?.message || String(error),
+      })
+    )
+
     await logSync({
       integrationId: session.integrationId,
       type: 'estimate',
       action: attemptedAction,
       status: 'error',
       entityId: estimateId,
-      error: error?.message || 'QuickBooks estimate sync failed',
-      data: { docNumber: attemptedDocNumber },
+      error: friendlyError,
+      data: {
+        docNumber: attemptedDocNumber,
+        intuitTid: quickBooksError?.intuitTid || getIntuitTidFromError(error),
+        refs: qboReferenceSnapshot?.refs || [],
+        qboError: quickBooksError?.payload || null,
+      },
     })
-    throw error
+    throw new Error(friendlyError)
   }
 }
 

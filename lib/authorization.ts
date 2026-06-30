@@ -7,6 +7,7 @@ import { prisma } from './prisma'
 import { User } from '@prisma/client'
 import { NextRequest, NextResponse } from 'next/server'
 import { PERMISSIONS } from './permissions-catalog'
+import { hasPermissionKey } from './permission-aliases'
 
 export interface UserWithRoles extends User {
   userRoles?: Array<{
@@ -113,7 +114,7 @@ export async function hasPermission(
   permission: string
 ): Promise<boolean> {
   const userPermissions = await getUserPermissions(userId, tenantId)
-  return userPermissions.includes(permission)
+  return hasPermissionKey(userPermissions, permission)
 }
 
 /**
@@ -125,7 +126,7 @@ export async function hasAnyPermission(
   permissions: string[]
 ): Promise<boolean> {
   const userPermissions = await getUserPermissions(userId, tenantId)
-  return permissions.some((perm) => userPermissions.includes(perm))
+  return permissions.some((perm) => hasPermissionKey(userPermissions, perm))
 }
 
 /**
@@ -137,7 +138,28 @@ export async function hasAllPermissions(
   permissions: string[]
 ): Promise<boolean> {
   const userPermissions = await getUserPermissions(userId, tenantId)
-  return permissions.every((perm) => userPermissions.includes(perm))
+  return permissions.every((perm) => hasPermissionKey(userPermissions, perm))
+}
+
+function logPermissionDenied(
+  request: NextRequest,
+  user: any,
+  requiredPermissions: string[],
+  mode: 'all' | 'any'
+) {
+  const username =
+    user?.email ||
+    [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim() ||
+    user?.id ||
+    'unknown'
+  console.warn('[authorization] Permission denied', {
+    userId: user?.id || null,
+    username,
+    requiredPermissions,
+    mode,
+    action: `${request.method} ${request.nextUrl.pathname}`,
+    timestamp: new Date().toISOString(),
+  })
 }
 
 /**
@@ -155,6 +177,7 @@ export async function requirePermission(
 
   const hasPerm = await hasPermission(user.id, user.tenantId, permission)
   if (!hasPerm) {
+    logPermissionDenied(request, user, [permission], 'all')
     return NextResponse.json(
       { error: 'Forbidden: Insufficient permissions' },
       { status: 403 }
@@ -178,6 +201,7 @@ export async function requireAnyPermission(
 
   const hasPerm = await hasAnyPermission(user.id, user.tenantId, permissions)
   if (!hasPerm) {
+    logPermissionDenied(request, user, permissions, 'any')
     return NextResponse.json(
       { error: 'Forbidden: Insufficient permissions' },
       { status: 403 }

@@ -1,11 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
+
+function formatJobSiteAddress(parts?: {
+  street?: string | null
+  city?: string | null
+  state?: string | null
+  zipCode?: string | null
+} | null) {
+  if (!parts) return ''
+  const street = String(parts.street || '').trim()
+  const city = String(parts.city || '').trim()
+  const state = String(parts.state || '').replace(/\b\d{5}(?:-\d{4})?\b/g, '').trim()
+  return [street, city || state].filter(Boolean).join(', ').trim()
+}
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'purchase_orders.view')
+  if (permError) return permError
 
   const user = getAuthUser(request)
   const searchParams = request.nextUrl.searchParams
@@ -63,6 +79,16 @@ export async function GET(request: NextRequest) {
               id: true,
               jobNumber: true,
               title: true,
+              addresses: {
+                where: { type: 'job_site' },
+                take: 1,
+                select: {
+                  street: true,
+                  city: true,
+                  state: true,
+                  zipCode: true,
+                },
+              },
             },
           },
           lineItems: {
@@ -91,6 +117,7 @@ export async function GET(request: NextRequest) {
         ...po,
         subtotal,
         total,
+        jobSiteAddress: formatJobSiteAddress(po.job?.addresses?.[0]),
       }
     })
 
@@ -112,6 +139,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'purchase_orders.create')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 

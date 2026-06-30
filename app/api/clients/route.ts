@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { createPaginationResponse } from '@/lib/pagination'
 import { validateRequest, createClientSchema } from '@/lib/validation'
@@ -8,6 +9,8 @@ import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'clients.view')
+  if (permError) return permError
 
   const user = getAuthUser(request)
   const { searchParams } = new URL(request.url)
@@ -170,6 +173,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'clients.create')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 
@@ -311,6 +316,8 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'clients.delete')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { getPaginationParams, createPaginationResponse } from '@/lib/pagination'
 import { validateRequest, createInvoiceSchema } from '@/lib/validation'
@@ -18,9 +19,29 @@ import {
 } from '@/lib/qbo/doc-numbers'
 import { ensureJobFromInvoice } from '@/lib/jobs/ensure-job-from-invoice'
 
+function formatJobSiteAddress(raw?: string | null, fallbackParts?: Array<string | null | undefined>) {
+  const value = String(raw || '').trim()
+  if (value) {
+    const parts = value.split(',').map((p) => p.trim()).filter(Boolean)
+    const street = parts[0] || ''
+    const city = parts[1] || ''
+    const stateNoZip = String(parts[2] || '').replace(/\b\d{5}(?:-\d{4})?\b/g, '').trim()
+    const concise = [street, city || stateNoZip].filter(Boolean).join(', ').trim()
+    if (concise) return concise
+    return value
+  }
+  if (Array.isArray(fallbackParts)) {
+    const concise = fallbackParts.map((p) => String(p || '').trim()).filter(Boolean).slice(0, 2).join(', ').trim()
+    if (concise) return concise
+  }
+  return ''
+}
+
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'invoices.view')
+  if (permError) return permError
 
   const user = getAuthUser(request)
   const { searchParams } = new URL(request.url)
@@ -76,12 +97,23 @@ export async function GET(request: NextRequest) {
             select: {
               id: true,
               jobNumber: true,
+              addresses: {
+                where: { type: 'job_site' },
+                take: 1,
+                select: {
+                  street: true,
+                  city: true,
+                  state: true,
+                  zipCode: true,
+                },
+              },
             },
           },
           estimate: {
             select: {
               id: true,
               estimateNumber: true,
+              jobSiteAddress: true,
             },
           },
           _count: {
@@ -118,7 +150,17 @@ export async function GET(request: NextRequest) {
     ])
 
     return NextResponse.json({
-      invoices,
+      invoices: invoices.map((invoice: any) => {
+        const jobAddress = invoice?.job?.addresses?.[0]
+        const jobSiteAddress = formatJobSiteAddress(
+          invoice?.estimate?.jobSiteAddress || null,
+          [jobAddress?.street, jobAddress?.city || jobAddress?.state]
+        )
+        return {
+          ...invoice,
+          jobSiteAddress,
+        }
+      }),
       summary: {
         totalInvoicesAllTime: allTimeTotal,
         overdueCountAllTime: allTimeOverdue,
@@ -136,6 +178,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'invoices.create')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 
@@ -411,7 +455,11 @@ export async function POST(request: NextRequest) {
         const conversion = await getEstimateConversionSummary(tx, estimateId, estimate.total, user.tenantId)
         await tx.estimate.update({
           where: { id: estimateId },
-          data: { status: 'CONVERTED', convertedPercent: conversion.convertedPercent, jobId: jobId || null },
+          data: {
+            status: 'CONVERTED',
+            convertedPercent: conversion.convertedPercent,
+            ...(jobId ? { jobId } : {}),
+          },
         })
       }
     }

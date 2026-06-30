@@ -38,6 +38,7 @@ interface PurchaseOrder {
   tax?: number
   shipping?: number
   total: number
+  jobSiteAddress?: string
 }
 
 function getPurchaseOrderTag(po: PurchaseOrder): string {
@@ -54,6 +55,16 @@ const statusColors: Record<string, string> = {
   ORDERED: 'bg-purple-100 text-purple-800',
   RECEIVED: 'bg-green-100 text-green-800',
   CANCELLED: 'bg-red-100 text-red-800',
+}
+
+function renderJobSiteAddress(address?: string) {
+  const value = String(address || '').trim()
+  if (!value) return null
+  return (
+    <span className="block max-w-[260px] truncate" title={value}>
+      {value}
+    </span>
+  )
 }
 
 export default function PurchaseOrdersPage() {
@@ -287,6 +298,11 @@ export default function PurchaseOrdersPage() {
                       {po.job && ` \u2022 Job ${po.job.jobNumber}`}
                       {po.expectedDate && ` \u2022 Expected: ${formatDate(po.expectedDate)}`}
                     </CardDescription>
+                    {po.jobSiteAddress ? (
+                      <p className="mt-1 text-xs text-gray-500" title={po.jobSiteAddress}>
+                        <span className="inline-block max-w-[320px] truncate">{po.jobSiteAddress}</span>
+                      </p>
+                    ) : null}
                     <div className="mt-1 text-xs text-gray-500">Tag: {getPurchaseOrderTag(po)}</div>
                   </div>
                   <div className="flex items-center space-x-2">
@@ -347,7 +363,7 @@ export default function PurchaseOrdersPage() {
                 />
               }
               primary={po.poNumber}
-              secondary={po.vendorRef?.name || po.vendor}
+              secondary={[po.vendorRef?.name || po.vendor, po.jobSiteAddress || null].filter(Boolean).join(' \u2022 ')}
               status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[po.status] || 'bg-gray-100 text-gray-800'}`}>{po.status}</span>}
               amount={formatCurrency(po.total)}
               date={`${po.orderDate ? formatDate(po.orderDate) : '-'} \u2022 Tag: ${getPurchaseOrderTag(po)}`}
@@ -375,7 +391,11 @@ export default function PurchaseOrdersPage() {
               }
               primary={po.poNumber}
               status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[po.status] || 'bg-gray-100 text-gray-800'}`}>{po.status}</span>}
-              line2={`${po.vendorRef?.name || po.vendor}${po.job ? ` \u2022 Job ${po.job.jobNumber}` : ''}`}
+              line2={[
+                po.vendorRef?.name || po.vendor,
+                po.job ? `Job ${po.job.jobNumber}` : null,
+                po.jobSiteAddress || null,
+              ].filter(Boolean).join(' \u2022 ')}
               rightTop={formatCurrency(po.total)}
               rightBottom={`${po.orderDate ? formatDate(po.orderDate) : 'No order date'} \u2022 Tag: ${getPurchaseOrderTag(po)}`}
             />
@@ -420,6 +440,12 @@ export default function PurchaseOrdersPage() {
               header: 'Tag',
               sortValue: (po) => getPurchaseOrderTag(po),
               render: (po) => getPurchaseOrderTag(po),
+            },
+            {
+              key: 'jobSiteAddress',
+              header: 'Job Site Address',
+              sortValue: () => '',
+              render: (po) => renderJobSiteAddress(po.jobSiteAddress),
             },
             {
               key: 'status',

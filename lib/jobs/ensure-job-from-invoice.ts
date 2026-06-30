@@ -25,6 +25,46 @@ function parseJobSiteAddress(address: string | null | undefined) {
   }
 }
 
+function formatJobNameFromEstimate(
+  jobNumber: string,
+  jobSiteAddress: string | null | undefined,
+  estimateTitle: string | null | undefined
+) {
+  const rawAddress = String(jobSiteAddress || '').trim()
+  const rawTitle = String(estimateTitle || '').trim()
+  const numberLabel = jobNumber.replace(/^JOB-0*/, '')
+
+  let conciseAddress = ''
+  if (rawAddress) {
+    const parts = rawAddress
+      .split(',')
+      .map((p) => p.trim())
+      .filter(Boolean)
+
+    const street = parts[0] || ''
+    const city = parts[1] || ''
+    const state = parts[2] || ''
+    const stateNoZip = state.replace(/\b\d{5}(?:-\d{4})?\b/g, '').trim()
+    const cityOrState = city || stateNoZip
+
+    conciseAddress = [street, cityOrState].filter(Boolean).join(', ').trim()
+    if (!conciseAddress) {
+      conciseAddress = rawAddress
+        .replace(/\b\d{5}(?:-\d{4})?\b/g, '')
+        .replace(/\b(US|USA|United States)\b/gi, '')
+        .replace(/\s{2,}/g, ' ')
+        .replace(/\s+,/g, ',')
+        .replace(/,\s*,+/g, ',')
+        .replace(/,\s*$/, '')
+        .trim()
+    }
+  }
+
+  if (conciseAddress) return `Job #${numberLabel} - ${conciseAddress}`
+  if (rawTitle) return `Job #${numberLabel} - ${rawTitle}`
+  return `Job #${numberLabel}`
+}
+
 export type EnsureJobFromInvoiceResult = {
   job: { id: string; jobNumber: string; title: string } | null
   created: boolean
@@ -152,9 +192,9 @@ export async function ensureJobFromInvoice(invoiceId: string): Promise<EnsureJob
             tenantId: invoice.tenantId,
             clientId,
             jobNumber,
-            title: invoice.title || estimate?.title || `Job for ${invoice.invoiceNumber}`,
+            title: formatJobNameFromEstimate(jobNumber, estimate?.jobSiteAddress || estimate?.lead?.jobSiteAddress, estimate?.title),
             description: mergedDescription || null,
-            status: 'SCHEDULED',
+            status: 'QUOTE',
             priority: 3,
             estimateAmount: estimate?.total || invoice.total,
           },

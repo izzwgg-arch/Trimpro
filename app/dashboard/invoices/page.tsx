@@ -45,6 +45,7 @@ interface Invoice {
     id: string
     estimateNumber: string
   } | null
+  jobSiteAddress?: string
   _count: {
     lineItems: number
     payments: number
@@ -67,6 +68,16 @@ function progressBillingLabel(invoice: Invoice): string | null {
   const pct = Number(invoice.progressBillingPercent || 0)
   if (!Number.isFinite(pct) || pct <= 0) return null
   return `${pct}% of ${invoice.estimate.estimateNumber}`
+}
+
+function renderJobSiteAddress(address?: string) {
+  const value = String(address || '').trim()
+  if (!value) return null
+  return (
+    <span className="block max-w-[260px] truncate" title={value}>
+      {value}
+    </span>
+  )
 }
 
 export default function InvoicesPage() {
@@ -641,6 +652,11 @@ export default function InvoicesPage() {
                         {invoice.invoiceNumber} • <Link href={`/dashboard/clients/${invoice.client.id}`} className="hover:text-primary">{invoice.client.name}</Link>
                         {invoice.job && ` • Job ${invoice.job.jobNumber}`}
                       </CardDescription>
+                    {invoice.jobSiteAddress ? (
+                      <p className="mt-1 text-xs text-gray-500" title={invoice.jobSiteAddress}>
+                        <span className="inline-block max-w-[320px] truncate">{invoice.jobSiteAddress}</span>
+                      </p>
+                    ) : null}
                       {progressBillingLabel(invoice) ? (
                         <p className="mt-1 text-xs font-medium text-blue-600">
                           Converted from estimate: {progressBillingLabel(invoice)}
@@ -766,7 +782,11 @@ export default function InvoicesPage() {
                 />
               }
               primary={`${invoice.invoiceNumber} • ${invoice.title}`}
-              secondary={[invoice.client.name, progressBillingLabel(invoice) ? `Converted: ${progressBillingLabel(invoice)}` : null].filter(Boolean).join(' • ')}
+              secondary={[
+                invoice.client.name,
+                invoice.jobSiteAddress || null,
+                progressBillingLabel(invoice) ? `Converted: ${progressBillingLabel(invoice)}` : null,
+              ].filter(Boolean).join(' • ')}
               status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[invoice.status] || 'bg-gray-100 text-gray-800'}`}>{invoice.status}</span>}
               amount={formatCurrency(parseFloat(invoice.total))}
               date={formatDate(invoice.invoiceDate)}
@@ -794,7 +814,12 @@ export default function InvoicesPage() {
               }
               primary={`${invoice.invoiceNumber} • ${invoice.title}`}
               status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[invoice.status] || 'bg-gray-100 text-gray-800'}`}>{invoice.status}</span>}
-              line2={[invoice.client.name, progressBillingLabel(invoice) ? `Converted: ${progressBillingLabel(invoice)}` : null, `Balance ${formatCurrency(parseFloat(invoice.balance))}`].filter(Boolean).join(' • ')}
+              line2={[
+                invoice.client.name,
+                invoice.jobSiteAddress || null,
+                progressBillingLabel(invoice) ? `Converted: ${progressBillingLabel(invoice)}` : null,
+                `Balance ${formatCurrency(parseFloat(invoice.balance))}`,
+              ].filter(Boolean).join(' • ')}
               rightTop={formatCurrency(parseFloat(invoice.total))}
               rightBottom={formatDate(invoice.invoiceDate)}
             />
@@ -846,6 +871,12 @@ export default function InvoicesPage() {
               header: 'Client',
               sortValue: (invoice) => invoice.client.name,
               render: (invoice) => invoice.client.name,
+            },
+            {
+              key: 'jobSiteAddress',
+              header: 'Job Site Address',
+              sortValue: () => '',
+              render: (invoice) => renderJobSiteAddress(invoice.jobSiteAddress),
             },
             {
               key: 'total',

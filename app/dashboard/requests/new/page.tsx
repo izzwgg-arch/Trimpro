@@ -14,6 +14,8 @@ import { SearchableClientSelect } from '@/components/ui/searchable-client-select
 import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
 import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
 import { PlaceAutocompleteInput } from '@/components/maps/PlaceAutocompleteInput'
+import { refreshAccessToken } from '@/lib/auth/client'
+import { usePermissions, hasPermission } from '@/hooks/usePermissions'
 
 interface User {
   id: string
@@ -32,6 +34,37 @@ interface StagedAttachment {
   error?: string
 }
 
+interface ClientContactPrefill {
+  id: string
+  firstName?: string | null
+  lastName?: string | null
+  email?: string | null
+  phone?: string | null
+  mobile?: string | null
+  isPrimary?: boolean
+}
+
+interface ClientAddressPrefill {
+  id: string
+  type?: string | null
+  street?: string | null
+  city?: string | null
+  state?: string | null
+  zipCode?: string | null
+  country?: string | null
+  isDefault?: boolean
+}
+
+interface ClientPrefillResponse {
+  id: string
+  name?: string | null
+  companyName?: string | null
+  email?: string | null
+  phone?: string | null
+  contacts?: ClientContactPrefill[]
+  addresses?: ClientAddressPrefill[]
+}
+
 export default function NewRequestPage() {
   console.log('[request-create] Component rendering - upload section should be visible')
   const router = useRouter()
@@ -45,6 +78,8 @@ export default function NewRequestPage() {
   const [dragActive, setDragActive] = useState(false)
   const [clientMode, setClientMode] = useState<'new' | 'existing'>('existing')
   const [jobSitePlaceId, setJobSitePlaceId] = useState<string | null>(null)
+  const [prefillValidationError, setPrefillValidationError] = useState<string | null>(null)
+  const { permissions: userPermissions, loading: permissionsLoading } = usePermissions()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [formData, setFormData] = useState({
     clientId: '',
@@ -71,32 +106,18 @@ export default function NewRequestPage() {
   }, [])
 
   useEffect(() => {
-    if (!preselectedClientId) return
-    setClientMode('existing')
-    setFormData((prev) => ({
-      ...prev,
-      clientId: preselectedClientId,
-    }))
-  }, [preselectedClientId])
+    if (permissionsLoading) return
+    if (!hasPermission(userPermissions, 'leads.create')) {
+      alert('You do not have permission to create requests.')
+      router.push('/dashboard/requests')
+    }
+  }, [permissionsLoading, router, userPermissions])
 
   useEffect(() => {
-    if (!preselectedClientId || clients.length === 0) return
-    const selected = clients.find((c) => c.id === preselectedClientId)
-    if (!selected) return
-    const nameParts = selected.name.trim().split(/\s+/)
-    const firstName = nameParts[0] || ''
-    const lastName = nameParts.slice(1).join(' ')
+    if (!preselectedClientId) return
     setClientMode('existing')
-    setFormData((prev) => ({
-      ...prev,
-      clientId: selected.id,
-      firstName,
-      lastName,
-      email: selected.email || '',
-      phone: selected.phone || '',
-      company: selected.companyName || '',
-    }))
-  }, [clients, preselectedClientId])
+    void hydrateClientPrefill(preselectedClientId, true)
+  }, [preselectedClientId])
 
   const fetchUsers = async () => {
     try {
@@ -121,21 +142,122 @@ export default function NewRequestPage() {
     }
   }
 
-  const handleExistingClientSelect = (clientId: string) => {
+  const pickDefaultAddress = (addresses: ClientAddressPrefill[]) => {
+    if (!Array.isArray(addresses) || addresses.length === 0) return null
+    const billingDefault = addresses.find((a) => a?.type === 'billing' && a?.isDefault)
+    const billingAny = addresses.find((a) => a?.type === 'billing')
+    const anyDefault = addresses.find((a) => a?.isDefault)
+    return billingDefault || billingAny || anyDefault || addresses[0] || null
+  }
+
+  const hydrateClientPrefill = async (clientId: string, lockClientSelection = false) => {
+    if (!clientId) return
+    setPrefillValidationError(null)
+
+    // Fast local prefill from picker payload.
     const selected = clients.find((c) => c.id === clientId)
-    if (!selected) return
-    const nameParts = selected.name.trim().split(/\s+/)
-    const firstName = nameParts[0] || ''
-    const lastName = nameParts.slice(1).join(' ')
     setFormData((prev) => ({
       ...prev,
-      clientId: selected.id,
-      firstName,
-      lastName,
-      email: selected.email || '',
-      phone: selected.phone || '',
-      company: selected.companyName || '',
+      clientId,
+      firstName: selected ? selected.name.trim().split(/\s+/)[0] || prev.firstName : prev.firstName,
+      lastName: selected ? selected.name.trim().split(/\s+/).slice(1).join(' ') || prev.lastName : prev.lastName,
+      email: selected?.email || prev.email,
+      phone: selected?.phone || prev.phone,
+      company: selected?.companyName || prev.company,
     }))
+
+    // Rich prefill from client details endpoint.
+    try {
+      let token = localStorage.getItem('accessToken')
+      if (!token) {
+        setPrefillValidationError('Please sign in again to prefill client details.')
+        return
+      }
+
+      let response = await fetch(`/api/clients/${clientId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (response.status === 401) {
+        const refreshed = await refreshAccessToken()
+        if (!refreshed) {
+          setPrefillValidationError('Your session expired. Please sign in and try again.')
+          return
+        }
+        token = localStorage.getItem('accessToken')
+        response = await fetch(`/api/clients/${clientId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      }
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}))
+        setPrefillValidationError(payload.error || 'Unable to load selected client details for request prefill.')
+        return
+      }
+
+      const payload = await response.json().catch(() => null)
+      const client = (payload?.client || null) as ClientPrefillResponse | null
+      if (!client?.id) {
+        setPrefillValidationError('Selected client record is unavailable. Please refresh and try again.')
+        return
+      }
+
+      const contacts = Array.isArray(client.contacts) ? client.contacts : []
+      const addresses = Array.isArray(client.addresses) ? client.addresses : []
+      const primaryContact = contacts.find((c) => c?.isPrimary) || contacts[0] || null
+      const defaultAddress = pickDefaultAddress(addresses)
+
+      const fallbackName = String(client.name || '').trim()
+      const nameParts = fallbackName.split(/\s+/).filter(Boolean)
+      const defaultFirstName = primaryContact?.firstName?.trim() || nameParts[0] || ''
+      const defaultLastName = primaryContact?.lastName?.trim() || nameParts.slice(1).join(' ') || ''
+      const defaultEmail = primaryContact?.email?.trim() || client.email?.trim() || ''
+      const defaultPhone = primaryContact?.phone?.trim() || primaryContact?.mobile?.trim() || client.phone?.trim() || ''
+      const defaultCompany = client.companyName?.trim() || ''
+
+      setFormData((prev) => ({
+        ...prev,
+        clientId,
+        firstName: defaultFirstName || prev.firstName,
+        lastName: defaultLastName || prev.lastName,
+        email: defaultEmail || prev.email,
+        phone: defaultPhone || prev.phone,
+        company: defaultCompany || prev.company,
+        jobSiteAddress:
+          !prev.jobSiteAddress.trim() && defaultAddress?.street
+            ? [defaultAddress.street, defaultAddress.city, defaultAddress.state, defaultAddress.zipCode]
+                .filter(Boolean)
+                .join(', ')
+            : prev.jobSiteAddress,
+        jobSiteCity:
+          !prev.jobSiteCity.trim() && defaultAddress?.city ? String(defaultAddress.city) : prev.jobSiteCity,
+        jobSiteState:
+          !prev.jobSiteState.trim() && defaultAddress?.state ? String(defaultAddress.state) : prev.jobSiteState,
+        jobSiteZipCode:
+          !prev.jobSiteZipCode.trim() && defaultAddress?.zipCode ? String(defaultAddress.zipCode) : prev.jobSiteZipCode,
+      }))
+
+      if (defaultAddress?.street) {
+        setJobSitePlaceId((current) => current || `stored:${defaultAddress.id || clientId}`)
+      }
+
+      if (!defaultFirstName || !defaultLastName) {
+        setPrefillValidationError(
+          'Selected client is missing a complete default contact name. Please review First and Last Name before saving.'
+        )
+      }
+    } catch (error) {
+      console.error('Error hydrating request client prefill:', error)
+      setPrefillValidationError('Unable to prefill from this client. Please review details before saving.')
+    } finally {
+      if (lockClientSelection) {
+        setClientMode('existing')
+      }
+    }
+  }
+
+  const handleExistingClientSelect = (clientId: string) => {
+    void hydrateClientPrefill(clientId)
   }
 
   const syncAddressParts = (address: string) => {
@@ -151,6 +273,10 @@ export default function NewRequestPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!hasPermission(userPermissions, 'leads.create')) {
+      alert('You do not have permission to create requests.')
+      return
+    }
     const uploadingCount = stagedAttachments.filter((a) => a.status === 'uploading').length
     if (uploadingCount > 0) {
       alert('Please wait for file uploads to finish before creating the request.')
@@ -163,6 +289,10 @@ export default function NewRequestPage() {
     }
     if (clientMode === 'existing' && !formData.clientId) {
       alert('Please select a valid existing client from the dropdown.')
+      return
+    }
+    if (clientMode === 'existing' && prefillValidationError) {
+      alert(prefillValidationError)
       return
     }
     if (formData.jobSiteAddress.trim() && !jobSitePlaceId) {
@@ -434,6 +564,9 @@ export default function NewRequestPage() {
                     onSelect={handleExistingClientSelect}
                     placeholder="Select client..."
                   />
+                  {prefillValidationError && (
+                    <p className="mt-2 text-sm text-amber-700">{prefillValidationError}</p>
+                  )}
                 </div>
               </>
             )}

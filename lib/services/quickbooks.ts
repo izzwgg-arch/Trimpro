@@ -38,6 +38,33 @@ export type QuickBooksRequestContext = {
   retryCount?: number | null
 }
 
+export type QuickBooksReferenceField =
+  | 'CustomerRef'
+  | 'ItemRef'
+  | 'AccountRef'
+  | 'VendorRef'
+  | 'EmployeeRef'
+  | 'TaxCodeRef'
+  | 'ClassRef'
+  | 'DepartmentRef'
+  | 'PaymentTermRef'
+
+export type QuickBooksFaultReference = {
+  field: QuickBooksReferenceField
+  value?: string | null
+  name?: string | null
+  source: 'fault_element' | 'fault_text'
+}
+
+export type QuickBooksFaultEntry = {
+  code: string | null
+  type: string | null
+  message: string | null
+  detail: string | null
+  element: string | null
+  references: QuickBooksFaultReference[]
+}
+
 type QuickBooksUsageLog = {
   tenantId: string | null
   realmId: string | null
@@ -66,6 +93,116 @@ export function logQuickBooksApiUsage(entry: QuickBooksUsageLog) {
       ...entry,
     })
   )
+}
+
+const KNOWN_REF_FIELDS: QuickBooksReferenceField[] = [
+  'CustomerRef',
+  'ItemRef',
+  'AccountRef',
+  'VendorRef',
+  'EmployeeRef',
+  'TaxCodeRef',
+  'ClassRef',
+  'DepartmentRef',
+  'PaymentTermRef',
+]
+
+function normalizeFieldName(field: string | null | undefined): QuickBooksReferenceField | null {
+  const clean = String(field || '').trim()
+  if (!clean) return null
+  const found = KNOWN_REF_FIELDS.find((name) => name.toLowerCase() === clean.toLowerCase())
+  return found || null
+}
+
+function extractRefFieldFromText(text: string): QuickBooksReferenceField | null {
+  const lower = String(text || '').toLowerCase()
+  for (const field of KNOWN_REF_FIELDS) {
+    if (lower.includes(field.toLowerCase())) return field
+  }
+  return null
+}
+
+function extractReferencesFromFaultText(text: string): QuickBooksFaultReference[] {
+  const refs: QuickBooksFaultReference[] = []
+  const seen = new Set<string>()
+  const sourceText = String(text || '')
+  for (const field of KNOWN_REF_FIELDS) {
+    const regex = new RegExp(`${field}\\s*(?:[:=]\\s*|\\s+)(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_.-]+))`, 'gi')
+    let match: RegExpExecArray | null = regex.exec(sourceText)
+    while (match) {
+      const value = String(match[1] || match[2] || match[3] || '').trim() || null
+      const key = `${field}|${value || ''}`
+      if (!seen.has(key)) {
+        seen.add(key)
+        refs.push({ field, value, source: 'fault_text' })
+      }
+      match = regex.exec(sourceText)
+    }
+  }
+  return refs
+}
+
+function parseFaultEntries(payload: any): QuickBooksFaultEntry[] {
+  const fault = payload?.fault || payload?.Fault
+  const errors = fault?.error || fault?.Error
+  const errorList = Array.isArray(errors) ? errors : errors ? [errors] : []
+  const type = String(fault?.type || fault?.Type || '').trim() || null
+  return errorList.map((entry: any) => {
+    const code = String(entry?.code || entry?.Code || '').trim() || null
+    const message = String(entry?.Message || entry?.message || '').trim() || null
+    const detail = String(entry?.Detail || entry?.detail || '').trim() || null
+    const element = String(entry?.element || entry?.Element || '').trim() || null
+
+    const references: QuickBooksFaultReference[] = []
+    const normalizedElement = normalizeFieldName(element)
+    if (normalizedElement) {
+      references.push({ field: normalizedElement, source: 'fault_element' })
+    } else {
+      const inferred = extractRefFieldFromText(`${message || ''} ${detail || ''}`.trim())
+      if (inferred) references.push({ field: inferred, source: 'fault_text' })
+    }
+    for (const ref of extractReferencesFromFaultText(`${message || ''} ${detail || ''}`.trim())) {
+      references.push(ref)
+    }
+
+    return { code, type, message, detail, element, references }
+  })
+}
+
+export class QuickBooksApiError extends Error {
+  status: number
+  intuitTid: string | null
+  payload: any
+  faults: QuickBooksFaultEntry[]
+
+  constructor(params: { status: number; intuitTid: string | null; payload: any; fallbackMessage: string }) {
+    const faults = parseFaultEntries(params.payload)
+    const firstFault = faults[0]
+    const summaryParts = [
+      firstFault?.detail,
+      firstFault?.message,
+      firstFault?.code ? `code=${firstFault.code}` : null,
+      firstFault?.type ? `type=${firstFault.type}` : null,
+    ].filter(Boolean)
+    const msgBase = summaryParts.length
+      ? summaryParts.join(' | ')
+      : String(params.fallbackMessage || 'QuickBooks API error')
+    const withStatus = `${msgBase} (status=${params.status})`
+    super(params.intuitTid ? `${withStatus} (intuit_tid: ${params.intuitTid})` : withStatus)
+    this.name = 'QuickBooksApiError'
+    this.status = params.status
+    this.intuitTid = params.intuitTid
+    this.payload = params.payload
+    this.faults = faults
+  }
+
+  hasFaultCode(code: string): boolean {
+    return this.faults.some((fault) => String(fault.code || '') === String(code))
+  }
+
+  isValidationFault(): boolean {
+    return this.faults.some((fault) => String(fault.type || '').toLowerCase() === 'validationfault')
+  }
 }
 
 export class QuickBooksService {
@@ -282,8 +419,12 @@ export class QuickBooksService {
       }
 
       const msgBase = this.summarizeQboError(errorPayload)
-      const msg = `${msgBase} (status=${response.status})`
-      throw new Error(intuitTid ? `${msg} (intuit_tid: ${intuitTid})` : msg)
+      throw new QuickBooksApiError({
+        status: response.status,
+        intuitTid,
+        payload: errorPayload,
+        fallbackMessage: msgBase,
+      })
     }
 
     return response.json()

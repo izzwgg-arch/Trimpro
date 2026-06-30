@@ -15,6 +15,7 @@ import { PaginationControls } from '@/components/ui/PaginationControls'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Plus, Search, Filter, User, Phone, Mail, CheckCircle, Trash2, FileText, Briefcase, Copy, Calendar, UserPlus } from 'lucide-react'
 import Link from 'next/link'
+import { usePermissions, hasPermission } from '@/hooks/usePermissions'
 
 interface Request {
   id: string
@@ -142,6 +143,11 @@ export default function RequestsPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [urgentBusyById, setUrgentBusyById] = useState<Record<string, boolean>>({})
   const [viewMode, setViewMode] = useViewMode('requests', 'grid')
+  const { permissions: userPermissions, loading: permissionsLoading } = usePermissions()
+  const canCreateRequest = !permissionsLoading && hasPermission(userPermissions, 'leads.create')
+  const canEditRequest = !permissionsLoading && hasPermission(userPermissions, 'leads.edit')
+  const canDeleteRequest = !permissionsLoading && hasPermission(userPermissions, 'leads.delete')
+  const canConvertRequest = !permissionsLoading && hasPermission(userPermissions, 'leads.convert')
 
   const setListState = useCallback((updates: Partial<RequestsListState>) => {
     setListStateRaw((prev) => {
@@ -222,6 +228,10 @@ export default function RequestsPage() {
   }
 
   const handleDelete = async (requestId: string, requestName: string) => {
+    if (!canDeleteRequest) {
+      alert('You do not have permission to delete requests.')
+      return
+    }
     if (!confirm(`Are you sure you want to delete the request for ${requestName}? This action cannot be undone.`)) {
       return
     }
@@ -263,6 +273,10 @@ export default function RequestsPage() {
   }
 
   const handleToggleUrgent = async (requestId: string, nextUrgent: boolean) => {
+    if (!canEditRequest) {
+      alert('You do not have permission to edit requests.')
+      return
+    }
     const token = localStorage.getItem('accessToken')
     if (!token) {
       router.push('/auth/login')
@@ -302,6 +316,10 @@ export default function RequestsPage() {
   }
 
   const handleConvertToEstimate = async (request: Request) => {
+    if (!canConvertRequest) {
+      alert('You do not have permission to convert requests.')
+      return
+    }
     const requestName = `${request.firstName} ${request.lastName}`.trim()
     if (!confirm(`Open a new estimate draft for request "${requestName}"? (It will only convert after you Save.)`)) return
 
@@ -316,6 +334,10 @@ export default function RequestsPage() {
   }
 
   const handleConvertToJob = async (request: Request) => {
+    if (!canConvertRequest) {
+      alert('You do not have permission to convert requests.')
+      return
+    }
     const requestName = `${request.firstName} ${request.lastName}`.trim()
     if (!confirm(`Convert request "${requestName}" into a job?`)) return
 
@@ -360,6 +382,10 @@ export default function RequestsPage() {
   }
 
   const handleDuplicateSelected = async () => {
+    if (!canCreateRequest) {
+      alert('You do not have permission to create requests.')
+      return
+    }
     if (selectedIds.length === 0) return
     if (!confirm(`Duplicate ${selectedIds.length} selected request(s)?`)) return
 
@@ -429,15 +455,17 @@ export default function RequestsPage() {
           <Button
             variant="outline"
             onClick={handleDuplicateSelected}
-            disabled={selectedIds.length === 0 || duplicating}
+            disabled={selectedIds.length === 0 || duplicating || !canCreateRequest}
           >
             <Copy className="mr-2 h-4 w-4" />
             {duplicating ? 'Duplicating...' : `Duplicate${selectedIds.length ? ` (${selectedIds.length})` : ''}`}
           </Button>
-          <Button onClick={() => router.push('/dashboard/requests/new')}>
-            <Plus className="mr-2 h-4 w-4" />
-            New Request
-          </Button>
+          {canCreateRequest && (
+            <Button onClick={() => router.push('/dashboard/requests/new')}>
+              <Plus className="mr-2 h-4 w-4" />
+              New Request
+            </Button>
+          )}
         </div>
       </div>
 
@@ -538,7 +566,7 @@ export default function RequestsPage() {
               Get started by creating a new request.
             </p>
             <div className="mt-6">
-              <Button onClick={() => router.push('/dashboard/requests/new')}>
+              <Button onClick={() => router.push('/dashboard/requests/new')} disabled={!canCreateRequest}>
                 <Plus className="mr-2 h-4 w-4" />
                 New Request
               </Button>
@@ -673,7 +701,7 @@ export default function RequestsPage() {
                             e.stopPropagation()
                             void handleToggleUrgent(request.id, !request.isUrgent)
                           }}
-                          disabled={Boolean(urgentBusyById[request.id])}
+                          disabled={Boolean(urgentBusyById[request.id]) || !canEditRequest}
                           className={`h-7 px-2 ${request.isUrgent ? 'text-red-600 hover:text-red-700 hover:bg-red-50' : 'text-slate-600 hover:text-slate-700 hover:bg-slate-50'}`}
                           title={request.isUrgent ? 'Unmark urgent' : 'Mark urgent'}
                         >
@@ -686,7 +714,7 @@ export default function RequestsPage() {
                             e.stopPropagation()
                             handleConvertToEstimate(request)
                           }}
-                          disabled={convertingId === request.id}
+                          disabled={convertingId === request.id || !canConvertRequest}
                           className="h-7 px-2 bg-transparent hover:bg-transparent text-[#2E4A59] hover:text-[#2E4A59] border border-[#2E4A59]/30 hover:border-[#2E4A59]"
                           title="Convert to Estimate"
                         >
@@ -699,7 +727,7 @@ export default function RequestsPage() {
                             e.stopPropagation()
                             handleConvertToJob(request)
                           }}
-                          disabled={convertingId === request.id}
+                          disabled={convertingId === request.id || !canConvertRequest}
                           className="h-7 px-2 bg-transparent hover:bg-transparent text-[#2E4A59] hover:text-[#2E4A59] border border-[#2E4A59]/30 hover:border-[#2E4A59]"
                           title="Convert to Job"
                         >
@@ -712,7 +740,7 @@ export default function RequestsPage() {
                             e.stopPropagation()
                             handleDelete(request.id, `${request.firstName} ${request.lastName}`)
                           }}
-                          disabled={deletingId === request.id}
+                          disabled={deletingId === request.id || !canDeleteRequest}
                           className="text-red-600 hover:text-red-700 hover:bg-red-50 h-7 px-2"
                           title="Delete Request"
                         >
@@ -885,7 +913,7 @@ export default function RequestsPage() {
                       e.stopPropagation()
                       void handleToggleUrgent(request.id, !request.isUrgent)
                     }}
-                    disabled={Boolean(urgentBusyById[request.id])}
+                    disabled={Boolean(urgentBusyById[request.id]) || !canEditRequest}
                     className={request.isUrgent ? 'text-red-600 hover:text-red-700 hover:bg-red-50 h-7 px-2' : 'h-7 px-2'}
                     title={request.isUrgent ? 'Unmark urgent' : 'Mark urgent'}
                   >
@@ -898,7 +926,7 @@ export default function RequestsPage() {
                       e.stopPropagation()
                       handleConvertToEstimate(request)
                     }}
-                    disabled={convertingId === request.id}
+                    disabled={convertingId === request.id || !canConvertRequest}
                     className="h-7 px-2 bg-transparent hover:bg-transparent text-[#2E4A59] hover:text-[#2E4A59] border border-[#2E4A59]/30 hover:border-[#2E4A59]"
                     title="Convert to Estimate"
                   >
@@ -911,7 +939,7 @@ export default function RequestsPage() {
                       e.stopPropagation()
                       handleConvertToJob(request)
                     }}
-                    disabled={convertingId === request.id}
+                    disabled={convertingId === request.id || !canConvertRequest}
                     className="h-7 px-2 bg-transparent hover:bg-transparent text-[#2E4A59] hover:text-[#2E4A59] border border-[#2E4A59]/30 hover:border-[#2E4A59]"
                     title="Convert to Job"
                   >
@@ -924,7 +952,7 @@ export default function RequestsPage() {
                       e.stopPropagation()
                       handleDelete(request.id, `${request.firstName} ${request.lastName}`)
                     }}
-                    disabled={deletingId === request.id}
+                    disabled={deletingId === request.id || !canDeleteRequest}
                     className="text-red-600 hover:text-red-700 hover:bg-red-50 h-7 px-2"
                   >
                     <Trash2 className="h-3 w-3" />

@@ -40,6 +40,7 @@ interface Estimate {
     id: string
     jobNumber: string
   } | null
+  jobSiteAddress?: string | null
   _count: {
     lineItems: number
   }
@@ -64,6 +65,16 @@ const statusColors: Record<string, string> = {
   REJECTED: 'bg-red-100 text-red-800',
   EXPIRED: 'bg-orange-100 text-orange-800',
   CONVERTED: 'bg-indigo-100 text-indigo-800',
+}
+
+function renderJobSiteAddress(address?: string | null) {
+  const value = String(address || '').trim()
+  if (!value) return null
+  return (
+    <span className="block max-w-[260px] truncate" title={value}>
+      {value}
+    </span>
+  )
 }
 
 // ── persistent list state (survives back-navigation within the same tab) ──────
@@ -407,6 +418,11 @@ export default function EstimatesPage() {
                       {estimate.client && ` \u2022 ${estimate.client.name}`}
                       {estimate.lead && ` \u2022 ${estimate.lead.firstName} ${estimate.lead.lastName}`}
                     </CardDescription>
+                    {estimate.jobSiteAddress ? (
+                      <p className="mt-1 text-xs text-gray-500" title={estimate.jobSiteAddress}>
+                        <span className="inline-block max-w-[320px] truncate">{estimate.jobSiteAddress}</span>
+                      </p>
+                    ) : null}
                   </div>
                   <div className="flex flex-col items-end gap-1">
                     <input
@@ -512,7 +528,10 @@ export default function EstimatesPage() {
                 />
               }
               primary={`${estimate.estimateNumber} \u2022 ${estimate.title}`}
-              secondary={estimate.client?.name || (estimate.lead ? `${estimate.lead.firstName} ${estimate.lead.lastName}` : 'No client')}
+              secondary={[
+                estimate.client?.name || (estimate.lead ? `${estimate.lead.firstName} ${estimate.lead.lastName}` : 'No client'),
+                estimate.jobSiteAddress || null,
+              ].filter(Boolean).join(' \u2022 ')}
               status={<StatusBadge estimate={estimate} />}
               amount={formatCurrency(parseFloat(estimate.total))}
               date={estimate.validUntil ? formatDate(estimate.validUntil) : '-'}
@@ -540,7 +559,11 @@ export default function EstimatesPage() {
               }
               primary={`${estimate.estimateNumber} \u2022 ${estimate.title}`}
               status={<StatusBadge estimate={estimate} />}
-              line2={`${estimate.client?.name || (estimate.lead ? `${estimate.lead.firstName} ${estimate.lead.lastName}` : 'No client')} \u2022 ${estimate._count.lineItems} line items`}
+              line2={[
+                estimate.client?.name || (estimate.lead ? `${estimate.lead.firstName} ${estimate.lead.lastName}` : 'No client'),
+                estimate.jobSiteAddress || null,
+                `${estimate._count.lineItems} line items`,
+              ].filter(Boolean).join(' \u2022 ')}
               rightTop={formatCurrency(parseFloat(estimate.total))}
               rightBottom={estimate.validUntil ? formatDate(estimate.validUntil) : 'No expiry'}
             />
@@ -588,6 +611,12 @@ export default function EstimatesPage() {
               header: 'Client',
               sortValue: (estimate) => estimate.client?.name || '',
               render: (estimate) => estimate.client?.name || '-',
+            },
+            {
+              key: 'jobSiteAddress',
+              header: 'Job Site Address',
+              sortValue: () => '',
+              render: (estimate) => renderJobSiteAddress(estimate.jobSiteAddress),
             },
             {
               key: 'total',

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { notifyRequestCreated } from '@/lib/notifications'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
@@ -7,6 +8,8 @@ import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'leads.view')
+  if (permError) return permError
 
   const user = getAuthUser(request)
   const searchParams = request.nextUrl.searchParams
@@ -124,6 +127,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'leads.create')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 
