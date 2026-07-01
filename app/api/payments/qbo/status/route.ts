@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { getAchStatusByInvoice } from '@/lib/qbo/payments-ach'
 
 const querySchema = z.object({
@@ -10,17 +11,14 @@ const querySchema = z.object({
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'payments.view')
+  if (permError) return permError
 
   const user = getAuthUser(request)
   const url = new URL(request.url)
   const parsed = querySchema.safeParse({ invoiceId: url.searchParams.get('invoiceId') })
   if (!parsed.success) {
     return NextResponse.json({ error: 'Missing invoiceId' }, { status: 400 })
-  }
-
-  // Invoice visibility rules are broader in this app; keep it role-gated for now.
-  if (!user || !['ADMIN', 'OFFICE', 'ACCOUNTING', 'SALES'].includes(String(user.role))) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
   try {

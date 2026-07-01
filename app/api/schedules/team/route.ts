@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
-import { hasMobilePermission, hasPermission } from '@/lib/authorization'
+import { hasMobilePermission, hasPermission, requireAnyPermission } from '@/lib/authorization'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requireAnyPermission(request, ['schedule.view', 'schedule.view_all'])
+  if (permError) return permError
 
   const user = getAuthUser(request)
 

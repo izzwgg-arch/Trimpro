@@ -3,7 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { createNotificationsForUsers, notifyDispatchJobActivity } from '@/lib/notifications'
 import { publishDispatchRealtime } from '@/lib/dispatch-realtime'
-import { hasMobilePermission, isMobileRequest } from '@/lib/authorization'
+import { hasMobilePermission, isMobileRequest, requireAnyPermission } from '@/lib/authorization'
 import { normalizePublicFileUrl } from '@/lib/public-url'
 
 type EntityType = 'estimate' | 'invoice' | 'job' | 'task' | 'issue' | 'request' | 'lead'
@@ -66,6 +66,8 @@ async function ensureEntityAccess(
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requireAnyPermission(request, ['jobs.view', 'leads.view', 'clients.view'])
+  if (permError) return permError
 
   const user = getAuthUser(request)
   try {
@@ -119,6 +121,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requireAnyPermission(request, ['jobs.view', 'leads.view', 'clients.view'])
+  if (permError) return permError
 
   const user = getAuthUser(request)
   try {

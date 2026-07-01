@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
-import { isMobileRequest, requireMobilePermission } from '@/lib/authorization'
+import { isMobileRequest, requireMobilePermission, requirePermission } from '@/lib/authorization'
 import { notifyJobAssigned } from '@/lib/notifications'
 
 export async function GET(
@@ -10,6 +10,8 @@ export async function GET(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'jobs.assign')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 
@@ -59,9 +61,11 @@ export async function POST(
   const user = getAuthUser(request)
   const isMobile = isMobileRequest(request)
 
-  // If mobile request, enforce mobile.jobs.assign permission
   if (isMobile) {
     const permError = await requireMobilePermission(request, 'mobile.jobs.assign')
+    if (permError) return permError
+  } else {
+    const permError = await requirePermission(request, 'jobs.assign')
     if (permError) return permError
   }
 
@@ -174,6 +178,8 @@ export async function DELETE(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'jobs.assign')
+  if (permError) return permError
 
   const user = getAuthUser(request)
   const searchParams = request.nextUrl.searchParams

@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { messagingService } from '@/lib/messaging/service'
 import { MessagingChannel } from '@/lib/messaging/types'
 
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'messages.send')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 

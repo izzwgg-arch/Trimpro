@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { notifyTaskAssigned } from '@/lib/notifications'
-import { hasMobilePermission, requireMobilePermission } from '@/lib/authorization'
+import { hasMobilePermission, requireMobilePermission, requirePermission } from '@/lib/authorization'
 
 // Helper to detect if request is from mobile app
 function isMobileRequest(request: NextRequest): boolean {
@@ -15,6 +15,8 @@ function isMobileRequest(request: NextRequest): boolean {
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'tasks.view')
+  if (permError) return permError
 
   const user = getAuthUser(request)
   const searchParams = request.nextUrl.searchParams
@@ -159,6 +161,9 @@ export async function POST(request: NextRequest) {
   if (isMobile) {
     const createPermError = await requireMobilePermission(request, 'mobile.tasks.create')
     if (createPermError) return createPermError
+  } else {
+    const permError = await requirePermission(request, 'tasks.create')
+    if (permError) return permError
   }
 
   try {

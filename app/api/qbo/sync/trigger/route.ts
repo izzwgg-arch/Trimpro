@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { enqueueQboSync, type QboEntityType } from '@/lib/qbo/sync-queue'
 
 const EVENT_TO_ENTITY: Record<string, QboEntityType> = {
@@ -14,6 +15,8 @@ const EVENT_TO_ENTITY: Record<string, QboEntityType> = {
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'system.integrations')
+  if (permError) return permError
 
   const user = getAuthUser(request)
   try {

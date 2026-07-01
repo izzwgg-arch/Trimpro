@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
-import { hasAnyPermission } from '@/lib/authorization'
+import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { solaService } from '@/lib/services/sola'
 import { getQboSessionForTenant } from '@/lib/qbo/session'
@@ -118,14 +118,10 @@ async function refundWithQuickBooks(params: {
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'payments.refund')
+  if (permError) return permError
 
   const user = getAuthUser(request)
-  const canRefund =
-    user.role === 'ADMIN' ||
-    (await hasAnyPermission(user.id, user.tenantId, ['payments.manage', 'payments.refund', 'manage_payments']))
-  if (!canRefund) {
-    return NextResponse.json({ error: 'Forbidden: Insufficient permissions' }, { status: 403 })
-  }
 
   try {
     const body = await request.json()

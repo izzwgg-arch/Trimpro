@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requireAnyPermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { sendEmail, sendBulkEmails, resolveTemplateVariables } from '@/lib/email/provider'
 import { z } from 'zod'
@@ -19,6 +20,8 @@ const sendEmailSchema = z.object({
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requireAnyPermission(request, ['messaging.email', 'messages.send'])
+  if (permError) return permError
 
   const user = getAuthUser(request)
 

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { createNotification } from '@/lib/notifications'
-import { hasMobilePermission, isMobileRequest, requireMobilePermission } from '@/lib/authorization'
+import { hasMobilePermission, isMobileRequest, requireAnyPermission, requireMobilePermission, requirePermission } from '@/lib/authorization'
 
 export async function GET(
   request: NextRequest,
@@ -10,6 +10,8 @@ export async function GET(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requireAnyPermission(request, ['schedule.view', 'schedule.view_all'])
+  if (permError) return permError
 
   const user = getAuthUser(request)
 
@@ -72,6 +74,9 @@ export async function PUT(
   if (isMobileRequest(request)) {
     const mobilePermError = await requireMobilePermission(request, 'mobile.jobs.schedule')
     if (mobilePermError) return mobilePermError
+  } else {
+    const permError = await requirePermission(request, 'schedule.edit')
+    if (permError) return permError
   }
 
   const user = getAuthUser(request)
@@ -248,6 +253,8 @@ export async function DELETE(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'schedule.delete')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 

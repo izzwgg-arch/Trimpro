@@ -12,6 +12,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { formatAddressParts } from '@/lib/address/parse'
+import { hasPermissionKey } from '@/lib/permission-aliases'
 import { computeScore, topN, expandQuery } from './scoring'
 
 export type { RawResult as SearchResult } from './scoring'
@@ -142,7 +143,7 @@ export async function runGlobalSearch({
   const q = query.trim()
   if (!q || q.length < 2) return []
 
-  const can = (key: string) => permissions.includes(key)
+  const can = (key: string) => hasPermissionKey(permissions, key)
   const terms = expandQuery(q) // e.g. ["vendor", "supplier"]
   const fetch = limitPerGroup * 2 // fetch 2× then score/slice
 
@@ -198,19 +199,21 @@ export async function runGlobalSearch({
       : Promise.resolve([]),
 
     // Vendors
-    prisma.vendor.findMany({
-      where: {
-        tenantId,
-        OR: [
-          ...ilikeAny('name', terms),
-          ...ilikeAny('email', terms),
-          ...ilikeAny('phone', terms),
-          ...ilikeAny('vendorCode', terms),
-        ],
-      },
-      take: fetch,
-      orderBy: { updatedAt: 'desc' },
-    }),
+    can('purchase_orders.view')
+      ? prisma.vendor.findMany({
+          where: {
+            tenantId,
+            OR: [
+              ...ilikeAny('name', terms),
+              ...ilikeAny('email', terms),
+              ...ilikeAny('phone', terms),
+              ...ilikeAny('vendorCode', terms),
+            ],
+          },
+          take: fetch,
+          orderBy: { updatedAt: 'desc' },
+        })
+      : Promise.resolve([]),
 
     // Estimates
     can('estimates.view')
@@ -248,7 +251,7 @@ export async function runGlobalSearch({
       : Promise.resolve([]),
 
     // Payments (tenant-isolated through invoice relation)
-    can('invoices.view')
+    can('payments.view')
       ? prisma.payment.findMany({
           where: {
             invoice: { tenantId },
@@ -266,31 +269,35 @@ export async function runGlobalSearch({
       : Promise.resolve([]),
 
     // Purchase Orders
-    prisma.purchaseOrder.findMany({
-      where: {
-        tenantId,
-        OR: [
-          ...ilikeAny('poNumber', terms),
-          ...ilikeAny('vendor', terms),
-        ],
-      },
-      take: fetch,
-      orderBy: { updatedAt: 'desc' },
-    }),
+    can('purchase_orders.view')
+      ? prisma.purchaseOrder.findMany({
+          where: {
+            tenantId,
+            OR: [
+              ...ilikeAny('poNumber', terms),
+              ...ilikeAny('vendor', terms),
+            ],
+          },
+          take: fetch,
+          orderBy: { updatedAt: 'desc' },
+        })
+      : Promise.resolve([]),
 
     // Items / Products / Materials
-    prisma.item.findMany({
-      where: {
-        tenantId,
-        OR: [
-          ...ilikeAny('name', terms),
-          ...ilikeAny('sku', terms),
-          ...ilikeAny('description', terms),
-        ],
-      },
-      take: fetch,
-      orderBy: { updatedAt: 'desc' },
-    }),
+    can('settings.view')
+      ? prisma.item.findMany({
+          where: {
+            tenantId,
+            OR: [
+              ...ilikeAny('name', terms),
+              ...ilikeAny('sku', terms),
+              ...ilikeAny('description', terms),
+            ],
+          },
+          take: fetch,
+          orderBy: { updatedAt: 'desc' },
+        })
+      : Promise.resolve([]),
 
     // Jobs / Projects
     can('jobs.view')

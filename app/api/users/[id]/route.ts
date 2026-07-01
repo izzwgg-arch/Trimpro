@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
-import { hasPermission } from '@/lib/authorization'
+import { requirePermission } from '@/lib/authorization'
 import { getDefaultPermissions } from '@/lib/permissions'
 
 const ALLOWED_ROLES = new Set(['ADMIN', 'MANAGER', 'OFFICE', 'FIELD', 'SALES', 'ACCOUNTING'])
@@ -18,12 +18,10 @@ export async function PUT(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'users.edit')
+  if (permError) return permError
 
   const actor = getAuthUser(request)
-  const canEditUsers = actor.role === 'ADMIN' || (await hasPermission(actor.id, actor.tenantId, 'users.edit'))
-  if (!canEditUsers) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
 
   try {
     const body = await request.json()
@@ -255,12 +253,10 @@ export async function DELETE(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'users.deactivate')
+  if (permError) return permError
 
   const actor = getAuthUser(request)
-  const canDeleteUsers = actor.role === 'ADMIN' || (await hasPermission(actor.id, actor.tenantId, 'users.edit'))
-  if (!canDeleteUsers) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
 
   if (params.id === actor.id) {
     return NextResponse.json({ error: 'You cannot delete your own account' }, { status: 400 })

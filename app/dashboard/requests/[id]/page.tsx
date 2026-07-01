@@ -32,6 +32,7 @@ import Link from 'next/link'
 import { parseAddressParts } from '@/lib/address/parse'
 import { buildCreateContextQuery } from '@/src/lib/create-context'
 import { DocumentAttachments } from '@/components/common/document-attachments'
+import { usePermissions, hasPermission } from '@/hooks/usePermissions'
 
 interface RequestDetail {
   id: string
@@ -194,6 +195,14 @@ export default function RequestDetailPage() {
   const [measuringNotes, setMeasuringNotes] = useState('')
   const [measuringSearch, setMeasuringSearch] = useState('')
   const [sendingMeasuringRequest, setSendingMeasuringRequest] = useState(false)
+  const { permissions: userPermissions, loading: permissionsLoading } = usePermissions()
+  const canEditRequest = !permissionsLoading && hasPermission(userPermissions, 'leads.edit')
+  const canDeleteRequest = !permissionsLoading && hasPermission(userPermissions, 'leads.delete')
+  const canConvertRequest = !permissionsLoading && hasPermission(userPermissions, 'leads.convert')
+  const canCreateEstimate = !permissionsLoading && hasPermission(userPermissions, 'estimates.create')
+  const canCreateJob = !permissionsLoading && hasPermission(userPermissions, 'jobs.create')
+  const canCreateTask = !permissionsLoading && hasPermission(userPermissions, 'tasks.create')
+  const canCreateIssue = !permissionsLoading && hasPermission(userPermissions, 'issues.create')
 
   // Admin-only: field worker assignment
   const [currentUserRole, setCurrentUserRole] = useState<string>('')
@@ -304,6 +313,10 @@ export default function RequestDetailPage() {
   }
 
   const handleAssignFieldWorker = async () => {
+    if (!canEditRequest) {
+      alert('You do not have permission to edit requests.')
+      return
+    }
     if (!request || !selectedFieldWorkerId) return
     setAssigningWorker(true)
     try {
@@ -329,6 +342,10 @@ export default function RequestDetailPage() {
   }
 
   const handleDelete = async () => {
+    if (!canDeleteRequest) {
+      alert('You do not have permission to delete requests.')
+      return
+    }
     if (!request) return
     
     if (!confirm(`Are you sure you want to delete the request for ${request.firstName} ${request.lastName}? This action cannot be undone.`)) {
@@ -372,6 +389,10 @@ export default function RequestDetailPage() {
   }
 
   const handleToggleUrgent = async () => {
+    if (!canEditRequest) {
+      alert('You do not have permission to edit requests.')
+      return
+    }
     if (!request) return
     const token = localStorage.getItem('accessToken')
     if (!token) {
@@ -438,6 +459,10 @@ export default function RequestDetailPage() {
   }
 
   const handleOpenMeasuringDialog = async () => {
+    if (!canEditRequest) {
+      alert('You do not have permission to edit requests.')
+      return
+    }
     setMeasuringDialogOpen(true)
     setSelectedMeasuringUserId('')
     setMeasuringNotes('')
@@ -562,32 +587,38 @@ export default function RequestDetailPage() {
           )}
         </div>
         <div className="flex items-center space-x-2">
-          <Button variant="outline" onClick={() => router.push(`/dashboard/requests/${requestId}/edit`)}>
-            <Edit className="mr-2 h-4 w-4" />
-            Edit
-          </Button>
-          <Button variant="outline" onClick={handleOpenMeasuringDialog}>
-            <Ruler className="mr-2 h-4 w-4" />
-            Measuring Request
-          </Button>
+          {canEditRequest && (
+            <Button variant="outline" onClick={() => router.push(`/dashboard/requests/${requestId}/edit`)}>
+              <Edit className="mr-2 h-4 w-4" />
+              Edit
+            </Button>
+          )}
+          {canEditRequest && (
+            <Button variant="outline" onClick={handleOpenMeasuringDialog}>
+              <Ruler className="mr-2 h-4 w-4" />
+              Measuring Request
+            </Button>
+          )}
           <Button
             variant="outline"
             onClick={handleToggleUrgent}
-            disabled={urgentBusy}
+            disabled={urgentBusy || !canEditRequest}
             className={request.isUrgent ? 'text-red-600 hover:text-red-700 hover:bg-red-50' : ''}
           >
             {urgentBusy ? 'Saving...' : request.isUrgent ? 'Unmark Urgent' : 'Mark Urgent'}
           </Button>
-          <Button
-            variant="outline"
-            onClick={handleDelete}
-            disabled={deleting}
-            title="Delete request"
-            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-          >
-            <Trash2 className="mr-2 h-4 w-4" />
-            {deleting ? 'Deleting...' : 'Delete'}
-          </Button>
+          {canDeleteRequest && (
+            <Button
+              variant="outline"
+              onClick={handleDelete}
+              disabled={deleting}
+              title="Delete request"
+              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              {deleting ? 'Deleting...' : 'Delete'}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -682,6 +713,8 @@ export default function RequestDetailPage() {
                 )
               }}
             >
+              disabled={!canConvertRequest || !canCreateEstimate}
+            >
               <FileText className="mr-2 h-4 w-4" />
               New Estimate
             </Button>
@@ -700,6 +733,8 @@ export default function RequestDetailPage() {
                   })}`
                 )
               }}
+            >
+              disabled={!canConvertRequest || !canCreateJob}
             >
               <Plus className="mr-2 h-4 w-4" />
               New Job
@@ -720,6 +755,8 @@ export default function RequestDetailPage() {
                 )
               }}
             >
+              disabled={!canCreateTask}
+            >
               <CheckSquare className="mr-2 h-4 w-4" />
               New Task
             </Button>
@@ -738,6 +775,8 @@ export default function RequestDetailPage() {
                   })}`
                 )
               }}
+            >
+              disabled={!canCreateIssue}
             >
               <AlertCircle className="mr-2 h-4 w-4" />
               New Issue

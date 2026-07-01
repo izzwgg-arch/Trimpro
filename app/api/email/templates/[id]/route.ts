@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
@@ -18,6 +19,8 @@ export async function GET(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'settings.edit')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 
@@ -46,6 +49,8 @@ export async function PUT(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'settings.edit')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 
@@ -85,6 +90,8 @@ export async function DELETE(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'settings.edit')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 

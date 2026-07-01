@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { deleteMessageInConversation, editMessageInConversation } from '@/lib/chat/service'
 
 export async function PATCH(
@@ -8,6 +9,8 @@ export async function PATCH(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'messages.edit')
+  if (permError) return permError
   const user = getAuthUser(request)
 
   try {
@@ -45,6 +48,8 @@ export async function DELETE(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'messages.delete')
+  if (permError) return permError
   const user = getAuthUser(request)
 
   try {

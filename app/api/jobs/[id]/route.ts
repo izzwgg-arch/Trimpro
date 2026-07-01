@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { formatAddressParts, parseAddressParts } from '@/lib/address/parse'
 import { geocodeAddressPartsFromString } from '@/lib/geocoding'
@@ -14,6 +15,8 @@ export async function GET(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'jobs.view')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 
@@ -262,6 +265,8 @@ export async function PUT(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'jobs.edit')
+  if (permError) return permError
 
   const user = getAuthUser(request)
   const isMobile = isMobileRequest(request)
@@ -486,6 +491,8 @@ export async function DELETE(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'jobs.delete')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 

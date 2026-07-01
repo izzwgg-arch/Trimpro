@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { getQboSessionForTenant } from '@/lib/qbo/session'
 import { qboEstimateReadEndpoint } from '@/lib/services/qbo-sync'
@@ -11,6 +12,8 @@ export async function GET(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'system.integrations')
+  if (permError) return permError
   const user = getAuthUser(request)
 
   const syncLog = await prisma.quickBooksSyncLog.findFirst({

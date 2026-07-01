@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { sendEmailWithAttachments } from '@/lib/integrations/providers/email'
@@ -45,6 +46,8 @@ export async function POST(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'estimates.send')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requireMethodPermissions } from '@/lib/api-guards'
 import { prisma } from '@/lib/prisma'
 
 export async function GET(
@@ -8,6 +9,8 @@ export async function GET(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requireMethodPermissions(request, { GET: 'clients.view' })
+  if (permError) return permError
 
   const user = getAuthUser(request)
 
@@ -45,6 +48,8 @@ export async function POST(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requireMethodPermissions(request, { POST: 'clients.edit' })
+  if (permError) return permError
 
   const user = getAuthUser(request)
 

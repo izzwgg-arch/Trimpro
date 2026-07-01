@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 
@@ -9,6 +10,8 @@ export async function GET(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'purchase_orders.view')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 
@@ -101,6 +104,8 @@ export async function PATCH(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'purchase_orders.edit')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 
@@ -262,6 +267,8 @@ export async function DELETE(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'purchase_orders.delete')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 

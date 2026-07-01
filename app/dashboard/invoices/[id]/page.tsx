@@ -1640,14 +1640,14 @@ export default function InvoiceDetailPage() {
             </Card>
           )}
 
-          {/* Job Address - displayed prominently below Client */}
+          {/* Job Site Address - displayed prominently below Client */}
           {invoice.jobSiteAddress && (
             <Card>
               <CardHeader>
-                <CardTitle>Job Address</CardTitle>
+                <CardTitle>Job Site Address</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-gray-700">{invoice.jobSiteAddress}</p>
+                <p className="text-sm text-gray-700 whitespace-pre-line">{invoice.jobSiteAddress}</p>
                 <iframe
                   title="Invoice Job Site Map"
                   className="mt-3 h-48 w-full rounded-md border"

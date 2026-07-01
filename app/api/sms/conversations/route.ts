@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { toE164, formatPhone, toNanp10 } from '@/lib/phone'
 
@@ -9,6 +10,8 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'messages.view')
+  if (permError) return permError
   const user = getAuthUser(request)
 
   const conversations = await prisma.conversation.findMany({

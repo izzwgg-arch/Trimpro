@@ -66,10 +66,10 @@ interface ClientPrefillResponse {
 }
 
 export default function NewRequestPage() {
-  console.log('[request-create] Component rendering - upload section should be visible')
   const router = useRouter()
   const searchParams = useSearchParams()
   const preselectedClientId = searchParams.get('clientId')?.trim() || ''
+  const clientLockedFromContext = Boolean(preselectedClientId)
   const [loading, setLoading] = useState(false)
   const [users, setUsers] = useState<User[]>([])
   const [clients, setClients] = useState<PickerClient[]>([])
@@ -82,7 +82,7 @@ export default function NewRequestPage() {
   const { permissions: userPermissions, loading: permissionsLoading } = usePermissions()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [formData, setFormData] = useState({
-    clientId: '',
+    clientId: preselectedClientId,
     firstName: '',
     lastName: '',
     email: '',
@@ -533,7 +533,9 @@ export default function NewRequestPage() {
                 <Label htmlFor="clientMode">Client Type</Label>
                 <Select
                   value={clientMode}
+                  disabled={clientLockedFromContext}
                   onValueChange={(value) => {
+                    if (clientLockedFromContext) return
                     const nextMode = value as 'new' | 'existing'
                     setClientMode(nextMode)
                     if (nextMode === 'new') {
@@ -563,6 +565,7 @@ export default function NewRequestPage() {
                     value={formData.clientId}
                     onSelect={handleExistingClientSelect}
                     placeholder="Select client..."
+                    disabled={clientLockedFromContext}
                   />
                   {prefillValidationError && (
                     <p className="mt-2 text-sm text-amber-700">{prefillValidationError}</p>

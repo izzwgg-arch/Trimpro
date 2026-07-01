@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 
 // Helper function to flatten a bundle (handles nested bundles)
@@ -113,6 +114,8 @@ async function recalculateAndPersistBundleTotals(bundleId: string, tenantId: str
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'settings.view')
+  if (permError) return permError
 
   const user = getAuthUser(request)
   const searchParams = request.nextUrl.searchParams
@@ -255,6 +258,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'settings.edit')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 

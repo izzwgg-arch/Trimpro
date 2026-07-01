@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { generatePasswordResetToken } from '@/lib/auth'
 import { getDefaultPermissions } from '@/lib/permissions'
@@ -13,11 +14,10 @@ export async function POST(request: NextRequest) {
   // Authenticate
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'users.create')
+  if (permError) return permError
 
   const user = getAuthUser(request)
-  if (user.role !== 'ADMIN') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
 
   try {
     const {

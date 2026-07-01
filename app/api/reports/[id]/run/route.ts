@@ -45,6 +45,64 @@ function formatCellValue(value: unknown): string {
   return asString
 }
 
+function toMoneyNumber(value: unknown): number {
+  const num = Number(value)
+  return Number.isFinite(num) ? num : 0
+}
+
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100
+}
+
+function getRowSubtotal(row: any): number {
+  if (row && typeof row === 'object') {
+    if (row.subtotal != null) return toMoneyNumber(row.subtotal)
+
+    const lineItems = Array.isArray(row.lineItems) ? row.lineItems : []
+    if (lineItems.length > 0) {
+      return lineItems.reduce((sum: number, item: any) => {
+        if (item?.total != null) return sum + toMoneyNumber(item.total)
+        const qty = toMoneyNumber(item?.quantity)
+        const unitPrice = toMoneyNumber(item?.unitPrice)
+        return sum + qty * unitPrice
+      }, 0)
+    }
+  }
+
+  return 0
+}
+
+function getReportSummary(rows: any[]) {
+  const raw = rows.reduce(
+    (acc, row) => {
+      const subtotal = getRowSubtotal(row)
+      const tax = row?.taxAmount != null ? toMoneyNumber(row.taxAmount) : toMoneyNumber(row?.tax)
+      const discount = toMoneyNumber(row?.discount)
+      const fees = toMoneyNumber(row?.fees) + toMoneyNumber(row?.fee)
+      const total =
+        row?.total != null
+          ? toMoneyNumber(row.total)
+          : subtotal - discount + tax + fees
+
+      acc.subtotal += subtotal
+      acc.tax += tax
+      acc.discount += discount
+      acc.fees += fees
+      acc.total += total
+      return acc
+    },
+    { subtotal: 0, tax: 0, discount: 0, fees: 0, total: 0 }
+  )
+
+  return {
+    subtotal: roundMoney(raw.subtotal),
+    tax: roundMoney(raw.tax),
+    discount: roundMoney(raw.discount),
+    fees: roundMoney(raw.fees),
+    total: roundMoney(raw.total),
+  }
+}
+
 function buildReportPdfHtml(input: {
   reportName: string
   dataset: string
@@ -52,8 +110,15 @@ function buildReportPdfHtml(input: {
   generatedAt: string
   columns: string[]
   rows: any[]
+  summary: {
+    subtotal: number
+    tax: number
+    discount: number
+    fees: number
+    total: number
+  }
 }): string {
-  const { reportName, dataset, totalRows, generatedAt, columns, rows } = input
+  const { reportName, dataset, totalRows, generatedAt, columns, rows, summary } = input
   const headerCells = columns
     .map(
       (col) =>
@@ -94,6 +159,13 @@ function buildReportPdfHtml(input: {
             <thead><tr>${headerCells}</tr></thead>
             <tbody>${bodyRows || '<tr><td style="padding:12px;font-size:12px;color:#64748b;" colspan="' + columns.length + '">No results found.</td></tr>'}</tbody>
           </table>
+          <div style="margin-top:14px;padding-top:10px;border-top:1px solid #e2e8f0;max-width:320px;margin-left:auto;">
+            <div style="display:flex;justify-content:space-between;font-size:12px;color:#334155;padding:2px 0;"><span>Subtotal</span><span>$${summary.subtotal.toFixed(2)}</span></div>
+            ${summary.tax !== 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;color:#334155;padding:2px 0;"><span>Tax</span><span>$${summary.tax.toFixed(2)}</span></div>` : ''}
+            ${summary.discount !== 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;color:#334155;padding:2px 0;"><span>Discount</span><span>-$${summary.discount.toFixed(2)}</span></div>` : ''}
+            ${summary.fees !== 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;color:#334155;padding:2px 0;"><span>Fees</span><span>$${summary.fees.toFixed(2)}</span></div>` : ''}
+            <div style="display:flex;justify-content:space-between;font-size:13px;color:#0f172a;padding:7px 0 2px;border-top:1px solid #cbd5e1;margin-top:6px;font-weight:700;"><span>Total</span><span>$${summary.total.toFixed(2)}</span></div>
+          </div>
         </div>
       </div>
     </div>
@@ -217,6 +289,8 @@ export async function POST(
       },
     })
 
+    const summary = getReportSummary(data)
+
     if (format === 'csv') {
       // Convert to CSV
       const columns = (report.columns as string[]) || []
@@ -232,6 +306,13 @@ export async function POST(
             })
             .join(',')
         ),
+        '',
+        `"Summary","Amount"`,
+        `"Subtotal","${summary.subtotal.toFixed(2)}"`,
+        ...(summary.tax !== 0 ? [`"Tax","${summary.tax.toFixed(2)}"`] : []),
+        ...(summary.discount !== 0 ? [`"Discount","-${summary.discount.toFixed(2)}"`] : []),
+        ...(summary.fees !== 0 ? [`"Fees","${summary.fees.toFixed(2)}"`] : []),
+        `"Total","${summary.total.toFixed(2)}"`,
       ]
 
       return new NextResponse(csvRows.join('\n'), {
@@ -265,6 +346,7 @@ export async function POST(
         generatedAt: new Date().toLocaleString(),
         columns,
         rows: data,
+        summary,
       })
 
       const pdfBuffer = await renderPdfFromHtml(html)
@@ -282,6 +364,7 @@ export async function POST(
       reportRun,
       data,
       total: data.length,
+      summary,
     })
   } catch (error) {
     console.error('Run report error:', error)

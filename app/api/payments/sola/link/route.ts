@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { solaService } from '@/lib/services/sola'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
@@ -34,6 +35,8 @@ function fromCents(cents: number) {
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'payments.manage')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 

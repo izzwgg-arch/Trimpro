@@ -152,12 +152,14 @@ function logPermissionDenied(
     [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim() ||
     user?.id ||
     'unknown'
+  const module = requiredPermissions[0]?.split('.')[0] || 'unknown'
   console.warn('[authorization] Permission denied', {
     userId: user?.id || null,
     username,
-    requiredPermissions,
+    module,
+    permissionRequired: requiredPermissions,
     mode,
-    action: `${request.method} ${request.nextUrl.pathname}`,
+    requestedAction: `${request.method} ${request.nextUrl.pathname}`,
     timestamp: new Date().toISOString(),
   })
 }

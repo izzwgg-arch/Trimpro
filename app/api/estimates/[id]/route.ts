@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { parseAddressParts } from '@/lib/address/parse'
 import { geocodeAddressPartsFromString } from '@/lib/geocoding'
@@ -18,6 +19,8 @@ export async function GET(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'estimates.view')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 
@@ -201,6 +204,8 @@ export async function PUT(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'estimates.edit')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 
@@ -491,6 +496,8 @@ export async function DELETE(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'estimates.delete')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 

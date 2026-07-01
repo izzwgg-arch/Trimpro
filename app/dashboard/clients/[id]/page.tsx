@@ -19,6 +19,7 @@ import {
   MessageSquare,
   AlertCircle,
   CheckSquare,
+  UserPlus,
   Edit,
   Plus,
   Trash2,
@@ -30,6 +31,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { AddressMapSection } from './map-section'
+import { usePermissions, hasPermission } from '@/hooks/usePermissions'
 
 interface ClientDetail {
   id: string
@@ -358,6 +360,7 @@ export default function ClientDetailPage() {
   const [receiptEmailSending, setReceiptEmailSending] = useState(false)
   const [receiptEmailResult, setReceiptEmailResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [downloadingReceiptId, setDownloadingReceiptId] = useState<string | null>(null)
+  const { permissions: userPermissions, loading: permissionsLoading } = usePermissions()
 
   // Defensive: Validate params before using
   const clientId = params?.id as string | undefined
@@ -820,6 +823,7 @@ export default function ClientDetailPage() {
     ? client.subClientInvoices
     : []
   const hasSubClients = subClients.length > 0
+  const canCreateRequest = !permissionsLoading && hasPermission(userPermissions, 'leads.create')
   const selectedInvoices = invoices.filter((invoice) => selectedInvoiceIds.includes(invoice.id))
   const bulkPaymentTotal = selectedInvoices.reduce((sum, invoice) => {
     const amount = parseFloat(bulkPaymentAmounts[invoice.id] || '0')
@@ -897,6 +901,12 @@ export default function ClientDetailPage() {
               <FileText className="mr-2 h-4 w-4" />
               New Estimate
             </Button>
+            {canCreateRequest && (
+              <Button variant="outline" onClick={() => router.push(`/dashboard/requests/new?clientId=${clientId}`)}>
+                <UserPlus className="mr-2 h-4 w-4" />
+                New Request
+              </Button>
+            )}
             <Button variant="outline" onClick={() => router.push(`/dashboard/tasks/new?clientId=${clientId}`)}>
               <CheckSquare className="mr-2 h-4 w-4" />
               New Task

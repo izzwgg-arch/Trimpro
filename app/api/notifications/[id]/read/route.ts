@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 
 export async function POST(
   request: NextRequest,
@@ -8,6 +9,8 @@ export async function POST(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'dashboard.view')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 

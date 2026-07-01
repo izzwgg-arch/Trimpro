@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { getUserFromToken } from '@/lib/auth'
 
 export const runtime = 'nodejs'
@@ -31,6 +32,9 @@ export async function GET(request: NextRequest) {
     if (authError) return authError
     user = getAuthUser(request)
   }
+
+  const permError = await requirePermission(request, 'messages.view')
+  if (permError) return permError
 
   const sinceRaw = searchParams.get('since')
   let since = sinceRaw ? new Date(sinceRaw) : new Date(Date.now() - 60_000)

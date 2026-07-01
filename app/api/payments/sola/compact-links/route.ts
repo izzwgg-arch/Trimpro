@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import {
   CARDKNOX_HOSTED_FORM_URL,
@@ -14,14 +15,10 @@ export const dynamic = 'force-dynamic'
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'payments.manage')
+  if (permError) return permError
 
   const user = getAuthUser(request)
-  if (user.role !== 'ADMIN') {
-    return NextResponse.json(
-      { error: 'Admin access required to run this repair tool' },
-      { status: 403 }
-    )
-  }
 
   const body = await request.json().catch(() => ({}))
   const write = Boolean(body?.write)

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { getIntegrationConnection, updateIntegrationStatus } from '@/lib/integrations/status'
 import { getQboSessionForTenant } from '@/lib/qbo/session'
 import { quickBooksService } from '@/lib/services/quickbooks'
@@ -17,6 +18,8 @@ const TWENTY_HOURS_MS = 20 * 60 * 60 * 1000
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'system.integrations')
+  if (permError) return permError
 
   const user = getAuthUser(request)
   const url = new URL(request.url)

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { allocateNextEstimateNumber } from '@/lib/qbo/doc-numbers'
 
 /**
@@ -10,6 +11,8 @@ import { allocateNextEstimateNumber } from '@/lib/qbo/doc-numbers'
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'estimates.view')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 

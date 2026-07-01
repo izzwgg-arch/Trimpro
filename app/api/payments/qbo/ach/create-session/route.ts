@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { requireSameOrigin } from '@/lib/security/csrf'
 import { rateLimitOrThrow } from '@/lib/security/rate-limit'
 import { createAchPaymentSession } from '@/lib/qbo/payments-ach'
@@ -15,6 +16,8 @@ export async function POST(request: NextRequest) {
 
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'payments.manage')
+  if (permError) return permError
 
   try {
     rateLimitOrThrow(request, { key: 'qbo-ach-create-session', limit: 30, windowMs: 60_000 })
@@ -23,9 +26,6 @@ export async function POST(request: NextRequest) {
   }
 
   const user = getAuthUser(request)
-  if (!user || !['ADMIN', 'OFFICE', 'ACCOUNTING'].includes(String(user.role))) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
 
   const parsed = bodySchema.safeParse(await request.json().catch(() => ({})))
   if (!parsed.success) {

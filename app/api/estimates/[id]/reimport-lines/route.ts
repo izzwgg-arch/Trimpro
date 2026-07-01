@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { reimportEstimateLines } from '@/lib/services/qbo-sync'
 
 export async function POST(
@@ -8,6 +9,8 @@ export async function POST(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'estimates.edit')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 

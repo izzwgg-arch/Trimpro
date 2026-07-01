@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
-import { getUserPermissions } from '@/lib/authorization'
+import { getUserPermissions, requirePermission } from '@/lib/authorization'
 import { runGlobalSearch } from '@/lib/search/global-search'
 
 export const runtime = 'nodejs'
@@ -9,6 +9,8 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'dashboard.view')
+  if (permError) return permError
 
   const user = getAuthUser(request)
   const { searchParams } = new URL(request.url)

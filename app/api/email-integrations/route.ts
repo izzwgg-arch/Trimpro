@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { encryptSecrets } from '@/lib/integrations/secrets'
 import { isValidEmail } from '@/lib/email'
 
@@ -39,11 +40,9 @@ function mapIntegrationForResponse(integration: any) {
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'system.integrations')
+  if (permError) return permError
   const user = getAuthUser(request)
-
-  if (!requireAdmin(user)) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
 
   const db = prisma as any
   const integrations = await db.emailIntegration.findMany({
@@ -70,10 +69,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'system.integrations')
+  if (permError) return permError
   const user = getAuthUser(request)
-  if (!requireAdmin(user)) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
 
   try {
     const body = await request.json()

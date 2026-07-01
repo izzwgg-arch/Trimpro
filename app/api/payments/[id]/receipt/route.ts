@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
-import { hasAnyPermission } from '@/lib/authorization'
+import { requirePermission } from '@/lib/authorization'
 import { isValidEmail } from '@/lib/email'
 import {
   generatePaymentReceiptPdf,
@@ -11,24 +11,10 @@ async function assertReceiptAccess(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return { error: authError }
 
+  const permError = await requirePermission(request, 'payments.view')
+  if (permError) return { error: permError }
+
   const user = getAuthUser(request)
-  const hasAccess =
-    user.role === 'ADMIN' ||
-    (await hasAnyPermission(user.id, user.tenantId, [
-      'clients.view',
-      'invoices.view',
-      'invoices.send',
-      'payments.view',
-      'payments.manage',
-      'manage_payments',
-    ]))
-
-  if (!hasAccess) {
-    return {
-      error: NextResponse.json({ error: 'Forbidden: Insufficient permissions' }, { status: 403 }),
-    }
-  }
-
   return { user }
 }
 

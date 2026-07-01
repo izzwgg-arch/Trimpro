@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { Menu } from 'lucide-react'
 import { QboSyncFailureNotifier } from '@/components/qbo/QboSyncFailureNotifier'
 import { GlobalSearch } from '@/components/search/GlobalSearch'
+import { RoutePermissionGuard } from '@/components/permissions/RoutePermissionGuard'
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -77,7 +78,9 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
         <main className="flex-1 overflow-y-auto overflow-x-hidden bg-gray-100">
         <div className="min-h-full flex flex-col bg-gray-100 p-4 sm:p-6">
-          <div className="flex-1">{children}</div>
+          <div className="flex-1">
+            <RoutePermissionGuard>{children}</RoutePermissionGuard>
+          </div>
           <footer className="mt-10 border-t border-gray-200 pt-4 text-xs text-muted-foreground flex flex-wrap items-center justify-between gap-3">
             <div>© {new Date().getFullYear()} TrimPro</div>
             <div className="flex items-center gap-4">

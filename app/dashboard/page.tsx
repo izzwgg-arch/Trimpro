@@ -23,6 +23,7 @@ import { DashboardRevenueChart } from '@/components/dashboard/DashboardRevenueCh
 import { DashboardJobsPipelineChart } from '@/components/dashboard/DashboardJobsPipelineChart'
 import { DashboardJobsChart } from '@/components/dashboard/DashboardJobsChart'
 import { refreshAccessToken } from '@/lib/auth/client'
+import { PermissionGuard } from '@/components/permissions/PermissionGuard'
 
 interface DashboardStats {
   kpis: {
@@ -178,20 +179,22 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {qboHealth?.ok === false ? (
-        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-900">
-          <div className="flex items-start gap-2">
-            <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-            <div className="min-w-0">
-              <div className="font-medium">QuickBooks needs attention</div>
-              <div className="text-sm opacity-90 break-words">
-                {qboHealth.error || 'QuickBooks token refresh failed.'}{' '}
-                <a className="underline" href="/dashboard/settings/integrations/quickbooks">
-                  Open QuickBooks settings
-                </a>
+        <PermissionGuard permission="system.integrations">
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-900">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+              <div className="min-w-0">
+                <div className="font-medium">QuickBooks needs attention</div>
+                <div className="text-sm opacity-90 break-words">
+                  {qboHealth.error || 'QuickBooks token refresh failed.'}{' '}
+                  <a className="underline" href="/dashboard/settings/integrations/quickbooks">
+                    Open QuickBooks settings
+                  </a>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        </PermissionGuard>
       ) : null}
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
@@ -199,6 +202,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Payment Received Panel - Forced Dismissal */}
+      <PermissionGuard permission="payments.view">
       {visiblePayments.length > 0 && (
         <Card className="border-green-500 bg-green-50">
           <CardHeader>
@@ -247,9 +251,11 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       )}
+      </PermissionGuard>
 
       {/* KPI Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <PermissionGuard permission="analytics.view">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
@@ -262,7 +268,9 @@ export default function DashboardPage() {
             </p>
           </CardContent>
         </Card>
+        </PermissionGuard>
 
+        <PermissionGuard permission="analytics.view">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Month Revenue</CardTitle>
@@ -282,7 +290,9 @@ export default function DashboardPage() {
             </div>
           </CardContent>
         </Card>
+        </PermissionGuard>
 
+        <PermissionGuard permission="invoices.view">
         <Link href="/dashboard/invoices?status=UNPAID_OVERDUE" className="block">
           <Card className="hover:shadow-md transition-shadow cursor-pointer">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -304,7 +314,9 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
         </Link>
+        </PermissionGuard>
 
+        <PermissionGuard permission="jobs.view">
         <Link href="/dashboard/jobs?status=ACTIVE" className="block">
           <Card className="hover:shadow-md transition-shadow cursor-pointer">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -319,10 +331,12 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
         </Link>
+        </PermissionGuard>
       </div>
 
       {/* Secondary KPIs */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <PermissionGuard permission="calls.view">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Missed Calls</CardTitle>
@@ -333,7 +347,9 @@ export default function DashboardPage() {
             <p className="text-xs text-muted-foreground mt-1">Today</p>
           </CardContent>
         </Card>
+        </PermissionGuard>
 
+        <PermissionGuard permission="messages.view">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Unread Messages</CardTitle>
@@ -344,7 +360,9 @@ export default function DashboardPage() {
             <p className="text-xs text-muted-foreground mt-1">SMS/MMS</p>
           </CardContent>
         </Card>
+        </PermissionGuard>
 
+        <PermissionGuard permission="tasks.view">
         <Link href="/dashboard/tasks?status=PLANNING_PENDING" className="block">
           <Card className="hover:shadow-md transition-shadow cursor-pointer">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -357,7 +375,9 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
         </Link>
+        </PermissionGuard>
 
+        <PermissionGuard permission="issues.view">
         <Link href="/dashboard/issues?status=OPEN" className="block">
           <Card className="hover:shadow-md transition-shadow cursor-pointer">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -370,9 +390,11 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
         </Link>
+        </PermissionGuard>
       </div>
 
       {/* Charts Section */}
+      <PermissionGuard permission="analytics.view">
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader>
@@ -404,12 +426,15 @@ export default function DashboardPage() {
           <DashboardJobsChart />
         </CardContent>
       </Card>
+      </PermissionGuard>
 
+      <PermissionGuard permission="analytics.view">
       <div className="flex justify-end">
         <Button variant="outline" onClick={() => window.location.href = '/dashboard/analytics'}>
           View Full Analytics →
         </Button>
       </div>
+      </PermissionGuard>
 
     </div>
   )

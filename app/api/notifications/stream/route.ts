@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 
 export const runtime = 'nodejs'
 
@@ -11,6 +12,8 @@ function sleep(ms: number) {
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'dashboard.view')
+  if (permError) return permError
 
   const user = getAuthUser(request)
   const { searchParams } = new URL(request.url)

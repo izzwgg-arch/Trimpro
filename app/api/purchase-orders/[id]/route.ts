@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
+import { formatAddressParts } from '@/lib/address/parse'
 
 export async function GET(
   request: NextRequest,
@@ -9,6 +11,8 @@ export async function GET(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'purchase_orders.view')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 
@@ -34,6 +38,10 @@ export async function GET(
         },
         job: {
           include: {
+            addresses: {
+              where: { type: 'job_site' },
+              take: 1,
+            },
             client: {
               select: {
                 id: true,
@@ -90,10 +98,12 @@ export async function GET(
     const tax = 0 // Tax not stored in schema, would need migration
     const shipping = 0 // Shipping not stored in schema, would need migration
     const receivedTotal = 0 // Receipts tracking would require a separate model
+    const jobSiteAddress = formatAddressParts(purchaseOrder.job?.addresses?.[0] || null)
 
     return NextResponse.json({
       purchaseOrder: {
         ...purchaseOrder,
+        jobSiteAddress,
         subtotal,
         tax,
         shipping,
@@ -114,6 +124,8 @@ export async function PUT(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'purchase_orders.edit')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 
@@ -344,6 +356,8 @@ export async function DELETE(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'purchase_orders.delete')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 

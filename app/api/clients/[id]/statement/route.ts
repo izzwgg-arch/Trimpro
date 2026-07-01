@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { getPdfBranding } from '@/lib/branding/pdf'
 import { renderPdfFromHtml } from '@/lib/pdf/render-html-to-pdf'
 import { getUserFromToken } from '@/lib/auth'
@@ -271,6 +272,10 @@ export async function GET(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  ;(request as any).user = user
+  const permError = await requirePermission(request, 'clients.view')
+  if (permError) return permError
+
   const format = request.nextUrl.searchParams.get('format') || 'html'
   const download = request.nextUrl.searchParams.get('download') === '1'
 
@@ -324,6 +329,8 @@ export async function POST(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'clients.view')
+  if (permError) return permError
   const user = getAuthUser(request)
 
   try {

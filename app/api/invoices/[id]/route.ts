@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { notifyInvoiceOverdue } from '@/lib/notifications'
 import { formatAddressParts, parseAddressParts } from '@/lib/address/parse'
@@ -17,6 +18,8 @@ export async function GET(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'invoices.view')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 
@@ -203,6 +206,8 @@ export async function PUT(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'invoices.edit')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 
@@ -517,6 +522,8 @@ export async function DELETE(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'invoices.delete')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 

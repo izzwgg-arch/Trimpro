@@ -3,7 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns'
 import { createNotification } from '@/lib/notifications'
-import { hasMobilePermission, hasPermission, isMobileRequest, requireMobilePermission } from '@/lib/authorization'
+import { hasMobilePermission, hasPermission, isMobileRequest, requireAnyPermission, requireMobilePermission, requirePermission } from '@/lib/authorization'
 import { resolveScheduleScope } from '@/lib/schedule/scope'
 
 function normalizeScheduleDateTime(rawDate: unknown, rawTime: unknown, fallbackIso?: string): Date | null {
@@ -32,6 +32,8 @@ function normalizeScheduleDateTime(rawDate: unknown, rawTime: unknown, fallbackI
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requireAnyPermission(request, ['schedule.view', 'schedule.view_all'])
+  if (permError) return permError
 
   const user = getAuthUser(request)
   const searchParams = request.nextUrl.searchParams
@@ -214,6 +216,9 @@ export async function POST(request: NextRequest) {
   if (isMobileRequest(request)) {
     const mobilePermError = await requireMobilePermission(request, 'mobile.jobs.schedule')
     if (mobilePermError) return mobilePermError
+  } else {
+    const permError = await requirePermission(request, 'schedule.create')
+    if (permError) return permError
   }
 
   const user = getAuthUser(request)

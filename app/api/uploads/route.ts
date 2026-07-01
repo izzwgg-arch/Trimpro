@@ -3,6 +3,7 @@ import path from 'path'
 import { promises as fs } from 'fs'
 import crypto from 'crypto'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requireAnyPermission } from '@/lib/authorization'
 import {
   getMaxBytesForMimeType,
   isAllowedUploadMimeType,
@@ -22,6 +23,8 @@ export async function POST(request: NextRequest) {
   console.log('[uploads] Upload route hit')
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requireAnyPermission(request, ['jobs.upload_files', 'leads.edit', 'clients.edit'])
+  if (permError) return permError
 
   const user = getAuthUser(request)
   console.log('[uploads] Authenticated user:', { userId: user.id, tenantId: user.tenantId })

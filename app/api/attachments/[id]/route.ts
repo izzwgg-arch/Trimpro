@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requireAnyPermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 
 export async function DELETE(
@@ -8,6 +9,8 @@ export async function DELETE(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requireAnyPermission(request, ['jobs.view', 'leads.view', 'clients.view'])
+  if (permError) return permError
 
   const user = getAuthUser(request)
   try {

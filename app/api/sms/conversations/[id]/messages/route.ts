@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { messagingService } from '@/lib/messaging/service'
 import { MessagingChannel } from '@/lib/messaging/types'
@@ -13,6 +14,8 @@ export async function GET(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'messages.view')
+  if (permError) return permError
   const user = getAuthUser(request)
 
   const conversation = await prisma.conversation.findFirst({
@@ -52,6 +55,8 @@ export async function POST(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'messages.send')
+  if (permError) return permError
   const user = getAuthUser(request)
 
   const conversation = await prisma.conversation.findFirst({

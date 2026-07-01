@@ -48,6 +48,7 @@ interface PurchaseOrderDetail {
   orderDate: string | null
   expectedDate: string | null
   receivedDate: string | null
+  jobSiteAddress?: string | null
   job: {
     id: string
     jobNumber: string
@@ -655,6 +656,17 @@ export default function PurchaseOrderDetailPage() {
                   {po.job.jobNumber} - {po.job.title}
                 </Link>
                 <p className="text-sm text-gray-600 mt-1">Client: {po.job.client.name}</p>
+              </CardContent>
+            </Card>
+          )}
+
+          {po.jobSiteAddress && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Job Site Address</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-gray-700 whitespace-pre-line">{po.jobSiteAddress}</p>
               </CardContent>
             </Card>
           )}

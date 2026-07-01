@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'payments.manage')
+  if (permError) return permError
 
   const user = getAuthUser(request)
-  if (!['ADMIN', 'OFFICE', 'ACCOUNTING'].includes(String(user.role))) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
 
   const webhookEvents = await prisma.webhookEvent.findMany({
     where: {

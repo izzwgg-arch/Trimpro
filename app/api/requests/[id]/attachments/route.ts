@@ -3,6 +3,7 @@ import crypto from 'crypto'
 import path from 'path'
 import { promises as fs } from 'fs'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import {
   getMaxBytesForMimeType,
@@ -26,6 +27,8 @@ export const runtime = 'nodejs'
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'leads.edit')
+  if (permError) return permError
 
   const user = getAuthUser(request)
   try {

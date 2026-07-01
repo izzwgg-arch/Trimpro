@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 
 async function localEntityExists(type: string, entityId: string | null): Promise<boolean> {
@@ -29,12 +30,10 @@ async function localEntityExists(type: string, entityId: string | null): Promise
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'system.integrations')
+  if (permError) return permError
 
   const user = getAuthUser(request)
-
-  if (user.role !== 'ADMIN') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
 
   try {
     const { searchParams } = new URL(request.url)

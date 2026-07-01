@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { getQboSessionForTenant } from '@/lib/qbo/session'
 import { quickBooksService } from '@/lib/services/quickbooks'
@@ -41,6 +42,8 @@ function mapQboVendor(v: any) {
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'purchase_orders.create')
+  if (permError) return permError
   const user = getAuthUser(request)
 
   try {

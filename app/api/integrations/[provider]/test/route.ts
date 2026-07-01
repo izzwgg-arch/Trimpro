@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { getIntegrationSecrets, updateIntegrationStatus } from '@/lib/integrations/status'
 import { IntegrationProvider, IntegrationTestResult } from '@/lib/integrations/types'
 import { z } from 'zod'
@@ -23,6 +24,8 @@ export async function POST(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'system.integrations')
+  if (permError) return permError
 
   const user = getAuthUser(request)
   const provider = params.provider as IntegrationProvider

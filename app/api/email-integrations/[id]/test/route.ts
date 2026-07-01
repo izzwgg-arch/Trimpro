@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { decryptSecrets } from '@/lib/integrations/secrets'
 
 const schema = z.object({
@@ -15,8 +16,9 @@ function isAdmin(user: { role?: string }) {
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'system.integrations')
+  if (permError) return permError
   const user = getAuthUser(request)
-  if (!isAdmin(user)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const db = prisma as any
   const integration = await db.emailIntegration.findFirst({

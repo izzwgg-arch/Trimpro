@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { encryptSecrets, decryptSecrets } from '@/lib/integrations/secrets'
 import { getIntegrationConnection } from '@/lib/integrations/status'
@@ -12,6 +13,8 @@ export async function POST(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'system.integrations')
+  if (permError) return permError
 
   const user = getAuthUser(request)
   const provider = params.provider as IntegrationProvider

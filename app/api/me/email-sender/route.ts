@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { decryptSecrets, encryptSecrets } from '@/lib/integrations/secrets'
 import { isValidEmail } from '@/lib/email'
 
@@ -20,6 +21,8 @@ function hasModel(db: any, model: string): boolean {
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'settings.edit')
+  if (permError) return permError
   const user = getAuthUser(request)
   const db = prisma as any
 
@@ -68,6 +71,8 @@ export async function GET(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'settings.edit')
+  if (permError) return permError
   const user = getAuthUser(request)
   const db = prisma as any
 
@@ -157,6 +162,8 @@ export async function PUT(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'settings.edit')
+  if (permError) return permError
   const user = getAuthUser(request)
   const db = prisma as any
 

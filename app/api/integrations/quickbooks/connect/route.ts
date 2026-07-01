@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import crypto from 'crypto'
 import { prisma } from '@/lib/prisma'
 import { decryptSecrets } from '@/lib/integrations/secrets'
@@ -36,6 +37,8 @@ async function getQuickBooksConfig(tenantId: string) {
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'system.integrations')
+  if (permError) return permError
 
   const user = getAuthUser(request)
   const cfg = await getQuickBooksConfig(user.tenantId)

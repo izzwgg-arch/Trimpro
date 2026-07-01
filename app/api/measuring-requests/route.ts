@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { createNotification } from '@/lib/notifications'
 
@@ -16,12 +17,9 @@ function parseStatusFilter(value: string | null): 'PENDING' | 'OPENED' | 'COMPLE
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'leads.view')
+  if (permError) return permError
   const user = getAuthUser(request)
-  const role = String(user.role || '').toUpperCase()
-
-  if (!['ADMIN', 'MANAGER', 'OFFICE'].includes(role)) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
 
   const searchParams = request.nextUrl.searchParams
   const statusFilter = parseStatusFilter(searchParams.get('status'))
@@ -122,6 +120,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'leads.create')
+  if (permError) return permError
   const user = getAuthUser(request)
 
   const body = await request.json().catch(() => ({}))

@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
-import { hasMobilePermission, hasPermission } from '@/lib/authorization'
+import { hasMobilePermission, hasPermission, requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { syncJobBillableMinutes } from '@/lib/time-tracking'
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'web.jobs.edit_time_entries')
+  if (permError) return permError
 
   const actor = getAuthUser(request)
   const jobId = params.id

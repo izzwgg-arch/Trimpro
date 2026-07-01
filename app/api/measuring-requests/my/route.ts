@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 
 function parseStatusFilter(value: string | null): 'PENDING' | 'OPENED' | 'COMPLETED' | 'ALL' {
@@ -15,6 +16,8 @@ function toApiStatus(status: 'PENDING' | 'OPENED' | 'COMPLETED') {
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'leads.view')
+  if (permError) return permError
   const user = getAuthUser(request)
 
   const statusFilter = parseStatusFilter(request.nextUrl.searchParams.get('status'))

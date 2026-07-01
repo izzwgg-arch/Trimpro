@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requireAnyPermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 
 /**
@@ -10,6 +11,14 @@ import { prisma } from '@/lib/prisma'
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requireAnyPermission(request, [
+    'settings.view',
+    'estimates.view',
+    'invoices.view',
+    'purchase_orders.view',
+    'jobs.view',
+  ])
+  if (permError) return permError
 
   const user = getAuthUser(request)
   const searchParams = request.nextUrl.searchParams

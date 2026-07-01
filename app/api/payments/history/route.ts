@@ -1,20 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
-import { hasAnyPermission } from '@/lib/authorization'
+import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'payments.view')
+  if (permError) return permError
 
   const user = getAuthUser(request)
-  const hasAccess =
-    user.role === 'ADMIN' ||
-    (await hasAnyPermission(user.id, user.tenantId, ['reports.view', 'payments.manage', 'manage_payments']))
-  if (!hasAccess) {
-    return NextResponse.json({ error: 'Forbidden: Insufficient permissions' }, { status: 403 })
-  }
-
   const { searchParams } = new URL(request.url)
   const page = Math.max(1, Number(searchParams.get('page') || 1))
   const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit') || 25)))

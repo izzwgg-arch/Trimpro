@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { createNotification } from '@/lib/notifications'
 
@@ -16,10 +17,9 @@ async function authorize(request: NextRequest): Promise<{ tenantId?: string; isG
 
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'issues.edit')
+  if (permError) return permError
   const user = getAuthUser(request)
-  if (String(user.role) !== 'ADMIN') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
   return { tenantId: user.tenantId, isGlobal: false }
 }
 

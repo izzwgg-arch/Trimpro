@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { decryptSecrets } from '@/lib/integrations/secrets'
 
 const schema = z.object({
@@ -11,6 +12,8 @@ const schema = z.object({
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  const permError = await requirePermission(request, 'settings.edit')
+  if (permError) return permError
   const user = getAuthUser(request)
   const db = prisma as any
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 
 export async function POST(
@@ -8,6 +9,8 @@ export async function POST(
 ) {
   const authError = await authenticateRequest(req)
   if (authError) return authError
+  const permError = await requirePermission(req, 'messages.send')
+  if (permError) return permError
   const user = getAuthUser(req)
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
