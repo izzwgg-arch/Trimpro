@@ -18,6 +18,7 @@ import {
   normalizeInvoiceNumber,
 } from '@/lib/qbo/doc-numbers'
 import { ensureJobFromInvoice } from '@/lib/jobs/ensure-job-from-invoice'
+import { invoiceJobSiteAddressSearchClauses } from '@/lib/search/job-site-address'
 
 function formatJobSiteAddress(raw?: string | null, fallbackParts?: Array<string | null | undefined>) {
   const value = String(raw || '').trim()
@@ -65,6 +66,7 @@ export async function GET(request: NextRequest) {
         { client: { addresses: { some: { city: { contains: search, mode: 'insensitive' } } } } },
         { client: { addresses: { some: { state: { contains: search, mode: 'insensitive' } } } } },
         { client: { addresses: { some: { zipCode: { contains: search, mode: 'insensitive' } } } } },
+        ...invoiceJobSiteAddressSearchClauses(search),
       ]
     }
 

@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { notifyRequestCreated } from '@/lib/notifications'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
+import { leadJobSiteAddressSearchClauses } from '@/lib/search/job-site-address'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -47,7 +48,7 @@ export async function GET(request: NextRequest) {
         { email: { contains: search, mode: 'insensitive' } },
         { phone: { contains: search, mode: 'insensitive' } },
         { company: { contains: search, mode: 'insensitive' } },
-        { jobSiteAddress: { contains: search, mode: 'insensitive' } },
+        ...leadJobSiteAddressSearchClauses(search),
         { client: { name: { contains: search, mode: 'insensitive' } } },
         { client: { companyName: { contains: search, mode: 'insensitive' } } },
         { client: { addresses: { some: { street: { contains: search, mode: 'insensitive' } } } } },

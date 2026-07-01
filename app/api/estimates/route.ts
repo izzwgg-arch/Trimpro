@@ -12,6 +12,7 @@ import {
   mapEstimateDocNumberErrorToResponse,
   normalizeEstimateNumber,
 } from '@/lib/qbo/doc-numbers'
+import { estimateJobSiteAddressSearchClauses } from '@/lib/search/job-site-address'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -48,6 +49,7 @@ export async function GET(request: NextRequest) {
       where.OR = [
         { estimateNumber: { contains: search, mode: 'insensitive' } },
         { title: { contains: search, mode: 'insensitive' } },
+        ...estimateJobSiteAddressSearchClauses(search),
       ]
     }
 

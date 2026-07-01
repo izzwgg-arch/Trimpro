@@ -6,6 +6,7 @@ import { getPaginationParams, createPaginationResponse } from '@/lib/pagination'
 import { validateRequest, createJobSchema } from '@/lib/validation'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { isMobileRequest, requireMobilePermission, hasMobilePermission } from '@/lib/authorization'
+import { jobRecordJobSiteAddressSearchClauses } from '@/lib/search/job-site-address'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -110,6 +111,7 @@ export async function GET(request: NextRequest) {
             { jobNumber: { contains: search, mode: 'insensitive' } },
             { title: { contains: search, mode: 'insensitive' } },
             { description: { contains: search, mode: 'insensitive' } },
+            ...jobRecordJobSiteAddressSearchClauses(search),
           ]
         }
 
@@ -223,6 +225,7 @@ export async function GET(request: NextRequest) {
         { jobNumber: { contains: search, mode: 'insensitive' } },
         { title: { contains: search, mode: 'insensitive' } },
         { description: { contains: search, mode: 'insensitive' } },
+        ...jobRecordJobSiteAddressSearchClauses(search),
       ]
     }
 

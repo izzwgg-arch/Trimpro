@@ -3,6 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
+import { purchaseOrderJobSiteAddressSearchClauses } from '@/lib/search/job-site-address'
 
 function formatJobSiteAddress(parts?: {
   street?: string | null
@@ -42,6 +43,7 @@ export async function GET(request: NextRequest) {
       where.OR = [
         { poNumber: { contains: search, mode: 'insensitive' } },
         { vendor: { contains: search, mode: 'insensitive' } },
+        ...purchaseOrderJobSiteAddressSearchClauses(search),
       ]
     }
 
