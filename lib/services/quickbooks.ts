@@ -1,6 +1,8 @@
 // QuickBooks Online API Integration
 // OAuth 2.0 with refresh token support
 
+import { fetchWithTimeout } from '@/lib/http/fetch-with-timeout'
+
 const QBO_CLIENT_ID = process.env.QBO_CLIENT_ID
 const QBO_CLIENT_SECRET = process.env.QBO_CLIENT_SECRET
 const QBO_REDIRECT_URI = process.env.QBO_REDIRECT_URI || 'http://localhost:3000/api/qbo/callback'
@@ -14,6 +16,9 @@ const QBO_API_BASE =
   QBO_ENV === 'sandbox'
     ? 'https://sandbox-quickbooks.api.intuit.com'
     : 'https://quickbooks.api.intuit.com'
+
+const QBO_FETCH_TIMEOUT_MS = Number(process.env.QBO_FETCH_TIMEOUT_MS || 30_000)
+const QBO_TOKEN_TIMEOUT_MS = Number(process.env.QBO_TOKEN_TIMEOUT_MS || 15_000)
 
 interface QBOAccessTokenResponse {
   access_token: string
@@ -64,7 +69,7 @@ export class QuickBooksService {
   }
 
   async exchangeCodeForTokens(code: string): Promise<QBOAccessTokenResponse> {
-    const response = await fetch(QBO_TOKEN_URL, {
+    const response = await fetchWithTimeout(QBO_TOKEN_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -76,7 +81,7 @@ export class QuickBooksService {
         code,
         redirect_uri: QBO_REDIRECT_URI,
       }),
-    })
+    }, QBO_TOKEN_TIMEOUT_MS)
 
     const intuitTid = this.extractIntuitTid(response.headers)
     this.logIntuitTid(intuitTid, { method: 'POST', url: `${QBO_BASE_URL}/v1/tokens/bearer`, status: response.status })
@@ -103,7 +108,7 @@ export class QuickBooksService {
       throw new Error('QuickBooks OAuth credentials missing (clientId/clientSecret required)')
     }
 
-    const response = await fetch(QBO_TOKEN_URL, {
+    const response = await fetchWithTimeout(QBO_TOKEN_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -114,7 +119,7 @@ export class QuickBooksService {
         grant_type: 'refresh_token',
         refresh_token: refreshToken,
       }),
-    })
+    }, QBO_TOKEN_TIMEOUT_MS)
 
     const intuitTid = this.extractIntuitTid(response.headers)
     this.logIntuitTid(intuitTid, { method: 'POST', url: `${QBO_BASE_URL}/v1/tokens/bearer`, status: response.status })
@@ -175,11 +180,11 @@ export class QuickBooksService {
       headers['Content-Type'] = 'application/json'
     }
 
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,
-    })
+    }, QBO_FETCH_TIMEOUT_MS)
 
     const intuitTid = this.extractIntuitTid(response.headers)
     this.logIntuitTid(intuitTid, { method, url, status: response.status })

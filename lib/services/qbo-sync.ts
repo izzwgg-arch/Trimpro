@@ -541,6 +541,7 @@ export async function syncClientToQuickBooks(tenantId: string, clientId: string)
       entityId: clientId,
       error: error?.message || 'QuickBooks client sync failed',
     })
+    throw error
   }
 }
 
@@ -609,6 +610,7 @@ export async function syncLeadToQuickBooksProject(tenantId: string, leadId: stri
       entityId: leadId,
       error: error?.message || 'QuickBooks request project sync failed',
     })
+    throw error
   }
 }
 
@@ -652,6 +654,7 @@ export async function syncJobToQuickBooksProject(tenantId: string, jobId: string
       entityId: jobId,
       error: error?.message || 'QuickBooks job project sync failed',
     })
+    throw error
   }
 }
 
@@ -812,6 +815,7 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
       entityId: estimateId,
       error: error?.message || 'QuickBooks estimate sync failed',
     })
+    throw error
   }
 }
 
@@ -987,6 +991,7 @@ export async function syncInvoiceToQuickBooks(tenantId: string, invoiceId: strin
       entityId: invoiceId,
       error: error?.message || 'QuickBooks invoice sync failed',
     })
+    throw error
   }
 }
 
@@ -1123,6 +1128,7 @@ export async function syncPaymentToQuickBooks(tenantId: string, paymentId: strin
       entityId: paymentId,
       error: error?.message || 'QuickBooks payment sync failed',
     })
+    throw error
   }
 }
 
@@ -1224,6 +1230,7 @@ export async function syncVendorToQuickBooks(tenantId: string, vendorId: string)
       entityId: vendorId,
       error: error?.message || 'QuickBooks vendor sync failed',
     })
+    throw error
   }
 }
 
@@ -1337,6 +1344,7 @@ export async function syncPurchaseOrderToQuickBooks(tenantId: string, purchaseOr
       entityId: purchaseOrderId,
       error: error?.message || 'QuickBooks purchase order sync failed',
     })
+    throw error
   }
 }
 

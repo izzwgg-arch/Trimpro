@@ -767,31 +767,40 @@ export default function EditEstimatePage() {
         }
       })
 
-      const response = await fetch(`/api/estimates/${estimateId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          estimateNumber,
-          title: formData.title,
-          jobSiteAddress: formData.jobSiteAddress || null,
-          taxRate: taxRate,
-          discount,
-          status: formData.status,
-          validUntil: formData.validUntil || null,
-          notes: formData.notes || null,
-          isNotesVisibleToClient,
-          terms: formData.terms || null,
-          lineItems: apiLineItems,
-          optionalItems: apiOptionalItems,
-          groups: Array.from(groups.entries()).map(([groupId, group]) => ({
-            groupId,
-            ...group,
-          })),
-        }),
-      })
+      const controller = new AbortController()
+      const timeoutId = window.setTimeout(() => controller.abort(), 60_000)
+
+      let response: Response
+      try {
+        response = await fetch(`/api/estimates/${estimateId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            estimateNumber,
+            title: formData.title,
+            jobSiteAddress: formData.jobSiteAddress || null,
+            taxRate: taxRate,
+            discount,
+            status: formData.status,
+            validUntil: formData.validUntil || null,
+            notes: formData.notes || null,
+            isNotesVisibleToClient,
+            terms: formData.terms || null,
+            lineItems: apiLineItems,
+            optionalItems: apiOptionalItems,
+            groups: Array.from(groups.entries()).map(([groupId, group]) => ({
+              groupId,
+              ...group,
+            })),
+          }),
+          signal: controller.signal,
+        })
+      } finally {
+        window.clearTimeout(timeoutId)
+      }
 
       if (response.status === 401) {
         router.push('/auth/login')
@@ -807,7 +816,11 @@ export default function EditEstimatePage() {
       router.push(`/dashboard/estimates/${estimateId}`)
     } catch (error) {
       console.error('Error updating estimate:', error)
-      alert('Failed to update estimate. Please try again.')
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        alert('Save timed out. Your changes may still have been saved — refresh the page to verify.')
+      } else {
+        alert('Failed to update estimate. Please try again.')
+      }
     } finally {
       setSaving(false)
     }

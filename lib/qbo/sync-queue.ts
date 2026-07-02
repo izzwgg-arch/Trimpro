@@ -11,15 +11,16 @@
  *   2. Job is deduplicated: if a pending job already exists for the same
  *      (tenantId, entityType, entityId), we just touch updatedAt instead
  *      of creating a duplicate.
- *   3. After enqueue, `processImmediately: true` (default) triggers the
- *      sync in the same request so behaviour is unchanged for callers
- *      that relied on synchronous sync.  Pass `false` on hot paths (webhooks,
- *      bulk loops) to defer to the background worker.
- *   4. The background worker (`/api/qbo/worker`) retries failed jobs with
- *      exponential backoff up to `maxRetries` times.
+ *   3. By default the job is deferred to the background worker so user-facing
+ *      requests (saves, webhooks) return immediately. Pass
+ *      `processImmediately: true` only for explicit manual sync actions.
+ *   4. After enqueue, a fire-and-forget worker nudge starts processing within
+ *      seconds. The cron worker (`/api/qbo/worker`, every 5 min) handles
+ *      retries with exponential backoff up to `maxRetries` times.
  */
 
 import { prisma } from '@/lib/prisma'
+import { getPublicBaseUrl } from '@/lib/public-url'
 import {
   syncInvoiceToQuickBooks,
   syncClientToQuickBooks,
@@ -47,12 +48,16 @@ const RETRY_DELAYS_MS = [
   600_000,   // 10 min
 ]
 
+/** Jobs stuck in `processing` longer than this are reset to `pending`. */
+const STALE_PROCESSING_MS = 15 * 60 * 1000
+
 /**
  * Enqueue a QBO sync job with deduplication.
  *
- * If `processImmediately` is true (default), the job is executed inline
- * before this function returns — matching the original synchronous behaviour.
- * Pass `false` to defer execution to the background worker cron.
+ * By default the job is processed asynchronously by the background worker so
+ * callers are not blocked on QuickBooks API latency. Pass
+ * `processImmediately: true` only when the caller must wait for the result
+ * (e.g. manual admin sync trigger).
  */
 export async function enqueueQboSync(
   tenantId: string,
@@ -60,7 +65,7 @@ export async function enqueueQboSync(
   entityId: string,
   options?: { processImmediately?: boolean }
 ): Promise<void> {
-  const processImmediately = options?.processImmediately !== false
+  const processImmediately = options?.processImmediately === true
 
   // Dedup: check for an existing pending job for this entity.
   const existing = await prisma.qboSyncJob.findFirst({
@@ -98,6 +103,8 @@ export async function enqueueQboSync(
 
   if (processImmediately) {
     await processQboSyncJob(jobId)
+  } else {
+    nudgeQboWorker(tenantId)
   }
 }
 
@@ -149,6 +156,55 @@ export async function processQboSyncJob(jobId: string): Promise<void> {
 }
 
 /**
+ * Reset jobs left in `processing` after a serverless timeout or crash.
+ */
+export async function resetStaleProcessingJobs(): Promise<number> {
+  const cutoff = new Date(Date.now() - STALE_PROCESSING_MS)
+  const result = await prisma.qboSyncJob.updateMany({
+    where: {
+      status: 'processing',
+      updatedAt: { lt: cutoff },
+    },
+    data: {
+      status: 'pending',
+      nextRetryAt: new Date(),
+      lastError: 'Reset after stale processing state (likely server timeout)',
+    },
+  })
+  return result.count
+}
+
+/**
+ * Kick off background processing without blocking the caller.
+ * Uses a separate serverless invocation in production; runs inline in dev.
+ */
+export function nudgeQboWorker(tenantId?: string): void {
+  const secret = String(process.env.CRON_SECRET || '').trim()
+
+  if (!secret) {
+    void runQboSyncWorker({ tenantId, limit: 10 }).catch((err) => {
+      console.error('[QBO] Inline worker error:', err)
+    })
+    return
+  }
+
+  const base = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : getPublicBaseUrl()
+
+  void fetch(`${base}/api/qbo/worker`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${secret}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ tenantId }),
+  }).catch((err) => {
+    console.error('[QBO] Worker nudge failed:', err)
+  })
+}
+
+/**
  * Background worker: process all pending jobs that are due.
  * Returns counts of processed, succeeded, and failed jobs.
  *
@@ -159,11 +215,13 @@ export async function runQboSyncWorker(options?: {
   tenantId?: string
   limit?: number
 }): Promise<{ processed: number; succeeded: number; failed: number }> {
+  await resetStaleProcessingJobs()
+
   const limit = options?.limit ?? 50
 
   const jobs = await prisma.qboSyncJob.findMany({
     where: {
-      status: { in: ['pending', 'processing'] },
+      status: 'pending',
       nextRetryAt: { lte: new Date() },
       ...(options?.tenantId ? { tenantId: options.tenantId } : {}),
     },

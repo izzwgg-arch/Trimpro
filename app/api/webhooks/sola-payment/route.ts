@@ -523,7 +523,7 @@ export async function POST(request: NextRequest) {
         })
 
         try {
-          await enqueueQboSync(client.tenantId, 'payment', createdPayment.id, { processImmediately: false })
+          await enqueueQboSync(client.tenantId, 'payment', createdPayment.id)
         } catch (error) {
           console.error('QuickBooks payment sync trigger error (bulk):', error)
         }
@@ -662,7 +662,7 @@ export async function POST(request: NextRequest) {
       })
 
       try {
-        await enqueueQboSync(invoice.tenantId, 'payment', createdPayment.id, { processImmediately: false })
+        await enqueueQboSync(invoice.tenantId, 'payment', createdPayment.id)
       } catch (error) {
         console.error('QuickBooks payment sync trigger error:', error)
       }
@@ -746,7 +746,7 @@ export async function POST(request: NextRequest) {
           )
         }
         try {
-          await enqueueQboSync(invoice.tenantId, 'job', job.id, { processImmediately: false })
+          await enqueueQboSync(invoice.tenantId, 'job', job.id)
         } catch (error) {
           console.error('QuickBooks job/project sync trigger error (payment lifecycle):', error)
         }
