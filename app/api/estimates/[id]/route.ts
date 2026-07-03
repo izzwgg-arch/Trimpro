@@ -478,7 +478,7 @@ export async function PUT(
 
     // Best-effort: if this estimate is connected to QBO, push edits over as an update.
     try {
-      await enqueueQboSync(user.tenantId, 'estimate', estimateRecord.id)
+      await enqueueQboSync(user.tenantId, 'estimate', estimateRecord.id, { processImmediately: false })
     } catch (error) {
       console.error('QuickBooks estimate sync trigger error (estimate update):', error)
     }
