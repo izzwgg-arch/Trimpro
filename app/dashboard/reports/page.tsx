@@ -9,6 +9,7 @@ import { formatDate } from '@/lib/utils'
 import { ReportBuilder } from '@/components/reports/ReportBuilder'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import Link from 'next/link'
+import { usePermissions, hasPermission } from '@/hooks/usePermissions'
 
 interface Report {
   id: string
@@ -21,6 +22,10 @@ interface Report {
 }
 
 export default function ReportsPage() {
+  const { permissions, loading: permissionsLoading } = usePermissions()
+  const canViewReports = hasPermission(permissions, 'reports.view')
+  const canCreateReports = hasPermission(permissions, 'reports.create')
+  const canViewPayments = hasPermission(permissions, 'payments.view')
   const [reports, setReports] = useState<Report[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'templates' | 'custom' | 'scheduled'>('templates')
@@ -28,10 +33,17 @@ export default function ReportsPage() {
   const [configuringTemplate, setConfiguringTemplate] = useState<string | null>(null)
 
   useEffect(() => {
+    if (permissionsLoading) return
     fetchReports()
-  }, [])
+  }, [permissionsLoading, canViewReports])
 
   const fetchReports = async () => {
+    if (!canViewReports) {
+      setReports([])
+      setLoading(false)
+      return
+    }
+
     try {
       const token = localStorage.getItem('accessToken')
       if (!token) {
@@ -170,7 +182,7 @@ export default function ReportsPage() {
     alert('Edit functionality coming soon!')
   }
 
-  if (loading) {
+  if (loading || permissionsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -190,9 +202,12 @@ export default function ReportsPage() {
           <p className="text-gray-600 mt-1">Generate and manage reports</p>
         </div>
         <div className="flex items-center gap-2">
-          <Link href="/reports/payments">
+          {canViewPayments && (
+          <Link href="/dashboard/reports/payments">
             <Button variant="outline">Payment History</Button>
           </Link>
+          )}
+          {canCreateReports && (
           <Dialog open={showBuilder} onOpenChange={setShowBuilder}>
             <DialogTrigger asChild>
               <Button>
@@ -219,9 +234,19 @@ export default function ReportsPage() {
               />
             </DialogContent>
           </Dialog>
+          )}
         </div>
       </div>
 
+      {!canViewReports && canViewPayments && (
+        <Card>
+          <CardContent className="py-8 text-center text-sm text-gray-600">
+            You have access to Payment History only. Use the button above to open payments.
+          </CardContent>
+        </Card>
+      )}
+
+      {canViewReports && (
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
         <TabsList>
           <TabsTrigger value="templates">Report Templates</TabsTrigger>
@@ -387,6 +412,7 @@ export default function ReportsPage() {
           </Card>
         </TabsContent>
       </Tabs>
+      )}
     </div>
   )
 }

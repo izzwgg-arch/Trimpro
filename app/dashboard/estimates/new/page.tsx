@@ -16,6 +16,8 @@ import { MobileActionBar } from '@/components/layout/MobileActionBar'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
 import { refreshAccessToken } from '@/lib/auth/client'
+import { usePermissions } from '@/hooks/usePermissions'
+import { postCreateRedirectPath } from '@/hooks/useDocumentListAccess'
 import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
 import { useCreateContextPrefill } from '@/src/hooks/useCreateContextPrefill'
 import { cnCustomerVisibilityBulkPill } from '@/lib/ui/customer-visibility-bulk-pill'
@@ -56,6 +58,7 @@ interface LineItem {
 export default function NewEstimatePage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { permissions } = usePermissions()
   const clientIdParam = searchParams.get('clientId')
   const requestIdParam = searchParams.get('requestId')
   const jobIdParam = searchParams.get('jobId')
@@ -1088,7 +1091,7 @@ export default function NewEstimatePage() {
       }
 
       const data = await response.json()
-      router.push(`/dashboard/estimates/${data.estimate.id}`)
+      router.push(postCreateRedirectPath(permissions, 'estimates', 'estimates.view', data.estimate.id))
     } catch (error) {
       console.error('Error creating estimate:', error)
       alert('Failed to create estimate. Please try again.')

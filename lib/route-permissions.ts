@@ -36,6 +36,7 @@ export const ROUTE_PERMISSION_RULES: RoutePermissionRule[] = [
   { prefix: '/dashboard/email', permission: ['messages.access', 'messages.view'] },
   { prefix: '/dashboard/maps', permission: ['jobs.access', 'jobs.view'] },
   { prefix: '/dashboard/analytics', permission: ['analytics.access', 'analytics.view'] },
+  { prefix: '/dashboard/reports/payments', permission: ['payments.view', 'reports.view', 'reports.access'] },
   { prefix: '/dashboard/reports', permission: ['reports.access', 'reports.view', 'payments.view'] },
   { prefix: '/dashboard/dispatch', permission: ['dispatch.access', 'dispatch.view'] },
   { prefix: '/dashboard/help/new', permission: 'settings.edit' },
@@ -55,6 +56,8 @@ const DOCUMENT_DETAIL_VIEW_RULES: Array<{
   { base: '/dashboard/jobs/', viewPermission: 'jobs.view', exemptSegments: ['new'] },
   { base: '/dashboard/tasks/', viewPermission: 'tasks.view', exemptSegments: ['new'] },
   { base: '/dashboard/issues/', viewPermission: 'issues.view', exemptSegments: ['new'] },
+  { base: '/dashboard/requests/', viewPermission: 'leads.view', exemptSegments: ['new'] },
+  { base: '/dashboard/leads/', viewPermission: 'leads.view', exemptSegments: ['new'] },
 ]
 
 /**

@@ -15,6 +15,8 @@ import { PaginationControls } from '@/components/ui/PaginationControls'
 import { formatDate } from '@/lib/utils'
 import { Plus, Search, Filter, CheckSquare, Calendar, User, AlertCircle } from 'lucide-react'
 import Link from 'next/link'
+import { useDocumentListAccess } from '@/hooks/useDocumentListAccess'
+import { CreateOnlyAccessCard } from '@/components/permissions/CreateOnlyAccessCard'
 
 interface Task {
   id: string
@@ -78,6 +80,7 @@ const priorityColors: Record<string, string> = {
 export default function TasksPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { permissionsLoading, canViewList, canCreate } = useDocumentListAccess('tasks.view', 'tasks.create')
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -100,11 +103,19 @@ export default function TasksPage() {
   }, [search, status, filter])
 
   useEffect(() => {
+    if (permissionsLoading) return
+    setLoading(true)
     fetchTasks()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, status, filter, page])
+  }, [search, status, filter, page, permissionsLoading, canViewList])
 
   const fetchTasks = async () => {
+    if (!canViewList) {
+      setTasks([])
+      setLoading(false)
+      return
+    }
+
     try {
       const token = localStorage.getItem('accessToken')
       const params = new URLSearchParams({
@@ -137,7 +148,7 @@ export default function TasksPage() {
     }
   }
 
-  if (loading) {
+  if (loading || permissionsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -164,13 +175,27 @@ export default function TasksPage() {
         </div>
         <div className="flex items-center gap-2">
           <ViewModeSelector value={viewMode} onChange={setViewMode} />
-          <Button onClick={() => router.push('/dashboard/tasks/new')}>
-            <Plus className="mr-2 h-4 w-4" />
-            New Task
-          </Button>
+          {canCreate && (
+            <Button onClick={() => router.push('/dashboard/tasks/new')}>
+              <Plus className="mr-2 h-4 w-4" />
+              New Task
+            </Button>
+          )}
         </div>
       </div>
 
+      {!canViewList && (
+        <CreateOnlyAccessCard
+          icon={CheckSquare}
+          entityLabel="tasks"
+          createButtonLabel="New Task"
+          canCreate={canCreate}
+          onCreate={() => router.push('/dashboard/tasks/new')}
+        />
+      )}
+
+      {canViewList && (
+        <>
       {/* Summary Cards */}
       {(overdueTasks.length > 0 || todayTasks.length > 0) && (
         <div className="grid gap-4 md:grid-cols-2">
@@ -445,6 +470,8 @@ export default function TasksPage() {
         onPrev={() => setPage((p) => Math.max(1, p - 1))}
         onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
       />
+        </>
+      )}
     </div>
   )
 }

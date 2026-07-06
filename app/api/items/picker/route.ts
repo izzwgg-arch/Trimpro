@@ -14,8 +14,11 @@ export async function GET(request: NextRequest) {
   const permError = await requireAnyPermission(request, [
     'settings.view',
     'estimates.view',
+    'estimates.create',
     'invoices.view',
+    'invoices.create',
     'purchase_orders.view',
+    'purchase_orders.create',
     'jobs.view',
   ])
   if (permError) return permError

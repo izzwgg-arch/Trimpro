@@ -16,6 +16,7 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { Plus, Search, Filter, User, Phone, Mail, CheckCircle, Trash2, FileText, Briefcase, Copy, Calendar, UserPlus } from 'lucide-react'
 import Link from 'next/link'
 import { usePermissions, hasPermission } from '@/hooks/usePermissions'
+import { CreateOnlyAccessCard } from '@/components/permissions/CreateOnlyAccessCard'
 
 interface Request {
   id: string
@@ -145,6 +146,7 @@ export default function RequestsPage() {
   const [viewMode, setViewMode] = useViewMode('requests', 'grid')
   const { permissions: userPermissions, loading: permissionsLoading } = usePermissions()
   const canCreateRequest = !permissionsLoading && hasPermission(userPermissions, 'leads.create')
+  const canViewList = !permissionsLoading && hasPermission(userPermissions, 'leads.view')
   const canEditRequest = !permissionsLoading && hasPermission(userPermissions, 'leads.edit')
   const canDeleteRequest = !permissionsLoading && hasPermission(userPermissions, 'leads.delete')
   const canConvertRequest = !permissionsLoading && hasPermission(userPermissions, 'leads.convert')
@@ -162,6 +164,12 @@ export default function RequestsPage() {
   }, [search, status, source, sortKey, sortDirection])
 
   const fetchRequests = useCallback(async (silent = false) => {
+    if (!canViewList) {
+      setRequests([])
+      if (!silent) setLoading(false)
+      return
+    }
+
     try {
       const token = localStorage.getItem('accessToken')
       const params = new URLSearchParams({
@@ -196,11 +204,13 @@ export default function RequestsPage() {
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [page, router, search, sortDirection, sortKey, source, status])
+  }, [page, router, search, sortDirection, sortKey, source, status, canViewList])
 
   useEffect(() => {
+    if (permissionsLoading) return
+    setLoading(true)
     fetchRequests()
-  }, [fetchRequests])
+  }, [fetchRequests, permissionsLoading])
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -425,7 +435,7 @@ export default function RequestsPage() {
     )
   }
 
-  if (loading) {
+  if (loading || permissionsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -452,14 +462,16 @@ export default function RequestsPage() {
         </div>
         <div className="flex items-center gap-2">
           <ViewModeSelector value={viewMode} onChange={setViewMode} />
-          <Button
-            variant="outline"
-            onClick={handleDuplicateSelected}
-            disabled={selectedIds.length === 0 || duplicating || !canCreateRequest}
-          >
-            <Copy className="mr-2 h-4 w-4" />
-            {duplicating ? 'Duplicating...' : `Duplicate${selectedIds.length ? ` (${selectedIds.length})` : ''}`}
-          </Button>
+          {canViewList && (
+            <Button
+              variant="outline"
+              onClick={handleDuplicateSelected}
+              disabled={selectedIds.length === 0 || duplicating || !canCreateRequest}
+            >
+              <Copy className="mr-2 h-4 w-4" />
+              {duplicating ? 'Duplicating...' : `Duplicate${selectedIds.length ? ` (${selectedIds.length})` : ''}`}
+            </Button>
+          )}
           {canCreateRequest && (
             <Button onClick={() => router.push('/dashboard/requests/new')}>
               <Plus className="mr-2 h-4 w-4" />
@@ -469,6 +481,18 @@ export default function RequestsPage() {
         </div>
       </div>
 
+      {!canViewList && (
+        <CreateOnlyAccessCard
+          icon={User}
+          entityLabel="requests"
+          createButtonLabel="New Request"
+          canCreate={canCreateRequest}
+          onCreate={() => router.push('/dashboard/requests/new')}
+        />
+      )}
+
+      {canViewList && (
+        <>
       {/* Pipeline Stats */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
@@ -972,6 +996,8 @@ export default function RequestsPage() {
         onPrev={() => setPage((p) => Math.max(1, p - 1))}
         onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
       />
+        </>
+      )}
     </div>
   )
 }

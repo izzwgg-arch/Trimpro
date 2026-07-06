@@ -14,6 +14,8 @@ import { TableView } from '@/components/lists/TableView'
 import { formatCurrency } from '@/lib/utils'
 import { Plus, Search, Phone, Mail, Building2, Filter, Trash2 } from 'lucide-react'
 import Link from 'next/link'
+import { useDocumentListAccess } from '@/hooks/useDocumentListAccess'
+import { CreateOnlyAccessCard } from '@/components/permissions/CreateOnlyAccessCard'
 
 interface Client {
   id: string
@@ -51,6 +53,10 @@ function clientListBalance(c: Client) {
 
 export default function ClientsPage() {
   const router = useRouter()
+  const { permissionsLoading, canViewList, canCreate } = useDocumentListAccess(
+    'clients.view',
+    'clients.create'
+  )
   const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -73,11 +79,19 @@ export default function ClientsPage() {
   }, [search, status])
 
   useEffect(() => {
+    if (permissionsLoading) return
+    setLoading(true)
     fetchClients()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, status, page])
+  }, [search, status, page, permissionsLoading, canViewList])
 
   const fetchClients = async () => {
+    if (!canViewList) {
+      setClients([])
+      setLoading(false)
+      return
+    }
+
     try {
       const token = localStorage.getItem('accessToken')
       const params = new URLSearchParams({
@@ -264,7 +278,7 @@ export default function ClientsPage() {
     }
   }
 
-  if (loading) {
+  if (loading || permissionsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -284,23 +298,39 @@ export default function ClientsPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <ViewModeSelector value={viewMode} onChange={setViewMode} />
-          <Button
-            variant="outline"
-            onClick={handleDeleteSelected}
-            disabled={selectedIds.length === 0 || bulkDeleting}
-            className="text-red-700 border-red-200 hover:bg-red-50"
-            title="Delete selected clients"
-          >
-            <Trash2 className="mr-2 h-4 w-4" />
-            {bulkDeleting ? 'Deleting...' : `Delete${selectedIds.length ? ` (${selectedIds.length})` : ''}`}
-          </Button>
+          {canViewList && (
+            <Button
+              variant="outline"
+              onClick={handleDeleteSelected}
+              disabled={selectedIds.length === 0 || bulkDeleting}
+              className="text-red-700 border-red-200 hover:bg-red-50"
+              title="Delete selected clients"
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              {bulkDeleting ? 'Deleting...' : `Delete${selectedIds.length ? ` (${selectedIds.length})` : ''}`}
+            </Button>
+          )}
+          {canCreate && (
           <Button onClick={() => router.push('/dashboard/clients/new')}>
             <Plus className="mr-2 h-4 w-4" />
             New Client
           </Button>
+          )}
         </div>
       </div>
 
+      {!canViewList && (
+        <CreateOnlyAccessCard
+          icon={Building2}
+          entityLabel="clients"
+          createButtonLabel="New Client"
+          canCreate={canCreate}
+          onCreate={() => router.push('/dashboard/clients/new')}
+        />
+      )}
+
+      {canViewList && (
+        <>
       {/* Search and Filters */}
       <Card>
         <CardContent className="pt-6">
@@ -648,6 +678,8 @@ export default function ClientsPage() {
           </div>
         </div>
       ) : null}
+        </>
+      )}
     </div>
   )
 }

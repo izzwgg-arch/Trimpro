@@ -22,6 +22,8 @@ import {
   addItemToDocumentBundle,
   removeDocumentLineItem,
 } from '@/lib/bundles/document-line-item-actions'
+import { usePermissions } from '@/hooks/usePermissions'
+import { postCreateRedirectPath } from '@/hooks/useDocumentListAccess'
 
 interface Job {
   id: string
@@ -66,6 +68,7 @@ interface LineItem {
 export default function NewInvoicePage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { permissions } = usePermissions()
   const clientIdParam = searchParams.get('clientId')
   const jobIdParam = searchParams.get('jobId')
   const estimateIdParam = searchParams.get('estimateId')
@@ -1364,7 +1367,7 @@ export default function NewInvoicePage() {
       }
 
       const data = await response.json()
-      router.push(`/dashboard/invoices/${data.invoice.id}`)
+      router.push(postCreateRedirectPath(permissions, 'invoices', 'invoices.view', data.invoice.id))
     } catch (error) {
       console.error('Error creating invoice:', error)
       alert('Failed to create invoice. Please try again.')

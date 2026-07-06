@@ -15,6 +15,8 @@ import { PaginationControls } from '@/components/ui/PaginationControls'
 import { formatDate } from '@/lib/utils'
 import { Plus, Search, Filter, AlertCircle, User, Clock, CheckCircle } from 'lucide-react'
 import Link from 'next/link'
+import { useDocumentListAccess } from '@/hooks/useDocumentListAccess'
+import { CreateOnlyAccessCard } from '@/components/permissions/CreateOnlyAccessCard'
 
 interface Issue {
   id: string
@@ -85,6 +87,7 @@ const typeColors: Record<string, string> = {
 export default function IssuesPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { permissionsLoading, canViewList, canCreate } = useDocumentListAccess('issues.view', 'issues.create')
   const [issues, setIssues] = useState<Issue[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -108,11 +111,19 @@ export default function IssuesPage() {
   }, [search, status, type, filter])
 
   useEffect(() => {
+    if (permissionsLoading) return
+    setLoading(true)
     fetchIssues()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, status, type, filter, page])
+  }, [search, status, type, filter, page, permissionsLoading, canViewList])
 
   const fetchIssues = async () => {
+    if (!canViewList) {
+      setIssues([])
+      setLoading(false)
+      return
+    }
+
     try {
       const token = localStorage.getItem('accessToken')
       const params = new URLSearchParams({
@@ -146,7 +157,7 @@ export default function IssuesPage() {
     }
   }
 
-  if (loading) {
+  if (loading || permissionsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -169,13 +180,27 @@ export default function IssuesPage() {
         </div>
         <div className="flex items-center gap-2">
           <ViewModeSelector value={viewMode} onChange={setViewMode} />
-          <Button onClick={() => router.push('/dashboard/issues/new')}>
-            <Plus className="mr-2 h-4 w-4" />
-            New Issue
-          </Button>
+          {canCreate && (
+            <Button onClick={() => router.push('/dashboard/issues/new')}>
+              <Plus className="mr-2 h-4 w-4" />
+              New Issue
+            </Button>
+          )}
         </div>
       </div>
 
+      {!canViewList && (
+        <CreateOnlyAccessCard
+          icon={AlertCircle}
+          entityLabel="issues"
+          createButtonLabel="New Issue"
+          canCreate={canCreate}
+          onCreate={() => router.push('/dashboard/issues/new')}
+        />
+      )}
+
+      {canViewList && (
+        <>
       {/* Summary Cards */}
       {(openIssues.length > 0 || criticalIssues.length > 0) && (
         <div className="grid gap-4 md:grid-cols-2">
@@ -447,6 +472,8 @@ export default function IssuesPage() {
         onPrev={() => setPage((p) => Math.max(1, p - 1))}
         onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
       />
+        </>
+      )}
     </div>
   )
 }

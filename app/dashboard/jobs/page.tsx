@@ -15,6 +15,8 @@ import { PaginationControls } from '@/components/ui/PaginationControls'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Plus, Search, Filter, Briefcase, Calendar, DollarSign, Trash2, FileText, Copy } from 'lucide-react'
 import Link from 'next/link'
+import { useDocumentListAccess } from '@/hooks/useDocumentListAccess'
+import { CreateOnlyAccessCard } from '@/components/permissions/CreateOnlyAccessCard'
 
 interface Job {
   id: string
@@ -74,6 +76,7 @@ const priorityLabels: Record<number, string> = {
 export default function JobsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { permissionsLoading, canViewList, canCreate } = useDocumentListAccess('jobs.view', 'jobs.create')
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -99,11 +102,19 @@ export default function JobsPage() {
   }, [search, status])
 
   useEffect(() => {
+    if (permissionsLoading) return
+    setLoading(true)
     fetchJobs()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, status, page])
+  }, [search, status, page, permissionsLoading, canViewList])
 
   const fetchJobs = async () => {
+    if (!canViewList) {
+      setJobs([])
+      setLoading(false)
+      return
+    }
+
     try {
       const token = localStorage.getItem('accessToken')
       const params = new URLSearchParams({
@@ -262,7 +273,7 @@ export default function JobsPage() {
     )
   }
 
-  if (loading) {
+  if (loading || permissionsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -282,21 +293,37 @@ export default function JobsPage() {
         </div>
         <div className="flex items-center gap-2">
           <ViewModeSelector value={viewMode} onChange={setViewMode} />
-          <Button
-            variant="outline"
-            onClick={handleDuplicateSelected}
-            disabled={selectedIds.length === 0 || duplicating}
-          >
-            <Copy className="mr-2 h-4 w-4" />
-            {duplicating ? 'Duplicating...' : `Duplicate${selectedIds.length ? ` (${selectedIds.length})` : ''}`}
-          </Button>
-          <Button onClick={() => router.push('/dashboard/jobs/new')}>
-            <Plus className="mr-2 h-4 w-4" />
-            New Job
-          </Button>
+          {canViewList && (
+            <Button
+              variant="outline"
+              onClick={handleDuplicateSelected}
+              disabled={selectedIds.length === 0 || duplicating}
+            >
+              <Copy className="mr-2 h-4 w-4" />
+              {duplicating ? 'Duplicating...' : `Duplicate${selectedIds.length ? ` (${selectedIds.length})` : ''}`}
+            </Button>
+          )}
+          {canCreate && (
+            <Button onClick={() => router.push('/dashboard/jobs/new')}>
+              <Plus className="mr-2 h-4 w-4" />
+              New Job
+            </Button>
+          )}
         </div>
       </div>
 
+      {!canViewList && (
+        <CreateOnlyAccessCard
+          icon={Briefcase}
+          entityLabel="jobs"
+          createButtonLabel="New Job"
+          canCreate={canCreate}
+          onCreate={() => router.push('/dashboard/jobs/new')}
+        />
+      )}
+
+      {canViewList && (
+        <>
       {/* Search and Filters */}
       <Card>
         <CardContent className="pt-6">
@@ -671,6 +698,8 @@ export default function JobsPage() {
         onPrev={() => setPage((p) => Math.max(1, p - 1))}
         onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
       />
+        </>
+      )}
     </div>
   )
 }
