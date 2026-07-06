@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { TrimProLogo } from '@/components/branding/TrimProLogo'
+import { TrimProLoginBadge } from '@/components/branding/TrimProLogo'
 import { isDevEnvironment } from '@/lib/dev'
 
 type LoginResponse = {
@@ -118,9 +118,7 @@ function LoginForm() {
         <CardHeader className="pt-10 pb-3 space-y-2">
           <CardTitle className="text-center">
             <div className="flex justify-center">
-              <div className="inline-flex items-center rounded-md px-4 py-2" style={{ backgroundColor: 'var(--brand-sidebar-color)' }}>
-                <TrimProLogo variant="light" size="lg" />
-              </div>
+              <TrimProLoginBadge />
             </div>
           </CardTitle>
           <CardDescription className="text-center">

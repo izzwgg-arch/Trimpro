@@ -17,6 +17,7 @@ import { PaginationControls } from '@/components/ui/PaginationControls'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Plus, Search, Filter, DollarSign, AlertCircle, Trash2, Copy, Download } from 'lucide-react'
 import Link from 'next/link'
+import { usePermissions, hasPermission } from '@/hooks/usePermissions'
 
 interface Invoice {
   id: string
@@ -83,6 +84,9 @@ function renderJobSiteAddress(address?: string) {
 export default function InvoicesPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { permissions, loading: permissionsLoading } = usePermissions()
+  const canViewList = hasPermission(permissions, 'invoices.view')
+  const canCreate = hasPermission(permissions, 'invoices.create')
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -135,11 +139,20 @@ export default function InvoicesPage() {
   }, [search, status])
 
   useEffect(() => {
+    if (permissionsLoading) return
+    setLoading(true)
     fetchInvoices()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, status, page])
+  }, [search, status, page, permissionsLoading, canViewList])
 
   const fetchInvoices = async () => {
+    if (!canViewList) {
+      setInvoices([])
+      setSummary(null)
+      setLoading(false)
+      return
+    }
+
     try {
       const token = localStorage.getItem('accessToken')
       const params = new URLSearchParams({
@@ -372,7 +385,7 @@ export default function InvoicesPage() {
     }
   }
 
-  if (loading) {
+  if (loading || permissionsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -393,6 +406,8 @@ export default function InvoicesPage() {
         <div className="flex items-center gap-2 flex-wrap">
           <ViewModeSelector value={viewMode} onChange={setViewMode} />
 
+          {canViewList && (
+            <>
           {/* Export controls */}
           <div className="flex items-center gap-1 border border-gray-200 rounded-md overflow-hidden">
             <button
@@ -430,13 +445,39 @@ export default function InvoicesPage() {
             <DollarSign className="mr-2 h-4 w-4" />
             {selectedIds.length > 0 ? `Add Payment (${payableSelectedInvoices.length})` : 'Add Payment'}
           </Button>
+            </>
+          )}
+          {canCreate && (
           <Button onClick={() => router.push('/dashboard/invoices/new')}>
             <Plus className="mr-2 h-4 w-4" />
             New Invoice
           </Button>
+          )}
         </div>
       </div>
 
+      {!canViewList && (
+        <Card>
+          <CardContent className="py-10 text-center">
+            <DollarSign className="mx-auto h-12 w-12 text-gray-400" />
+            <h3 className="mt-3 text-sm font-medium text-gray-900">Create-only access</h3>
+            <p className="mt-1 text-sm text-gray-500">
+              You can create new invoices, but you do not have permission to browse existing ones.
+            </p>
+            {canCreate && (
+              <div className="mt-6">
+                <Button onClick={() => router.push('/dashboard/invoices/new')}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  New Invoice
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {canViewList && (
+        <>
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
@@ -914,6 +955,8 @@ export default function InvoicesPage() {
         onPrev={() => setPage((p) => Math.max(1, p - 1))}
         onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
       />
+        </>
+      )}
     </div>
   )
 }

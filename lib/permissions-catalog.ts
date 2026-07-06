@@ -16,6 +16,13 @@ export const PERMISSIONS: PermissionDefinition[] = [
   // DASHBOARD
   // ============================================
   {
+    key: 'dashboard.access',
+    label: 'Access Dashboard',
+    description: 'Open the dashboard page (sidebar link)',
+    category: 'Dashboard',
+    module: 'dashboard',
+  },
+  {
     key: 'dashboard.view',
     label: 'View Dashboard',
     description: 'Access the main dashboard',
@@ -27,9 +34,16 @@ export const PERMISSIONS: PermissionDefinition[] = [
   // CLIENTS
   // ============================================
   {
+    key: 'clients.access',
+    label: 'Access Clients Page',
+    description: 'Open the clients page (sidebar link)',
+    category: 'Clients',
+    module: 'clients',
+  },
+  {
     key: 'clients.view',
-    label: 'View Clients',
-    description: 'View client list and details',
+    label: 'View All Clients',
+    description: 'Browse the full client list and open client details',
     category: 'Clients',
     module: 'clients',
   },
@@ -66,9 +80,16 @@ export const PERMISSIONS: PermissionDefinition[] = [
   // LEADS
   // ============================================
   {
+    key: 'leads.access',
+    label: 'Access Requests Page',
+    description: 'Open the requests/leads page (sidebar link)',
+    category: 'Leads',
+    module: 'leads',
+  },
+  {
     key: 'leads.view',
-    label: 'View Leads',
-    description: 'View lead list and details',
+    label: 'View All Requests',
+    description: 'Browse the full request list and open request details',
     category: 'Leads',
     module: 'leads',
   },
@@ -112,9 +133,16 @@ export const PERMISSIONS: PermissionDefinition[] = [
   // JOBS
   // ============================================
   {
+    key: 'jobs.access',
+    label: 'Access Jobs Page',
+    description: 'Open the jobs page (sidebar link)',
+    category: 'Jobs',
+    module: 'jobs',
+  },
+  {
     key: 'jobs.view',
-    label: 'View Jobs',
-    description: 'View job list and details',
+    label: 'View All Jobs',
+    description: 'Browse the full job list and open job details',
     category: 'Jobs',
     module: 'jobs',
   },
@@ -200,9 +228,16 @@ export const PERMISSIONS: PermissionDefinition[] = [
   // SCHEDULE / CALENDAR
   // ============================================
   {
+    key: 'schedule.access',
+    label: 'Access Schedule Page',
+    description: 'Open the schedule page (sidebar link)',
+    category: 'Schedule',
+    module: 'schedule',
+  },
+  {
     key: 'schedule.view',
-    label: 'View Schedule',
-    description: 'View calendar and schedule',
+    label: 'View All Schedule',
+    description: 'Browse the full calendar and schedule list',
     category: 'Schedule',
     module: 'schedule',
   },
@@ -253,9 +288,16 @@ export const PERMISSIONS: PermissionDefinition[] = [
   // ESTIMATES
   // ============================================
   {
+    key: 'estimates.access',
+    label: 'Access Estimates Page',
+    description: 'Open the estimates page (sidebar link)',
+    category: 'Estimates',
+    module: 'estimates',
+  },
+  {
     key: 'estimates.view',
-    label: 'View Estimates',
-    description: 'View estimate list and details',
+    label: 'View All Estimates',
+    description: 'Browse the full estimate list and open existing estimates',
     category: 'Estimates',
     module: 'estimates',
   },
@@ -313,9 +355,16 @@ export const PERMISSIONS: PermissionDefinition[] = [
   // INVOICES
   // ============================================
   {
+    key: 'invoices.access',
+    label: 'Access Invoices Page',
+    description: 'Open the invoices page (sidebar link)',
+    category: 'Invoices',
+    module: 'invoices',
+  },
+  {
     key: 'invoices.view',
-    label: 'View Invoices',
-    description: 'View invoice list and details',
+    label: 'View All Invoices',
+    description: 'Browse the full invoice list and open existing invoices',
     category: 'Invoices',
     module: 'invoices',
   },
@@ -366,9 +415,16 @@ export const PERMISSIONS: PermissionDefinition[] = [
   // PURCHASE ORDERS
   // ============================================
   {
+    key: 'purchase_orders.access',
+    label: 'Access Purchase Orders Page',
+    description: 'Open the purchase orders page (sidebar link)',
+    category: 'Purchase Orders',
+    module: 'purchase_orders',
+  },
+  {
     key: 'purchase_orders.view',
-    label: 'View Purchase Orders',
-    description: 'View purchase order list and details',
+    label: 'View All Purchase Orders',
+    description: 'Browse the full purchase order list and open details',
     category: 'Purchase Orders',
     module: 'purchase_orders',
   },
@@ -412,9 +468,16 @@ export const PERMISSIONS: PermissionDefinition[] = [
   // TASKS
   // ============================================
   {
+    key: 'tasks.access',
+    label: 'Access Tasks Page',
+    description: 'Open the tasks page (sidebar link)',
+    category: 'Tasks',
+    module: 'tasks',
+  },
+  {
     key: 'tasks.view',
-    label: 'View Tasks',
-    description: 'View task list and details',
+    label: 'View All Tasks',
+    description: 'Browse the full task list and open task details',
     category: 'Tasks',
     module: 'tasks',
   },
@@ -458,9 +521,16 @@ export const PERMISSIONS: PermissionDefinition[] = [
   // ISSUES
   // ============================================
   {
+    key: 'issues.access',
+    label: 'Access Issues Page',
+    description: 'Open the issues page (sidebar link)',
+    category: 'Issues',
+    module: 'issues',
+  },
+  {
     key: 'issues.view',
-    label: 'View Issues',
-    description: 'View issue list and details',
+    label: 'View All Issues',
+    description: 'Browse the full issue list and open issue details',
     category: 'Issues',
     module: 'issues',
   },
@@ -504,9 +574,16 @@ export const PERMISSIONS: PermissionDefinition[] = [
   // TEAMS
   // ============================================
   {
+    key: 'teams.access',
+    label: 'Access Teams Page',
+    description: 'Open the teams page (sidebar link)',
+    category: 'Teams',
+    module: 'teams',
+  },
+  {
     key: 'teams.view',
-    label: 'View Teams',
-    description: 'View team list and details',
+    label: 'View All Teams',
+    description: 'Browse the full team list and open team details',
     category: 'Teams',
     module: 'teams',
   },
@@ -550,9 +627,16 @@ export const PERMISSIONS: PermissionDefinition[] = [
   // CALLS
   // ============================================
   {
+    key: 'calls.access',
+    label: 'Access Calls Page',
+    description: 'Open the calls page (sidebar link)',
+    category: 'Communication',
+    module: 'calls',
+  },
+  {
     key: 'calls.view',
-    label: 'View Calls',
-    description: 'View call logs',
+    label: 'View All Calls',
+    description: 'Browse the full call log',
     category: 'Communication',
     module: 'calls',
   },
@@ -582,9 +666,16 @@ export const PERMISSIONS: PermissionDefinition[] = [
   // MESSAGES (SMS/Email)
   // ============================================
   {
+    key: 'messages.access',
+    label: 'Access Messages Page',
+    description: 'Open the messages page (sidebar link)',
+    category: 'Communication',
+    module: 'messages',
+  },
+  {
     key: 'messages.view',
-    label: 'View Messages',
-    description: 'View SMS and email messages',
+    label: 'View All Messages',
+    description: 'Browse the full message history',
     category: 'Communication',
     module: 'messages',
   },
@@ -642,9 +733,16 @@ export const PERMISSIONS: PermissionDefinition[] = [
   // SETTINGS
   // ============================================
   {
+    key: 'settings.access',
+    label: 'Access Settings Page',
+    description: 'Open the settings page (sidebar link)',
+    category: 'Settings',
+    module: 'settings',
+  },
+  {
     key: 'settings.view',
-    label: 'View Settings',
-    description: 'View system settings',
+    label: 'View All Settings',
+    description: 'Browse and open settings sections',
     category: 'Settings',
     module: 'settings',
   },
@@ -660,9 +758,16 @@ export const PERMISSIONS: PermissionDefinition[] = [
   // USERS
   // ============================================
   {
+    key: 'users.access',
+    label: 'Access Users Page',
+    description: 'Open the users page (sidebar link)',
+    category: 'Users',
+    module: 'users',
+  },
+  {
     key: 'users.view',
-    label: 'View Users',
-    description: 'View user list and details',
+    label: 'View All Users',
+    description: 'Browse the full user list and open user details',
     category: 'Users',
     module: 'users',
   },
@@ -699,9 +804,16 @@ export const PERMISSIONS: PermissionDefinition[] = [
   // ROLES
   // ============================================
   {
+    key: 'roles.access',
+    label: 'Access Roles Page',
+    description: 'Open the roles page (sidebar link)',
+    category: 'Roles',
+    module: 'roles',
+  },
+  {
     key: 'roles.view',
-    label: 'View Roles',
-    description: 'View role list and details',
+    label: 'View All Roles',
+    description: 'Browse the full role list and open role details',
     category: 'Roles',
     module: 'roles',
   },
@@ -738,9 +850,16 @@ export const PERMISSIONS: PermissionDefinition[] = [
   // ANALYTICS
   // ============================================
   {
+    key: 'analytics.access',
+    label: 'Access Analytics Page',
+    description: 'Open the analytics page (sidebar link)',
+    category: 'Analytics',
+    module: 'analytics',
+  },
+  {
     key: 'analytics.view',
-    label: 'View Analytics',
-    description: 'Access analytics dashboards',
+    label: 'View All Analytics',
+    description: 'Browse analytics dashboards and reports',
     category: 'Analytics',
     module: 'analytics',
   },
@@ -749,9 +868,16 @@ export const PERMISSIONS: PermissionDefinition[] = [
   // REPORTS
   // ============================================
   {
+    key: 'reports.access',
+    label: 'Access Reports Page',
+    description: 'Open the reports page (sidebar link)',
+    category: 'Reports',
+    module: 'reports',
+  },
+  {
     key: 'reports.view',
-    label: 'View Reports',
-    description: 'View report list and details',
+    label: 'View All Reports',
+    description: 'Browse the full report list and open report details',
     category: 'Reports',
     module: 'reports',
   },
@@ -809,9 +935,16 @@ export const PERMISSIONS: PermissionDefinition[] = [
   // DISPATCH
   // ============================================
   {
+    key: 'dispatch.access',
+    label: 'Access Dispatch Page',
+    description: 'Open the dispatch page (sidebar link)',
+    category: 'Dispatch',
+    module: 'dispatch',
+  },
+  {
     key: 'dispatch.view',
-    label: 'View Dispatch',
-    description: 'Access dispatch board',
+    label: 'View All Dispatch',
+    description: 'Browse the dispatch board and assignments',
     category: 'Dispatch',
     module: 'dispatch',
   },
@@ -855,9 +988,16 @@ export const PERMISSIONS: PermissionDefinition[] = [
   // AUDIT LOGS
   // ============================================
   {
+    key: 'audit_logs.access',
+    label: 'Access Audit Logs Page',
+    description: 'Open the audit logs page (sidebar link)',
+    category: 'Audit',
+    module: 'audit_logs',
+  },
+  {
     key: 'audit_logs.view',
-    label: 'View Audit Logs',
-    description: 'View audit log entries',
+    label: 'View All Audit Logs',
+    description: 'Browse the full audit log list',
     category: 'Audit',
     module: 'audit_logs',
   },

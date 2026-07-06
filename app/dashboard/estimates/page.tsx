@@ -15,6 +15,7 @@ import { PaginationControls } from '@/components/ui/PaginationControls'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Plus, Search, Filter, FileText, Calendar, Trash2, Briefcase, Copy } from 'lucide-react'
 import Link from 'next/link'
+import { usePermissions, hasPermission } from '@/hooks/usePermissions'
 
 interface Estimate {
   id: string
@@ -117,6 +118,9 @@ function saveEstimatesListState(s: EstimatesListState) {
 
 export default function EstimatesPage() {
   const router = useRouter()
+  const { permissions, loading: permissionsLoading } = usePermissions()
+  const canViewList = hasPermission(permissions, 'estimates.view')
+  const canCreate = hasPermission(permissions, 'estimates.create')
   const [estimates, setEstimates] = useState<Estimate[]>([])
   const [loading, setLoading] = useState(true)
   const [listState, setListStateRaw] = useState<EstimatesListState>(loadEstimatesListState)
@@ -155,6 +159,12 @@ export default function EstimatesPage() {
   }, [])
 
   const fetchEstimates = useCallback(async () => {
+    if (!canViewList) {
+      setEstimates([])
+      setLoading(false)
+      return
+    }
+
     try {
       const token = localStorage.getItem('accessToken')
       const params = new URLSearchParams({
@@ -186,11 +196,13 @@ export default function EstimatesPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, router, search, sortDirection, sortKey, status])
+  }, [page, router, search, sortDirection, sortKey, status, canViewList])
 
   useEffect(() => {
+    if (permissionsLoading) return
+    setLoading(true)
     fetchEstimates()
-  }, [fetchEstimates])
+  }, [fetchEstimates, permissionsLoading])
 
   const handleTableSortChange = (nextSortKey: string, nextSortDirection: 'asc' | 'desc') => {
     setListState({ sortKey: nextSortKey, sortDirection: nextSortDirection })
@@ -315,7 +327,7 @@ export default function EstimatesPage() {
     }
   }
 
-  if (loading) {
+  if (loading || permissionsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -335,21 +347,47 @@ export default function EstimatesPage() {
         </div>
         <div className="flex items-center gap-2">
           <ViewModeSelector value={viewMode} onChange={setViewMode} />
-          <Button
-            variant="outline"
-            onClick={handleDuplicateSelected}
-            disabled={selectedIds.length === 0 || duplicating}
-          >
-            <Copy className="mr-2 h-4 w-4" />
-            {duplicating ? 'Duplicating...' : `Duplicate${selectedIds.length ? ` (${selectedIds.length})` : ''}`}
-          </Button>
-          <Button onClick={() => router.push('/dashboard/estimates/new')}>
-            <Plus className="mr-2 h-4 w-4" />
-            New Estimate
-          </Button>
+          {canViewList && (
+            <Button
+              variant="outline"
+              onClick={handleDuplicateSelected}
+              disabled={selectedIds.length === 0 || duplicating}
+            >
+              <Copy className="mr-2 h-4 w-4" />
+              {duplicating ? 'Duplicating...' : `Duplicate${selectedIds.length ? ` (${selectedIds.length})` : ''}`}
+            </Button>
+          )}
+          {canCreate && (
+            <Button onClick={() => router.push('/dashboard/estimates/new')}>
+              <Plus className="mr-2 h-4 w-4" />
+              New Estimate
+            </Button>
+          )}
         </div>
       </div>
 
+      {!canViewList && (
+        <Card>
+          <CardContent className="py-10 text-center">
+            <FileText className="mx-auto h-12 w-12 text-gray-400" />
+            <h3 className="mt-3 text-sm font-medium text-gray-900">Create-only access</h3>
+            <p className="mt-1 text-sm text-gray-500">
+              You can create new estimates, but you do not have permission to browse existing ones.
+            </p>
+            {canCreate && (
+              <div className="mt-6">
+                <Button onClick={() => router.push('/dashboard/estimates/new')}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  New Estimate
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {canViewList && (
+        <>
       {/* Search and Filters */}
       <Card>
         <CardContent className="pt-6">
@@ -668,6 +706,8 @@ export default function EstimatesPage() {
         onPrev={() => setPage((p) => Math.max(1, p - 1))}
         onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
       />
+        </>
+      )}
     </div>
   )
 }

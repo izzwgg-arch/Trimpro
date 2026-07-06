@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { TrimProLogo } from '@/components/branding/TrimProLogo'
 import { PermissionGuard } from '@/components/permissions/PermissionGuard'
+import { SIDEBAR_PAGE_MODULE_IDS, getModuleById, getModulePageAccessCandidates } from '@/lib/page-module-permissions'
 import { NotificationBell } from '@/components/notifications/NotificationBell'
 import {
   LayoutDashboard,
@@ -171,8 +172,14 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
           )
 
           if (item.permission) {
+            const moduleId = SIDEBAR_PAGE_MODULE_IDS[item.name]
+            const module = moduleId ? getModuleById(moduleId) : undefined
+            const sidebarPermissions = module
+              ? getModulePageAccessCandidates(module)
+              : [item.permission]
+
             return (
-              <PermissionGuard key={item.name} permission={item.permission}>
+              <PermissionGuard key={item.name} permissions={sidebarPermissions}>
                 {navItem}
               </PermissionGuard>
             )
@@ -270,8 +277,14 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
                   </Link>
                 )
                 if (item.permission) {
+                  const moduleId = SIDEBAR_PAGE_MODULE_IDS[item.name]
+                  const module = moduleId ? getModuleById(moduleId) : undefined
+                  const sidebarPermissions = module
+                    ? getModulePageAccessCandidates(module)
+                    : [item.permission]
+
                   return (
-                    <PermissionGuard key={item.name} permission={item.permission}>
+                    <PermissionGuard key={item.name} permissions={sidebarPermissions}>
                       {navItem}
                     </PermissionGuard>
                   )

@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Plus, Edit, Trash2, Users, Search, Check, X } from 'lucide-react'
+import { Plus, Edit, Trash2, Search } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -16,6 +16,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { getPermissionsByCategory } from '@/lib/permissions-catalog'
+import { RolePermissionModulePicker } from '@/components/settings/RolePermissionModulePicker'
 
 interface Role {
   id: string
@@ -44,9 +45,6 @@ export default function RolesPage() {
   
   // Get mobile permissions separately
   const mobilePermissions = permissionsByCategory['Mobile App'] || []
-  const webPermissionsByCategory = Object.fromEntries(
-    Object.entries(permissionsByCategory).filter(([cat]) => cat !== 'Mobile App')
-  )
 
   useEffect(() => {
     fetchRoles()
@@ -155,28 +153,6 @@ export default function RolesPage() {
     }
   }
 
-  const togglePermission = (permissionKey: string) => {
-    setFormData((prev) => ({
-      ...prev,
-      permissions: prev.permissions.includes(permissionKey)
-        ? prev.permissions.filter((p) => p !== permissionKey)
-        : [...prev.permissions, permissionKey],
-    }))
-  }
-
-  const selectAllInCategory = (category: string) => {
-    const categoryPerms = permissionsByCategory[category] || []
-    const categoryKeys = categoryPerms.map((p) => p.key)
-    const allSelected = categoryKeys.every((key) => formData.permissions.includes(key))
-
-    setFormData((prev) => ({
-      ...prev,
-      permissions: allSelected
-        ? prev.permissions.filter((p) => !categoryKeys.includes(p))
-        : [...new Set([...prev.permissions, ...categoryKeys])],
-    }))
-  }
-
   const openEditModal = async (role: Role) => {
     setEditingRole(role)
     
@@ -280,41 +256,12 @@ export default function RolesPage() {
                 />
               </div>
               <div>
-                <Label>Permissions</Label>
-                <div className="mt-2 space-y-4 max-h-96 overflow-y-auto border rounded-md p-4">
-                  {Object.entries(webPermissionsByCategory).map(([category, perms]) => (
-                    <div key={category} className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-semibold text-sm">{category}</h4>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => selectAllInCategory(category)}
-                        >
-                          {perms.every((p) => formData.permissions.includes(p.key))
-                            ? 'Deselect All'
-                            : 'Select All'}
-                        </Button>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 ml-4">
-                        {perms.map((perm) => (
-                          <label
-                            key={perm.key}
-                            className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={formData.permissions.includes(perm.key)}
-                              onChange={() => togglePermission(perm.key)}
-                              className="rounded"
-                            />
-                            <span className="text-sm">{perm.label}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
+                <Label>Web App — Pages &amp; Actions</Label>
+                <div className="mt-2">
+                  <RolePermissionModulePicker
+                    selectedPermissions={formData.permissions}
+                    onChange={(permissions) => setFormData((prev) => ({ ...prev, permissions }))}
+                  />
                 </div>
               </div>
               <div>
@@ -471,41 +418,12 @@ export default function RolesPage() {
                 )}
               </div>
               <div>
-                <Label>Web App Permissions</Label>
-                <div className="mt-2 space-y-4 max-h-96 overflow-y-auto border rounded-md p-4">
-                  {Object.entries(webPermissionsByCategory).map(([category, perms]) => (
-                    <div key={category} className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-semibold text-sm">{category}</h4>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => selectAllInCategory(category)}
-                        >
-                          {perms.every((p) => formData.permissions.includes(p.key))
-                            ? 'Deselect All'
-                            : 'Select All'}
-                        </Button>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 ml-4">
-                        {perms.map((perm) => (
-                          <label
-                            key={perm.key}
-                            className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={formData.permissions.includes(perm.key)}
-                              onChange={() => togglePermission(perm.key)}
-                              className="rounded"
-                            />
-                            <span className="text-sm">{perm.label}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
+                <Label>Web App — Pages &amp; Actions</Label>
+                <div className="mt-2">
+                  <RolePermissionModulePicker
+                    selectedPermissions={formData.permissions}
+                    onChange={(permissions) => setFormData((prev) => ({ ...prev, permissions }))}
+                  />
                 </div>
               </div>
               <div>

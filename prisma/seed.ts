@@ -301,6 +301,14 @@ async function main() {
 
   // Assign Owner role to existing admin if not already assigned
   if (existingAdmin) {
+    if (!existingAdmin.allowWebLogin) {
+      await prisma.user.update({
+        where: { id: existingAdmin.id },
+        data: { allowWebLogin: true, allowMobileLogin: true },
+      })
+      console.log('   ✅ Restored web/mobile login for admin user')
+    }
+
     console.log('✅ Admin user already exists!')
     console.log('   Email: admin@trimpro.com')
     

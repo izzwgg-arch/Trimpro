@@ -26,6 +26,41 @@ export function TrimProMark({ size = 30, className }: TrimProMarkProps) {
   return <TrimProIcon className={className} size={size} />
 }
 
+function TrimProColumnIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 220 224" aria-hidden="true" className={cn('shrink-0', className)}>
+      <g fill="#ffffff">
+        <rect x="0" y="0" width="220" height="18" rx="4" />
+        <circle cx="24" cy="36" r="10" />
+        <circle cx="196" cy="36" r="10" />
+        <rect x="82" y="52" width="24" height="172" rx="4" />
+        <rect x="122" y="52" width="24" height="172" rx="4" />
+      </g>
+    </svg>
+  )
+}
+
+/** Compact auth-page badge: lowercase trimpro + column mark on brand slate. */
+export function TrimProLoginBadge({ className }: { className?: string }) {
+  return (
+    <div
+      className={cn('inline-flex items-center gap-3 rounded-lg px-5 py-2.5', className)}
+      style={{ backgroundColor: '#2E4A59' }}
+    >
+      <span
+        className="text-[1.65rem] font-bold lowercase leading-none tracking-[0.01em]"
+        style={{
+          color: '#E6C98B',
+          fontFamily: 'Avenir Next, Montserrat, Poppins, Inter, Arial, Helvetica, sans-serif',
+        }}
+      >
+        trimpro
+      </span>
+      <TrimProColumnIcon className="h-9 w-9" />
+    </div>
+  )
+}
+
 interface TrimProLogoProps {
   variant?: 'sidebar' | 'light'
   size?: 'sm' | 'md' | 'lg'
