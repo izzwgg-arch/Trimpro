@@ -33,6 +33,11 @@ import {
   Eye,
 } from 'lucide-react'
 import Link from 'next/link'
+import {
+  getCustomPaymentLabel,
+  getCustomPaymentUiMethod,
+  isCustomPayment,
+} from '@/lib/payments/custom-payment'
 import { MobileActionBar } from '@/components/layout/MobileActionBar'
 import { ResponsivePage } from '@/components/layout/ResponsivePage'
 import { ResponsiveTableContainer } from '@/components/layout/ResponsiveTableContainer'
@@ -684,15 +689,16 @@ export default function InvoiceDetailPage() {
     }
   }
 
-  const EDITABLE_PROVIDERS = new Set(['manual', 'quick_pay', 'check', null, undefined, ''])
-  const EDITABLE_METHODS = new Set(['CHECK', 'CASH', 'OTHER'])
-
-  function isPaymentEditable(payment: { method: string; provider: string | null; status: string }) {
-    return (
-      payment.status === 'COMPLETED' &&
-      EDITABLE_PROVIDERS.has(payment.provider as any) &&
-      EDITABLE_METHODS.has(payment.method)
-    )
+  function isPaymentEditable(payment: {
+    method: string
+    provider: string | null
+    status: string
+    reference?: string | null
+    solaTransactionId?: string | null
+    providerPaymentId?: string | null
+    notes?: string | null
+  }) {
+    return isCustomPayment(payment)
   }
 
   function openEditPayment(payment: { id: string; amount: string; method: string; processedAt: string | null; reference: string | null; provider: string | null; notes: string | null }) {
@@ -703,14 +709,9 @@ export default function InvoiceDetailPage() {
         ? new Date(payment.processedAt).toISOString().split('T')[0]
         : new Date().toISOString().split('T')[0]
     )
-    const method = payment.method === 'CASH' ? 'QUICK_PAY' : (payment.method as 'CHECK' | 'QUICK_PAY' | 'OTHER')
-    setEditPaymentMethod(['CHECK', 'QUICK_PAY', 'OTHER'].includes(method) ? method : 'OTHER')
-    // Derive the custom label for OTHER from the notes or provider.
-    const label = (payment.notes || '')
-      .replace(/^manually marked as paid\s*[—-]\s*/i, '')
-      .replace(/^manually marked as paid by\s*/i, '')
-      .trim()
-    setEditPaymentOtherLabel(method === 'OTHER' || method === 'CASH' ? label : '')
+    const uiMethod = getCustomPaymentUiMethod(payment)
+    setEditPaymentMethod(uiMethod)
+    setEditPaymentOtherLabel(uiMethod === 'OTHER' ? getCustomPaymentLabel(payment) : '')
     setEditPaymentReference(payment.reference || '')
     setEditPaymentError('')
   }

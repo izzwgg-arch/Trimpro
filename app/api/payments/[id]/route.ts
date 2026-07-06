@@ -3,9 +3,12 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
-
-const EDITABLE_PROVIDERS = new Set(['manual', 'quick_pay', 'check', null, undefined, ''])
-const EDITABLE_METHODS = new Set(['CHECK', 'CASH', 'OTHER'])
+import {
+  buildCustomPaymentNotes,
+  isCustomPayment,
+  mapCustomPaymentMethodToDb,
+  type CustomPaymentUiMethod,
+} from '@/lib/payments/custom-payment'
 
 function toNumber(value: unknown): number {
   const n = Number(value)
@@ -42,6 +45,7 @@ export async function PATCH(
           select: {
             id: true,
             tenantId: true,
+            invoiceNumber: true,
             total: true,
             status: true,
             paidAt: true,
@@ -57,21 +61,29 @@ export async function PATCH(
       return NextResponse.json({ error: 'Payment not found' }, { status: 404 })
     }
 
-    // Only allow editing payments that were manually recorded, not card/ACH gateway payments.
-    const provider = payment.provider || ''
-    if (!EDITABLE_PROVIDERS.has(provider) || !EDITABLE_METHODS.has(payment.method)) {
+    if (!isCustomPayment(payment)) {
       return NextResponse.json(
-        { error: 'Only manually recorded payments (check, quick pay, other) can be edited.' },
+        { error: 'Only custom (manually recorded) payments can be edited.' },
         { status: 400 }
       )
     }
 
     const ALLOWED_METHODS = new Set(['CHECK', 'QUICK_PAY', 'OTHER'])
-    if (methodRaw && !ALLOWED_METHODS.has(methodRaw)) {
+    const resolvedMethod = (methodRaw || '') as CustomPaymentUiMethod | ''
+    if (resolvedMethod && !ALLOWED_METHODS.has(resolvedMethod)) {
       return NextResponse.json({ error: 'Invalid payment method.' }, { status: 400 })
     }
-    if (methodRaw === 'OTHER' && !methodLabel) {
+    if (resolvedMethod === 'OTHER' && !methodLabel) {
       return NextResponse.json({ error: 'Please enter a payment type name.' }, { status: 400 })
+    }
+
+    const beforeSnapshot = {
+      amount: round2(toNumber(payment.amount)),
+      method: payment.method,
+      provider: payment.provider,
+      reference: payment.reference,
+      processedAt: payment.processedAt,
+      notes: payment.notes,
     }
 
     const processedAt =
@@ -113,31 +125,18 @@ export async function PATCH(
         if (newAmount <= 0) throw new Error('No remaining balance to apply payment to.')
       }
 
-      // Map method label.
-      const newMethod =
-        methodRaw === 'CHECK'
-          ? ('CHECK' as const)
-          : methodRaw === 'QUICK_PAY' || methodRaw === 'CASH'
-            ? ('CASH' as const)
-            : methodRaw === 'OTHER'
-              ? ('OTHER' as const)
-              : payment.method
-      const newProvider =
-        methodRaw === 'QUICK_PAY'
-          ? 'quick_pay'
-          : methodRaw === 'OTHER'
-            ? (methodLabel.toLowerCase().replace(/\s+/g, '_') || payment.provider || 'manual')
-            : methodRaw === 'CHECK'
-              ? 'manual'
-              : payment.provider || 'manual'
+      // Map method label — preserve existing values when the client omits method.
+      const mapped =
+        resolvedMethod && ALLOWED_METHODS.has(resolvedMethod)
+          ? mapCustomPaymentMethodToDb(resolvedMethod, methodLabel)
+          : { method: payment.method as 'CHECK' | 'CASH' | 'OTHER', provider: payment.provider || 'manual' }
+
+      const newMethod = mapped.method
+      const newProvider = mapped.provider
       const newNotes =
-        methodRaw === 'CHECK'
-          ? 'Manually marked as paid by check'
-          : methodRaw === 'QUICK_PAY'
-            ? 'Manually marked as paid by Quick Pay'
-            : methodRaw === 'OTHER' && methodLabel
-              ? `Manually marked as paid — ${methodLabel}`
-              : payment.notes
+        resolvedMethod && ALLOWED_METHODS.has(resolvedMethod)
+          ? buildCustomPaymentNotes(resolvedMethod, methodLabel)
+          : payment.notes
 
       const updatedPayment = await tx.payment.update({
         where: { id: params.id },
@@ -177,6 +176,31 @@ export async function PATCH(
       })
 
       return { payment: updatedPayment, invoice: updatedInvoice }
+    })
+
+    await prisma.auditLog.create({
+      data: {
+        tenantId: user.tenantId,
+        userId: user.id,
+        action: 'UPDATE',
+        entityType: 'Payment',
+        entityId: params.id,
+        ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || undefined,
+        userAgent: request.headers.get('user-agent') || undefined,
+        changes: {
+          invoiceId: payment.invoice.id,
+          invoiceNumber: payment.invoice.invoiceNumber,
+          before: beforeSnapshot,
+          after: {
+            amount: Number(result.payment.amount),
+            method: result.payment.method,
+            provider: result.payment.provider,
+            reference: result.payment.reference,
+            processedAt: result.payment.processedAt,
+            notes: result.payment.notes,
+          },
+        },
+      },
     })
 
     // Re-sync to QuickBooks.
