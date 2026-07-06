@@ -188,7 +188,11 @@ export async function GET(
     }
 
     let frontierParentIds = [...directSubClientIds]
-    while (frontierParentIds.length > 0) {
+    const visitedDescendantIds = new Set<string>(directSubClientIds)
+    let descendantDepth = 0
+    const maxDescendantDepth = 50
+    while (frontierParentIds.length > 0 && descendantDepth < maxDescendantDepth) {
+      descendantDepth += 1
       const nextLayer = await prisma.client.findMany({
         where: {
           tenantId: user.tenantId,
@@ -199,7 +203,8 @@ export async function GET(
       if (nextLayer.length === 0) break
       frontierParentIds = []
       for (const child of nextLayer) {
-        if (!child.parentId) continue
+        if (!child.parentId || visitedDescendantIds.has(child.id)) continue
+        visitedDescendantIds.add(child.id)
         const rootSubClientId = rootSubClientByClientId.get(child.parentId) || child.parentId
         rootSubClientByClientId.set(child.id, rootSubClientId)
         const ids = descendantIdsByRootSubClient.get(rootSubClientId) || [rootSubClientId]
