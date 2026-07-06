@@ -16,6 +16,7 @@ import { Plus, Search, Phone, Mail, Building2, Filter, Trash2 } from 'lucide-rea
 import Link from 'next/link'
 import { useDocumentListAccess } from '@/hooks/useDocumentListAccess'
 import { CreateOnlyAccessCard } from '@/components/permissions/CreateOnlyAccessCard'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 
 interface Client {
   id: string
@@ -58,8 +59,10 @@ export default function ClientsPage() {
     'clients.create'
   )
   const [clients, setClients] = useState<Client[]>([])
-  const [loading, setLoading] = useState(true)
+  const [initialLoading, setInitialLoading] = useState(true)
+  const [isFetching, setIsFetching] = useState(false)
   const [search, setSearch] = useState('')
+  const debouncedSearch = useDebouncedValue(search, 300)
   const [status, setStatus] = useState('all')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
@@ -76,26 +79,27 @@ export default function ClientsPage() {
   useEffect(() => {
     // Reset to first page on filter changes.
     setPage(1)
-  }, [search, status])
+  }, [debouncedSearch, status])
 
   useEffect(() => {
     if (permissionsLoading) return
-    setLoading(true)
     fetchClients()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, status, page, permissionsLoading, canViewList])
+  }, [debouncedSearch, status, page, permissionsLoading, canViewList])
 
   const fetchClients = async () => {
     if (!canViewList) {
       setClients([])
-      setLoading(false)
+      setInitialLoading(false)
+      setIsFetching(false)
       return
     }
 
+    setIsFetching(true)
     try {
       const token = localStorage.getItem('accessToken')
       const params = new URLSearchParams({
-        search,
+        search: debouncedSearch,
         status,
         page: String(page),
         limit: '50',
@@ -119,7 +123,8 @@ export default function ClientsPage() {
     } catch (error) {
       console.error('Failed to fetch clients:', error)
     } finally {
-      setLoading(false)
+      setInitialLoading(false)
+      setIsFetching(false)
     }
   }
 
@@ -278,7 +283,7 @@ export default function ClientsPage() {
     }
   }
 
-  if (loading || permissionsLoading) {
+  if (initialLoading || permissionsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">

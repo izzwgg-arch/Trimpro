@@ -17,6 +17,7 @@ import { Plus, Search, Filter, AlertCircle, User, Clock, CheckCircle } from 'luc
 import Link from 'next/link'
 import { useDocumentListAccess } from '@/hooks/useDocumentListAccess'
 import { CreateOnlyAccessCard } from '@/components/permissions/CreateOnlyAccessCard'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 
 interface Issue {
   id: string
@@ -89,8 +90,10 @@ export default function IssuesPage() {
   const searchParams = useSearchParams()
   const { permissionsLoading, canViewList, canCreate } = useDocumentListAccess('issues.view', 'issues.create')
   const [issues, setIssues] = useState<Issue[]>([])
-  const [loading, setLoading] = useState(true)
+  const [initialLoading, setInitialLoading] = useState(true)
+  const [isFetching, setIsFetching] = useState(false)
   const [search, setSearch] = useState('')
+  const debouncedSearch = useDebouncedValue(search, 300)
   const [status, setStatus] = useState('all')
   const [type, setType] = useState('all')
   const [filter, setFilter] = useState('all') // all, my, assigned, watched
@@ -108,26 +111,27 @@ export default function IssuesPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [search, status, type, filter])
+  }, [debouncedSearch, status, type, filter])
 
   useEffect(() => {
     if (permissionsLoading) return
-    setLoading(true)
     fetchIssues()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, status, type, filter, page, permissionsLoading, canViewList])
+  }, [debouncedSearch, status, type, filter, page, permissionsLoading, canViewList])
 
   const fetchIssues = async () => {
     if (!canViewList) {
       setIssues([])
-      setLoading(false)
+      setInitialLoading(false)
+      setIsFetching(false)
       return
     }
 
+    setIsFetching(true)
     try {
       const token = localStorage.getItem('accessToken')
       const params = new URLSearchParams({
-        search,
+        search: debouncedSearch,
         status,
         type,
         filter,
@@ -153,11 +157,12 @@ export default function IssuesPage() {
     } catch (error) {
       console.error('Failed to fetch issues:', error)
     } finally {
-      setLoading(false)
+      setInitialLoading(false)
+      setIsFetching(false)
     }
   }
 
-  if (loading || permissionsLoading) {
+  if (initialLoading || permissionsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -468,7 +473,7 @@ export default function IssuesPage() {
         page={page}
         totalPages={totalPages}
         total={total}
-        disabled={loading}
+        disabled={isFetching}
         onPrev={() => setPage((p) => Math.max(1, p - 1))}
         onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
       />

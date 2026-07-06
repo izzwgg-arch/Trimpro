@@ -18,6 +18,7 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { Plus, Search, Filter, DollarSign, AlertCircle, Trash2, Copy, Download } from 'lucide-react'
 import Link from 'next/link'
 import { usePermissions, hasPermission } from '@/hooks/usePermissions'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 
 interface Invoice {
   id: string
@@ -88,8 +89,10 @@ export default function InvoicesPage() {
   const canViewList = hasPermission(permissions, 'invoices.view')
   const canCreate = hasPermission(permissions, 'invoices.create')
   const [invoices, setInvoices] = useState<Invoice[]>([])
-  const [loading, setLoading] = useState(true)
+  const [initialLoading, setInitialLoading] = useState(true)
+  const [isFetching, setIsFetching] = useState(false)
   const [search, setSearch] = useState('')
+  const debouncedSearch = useDebouncedValue(search, 300)
   const [status, setStatus] = useState('all')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
@@ -136,27 +139,28 @@ export default function InvoicesPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [search, status])
+  }, [debouncedSearch, status])
 
   useEffect(() => {
     if (permissionsLoading) return
-    setLoading(true)
     fetchInvoices()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, status, page, permissionsLoading, canViewList])
+  }, [debouncedSearch, status, page, permissionsLoading, canViewList])
 
   const fetchInvoices = async () => {
     if (!canViewList) {
       setInvoices([])
       setSummary(null)
-      setLoading(false)
+      setInitialLoading(false)
+      setIsFetching(false)
       return
     }
 
+    setIsFetching(true)
     try {
       const token = localStorage.getItem('accessToken')
       const params = new URLSearchParams({
-        search,
+        search: debouncedSearch,
         status,
         page: String(page),
         limit: '50',
@@ -188,7 +192,8 @@ export default function InvoicesPage() {
     } catch (error) {
       console.error('Failed to fetch invoices:', error)
     } finally {
-      setLoading(false)
+      setInitialLoading(false)
+      setIsFetching(false)
     }
   }
 
@@ -385,7 +390,7 @@ export default function InvoicesPage() {
     }
   }
 
-  if (loading || permissionsLoading) {
+  if (initialLoading || permissionsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -951,7 +956,7 @@ export default function InvoicesPage() {
         page={page}
         totalPages={totalPages}
         total={total}
-        disabled={loading}
+        disabled={isFetching}
         onPrev={() => setPage((p) => Math.max(1, p - 1))}
         onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
       />

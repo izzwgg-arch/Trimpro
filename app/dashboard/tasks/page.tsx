@@ -17,6 +17,7 @@ import { Plus, Search, Filter, CheckSquare, Calendar, User, AlertCircle } from '
 import Link from 'next/link'
 import { useDocumentListAccess } from '@/hooks/useDocumentListAccess'
 import { CreateOnlyAccessCard } from '@/components/permissions/CreateOnlyAccessCard'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 
 interface Task {
   id: string
@@ -82,8 +83,10 @@ export default function TasksPage() {
   const searchParams = useSearchParams()
   const { permissionsLoading, canViewList, canCreate } = useDocumentListAccess('tasks.view', 'tasks.create')
   const [tasks, setTasks] = useState<Task[]>([])
-  const [loading, setLoading] = useState(true)
+  const [initialLoading, setInitialLoading] = useState(true)
+  const [isFetching, setIsFetching] = useState(false)
   const [search, setSearch] = useState('')
+  const debouncedSearch = useDebouncedValue(search, 300)
   const [status, setStatus] = useState('all')
   const [filter, setFilter] = useState('all') // all, my, assigned
   const [page, setPage] = useState(1)
@@ -100,26 +103,27 @@ export default function TasksPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [search, status, filter])
+  }, [debouncedSearch, status, filter])
 
   useEffect(() => {
     if (permissionsLoading) return
-    setLoading(true)
     fetchTasks()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, status, filter, page, permissionsLoading, canViewList])
+  }, [debouncedSearch, status, filter, page, permissionsLoading, canViewList])
 
   const fetchTasks = async () => {
     if (!canViewList) {
       setTasks([])
-      setLoading(false)
+      setInitialLoading(false)
+      setIsFetching(false)
       return
     }
 
+    setIsFetching(true)
     try {
       const token = localStorage.getItem('accessToken')
       const params = new URLSearchParams({
-        search,
+        search: debouncedSearch,
         status,
         filter,
         page: String(page),
@@ -144,11 +148,12 @@ export default function TasksPage() {
     } catch (error) {
       console.error('Failed to fetch tasks:', error)
     } finally {
-      setLoading(false)
+      setInitialLoading(false)
+      setIsFetching(false)
     }
   }
 
-  if (loading || permissionsLoading) {
+  if (initialLoading || permissionsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -466,7 +471,7 @@ export default function TasksPage() {
         page={page}
         totalPages={totalPages}
         total={total}
-        disabled={loading}
+        disabled={isFetching}
         onPrev={() => setPage((p) => Math.max(1, p - 1))}
         onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
       />

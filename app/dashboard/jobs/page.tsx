@@ -17,6 +17,7 @@ import { Plus, Search, Filter, Briefcase, Calendar, DollarSign, Trash2, FileText
 import Link from 'next/link'
 import { useDocumentListAccess } from '@/hooks/useDocumentListAccess'
 import { CreateOnlyAccessCard } from '@/components/permissions/CreateOnlyAccessCard'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 
 interface Job {
   id: string
@@ -78,8 +79,10 @@ export default function JobsPage() {
   const searchParams = useSearchParams()
   const { permissionsLoading, canViewList, canCreate } = useDocumentListAccess('jobs.view', 'jobs.create')
   const [jobs, setJobs] = useState<Job[]>([])
-  const [loading, setLoading] = useState(true)
+  const [initialLoading, setInitialLoading] = useState(true)
+  const [isFetching, setIsFetching] = useState(false)
   const [search, setSearch] = useState('')
+  const debouncedSearch = useDebouncedValue(search, 300)
   const [status, setStatus] = useState('all')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
@@ -99,26 +102,27 @@ export default function JobsPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [search, status])
+  }, [debouncedSearch, status])
 
   useEffect(() => {
     if (permissionsLoading) return
-    setLoading(true)
     fetchJobs()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, status, page, permissionsLoading, canViewList])
+  }, [debouncedSearch, status, page, permissionsLoading, canViewList])
 
   const fetchJobs = async () => {
     if (!canViewList) {
       setJobs([])
-      setLoading(false)
+      setInitialLoading(false)
+      setIsFetching(false)
       return
     }
 
+    setIsFetching(true)
     try {
       const token = localStorage.getItem('accessToken')
       const params = new URLSearchParams({
-        search,
+        search: debouncedSearch,
         status,
         page: String(page),
         limit: '50',
@@ -142,7 +146,8 @@ export default function JobsPage() {
     } catch (error) {
       console.error('Failed to fetch jobs:', error)
     } finally {
-      setLoading(false)
+      setInitialLoading(false)
+      setIsFetching(false)
     }
   }
 
@@ -273,7 +278,7 @@ export default function JobsPage() {
     )
   }
 
-  if (loading || permissionsLoading) {
+  if (initialLoading || permissionsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -694,7 +699,7 @@ export default function JobsPage() {
         page={page}
         totalPages={totalPages}
         total={total}
-        disabled={loading}
+        disabled={isFetching}
         onPrev={() => setPage((p) => Math.max(1, p - 1))}
         onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
       />

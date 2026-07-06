@@ -16,6 +16,7 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { Plus, Search, Filter, FileText, Calendar, Trash2, Briefcase, Copy } from 'lucide-react'
 import Link from 'next/link'
 import { usePermissions, hasPermission } from '@/hooks/usePermissions'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 
 interface Estimate {
   id: string
@@ -122,9 +123,11 @@ export default function EstimatesPage() {
   const canViewList = hasPermission(permissions, 'estimates.view')
   const canCreate = hasPermission(permissions, 'estimates.create')
   const [estimates, setEstimates] = useState<Estimate[]>([])
-  const [loading, setLoading] = useState(true)
+  const [initialLoading, setInitialLoading] = useState(true)
+  const [isFetching, setIsFetching] = useState(false)
   const [listState, setListStateRaw] = useState<EstimatesListState>(loadEstimatesListState)
   const { status, search, sortKey, sortDirection } = listState
+  const debouncedSearch = useDebouncedValue(search, 300)
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
@@ -149,7 +152,7 @@ export default function EstimatesPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [search, status, sortKey, sortDirection])
+  }, [debouncedSearch, status, sortKey, sortDirection])
 
   // Clear persisted state on a real full-page reload / tab close
   useEffect(() => {
@@ -161,14 +164,16 @@ export default function EstimatesPage() {
   const fetchEstimates = useCallback(async () => {
     if (!canViewList) {
       setEstimates([])
-      setLoading(false)
+      setInitialLoading(false)
+      setIsFetching(false)
       return
     }
 
+    setIsFetching(true)
     try {
       const token = localStorage.getItem('accessToken')
       const params = new URLSearchParams({
-        search,
+        search: debouncedSearch,
         status,
         page: String(page),
         limit: '50',
@@ -194,13 +199,13 @@ export default function EstimatesPage() {
     } catch (error) {
       console.error('Failed to fetch estimates:', error)
     } finally {
-      setLoading(false)
+      setInitialLoading(false)
+      setIsFetching(false)
     }
-  }, [page, router, search, sortDirection, sortKey, status, canViewList])
+  }, [page, router, debouncedSearch, sortDirection, sortKey, status, canViewList])
 
   useEffect(() => {
     if (permissionsLoading) return
-    setLoading(true)
     fetchEstimates()
   }, [fetchEstimates, permissionsLoading])
 
@@ -327,7 +332,7 @@ export default function EstimatesPage() {
     }
   }
 
-  if (loading || permissionsLoading) {
+  if (initialLoading || permissionsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -702,7 +707,7 @@ export default function EstimatesPage() {
         page={page}
         totalPages={totalPages}
         total={total}
-        disabled={loading}
+        disabled={isFetching}
         onPrev={() => setPage((p) => Math.max(1, p - 1))}
         onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
       />

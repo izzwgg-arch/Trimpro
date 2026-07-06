@@ -17,6 +17,7 @@ import { Plus, Search, Filter, User, Phone, Mail, CheckCircle, Trash2, FileText,
 import Link from 'next/link'
 import { usePermissions, hasPermission } from '@/hooks/usePermissions'
 import { CreateOnlyAccessCard } from '@/components/permissions/CreateOnlyAccessCard'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 
 interface Request {
   id: string
@@ -132,9 +133,11 @@ function saveRequestsListState(s: RequestsListState) {
 export default function RequestsPage() {
   const router = useRouter()
   const [requests, setRequests] = useState<Request[]>([])
-  const [loading, setLoading] = useState(true)
+  const [initialLoading, setInitialLoading] = useState(true)
+  const [isFetching, setIsFetching] = useState(false)
   const [listState, setListStateRaw] = useState<RequestsListState>(loadRequestsListState)
   const { status, source, search, sortKey, sortDirection } = listState
+  const debouncedSearch = useDebouncedValue(search, 300)
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
@@ -161,19 +164,21 @@ export default function RequestsPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [search, status, source, sortKey, sortDirection])
+  }, [debouncedSearch, status, source, sortKey, sortDirection])
 
   const fetchRequests = useCallback(async (silent = false) => {
     if (!canViewList) {
       setRequests([])
-      if (!silent) setLoading(false)
+      setInitialLoading(false)
+      if (!silent) setIsFetching(false)
       return
     }
 
+    if (!silent) setIsFetching(true)
     try {
       const token = localStorage.getItem('accessToken')
       const params = new URLSearchParams({
-        search,
+        search: debouncedSearch,
         status,
         source,
         page: String(page),
@@ -202,13 +207,13 @@ export default function RequestsPage() {
     } catch (error) {
       console.error('Failed to fetch requests:', error)
     } finally {
-      if (!silent) setLoading(false)
+      setInitialLoading(false)
+      if (!silent) setIsFetching(false)
     }
-  }, [page, router, search, sortDirection, sortKey, source, status, canViewList])
+  }, [page, router, debouncedSearch, sortDirection, sortKey, source, status, canViewList])
 
   useEffect(() => {
     if (permissionsLoading) return
-    setLoading(true)
     fetchRequests()
   }, [fetchRequests, permissionsLoading])
 
@@ -435,7 +440,7 @@ export default function RequestsPage() {
     )
   }
 
-  if (loading || permissionsLoading) {
+  if (initialLoading || permissionsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -992,7 +997,7 @@ export default function RequestsPage() {
         page={page}
         totalPages={totalPages}
         total={total}
-        disabled={loading}
+        disabled={isFetching}
         onPrev={() => setPage((p) => Math.max(1, p - 1))}
         onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
       />
