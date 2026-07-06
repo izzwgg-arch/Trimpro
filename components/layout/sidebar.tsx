@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { TrimProLogo } from '@/components/branding/TrimProLogo'
 import { PermissionGuard } from '@/components/permissions/PermissionGuard'
-import { SIDEBAR_PAGE_MODULE_IDS, getModuleById, getModulePageAccessCandidates } from '@/lib/page-module-permissions'
+import { SIDEBAR_PAGE_MODULE_IDS, getModuleById, getModuleSidebarPermissions } from '@/lib/page-module-permissions'
 import { NotificationBell } from '@/components/notifications/NotificationBell'
 import {
   LayoutDashboard,
@@ -32,6 +32,7 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
+  History,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 
@@ -55,6 +56,7 @@ const navigation = [
   { name: 'Maps', href: '/dashboard/maps', icon: Map, permission: 'jobs.view' },
   { name: 'Analytics', href: '/dashboard/analytics', icon: BarChart3, permission: 'analytics.view' },
   { name: 'Reports', href: '/dashboard/reports', icon: FileBarChart, permission: 'reports.view' },
+  { name: 'Payment History', href: '/dashboard/reports/payments', icon: History, permission: 'payments.view' },
   { name: 'Dispatch', href: '/dashboard/dispatch', icon: Radio, permission: 'dispatch.view' },
   { name: 'Settings', href: '/dashboard/settings', icon: Settings, permission: 'settings.view' },
   { name: 'Help', href: '/dashboard/help', icon: HelpCircle, permission: 'dashboard.view' },
@@ -175,7 +177,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
             const moduleId = SIDEBAR_PAGE_MODULE_IDS[item.name]
             const module = moduleId ? getModuleById(moduleId) : undefined
             const sidebarPermissions = module
-              ? getModulePageAccessCandidates(module)
+              ? getModuleSidebarPermissions(module)
               : [item.permission]
 
             return (
@@ -280,7 +282,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
                   const moduleId = SIDEBAR_PAGE_MODULE_IDS[item.name]
                   const module = moduleId ? getModuleById(moduleId) : undefined
                   const sidebarPermissions = module
-                    ? getModulePageAccessCandidates(module)
+                    ? getModuleSidebarPermissions(module)
                     : [item.permission]
 
                   return (

@@ -5,7 +5,21 @@ import {
 } from '@/lib/permissions-page-modules'
 import { hasPermissionKey } from '@/lib/permission-aliases'
 
-/** Permission keys that grant entering a page (sidebar + route), with legacy fallbacks. */
+/** Sidebar visibility: Access page or View all only (not sub-pages/actions). */
+export function getModuleSidebarPermissions(module: PermissionPageModule): string[] {
+  return [module.pageAccessPermission, module.viewPermission]
+}
+
+export function hasModuleSidebarAccess(
+  userPermissions: string[],
+  module: PermissionPageModule
+): boolean {
+  return getModuleSidebarPermissions(module).some((key) =>
+    hasPermissionKey(userPermissions, key)
+  )
+}
+
+/** Route/page entry: access, view, actions, and sub-pages (legacy-friendly). */
 export function getModulePageAccessCandidates(module: PermissionPageModule): string[] {
   const keys = new Set<string>([module.pageAccessPermission, module.viewPermission])
 
