@@ -1013,9 +1013,16 @@ export const PERMISSIONS: PermissionDefinition[] = [
   // BILLING / PAYMENTS
   // ============================================
   {
+    key: 'payments.access',
+    label: 'Access Payment History Page',
+    description: 'Show Payment History in sidebar and open the page',
+    category: 'Billing',
+    module: 'payments',
+  },
+  {
     key: 'payments.view',
-    label: 'View Payments',
-    description: 'View payment records',
+    label: 'View Payment History',
+    description: 'View payment records, receipts, and refund history',
     category: 'Billing',
     module: 'payments',
   },

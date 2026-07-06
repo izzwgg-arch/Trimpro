@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { usePermissions, hasPermission, hasAnyPermission } from '@/hooks/usePermissions'
 
 type PaymentRow = {
   id: string
@@ -48,6 +49,12 @@ type RefundModalState = {
 }
 
 export default function PaymentHistoryPage() {
+  const { permissions } = usePermissions()
+  const canViewReports = hasAnyPermission(permissions, ['reports.view', 'reports.access'])
+  const canRefund =
+    hasPermission(permissions, 'payments.refund') ||
+    hasPermission(permissions, 'payments.manage')
+
   const [rows, setRows] = useState<PaymentRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -59,7 +66,6 @@ export default function PaymentHistoryPage() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
-  const [canRefund, setCanRefund] = useState(false)
 
   const [refundModal, setRefundModal] = useState<RefundModalState>({
     open: false,
@@ -69,25 +75,6 @@ export default function PaymentHistoryPage() {
     reason: '',
     submitting: false,
   })
-
-  useEffect(() => {
-    const loadPermissions = async () => {
-      try {
-        const token = localStorage.getItem('accessToken')
-        const res = await fetch('/api/me', {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        if (!res.ok) return
-        const data = await res.json()
-        const role = String(data?.user?.role || '').toUpperCase()
-        const perms: string[] = Array.isArray(data?.permissions) ? data.permissions : []
-        setCanRefund(role === 'ADMIN' || perms.includes('payments.manage') || perms.includes('manage_payments'))
-      } catch {
-        setCanRefund(false)
-      }
-    }
-    void loadPermissions()
-  }, [])
 
   const fetchHistory = useCallback(async () => {
     setLoading(true)
@@ -210,12 +197,14 @@ export default function PaymentHistoryPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Link href="/dashboard/reports">
-            <Button variant="outline" size="sm">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Reports
-            </Button>
-          </Link>
+          {canViewReports && (
+            <Link href="/dashboard/reports">
+              <Button variant="outline" size="sm">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Back to Reports
+              </Button>
+            </Link>
+          )}
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Payment History</h1>
             <p className="text-gray-600 mt-1">SOLA + QuickBooks ACH payment events and refunds</p>
