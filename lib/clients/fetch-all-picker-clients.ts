@@ -24,7 +24,7 @@ export async function fetchAllPickerClients(): Promise<PickerClient[]> {
   const all: PickerClient[] = []
 
   do {
-    const response = await fetch(`/api/clients?limit=${limit}&page=${page}`, {
+    const response = await fetch(`/api/clients/picker?limit=${limit}&page=${page}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
 

@@ -12,6 +12,7 @@ import Link from 'next/link'
 import { parseAddressParts } from '@/lib/address/parse'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
 import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
+import { fetchClientPickerDetail } from '@/lib/clients/client-picker-api'
 import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
 import { PlaceAutocompleteInput } from '@/components/maps/PlaceAutocompleteInput'
 import { refreshAccessToken } from '@/lib/auth/client'
@@ -166,37 +167,9 @@ export default function NewRequestPage() {
       company: selected?.companyName || prev.company,
     }))
 
-    // Rich prefill from client details endpoint.
+    // Rich prefill from client picker endpoint.
     try {
-      let token = localStorage.getItem('accessToken')
-      if (!token) {
-        setPrefillValidationError('Please sign in again to prefill client details.')
-        return
-      }
-
-      let response = await fetch(`/api/clients/${clientId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (response.status === 401) {
-        const refreshed = await refreshAccessToken()
-        if (!refreshed) {
-          setPrefillValidationError('Your session expired. Please sign in and try again.')
-          return
-        }
-        token = localStorage.getItem('accessToken')
-        response = await fetch(`/api/clients/${clientId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-      }
-
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}))
-        setPrefillValidationError(payload.error || 'Unable to load selected client details for request prefill.')
-        return
-      }
-
-      const payload = await response.json().catch(() => null)
-      const client = (payload?.client || null) as ClientPrefillResponse | null
+      const client = (await fetchClientPickerDetail(clientId)) as ClientPrefillResponse | null
       if (!client?.id) {
         setPrefillValidationError('Selected client record is unavailable. Please refresh and try again.')
         return

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { z } from 'zod'
-import { refreshAccessToken } from '@/lib/auth/client'
+import { fetchClientPickerDetail, pickDefaultClientAddress } from '@/lib/clients/client-picker-api'
 
 type EntityType = 'estimate' | 'job' | 'task' | 'issue'
 type SourceType = 'request' | 'job' | 'estimate' | 'client'
@@ -35,43 +35,9 @@ const querySchema = z.object({
   jobId: z.string().trim().min(1).optional(),
 })
 
-function pickDefaultAddress(addresses: ClientAddress[], addressId?: string) {
-  if (!Array.isArray(addresses) || addresses.length === 0) return null
-  if (addressId) {
-    const match = addresses.find((a) => a.id === addressId)
-    if (match) return match
-  }
-
-  // Prefer a billing address if present.
-  const billingDefault = addresses.find((a) => a.type === 'billing' && a.isDefault)
-  if (billingDefault) return billingDefault
-  const billingAny = addresses.find((a) => a.type === 'billing')
-  if (billingAny) return billingAny
-
-  // Otherwise any default, then first.
-  const anyDefault = addresses.find((a) => a.isDefault)
-  if (anyDefault) return anyDefault
-  return addresses[0]
-}
-
 async function fetchClientPrefill(clientId: string): Promise<ClientPrefill | null> {
-  let token = localStorage.getItem('accessToken')
-  let res = await fetch(`/api/clients/${clientId}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-
-  if (res.status === 401) {
-    const ok = await refreshAccessToken()
-    if (!ok) return null
-    token = localStorage.getItem('accessToken')
-    res = await fetch(`/api/clients/${clientId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-  }
-
-  if (!res.ok) return null
-  const data = await res.json().catch(() => null)
-  return (data?.client as ClientPrefill) || null
+  const client = await fetchClientPickerDetail(clientId)
+  return client
 }
 
 export function useCreateContextPrefill(entityType: EntityType) {
@@ -118,7 +84,7 @@ export function useCreateContextPrefill(entityType: EntityType) {
       .then((c) => {
         if (cancelled) return
         setClient(c)
-        const addr = c?.addresses ? pickDefaultAddress(c.addresses, parsed.addressId) : null
+        const addr = c?.addresses ? pickDefaultClientAddress(c.addresses, parsed.addressId) : null
         setAddress(addr)
       })
       .catch((e) => {

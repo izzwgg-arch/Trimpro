@@ -12,6 +12,7 @@ import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
 import { PlaceAutocompleteInput } from '@/components/maps/PlaceAutocompleteInput'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
 import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
+import { fetchClientPickerDetail, pickDefaultClientAddress } from '@/lib/clients/client-picker-api'
 import { useCreateContextPrefill } from '@/src/hooks/useCreateContextPrefill'
 import { refreshAccessToken } from '@/lib/auth/client'
 
@@ -100,30 +101,9 @@ export default function NewJobPage() {
   }
 
   const fetchClientDefaultAddress = async (clientId: string) => {
-    try {
-      let token = localStorage.getItem('accessToken')
-      let res = await fetch(`/api/clients/${clientId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (res.status === 401) {
-        const ok = await refreshAccessToken()
-        if (!ok) return null
-        token = localStorage.getItem('accessToken')
-        res = await fetch(`/api/clients/${clientId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-      }
-      if (!res.ok) return null
-      const data = await res.json().catch(() => null)
-      const addresses = (data?.client?.addresses || []) as any[]
-      if (!Array.isArray(addresses) || addresses.length === 0) return null
-      const billingDefault = addresses.find((a) => a?.type === 'billing' && a?.isDefault)
-      const billingAny = addresses.find((a) => a?.type === 'billing')
-      const anyDefault = addresses.find((a) => a?.isDefault)
-      return billingDefault || billingAny || anyDefault || addresses[0] || null
-    } catch {
-      return null
-    }
+    const client = await fetchClientPickerDetail(clientId)
+    if (!client?.addresses?.length) return null
+    return pickDefaultClientAddress(client.addresses)
   }
 
   const handleClientChange = async (value: string) => {

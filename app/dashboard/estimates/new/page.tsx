@@ -19,6 +19,7 @@ import { refreshAccessToken } from '@/lib/auth/client'
 import { usePermissions } from '@/hooks/usePermissions'
 import { postCreateRedirectPath } from '@/hooks/useDocumentListAccess'
 import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
+import { fetchClientDefaultAddressString } from '@/lib/clients/client-picker-api'
 import { useCreateContextPrefill } from '@/src/hooks/useCreateContextPrefill'
 import { cnCustomerVisibilityBulkPill } from '@/lib/ui/customer-visibility-bulk-pill'
 import { applyBundleSelectionToLines } from '@/lib/bundles/expand-line-items'
@@ -275,35 +276,6 @@ export default function NewEstimatePage() {
       }
     } catch (error) {
       console.error('Error fetching items for picker:', error)
-    }
-  }
-
-  const fetchClientDefaultAddressString = async (clientId: string): Promise<string> => {
-    try {
-      let token = localStorage.getItem('accessToken')
-      let res = await fetch(`/api/clients/${clientId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (res.status === 401) {
-        const ok = await refreshAccessToken()
-        if (!ok) return ''
-        token = localStorage.getItem('accessToken')
-        res = await fetch(`/api/clients/${clientId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-      }
-      if (!res.ok) return ''
-      const data = await res.json().catch(() => null)
-      const addresses = (data?.client?.addresses || []) as any[]
-      if (!Array.isArray(addresses) || addresses.length === 0) return ''
-      const billingDefault = addresses.find((a) => a?.type === 'billing' && a?.isDefault)
-      const billingAny = addresses.find((a) => a?.type === 'billing')
-      const anyDefault = addresses.find((a) => a?.isDefault)
-      const picked = billingDefault || billingAny || anyDefault || addresses[0]
-      if (!picked?.street) return ''
-      return `${picked.street}, ${picked.city || ''}, ${picked.state || ''} ${picked.zipCode || ''}`.replace(/\s+,/g, ',').trim()
-    } catch {
-      return ''
     }
   }
 
