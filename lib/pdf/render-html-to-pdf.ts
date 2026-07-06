@@ -28,19 +28,68 @@ function resolveChromePath(): string | undefined {
   return undefined
 }
 
-async function getBrowser(): Promise<Browser> {
-  if (!browserPromise) {
-    const executablePath = resolveChromePath()
-    browserPromise = puppeteer.launch({
-      executablePath,
-      // Required on many Linux hosts (incl. Docker/VPS) unless Chromium sandbox is configured.
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    })
+function isBrowserConnectionError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error || '')
+  const name = error instanceof Error ? error.name : ''
+  return (
+    name === 'ConnectionClosedError' ||
+    /connection closed/i.test(message) ||
+    /browser has disconnected/i.test(message) ||
+    /target closed/i.test(message) ||
+    /session closed/i.test(message) ||
+    /protocol error.*closed/i.test(message)
+  )
+}
+
+async function launchBrowser(): Promise<Browser> {
+  const executablePath = resolveChromePath()
+  const browser = await puppeteer.launch({
+    executablePath,
+    // Required on many Linux hosts (incl. Docker/VPS) unless Chromium sandbox is configured.
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+  })
+
+  browser.on('disconnected', () => {
+    browserPromise = null
+  })
+
+  return browser
+}
+
+async function resetBrowser(): Promise<void> {
+  const current = browserPromise
+  browserPromise = null
+
+  if (!current) return
+
+  try {
+    const browser = await current
+    if (browser.connected) {
+      await browser.close().catch(() => {})
+    }
+  } catch {
+    // Ignore cleanup errors for a dead browser instance.
   }
+}
+
+async function getBrowser(): Promise<Browser> {
+  if (browserPromise) {
+    try {
+      const browser = await browserPromise
+      if (browser.connected) {
+        return browser
+      }
+      browserPromise = null
+    } catch {
+      browserPromise = null
+    }
+  }
+
+  browserPromise = launchBrowser()
   return browserPromise
 }
 
-export async function renderPdfFromHtml(
+async function renderPdfOnce(
   html: string,
   options?: { waitUntil?: 'load' | 'networkidle0' | 'domcontentloaded' }
 ): Promise<Buffer> {
@@ -73,3 +122,18 @@ export async function renderPdfFromHtml(
   }
 }
 
+export async function renderPdfFromHtml(
+  html: string,
+  options?: { waitUntil?: 'load' | 'networkidle0' | 'domcontentloaded' }
+): Promise<Buffer> {
+  try {
+    return await renderPdfOnce(html, options)
+  } catch (error) {
+    if (!isBrowserConnectionError(error)) {
+      throw error
+    }
+
+    await resetBrowser()
+    return renderPdfOnce(html, options)
+  }
+}
