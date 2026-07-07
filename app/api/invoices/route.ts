@@ -12,6 +12,7 @@ import {
   assertEstimateWillNotOverConvert,
   getEstimateConversionSummary,
 } from '@/lib/documents/conversion'
+import { reconcileEstimateConversionLineItems, toCents } from '@/lib/documents/progress-billing'
 import {
   allocateNextInvoiceNumber,
   assertInvoiceNumberAvailableInQuickBooks,
@@ -306,19 +307,50 @@ export async function POST(request: NextRequest) {
 
     const invoiceNumberOverrideTrimmed = normalizeInvoiceNumber(invoiceNumberOverride)
 
-    // Calculate totals
-    const subtotal = lineItems.reduce((sum: number, item: any) => {
+    let resolvedLineItems = lineItems
+    let discountAmount = discount ? (typeof discount === 'number' ? discount : parseFloat(discount)) : 0
+    let taxRateValue = taxRate ? (typeof taxRate === 'number' ? taxRate : parseFloat(taxRate)) : 0
+
+    // Calculate totals (may be adjusted below for estimate conversion rounding)
+    let subtotal = resolvedLineItems.reduce((sum: number, item: any) => {
       if (item?.isSubtotal) return sum
       const qty = typeof item.quantity === 'number' ? item.quantity : parseFloat(item.quantity || 0)
       const price = typeof item.unitPrice === 'number' ? item.unitPrice : parseFloat(item.unitPrice || 0)
       return sum + (qty * price)
     }, 0)
 
-    const discountAmount = discount ? (typeof discount === 'number' ? discount : parseFloat(discount)) : 0
-    const subtotalAfterDiscount = subtotal - discountAmount
-    const taxRateValue = taxRate ? (typeof taxRate === 'number' ? taxRate : parseFloat(taxRate)) : 0
-    const tax = Math.round(subtotalAfterDiscount * taxRateValue * 100) / 100
-    const total = Math.round((subtotalAfterDiscount + tax) * 100) / 100
+    let subtotalAfterDiscount = subtotal - discountAmount
+    let tax = Math.round(subtotalAfterDiscount * taxRateValue * 100) / 100
+    let total = Math.round((subtotalAfterDiscount + tax) * 100) / 100
+
+    if (estimateId) {
+      const estimateForReconcile = await prisma.estimate.findFirst({
+        where: { id: estimateId, tenantId: user.tenantId },
+        select: { id: true, total: true },
+      })
+      if (estimateForReconcile) {
+        const existingConv = await getEstimateConversionSummary(
+          prisma,
+          estimateId,
+          estimateForReconcile.total,
+          user.tenantId,
+          reusableEmptyInvoice?.id
+        )
+        const reconciled = reconcileEstimateConversionLineItems(resolvedLineItems, {
+          taxRate: taxRateValue,
+          discount: discountAmount,
+          estimateTotalCents: toCents(Number(estimateForReconcile.total)),
+          existingInvoicedCents: toCents(existingConv.invoicedTotal),
+        })
+        if (reconciled.wasReconciled) {
+          resolvedLineItems = reconciled.lineItems
+          subtotal = reconciled.subtotal
+          subtotalAfterDiscount = subtotal - discountAmount
+          tax = reconciled.taxAmount
+          total = reconciled.total
+        }
+      }
+    }
 
     const baseInvoiceData = {
       tenantId: user.tenantId,
@@ -367,8 +399,8 @@ export async function POST(request: NextRequest) {
       }
 
       // Create line items. Subtotal rows are calculated from the preceding ordered segment.
-      console.log(`[invoice-create] creating ${lineItems.length} line items for invoice ${inv.id}`)
-      const calculatedLineItems = calculateOrderedSubtotalRows(lineItems as any[])
+      console.log(`[invoice-create] creating ${resolvedLineItems.length} line items for invoice ${inv.id}`)
+      const calculatedLineItems = calculateOrderedSubtotalRows(resolvedLineItems as any[])
       for (let i = 0; i < calculatedLineItems.length; i++) {
         const item = calculatedLineItems[i]
         const qty = typeof item.quantity === 'number' ? item.quantity : parseFloat(item.quantity || 0)

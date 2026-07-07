@@ -23,6 +23,7 @@ import {
   solveSubtotalForTotal,
   reconcileProgressLines,
   computeProgressInvoiceTotals,
+  reconcileEstimateConversionLineItems,
 } from '../lib/documents/progress-billing'
 
 // ---------------------------------------------------------------------------
@@ -392,6 +393,32 @@ test('computeProgressInvoiceTotals: no reconciliation needed when total is under
   })
   assert.equal(result.wasReconciled, false)
   assert.equal(result.totalCents, 500000)
+})
+
+test('REAL SCENARIO: railing estimate second invoice caps 1-cent rounding overflow', () => {
+  // Estimate EST-009100: $7,025.01 total, $3,012.51 already invoiced (50% + $500 discount)
+  // Full remaining (57.1%) scales lines to $4,012.51 — 1 cent over the $4,012.50 remaining.
+  const ESTIMATE_CENTS = toCents(7025.01)
+  const EXISTING_CENTS = toCents(3012.51)
+  const lines = [
+    { description: 'rad oak railing', total: 3141.46, unitPrice: 3141.46, quantity: 1 },
+    { description: 'Subtotal', total: 99.96, unitPrice: 99.96, quantity: 1 },
+    { description: 'Subtotal', total: 371.27, unitPrice: 371.27, quantity: 1 },
+    { description: 'Subtotal', total: 114.23, unitPrice: 114.23, quantity: 1 },
+    { description: 'Subtotal', total: 285.59, unitPrice: 285.59, quantity: 1 },
+  ]
+
+  const result = reconcileEstimateConversionLineItems(lines, {
+    taxRate: 0,
+    discount: 0,
+    estimateTotalCents: ESTIMATE_CENTS,
+    existingInvoicedCents: EXISTING_CENTS,
+  })
+
+  assert.equal(result.wasReconciled, true)
+  assert.equal(result.total, 4012.5)
+  assert.equal(EXISTING_CENTS + toCents(result.total), ESTIMATE_CENTS)
+  assert.equal(result.lineItems[4].unitPrice, 285.58)
 })
 
 test('computeProgressInvoiceTotals: reconciles when existing + new would exceed estimate', () => {

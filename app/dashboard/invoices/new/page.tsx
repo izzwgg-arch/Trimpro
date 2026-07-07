@@ -24,6 +24,7 @@ import {
 } from '@/lib/bundles/document-line-item-actions'
 import { usePermissions } from '@/hooks/usePermissions'
 import { postCreateRedirectPath } from '@/hooks/useDocumentListAccess'
+import { reconcileEstimateConversionLineItems, toCents } from '@/lib/documents/progress-billing'
 
 interface Job {
   id: string
@@ -479,6 +480,19 @@ export default function NewInvoicePage() {
             })
           }
         })
+
+        if (isScaledEstimateConversion && cp) {
+          const taxRateFraction = est.taxRate ? parseFloat(est.taxRate) : 0
+          const reconciled = reconcileEstimateConversionLineItems(mappedItems, {
+            taxRate: taxRateFraction,
+            discount: 0,
+            estimateTotalCents: toCents(Number(cp.estimateTotal ?? est.total)),
+            existingInvoicedCents: toCents(Number(cp.invoicedTotal ?? 0)),
+          })
+          if (reconciled.wasReconciled) {
+            mappedItems.splice(0, mappedItems.length, ...reconciled.lineItems)
+          }
+        }
 
         if (mappedItems.length > 0) {
           setLineItems(mappedItems)

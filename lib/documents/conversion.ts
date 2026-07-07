@@ -1,4 +1,5 @@
 import { toDocumentNumber } from '@/lib/documents/subtotals'
+import { toCents } from '@/lib/documents/progress-billing'
 
 const EXCLUDED_CONVERSION_INVOICE_STATUSES = ['CANCELLED', 'REFUNDED']
 const OVER_CONVERSION_TOLERANCE = 0.01
@@ -93,11 +94,12 @@ export async function assertEstimateWillNotOverConvert(
     params.tenantId,
     params.excludeInvoiceId
   )
-  const estimateTotal = toDocumentNumber(params.estimateTotal)
-  const projectedTotal = summary.invoicedTotal + toDocumentNumber(params.newInvoiceTotal)
+  const estimateCents = toCents(toDocumentNumber(params.estimateTotal))
+  const projectedCents =
+    toCents(summary.invoicedTotal) + toCents(toDocumentNumber(params.newInvoiceTotal))
 
-  if (estimateTotal > 0 && projectedTotal - estimateTotal > OVER_CONVERSION_TOLERANCE) {
-    const projectedPercent = Math.round((projectedTotal / estimateTotal) * 100)
+  if (estimateCents > 0 && projectedCents > estimateCents) {
+    const projectedPercent = Math.round((projectedCents / estimateCents) * 100)
     throw new Error(`This would invoice ${projectedPercent}% of the estimate. Total invoiced amount cannot exceed 100%.`)
   }
 }

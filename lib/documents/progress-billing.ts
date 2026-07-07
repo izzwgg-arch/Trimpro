@@ -165,6 +165,113 @@ export function reconcileProgressLines<T extends ReconcilableLine>(
  * rate, and the existing invoiced total + estimate total, return the values to
  * use for the invoice — reconciling if needed.
  */
+export type EstimateConversionLineInput = {
+  quantity?: unknown
+  unitPrice?: unknown
+  isSubtotal?: boolean
+  isGroupHeader?: boolean
+}
+
+function parseQty(value: unknown): number {
+  const qty = typeof value === 'number' ? value : parseFloat(String(value ?? ''))
+  return Number.isFinite(qty) ? qty : 0
+}
+
+function parseUnitPrice(value: unknown): number {
+  const price = typeof value === 'number' ? value : parseFloat(String(value ?? ''))
+  return Number.isFinite(price) ? price : 0
+}
+
+/**
+ * Cap scaled estimate-conversion line items so invoice total (after discount/tax)
+ * does not exceed what remains on the estimate. Adjusts the last billable line(s).
+ */
+export function reconcileEstimateConversionLineItems<T extends EstimateConversionLineInput>(
+  lineItems: readonly T[],
+  params: {
+    taxRate: number
+    discount?: number
+    estimateTotalCents: number
+    existingInvoicedCents: number
+  }
+): {
+  lineItems: T[]
+  subtotal: number
+  taxAmount: number
+  total: number
+  wasReconciled: boolean
+} {
+  const discount = params.discount ?? 0
+  const taxRate = params.taxRate ?? 0
+  const maxAllowedTotalCents = Math.max(0, params.estimateTotalCents - params.existingInvoicedCents)
+
+  const reconcilable: ReconcilableLine[] = []
+  const billableIndices: number[] = []
+
+  lineItems.forEach((item, index) => {
+    if (item.isSubtotal || item.isGroupHeader) return
+    const qty = parseQty(item.quantity) || 1
+    const unitPrice = parseUnitPrice(item.unitPrice)
+    const lineTotal = fromCents(toCents(qty * unitPrice))
+    billableIndices.push(index)
+    reconcilable.push({ quantity: qty, unitPrice, total: lineTotal, isSubtotal: false })
+  })
+
+  const subtotalCents = reconcilable.reduce((sum, line) => sum + toCents(line.total), 0)
+  const discountCents = toCents(discount)
+  const subtotalAfterDiscountCents = subtotalCents - discountCents
+  const taxCents = Math.round(subtotalAfterDiscountCents * taxRate)
+  const currentTotalCents = subtotalAfterDiscountCents + taxCents
+
+  if (currentTotalCents <= maxAllowedTotalCents) {
+    return {
+      lineItems: [...lineItems],
+      subtotal: fromCents(subtotalCents),
+      taxAmount: fromCents(taxCents),
+      total: fromCents(currentTotalCents),
+      wasReconciled: false,
+    }
+  }
+
+  const solved = solveSubtotalForTotal(maxAllowedTotalCents, taxRate)
+  const targetSubtotalAfterDiscountCents = solved?.subtotalCents ?? maxAllowedTotalCents
+  const targetSubtotalCents = targetSubtotalAfterDiscountCents + discountCents
+
+  const reconciled = reconcileProgressLines(
+    reconcilable,
+    subtotalCents,
+    0,
+    targetSubtotalCents
+  )
+
+  const updated = [...lineItems] as T[]
+  billableIndices.forEach((lineIndex, i) => {
+    const adjusted = reconciled.lineItems[i]
+    const existing = updated[lineIndex]
+    const unitPriceOut =
+      typeof existing.unitPrice === 'string'
+        ? adjusted.unitPrice.toFixed(2)
+        : adjusted.unitPrice
+    updated[lineIndex] = {
+      ...existing,
+      unitPrice: unitPriceOut,
+    }
+  })
+
+  const finalSubtotalCents = reconciled.subtotalCents
+  const finalSubtotalAfterDiscountCents = finalSubtotalCents - discountCents
+  const finalTaxCents = Math.round(finalSubtotalAfterDiscountCents * taxRate)
+  const finalTotalCents = finalSubtotalAfterDiscountCents + finalTaxCents
+
+  return {
+    lineItems: updated,
+    subtotal: fromCents(finalSubtotalCents),
+    taxAmount: fromCents(finalTaxCents),
+    total: fromCents(finalTotalCents),
+    wasReconciled: true,
+  }
+}
+
 export function computeProgressInvoiceTotals(params: {
   subtotalCents: number
   taxRate: number
