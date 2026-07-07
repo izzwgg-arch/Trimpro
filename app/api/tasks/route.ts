@@ -2,7 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { notifyTaskAssigned } from '@/lib/notifications'
-import { hasMobilePermission, requireMobilePermission, requirePermission } from '@/lib/authorization'
+import {
+  getUserPermissions,
+  hasMobilePermission,
+  requireMobilePermission,
+  requirePermission,
+} from '@/lib/authorization'
+import {
+  canViewAllTasksList,
+  resolveTasksListFilter,
+} from '@/lib/tasks/list-scope'
 
 // Helper to detect if request is from mobile app
 function isMobileRequest(request: NextRequest): boolean {
@@ -22,8 +31,17 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const search = searchParams.get('search') || ''
   const status = searchParams.get('status') || 'all'
-  const assigneeId = searchParams.get('assigneeId') || ''
-  const filter = searchParams.get('filter') || 'all' // all, my, assigned
+  const assigneeIdParam = searchParams.get('assigneeId') || ''
+  const permissions = await getUserPermissions(user.id, user.tenantId)
+  const filter = resolveTasksListFilter(searchParams.get('filter'), {
+    role: user.role,
+    permissions,
+  })
+  const canViewAll = canViewAllTasksList({ role: user.role, permissions })
+  const assigneeId =
+    canViewAll || !assigneeIdParam || assigneeIdParam === user.id
+      ? assigneeIdParam
+      : user.id
   const scheduledFrom = searchParams.get('scheduledFrom')
   const scheduledTo = searchParams.get('scheduledTo')
   const page = parseInt(searchParams.get('page') || '1')
@@ -187,17 +205,17 @@ export async function POST(request: NextRequest) {
     } = body
 
     const resolvedDueDate = dueDate ?? scheduledAt ?? null
+    const resolvedAssigneeId = assigneeId || null
 
-    if (!title || !assigneeId) {
-      return NextResponse.json({ error: 'Title and assignee are required' }, { status: 400 })
+    if (!title) {
+      return NextResponse.json({ error: 'Title is required' }, { status: 400 })
     }
 
-    // If mobile request, check assignment permissions
-    if (isMobile) {
-      // Verify assignee belongs to tenant
+    // If mobile request, check assignment permissions when an assignee is set
+    if (isMobile && resolvedAssigneeId) {
       const assignee = await prisma.user.findFirst({
         where: {
-          id: assigneeId,
+          id: resolvedAssigneeId,
           tenantId: user.tenantId,
         },
         select: {
@@ -210,16 +228,13 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Assignee not found' }, { status: 404 })
       }
 
-      // Allow self-assignment from mobile without elevated assignment permissions.
       if (assignee.id !== user.id) {
-      // Check if assigning to admin
         const isAdmin = assignee.role === 'ADMIN' || assignee.role === 'OFFICE'
-        
-        // If assigning to admin, require mobile.tasks.assign_to_admin or mobile.tasks.assign_to_any
+
         if (isAdmin) {
           const canAssignToAdmin = await hasMobilePermission(user.id, user.tenantId, 'mobile.tasks.assign_to_admin')
           const canAssignToAny = await hasMobilePermission(user.id, user.tenantId, 'mobile.tasks.assign_to_any')
-          
+
           if (!canAssignToAdmin && !canAssignToAny) {
             return NextResponse.json(
               { error: 'You do not have permission to assign tasks to admin users' },
@@ -227,7 +242,6 @@ export async function POST(request: NextRequest) {
             )
           }
         } else {
-          // If assigning to non-admin, require mobile.tasks.assign_to_any (admin-level)
           const canAssignToAny = await hasMobilePermission(user.id, user.tenantId, 'mobile.tasks.assign_to_any')
           if (!canAssignToAny) {
             return NextResponse.json(
@@ -277,34 +291,37 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Verify assignee belongs to tenant (if not already checked above for mobile)
-    if (!isMobile) {
-      const assignee = await prisma.user.findFirst({
-        where: {
-          id: assigneeId,
-          tenantId: user.tenantId,
-        },
-      })
+    let assignee: { id: string; firstName: string; lastName: string } | null = null
+    if (resolvedAssigneeId) {
+      if (!isMobile) {
+        assignee = await prisma.user.findFirst({
+          where: {
+            id: resolvedAssigneeId,
+            tenantId: user.tenantId,
+          },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
+        })
 
-      if (!assignee) {
-        return NextResponse.json({ error: 'Assignee not found' }, { status: 404 })
+        if (!assignee) {
+          return NextResponse.json({ error: 'Assignee not found' }, { status: 404 })
+        }
+      } else {
+        assignee = await prisma.user.findFirst({
+          where: {
+            id: resolvedAssigneeId,
+            tenantId: user.tenantId,
+          },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
+        })
       }
-    }
-
-    const assignee = await prisma.user.findFirst({
-      where: {
-        id: assigneeId,
-        tenantId: user.tenantId,
-      },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-      },
-    })
-
-    if (!assignee) {
-      return NextResponse.json({ error: 'Assignee not found' }, { status: 404 })
     }
 
     // Create task
@@ -316,7 +333,7 @@ export async function POST(request: NextRequest) {
         status: status || 'TODO',
         priority: priority || 'MEDIUM',
         dueDate: resolvedDueDate ? new Date(resolvedDueDate) : null,
-        assigneeId,
+        assigneeId: resolvedAssigneeId,
         createdById: user.id,
         clientId: resolvedClientId,
         leadId: leadId || null,
@@ -345,7 +362,7 @@ export async function POST(request: NextRequest) {
 
     const assigneeName = task.assignee
       ? `${task.assignee.firstName} ${task.assignee.lastName}`
-      : 'unassigned user'
+      : 'Unassigned'
 
     // Create activity
     await prisma.activity.create({
@@ -353,7 +370,9 @@ export async function POST(request: NextRequest) {
         tenantId: user.tenantId,
         userId: user.id,
         type: 'TASK_CREATED',
-        description: `Task "${title}" assigned to ${assigneeName}`,
+        description: task.assignee
+          ? `Task "${title}" assigned to ${assigneeName}`
+          : `Task "${title}" created`,
         taskId: task.id,
         clientId: resolvedClientId || undefined,
         jobId: jobId || undefined,
@@ -363,7 +382,9 @@ export async function POST(request: NextRequest) {
     })
 
     // Notify assignee
-    await notifyTaskAssigned(user.tenantId, assigneeId, task.id, title)
+    if (resolvedAssigneeId) {
+      await notifyTaskAssigned(user.tenantId, resolvedAssigneeId, task.id, title)
+    }
 
     // Audit log for mobile task creation
     if (isMobile) {

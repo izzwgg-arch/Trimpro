@@ -7,6 +7,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { formatDate } from '@/lib/utils'
 import { AlertCircle, Calendar, CheckSquare, Pencil, Trash2, User } from 'lucide-react'
+import { TaskStatusSelect } from '@/components/tasks/TaskStatusSelect'
+import { taskStatusColors, formatTaskStatus } from '@/lib/tasks/statuses'
+import { usePermissions, hasPermission } from '@/hooks/usePermissions'
 
 interface TaskDetail {
   id: string
@@ -33,18 +36,14 @@ interface TaskNote {
   authorName?: string
 }
 
-const statusBadge: Record<string, string> = {
-  TODO: 'bg-gray-100 text-gray-800',
-  IN_PROGRESS: 'bg-blue-100 text-blue-800',
-  COMPLETED: 'bg-green-100 text-green-800',
-  CANCELLED: 'bg-red-100 text-red-800',
-  PLANNING_PENDING: 'bg-yellow-100 text-yellow-800',
-}
+const statusBadge = taskStatusColors
 
 export default function TaskDetailPage() {
   const params = useParams()
   const router = useRouter()
   const taskId = params.id as string
+  const { permissions } = usePermissions()
+  const canEditStatus = hasPermission(permissions, 'tasks.edit')
 
   const [task, setTask] = useState<TaskDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -273,7 +272,15 @@ export default function TaskDetailPage() {
           </Link>
           <div className="flex items-center gap-3 mt-2">
             <h1 className="text-3xl font-bold text-gray-900">{task.title}</h1>
-            <span className={`px-3 py-1 text-sm rounded-full ${badgeClass}`}>{task.status.replaceAll('_', ' ')}</span>
+            {canEditStatus ? (
+              <TaskStatusSelect
+                taskId={task.id}
+                status={task.status}
+                onUpdated={(nextStatus) => setTask((current) => (current ? { ...current, status: nextStatus } : current))}
+              />
+            ) : (
+              <span className={`px-3 py-1 text-sm rounded-full ${badgeClass}`}>{formatTaskStatus(task.status)}</span>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -285,15 +292,17 @@ export default function TaskDetailPage() {
             <Pencil className="mr-2 h-4 w-4" />
             Edit
           </Button>
-          <Button
-            variant="outline"
-            disabled={updating}
-            onClick={() => updateStatus(isCompleted ? 'TODO' : 'COMPLETED')}
-            title={isCompleted ? 'Reopen task' : 'Mark task completed'}
-          >
-            <CheckSquare className="mr-2 h-4 w-4" />
-            {updating ? 'Updating...' : isCompleted ? 'Reopen' : 'Mark Complete'}
-          </Button>
+          {canEditStatus && (
+            <Button
+              variant="outline"
+              disabled={updating}
+              onClick={() => updateStatus(isCompleted ? 'TODO' : 'COMPLETED')}
+              title={isCompleted ? 'Reopen task' : 'Mark task completed'}
+            >
+              <CheckSquare className="mr-2 h-4 w-4" />
+              {updating ? 'Updating...' : isCompleted ? 'Reopen' : 'Mark Complete'}
+            </Button>
+          )}
           <Button
             variant="outline"
             className="text-red-600 hover:text-red-700 hover:bg-red-50"

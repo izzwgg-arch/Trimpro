@@ -18,6 +18,13 @@ import Link from 'next/link'
 import { useDocumentListAccess } from '@/hooks/useDocumentListAccess'
 import { CreateOnlyAccessCard } from '@/components/permissions/CreateOnlyAccessCard'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { usePermissions, hasPermission } from '@/hooks/usePermissions'
+import {
+  canViewAllTasksList,
+  defaultTasksListFilter,
+  isPersonalTasksListEnabled,
+} from '@/lib/tasks/list-scope'
+import { TaskStatusSelect, TaskStatusBadge } from '@/components/tasks/TaskStatusSelect'
 
 interface Task {
   id: string
@@ -32,7 +39,7 @@ interface Task {
     firstName: string
     lastName: string
     email: string
-  }
+  } | null
   creator: {
     firstName: string
     lastName: string
@@ -64,13 +71,6 @@ interface Task {
   }
 }
 
-const statusColors: Record<string, string> = {
-  TODO: 'bg-gray-100 text-gray-800',
-  IN_PROGRESS: 'bg-blue-100 text-blue-800',
-  COMPLETED: 'bg-green-100 text-green-800',
-  CANCELLED: 'bg-red-100 text-red-800',
-}
-
 const priorityColors: Record<string, string> = {
   LOW: 'text-gray-600',
   MEDIUM: 'text-blue-600',
@@ -81,6 +81,7 @@ const priorityColors: Record<string, string> = {
 export default function TasksPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { permissions, loading: permissionsFetchLoading } = usePermissions()
   const { permissionsLoading, canViewList, canCreate } = useDocumentListAccess('tasks.view', 'tasks.create')
   const [tasks, setTasks] = useState<Task[]>([])
   const [initialLoading, setInitialLoading] = useState(true)
@@ -88,11 +89,31 @@ export default function TasksPage() {
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebouncedValue(search, 300)
   const [status, setStatus] = useState('all')
-  const [filter, setFilter] = useState('all') // all, my, assigned
+  const [filter, setFilter] = useState(defaultTasksListFilter)
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
   const [viewMode, setViewMode] = useViewMode('tasks', 'grid')
+  const [userRole, setUserRole] = useState<string | null>(null)
+
+  useEffect(() => {
+    try {
+      const userRaw = localStorage.getItem('user')
+      setUserRole(userRaw ? (JSON.parse(userRaw)?.role as string | undefined) ?? null : null)
+    } catch {
+      setUserRole(null)
+    }
+  }, [])
+
+  const canViewAll = canViewAllTasksList({ role: userRole, permissions })
+  const personalTasksEnabled = isPersonalTasksListEnabled()
+  const canEditStatus = hasPermission(permissions, 'tasks.edit')
+
+  const handleTaskStatusUpdated = (taskId: string, nextStatus: string) => {
+    setTasks((current) =>
+      current.map((task) => (task.id === taskId ? { ...task, status: nextStatus } : task))
+    )
+  }
 
   useEffect(() => {
     const statusParam = searchParams.get('status')
@@ -104,6 +125,13 @@ export default function TasksPage() {
   useEffect(() => {
     setPage(1)
   }, [debouncedSearch, status, filter])
+
+  useEffect(() => {
+    if (permissionsFetchLoading) return
+    if (filter === 'all' && personalTasksEnabled && !canViewAll) {
+      setFilter(defaultTasksListFilter())
+    }
+  }, [permissionsFetchLoading, filter, personalTasksEnabled, canViewAll])
 
   useEffect(() => {
     if (permissionsLoading) return
@@ -176,7 +204,11 @@ export default function TasksPage() {
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Tasks</h1>
-          <p className="mt-2 text-gray-600">Manage your tasks and to-dos</p>
+          <p className="mt-2 text-gray-600">
+            {personalTasksEnabled
+              ? 'Your personal task inbox — job task lists are unchanged on each job.'
+              : 'Manage your tasks and to-dos'}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <ViewModeSelector value={viewMode} onChange={setViewMode} />
@@ -251,11 +283,11 @@ export default function TasksPage() {
             <div className="flex items-center space-x-2">
               <Filter className="h-4 w-4 text-gray-400" />
               <Select value={filter} onValueChange={setFilter}>
-                <SelectTrigger className="w-[140px]">
-                  <SelectValue placeholder="All Tasks" />
+                <SelectTrigger className="w-[160px]">
+                  <SelectValue placeholder="My Tasks" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Tasks</SelectItem>
+                  {canViewAll && <SelectItem value="all">All Tasks</SelectItem>}
                   <SelectItem value="my">My Tasks</SelectItem>
                   <SelectItem value="assigned">Assigned to Me</SelectItem>
                 </SelectContent>
@@ -287,7 +319,9 @@ export default function TasksPage() {
               <CheckSquare className="mx-auto h-12 w-12 text-gray-400" />
               <h3 className="mt-2 text-sm font-medium text-gray-900">No tasks</h3>
               <p className="mt-1 text-sm text-gray-500">
-                Get started by creating a new task.
+                {personalTasksEnabled
+                  ? 'No tasks assigned to you or created by you yet.'
+                  : 'Get started by creating a new task.'}
               </p>
               <div className="mt-6">
                 <Button onClick={() => router.push('/dashboard/tasks/new')}>
@@ -321,7 +355,7 @@ export default function TasksPage() {
                         </CardTitle>
                       </Link>
                       <CardDescription className="mt-1">
-                        Assigned to {task.assignee.firstName} {task.assignee.lastName}
+                        Assigned to {task.assignee ? `${task.assignee.firstName} ${task.assignee.lastName}` : 'Unassigned'}
                         {task.client && ` • ${task.client.name}`}
                         {task.job && ` • Job ${task.job.jobNumber}`}
                         {task.invoice && ` • Invoice ${task.invoice.invoiceNumber}`}
@@ -332,9 +366,16 @@ export default function TasksPage() {
                       {isOverdue && (
                         <AlertCircle className="h-5 w-5 text-red-500" />
                       )}
-                      <span className={`px-2 py-1 text-xs rounded-full ${statusColors[task.status] || 'bg-gray-100 text-gray-800'}`}>
-                        {task.status.replace('_', ' ')}
-                      </span>
+                      {canEditStatus ? (
+                        <TaskStatusSelect
+                          taskId={task.id}
+                          status={task.status}
+                          compact
+                          onUpdated={(nextStatus) => handleTaskStatusUpdated(task.id, nextStatus)}
+                        />
+                      ) : (
+                        <TaskStatusBadge status={task.status} />
+                      )}
                     </div>
                   </div>
                 </CardHeader>
@@ -407,7 +448,18 @@ export default function TasksPage() {
               href={`/dashboard/tasks/${task.id}`}
               primary={task.title}
               secondary={task.assignee ? `${task.assignee.firstName} ${task.assignee.lastName}` : 'Unassigned'}
-              status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[task.status] || 'bg-gray-100 text-gray-800'}`}>{task.status.replace('_', ' ')}</span>}
+              status={
+                canEditStatus ? (
+                  <TaskStatusSelect
+                    taskId={task.id}
+                    status={task.status}
+                    compact
+                    onUpdated={(nextStatus) => handleTaskStatusUpdated(task.id, nextStatus)}
+                  />
+                ) : (
+                  <TaskStatusBadge status={task.status} />
+                )
+              }
               amount={task.priority}
               date={task.dueDate ? formatDate(task.dueDate) : '-'}
             />
@@ -420,7 +472,18 @@ export default function TasksPage() {
               key={task.id}
               href={`/dashboard/tasks/${task.id}`}
               primary={task.title}
-              status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[task.status] || 'bg-gray-100 text-gray-800'}`}>{task.status.replace('_', ' ')}</span>}
+              status={
+                canEditStatus ? (
+                  <TaskStatusSelect
+                    taskId={task.id}
+                    status={task.status}
+                    compact
+                    onUpdated={(nextStatus) => handleTaskStatusUpdated(task.id, nextStatus)}
+                  />
+                ) : (
+                  <TaskStatusBadge status={task.status} />
+                )
+              }
               line2={`${task.assignee ? `${task.assignee.firstName} ${task.assignee.lastName}` : 'Unassigned'}${task.client ? ` • ${task.client.name}` : ''}`}
               rightTop={task.priority}
               rightBottom={task.dueDate ? formatDate(task.dueDate) : 'No due date'}
@@ -443,13 +506,25 @@ export default function TasksPage() {
               key: 'status',
               header: 'Status',
               sortValue: (task) => task.status,
-              render: (task) => <span className={`px-2 py-1 text-xs rounded-full ${statusColors[task.status] || 'bg-gray-100 text-gray-800'}`}>{task.status.replace('_', ' ')}</span>,
+              render: (task) =>
+                canEditStatus ? (
+                  <TaskStatusSelect
+                    taskId={task.id}
+                    status={task.status}
+                    compact
+                    onUpdated={(nextStatus) => handleTaskStatusUpdated(task.id, nextStatus)}
+                  />
+                ) : (
+                  <TaskStatusBadge status={task.status} />
+                ),
             },
             {
               key: 'assignee',
               header: 'Assignee',
-              sortValue: (task) => `${task.assignee.firstName} ${task.assignee.lastName}`,
-              render: (task) => `${task.assignee.firstName} ${task.assignee.lastName}`,
+              sortValue: (task) =>
+                task.assignee ? `${task.assignee.firstName} ${task.assignee.lastName}` : 'Unassigned',
+              render: (task) =>
+                task.assignee ? `${task.assignee.firstName} ${task.assignee.lastName}` : 'Unassigned',
             },
             {
               key: 'priority',

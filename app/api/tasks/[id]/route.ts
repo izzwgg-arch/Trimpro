@@ -172,7 +172,7 @@ export async function PUT(
         priority: priority !== undefined ? priority : existing.priority,
         dueDate:
           resolvedDueDate !== undefined ? (resolvedDueDate ? new Date(resolvedDueDate) : null) : existing.dueDate,
-        assigneeId: assigneeId !== undefined ? assigneeId : existing.assigneeId,
+        assigneeId: assigneeId !== undefined ? (assigneeId || null) : existing.assigneeId,
         completedAt,
       },
       include: {

@@ -1460,8 +1460,8 @@ model Task {
   invoice Invoice? @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   issue   Issue?   @relation(fields: [issueId], references: [id], onDelete: Cascade)
 
-  assigneeId String
-  assignee   User   @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: Restrict)
+  assigneeId String?
+  assignee   User?  @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
 
   createdById String
   creator     User   @relation("TaskCreator", fields: [createdById], references: [id], onDelete: Restrict)

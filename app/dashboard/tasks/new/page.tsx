@@ -99,7 +99,8 @@ export default function NewTaskPage() {
       })
       if (response.ok) {
         const data = await response.json()
-        setUsers(data.teamMembers || [])
+        const teamMembers: User[] = data.teamMembers || []
+        setUsers(teamMembers)
       }
     } catch (error) {
       console.error('Error fetching users:', error)
@@ -177,6 +178,7 @@ export default function NewTaskPage() {
         body: JSON.stringify({
           ...formData,
           dueDate: formData.dueDate || null,
+          assigneeId: formData.assigneeId || null,
           clientId: formData.clientId || null,
           leadId: formData.leadId || null,
           jobId: formData.jobId || null,
@@ -263,15 +265,18 @@ export default function NewTaskPage() {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="assigneeId">Assignee *</Label>
+                <Label htmlFor="assigneeId">Assignee</Label>
                 <Select
-                  value={formData.assigneeId}
-                  onValueChange={(value) => setFormData({ ...formData, assigneeId: value })}
+                  value={formData.assigneeId || '__none__'}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, assigneeId: value === '__none__' ? '' : value })
+                  }
                 >
                   <SelectTrigger id="assigneeId">
-                    <SelectValue placeholder="Select assignee" />
+                    <SelectValue placeholder="Unassigned" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="__none__">Unassigned</SelectItem>
                     {users.map((user) => (
                       <SelectItem key={user.id} value={user.id}>
                         {user.firstName} {user.lastName}
@@ -376,7 +381,7 @@ export default function NewTaskPage() {
               <Button type="button" variant="outline" onClick={() => router.back()}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={loading}>
+              <Button type="submit" disabled={loading || !formData.title.trim()}>
                 <Save className="mr-2 h-4 w-4" />
                 {loading ? 'Creating...' : 'Create Task'}
               </Button>
