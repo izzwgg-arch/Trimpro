@@ -2327,59 +2327,93 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
 
     if (existingQboId) {
       attemptedAction = 'update'
-      const fetched = await quickBooksService.makeAPIRequest(
-        session.accessToken,
-        session.realmId,
-        qboEstimateReadEndpoint(String(existingQboId)),
-        'GET',
-        undefined,
-        {
-          tenantId,
-          entityType: 'estimate',
-          entityId: estimate.id,
-          triggerSource: 'estimate_sync',
-        }
-      )
-      const qboEstimate = fetched?.Estimate
-      const syncToken = qboEstimate?.SyncToken
-      if (!syncToken) throw new Error('QuickBooks estimate SyncToken missing (cannot update)')
+      try {
+        const fetched = await quickBooksService.makeAPIRequest(
+          session.accessToken,
+          session.realmId,
+          qboEstimateReadEndpoint(String(existingQboId)),
+          'GET',
+          undefined,
+          {
+            tenantId,
+            entityType: 'estimate',
+            entityId: estimate.id,
+            triggerSource: 'estimate_sync',
+          }
+        )
+        const qboEstimate = fetched?.Estimate
+        const syncToken = qboEstimate?.SyncToken
+        if (!syncToken) throw new Error('QuickBooks estimate SyncToken missing (cannot update)')
 
-      const existingQboLines = extractAllQboLines(qboEstimate?.Line)
-      const updatePayload: any = {
-        ...payload,
-        Id: existingQboId,
-        SyncToken: String(syncToken),
-        // Full update so line additions/removals (including subtotals) reflect in QBO.
-        Line: buildQboLinesWithIds({
-          localLineItems: lineItems,
-          existingQboLines,
-          serviceItemId,
-        }),
+        const existingQboLines = extractAllQboLines(qboEstimate?.Line)
+        const updatePayload: any = {
+          ...payload,
+          Id: existingQboId,
+          SyncToken: String(syncToken),
+          // Full update so line additions/removals (including subtotals) reflect in QBO.
+          Line: buildQboLinesWithIds({
+            localLineItems: lineItems,
+            existingQboLines,
+            serviceItemId,
+          }),
+        }
+
+        const updated = await quickBooksService.makeAPIRequest(
+          session.accessToken,
+          session.realmId,
+          '/estimate?operation=update',
+          'POST',
+          updatePayload,
+          {
+            tenantId,
+            entityType: 'estimate',
+            entityId: estimate.id,
+            triggerSource: 'estimate_sync',
+          }
+        )
+        const qboId = String(updated?.Estimate?.Id || existingQboId)
+        await logSync({
+          integrationId: session.integrationId,
+          type: 'estimate',
+          action: 'update',
+          status: 'success',
+          entityId: estimate.id,
+          qboId,
+        })
+        return
+      } catch (updateError: any) {
+        const staleMapping =
+          isQboMissingOrDeletedEntityError(updateError) ||
+          isQboDeletedListReferenceError(updateError) ||
+          (updateError instanceof QuickBooksApiError &&
+            updateError.isValidationFault() &&
+            (updateError.hasFaultCode('610') || isQboMissingOrDeletedEntityError(updateError)))
+        if (!staleMapping) throw updateError
+
+        console.info(
+          JSON.stringify({
+            area: 'qbo_estimate_sync',
+            step: 'recover_stale_mapping',
+            tenantId,
+            estimateId: estimate.id,
+            docNumber: attemptedDocNumber,
+            staleMappedQboId: existingQboId,
+            error: getErrorMessage(updateError),
+          })
+        )
+        await logSync({
+          integrationId: session.integrationId,
+          type: 'estimate',
+          action: 'recover_stale_mapping',
+          status: 'conflict',
+          entityId: estimate.id,
+          qboId: existingQboId,
+          error: getErrorMessage(updateError),
+          data: { docNumber: attemptedDocNumber },
+        })
+        existingQboId = null
+        attemptedAction = 'create'
       }
-
-      const updated = await quickBooksService.makeAPIRequest(
-        session.accessToken,
-        session.realmId,
-        '/estimate?operation=update',
-        'POST',
-        updatePayload,
-        {
-          tenantId,
-          entityType: 'estimate',
-          entityId: estimate.id,
-          triggerSource: 'estimate_sync',
-        }
-      )
-      const qboId = String(updated?.Estimate?.Id || existingQboId)
-      await logSync({
-        integrationId: session.integrationId,
-        type: 'estimate',
-        action: 'update',
-        status: 'success',
-        entityId: estimate.id,
-        qboId,
-      })
-      return
     }
 
     const created = await quickBooksService.makeAPIRequest(
