@@ -202,7 +202,6 @@ export default function JobDetailPage() {
   const [job, setJob] = useState<JobDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState(false)
-  const [convertingToInvoice, setConvertingToInvoice] = useState(false)
   const [duplicating, setDuplicating] = useState(false)
   const [availableCrew, setAvailableCrew] = useState<AssignableUser[]>([])
   const [selectedCrewId, setSelectedCrewId] = useState('')
@@ -582,50 +581,6 @@ export default function JobDetailPage() {
     }
   }
 
-  const handleConvertToInvoice = async () => {
-    if (!job) return
-    if (!confirm(`Convert job "${job.jobNumber}" to an invoice?`)) return
-
-    setConvertingToInvoice(true)
-    try {
-      const token = localStorage.getItem('accessToken')
-      if (!token) {
-        router.push('/auth/login')
-        return
-      }
-
-      const response = await fetch(`/api/jobs/${jobId}/convert-to-invoice`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
-
-      if (response.status === 401) {
-        router.push('/auth/login')
-        return
-      }
-
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok) {
-        alert(data.error || 'Failed to convert job to invoice')
-        return
-      }
-
-      const invoiceId = data?.invoice?.id
-      if (invoiceId) {
-        router.push(`/dashboard/invoices/${invoiceId}`)
-      } else {
-        fetchJob()
-      }
-    } catch (error) {
-      console.error('Error converting job to invoice:', error)
-      alert('Failed to convert job to invoice')
-    } finally {
-      setConvertingToInvoice(false)
-    }
-  }
-
   const handleDuplicate = async () => {
     setDuplicating(true)
     try {
@@ -714,10 +669,6 @@ export default function JobDetailPage() {
           </p>
         </div>
         <div className="flex items-center space-x-2">
-          <Button onClick={handleConvertToInvoice} disabled={convertingToInvoice}>
-            <DollarSign className="mr-2 h-4 w-4" />
-            {convertingToInvoice ? 'Converting...' : 'Convert to Invoice'}
-          </Button>
           <Button variant="outline" onClick={handleDuplicate} disabled={duplicating}>
             <Copy className="mr-2 h-4 w-4" />
             {duplicating ? 'Duplicating...' : 'Duplicate'}
@@ -1263,9 +1214,12 @@ export default function JobDetailPage() {
                       className="block p-2 rounded border hover:bg-gray-50 transition-colors mb-2"
                     >
                       <div className="flex items-center justify-between">
-                        <CheckSquare className="h-4 w-4 text-blue-500" />
+                        <CheckSquare className="h-4 w-4 text-blue-500 shrink-0" />
                         <p className="flex-1 ml-2 text-sm">{task.title}</p>
-                        <span className="text-xs text-gray-500">{task.status}</span>
+                        <div className="text-right text-xs text-gray-500 shrink-0">
+                          <div>{task.status}</div>
+                          {task.createdAt && <div>{formatDate(task.createdAt)}</div>}
+                        </div>
                       </div>
                     </Link>
                   ))
