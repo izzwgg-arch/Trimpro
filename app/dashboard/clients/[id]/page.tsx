@@ -808,6 +808,7 @@ export default function ClientDetailPage() {
         onAddPayment={openPaymentModal}
         defaultReceiptEmail={client?.email}
         onDocumentsRefresh={fetchDocuments}
+        preferencesKey={clientId ? `documents-client-${clientId}` : undefined}
       />
 
       <div className="grid gap-6 md:grid-cols-3">

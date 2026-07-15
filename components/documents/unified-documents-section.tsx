@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -20,6 +20,60 @@ type TypeFilter = 'all' | UnifiedDocumentKind
 type InvoiceFilter = 'all' | 'paid' | 'unpaid'
 type EstimateFilter = 'all' | 'open' | 'converted'
 type SortOption = 'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc'
+
+type DocumentPreferences = {
+  sort: SortOption
+  typeFilter: TypeFilter
+  invoiceFilter: InvoiceFilter
+  estimateFilter: EstimateFilter
+  search: string
+}
+
+function readDocumentPreferences(key?: string): Partial<DocumentPreferences> | null {
+  if (!key || typeof window === 'undefined') return null
+  try {
+    const raw = sessionStorage.getItem(key)
+    return raw ? (JSON.parse(raw) as Partial<DocumentPreferences>) : null
+  } catch {
+    return null
+  }
+}
+
+function writeDocumentPreferences(key: string | undefined, prefs: DocumentPreferences) {
+  if (!key || typeof window === 'undefined') return
+  try {
+    sessionStorage.setItem(key, JSON.stringify(prefs))
+  } catch {
+    // ignore storage failures
+  }
+}
+
+function compareDocuments(a: UnifiedDocumentRow, b: UnifiedDocumentRow, sort: SortOption) {
+  let primary = 0
+  switch (sort) {
+    case 'date-asc':
+      primary = new Date(a.date).getTime() - new Date(b.date).getTime()
+      break
+    case 'amount-desc':
+      primary = b.amount - a.amount
+      break
+    case 'amount-asc':
+      primary = a.amount - b.amount
+      break
+    default:
+      primary = new Date(b.date).getTime() - new Date(a.date).getTime()
+  }
+  if (primary !== 0) return primary
+
+  const kindOrder: Record<UnifiedDocumentKind, number> = { estimate: 0, invoice: 1, payment: 2 }
+  const kindDiff = kindOrder[a.kind] - kindOrder[b.kind]
+  if (kindDiff !== 0) return kindDiff
+
+  const numberDiff = a.number.localeCompare(b.number)
+  if (numberDiff !== 0) return numberDiff
+
+  return a.id.localeCompare(b.id)
+}
 
 function matchesEstimateFilter(status: string, filter: EstimateFilter) {
   if (filter === 'all') return true
@@ -69,6 +123,7 @@ interface UnifiedDocumentsSectionProps {
   defaultOpen?: boolean
   defaultReceiptEmail?: string | null
   onDocumentsRefresh?: () => void | Promise<void>
+  preferencesKey?: string
 }
 
 export function UnifiedDocumentsSection({
@@ -83,19 +138,31 @@ export function UnifiedDocumentsSection({
   defaultOpen = true,
   defaultReceiptEmail = null,
   onDocumentsRefresh,
+  preferencesKey,
 }: UnifiedDocumentsSectionProps) {
-  const [search, setSearch] = useState('')
+  const storedPrefs = readDocumentPreferences(preferencesKey)
+  const [search, setSearch] = useState(storedPrefs?.search ?? '')
   const [open, setOpen] = useState(defaultOpen)
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
-  const [invoiceFilter, setInvoiceFilter] = useState<InvoiceFilter>('all')
-  const [estimateFilter, setEstimateFilter] = useState<EstimateFilter>('all')
-  const [sort, setSort] = useState<SortOption>('date-desc')
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>(storedPrefs?.typeFilter ?? 'all')
+  const [invoiceFilter, setInvoiceFilter] = useState<InvoiceFilter>(storedPrefs?.invoiceFilter ?? 'all')
+  const [estimateFilter, setEstimateFilter] = useState<EstimateFilter>(storedPrefs?.estimateFilter ?? 'all')
+  const [sort, setSort] = useState<SortOption>(storedPrefs?.sort ?? 'date-desc')
   const [downloadingReceiptId, setDownloadingReceiptId] = useState<string | null>(null)
   const [showReceiptEmailDialog, setShowReceiptEmailDialog] = useState(false)
   const [receiptEmailPayment, setReceiptEmailPayment] = useState<UnifiedDocumentRow | null>(null)
   const [receiptEmailTo, setReceiptEmailTo] = useState('')
   const [receiptEmailSending, setReceiptEmailSending] = useState(false)
   const [receiptEmailResult, setReceiptEmailResult] = useState<{ ok: boolean; message: string } | null>(null)
+
+  useEffect(() => {
+    writeDocumentPreferences(preferencesKey, {
+      sort,
+      typeFilter,
+      invoiceFilter,
+      estimateFilter,
+      search,
+    })
+  }, [preferencesKey, sort, typeFilter, invoiceFilter, estimateFilter, search])
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -117,23 +184,14 @@ export function UnifiedDocumentsSection({
       return haystack.includes(query)
     })
 
-    rows = [...rows].sort((a, b) => {
-      switch (sort) {
-        case 'date-asc':
-          return new Date(a.date).getTime() - new Date(b.date).getTime()
-        case 'amount-desc':
-          return b.amount - a.amount
-        case 'amount-asc':
-          return a.amount - b.amount
-        default:
-          return new Date(b.date).getTime() - new Date(a.date).getTime()
-      }
-    })
+    rows = [...rows].sort((a, b) => compareDocuments(a, b, sort))
 
     return rows
   }, [documents, search, typeFilter, invoiceFilter, estimateFilter, sort])
 
   const visibleTotal = filtered.reduce((sum, row) => sum + row.amount, 0)
+  const isInitialLoad = loading && documents.length === 0
+  const isRefreshing = loading && documents.length > 0
 
   const showInvoiceFilter = typeFilter === 'invoice'
   const showEstimateFilter = typeFilter === 'estimate'
@@ -227,7 +285,10 @@ export function UnifiedDocumentsSection({
               <FileText className="h-5 w-5" />
               Documents
             </CardTitle>
-            <CardDescription>{description}</CardDescription>
+            <CardDescription>
+              {description}
+              {isRefreshing ? ' • Updating…' : ''}
+            </CardDescription>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {open && enableInvoiceSelection && onAddPayment && (
@@ -325,14 +386,14 @@ export function UnifiedDocumentsSection({
           </div>
         </div>
 
-        {loading ? (
+        {isInitialLoad ? (
           <p className="py-8 text-center text-sm text-gray-500">Loading documents...</p>
         ) : error ? (
           <p className="py-4 text-sm text-red-600">{error}</p>
         ) : filtered.length === 0 ? (
           <p className="py-8 text-center text-sm text-gray-500">No documents match your filters</p>
         ) : (
-          <div className="overflow-x-auto overflow-y-auto max-h-[min(32rem,65vh)] rounded-lg border">
+          <div className={`overflow-x-auto overflow-y-auto max-h-[min(32rem,65vh)] rounded-lg border ${isRefreshing ? 'opacity-70' : ''}`}>
             <table className="min-w-full text-sm">
               <thead className="sticky top-0 z-10 bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500 shadow-[0_1px_0_0_rgb(229_231_235)]">
                 <tr>
