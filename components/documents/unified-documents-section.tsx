@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { DollarSign, FileText, Search, ChevronDown, ChevronRight } from 'lucide-react'
+import { DollarSign, FileText, Search, ChevronDown, ChevronRight, Download, Mail, X } from 'lucide-react'
 import type { UnifiedDocumentKind, UnifiedDocumentRow } from '@/lib/documents/unified-documents'
 
 type TypeFilter = 'all' | UnifiedDocumentKind
@@ -67,6 +67,8 @@ interface UnifiedDocumentsSectionProps {
   onToggleInvoice?: (invoiceId: string, checked: boolean) => void
   onAddPayment?: () => void
   defaultOpen?: boolean
+  defaultReceiptEmail?: string | null
+  onDocumentsRefresh?: () => void | Promise<void>
 }
 
 export function UnifiedDocumentsSection({
@@ -79,6 +81,8 @@ export function UnifiedDocumentsSection({
   onToggleInvoice,
   onAddPayment,
   defaultOpen = true,
+  defaultReceiptEmail = null,
+  onDocumentsRefresh,
 }: UnifiedDocumentsSectionProps) {
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState(defaultOpen)
@@ -86,6 +90,12 @@ export function UnifiedDocumentsSection({
   const [invoiceFilter, setInvoiceFilter] = useState<InvoiceFilter>('all')
   const [estimateFilter, setEstimateFilter] = useState<EstimateFilter>('all')
   const [sort, setSort] = useState<SortOption>('date-desc')
+  const [downloadingReceiptId, setDownloadingReceiptId] = useState<string | null>(null)
+  const [showReceiptEmailDialog, setShowReceiptEmailDialog] = useState(false)
+  const [receiptEmailPayment, setReceiptEmailPayment] = useState<UnifiedDocumentRow | null>(null)
+  const [receiptEmailTo, setReceiptEmailTo] = useState('')
+  const [receiptEmailSending, setReceiptEmailSending] = useState(false)
+  const [receiptEmailResult, setReceiptEmailResult] = useState<{ ok: boolean; message: string } | null>(null)
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -128,6 +138,85 @@ export function UnifiedDocumentsSection({
   const showInvoiceFilter = typeFilter === 'all' || typeFilter === 'invoice'
   const showEstimateFilter = typeFilter === 'all' || typeFilter === 'estimate'
   const filterCount = 1 + (showEstimateFilter ? 1 : 0) + (showInvoiceFilter ? 1 : 0) + 1
+  const showReceiptActions = documents.some((row) => row.kind === 'payment' && row.canReceipt)
+  const leadingColumns = (enableInvoiceSelection ? 1 : 0) + 6
+  const totalColumns = leadingColumns + (showReceiptActions ? 1 : 0)
+
+  const downloadPaymentReceipt = async (row: UnifiedDocumentRow) => {
+    setDownloadingReceiptId(row.id)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch(`/api/payments/${row.id}/receipt`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!response.ok) {
+        const contentType = response.headers.get('content-type') || ''
+        const data = contentType.includes('application/json')
+          ? await response.json().catch(() => ({}))
+          : {}
+        alert(
+          data.error ||
+            (response.status === 403
+              ? 'You do not have permission to download receipts.'
+              : `Failed to download receipt (${response.status})`)
+        )
+        return
+      }
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `receipt-${row.number || row.id}.pdf`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Receipt download error:', error)
+      alert('Failed to download receipt')
+    } finally {
+      setDownloadingReceiptId(null)
+    }
+  }
+
+  const openReceiptEmailDialog = (row: UnifiedDocumentRow) => {
+    setReceiptEmailPayment(row)
+    setReceiptEmailTo(defaultReceiptEmail || '')
+    setReceiptEmailResult(null)
+    setShowReceiptEmailDialog(true)
+  }
+
+  const sendReceiptEmail = async () => {
+    if (!receiptEmailPayment || !receiptEmailTo.trim()) return
+    setReceiptEmailSending(true)
+    setReceiptEmailResult(null)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch(`/api/payments/${receiptEmailPayment.id}/receipt`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: receiptEmailTo.trim() }),
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        setReceiptEmailResult({ ok: false, message: data.error || 'Failed to send receipt' })
+        return
+      }
+      setReceiptEmailResult({ ok: true, message: `Receipt sent to ${data.sentTo}` })
+      await onDocumentsRefresh?.()
+      setTimeout(() => {
+        setShowReceiptEmailDialog(false)
+        setReceiptEmailPayment(null)
+      }, 2000)
+    } catch {
+      setReceiptEmailResult({ ok: false, message: 'Network error — please try again' })
+    } finally {
+      setReceiptEmailSending(false)
+    }
+  }
 
   return (
     <Card>
@@ -249,6 +338,7 @@ export function UnifiedDocumentsSection({
                   <th className="px-3 py-2">Date</th>
                   <th className="px-3 py-2 text-right">Amount</th>
                   <th className="px-3 py-2">Status</th>
+                  {showReceiptActions && <th className="px-3 py-2">Actions</th>}
                 </tr>
               </thead>
               <tbody>
@@ -309,6 +399,38 @@ export function UnifiedDocumentsSection({
                           {row.status.replace(/_/g, ' ')}
                         </span>
                       </td>
+                      {showReceiptActions && (
+                        <td className="px-3 py-2 align-top">
+                          {row.kind === 'payment' && row.canReceipt ? (
+                            <div className="flex flex-col items-start gap-1">
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 px-2 text-xs"
+                                  disabled={downloadingReceiptId === row.id}
+                                  onClick={() => downloadPaymentReceipt(row)}
+                                >
+                                  <Download className="mr-1 h-3 w-3" />
+                                  {downloadingReceiptId === row.id ? '...' : 'PDF'}
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 px-2 text-xs"
+                                  onClick={() => openReceiptEmailDialog(row)}
+                                >
+                                  <Mail className="mr-1 h-3 w-3" />
+                                  Email
+                                </Button>
+                              </div>
+                              {row.receiptEmailSentAt && (
+                                <span className="text-[10px] text-gray-400">Receipt emailed</span>
+                              )}
+                            </div>
+                          ) : null}
+                        </td>
+                      )}
                     </tr>
                   )
                 })}
@@ -316,7 +438,7 @@ export function UnifiedDocumentsSection({
               <tfoot className="border-t bg-slate-50">
                 <tr>
                   <td
-                    colSpan={enableInvoiceSelection ? 5 : 4}
+                    colSpan={totalColumns - 2}
                     className="px-3 py-3 text-sm text-gray-600"
                   >
                     Showing {filtered.length} of {documents.length} document{documents.length !== 1 ? 's' : ''}
@@ -331,6 +453,86 @@ export function UnifiedDocumentsSection({
           </div>
         )}
       </CardContent>
+      )}
+
+      {showReceiptEmailDialog && receiptEmailPayment && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between p-5 border-b">
+              <div>
+                <h3 className="text-base font-semibold text-gray-900">Email Payment Receipt</h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {formatCurrency(receiptEmailPayment.amount)} — Invoice {receiptEmailPayment.number}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowReceiptEmailDialog(false)
+                  setReceiptEmailPayment(null)
+                  setReceiptEmailResult(null)
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Send To</label>
+                <input
+                  type="email"
+                  value={receiptEmailTo}
+                  onChange={(e) => setReceiptEmailTo(e.target.value)}
+                  placeholder="client@example.com"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1e4d6e] focus:border-transparent"
+                  onKeyDown={(e) => { if (e.key === 'Enter') sendReceiptEmail() }}
+                  autoFocus
+                />
+                {defaultReceiptEmail && receiptEmailTo !== defaultReceiptEmail && (
+                  <button
+                    type="button"
+                    className="mt-1 text-xs text-blue-600 hover:underline"
+                    onClick={() => setReceiptEmailTo(defaultReceiptEmail)}
+                  >
+                    Use {defaultReceiptEmail}
+                  </button>
+                )}
+              </div>
+              {receiptEmailResult && (
+                <div className={`rounded-lg px-4 py-3 text-sm font-medium ${
+                  receiptEmailResult.ok
+                    ? 'bg-green-50 text-green-800 border border-green-200'
+                    : 'bg-red-50 text-red-800 border border-red-200'
+                }`}>
+                  {receiptEmailResult.message}
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 p-5 pt-0">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setShowReceiptEmailDialog(false)
+                  setReceiptEmailPayment(null)
+                  setReceiptEmailResult(null)
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                className="bg-[#1e4d6e] hover:bg-[#163a54] text-white"
+                onClick={sendReceiptEmail}
+                disabled={receiptEmailSending || !receiptEmailTo.trim()}
+              >
+                <Mail className="h-4 w-4 mr-1" />
+                {receiptEmailSending ? 'Sending...' : 'Send Receipt'}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </Card>
   )

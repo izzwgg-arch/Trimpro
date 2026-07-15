@@ -832,6 +832,8 @@ export default function JobDetailPage() {
         loading={documentsLoading}
         error={documentsError}
         description={`${job._count.estimates ?? 0} estimates, ${job._count.invoices ?? 0} invoices, and related payments`}
+        defaultReceiptEmail={primaryContact?.email}
+        onDocumentsRefresh={fetchDocuments}
       />
 
       <div className="grid gap-6 md:grid-cols-3">

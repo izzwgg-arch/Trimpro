@@ -14,6 +14,8 @@ export interface UnifiedDocumentRow {
   date: string
   href: string
   meta?: string | null
+  canReceipt?: boolean
+  receiptEmailSentAt?: string | null
 }
 
 function isInvoicePaid(status: string, balance: number) {
@@ -24,6 +26,10 @@ function paymentDisplayStatus(status: string, refundStatus: string) {
   if (refundStatus === 'FULLY_REFUNDED') return 'REFUNDED'
   if (refundStatus === 'PARTIALLY_REFUNDED') return 'PARTIALLY_REFUNDED'
   return status
+}
+
+function paymentCanReceipt(displayStatus: string) {
+  return displayStatus === 'COMPLETED' || displayStatus === 'REFUNDED' || displayStatus === 'PARTIALLY_REFUNDED'
 }
 
 export async function fetchClientDocuments(tenantId: string, clientId: string) {
@@ -160,6 +166,7 @@ function buildDocumentRows({
     reference: string | null
     processedAt: Date | null
     createdAt: Date
+    receiptEmailSentAt: Date | null
     invoice: { id: string; invoiceNumber: string } | null
   }>
 }): UnifiedDocumentRow[] {
@@ -212,6 +219,8 @@ function buildDocumentRows({
       date: (payment.processedAt || payment.createdAt).toISOString(),
       href: payment.invoice ? `/dashboard/invoices/${payment.invoice.id}` : '#',
       meta: payment.invoice ? `Invoice ${payment.invoice.invoiceNumber}` : null,
+      canReceipt: paymentCanReceipt(displayStatus),
+      receiptEmailSentAt: payment.receiptEmailSentAt?.toISOString() ?? null,
     })
   }
 
