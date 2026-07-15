@@ -102,15 +102,15 @@ export function UnifiedDocumentsSection({
 
     let rows = documents.filter((row) => {
       if (typeFilter !== 'all' && row.kind !== typeFilter) return false
-      if (row.kind === 'invoice' || (typeFilter === 'all' && row.kind === 'invoice')) {
+      if (row.kind === 'invoice' && typeFilter === 'invoice') {
         if (invoiceFilter === 'paid' && !row.isPaid) return false
         if (invoiceFilter === 'unpaid' && row.isPaid) return false
       }
-      if (row.kind === 'estimate' || (typeFilter === 'all' && row.kind === 'estimate')) {
+      if (row.kind === 'estimate' && typeFilter === 'estimate') {
         if (!matchesEstimateFilter(row.status, estimateFilter)) return false
       }
       if (!query) return true
-      const haystack = [row.number, row.title, row.status, row.meta, kindLabels[row.kind]]
+      const haystack = [row.number, row.title, row.status, row.meta, row.clientName, kindLabels[row.kind]]
         .filter(Boolean)
         .join(' ')
         .toLowerCase()
@@ -135,8 +135,8 @@ export function UnifiedDocumentsSection({
 
   const visibleTotal = filtered.reduce((sum, row) => sum + row.amount, 0)
 
-  const showInvoiceFilter = typeFilter === 'all' || typeFilter === 'invoice'
-  const showEstimateFilter = typeFilter === 'all' || typeFilter === 'estimate'
+  const showInvoiceFilter = typeFilter === 'invoice'
+  const showEstimateFilter = typeFilter === 'estimate'
   const filterCount = 1 + (showEstimateFilter ? 1 : 0) + (showInvoiceFilter ? 1 : 0) + 1
   const showReceiptActions = documents.some((row) => row.kind === 'payment' && row.canReceipt)
   const leadingColumns = (enableInvoiceSelection ? 1 : 0) + 6
@@ -271,7 +271,12 @@ export function UnifiedDocumentsSection({
               filterCount >= 4 ? 'lg:grid-cols-4' : filterCount === 3 ? 'lg:grid-cols-3' : 'lg:grid-cols-2'
             } lg:flex-1 lg:max-w-3xl`}
           >
-            <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as TypeFilter)}>
+            <Select value={typeFilter} onValueChange={(v) => {
+              const next = v as TypeFilter
+              setTypeFilter(next)
+              if (next !== 'invoice') setInvoiceFilter('all')
+              if (next !== 'estimate') setEstimateFilter('all')
+            }}>
               <SelectTrigger>
                 <SelectValue placeholder="Type" />
               </SelectTrigger>
@@ -327,9 +332,9 @@ export function UnifiedDocumentsSection({
         ) : filtered.length === 0 ? (
           <p className="py-8 text-center text-sm text-gray-500">No documents match your filters</p>
         ) : (
-          <div className="overflow-x-auto rounded-lg border">
+          <div className="overflow-x-auto overflow-y-auto max-h-[min(32rem,65vh)] rounded-lg border">
             <table className="min-w-full text-sm">
-              <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+              <thead className="sticky top-0 z-10 bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500 shadow-[0_1px_0_0_rgb(229_231_235)]">
                 <tr>
                   {enableInvoiceSelection && <th className="px-3 py-2 w-8" />}
                   <th className="px-3 py-2">Type</th>
@@ -380,8 +385,11 @@ export function UnifiedDocumentsSection({
                           <p className="text-xs text-gray-500 mt-0.5">{row.meta}</p>
                         )}
                       </td>
-                      <td className="px-3 py-2 align-top max-w-[16rem] truncate text-gray-600">
-                        {row.title || '—'}
+                      <td className="px-3 py-2 align-top max-w-[16rem] text-gray-600">
+                        <p className="truncate">{row.title || '—'}</p>
+                        {row.clientName && (
+                          <p className="text-xs text-gray-500 truncate mt-0.5">Sub-client: {row.clientName}</p>
+                        )}
                       </td>
                       <td className="px-3 py-2 align-top whitespace-nowrap text-gray-600">
                         {formatDate(row.date)}
@@ -435,7 +443,7 @@ export function UnifiedDocumentsSection({
                   )
                 })}
               </tbody>
-              <tfoot className="border-t bg-slate-50">
+              <tfoot className="sticky bottom-0 z-10 border-t bg-slate-50 shadow-[0_-1px_0_0_rgb(229_231_235)]">
                 <tr>
                   <td
                     colSpan={totalColumns - 2}

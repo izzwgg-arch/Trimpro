@@ -16,6 +16,26 @@ export interface UnifiedDocumentRow {
   meta?: string | null
   canReceipt?: boolean
   receiptEmailSentAt?: string | null
+  clientName?: string | null
+}
+
+async function getDescendantClientIds(tenantId: string, parentIds: string[]): Promise<string[]> {
+  const all = new Set<string>()
+  let frontier = [...parentIds]
+  while (frontier.length > 0) {
+    const children = await prisma.client.findMany({
+      where: { tenantId, parentId: { in: frontier } },
+      select: { id: true },
+    })
+    frontier = []
+    for (const child of children) {
+      if (!all.has(child.id)) {
+        all.add(child.id)
+        frontier.push(child.id)
+      }
+    }
+  }
+  return Array.from(all)
 }
 
 function isInvoicePaid(status: string, balance: number) {
@@ -40,24 +60,30 @@ export async function fetchClientDocuments(tenantId: string, clientId: string) {
 
   if (!client) return null
 
+  const descendantIds = await getDescendantClientIds(tenantId, [clientId])
+  const clientIds = [clientId, ...descendantIds]
+
   const [estimates, invoices, payments] = await Promise.all([
     prisma.estimate.findMany({
-      where: { tenantId, clientId },
+      where: { tenantId, clientId: { in: clientIds } },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
+        clientId: true,
         estimateNumber: true,
         title: true,
         status: true,
         total: true,
         createdAt: true,
+        client: { select: { id: true, name: true } },
       },
     }),
     prisma.invoice.findMany({
-      where: { tenantId, clientId },
+      where: { tenantId, clientId: { in: clientIds } },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
+        clientId: true,
         invoiceNumber: true,
         title: true,
         status: true,
@@ -65,22 +91,28 @@ export async function fetchClientDocuments(tenantId: string, clientId: string) {
         balance: true,
         dueDate: true,
         createdAt: true,
+        client: { select: { id: true, name: true } },
       },
     }),
     prisma.payment.findMany({
       where: {
-        invoice: { tenantId, clientId },
+        invoice: { tenantId, clientId: { in: clientIds } },
       },
       orderBy: [{ processedAt: 'desc' }, { createdAt: 'desc' }],
       include: {
         invoice: {
-          select: { id: true, invoiceNumber: true },
+          select: {
+            id: true,
+            invoiceNumber: true,
+            clientId: true,
+            client: { select: { id: true, name: true } },
+          },
         },
       },
     }),
   ])
 
-  return buildDocumentRows({ estimates, invoices, payments })
+  return buildDocumentRows({ estimates, invoices, payments, rootClientId: clientId })
 }
 
 export async function fetchJobDocuments(tenantId: string, jobId: string) {
@@ -134,21 +166,30 @@ export async function fetchJobDocuments(tenantId: string, jobId: string) {
   return buildDocumentRows({ estimates, invoices, payments })
 }
 
+function subClientLabel(rootClientId: string | undefined, clientId: string | null | undefined, clientName: string | null | undefined) {
+  if (!rootClientId || !clientId || clientId === rootClientId || !clientName) return null
+  return clientName
+}
+
 function buildDocumentRows({
   estimates,
   invoices,
   payments,
+  rootClientId,
 }: {
   estimates: Array<{
     id: string
+    clientId?: string | null
     estimateNumber: string
     title: string
     status: string
     total: { toString(): string } | number
     createdAt: Date
+    client?: { id: string; name: string } | null
   }>
   invoices: Array<{
     id: string
+    clientId?: string | null
     invoiceNumber: string
     title: string
     status: string
@@ -156,6 +197,7 @@ function buildDocumentRows({
     balance: { toString(): string } | number
     dueDate: Date | null
     createdAt: Date
+    client?: { id: string; name: string } | null
   }>
   payments: Array<{
     id: string
@@ -167,8 +209,14 @@ function buildDocumentRows({
     processedAt: Date | null
     createdAt: Date
     receiptEmailSentAt: Date | null
-    invoice: { id: string; invoiceNumber: string } | null
+    invoice: {
+      id: string
+      invoiceNumber: string
+      clientId?: string
+      client?: { id: string; name: string } | null
+    } | null
   }>
+  rootClientId?: string
 }): UnifiedDocumentRow[] {
   const rows: UnifiedDocumentRow[] = []
 
@@ -184,6 +232,7 @@ function buildDocumentRows({
       isPaid: null,
       date: estimate.createdAt.toISOString(),
       href: `/dashboard/estimates/${estimate.id}`,
+      clientName: subClientLabel(rootClientId, estimate.clientId, estimate.client?.name),
     })
   }
 
@@ -202,6 +251,7 @@ function buildDocumentRows({
       date: (invoice.dueDate || invoice.createdAt).toISOString(),
       href: `/dashboard/invoices/${invoice.id}`,
       meta: balance > 0 ? `Balance ${balance.toFixed(2)}` : null,
+      clientName: subClientLabel(rootClientId, invoice.clientId, invoice.client?.name),
     })
   }
 
@@ -221,6 +271,7 @@ function buildDocumentRows({
       meta: payment.invoice ? `Invoice ${payment.invoice.invoiceNumber}` : null,
       canReceipt: paymentCanReceipt(displayStatus),
       receiptEmailSentAt: payment.receiptEmailSentAt?.toISOString() ?? null,
+      clientName: subClientLabel(rootClientId, payment.invoice?.clientId, payment.invoice?.client?.name),
     })
   }
 
