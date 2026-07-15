@@ -18,6 +18,8 @@ import Link from 'next/link'
 import { useDocumentListAccess } from '@/hooks/useDocumentListAccess'
 import { CreateOnlyAccessCard } from '@/components/permissions/CreateOnlyAccessCard'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { JOB_STATUSES } from '@/lib/jobs/statuses'
+import { JobStatusSelect } from '@/components/jobs/JobStatusSelect'
 
 interface Job {
   id: string
@@ -51,19 +53,6 @@ interface Job {
     tasks: number
     issues: number
   }
-}
-
-const statusColors: Record<string, string> = {
-  QUOTE: 'bg-gray-100 text-gray-800',
-  SCHEDULED: 'bg-blue-100 text-blue-800',
-  IN_PROGRESS: 'bg-yellow-100 text-yellow-800',
-  MEASURED: 'bg-indigo-100 text-indigo-800',
-  INSTALLATION_COMPLETE: 'bg-cyan-100 text-cyan-800',
-  FINISHING_COMPLETE: 'bg-teal-100 text-teal-800',
-  ON_HOLD: 'bg-orange-100 text-orange-800',
-  COMPLETED: 'bg-green-100 text-green-800',
-  CANCELLED: 'bg-red-100 text-red-800',
-  INVOICED: 'bg-purple-100 text-purple-800',
 }
 
 const priorityLabels: Record<number, string> = {
@@ -293,7 +282,7 @@ export default function JobsPage() {
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               <Input
-                placeholder="Search jobs by number, title, or description..."
+                placeholder="Search jobs by #, title, client, crew, or address..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-10"
@@ -308,16 +297,11 @@ export default function JobsPage() {
                 <SelectContent>
                   <SelectItem value="all">All Status</SelectItem>
                   <SelectItem value="ACTIVE">Active</SelectItem>
-                  <SelectItem value="QUOTE">Quote</SelectItem>
-                  <SelectItem value="SCHEDULED">Scheduled</SelectItem>
-                  <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
-                  <SelectItem value="MEASURED">Measured</SelectItem>
-                  <SelectItem value="INSTALLATION_COMPLETE">Installation complete</SelectItem>
-                  <SelectItem value="FINISHING_COMPLETE">Finishing complete</SelectItem>
-                  <SelectItem value="ON_HOLD">On Hold</SelectItem>
-                  <SelectItem value="COMPLETED">Completed</SelectItem>
-                  <SelectItem value="CANCELLED">Cancelled</SelectItem>
-                  <SelectItem value="INVOICED">Invoiced</SelectItem>
+                  {JOB_STATUSES.map((s) => (
+                    <SelectItem key={s.value} value={s.value}>
+                      {s.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -367,9 +351,14 @@ export default function JobsPage() {
                       className="h-4 w-4"
                       title="Select for duplicate"
                     />
-                    <span className={`px-2 py-1 text-xs rounded-full ${statusColors[job.status] || 'bg-gray-100 text-gray-800'}`}>
-                      {job.status.replace('_', ' ')}
-                    </span>
+                    <JobStatusSelect
+                      jobId={job.id}
+                      status={job.status}
+                      compact
+                      onUpdated={(next) =>
+                        setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, status: next } : j)))
+                      }
+                    />
                   </div>
                 </div>
               </CardHeader>
@@ -501,7 +490,16 @@ export default function JobsPage() {
                 href={`/dashboard/jobs/${job.id}`}
                 primary={`${job.jobNumber} - ${job.title}`}
                 secondary={`${job.client.name} | Client Open: ${formatCurrency(parseFloat(job.clientOpenInvoiceBalance || '0'))}`}
-                status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[job.status] || 'bg-gray-100 text-gray-800'}`}>{job.status.replace('_', ' ')}</span>}
+                status={
+                  <JobStatusSelect
+                    jobId={job.id}
+                    status={job.status}
+                    compact
+                    onUpdated={(next) =>
+                      setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, status: next } : j)))
+                    }
+                  />
+                }
                 amount={job.totalCost ? formatCurrency(parseFloat(job.totalCost)) : (job.estimateAmount ? formatCurrency(parseFloat(job.estimateAmount)) : '-')}
                 date={`Open: ${formatCurrency(parseFloat(job.openInvoiceBalance || '0'))}`}
                 className="pl-10"
@@ -524,7 +522,16 @@ export default function JobsPage() {
               <RowDetailedItem
                 href={`/dashboard/jobs/${job.id}`}
                 primary={`${job.jobNumber} - ${job.title}`}
-                status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[job.status] || 'bg-gray-100 text-gray-800'}`}>{job.status.replace('_', ' ')}</span>}
+                status={
+                  <JobStatusSelect
+                    jobId={job.id}
+                    status={job.status}
+                    compact
+                    onUpdated={(next) =>
+                      setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, status: next } : j)))
+                    }
+                  />
+                }
                 line2={`${job.client.name} | Priority ${priorityLabels[job.priority] || 'Medium'} | Client Open ${formatCurrency(parseFloat(job.clientOpenInvoiceBalance || '0'))}`}
                 rightTop={job.totalCost ? formatCurrency(parseFloat(job.totalCost)) : (job.estimateAmount ? formatCurrency(parseFloat(job.estimateAmount)) : '-')}
                 rightBottom={`Job Open ${formatCurrency(parseFloat(job.openInvoiceBalance || '0'))}`}
@@ -571,7 +578,16 @@ export default function JobsPage() {
               key: 'status',
               header: 'Status',
               sortValue: (job) => job.status,
-              render: (job) => <span className={`px-2 py-1 text-xs rounded-full ${statusColors[job.status] || 'bg-gray-100 text-gray-800'}`}>{job.status.replace('_', ' ')}</span>,
+              render: (job) => (
+                <JobStatusSelect
+                  jobId={job.id}
+                  status={job.status}
+                  compact
+                  onUpdated={(next) =>
+                    setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, status: next } : j)))
+                  }
+                />
+              ),
             },
             {
               key: 'estimate',

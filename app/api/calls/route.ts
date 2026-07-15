@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
+import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -11,6 +12,7 @@ export async function GET(request: NextRequest) {
 
   const user = getAuthUser(request)
   const searchParams = request.nextUrl.searchParams
+  const search = searchParams.get('search') || ''
   const direction = searchParams.get('direction') || 'all'
   const status = searchParams.get('status') || 'all'
   const clientId = searchParams.get('clientId') || ''
@@ -34,6 +36,22 @@ export async function GET(request: NextRequest) {
     if (clientId) {
       where.clientId = clientId
     }
+
+    applySmartSearch(
+      where,
+      buildSmartSearchAnd(search, (term) => [
+        { fromNumber: ilike(term) },
+        { toNumber: ilike(term) },
+        ...clientIdentityClauses(term),
+        { contact: { firstName: ilike(term) } },
+        { contact: { lastName: ilike(term) } },
+        { contact: { phone: ilike(term) } },
+        { job: { jobNumber: ilike(term) } },
+        { job: { title: ilike(term) } },
+        { user: { firstName: ilike(term) } },
+        { user: { lastName: ilike(term) } },
+      ])
+    )
 
     const [calls, total] = await Promise.all([
       prisma.call.findMany({

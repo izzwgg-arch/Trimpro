@@ -16,6 +16,7 @@ import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-al
 import { fetchClientPickerDetail, pickDefaultClientAddress } from '@/lib/clients/client-picker-api'
 import { useCreateContextPrefill } from '@/src/hooks/useCreateContextPrefill'
 import { refreshAccessToken } from '@/lib/auth/client'
+import { JOB_STATUSES } from '@/lib/jobs/statuses'
 
 export default function NewJobPage() {
   const router = useRouter()
@@ -281,14 +282,11 @@ export default function NewJobPage() {
                     <SelectValue placeholder="Select status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="QUOTE">Quote</SelectItem>
-                    <SelectItem value="SCHEDULED">Scheduled</SelectItem>
-                    <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
-                    <SelectItem value="MEASURED">Measured</SelectItem>
-                    <SelectItem value="INSTALLATION_COMPLETE">Installation complete</SelectItem>
-                    <SelectItem value="FINISHING_COMPLETE">Finishing complete</SelectItem>
-                    <SelectItem value="ON_HOLD">On Hold</SelectItem>
-                    <SelectItem value="COMPLETED">Completed</SelectItem>
+                    {JOB_STATUSES.map((s) => (
+                      <SelectItem key={s.value} value={s.value}>
+                        {s.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

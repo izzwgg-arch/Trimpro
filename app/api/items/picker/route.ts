@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requireAnyPermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
+import { applySmartSearch, buildSmartSearchAnd, ilike } from '@/lib/search/prisma-filters'
+import { scoreHaystack, topN } from '@/lib/search/scoring'
 
 /**
  * GET /api/items/picker
@@ -37,13 +39,16 @@ export async function GET(request: NextRequest) {
       where.isActive = true
     }
 
-    if (search) {
-      where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { sku: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } },
-      ]
-    }
+    applySmartSearch(
+      where,
+      buildSmartSearchAnd(search, (term) => [
+        { name: ilike(term) },
+        { sku: ilike(term) },
+        { description: ilike(term) },
+        { notes: ilike(term) },
+        { vendor: { name: ilike(term) } },
+      ])
+    )
 
     // Fetch all items first, then split by kind.
     // This is resilient to legacy rows where kind may be null/unknown:
@@ -90,42 +95,63 @@ export async function GET(request: NextRequest) {
     const items = allItems.filter((item) => item.kind !== 'BUNDLE')
     const bundleItems = allItems.filter((item) => item.kind === 'BUNDLE')
 
+    const rank = <T extends { name: string; sku: string | null; description: string | null; notes?: string | null; vendorName?: string | null }>(
+      rows: T[]
+    ) => {
+      if (!search.trim()) return rows
+      return topN(
+        rows.map((row) => ({
+          ...row,
+          score: scoreHaystack(
+            search,
+            [row.name, row.sku],
+            [row.description, row.notes, row.vendorName]
+          ),
+        })),
+        rows.length
+      )
+    }
+
     // Format items for FastPicker
-    const formattedItems = items.map(item => ({
-      id: item.id,
-      name: item.name,
-      sku: item.sku,
-      kind: 'SINGLE' as const,
-      defaultUnitPrice: Number(item.defaultUnitPrice),
-      defaultUnitCost: item.defaultUnitCost ? Number(item.defaultUnitCost) : null,
-      unit: item.unit,
-      vendorId: item.vendorId,
-      vendorName: item.vendor?.name || null,
-      taxable: item.taxable,
-      taxRate: item.taxRate ? Number(item.taxRate) : null,
-      description: item.description,
-      notes: item.notes,
-      tag: Array.isArray(item.tags) && item.tags.length > 0 ? item.tags.join(', ') : null,
-    }))
+    const formattedItems = rank(
+      items.map((item) => ({
+        id: item.id,
+        name: item.name,
+        sku: item.sku,
+        kind: 'SINGLE' as const,
+        defaultUnitPrice: Number(item.defaultUnitPrice),
+        defaultUnitCost: item.defaultUnitCost ? Number(item.defaultUnitCost) : null,
+        unit: item.unit,
+        vendorId: item.vendorId,
+        vendorName: item.vendor?.name || null,
+        taxable: item.taxable,
+        taxRate: item.taxRate ? Number(item.taxRate) : null,
+        description: item.description,
+        notes: item.notes,
+        tag: Array.isArray(item.tags) && item.tags.length > 0 ? item.tags.join(', ') : null,
+      }))
+    )
 
     // Format bundles for FastPicker
-    const formattedBundles = bundleItems.map(item => ({
-      id: item.id, // Item ID
-      name: item.name,
-      sku: item.sku,
-      kind: 'BUNDLE' as const,
-      defaultUnitPrice: Number(item.defaultUnitPrice),
-      defaultUnitCost: item.defaultUnitCost ? Number(item.defaultUnitCost) : null,
-      unit: item.unit,
-      vendorId: item.vendorId,
-      vendorName: item.vendor?.name || null,
-      taxable: item.taxable,
-      taxRate: item.taxRate ? Number(item.taxRate) : null,
-      description: item.description,
-      notes: item.notes,
-      bundleId: item.bundleDefinition?.id || null, // BundleDefinition ID (for API calls)
-      tag: Array.isArray(item.tags) && item.tags.length > 0 ? item.tags.join(', ') : null,
-    }))
+    const formattedBundles = rank(
+      bundleItems.map((item) => ({
+        id: item.id, // Item ID
+        name: item.name,
+        sku: item.sku,
+        kind: 'BUNDLE' as const,
+        defaultUnitPrice: Number(item.defaultUnitPrice),
+        defaultUnitCost: item.defaultUnitCost ? Number(item.defaultUnitCost) : null,
+        unit: item.unit,
+        vendorId: item.vendorId,
+        vendorName: item.vendor?.name || null,
+        taxable: item.taxable,
+        taxRate: item.taxRate ? Number(item.taxRate) : null,
+        description: item.description,
+        notes: item.notes,
+        bundleId: item.bundleDefinition?.id || null, // BundleDefinition ID (for API calls)
+        tag: Array.isArray(item.tags) && item.tags.length > 0 ? item.tags.join(', ') : null,
+      }))
+    )
 
     return NextResponse.json({
       items: formattedItems,

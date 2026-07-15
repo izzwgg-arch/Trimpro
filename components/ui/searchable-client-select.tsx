@@ -9,6 +9,7 @@ import {
   DROPDOWN_SEARCH_WRAP,
   DROPDOWN_TRIGGER,
 } from '@/components/ui/dropdown-styles'
+import { smartMatch, scoreHaystack } from '@/lib/search/scoring'
 
 type ClientOption = {
   id: string
@@ -42,12 +43,17 @@ export function SearchableClientSelect({
   const selectedClient = clients.find((c) => c.id === value) || null
 
   const filteredClients = useMemo(() => {
-    const q = query.trim().toLowerCase()
+    const q = query.trim()
     if (!q) return clients
-    return clients.filter((client) => {
-      const haystack = `${client.name} ${client.companyName || ''} ${client.email || ''} ${client.phone || ''} ${client.address || ''}`.toLowerCase()
-      return haystack.includes(q)
-    })
+    return [...clients]
+      .filter((client) =>
+        smartMatch(q, [client.name, client.companyName, client.email, client.phone, client.address])
+      )
+      .sort(
+        (a, b) =>
+          scoreHaystack(q, [b.name, b.companyName], [b.email, b.phone, b.address]) -
+          scoreHaystack(q, [a.name, a.companyName], [a.email, a.phone, a.address])
+      )
   }, [clients, query])
 
   useEffect(() => {

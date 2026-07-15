@@ -32,6 +32,7 @@ import { buildCreateContextQuery } from '@/src/lib/create-context'
 import { UnifiedDocumentsSection } from '@/components/documents/unified-documents-section'
 import { EditableNotesList } from '@/components/notes/editable-notes-list'
 import type { UnifiedDocumentRow } from '@/lib/documents/unified-documents'
+import { JobStatusSelect } from '@/components/jobs/JobStatusSelect'
 
 const JobSiteMap = dynamic(() => import('@/components/maps/JobSiteMap').then(mod => ({ default: mod.JobSiteMap })), {
   ssr: false,
@@ -192,19 +193,6 @@ interface AssignableUser {
   lastName: string
   email: string | null
   status?: string | null
-}
-
-const statusColors: Record<string, string> = {
-  QUOTE: 'bg-gray-100 text-gray-800',
-  SCHEDULED: 'bg-blue-100 text-blue-800',
-  IN_PROGRESS: 'bg-yellow-100 text-yellow-800',
-  MEASURED: 'bg-indigo-100 text-indigo-800',
-  INSTALLATION_COMPLETE: 'bg-cyan-100 text-cyan-800',
-  FINISHING_COMPLETE: 'bg-teal-100 text-teal-800',
-  ON_HOLD: 'bg-orange-100 text-orange-800',
-  COMPLETED: 'bg-green-100 text-green-800',
-  CANCELLED: 'bg-red-100 text-red-800',
-  INVOICED: 'bg-purple-100 text-purple-800',
 }
 
 export default function JobDetailPage() {
@@ -797,9 +785,11 @@ export default function JobDetailPage() {
           </div>
           <div className="flex items-center space-x-3 mt-2">
             <h1 className="text-3xl font-bold text-gray-900">{job.title}</h1>
-            <span className={`px-3 py-1 text-sm rounded-full ${statusColors[job.status] || 'bg-gray-100 text-gray-800'}`}>
-              {job.status.replace('_', ' ')}
-            </span>
+            <JobStatusSelect
+              jobId={job.id}
+              status={job.status}
+              onUpdated={(next) => setJob((prev) => (prev ? { ...prev, status: next } : prev))}
+            />
           </div>
           <p className="text-gray-600 mt-1">
             {job.jobNumber} - <Link href={`/dashboard/clients/${job.client.id}`} className="text-primary hover:underline">{job.client.name}</Link>

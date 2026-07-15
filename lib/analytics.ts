@@ -141,7 +141,7 @@ export async function getAnalyticsKPIs(
     by: ['status'],
     where: {
       tenantId,
-      status: { in: ['QUOTE', 'SCHEDULED', 'IN_PROGRESS', 'ON_HOLD'] },
+      status: { in: ['QUOTE', 'SCHEDULED', 'IN_PROGRESS', 'MEASURED', 'NEED_TO_ORDER', 'ORDERED', 'INSTALLATION_COMPLETE', 'NEED_TOUCH_UPS', 'FINISHING_COMPLETE', 'ON_HOLD'] },
     },
     _count: { id: true },
   })

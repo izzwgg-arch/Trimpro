@@ -3,6 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { notifyIssueAssigned } from '@/lib/notifications'
 import { hasMobilePermission, requireMobilePermission, requirePermission } from '@/lib/authorization'
+import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
 
 // Helper to detect if request is from mobile app
 function isMobileRequest(request: NextRequest): boolean {
@@ -36,15 +37,18 @@ export async function GET(request: NextRequest) {
       tenantId: user.tenantId,
     }
 
-    if (search) {
-      where.AND = where.AND || []
-      where.AND.push({
-        OR: [
-          { title: { contains: search, mode: 'insensitive' } },
-          { description: { contains: search, mode: 'insensitive' } },
-        ],
-      })
-    }
+    applySmartSearch(
+      where,
+      buildSmartSearchAnd(search, (term) => [
+        { title: ilike(term) },
+        { description: ilike(term) },
+        ...clientIdentityClauses(term),
+        { job: { jobNumber: ilike(term) } },
+        { job: { title: ilike(term) } },
+        { assignee: { firstName: ilike(term) } },
+        { assignee: { lastName: ilike(term) } },
+      ])
+    )
 
     if (status !== 'all') {
       where.status = status

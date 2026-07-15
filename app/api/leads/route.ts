@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { notifyRequestCreated } from '@/lib/notifications'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { leadJobSiteAddressSearchClauses } from '@/lib/search/job-site-address'
+import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -40,23 +41,26 @@ export async function GET(request: NextRequest) {
       tenantId: user.tenantId,
     }
 
-    if (search) {
-      where.OR = [
-        { id: { contains: search, mode: 'insensitive' } },
-        { firstName: { contains: search, mode: 'insensitive' } },
-        { lastName: { contains: search, mode: 'insensitive' } },
-        { email: { contains: search, mode: 'insensitive' } },
-        { phone: { contains: search, mode: 'insensitive' } },
-        { company: { contains: search, mode: 'insensitive' } },
-        ...leadJobSiteAddressSearchClauses(search),
-        { client: { name: { contains: search, mode: 'insensitive' } } },
-        { client: { companyName: { contains: search, mode: 'insensitive' } } },
-        { client: { addresses: { some: { street: { contains: search, mode: 'insensitive' } } } } },
-        { client: { addresses: { some: { city: { contains: search, mode: 'insensitive' } } } } },
-        { client: { addresses: { some: { state: { contains: search, mode: 'insensitive' } } } } },
-        { client: { addresses: { some: { zipCode: { contains: search, mode: 'insensitive' } } } } },
-      ]
-    }
+    applySmartSearch(
+      where,
+      buildSmartSearchAnd(search, (term) => [
+        { id: ilike(term) },
+        { firstName: ilike(term) },
+        { lastName: ilike(term) },
+        { email: ilike(term) },
+        { phone: ilike(term) },
+        { company: ilike(term) },
+        { notes: ilike(term) },
+        ...leadJobSiteAddressSearchClauses(term),
+        ...clientIdentityClauses(term),
+        { client: { addresses: { some: { street: ilike(term) } } } },
+        { client: { addresses: { some: { city: ilike(term) } } } },
+        { client: { addresses: { some: { state: ilike(term) } } } },
+        { client: { addresses: { some: { zipCode: ilike(term) } } } },
+        { assignedTo: { firstName: ilike(term) } },
+        { assignedTo: { lastName: ilike(term) } },
+      ])
+    )
 
     if (status !== 'all') {
       where.status = status

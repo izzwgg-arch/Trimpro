@@ -17,7 +17,11 @@ const JOB_STATUS_OPTIONS = [
   'QUOTE',
   'SCHEDULED',
   'IN_PROGRESS',
+  'MEASURED',
+  'NEED_TO_ORDER',
+  'ORDERED',
   'INSTALLATION_COMPLETE',
+  'NEED_TOUCH_UPS',
   'FINISHING_COMPLETE',
   'COMPLETED',
   'ON_HOLD',
@@ -27,6 +31,8 @@ const JOB_STATUS_OPTIONS = [
 
 function formatStatusLabel(status: string) {
   return status
+    .replace('NEED_TO_ORDER', 'NEED TO ORDER')
+    .replace('NEED_TOUCH_UPS', 'NEED TOUCH UPS')
     .replace('INSTALLATION_COMPLETE', 'INSTALLATION COMPLETED')
     .replace('FINISHING_COMPLETE', 'FINISHING COMPLETED')
     .replaceAll('_', ' ')

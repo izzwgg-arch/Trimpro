@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { refreshAccessToken } from '@/lib/auth/client'
+import { smartMatch, scoreHaystack } from '@/lib/search/scoring'
 
 // ─── Unified thread shape ──────────────────────────────────────────────────────
 
@@ -754,12 +755,15 @@ export default function MessagesPage() {
   }
 
   const filteredUsers = useMemo(() => {
-    const q = newUserFilter.toLowerCase()
+    const q = newUserFilter.trim()
     if (!q) return newUsers
-    return newUsers.filter((u) =>
-      `${u.firstName || ''} ${u.lastName || ''}`.toLowerCase().includes(q) ||
-      u.email.toLowerCase().includes(q)
-    )
+    return [...newUsers]
+      .filter((u) => smartMatch(q, [u.firstName, u.lastName, u.email]))
+      .sort(
+        (a, b) =>
+          scoreHaystack(q, [`${b.firstName} ${b.lastName}`, b.email], []) -
+          scoreHaystack(q, [`${a.firstName} ${a.lastName}`, a.email], [])
+      )
   }, [newUsers, newUserFilter])
 
   const createNewChat = async () => {
@@ -793,12 +797,10 @@ export default function MessagesPage() {
 
   // ── Filtered thread list ───────────────────────────────────────────────────
   const filteredThreads = useMemo(() => {
-    const q = search.toLowerCase().trim()
+    const q = search.trim()
     if (!q) return threads
     return threads.filter((t) =>
-      t.title.toLowerCase().includes(q) ||
-      (t.subtitle || '').toLowerCase().includes(q) ||
-      (t.phoneDisplay || '').toLowerCase().includes(q)
+      smartMatch(q, [t.title, t.subtitle, t.phoneDisplay, t.phone, t.preview])
     )
   }, [threads, search])
 

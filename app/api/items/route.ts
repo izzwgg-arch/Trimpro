@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
+import { applySmartSearch, buildSmartSearchAnd, ilike } from '@/lib/search/prisma-filters'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -26,13 +27,16 @@ export async function GET(request: NextRequest) {
       tenantId: user.tenantId,
     }
 
-    if (search) {
-      where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { sku: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } },
-      ]
-    }
+    applySmartSearch(
+      where,
+      buildSmartSearchAnd(search, (term) => [
+        { name: ilike(term) },
+        { sku: ilike(term) },
+        { description: ilike(term) },
+        { vendor: { name: ilike(term) } },
+        { category: { name: ilike(term) } },
+      ])
+    )
 
     if (type !== 'all') {
       where.type = type

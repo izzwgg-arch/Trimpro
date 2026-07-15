@@ -11,6 +11,7 @@ import {
   DROPDOWN_SEARCH_WRAP,
   DROPDOWN_TRIGGER,
 } from '@/components/ui/dropdown-styles'
+import { smartMatch, scoreHaystack } from '@/lib/search/scoring'
 
 export interface SearchableSelectOption {
   value: string
@@ -42,9 +43,11 @@ export function SearchableSelect({
   )
 
   const filteredOptions = useMemo(() => {
-    const q = query.trim().toLowerCase()
+    const q = query.trim()
     if (!q) return options
-    return options.filter((option) => option.label.toLowerCase().includes(q))
+    return [...options]
+      .filter((option) => smartMatch(q, [option.label, option.value]))
+      .sort((a, b) => scoreHaystack(q, [b.label], []) - scoreHaystack(q, [a.label], []))
   }, [options, query])
 
   useEffect(() => {

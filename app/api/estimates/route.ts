@@ -13,6 +13,7 @@ import {
   normalizeEstimateNumber,
 } from '@/lib/qbo/doc-numbers'
 import { estimateJobSiteAddressSearchClauses } from '@/lib/search/job-site-address'
+import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -45,13 +46,17 @@ export async function GET(request: NextRequest) {
       tenantId: user.tenantId,
     }
 
-    if (search) {
-      where.OR = [
-        { estimateNumber: { contains: search, mode: 'insensitive' } },
-        { title: { contains: search, mode: 'insensitive' } },
-        ...estimateJobSiteAddressSearchClauses(search),
-      ]
-    }
+    applySmartSearch(
+      where,
+      buildSmartSearchAnd(search, (term) => [
+        { estimateNumber: ilike(term) },
+        { title: ilike(term) },
+        ...clientIdentityClauses(term),
+        { job: { jobNumber: ilike(term) } },
+        { job: { title: ilike(term) } },
+        ...estimateJobSiteAddressSearchClauses(term),
+      ])
+    )
 
     if (status !== 'all') {
       where.status = status

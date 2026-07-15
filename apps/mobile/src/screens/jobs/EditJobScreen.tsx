@@ -243,14 +243,17 @@ export function EditJobScreen({ route, navigation }: Props) {
           <Card style={styles.card}>
             <Text style={styles.label}>Status</Text>
             <View style={styles.statusRow}>
-              {['QUOTE', 'SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'ON_HOLD'].map((status) => (
+              {['QUOTE', 'SCHEDULED', 'IN_PROGRESS', 'MEASURED', 'NEED_TO_ORDER', 'ORDERED', 'NEED_TOUCH_UPS', 'COMPLETED', 'ON_HOLD'].map((status) => (
                 <Pressable
                   key={status}
                   style={[styles.statusChip, formData.status === status && styles.statusChipActive]}
                   onPress={() => setFormData((prev) => ({ ...prev, status }))}
                 >
                   <Text style={[styles.statusChipText, formData.status === status && styles.statusChipTextActive]}>
-                    {status.replace('_', ' ')}
+                    {status
+                      .replace('NEED_TO_ORDER', 'NEED TO ORDER')
+                      .replace('NEED_TOUCH_UPS', 'NEED TOUCH UPS')
+                      .replaceAll('_', ' ')}
                   </Text>
                 </Pressable>
               ))}

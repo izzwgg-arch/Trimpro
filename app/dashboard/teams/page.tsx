@@ -12,6 +12,7 @@ import { RowCompactItem } from '@/components/lists/RowCompactItem'
 import { RowDetailedItem } from '@/components/lists/RowDetailedItem'
 import { TableView } from '@/components/lists/TableView'
 import { Users, Plus, Search, Mail, Phone, Briefcase, X, Pencil, Trash2 } from 'lucide-react'
+import { smartMatch } from '@/lib/search/scoring'
 
 const ALLOWED_BASE_ROLES = new Set(['ADMIN', 'MANAGER', 'OFFICE', 'FIELD', 'SALES', 'ACCOUNTING'])
 
@@ -342,15 +343,9 @@ export default function TeamsPage() {
     }
   }
 
-  const filteredMembers = teamMembers.filter((member) => {
-    const searchLower = search.toLowerCase()
-    return (
-      member.firstName.toLowerCase().includes(searchLower) ||
-      member.lastName.toLowerCase().includes(searchLower) ||
-      member.email.toLowerCase().includes(searchLower) ||
-      member.role.toLowerCase().includes(searchLower)
-    )
-  })
+  const filteredMembers = teamMembers.filter((member) =>
+    smartMatch(search, [member.firstName, member.lastName, member.email, member.role, member.phone])
+  )
 
   const roleColors: Record<string, string> = {
     ADMIN: 'bg-purple-100 text-purple-800',

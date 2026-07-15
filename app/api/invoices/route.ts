@@ -20,6 +20,7 @@ import {
 } from '@/lib/qbo/doc-numbers'
 import { ensureJobFromInvoice } from '@/lib/jobs/ensure-job-from-invoice'
 import { invoiceJobSiteAddressSearchClauses } from '@/lib/search/job-site-address'
+import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
 
 function formatJobSiteAddress(raw?: string | null, fallbackParts?: Array<string | null | undefined>) {
   const value = String(raw || '').trim()
@@ -57,19 +58,21 @@ export async function GET(request: NextRequest) {
       tenantId: user.tenantId,
     }
 
-    if (search) {
-      where.OR = [
-        { invoiceNumber: { contains: search, mode: 'insensitive' } },
-        { title: { contains: search, mode: 'insensitive' } },
-        { client: { name: { contains: search, mode: 'insensitive' } } },
-        { client: { companyName: { contains: search, mode: 'insensitive' } } },
-        { client: { addresses: { some: { street: { contains: search, mode: 'insensitive' } } } } },
-        { client: { addresses: { some: { city: { contains: search, mode: 'insensitive' } } } } },
-        { client: { addresses: { some: { state: { contains: search, mode: 'insensitive' } } } } },
-        { client: { addresses: { some: { zipCode: { contains: search, mode: 'insensitive' } } } } },
-        ...invoiceJobSiteAddressSearchClauses(search),
-      ]
-    }
+    applySmartSearch(
+      where,
+      buildSmartSearchAnd(search, (term) => [
+        { invoiceNumber: ilike(term) },
+        { title: ilike(term) },
+        ...clientIdentityClauses(term),
+        { job: { jobNumber: ilike(term) } },
+        { job: { title: ilike(term) } },
+        { client: { addresses: { some: { street: ilike(term) } } } },
+        { client: { addresses: { some: { city: ilike(term) } } } },
+        { client: { addresses: { some: { state: ilike(term) } } } },
+        { client: { addresses: { some: { zipCode: ilike(term) } } } },
+        ...invoiceJobSiteAddressSearchClauses(term),
+      ])
+    )
 
     if (status !== 'all') {
       if (status === 'UNPAID_OVERDUE') {

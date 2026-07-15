@@ -13,6 +13,7 @@ import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
 import { PlaceAutocompleteInput } from '@/components/maps/PlaceAutocompleteInput'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
 import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
+import { JOB_STATUSES } from '@/lib/jobs/statuses'
 
 type JobResponse = {
   job: {
@@ -386,16 +387,11 @@ export default function EditJobPage() {
                     <SelectValue placeholder="Select status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="QUOTE">Quote</SelectItem>
-                    <SelectItem value="SCHEDULED">Scheduled</SelectItem>
-                    <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
-                    <SelectItem value="MEASURED">Measured</SelectItem>
-                    <SelectItem value="INSTALLATION_COMPLETE">Installation complete</SelectItem>
-                    <SelectItem value="FINISHING_COMPLETE">Finishing complete</SelectItem>
-                    <SelectItem value="ON_HOLD">On Hold</SelectItem>
-                    <SelectItem value="COMPLETED">Completed</SelectItem>
-                    <SelectItem value="CANCELLED">Cancelled</SelectItem>
-                    <SelectItem value="INVOICED">Invoiced</SelectItem>
+                    {JOB_STATUSES.map((s) => (
+                      <SelectItem key={s.value} value={s.value}>
+                        {s.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

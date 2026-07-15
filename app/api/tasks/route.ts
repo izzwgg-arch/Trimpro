@@ -12,6 +12,7 @@ import {
   canViewAllTasksList,
   resolveTasksListFilter,
 } from '@/lib/tasks/list-scope'
+import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
 
 // Helper to detect if request is from mobile app
 function isMobileRequest(request: NextRequest): boolean {
@@ -53,12 +54,20 @@ export async function GET(request: NextRequest) {
       tenantId: user.tenantId,
     }
 
-    if (search) {
-      where.OR = [
-        { title: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } },
-      ]
-    }
+    applySmartSearch(
+      where,
+      buildSmartSearchAnd(search, (term) => [
+        { title: ilike(term) },
+        { description: ilike(term) },
+        ...clientIdentityClauses(term),
+        { job: { jobNumber: ilike(term) } },
+        { job: { title: ilike(term) } },
+        { invoice: { invoiceNumber: ilike(term) } },
+        { issue: { title: ilike(term) } },
+        { assignee: { firstName: ilike(term) } },
+        { assignee: { lastName: ilike(term) } },
+      ])
+    )
 
     if (status !== 'all') {
       if (status === 'PLANNING_PENDING') {
@@ -79,12 +88,15 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Filter: my tasks (created by me) or assigned to me
+    // Filter: my tasks (created by me) or assigned to me — must AND with search
     if (filter === 'my') {
-      where.OR = [
-        { createdById: user.id },
-        { assigneeId: user.id },
-      ]
+      where.AND = where.AND || []
+      where.AND.push({
+        OR: [
+          { createdById: user.id },
+          { assigneeId: user.id },
+        ],
+      })
     } else if (filter === 'assigned') {
       where.assigneeId = user.id
     }

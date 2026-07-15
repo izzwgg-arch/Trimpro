@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Plus, Edit, Trash2, Search } from 'lucide-react'
+import { smartMatch } from '@/lib/search/scoring'
 import {
   Dialog,
   DialogContent,
@@ -207,9 +208,7 @@ export default function RolesPage() {
     }))
   }
 
-  const filteredRoles = roles.filter((role) =>
-    role.name.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  const filteredRoles = roles.filter((role) => smartMatch(searchTerm, [role.name, role.description]))
 
   if (loading) {
     return <div className="p-6">Loading...</div>

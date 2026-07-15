@@ -193,7 +193,7 @@ export function GlobalSearch() {
           onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
           onFocus={() => setOpen(true)}
           onKeyDown={handleKeyDown}
-          placeholder="Search…"
+          placeholder="Search customers, jobs, invoices…"
           autoComplete="off"
           spellCheck={false}
           className="w-full h-9 pl-9 pr-20 rounded-lg border border-gray-200 bg-gray-50 text-sm text-gray-900 placeholder:text-gray-400 outline-none focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100 transition-all"

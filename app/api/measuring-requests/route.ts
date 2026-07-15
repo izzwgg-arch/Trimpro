@@ -3,6 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { createNotification } from '@/lib/notifications'
+import { applySmartSearch, buildSmartSearchAnd, ilike } from '@/lib/search/prisma-filters'
 
 function toApiStatus(status: 'PENDING' | 'OPENED' | 'COMPLETED') {
   return status.toLowerCase()
@@ -35,18 +36,22 @@ export async function GET(request: NextRequest) {
     tenantId: user.tenantId,
     ...(statusFilter === 'ALL' ? {} : { status: statusFilter }),
     ...(assignedUserId ? { assignedUserId } : {}),
-    ...(search
-      ? {
-          OR: [
-            { request: { firstName: { contains: search, mode: 'insensitive' } } },
-            { request: { lastName: { contains: search, mode: 'insensitive' } } },
-            { request: { company: { contains: search, mode: 'insensitive' } } },
-            { request: { jobSiteAddress: { contains: search, mode: 'insensitive' } } },
-            { notes: { contains: search, mode: 'insensitive' } },
-          ],
-        }
-      : {}),
   }
+
+  applySmartSearch(
+    where,
+    buildSmartSearchAnd(search, (term) => [
+      { request: { firstName: ilike(term) } },
+      { request: { lastName: ilike(term) } },
+      { request: { company: ilike(term) } },
+      { request: { jobSiteAddress: ilike(term) } },
+      { request: { phone: ilike(term) } },
+      { request: { email: ilike(term) } },
+      { notes: ilike(term) },
+      { assignedUser: { firstName: ilike(term) } },
+      { assignedUser: { lastName: ilike(term) } },
+    ])
+  )
 
   const [rows, total] = await Promise.all([
     prisma.measuringRequest.findMany({

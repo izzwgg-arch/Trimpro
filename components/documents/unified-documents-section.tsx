@@ -15,6 +15,7 @@ import {
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { DollarSign, FileText, Search, ChevronDown, ChevronRight, Download, Mail, X } from 'lucide-react'
 import type { UnifiedDocumentKind, UnifiedDocumentRow } from '@/lib/documents/unified-documents'
+import { smartMatch, scoreHaystack } from '@/lib/search/scoring'
 
 type TypeFilter = 'all' | UnifiedDocumentKind
 type InvoiceFilter = 'all' | 'paid' | 'unpaid'
@@ -165,7 +166,7 @@ export function UnifiedDocumentsSection({
   }, [preferencesKey, sort, typeFilter, invoiceFilter, estimateFilter, search])
 
   const filtered = useMemo(() => {
-    const query = search.trim().toLowerCase()
+    const query = search.trim()
 
     let rows = documents.filter((row) => {
       if (typeFilter !== 'all' && row.kind !== typeFilter) return false
@@ -177,14 +178,28 @@ export function UnifiedDocumentsSection({
         if (!matchesEstimateFilter(row.status, estimateFilter)) return false
       }
       if (!query) return true
-      const haystack = [row.number, row.title, row.status, row.meta, row.clientName, kindLabels[row.kind]]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-      return haystack.includes(query)
+      return smartMatch(query, [
+        row.number,
+        row.title,
+        row.status,
+        row.meta,
+        row.clientName,
+        kindLabels[row.kind],
+        String(row.amount),
+      ])
     })
 
-    rows = [...rows].sort((a, b) => compareDocuments(a, b, sort))
+    if (query) {
+      rows = [...rows].sort((a, b) => {
+        const scoreDiff =
+          scoreHaystack(query, [b.number, b.title, b.clientName], [b.meta, b.status]) -
+          scoreHaystack(query, [a.number, a.title, a.clientName], [a.meta, a.status])
+        if (scoreDiff !== 0) return scoreDiff
+        return compareDocuments(a, b, sort)
+      })
+    } else {
+      rows = [...rows].sort((a, b) => compareDocuments(a, b, sort))
+    }
 
     return rows
   }, [documents, search, typeFilter, invoiceFilter, estimateFilter, sort])

@@ -13,6 +13,8 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import * as XLSX from 'xlsx'
+import { invoiceJobSiteAddressSearchClauses } from '@/lib/search/job-site-address'
+import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
 
 export const dynamic = 'force-dynamic'
 
@@ -48,18 +50,21 @@ export async function GET(request: NextRequest) {
     const ids = idsParam.split(',').map((s) => s.trim()).filter(Boolean)
     where.id = { in: ids }
   } else {
-    if (search) {
-      where.OR = [
-        { invoiceNumber: { contains: search, mode: 'insensitive' } },
-        { title:         { contains: search, mode: 'insensitive' } },
-        { client: { name: { contains: search, mode: 'insensitive' } } },
-        { client: { companyName: { contains: search, mode: 'insensitive' } } },
-        { client: { addresses: { some: { street: { contains: search, mode: 'insensitive' } } } } },
-        { client: { addresses: { some: { city: { contains: search, mode: 'insensitive' } } } } },
-        { client: { addresses: { some: { state: { contains: search, mode: 'insensitive' } } } } },
-        { client: { addresses: { some: { zipCode: { contains: search, mode: 'insensitive' } } } } },
-      ]
-    }
+    applySmartSearch(
+      where,
+      buildSmartSearchAnd(search, (term) => [
+        { invoiceNumber: ilike(term) },
+        { title: ilike(term) },
+        ...clientIdentityClauses(term),
+        { job: { jobNumber: ilike(term) } },
+        { job: { title: ilike(term) } },
+        { client: { addresses: { some: { street: ilike(term) } } } },
+        { client: { addresses: { some: { city: ilike(term) } } } },
+        { client: { addresses: { some: { state: ilike(term) } } } },
+        { client: { addresses: { some: { zipCode: ilike(term) } } } },
+        ...invoiceJobSiteAddressSearchClauses(term),
+      ])
+    )
     if (status !== 'all') {
       if (status === 'UNPAID_OVERDUE') {
         where.status = { in: ['DRAFT', 'SENT', 'VIEWED', 'PARTIAL', 'OVERDUE'] }

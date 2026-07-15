@@ -9,6 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { formatDate, formatTime } from '@/lib/utils'
+import { smartMatch } from '@/lib/search/scoring'
+import { JOB_STATUSES, formatJobStatus, jobStatusHexColors } from '@/lib/jobs/statuses'
 import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
 import {
   Map,
@@ -83,15 +85,7 @@ interface MapData {
   techs: MapTech[]
 }
 
-const statusColors: Record<string, string> = {
-  QUOTE: '#94a3b8',
-  SCHEDULED: '#3b82f6',
-  IN_PROGRESS: '#eab308',
-  ON_HOLD: '#f97316',
-  COMPLETED: '#22c55e',
-  CANCELLED: '#ef4444',
-  INVOICED: '#a855f7',
-}
+const statusColors = jobStatusHexColors
 
 export default function MapsPage() {
   const router = useRouter()
@@ -375,16 +369,17 @@ export default function MapsPage() {
     return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`
   }
 
-  const filteredJobs = mapData.jobs.filter((job) => {
-    if (!searchQuery) return true
-    const query = searchQuery.toLowerCase()
-    return (
-      job.jobNumber.toLowerCase().includes(query) ||
-      job.title.toLowerCase().includes(query) ||
-      job.client.name.toLowerCase().includes(query) ||
-      `${job.address.street} ${job.address.city}`.toLowerCase().includes(query)
-    )
-  })
+  const filteredJobs = mapData.jobs.filter((job) =>
+    smartMatch(searchQuery, [
+      job.jobNumber,
+      job.title,
+      job.client.name,
+      job.address.street,
+      job.address.city,
+      job.address.state,
+      job.address.zipCode,
+    ])
+  )
 
   const hasGeocodedData = mapData.jobs.length > 0 || mapData.clients.length > 0
 
@@ -432,10 +427,11 @@ export default function MapsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="QUOTE">Quote</SelectItem>
-                    <SelectItem value="SCHEDULED">Scheduled</SelectItem>
-                    <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
-                    <SelectItem value="COMPLETED">Completed</SelectItem>
+                    {JOB_STATUSES.map((s) => (
+                      <SelectItem key={s.value} value={s.value}>
+                        {s.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -618,7 +614,7 @@ export default function MapsPage() {
                       className="px-2 py-1 text-xs rounded-full text-white"
                       style={{ backgroundColor: statusColors[selectedJob.status] || '#gray' }}
                     >
-                      {selectedJob.status}
+                      {formatJobStatus(selectedJob.status)}
                     </span>
                     <span className="text-xs text-gray-500">Priority: {selectedJob.priority}</span>
                   </div>

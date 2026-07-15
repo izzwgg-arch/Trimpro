@@ -3,6 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requireAnyPermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { CLIENT_PICKER_PERMISSIONS } from '@/lib/clients/client-picker-access'
+import { applySmartSearch, buildSmartSearchAnd, ilike } from '@/lib/search/prisma-filters'
 
 /**
  * GET /api/clients/picker
@@ -31,14 +32,39 @@ export async function GET(request: NextRequest) {
       isActive: true,
     }
 
-    if (search) {
-      where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { companyName: { contains: search, mode: 'insensitive' } },
-        { email: { contains: search, mode: 'insensitive' } },
-        { phone: { contains: search, mode: 'insensitive' } },
-      ]
-    }
+    applySmartSearch(
+      where as any,
+      buildSmartSearchAnd(search, (term) => [
+        { name: ilike(term) },
+        { companyName: ilike(term) },
+        { email: ilike(term) },
+        { phone: ilike(term) },
+        {
+          addresses: {
+            some: {
+              OR: [
+                { street: ilike(term) },
+                { city: ilike(term) },
+                { state: ilike(term) },
+                { zipCode: ilike(term) },
+              ],
+            },
+          },
+        },
+        {
+          contacts: {
+            some: {
+              OR: [
+                { firstName: ilike(term) },
+                { lastName: ilike(term) },
+                { email: ilike(term) },
+                { phone: ilike(term) },
+              ],
+            },
+          },
+        },
+      ])
+    )
 
     const [clients, total] = await Promise.all([
       prisma.client.findMany({

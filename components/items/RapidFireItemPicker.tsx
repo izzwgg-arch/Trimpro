@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, KeyboardEvent } from 'react'
 import { Input } from '@/components/ui/input'
 import { Package } from 'lucide-react'
+import { smartMatch, scoreHaystack } from '@/lib/search/scoring'
 
 interface Item {
   id: string
@@ -59,13 +60,17 @@ export function RapidFireItemPicker({
   ]
 
   // Filter based on search query
-  const filteredItems = allItems.filter((item) => {
-    const query = searchQuery.toLowerCase()
-    return (
-      item.displayName.toLowerCase().includes(query) ||
-      (item.sku && item.sku.toLowerCase().includes(query))
-    )
-  })
+  const filteredItems = (() => {
+    const query = searchQuery.trim()
+    if (!query) return allItems
+    return [...allItems]
+      .filter((item) => smartMatch(query, [item.displayName, item.sku]))
+      .sort(
+        (a, b) =>
+          scoreHaystack(query, [b.displayName, b.sku], []) -
+          scoreHaystack(query, [a.displayName, a.sku], [])
+      )
+  })()
 
   // Auto-focus search input when opened
   useEffect(() => {

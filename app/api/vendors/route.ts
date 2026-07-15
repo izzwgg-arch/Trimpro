@@ -3,6 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
+import { applySmartSearch, buildSmartSearchAnd, ilike } from '@/lib/search/prisma-filters'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -40,14 +41,24 @@ export async function GET(request: NextRequest) {
       where.paymentTerms = paymentTerms
     }
 
-    if (search) {
-      where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { email: { contains: search, mode: 'insensitive' } },
-        { phone: { contains: search, mode: 'insensitive' } },
-        { vendorCode: { contains: search, mode: 'insensitive' } },
-      ]
-    }
+    applySmartSearch(
+      where,
+      buildSmartSearchAnd(search, (term) => [
+        { name: ilike(term) },
+        { email: ilike(term) },
+        { phone: ilike(term) },
+        { vendorCode: ilike(term) },
+        { notes: ilike(term) },
+        { contactPerson: ilike(term) },
+        { address: ilike(term) },
+        { city: ilike(term) },
+        { state: ilike(term) },
+        { zipCode: ilike(term) },
+        { billingStreet: ilike(term) },
+        { billingCity: ilike(term) },
+        { billingZip: ilike(term) },
+      ])
+    )
 
     const [vendors, total] = await Promise.all([
       prisma.vendor.findMany({

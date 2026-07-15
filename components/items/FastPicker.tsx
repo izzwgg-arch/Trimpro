@@ -4,6 +4,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useCallback, KeyboardEven
 import { Input } from '@/components/ui/input'
 import { Package } from 'lucide-react'
 import { scrollPickerRowIntoComfortZone } from '@/lib/ui/scroll-picker-row'
+import { smartMatch, scoreHaystack } from '@/lib/search/scoring'
 
 export interface FastPickerItem {
   id: string
@@ -138,17 +139,19 @@ export function FastPicker({
   // not on every arrow key navigation re-render.
   const filteredByQuery = useMemo(() => {
     const query = searchQuery.trim()
-    if (!query.trim()) {
+    if (!query) {
       return allItems
     }
 
-    const lowerQuery = query.toLowerCase()
-    return allItems.filter(item => {
-      const nameMatch = item.name.toLowerCase().includes(lowerQuery)
-      const skuMatch = item.sku?.toLowerCase().includes(lowerQuery)
-      const descriptionMatch = item.description?.toLowerCase().includes(lowerQuery)
-      return nameMatch || skuMatch || Boolean(descriptionMatch)
-    })
+    return [...allItems]
+      .filter((item) =>
+        smartMatch(query, [item.name, item.sku, item.description, item.notes, item.vendorName, item.tag])
+      )
+      .sort(
+        (a, b) =>
+          scoreHaystack(query, [b.name, b.sku], [b.description, b.vendorName]) -
+          scoreHaystack(query, [a.name, a.sku], [a.description, a.vendorName])
+      )
   }, [searchQuery, allItems])
 
   useEffect(() => {

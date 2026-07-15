@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
+import { jobRecordJobSiteAddressSearchClauses } from '@/lib/search/job-site-address'
+import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -44,17 +46,28 @@ export async function GET(request: NextRequest) {
     else if (statusFilter === 'in_progress') where.status = 'IN_PROGRESS'
     else if (statusFilter === 'completed') where.status = 'COMPLETED'
 
-    if (search) {
-      where.AND = [
+    applySmartSearch(
+      where,
+      buildSmartSearchAnd(search, (term) => [
+        { jobNumber: ilike(term) },
+        { title: ilike(term) },
+        ...clientIdentityClauses(term),
+        ...jobRecordJobSiteAddressSearchClauses(term),
         {
-          OR: [
-            { jobNumber: { contains: search, mode: 'insensitive' } },
-            { title: { contains: search, mode: 'insensitive' } },
-            { client: { name: { contains: search, mode: 'insensitive' } } },
-          ],
+          assignments: {
+            some: {
+              user: {
+                OR: [
+                  { firstName: ilike(term) },
+                  { lastName: ilike(term) },
+                  { email: ilike(term) },
+                ],
+              },
+            },
+          },
         },
-      ]
-    }
+      ])
+    )
 
     const jobs = await prisma.job.findMany({
       where,

@@ -7,6 +7,8 @@ import { validateRequest, createJobSchema } from '@/lib/validation'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { isMobileRequest, requireMobilePermission, hasMobilePermission } from '@/lib/authorization'
 import { jobRecordJobSiteAddressSearchClauses } from '@/lib/search/job-site-address'
+import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
+import { ACTIVE_JOB_STATUSES } from '@/lib/jobs/statuses'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -106,26 +108,34 @@ export async function GET(request: NextRequest) {
           },
         }
 
-        if (search) {
-          where.OR = [
-            { jobNumber: { contains: search, mode: 'insensitive' } },
-            { title: { contains: search, mode: 'insensitive' } },
-            { description: { contains: search, mode: 'insensitive' } },
-            ...jobRecordJobSiteAddressSearchClauses(search),
-          ]
-        }
+        applySmartSearch(
+          where,
+          buildSmartSearchAnd(search, (term) => [
+            { jobNumber: ilike(term) },
+            { title: ilike(term) },
+            { description: ilike(term) },
+            ...clientIdentityClauses(term),
+            {
+              assignments: {
+                some: {
+                  user: {
+                    OR: [
+                      { firstName: ilike(term) },
+                      { lastName: ilike(term) },
+                      { email: ilike(term) },
+                    ],
+                  },
+                },
+              },
+            },
+            ...jobRecordJobSiteAddressSearchClauses(term),
+          ])
+        )
 
         if (status !== 'all') {
           if (status === 'ACTIVE') {
             where.status = {
-              in: [
-                'SCHEDULED',
-                'IN_PROGRESS',
-                'MEASURED',
-                'INSTALLATION_COMPLETE',
-                'FINISHING_COMPLETE',
-                'ON_HOLD',
-              ],
+              in: ACTIVE_JOB_STATUSES as any[],
             }
           } else {
             where.status = status
@@ -220,26 +230,34 @@ export async function GET(request: NextRequest) {
       tenantId: user.tenantId,
     }
 
-    if (search) {
-      where.OR = [
-        { jobNumber: { contains: search, mode: 'insensitive' } },
-        { title: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } },
-        ...jobRecordJobSiteAddressSearchClauses(search),
-      ]
-    }
+    applySmartSearch(
+      where,
+      buildSmartSearchAnd(search, (term) => [
+        { jobNumber: ilike(term) },
+        { title: ilike(term) },
+        { description: ilike(term) },
+        ...clientIdentityClauses(term),
+        {
+          assignments: {
+            some: {
+              user: {
+                OR: [
+                  { firstName: ilike(term) },
+                  { lastName: ilike(term) },
+                  { email: ilike(term) },
+                ],
+              },
+            },
+          },
+        },
+        ...jobRecordJobSiteAddressSearchClauses(term),
+      ])
+    )
 
     if (status !== 'all') {
       if (status === 'ACTIVE') {
         where.status = {
-          in: [
-            'SCHEDULED',
-            'IN_PROGRESS',
-            'MEASURED',
-            'INSTALLATION_COMPLETE',
-            'FINISHING_COMPLETE',
-            'ON_HOLD',
-          ],
+          in: ACTIVE_JOB_STATUSES as any[],
         }
       } else {
         where.status = status

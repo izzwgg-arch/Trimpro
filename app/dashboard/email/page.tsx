@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { formatDate } from '@/lib/utils'
+import { smartMatch } from '@/lib/search/scoring'
 import {
   Mail,
   Plus,
@@ -362,17 +363,9 @@ export default function EmailPage() {
     }
   }
 
-  const filteredLog = emailLog.filter((email) => {
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase()
-      return (
-        email.subject.toLowerCase().includes(query) ||
-        email.to.toLowerCase().includes(query) ||
-        (email.client && email.client.toLowerCase().includes(query))
-      )
-    }
-    return true
-  })
+  const filteredLog = emailLog.filter((email) =>
+    smartMatch(searchQuery, [email.subject, email.to, email.client])
+  )
 
   return (
     <div className="space-y-6">

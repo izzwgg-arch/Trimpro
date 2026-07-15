@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
+import { ACTIVE_JOB_STATUSES } from '@/lib/jobs/statuses'
 import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subDays, subMonths } from 'date-fns'
 
 export async function GET(request: NextRequest) {
@@ -207,7 +208,7 @@ export async function GET(request: NextRequest) {
       where: {
         tenantId: user.tenantId,
         status: {
-          in: ['SCHEDULED', 'IN_PROGRESS', 'ON_HOLD'],
+          in: ACTIVE_JOB_STATUSES as any[],
         },
       },
     })

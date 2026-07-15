@@ -34,6 +34,7 @@ interface Task {
   priority: string
   dueDate: string | null
   completedAt: string | null
+  createdAt: string
   assignee: {
     id: string
     firstName: string
@@ -274,7 +275,7 @@ export default function TasksPage() {
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               <Input
-                placeholder="Search tasks..."
+                placeholder="Search tasks by title, client, job, or assignee..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-10"
@@ -360,6 +361,7 @@ export default function TasksPage() {
                         {task.job && ` • Job ${task.job.jobNumber}`}
                         {task.invoice && ` • Invoice ${task.invoice.invoiceNumber}`}
                         {task.issue && ` • Issue: ${task.issue.title}`}
+                        {task.createdAt && ` • Created ${formatDate(task.createdAt)}`}
                       </CardDescription>
                     </div>
                     <div className="flex items-center space-x-2">
@@ -394,8 +396,14 @@ export default function TasksPage() {
                           <div className="flex items-center text-gray-600">
                             <Calendar className="mr-1 h-3 w-3" />
                             <span className={isOverdue ? 'text-red-600 font-medium' : ''}>
-                              {formatDate(task.dueDate)}
+                              Due {formatDate(task.dueDate)}
                             </span>
+                          </div>
+                        )}
+                        {!task.dueDate && task.createdAt && (
+                          <div className="flex items-center text-gray-600">
+                            <Calendar className="mr-1 h-3 w-3" />
+                            <span>Created {formatDate(task.createdAt)}</span>
                           </div>
                         )}
                         {task._count.subtasks > 0 && (
@@ -447,7 +455,7 @@ export default function TasksPage() {
               key={task.id}
               href={`/dashboard/tasks/${task.id}`}
               primary={task.title}
-              secondary={task.assignee ? `${task.assignee.firstName} ${task.assignee.lastName}` : 'Unassigned'}
+              secondary={`${task.assignee ? `${task.assignee.firstName} ${task.assignee.lastName}` : 'Unassigned'} • Created ${formatDate(task.createdAt)}`}
               status={
                 canEditStatus ? (
                   <TaskStatusSelect
@@ -484,7 +492,7 @@ export default function TasksPage() {
                   <TaskStatusBadge status={task.status} />
                 )
               }
-              line2={`${task.assignee ? `${task.assignee.firstName} ${task.assignee.lastName}` : 'Unassigned'}${task.client ? ` • ${task.client.name}` : ''}`}
+              line2={`${task.assignee ? `${task.assignee.firstName} ${task.assignee.lastName}` : 'Unassigned'}${task.client ? ` • ${task.client.name}` : ''} • Created ${formatDate(task.createdAt)}`}
               rightTop={task.priority}
               rightBottom={task.dueDate ? formatDate(task.dueDate) : 'No due date'}
             />
@@ -531,6 +539,12 @@ export default function TasksPage() {
               header: 'Priority',
               sortValue: (task) => task.priority,
               render: (task) => task.priority,
+            },
+            {
+              key: 'createdAt',
+              header: 'Created',
+              sortValue: (task) => task.createdAt,
+              render: (task) => formatDate(task.createdAt),
             },
             {
               key: 'dueDate',

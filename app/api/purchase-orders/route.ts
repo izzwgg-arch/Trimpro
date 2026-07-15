@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { purchaseOrderJobSiteAddressSearchClauses } from '@/lib/search/job-site-address'
+import { applySmartSearch, buildSmartSearchAnd, ilike } from '@/lib/search/prisma-filters'
 
 function formatJobSiteAddress(parts?: {
   street?: string | null
@@ -39,13 +40,19 @@ export async function GET(request: NextRequest) {
       tenantId: user.tenantId,
     }
 
-    if (search) {
-      where.OR = [
-        { poNumber: { contains: search, mode: 'insensitive' } },
-        { vendor: { contains: search, mode: 'insensitive' } },
-        ...purchaseOrderJobSiteAddressSearchClauses(search),
-      ]
-    }
+    applySmartSearch(
+      where,
+      buildSmartSearchAnd(search, (term) => [
+        { poNumber: ilike(term) },
+        { vendor: ilike(term) },
+        { job: { jobNumber: ilike(term) } },
+        { job: { title: ilike(term) } },
+        { vendorRef: { name: ilike(term) } },
+        { client: { name: ilike(term) } },
+        { client: { companyName: ilike(term) } },
+        ...purchaseOrderJobSiteAddressSearchClauses(term),
+      ])
+    )
 
     if (status !== 'all') {
       where.status = status

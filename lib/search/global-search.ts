@@ -13,7 +13,7 @@
 import { prisma } from '@/lib/prisma'
 import { formatAddressParts } from '@/lib/address/parse'
 import { hasPermissionKey } from '@/lib/permission-aliases'
-import { computeScore, topN, expandQuery } from './scoring'
+import { computeScore, topN, queryVariants } from './scoring'
 
 export type { RawResult as SearchResult } from './scoring'
 
@@ -144,7 +144,7 @@ export async function runGlobalSearch({
   if (!q || q.length < 2) return []
 
   const can = (key: string) => hasPermissionKey(permissions, key)
-  const terms = expandQuery(q) // e.g. ["vendor", "supplier"]
+  const terms = queryVariants(q) // synonyms + digit forms
   const fetch = limitPerGroup * 2 // fetch 2× then score/slice
 
   // ── parallel queries ──────────────────────────────────────────────────────
@@ -224,6 +224,8 @@ export async function runGlobalSearch({
               ...ilikeAny('estimateNumber', terms),
               ...ilikeAny('title', terms),
               ...ilikeAny('notes', terms),
+              { client: { OR: [...ilikeAny('name', terms), ...ilikeAny('companyName', terms)] } },
+              { job: { OR: [...ilikeAny('jobNumber', terms), ...ilikeAny('title', terms)] } },
             ],
           },
           include: estimateInclude,
@@ -242,6 +244,8 @@ export async function runGlobalSearch({
               ...ilikeAny('title', terms),
               ...ilikeAny('notes', terms),
               ...ilikeAny('memo', terms),
+              { client: { OR: [...ilikeAny('name', terms), ...ilikeAny('companyName', terms)] } },
+              { job: { OR: [...ilikeAny('jobNumber', terms), ...ilikeAny('title', terms)] } },
             ],
           },
           include: invoiceInclude,

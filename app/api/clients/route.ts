@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { createPaginationResponse } from '@/lib/pagination'
 import { validateRequest, createClientSchema } from '@/lib/validation'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
+import { applySmartSearch, buildSmartSearchAnd, ilike } from '@/lib/search/prisma-filters'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -27,26 +28,40 @@ export async function GET(request: NextRequest) {
       tenantId: user.tenantId,
     }
 
-    if (search) {
-      where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { companyName: { contains: search, mode: 'insensitive' } },
-        { email: { contains: search, mode: 'insensitive' } },
-        { phone: { contains: search, mode: 'insensitive' } },
+    applySmartSearch(
+      where,
+      buildSmartSearchAnd(search, (term) => [
+        { name: ilike(term) },
+        { companyName: ilike(term) },
+        { email: ilike(term) },
+        { phone: ilike(term) },
+        { notes: ilike(term) },
         {
-          addresses: {
+          contacts: {
             some: {
               OR: [
-                { street: { contains: search, mode: 'insensitive' } },
-                { city: { contains: search, mode: 'insensitive' } },
-                { state: { contains: search, mode: 'insensitive' } },
-                { zipCode: { contains: search, mode: 'insensitive' } },
+                { firstName: ilike(term) },
+                { lastName: ilike(term) },
+                { email: ilike(term) },
+                { phone: ilike(term) },
               ],
             },
           },
         },
-      ]
-    }
+        {
+          addresses: {
+            some: {
+              OR: [
+                { street: ilike(term) },
+                { city: ilike(term) },
+                { state: ilike(term) },
+                { zipCode: ilike(term) },
+              ],
+            },
+          },
+        },
+      ])
+    )
 
     if (status !== 'all') {
       where.isActive = status === 'active'
