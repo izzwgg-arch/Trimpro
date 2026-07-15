@@ -30,6 +30,7 @@ import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
 import { DocumentAttachments } from '@/components/common/document-attachments'
 import { buildCreateContextQuery } from '@/src/lib/create-context'
 import { UnifiedDocumentsSection } from '@/components/documents/unified-documents-section'
+import { EditableNotesList } from '@/components/notes/editable-notes-list'
 import type { UnifiedDocumentRow } from '@/lib/documents/unified-documents'
 
 const JobSiteMap = dynamic(() => import('@/components/maps/JobSiteMap').then(mod => ({ default: mod.JobSiteMap })), {
@@ -667,6 +668,60 @@ export default function JobDetailPage() {
     }
   }
 
+  const updateJobNote = async (noteId: string, content: string) => {
+    const token = localStorage.getItem('accessToken')
+    if (!token) {
+      router.push('/auth/login')
+      return
+    }
+
+    const response = await fetch(`/api/notes/${noteId}`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ content }),
+    })
+
+    if (response.status === 401) {
+      router.push('/auth/login')
+      return
+    }
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({ error: 'Failed to update note' }))
+      alert(payload.error || 'Failed to update note')
+      return
+    }
+
+    await fetchJob()
+  }
+
+  const deleteJobNote = async (noteId: string) => {
+    const token = localStorage.getItem('accessToken')
+    if (!token) {
+      router.push('/auth/login')
+      return
+    }
+
+    const response = await fetch(`/api/notes/${noteId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+
+    if (response.status === 401) {
+      router.push('/auth/login')
+      return
+    }
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({ error: 'Failed to delete note' }))
+      alert(payload.error || 'Failed to delete note')
+      return
+    }
+
+    await fetchJob()
+  }
+
   const handleDuplicate = async () => {
     setDuplicating(true)
     try {
@@ -1253,16 +1308,13 @@ export default function JobDetailPage() {
                     {addingNote ? 'Saving...' : 'Add Note'}
                   </Button>
                 </div>
-                {job.notes.length === 0 ? (
-                  <p className="text-center text-gray-500 py-4">No notes</p>
-                ) : (
-                  job.notes.map((note) => (
-                    <div key={note.id} className="border-l-4 border-gray-300 pl-4">
-                      <p className="text-sm text-gray-700">{note.content}</p>
-                      <p className="text-xs text-gray-400 mt-1">{formatDate(note.createdAt)}</p>
-                    </div>
-                  ))
-                )}
+                <EditableNotesList
+                  notes={job.notes}
+                  emptyMessage="No notes"
+                  onUpdate={updateJobNote}
+                  onDelete={deleteJobNote}
+                  variant="border-left"
+                />
               </div>
             </CardContent>
           </Card>

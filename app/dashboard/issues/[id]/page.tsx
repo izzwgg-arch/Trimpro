@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { formatDate } from '@/lib/utils'
 import { AlertCircle, Calendar, CheckCircle, Clock, Trash2, User } from 'lucide-react'
+import { EditableNotesList } from '@/components/notes/editable-notes-list'
 
 interface IssueDetail {
   id: string
@@ -213,6 +214,60 @@ export default function IssueDetailPage() {
     }
   }
 
+  const updateIssueNote = async (noteId: string, content: string) => {
+    const token = localStorage.getItem('accessToken')
+    if (!token) {
+      router.push('/auth/login')
+      return
+    }
+
+    const response = await fetch(`/api/issues/${issueId}/notes/${noteId}`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ content }),
+    })
+
+    if (response.status === 401) {
+      router.push('/auth/login')
+      return
+    }
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({ error: 'Failed to update note' }))
+      alert(payload.error || 'Failed to update note')
+      return
+    }
+
+    await fetchIssue()
+  }
+
+  const deleteIssueNote = async (noteId: string) => {
+    const token = localStorage.getItem('accessToken')
+    if (!token) {
+      router.push('/auth/login')
+      return
+    }
+
+    const response = await fetch(`/api/issues/${issueId}/notes/${noteId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+
+    if (response.status === 401) {
+      router.push('/auth/login')
+      return
+    }
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({ error: 'Failed to delete note' }))
+      alert(payload.error || 'Failed to delete note')
+      return
+    }
+
+    await fetchIssue()
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -324,20 +379,12 @@ export default function IssueDetailPage() {
                   </Button>
                 </div>
               </div>
-              {issue.notes?.length ? (
-                <div className="space-y-3">
-                  {issue.notes.map((note) => (
-                    <div key={note.id} className="rounded-md border border-gray-200 p-3">
-                      <p className="text-sm text-gray-700 whitespace-pre-wrap">{note.content}</p>
-                      <p className="mt-2 text-xs text-gray-500">
-                        {note.authorName || 'User'} • {formatDate(note.createdAt)}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-gray-500">No notes yet.</p>
-              )}
+              <EditableNotesList
+                notes={issue.notes || []}
+                emptyMessage="No notes yet."
+                onUpdate={updateIssueNote}
+                onDelete={deleteIssueNote}
+              />
             </CardContent>
           </Card>
 

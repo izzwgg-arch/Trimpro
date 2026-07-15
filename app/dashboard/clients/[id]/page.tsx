@@ -33,6 +33,7 @@ import Link from 'next/link'
 import { AddressMapSection } from './map-section'
 import { usePermissions, hasPermission } from '@/hooks/usePermissions'
 import { UnifiedDocumentsSection } from '@/components/documents/unified-documents-section'
+import { EditableNotesList } from '@/components/notes/editable-notes-list'
 import type { UnifiedDocumentRow } from '@/lib/documents/unified-documents'
 
 interface ClientDetail {
@@ -112,6 +113,11 @@ interface ClientDetail {
     sentAt: string | null
   }>
   notes: Array<{
+    id: string
+    content: string
+    createdAt: string
+  }>
+  notesHistory?: Array<{
     id: string
     content: string
     createdAt: string
@@ -314,6 +320,8 @@ export default function ClientDetailPage() {
   const [documents, setDocuments] = useState<UnifiedDocumentRow[]>([])
   const [documentsLoading, setDocumentsLoading] = useState(false)
   const [documentsError, setDocumentsError] = useState<string | null>(null)
+  const [noteText, setNoteText] = useState('')
+  const [addingNote, setAddingNote] = useState(false)
   const { permissions: userPermissions, loading: permissionsLoading } = usePermissions()
 
   // Defensive: Validate params before using
@@ -420,7 +428,11 @@ export default function ClientDetailPage() {
         calls: Array.isArray(clientData.calls) ? clientData.calls : [],
         smsMessages: Array.isArray(clientData.smsMessages) ? clientData.smsMessages : [],
         emails: Array.isArray(clientData.emails) ? clientData.emails : [],
-        notes: Array.isArray(clientData.notes) ? clientData.notes : (Array.isArray(clientData.notes_history) ? clientData.notes_history : []),
+        notes: Array.isArray(clientData.notesHistory)
+          ? clientData.notesHistory
+          : Array.isArray(clientData.notes_history)
+            ? clientData.notes_history
+            : [],
         tasks: Array.isArray(clientData.tasks) ? clientData.tasks : [],
         issues: Array.isArray(clientData.issues) ? clientData.issues : [],
         tags: Array.isArray(clientData.tags) ? clientData.tags : [],
@@ -644,6 +656,99 @@ export default function ClientDetailPage() {
     }
   }
 
+  const appendClientNote = async () => {
+    if (!client || !clientId || !noteText.trim()) return
+    setAddingNote(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+
+      const response = await fetch(`/api/clients/${clientId}/notes`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ content: noteText.trim() }),
+      })
+
+      if (response.status === 401) {
+        router.push('/auth/login')
+        return
+      }
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({ error: 'Failed to add note' }))
+        alert(payload.error || 'Failed to add note')
+        return
+      }
+
+      setNoteText('')
+      await fetchClient()
+    } catch (error) {
+      console.error('Failed to add client note:', error)
+      alert('Failed to add note. Please try again.')
+    } finally {
+      setAddingNote(false)
+    }
+  }
+
+  const updateClientNote = async (noteId: string, content: string) => {
+    const token = localStorage.getItem('accessToken')
+    if (!token) {
+      router.push('/auth/login')
+      return
+    }
+
+    const response = await fetch(`/api/notes/${noteId}`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ content }),
+    })
+
+    if (response.status === 401) {
+      router.push('/auth/login')
+      return
+    }
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({ error: 'Failed to update note' }))
+      alert(payload.error || 'Failed to update note')
+      return
+    }
+
+    await fetchClient()
+  }
+
+  const deleteClientNote = async (noteId: string) => {
+    const token = localStorage.getItem('accessToken')
+    if (!token) {
+      router.push('/auth/login')
+      return
+    }
+
+    const response = await fetch(`/api/notes/${noteId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+
+    if (response.status === 401) {
+      router.push('/auth/login')
+      return
+    }
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({ error: 'Failed to delete note' }))
+      alert(payload.error || 'Failed to delete note')
+      return
+    }
+
+    await fetchClient()
+  }
+
   // Loading state
   if (loading) {
     return (
@@ -685,10 +790,11 @@ export default function ClientDetailPage() {
   const calls = (client.calls && Array.isArray(client.calls)) ? client.calls : []
   const smsMessages = (client.smsMessages && Array.isArray(client.smsMessages)) ? client.smsMessages : []
   const emails = (client.emails && Array.isArray(client.emails)) ? client.emails : []
-  // Handle both 'notes' and 'notes_history' from API
-  const notes = (client.notes && Array.isArray(client.notes)) 
-    ? client.notes 
-    : ((client.notes_history && Array.isArray(client.notes_history)) ? client.notes_history : [])
+  const notes = Array.isArray(client.notes)
+    ? client.notes
+    : Array.isArray(client.notesHistory)
+      ? client.notesHistory
+      : []
   const tasks = (client.tasks && Array.isArray(client.tasks)) ? client.tasks : []
   const issues = (client.issues && Array.isArray(client.issues)) ? client.issues : []
   const subClients = (client.subClients && Array.isArray(client.subClients)) ? client.subClients : []
@@ -700,6 +806,7 @@ export default function ClientDetailPage() {
     : []
   const hasSubClients = subClients.length > 0
   const canCreateRequest = !permissionsLoading && hasPermission(userPermissions, 'leads.create')
+  const canEditNotes = !permissionsLoading && hasPermission(userPermissions, 'clients.edit')
   const selectedInvoices = documents.filter(
     (doc) => doc.kind === 'invoice' && selectedInvoiceIds.includes(doc.id)
   )
@@ -1063,26 +1170,35 @@ export default function ClientDetailPage() {
           {/* Notes */}
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Notes</CardTitle>
-                <Button variant="outline" size="sm">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Note
-                </Button>
-              </div>
+              <CardTitle>Notes</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {notes.length === 0 ? (
-                  <p className="text-center text-gray-500 py-8">No notes</p>
-                ) : (
-                  notes.map((note) => (
-                    <div key={note.id} className="border-l-4 border-gray-300 pl-4">
-                      <p className="text-sm text-gray-700">{note.content}</p>
-                      <p className="text-xs text-gray-400 mt-1">{formatDate(note.createdAt)}</p>
-                    </div>
-                  ))
-                )}
+                <textarea
+                  value={noteText}
+                  onChange={(e) => setNoteText(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Add a note..."
+                  rows={3}
+                />
+                <div>
+                  <Button
+                    onClick={() => void appendClientNote()}
+                    disabled={addingNote || !noteText.trim()}
+                    size="sm"
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    {addingNote ? 'Saving...' : 'Add Note'}
+                  </Button>
+                </div>
+                <EditableNotesList
+                  notes={notes}
+                  emptyMessage="No notes"
+                  onUpdate={updateClientNote}
+                  onDelete={deleteClientNote}
+                  canEdit={canEditNotes}
+                  variant="border-left"
+                />
               </div>
             </CardContent>
           </Card>

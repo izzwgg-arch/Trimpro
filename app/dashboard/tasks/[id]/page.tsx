@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { formatDate } from '@/lib/utils'
 import { AlertCircle, Calendar, CheckSquare, Pencil, Trash2, User } from 'lucide-react'
 import { TaskStatusSelect } from '@/components/tasks/TaskStatusSelect'
+import { EditableNotesList } from '@/components/notes/editable-notes-list'
 import { taskStatusColors, formatTaskStatus } from '@/lib/tasks/statuses'
 import { usePermissions, hasPermission } from '@/hooks/usePermissions'
 
@@ -19,6 +20,7 @@ interface TaskDetail {
   priority: string
   dueDate: string | null
   completedAt: string | null
+  createdAt: string
   assignee: { id: string; firstName: string; lastName: string; email: string; phone?: string | null } | null
   creator: { id: string; firstName: string; lastName: string } | null
   client: { id: string; name: string; companyName: string | null } | null
@@ -235,6 +237,60 @@ export default function TaskDetailPage() {
     }
   }
 
+  const updateTaskNote = async (noteId: string, content: string) => {
+    const token = localStorage.getItem('accessToken')
+    if (!token) {
+      router.push('/auth/login')
+      return
+    }
+
+    const response = await fetch(`/api/tasks/${taskId}/notes/${noteId}`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ content }),
+    })
+
+    if (response.status === 401) {
+      router.push('/auth/login')
+      return
+    }
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({ error: 'Failed to update note' }))
+      alert(payload.error || 'Failed to update note')
+      return
+    }
+
+    await fetchTaskNotes()
+  }
+
+  const deleteTaskNote = async (noteId: string) => {
+    const token = localStorage.getItem('accessToken')
+    if (!token) {
+      router.push('/auth/login')
+      return
+    }
+
+    const response = await fetch(`/api/tasks/${taskId}/notes/${noteId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+
+    if (response.status === 401) {
+      router.push('/auth/login')
+      return
+    }
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({ error: 'Failed to delete note' }))
+      alert(payload.error || 'Failed to delete note')
+      return
+    }
+
+    await fetchTaskNotes()
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -346,20 +402,13 @@ export default function TaskDetailPage() {
                   {addingNote ? 'Saving...' : 'Add Note'}
                 </Button>
               </div>
-              {notes.length > 0 ? (
-                <div className="space-y-3 pt-2">
-                  {notes.map((note) => (
-                    <div key={note.id} className="rounded-md border border-gray-200 p-3">
-                      <p className="text-sm text-gray-700 whitespace-pre-wrap">{note.content}</p>
-                      <p className="mt-2 text-xs text-gray-500">
-                        {note.authorName || 'User'}{' \u2022 '}{formatDate(note.createdAt)}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-gray-500">No notes yet.</p>
-              )}
+              <EditableNotesList
+                notes={notes}
+                emptyMessage="No notes yet."
+                onUpdate={updateTaskNote}
+                onDelete={deleteTaskNote}
+                canEdit={canEditStatus}
+              />
             </CardContent>
           </Card>
 
@@ -418,6 +467,14 @@ export default function TaskDetailPage() {
                   <p className="font-medium text-gray-900">
                     {task.assignee ? `${task.assignee.firstName} ${task.assignee.lastName}` : 'Unassigned'}
                   </p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2">
+                <Calendar className="h-4 w-4 text-gray-400 mt-0.5" />
+                <div>
+                  <p className="text-gray-500">Created</p>
+                  <p className="font-medium text-gray-900">{formatDate(task.createdAt)}</p>
                 </div>
               </div>
 
