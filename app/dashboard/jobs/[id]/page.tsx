@@ -116,6 +116,14 @@ interface JobDetail {
     balance: string
     status: string
   }>
+  estimates: Array<{
+    id: string
+    estimateNumber: string
+    title: string
+    status: string
+    total: string
+    createdAt: string
+  }>
   notes: Array<{
     id: string
     content: string
@@ -145,6 +153,7 @@ interface JobDetail {
     tasks: number
     issues: number
     invoices: number
+    estimates: number
   }
 }
 
@@ -1245,6 +1254,43 @@ export default function JobDetailPage() {
                   ))
                 )}
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Estimates */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Estimates</CardTitle>
+              <CardDescription>
+                {job._count.estimates ?? job.estimates?.length ?? 0} linked to this job
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {!job.estimates?.length ? (
+                <p className="text-sm text-gray-500">No estimates linked yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {job.estimates.map((estimate) => (
+                    <Link
+                      key={estimate.id}
+                      href={`/dashboard/estimates/${estimate.id}`}
+                      className="block p-2 rounded border hover:bg-gray-50 transition-colors"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{estimate.title}</p>
+                          <p className="text-xs text-gray-500">{estimate.estimateNumber}</p>
+                        </div>
+                        <div className="text-right text-xs text-gray-500 shrink-0">
+                          <div>{estimate.status}</div>
+                          <div>{formatCurrency(parseFloat(estimate.total))}</div>
+                          <div>{formatDate(estimate.createdAt)}</div>
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
 

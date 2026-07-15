@@ -426,7 +426,7 @@ model Job {
   tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   client         Client          @relation(fields: [clientId], references: [id], onDelete: Restrict)
   addresses      Address[]
-  estimate       Estimate?       @relation
+  estimates      Estimate[]
   invoices       Invoice[]
   purchaseOrders PurchaseOrder[]
   assignments    JobAssignment[]
@@ -527,7 +527,7 @@ model Estimate {
   tenantId       String
   clientId       String?
   leadId         String?
-  jobId          String?        @unique
+  jobId          String?
   estimateNumber String         @unique
   title          String
   jobSiteAddress String?        @db.Text
@@ -581,6 +581,7 @@ model Estimate {
   @@index([tenantId, clientId])
   @@index([tenantId, status])
   @@index([estimateNumber])
+  @@index([jobId])
   @@map("estimates")
 }
 

@@ -36,9 +36,15 @@ export async function GET(
           },
         },
         addresses: true,
-        estimate: {
-          include: {
-            lineItems: true,
+        estimates: {
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            estimateNumber: true,
+            title: true,
+            status: true,
+            total: true,
+            createdAt: true,
           },
         },
         invoices: {
@@ -125,6 +131,7 @@ export async function GET(
             tasks: true,
             issues: true,
             invoices: true,
+            estimates: true,
           },
         },
       },
@@ -197,9 +204,11 @@ export async function GET(
       country: (jobSite?.country || geo?.country || '').trim() || null,
     }
 
+    const { estimates: linkedEstimates = [], ...jobRecord } = job
+
     // Ensure arrays are initialized
     const safeJob = {
-      ...job,
+      ...jobRecord,
       addresses: addresses,
       assignments: job.assignments || [],
       tasks: job.tasks || [],
@@ -249,6 +258,14 @@ export async function GET(
         total: inv.total.toString(),
         balance: inv.balance.toString(),
         status: inv.status,
+      })),
+      estimates: linkedEstimates.map((est) => ({
+        id: est.id,
+        estimateNumber: est.estimateNumber,
+        title: est.title,
+        status: est.status,
+        total: est.total.toString(),
+        createdAt: est.createdAt.toISOString(),
       })),
     }
 
