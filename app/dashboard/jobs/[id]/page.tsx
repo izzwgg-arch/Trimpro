@@ -29,6 +29,8 @@ import dynamic from 'next/dynamic'
 import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
 import { DocumentAttachments } from '@/components/common/document-attachments'
 import { buildCreateContextQuery } from '@/src/lib/create-context'
+import { UnifiedDocumentsSection } from '@/components/documents/unified-documents-section'
+import type { UnifiedDocumentRow } from '@/lib/documents/unified-documents'
 
 const JobSiteMap = dynamic(() => import('@/components/maps/JobSiteMap').then(mod => ({ default: mod.JobSiteMap })), {
   ssr: false,
@@ -222,9 +224,13 @@ export default function JobDetailPage() {
   const [chargeByHour, setChargeByHour] = useState(false)
   const [hourlyRate, setHourlyRate] = useState('')
   const [currentUserRole, setCurrentUserRole] = useState<string>('')
+  const [documents, setDocuments] = useState<UnifiedDocumentRow[]>([])
+  const [documentsLoading, setDocumentsLoading] = useState(false)
+  const [documentsError, setDocumentsError] = useState<string | null>(null)
 
   useEffect(() => {
     fetchJob()
+    fetchDocuments()
   }, [jobId])
 
   useEffect(() => {
@@ -246,6 +252,36 @@ export default function JobDetailPage() {
       fetchTimeEntries()
     }
   }, [job])
+
+  const fetchDocuments = async () => {
+    setDocumentsLoading(true)
+    setDocumentsError(null)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+
+      const response = await fetch(`/api/jobs/${jobId}/documents`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        setDocumentsError(data.error || 'Failed to load documents')
+        return
+      }
+
+      const data = await response.json()
+      setDocuments(Array.isArray(data.documents) ? data.documents : [])
+    } catch (error) {
+      console.error('Failed to fetch job documents:', error)
+      setDocumentsError('Failed to load documents')
+    } finally {
+      setDocumentsLoading(false)
+    }
+  }
 
   const fetchJob = async () => {
     try {
@@ -791,6 +827,13 @@ export default function JobDetailPage() {
         </CardContent>
       </Card>
 
+      <UnifiedDocumentsSection
+        documents={documents}
+        loading={documentsLoading}
+        error={documentsError}
+        description={`${job._count.estimates ?? 0} estimates, ${job._count.invoices ?? 0} invoices, and related payments`}
+      />
+
       <div className="grid gap-6 md:grid-cols-3">
         {/* Main Content */}
         <div className="md:col-span-2 space-y-6">
@@ -1256,80 +1299,6 @@ export default function JobDetailPage() {
               </div>
             </CardContent>
           </Card>
-
-          {/* Estimates */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Estimates</CardTitle>
-              <CardDescription>
-                {job._count.estimates ?? job.estimates?.length ?? 0} linked to this job
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {!job.estimates?.length ? (
-                <p className="text-sm text-gray-500">No estimates linked yet.</p>
-              ) : (
-                <div className="space-y-2">
-                  {job.estimates.map((estimate) => (
-                    <Link
-                      key={estimate.id}
-                      href={`/dashboard/estimates/${estimate.id}`}
-                      className="block p-2 rounded border hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium truncate">{estimate.title}</p>
-                          <p className="text-xs text-gray-500">{estimate.estimateNumber}</p>
-                        </div>
-                        <div className="text-right text-xs text-gray-500 shrink-0">
-                          <div>{estimate.status}</div>
-                          <div>{formatCurrency(parseFloat(estimate.total))}</div>
-                          <div>{formatDate(estimate.createdAt)}</div>
-                        </div>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Invoices */}
-          {job.invoices.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Invoices</CardTitle>
-                <CardDescription>
-                  Open: {formatCurrency(parseFloat(job.openInvoiceBalance || '0'))} | Total invoiced: {formatCurrency(parseFloat(job.totalInvoicedAmount || '0'))}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {job.invoices.map((invoice) => (
-                    <Link
-                      key={invoice.id}
-                      href={`/dashboard/invoices/${invoice.id}`}
-                      className="block p-3 rounded-lg border hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-medium">{invoice.invoiceNumber}</p>
-                          <p className="text-xs text-gray-600">{formatCurrency(parseFloat(invoice.total))}</p>
-                        </div>
-                        <span className={`px-2 py-1 text-xs rounded ${
-                          invoice.status === 'PAID' ? 'bg-green-100 text-green-800' :
-                          invoice.status === 'OVERDUE' ? 'bg-red-100 text-red-800' :
-                          'bg-gray-100 text-gray-800'
-                        }`}>
-                          {invoice.status}
-                        </span>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
 
           {/* Schedule */}
           {job.schedules.length > 0 && (

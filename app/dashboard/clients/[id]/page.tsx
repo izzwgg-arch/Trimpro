@@ -32,6 +32,8 @@ import {
 import Link from 'next/link'
 import { AddressMapSection } from './map-section'
 import { usePermissions, hasPermission } from '@/hooks/usePermissions'
+import { UnifiedDocumentsSection } from '@/components/documents/unified-documents-section'
+import type { UnifiedDocumentRow } from '@/lib/documents/unified-documents'
 
 interface ClientDetail {
   id: string
@@ -347,13 +349,9 @@ export default function ClientDetailPage() {
   const [bulkPaymentOtherLabel, setBulkPaymentOtherLabel] = useState('')
   const [bulkPaymentSaving, setBulkPaymentSaving] = useState(false)
   const [bulkPaymentError, setBulkPaymentError] = useState('')
-  const [payments, setPayments] = useState<ClientPayment[]>([])
-  const [paymentsLoading, setPaymentsLoading] = useState(false)
-  const [paymentsError, setPaymentsError] = useState<string | null>(null)
-  const [paymentsPage, setPaymentsPage] = useState(1)
-  const [paymentsTotalPages, setPaymentsTotalPages] = useState(1)
-  const [paymentsTotal, setPaymentsTotal] = useState(0)
-  const [paymentsTotalPaid, setPaymentsTotalPaid] = useState(0)
+  const [documents, setDocuments] = useState<UnifiedDocumentRow[]>([])
+  const [documentsLoading, setDocumentsLoading] = useState(false)
+  const [documentsError, setDocumentsError] = useState<string | null>(null)
   const [showReceiptEmailDialog, setShowReceiptEmailDialog] = useState(false)
   const [receiptEmailPayment, setReceiptEmailPayment] = useState<ClientPayment | null>(null)
   const [receiptEmailTo, setReceiptEmailTo] = useState('')
@@ -365,11 +363,11 @@ export default function ClientDetailPage() {
   // Defensive: Validate params before using
   const clientId = params?.id as string | undefined
 
-  const fetchPayments = async (page = 1) => {
+  const fetchDocuments = async () => {
     if (!clientId) return
 
-    setPaymentsLoading(true)
-    setPaymentsError(null)
+    setDocumentsLoading(true)
+    setDocumentsError(null)
     try {
       const token = localStorage.getItem('accessToken')
       if (!token) {
@@ -377,27 +375,23 @@ export default function ClientDetailPage() {
         return
       }
 
-      const response = await fetch(`/api/clients/${clientId}/payments?page=${page}&limit=25`, {
+      const response = await fetch(`/api/clients/${clientId}/documents`, {
         headers: { Authorization: `Bearer ${token}` },
       })
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}))
-        setPaymentsError(data.error || 'Failed to load payments')
+        setDocumentsError(data.error || 'Failed to load documents')
         return
       }
 
       const data = await response.json()
-      setPayments(Array.isArray(data.payments) ? data.payments : [])
-      setPaymentsPage(data.pagination?.page || page)
-      setPaymentsTotalPages(data.pagination?.totalPages || 1)
-      setPaymentsTotal(data.pagination?.total || 0)
-      setPaymentsTotalPaid(Number(data.summary?.totalPaid || 0))
+      setDocuments(Array.isArray(data.documents) ? data.documents : [])
     } catch (err) {
-      console.error('Failed to load client payments:', err)
-      setPaymentsError('Failed to load payments')
+      console.error('Failed to load client documents:', err)
+      setDocumentsError('Failed to load documents')
     } finally {
-      setPaymentsLoading(false)
+      setDocumentsLoading(false)
     }
   }
 
@@ -410,7 +404,7 @@ export default function ClientDetailPage() {
     }
 
     fetchClient()
-    fetchPayments(1)
+    fetchDocuments()
   }, [clientId, router])
 
   const fetchClient = async () => {
@@ -611,7 +605,7 @@ export default function ClientDetailPage() {
         return
       }
       setReceiptEmailResult({ ok: true, message: `Receipt sent to ${data.sentTo}` })
-      await fetchPayments(paymentsPage)
+      await fetchDocuments()
       setTimeout(() => {
         setShowReceiptEmailDialog(false)
         setReceiptEmailPayment(null)
@@ -702,7 +696,9 @@ export default function ClientDetailPage() {
   }
 
   const openPaymentModal = () => {
-    const payableInvoices = invoices.filter((invoice) => selectedInvoiceIds.includes(invoice.id))
+    const payableInvoices = documents.filter(
+      (doc) => doc.kind === 'invoice' && selectedInvoiceIds.includes(doc.id)
+    )
     if (payableInvoices.length === 0) {
       alert('Select at least one invoice to apply a payment.')
       return
@@ -710,7 +706,7 @@ export default function ClientDetailPage() {
 
     const defaults: Record<string, string> = {}
     payableInvoices.forEach((invoice) => {
-      defaults[invoice.id] = Number(parseFloat(invoice.balance || '0')).toFixed(2)
+      defaults[invoice.id] = Number(invoice.balance || 0).toFixed(2)
     })
     setBulkPaymentAmounts(defaults)
     setBulkPaymentMethod('CHECK')
@@ -720,8 +716,8 @@ export default function ClientDetailPage() {
   }
 
   const handleBulkPaymentSubmit = async () => {
-    const items = invoices
-      .filter((invoice) => selectedInvoiceIds.includes(invoice.id))
+    const items = documents
+      .filter((doc) => doc.kind === 'invoice' && selectedInvoiceIds.includes(doc.id))
       .map((invoice) => ({
         invoiceId: invoice.id,
         amount: parseFloat(bulkPaymentAmounts[invoice.id] || '0'),
@@ -759,7 +755,7 @@ export default function ClientDetailPage() {
       setShowBulkPayment(false)
       setSelectedInvoiceIds([])
       await fetchClient()
-      await fetchPayments(1)
+      await fetchDocuments()
     } catch (error) {
       console.error('Bulk client payment error:', error)
       setBulkPaymentError('Failed to apply payment.')
@@ -824,7 +820,9 @@ export default function ClientDetailPage() {
     : []
   const hasSubClients = subClients.length > 0
   const canCreateRequest = !permissionsLoading && hasPermission(userPermissions, 'leads.create')
-  const selectedInvoices = invoices.filter((invoice) => selectedInvoiceIds.includes(invoice.id))
+  const selectedInvoices = documents.filter(
+    (doc) => doc.kind === 'invoice' && selectedInvoiceIds.includes(doc.id)
+  )
   const bulkPaymentTotal = selectedInvoices.reduce((sum, invoice) => {
     const amount = parseFloat(bulkPaymentAmounts[invoice.id] || '0')
     return sum + (Number.isFinite(amount) ? amount : 0)
@@ -918,6 +916,17 @@ export default function ClientDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      <UnifiedDocumentsSection
+        documents={documents}
+        loading={documentsLoading}
+        error={documentsError}
+        description="All estimates, invoices, and payments for this client"
+        enableInvoiceSelection
+        selectedInvoiceIds={selectedInvoiceIds}
+        onToggleInvoice={toggleSelectedInvoice}
+        onAddPayment={openPaymentModal}
+      />
 
       <div className="grid gap-6 md:grid-cols-3">
         {/* Main Content */}
@@ -1168,131 +1177,6 @@ export default function ClientDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Past Payments */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <CardTitle>Past Payments</CardTitle>
-                  <CardDescription>
-                    {paymentsTotal > 0
-                      ? `${paymentsTotal} payment${paymentsTotal !== 1 ? 's' : ''} • ${formatCurrency(paymentsTotalPaid)} total received`
-                      : 'Payment history across all invoices'}
-                  </CardDescription>
-                </div>
-                <Link href="/dashboard/reports/payments">
-                  <Button variant="outline" size="sm">
-                    All Payments
-                  </Button>
-                </Link>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {paymentsLoading ? (
-                <p className="text-sm text-gray-500 py-6 text-center">Loading payments...</p>
-              ) : paymentsError ? (
-                <p className="text-sm text-red-600 py-4">{paymentsError}</p>
-              ) : payments.length === 0 ? (
-                <p className="text-sm text-gray-500 py-6 text-center">No payments recorded yet</p>
-              ) : (
-                <div className="space-y-3">
-                  {payments.map((payment) => {
-                    const paidAt = payment.processedAt || payment.createdAt
-                    return (
-                      <div
-                        key={payment.id}
-                        className="flex items-start justify-between gap-3 rounded-lg border p-3 hover:bg-gray-50 transition-colors"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="text-sm font-semibold text-gray-900">
-                              {formatCurrency(payment.amount)}
-                            </p>
-                            {payment.invoiceId ? (
-                              <Link
-                                href={`/dashboard/invoices/${payment.invoiceId}`}
-                                className="text-xs font-medium text-blue-600 hover:underline"
-                              >
-                                {payment.invoiceNumber || 'View invoice'}
-                              </Link>
-                            ) : (
-                              <span className="text-xs text-gray-500">{payment.invoiceNumber || '—'}</span>
-                            )}
-                          </div>
-                          <p className="text-xs text-gray-600 mt-0.5">
-                            {payment.method.replace(/_/g, ' ')}
-                            {payment.reference ? ` • Ref ${payment.reference}` : ''}
-                            {payment.providerPaymentId ? ` • ${payment.providerPaymentId}` : ''}
-                          </p>
-                          <p className="text-xs text-gray-400 mt-0.5">{formatDate(paidAt)}</p>
-                          {payment.refundedAmount > 0 && (
-                            <p className="text-xs text-orange-700 mt-0.5">
-                              Refunded {formatCurrency(payment.refundedAmount)}
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex shrink-0 flex-col items-end gap-2">
-                          <span className={`px-2 py-1 text-xs rounded ${paymentStatusClass(payment.status)}`}>
-                            {payment.status.replace(/_/g, ' ')}
-                          </span>
-                          {payment.canReceipt !== false && (
-                            <div className="flex items-center gap-1">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-7 px-2 text-xs"
-                                disabled={downloadingReceiptId === payment.id}
-                                onClick={() => downloadPaymentReceipt(payment)}
-                              >
-                                <Download className="mr-1 h-3 w-3" />
-                                {downloadingReceiptId === payment.id ? '...' : 'PDF'}
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-7 px-2 text-xs"
-                                onClick={() => openReceiptEmailDialog(payment)}
-                              >
-                                <Mail className="mr-1 h-3 w-3" />
-                                Email
-                              </Button>
-                            </div>
-                          )}
-                          {payment.receiptEmailSentAt && (
-                            <span className="text-[10px] text-gray-400">Receipt emailed</span>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-              {paymentsTotalPages > 1 && (
-                <div className="flex items-center justify-between pt-4 mt-2 border-t">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={paymentsPage <= 1 || paymentsLoading}
-                    onClick={() => fetchPayments(paymentsPage - 1)}
-                  >
-                    Previous
-                  </Button>
-                  <span className="text-xs text-gray-500">
-                    Page {paymentsPage} of {paymentsTotalPages}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={paymentsPage >= paymentsTotalPages || paymentsLoading}
-                    onClick={() => fetchPayments(paymentsPage + 1)}
-                  >
-                    Next
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
           {/* Notes */}
           <Card>
             <CardHeader>
@@ -1501,123 +1385,6 @@ export default function ClientDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Recent Estimates */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Recent Estimates</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {estimates.length === 0 ? (
-                  <p className="text-sm text-gray-500">No estimates yet</p>
-                ) : (
-                  estimates.slice(0, 5).map((estimate) => (
-                    <Link
-                      key={estimate.id}
-                      href={`/dashboard/estimates/${estimate.id}`}
-                      className="block p-3 rounded-lg border hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium">{estimate.estimateNumber}</p>
-                          {estimate.title && (
-                            <p className="text-xs text-gray-600 truncate">{estimate.title}</p>
-                          )}
-                          {estimate.total != null && (
-                            <p className="text-xs text-gray-600">{formatCurrency(parseFloat(String(estimate.total)))}</p>
-                          )}
-                          <p className="text-xs text-gray-400 mt-0.5">{formatDate(estimate.createdAt)}</p>
-                        </div>
-                        <span className={`shrink-0 px-2 py-1 text-xs rounded ${
-                          estimate.status === 'APPROVED' ? 'bg-green-100 text-green-800' :
-                          estimate.status === 'SENT' ? 'bg-blue-100 text-blue-800' :
-                          estimate.status === 'DRAFT' ? 'bg-gray-100 text-gray-700' :
-                          estimate.status === 'DECLINED' ? 'bg-red-100 text-red-800' :
-                          'bg-gray-100 text-gray-800'
-                        }`}>
-                          {estimate.status}
-                        </span>
-                      </div>
-                    </Link>
-                  ))
-                )}
-                {estimates.length > 5 && (
-                  <Link
-                    href={`/dashboard/estimates?clientId=${clientId}`}
-                    className="block text-center text-xs text-blue-600 hover:underline pt-1"
-                  >
-                    View all {estimates.length} estimates
-                  </Link>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Open Invoices */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <CardTitle>Open Invoices</CardTitle>
-                  <CardDescription>Select invoices and apply one manual payment batch.</CardDescription>
-                </div>
-                <Button variant="outline" onClick={openPaymentModal} disabled={selectedInvoiceIds.length === 0}>
-                  <DollarSign className="mr-2 h-4 w-4" />
-                  Add Payment{selectedInvoiceIds.length > 0 ? ` (${selectedInvoiceIds.length})` : ''}
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {invoices.length === 0 ? (
-                  <p className="text-sm text-gray-500">No open invoices.</p>
-                ) : (
-                  invoices.map((invoice) => (
-                    <div
-                      key={invoice.id}
-                      className={`rounded-lg border p-3 transition-colors ${
-                        selectedInvoiceIds.includes(invoice.id) ? 'border-[#1e4d6e] bg-slate-50' : 'hover:bg-gray-50'
-                      }`}
-                    >
-                      <div className="flex items-start gap-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedInvoiceIds.includes(invoice.id)}
-                          onChange={(e) => toggleSelectedInvoice(invoice.id, e.target.checked)}
-                          className="mt-1"
-                        />
-                        <Link href={`/dashboard/invoices/${invoice.id}`} className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium">{invoice.invoiceNumber}</p>
-                              {invoice.title && (
-                                <p className="text-xs text-gray-600 truncate">{invoice.title}</p>
-                              )}
-                              <p className="text-xs text-gray-600">
-                                Total {formatCurrency(parseFloat(invoice.total))} • Balance {formatCurrency(parseFloat(invoice.balance))}
-                              </p>
-                              {invoice.dueDate && (
-                                <p className="text-xs text-gray-500">Due {formatDate(invoice.dueDate)}</p>
-                              )}
-                            </div>
-                            <span className={`px-2 py-1 text-xs rounded ${
-                              invoice.status === 'PAID' ? 'bg-green-100 text-green-800' :
-                              invoice.status === 'OVERDUE' ? 'bg-red-100 text-red-800' :
-                              'bg-gray-100 text-gray-800'
-                            }`}>
-                              {invoice.status}
-                            </span>
-                          </div>
-                        </Link>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Tasks & Issues */}
           {(tasks.length > 0 || issues.length > 0) && (
             <Card>
               <CardHeader>
@@ -1699,9 +1466,9 @@ export default function ClientDetailPage() {
                 <div key={invoice.id} className="rounded-md border p-3">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <p className="text-sm font-medium">{invoice.invoiceNumber}</p>
+                      <p className="text-sm font-medium">{invoice.number}</p>
                       <p className="text-xs text-gray-500">
-                        Remaining {formatCurrency(parseFloat(invoice.balance || '0'))}
+                        Remaining {formatCurrency(invoice.balance || 0)}
                       </p>
                     </div>
                     <div className="w-36">
