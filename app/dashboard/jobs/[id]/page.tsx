@@ -227,6 +227,8 @@ export default function JobDetailPage() {
   const [documents, setDocuments] = useState<UnifiedDocumentRow[]>([])
   const [documentsLoading, setDocumentsLoading] = useState(false)
   const [documentsError, setDocumentsError] = useState<string | null>(null)
+  const [noteText, setNoteText] = useState('')
+  const [addingNote, setAddingNote] = useState(false)
 
   useEffect(() => {
     fetchJob()
@@ -623,6 +625,45 @@ export default function JobDetailPage() {
       alert('Failed to assign crew')
     } finally {
       setAssigningCrew(false)
+    }
+  }
+
+  const appendJobNote = async () => {
+    if (!job || !noteText.trim()) return
+    setAddingNote(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+
+      const response = await fetch(`/api/jobs/${jobId}/notes`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ content: noteText.trim() }),
+      })
+
+      if (response.status === 401) {
+        router.push('/auth/login')
+        return
+      }
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({ error: 'Failed to add note' }))
+        alert(payload.error || 'Failed to add note')
+        return
+      }
+
+      setNoteText('')
+      await fetchJob()
+    } catch (error) {
+      console.error('Failed to add job note:', error)
+      alert('Failed to add note. Please try again.')
+    } finally {
+      setAddingNote(false)
     }
   }
 
@@ -1191,18 +1232,29 @@ export default function JobDetailPage() {
           {/* Notes */}
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Notes</CardTitle>
-                <Button variant="outline" size="sm">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Note
-                </Button>
-              </div>
+              <CardTitle>Notes</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
+                <textarea
+                  value={noteText}
+                  onChange={(e) => setNoteText(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Add a note..."
+                  rows={3}
+                />
+                <div>
+                  <Button
+                    onClick={() => void appendJobNote()}
+                    disabled={addingNote || !noteText.trim()}
+                    size="sm"
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    {addingNote ? 'Saving...' : 'Add Note'}
+                  </Button>
+                </div>
                 {job.notes.length === 0 ? (
-                  <p className="text-center text-gray-500 py-8">No notes</p>
+                  <p className="text-center text-gray-500 py-4">No notes</p>
                 ) : (
                   job.notes.map((note) => (
                     <div key={note.id} className="border-l-4 border-gray-300 pl-4">
