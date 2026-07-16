@@ -315,6 +315,8 @@ export default function ClientDetailPage() {
   const [subClientInvoicesOpen, setSubClientInvoicesOpen] = useState(false)
   const [bulkPaymentMethod, setBulkPaymentMethod] = useState<'CHECK' | 'QUICK_PAY' | 'OTHER'>('CHECK')
   const [bulkPaymentOtherLabel, setBulkPaymentOtherLabel] = useState('')
+  const [bulkPaymentDate, setBulkPaymentDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [bulkPaymentReference, setBulkPaymentReference] = useState('')
   const [bulkPaymentSaving, setBulkPaymentSaving] = useState(false)
   const [bulkPaymentError, setBulkPaymentError] = useState('')
   const [documents, setDocuments] = useState<UnifiedDocumentRow[]>([])
@@ -603,11 +605,23 @@ export default function ClientDetailPage() {
     setBulkPaymentAmounts(defaults)
     setBulkPaymentMethod('CHECK')
     setBulkPaymentOtherLabel('')
+    setBulkPaymentDate(new Date().toISOString().split('T')[0])
+    setBulkPaymentReference('')
     setBulkPaymentError('')
     setShowBulkPayment(true)
   }
 
   const handleBulkPaymentSubmit = async () => {
+    if (!bulkPaymentDate) {
+      setBulkPaymentError('Payment date is required.')
+      return
+    }
+    const parsedPaymentDate = new Date(bulkPaymentDate)
+    if (Number.isNaN(parsedPaymentDate.getTime())) {
+      setBulkPaymentError('Enter a valid payment date.')
+      return
+    }
+
     const items = documents
       .filter((doc) => doc.kind === 'invoice' && selectedInvoiceIds.includes(doc.id))
       .map((invoice) => ({
@@ -635,6 +649,8 @@ export default function ClientDetailPage() {
           items,
           method: bulkPaymentMethod,
           methodLabel: bulkPaymentMethod === 'OTHER' ? bulkPaymentOtherLabel.trim() : undefined,
+          paidAt: bulkPaymentDate,
+          reference: bulkPaymentReference.trim() || undefined,
         }),
       })
 
@@ -1459,6 +1475,26 @@ export default function ClientDetailPage() {
                   />
                 </div>
               )}
+              <div>
+                <Label htmlFor="bulk-payment-date">Payment Date</Label>
+                <Input
+                  id="bulk-payment-date"
+                  type="date"
+                  className="mt-1"
+                  value={bulkPaymentDate}
+                  onChange={(e) => setBulkPaymentDate(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="bulk-payment-reference">Reference Number</Label>
+                <Input
+                  id="bulk-payment-reference"
+                  className="mt-1"
+                  value={bulkPaymentReference}
+                  onChange={(e) => setBulkPaymentReference(e.target.value)}
+                  placeholder="Check #, confirmation #..."
+                />
+              </div>
             </div>
             <div className="space-y-3 max-h-[50vh] overflow-auto pr-1">
               {selectedInvoices.map((invoice) => (

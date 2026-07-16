@@ -105,6 +105,8 @@ export default function InvoicesPage() {
   const [bulkPaymentAmounts, setBulkPaymentAmounts] = useState<Record<string, string>>({})
   const [bulkPaymentMethod, setBulkPaymentMethod] = useState<'CHECK' | 'QUICK_PAY' | 'OTHER'>('CHECK')
   const [bulkPaymentOtherLabel, setBulkPaymentOtherLabel] = useState('')
+  const [bulkPaymentDate, setBulkPaymentDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [bulkPaymentReference, setBulkPaymentReference] = useState('')
   const [bulkPaymentSaving, setBulkPaymentSaving] = useState(false)
   const [bulkPaymentError, setBulkPaymentError] = useState('')
   const [viewMode, setViewMode] = useViewMode('invoices', 'grid')
@@ -326,6 +328,8 @@ export default function InvoicesPage() {
     setBulkPaymentAmounts(nextAmounts)
     setBulkPaymentMethod('CHECK')
     setBulkPaymentOtherLabel('')
+    setBulkPaymentDate(new Date().toISOString().split('T')[0])
+    setBulkPaymentReference('')
     setBulkPaymentError('')
     setShowBulkPayment(true)
   }
@@ -333,6 +337,15 @@ export default function InvoicesPage() {
   const handleBulkPaymentSubmit = async () => {
     if (payableSelectedInvoices.length === 0) {
       setBulkPaymentError('Select at least one unpaid invoice.')
+      return
+    }
+    if (!bulkPaymentDate) {
+      setBulkPaymentError('Payment date is required.')
+      return
+    }
+    const parsedPaymentDate = new Date(bulkPaymentDate)
+    if (Number.isNaN(parsedPaymentDate.getTime())) {
+      setBulkPaymentError('Enter a valid payment date.')
       return
     }
     if (bulkPaymentMethod === 'OTHER' && !bulkPaymentOtherLabel.trim()) {
@@ -368,6 +381,8 @@ export default function InvoicesPage() {
         body: JSON.stringify({
           method: bulkPaymentMethod,
           methodLabel: bulkPaymentMethod === 'OTHER' ? bulkPaymentOtherLabel.trim() : undefined,
+          paidAt: bulkPaymentDate,
+          reference: bulkPaymentReference.trim() || undefined,
           items,
         }),
       })
@@ -380,6 +395,8 @@ export default function InvoicesPage() {
       setBulkPaymentAmounts({})
       setBulkPaymentMethod('CHECK')
       setBulkPaymentOtherLabel('')
+      setBulkPaymentDate(new Date().toISOString().split('T')[0])
+      setBulkPaymentReference('')
       setSelectedIds((prev) => prev.filter((id) => !items.some((item) => item.invoiceId === id)))
       await fetchInvoices()
     } catch (error) {
@@ -606,6 +623,26 @@ export default function InvoicesPage() {
                 />
               </div>
             )}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label htmlFor="bulk-payment-date">Payment Date</Label>
+                <Input
+                  id="bulk-payment-date"
+                  type="date"
+                  value={bulkPaymentDate}
+                  onChange={(e) => setBulkPaymentDate(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="bulk-payment-reference">Reference Number</Label>
+                <Input
+                  id="bulk-payment-reference"
+                  placeholder="Check #, confirmation #..."
+                  value={bulkPaymentReference}
+                  onChange={(e) => setBulkPaymentReference(e.target.value)}
+                />
+              </div>
+            </div>
             <div className="max-h-[360px] overflow-y-auto rounded-md border">
               <div className="grid grid-cols-[1.4fr_1fr_1fr] gap-3 border-b bg-gray-50 px-4 py-2 text-xs font-medium uppercase tracking-wide text-gray-500">
                 <div>Invoice</div>

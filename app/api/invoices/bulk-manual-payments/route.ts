@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}))
     const method = String(body?.method || '').trim().toUpperCase()
     const methodLabel = String(body?.methodLabel || '').trim()
+    const reference = String(body?.reference || '').trim() || null
     const paidAtRaw = body?.paidAt ? new Date(String(body.paidAt)) : null
     const processedAt =
       paidAtRaw && !Number.isNaN(paidAtRaw.getTime()) ? paidAtRaw : new Date()
@@ -168,6 +169,7 @@ export async function POST(request: NextRequest) {
                   ? methodLabel.toLowerCase().replace(/\s+/g, '_')
                   : 'manual',
             processedAt,
+            reference,
             notes: paymentNotes,
             paymentGroupId,
           },
