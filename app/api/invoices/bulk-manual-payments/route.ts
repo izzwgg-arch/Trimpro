@@ -12,7 +12,9 @@ const ALLOWED_METHODS = new Set(['CHECK', 'QUICK_PAY', 'OTHER'])
 
 function toNumber(value: unknown): number {
   const n = Number(value)
-  return Number.isFinite(n) ? n : 0
+  if (!Number.isFinite(n)) return 0
+  // Round to cents so float leftovers (e.g. 433.849999999) don't reject full balances.
+  return Math.round(n * 100) / 100
 }
 
 export async function POST(request: NextRequest) {
