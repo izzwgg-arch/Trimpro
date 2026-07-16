@@ -175,7 +175,13 @@ export async function POST(request: NextRequest) {
           },
           { tx }
         )
-        if (!res.created || !res.paymentId || !res.invoice) continue
+        if (!res.created || !res.paymentId || !res.invoice) {
+          throw new Error(
+            `Failed to apply payment to ${invoice.invoiceNumber}${
+              res.reason ? ` (${res.reason})` : ''
+            }`
+          )
+        }
 
         created.push({
           paymentId: res.paymentId,
@@ -232,6 +238,11 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error('Bulk manual payment error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    const message = error instanceof Error ? error.message : 'Internal server error'
+    const isApplyFailure = message.startsWith('Failed to apply payment')
+    return NextResponse.json(
+      { error: isApplyFailure ? message : 'Internal server error' },
+      { status: isApplyFailure ? 400 : 500 }
+    )
   }
 }

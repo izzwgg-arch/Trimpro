@@ -12,12 +12,12 @@ import { prisma } from '@/lib/prisma'
  * Hardening guarantees (these are the properties the rest of the system relies on):
  *
  *  1. Idempotent. A payment is recorded at most once. Callers pass `dedupeWhere`
- *     (e.g. `{ solaTransactionId }`, `{ reference }`, or
+ *     (e.g. `{ solaTransactionId }`, `{ invoiceId, reference }`, or
  *     `{ provider, providerPaymentId }`). If a matching payment already exists we
  *     return `{ created: false }` with the existing id and a current invoice
  *     snapshot — we never double-apply. Unique DB constraints
- *     (`solaTransactionId`, `reference`, `[provider, providerPaymentId]`) are the
- *     final backstop: a P2002 race is treated as "already applied", not an error.
+ *     (`solaTransactionId`, `[invoiceId, reference]`, `[provider, providerPaymentId]`)
+ *     are the final backstop: a P2002 race is treated as "already applied", not an error.
  *
  *  2. Never overpays. The applied amount is clamped to the invoice's remaining
  *     balance. A deposit / partial payment can therefore NEVER flip an invoice to
@@ -150,6 +150,8 @@ async function runApply(
   }
 
   // 2) Idempotency: never record the same gateway transaction twice.
+  //    Reference is scoped to the invoice so one check/ref can pay many invoices
+  //    in a payment group without the later siblings being treated as duplicates.
   const dedupeWhere =
     input.dedupeWhere ||
     (input.provider && input.providerPaymentId
@@ -157,7 +159,7 @@ async function runApply(
       : input.solaTransactionId
         ? { solaTransactionId: input.solaTransactionId }
         : input.reference
-          ? { reference: input.reference }
+          ? { reference: input.reference, invoiceId: invoice.id }
           : null)
 
   if (dedupeWhere) {

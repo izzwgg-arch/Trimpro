@@ -937,7 +937,8 @@ model Payment {
   currency  String        @default("USD")
   status    PaymentStatus @default(PENDING)
   method    PaymentMethod
-  reference String?       @unique
+  // Unique per invoice so one check/reference can cover multiple invoices in a group.
+  reference String?
   provider  String?
   providerPaymentId String?
   providerInvoiceId String?
@@ -984,6 +985,8 @@ model Payment {
   @@index([providerPaymentId])
   @@index([paymentGroupId])
   @@index([refundStatus])
+  @@index([reference])
+  @@unique([invoiceId, reference], map: "payments_invoice_id_reference_unique_idx")
   @@unique([provider, providerPaymentId], map: "payments_provider_payment_id_unique_idx")
   @@map("payments")
 }
