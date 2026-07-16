@@ -3,6 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { requirePermission } from '@/lib/authorization'
 import { getDefaultPermissions } from '@/lib/permissions'
+import { parseAssignedJobTypes } from '@/lib/jobs/job-type-scope'
 
 const ALLOWED_ROLES = new Set(['ADMIN', 'MANAGER', 'OFFICE', 'FIELD', 'SALES', 'ACCOUNTING'])
 const ALLOWED_STATUSES = new Set(['ACTIVE', 'INACTIVE', 'INVITED', 'SUSPENDED'])
@@ -36,6 +37,8 @@ export async function PUT(
     const managerIdFromBody = rawManagerId === '' || rawManagerId === null ? null : rawManagerId
     const allowWebLogin = typeof body.allowWebLogin === 'boolean' ? body.allowWebLogin : true
     const allowMobileLogin = typeof body.allowMobileLogin === 'boolean' ? body.allowMobileLogin : true
+    const assignedJobTypes =
+      body.assignedJobTypes !== undefined ? parseAssignedJobTypes(body.assignedJobTypes) : undefined
 
     if (!firstName || !lastName || !email || !status || (!requestedRole && !roleId)) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -162,6 +165,7 @@ export async function PUT(
           managerId: role === 'FIELD' ? normalizedManagerId : null,
           allowWebLogin,
           allowMobileLogin,
+          ...(assignedJobTypes !== undefined ? { assignedJobTypes } : {}),
           permissions: selectedPermissionKeys,
         },
         select: {
@@ -175,6 +179,7 @@ export async function PUT(
           managerId: true,
           allowWebLogin: true,
           allowMobileLogin: true,
+          assignedJobTypes: true,
         },
       })
 

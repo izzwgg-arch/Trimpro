@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { parseAddressParts } from '@/lib/address/parse'
 import { geocodeAddressPartsFromString } from '@/lib/geocoding'
+import { assertCanAccessJobType, resolveJobTypeForWrite } from '@/lib/jobs/job-type-scope'
 
 export async function GET(
   request: NextRequest,
@@ -104,6 +105,11 @@ export async function GET(
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
     }
 
+    const typeAccess = await assertCanAccessJobType(user.id, user.tenantId, lead.jobType)
+    if (!typeAccess.ok) {
+      return NextResponse.json({ error: typeAccess.error }, { status: 403 })
+    }
+
     const parsed = parseAddressParts(lead.jobSiteAddress)
     const missingParts =
       !!lead.jobSiteAddress &&
@@ -153,6 +159,7 @@ export async function PUT(
       jobSiteAddress,
       source,
       status,
+      jobType,
       value,
       probability,
       notes,
@@ -169,6 +176,20 @@ export async function PUT(
 
     if (!existing) {
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+    }
+
+    const existingTypeAccess = await assertCanAccessJobType(user.id, user.tenantId, existing.jobType)
+    if (!existingTypeAccess.ok) {
+      return NextResponse.json({ error: existingTypeAccess.error }, { status: 403 })
+    }
+
+    let nextJobType = existing.jobType
+    if (jobType !== undefined) {
+      const resolved = await resolveJobTypeForWrite(user.id, user.tenantId, jobType, existing.jobType)
+      if (!resolved.ok) {
+        return NextResponse.json({ error: resolved.error }, { status: 403 })
+      }
+      nextJobType = resolved.jobType
     }
 
     // Verify assignee if changed
@@ -220,6 +241,7 @@ export async function PUT(
             : existing.jobSiteAddress,
         source: source !== undefined ? source : existing.source,
         status: status !== undefined ? status : existing.status,
+        jobType: nextJobType,
         value: value !== undefined ? parseFloat(value) : existing.value,
         probability: probability !== undefined ? probability : existing.probability,
         notes: notes !== undefined ? notes : existing.notes,

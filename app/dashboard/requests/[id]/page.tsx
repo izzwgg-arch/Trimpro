@@ -33,6 +33,7 @@ import { parseAddressParts } from '@/lib/address/parse'
 import { buildCreateContextQuery } from '@/src/lib/create-context'
 import { DocumentAttachments } from '@/components/common/document-attachments'
 import { usePermissions, hasPermission } from '@/hooks/usePermissions'
+import { JobTypeBadge } from '@/components/jobs/JobTypeSelect'
 
 interface RequestDetail {
   id: string
@@ -43,6 +44,7 @@ interface RequestDetail {
   company: string | null
   source: string
   status: string
+  jobType?: string
   isUrgent?: boolean
   urgentAt?: string | null
   urgentByUserId?: string | null
@@ -578,6 +580,7 @@ export default function RequestDetailPage() {
             <span className={`px-3 py-1 text-sm rounded-full ${statusColors[request.status] || 'bg-gray-100 text-gray-800'}`}>
               {statusLabels[request.status] ?? request.status.replace(/_/g, ' ')}
             </span>
+            <JobTypeBadge jobType={request.jobType} />
             <span className={`px-3 py-1 text-sm rounded ${sourceColors[request.source] || 'bg-gray-100 text-gray-800'}`}>
               {request.source}
             </span>

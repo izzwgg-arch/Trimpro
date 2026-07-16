@@ -152,6 +152,7 @@ export async function POST(
               title: titleBase,
               description: lead.notes || null,
               status: 'QUOTE',
+              jobType: lead.jobType || 'CUSTOM',
               priority: 3,
               estimateAmount: estimateAmount && Number.isFinite(estimateAmount) ? estimateAmount : null,
             },

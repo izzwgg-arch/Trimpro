@@ -223,6 +223,13 @@ export const PERMISSIONS: PermissionDefinition[] = [
     category: 'Jobs',
     module: 'jobs',
   },
+  {
+    key: 'jobs.access_all_types',
+    label: 'Access All Job Types',
+    description: 'View and manage jobs and requests of every job type, not only assigned types',
+    category: 'Jobs',
+    module: 'jobs',
+  },
 
   // ============================================
   // SCHEDULE / CALENDAR

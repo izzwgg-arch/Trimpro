@@ -7,6 +7,7 @@ import { getDefaultPermissions } from '@/lib/permissions'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { testEmailProvider } from '@/lib/integrations/providers/email'
 import { getEmailBranding } from '@/lib/email/branding'
+import { parseAssignedJobTypes } from '@/lib/jobs/job-type-scope'
 
 const ALLOWED_ROLES = new Set(['ADMIN', 'MANAGER', 'OFFICE', 'FIELD', 'SALES', 'ACCOUNTING'])
 
@@ -29,7 +30,10 @@ export async function POST(request: NextRequest) {
       roleId,
       allowWebLogin,
       allowMobileLogin,
+      assignedJobTypes,
     } = await request.json()
+
+    const resolvedAssignedJobTypes = parseAssignedJobTypes(assignedJobTypes)
 
     if (!email || !firstName || !lastName || (!role && !roleId)) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -105,6 +109,7 @@ export async function POST(request: NextRequest) {
         status: 'INVITED',
         allowWebLogin: allowWebLogin !== false,
         allowMobileLogin: allowMobileLogin !== false,
+        assignedJobTypes: resolvedAssignedJobTypes,
         passwordResetToken: inviteToken,
         passwordResetExp: inviteExp,
         permissions,

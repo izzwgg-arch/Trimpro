@@ -17,6 +17,7 @@ import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
 import { PlaceAutocompleteInput } from '@/components/maps/PlaceAutocompleteInput'
 import { refreshAccessToken } from '@/lib/auth/client'
 import { usePermissions, hasPermission } from '@/hooks/usePermissions'
+import { JobTypeCreateField } from '@/components/jobs/JobTypeCreateField'
 
 interface User {
   id: string
@@ -95,6 +96,7 @@ export default function NewRequestPage() {
     jobSiteZipCode: '',
     source: 'OTHER',
     status: 'NEW',
+    jobType: 'CUSTOM',
     value: '',
     probability: '50',
     notes: '',
@@ -670,7 +672,7 @@ export default function NewRequestPage() {
               )}
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
               <div>
                 <Label htmlFor="source">Source</Label>
                 <Select value={formData.source} onValueChange={(value) => setFormData({ ...formData, source: value })}>
@@ -703,6 +705,10 @@ export default function NewRequestPage() {
                   </SelectContent>
                 </Select>
               </div>
+              <JobTypeCreateField
+                value={formData.jobType}
+                onValueChange={(value) => setFormData((prev) => ({ ...prev, jobType: value }))}
+              />
               <div>
                 <Label htmlFor="assignedToId">Assigned To</Label>
                 <Select

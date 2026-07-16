@@ -27,7 +27,6 @@ import {
   addItemToDocumentBundle,
   removeDocumentLineItem,
 } from '@/lib/bundles/document-line-item-actions'
-
 interface LineItem {
   id?: string
   description: string

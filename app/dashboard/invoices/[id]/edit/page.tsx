@@ -20,7 +20,6 @@ import {
   addItemToDocumentBundle,
   removeDocumentLineItem,
 } from '@/lib/bundles/document-line-item-actions'
-
 interface Job {
   id: string
   jobNumber: string

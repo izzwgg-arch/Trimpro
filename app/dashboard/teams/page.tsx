@@ -13,12 +13,17 @@ import { RowDetailedItem } from '@/components/lists/RowDetailedItem'
 import { TableView } from '@/components/lists/TableView'
 import { Users, Plus, Search, Mail, Phone, Briefcase, X, Pencil, Trash2 } from 'lucide-react'
 import { smartMatch } from '@/lib/search/scoring'
+import { JOB_TYPES } from '@/lib/jobs/types'
 
 const ALLOWED_BASE_ROLES = new Set(['ADMIN', 'MANAGER', 'OFFICE', 'FIELD', 'SALES', 'ACCOUNTING'])
 
 function deriveBaseRole(roleName: string): string {
   const upper = roleName.trim().toUpperCase()
   return ALLOWED_BASE_ROLES.has(upper) ? upper : 'OFFICE'
+}
+
+function toggleJobType(current: string[], value: string): string[] {
+  return current.includes(value) ? current.filter((item) => item !== value) : [...current, value]
 }
 
 interface TeamMember {
@@ -30,6 +35,7 @@ interface TeamMember {
   role: string
   allowWebLogin: boolean
   allowMobileLogin: boolean
+  assignedJobTypes?: string[]
   roleId?: string | null
   roleName?: string | null
   managerId?: string | null
@@ -79,6 +85,7 @@ export default function TeamsPage() {
     roleId: '',
     allowWebLogin: true,
     allowMobileLogin: true,
+    assignedJobTypes: [] as string[],
   })
   const [editForm, setEditForm] = useState({
     firstName: '',
@@ -91,6 +98,7 @@ export default function TeamsPage() {
     status: 'ACTIVE' as 'ACTIVE' | 'INACTIVE' | 'INVITED' | 'SUSPENDED',
     allowWebLogin: true,
     allowMobileLogin: true,
+    assignedJobTypes: [] as string[],
   })
 
   useEffect(() => {
@@ -193,6 +201,7 @@ export default function TeamsPage() {
         roleId: defaultRole.id,
         allowWebLogin: true,
         allowMobileLogin: true,
+        assignedJobTypes: [],
       })
       
       // Refresh team list
@@ -300,6 +309,7 @@ export default function TeamsPage() {
       status: member.status as any,
       allowWebLogin: member.allowWebLogin !== false,
       allowMobileLogin: member.allowMobileLogin !== false,
+      assignedJobTypes: Array.isArray(member.assignedJobTypes) ? [...member.assignedJobTypes] : [],
     })
     setShowEditModal(true)
   }
@@ -605,6 +615,7 @@ export default function TeamsPage() {
                       roleId: roleOptions[0]?.id || 'FIELD',
                       allowWebLogin: true,
                       allowMobileLogin: true,
+                      assignedJobTypes: [],
                     })
                   }}
                 >
@@ -708,6 +719,29 @@ export default function TeamsPage() {
                     />
                   </label>
                 </div>
+                <div className="rounded-md border p-3 space-y-3">
+                  <p className="text-sm font-medium">Job Types</p>
+                  <p className="text-xs text-gray-500">
+                    Leave empty until you assign types. Users without Access All Job Types only see jobs/requests for their selected types.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {JOB_TYPES.map((type) => (
+                      <label key={type.value} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={inviteForm.assignedJobTypes.includes(type.value)}
+                          onChange={() =>
+                            setInviteForm({
+                              ...inviteForm,
+                              assignedJobTypes: toggleJobType(inviteForm.assignedJobTypes, type.value),
+                            })
+                          }
+                        />
+                        {type.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
                 <div className="flex space-x-2">
                   <Button
                     type="button"
@@ -726,6 +760,7 @@ export default function TeamsPage() {
                         roleId: roleOptions[0]?.id || 'FIELD',
                         allowWebLogin: true,
                         allowMobileLogin: true,
+                        assignedJobTypes: [],
                       })
                     }}
                   >
@@ -897,6 +932,29 @@ export default function TeamsPage() {
                       onChange={(e) => setEditForm({ ...editForm, allowMobileLogin: e.target.checked })}
                     />
                   </label>
+                </div>
+                <div className="rounded-md border p-3 space-y-3">
+                  <p className="text-sm font-medium">Job Types</p>
+                  <p className="text-xs text-gray-500">
+                    Leave empty until you assign types. Users without Access All Job Types only see jobs/requests for their selected types.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {JOB_TYPES.map((type) => (
+                      <label key={type.value} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={editForm.assignedJobTypes.includes(type.value)}
+                          onChange={() =>
+                            setEditForm({
+                              ...editForm,
+                              assignedJobTypes: toggleJobType(editForm.assignedJobTypes, type.value),
+                            })
+                          }
+                        />
+                        {type.label}
+                      </label>
+                    ))}
+                  </div>
                 </div>
                 <div className="flex space-x-2">
                   <Button

@@ -195,6 +195,7 @@ export async function ensureJobFromInvoice(invoiceId: string): Promise<EnsureJob
             title: formatJobNameFromEstimate(jobNumber, estimate?.jobSiteAddress || estimate?.lead?.jobSiteAddress, estimate?.title),
             description: mergedDescription || null,
             status: 'QUOTE',
+            jobType: 'CUSTOM',
             priority: 3,
             estimateAmount: estimate?.total || invoice.total,
           },

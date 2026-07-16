@@ -37,6 +37,7 @@ export async function GET(request: NextRequest) {
         role: true,
         allowWebLogin: true,
         allowMobileLogin: true,
+        assignedJobTypes: true,
         managerId: true,
         manager: {
           select: {

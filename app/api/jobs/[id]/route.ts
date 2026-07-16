@@ -8,6 +8,7 @@ import { isMobileRequest, requireMobilePermission, hasMobilePermission, hasPermi
 import { getJobTimeSummary } from '@/lib/time-tracking'
 import { syncAutoJobSchedules } from '@/lib/services/job-schedule-sync'
 import { createNotificationsForUsers } from '@/lib/notifications'
+import { assertCanAccessJobType, resolveJobTypeForWrite } from '@/lib/jobs/job-type-scope'
 
 export async function GET(
   request: NextRequest,
@@ -139,6 +140,11 @@ export async function GET(
 
     if (!job) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 })
+    }
+
+    const typeAccess = await assertCanAccessJobType(user.id, user.tenantId, job.jobType)
+    if (!typeAccess.ok) {
+      return NextResponse.json({ error: typeAccess.error }, { status: 403 })
     }
 
     const summary = await getJobTimeSummary(user.tenantId, job.id, job.hourlyRateCents ?? null)
@@ -306,6 +312,7 @@ export async function PUT(
       chargeByHour,
       hourlyRateCents,
       jobSite,
+      jobType,
     } = body
 
     // If mobile request, enforce permissions based on what's being changed
@@ -338,6 +345,20 @@ export async function PUT(
       return NextResponse.json({ error: 'Job not found' }, { status: 404 })
     }
 
+    const existingTypeAccess = await assertCanAccessJobType(user.id, user.tenantId, existing.jobType)
+    if (!existingTypeAccess.ok) {
+      return NextResponse.json({ error: existingTypeAccess.error }, { status: 403 })
+    }
+
+    let nextJobType = existing.jobType
+    if (jobType !== undefined) {
+      const nextTypeAccess = await resolveJobTypeForWrite(user.id, user.tenantId, jobType, existing.jobType)
+      if (!nextTypeAccess.ok) {
+        return NextResponse.json({ error: nextTypeAccess.error }, { status: 403 })
+      }
+      nextJobType = nextTypeAccess.jobType
+    }
+
     // Track status change for activity
     const statusChanged = status && status !== existing.status
     const hasHourlyBillingPermission =
@@ -359,6 +380,7 @@ export async function PUT(
         title: sanitizedTitle !== undefined ? sanitizedTitle : existing.title,
         description: description !== undefined ? description : existing.description,
         status: status !== undefined ? status : existing.status,
+        jobType: nextJobType,
         priority: priority !== undefined ? priority : existing.priority,
         scheduledStart: scheduledStart !== undefined ? (scheduledStart ? new Date(scheduledStart) : null) : existing.scheduledStart,
         scheduledEnd: scheduledEnd !== undefined ? (scheduledEnd ? new Date(scheduledEnd) : null) : existing.scheduledEnd,

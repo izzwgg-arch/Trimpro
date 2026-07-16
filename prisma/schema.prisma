@@ -99,6 +99,13 @@ enum UserStatus {
   SUSPENDED
 }
 
+enum JobType {
+  CUSTOM
+  STANDARD
+  RAILING
+  CLOSETS
+}
+
 model User {
   id        String     @id @default(cuid())
   tenantId  String
@@ -123,6 +130,9 @@ model User {
 
   // Permissions (JSON for granular control)
   permissions Json?
+
+  // Job types this user belongs to (empty = not scoped; with jobs.access_all_types they see all)
+  assignedJobTypes JobType[] @default([])
 
   // Session management
   refreshTokens RefreshToken[]
@@ -326,6 +336,7 @@ model Lead {
   company        String?
   source         LeadSource @default(OTHER)
   status         LeadStatus @default(NEW)
+  jobType        JobType    @default(CUSTOM)
   value          Decimal?   @db.Decimal(10, 2)
   probability    Int?       @default(50) // 0-100
   notes          String?    @db.Text
@@ -407,6 +418,7 @@ model Job {
   title       String
   description String?   @db.Text
   status      JobStatus @default(QUOTE)
+  jobType     JobType   @default(CUSTOM)
   priority    Int       @default(3) // 1-5
 
   // Financials

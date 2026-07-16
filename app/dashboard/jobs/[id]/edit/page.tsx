@@ -14,6 +14,7 @@ import { PlaceAutocompleteInput } from '@/components/maps/PlaceAutocompleteInput
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
 import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
 import { JOB_STATUSES } from '@/lib/jobs/statuses'
+import { JobTypeSelect } from '@/components/jobs/JobTypeSelect'
 
 type JobResponse = {
   job: {
@@ -21,6 +22,7 @@ type JobResponse = {
     title: string
     description: string | null
     status: string
+    jobType?: string
     priority: number
     scheduledStart: string | null
     scheduledEnd: string | null
@@ -63,6 +65,7 @@ export default function EditJobPage() {
     title: '',
     description: '',
     status: 'QUOTE',
+    jobType: 'CUSTOM',
     priority: '3',
     scheduledStart: '',
     scheduledEnd: '',
@@ -142,6 +145,7 @@ export default function EditJobPage() {
           title: job.title,
           description: job.description || '',
           status: job.status,
+          jobType: job.jobType || 'CUSTOM',
           priority: job.priority.toString(),
           scheduledStart: job.scheduledStart ? new Date(job.scheduledStart).toISOString().slice(0, 16) : '',
           scheduledEnd: job.scheduledEnd ? new Date(job.scheduledEnd).toISOString().slice(0, 16) : '',
@@ -221,6 +225,7 @@ export default function EditJobPage() {
           title: formData.title,
           description: formData.description,
           status: formData.status,
+          jobType: formData.jobType,
           priority: parseInt(formData.priority),
           scheduledStart: scheduledStart,
           scheduledEnd: scheduledEnd,
@@ -395,17 +400,22 @@ export default function EditJobPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div>
-                <Label htmlFor="priority">Priority (1-5)</Label>
-                <Input
-                  id="priority"
-                  type="number"
-                  min="1"
-                  max="5"
-                  value={formData.priority}
-                  onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
-                />
-              </div>
+              <JobTypeSelect
+                value={formData.jobType}
+                onValueChange={(value) => setFormData({ ...formData, jobType: value })}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="priority">Priority (1-5)</Label>
+              <Input
+                id="priority"
+                type="number"
+                min="1"
+                max="5"
+                value={formData.priority}
+                onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-4">

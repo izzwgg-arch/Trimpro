@@ -17,6 +17,7 @@ import { fetchClientPickerDetail, pickDefaultClientAddress } from '@/lib/clients
 import { useCreateContextPrefill } from '@/src/hooks/useCreateContextPrefill'
 import { refreshAccessToken } from '@/lib/auth/client'
 import { JOB_STATUSES } from '@/lib/jobs/statuses'
+import { JobTypeCreateField } from '@/components/jobs/JobTypeCreateField'
 
 export default function NewJobPage() {
   const router = useRouter()
@@ -32,6 +33,7 @@ export default function NewJobPage() {
     title: '',
     description: '',
     status: 'QUOTE',
+    jobType: 'CUSTOM',
     priority: '3',
     scheduledStart: '',
     scheduledEnd: '',
@@ -176,6 +178,7 @@ export default function NewJobPage() {
           title: formData.title,
           description: formData.description,
           status: formData.status,
+          jobType: formData.jobType,
           priority: parseInt(formData.priority),
           scheduledStart: scheduledStart,
           scheduledEnd: scheduledEnd,
@@ -290,17 +293,22 @@ export default function NewJobPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div>
-                <Label htmlFor="priority">Priority (1-5)</Label>
-                <Input
-                  id="priority"
-                  type="number"
-                  min="1"
-                  max="5"
-                  value={formData.priority}
-                  onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
-                />
-              </div>
+              <JobTypeCreateField
+                value={formData.jobType}
+                onValueChange={(value) => setFormData((prev) => ({ ...prev, jobType: value }))}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="priority">Priority (1-5)</Label>
+              <Input
+                id="priority"
+                type="number"
+                min="1"
+                max="5"
+                value={formData.priority}
+                onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-4">

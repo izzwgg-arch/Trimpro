@@ -6,6 +6,7 @@ import { notifyRequestCreated } from '@/lib/notifications'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { leadJobSiteAddressSearchClauses } from '@/lib/search/job-site-address'
 import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
+import { jobTypeScopeWhere, resolveJobTypeForWrite, assertCanAccessJobType } from '@/lib/jobs/job-type-scope'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -39,6 +40,7 @@ export async function GET(request: NextRequest) {
   try {
     const where: any = {
       tenantId: user.tenantId,
+      ...(await jobTypeScopeWhere(user.id, user.tenantId)),
     }
 
     applySmartSearch(
@@ -149,6 +151,7 @@ export async function POST(request: NextRequest) {
       jobSiteAddress,
       source,
       status,
+      jobType,
       value,
       probability,
       notes,
@@ -157,6 +160,11 @@ export async function POST(request: NextRequest) {
 
     if (!firstName || !lastName) {
       return NextResponse.json({ error: 'First name and last name are required' }, { status: 400 })
+    }
+
+    const resolvedType = await resolveJobTypeForWrite(user.id, user.tenantId, jobType)
+    if (!resolvedType.ok) {
+      return NextResponse.json({ error: resolvedType.error }, { status: 403 })
     }
 
     // Verify assignee if provided
@@ -222,6 +230,7 @@ export async function POST(request: NextRequest) {
         jobSiteAddress: jobSiteAddress || null,
         source: source || 'OTHER',
         status: status || 'NEW',
+        jobType: resolvedType.jobType,
         value: value ? parseFloat(value) : null,
         probability: probability || 50,
         notes: notes || null,

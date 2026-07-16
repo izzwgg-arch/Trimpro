@@ -15,6 +15,7 @@ import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-al
 import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
 import { PlaceAutocompleteInput } from '@/components/maps/PlaceAutocompleteInput'
 import { DocumentAttachments } from '@/components/common/document-attachments'
+import { JobTypeSelect } from '@/components/jobs/JobTypeSelect'
 
 type RequestResponse = {
   lead: {
@@ -26,6 +27,7 @@ type RequestResponse = {
     company: string | null
     source: string
     status: string
+    jobType?: string
     value: string | null
     probability: number
     notes: string | null
@@ -62,6 +64,7 @@ export default function EditRequestPage() {
     company: '',
     source: 'OTHER',
     status: 'NEW',
+    jobType: 'CUSTOM',
     value: '',
     probability: '50',
     notes: '',
@@ -152,6 +155,7 @@ export default function EditRequestPage() {
         company: request.company || '',
         source: request.source || 'OTHER',
         status: request.status || 'NEW',
+        jobType: request.jobType || 'CUSTOM',
         value: request.value ? parseFloat(request.value).toString() : '',
         probability: request.probability?.toString() || '50',
         notes: request.notes || '',
@@ -205,6 +209,7 @@ export default function EditRequestPage() {
         company: formData.company,
         source: formData.source,
         status: formData.status,
+        jobType: formData.jobType,
         value: formData.value ? parseFloat(formData.value) : null,
         probability: parseInt(formData.probability),
         notes: formData.notes,
@@ -560,7 +565,7 @@ export default function EditRequestPage() {
               )}
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
               <div>
                 <Label htmlFor="source">Source</Label>
                 <Select value={formData.source} onValueChange={(value) => setFormData({ ...formData, source: value })}>
@@ -595,6 +600,10 @@ export default function EditRequestPage() {
                   </SelectContent>
                 </Select>
               </div>
+              <JobTypeSelect
+                value={formData.jobType}
+                onValueChange={(value) => setFormData({ ...formData, jobType: value })}
+              />
               <div>
                 <Label htmlFor="assignedToId">Assigned To</Label>
                 <Select

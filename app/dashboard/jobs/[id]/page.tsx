@@ -32,6 +32,7 @@ import { buildCreateContextQuery } from '@/src/lib/create-context'
 import { UnifiedDocumentsSection } from '@/components/documents/unified-documents-section'
 import { EditableNotesList } from '@/components/notes/editable-notes-list'
 import type { UnifiedDocumentRow } from '@/lib/documents/unified-documents'
+import { JobTypeBadge } from '@/components/jobs/JobTypeSelect'
 import { JobStatusSelect } from '@/components/jobs/JobStatusSelect'
 
 const JobSiteMap = dynamic(() => import('@/components/maps/JobSiteMap').then(mod => ({ default: mod.JobSiteMap })), {
@@ -45,6 +46,7 @@ interface JobDetail {
   title: string
   description: string | null
   status: string
+  jobType?: string
   priority: number
   scheduledStart: string | null
   scheduledEnd: string | null
@@ -790,6 +792,7 @@ export default function JobDetailPage() {
               status={job.status}
               onUpdated={(next) => setJob((prev) => (prev ? { ...prev, status: next } : prev))}
             />
+            <JobTypeBadge jobType={job.jobType} />
           </div>
           <p className="text-gray-600 mt-1">
             {job.jobNumber} - <Link href={`/dashboard/clients/${job.client.id}`} className="text-primary hover:underline">{job.client.name}</Link>

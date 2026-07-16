@@ -42,6 +42,7 @@ export async function POST(
         title: `${source.title} (Copy)`,
         description: source.description,
         status: 'QUOTE',
+        jobType: source.jobType,
         priority: source.priority,
         estimateAmount: source.estimateAmount,
         actualAmount: source.actualAmount,

@@ -36,6 +36,7 @@ export async function POST(
         company: source.company,
         source: source.source,
         status: 'NEW',
+        jobType: source.jobType,
         value: source.value,
         probability: source.probability ?? 50,
         notes: source.notes,

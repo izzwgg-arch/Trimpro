@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { normalizeEmailList, splitEmailList } from '@/lib/email'
 import { JOB_STATUS_VALUES } from '@/lib/jobs/statuses'
+import { JOB_TYPE_VALUES } from '@/lib/jobs/types'
 
 /**
  * Common validation schemas for API endpoints
@@ -167,6 +168,7 @@ export const createJobSchema = z.object({
   title: singleLineString(z.string().min(1).max(255)),
   description: z.string().max(5000).optional().nullable(),
   status: z.enum(JOB_STATUS_VALUES).optional(),
+  jobType: z.enum(JOB_TYPE_VALUES).optional(),
   priority: z.union([
     z.number().int().min(1).max(5),
     z.string().transform((val) => {

@@ -9,6 +9,7 @@ import { isMobileRequest, requireMobilePermission, hasMobilePermission } from '@
 import { jobRecordJobSiteAddressSearchClauses } from '@/lib/search/job-site-address'
 import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
 import { ACTIVE_JOB_STATUSES } from '@/lib/jobs/statuses'
+import { jobTypeScopeWhere, resolveJobTypeForWrite } from '@/lib/jobs/job-type-scope'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -106,6 +107,7 @@ export async function GET(request: NextRequest) {
               userId: user.id,
             },
           },
+          ...(await jobTypeScopeWhere(user.id, user.tenantId)),
         }
 
         applySmartSearch(
@@ -228,6 +230,7 @@ export async function GET(request: NextRequest) {
 
     const where: any = {
       tenantId: user.tenantId,
+      ...(await jobTypeScopeWhere(user.id, user.tenantId)),
     }
 
     applySmartSearch(
@@ -381,12 +384,18 @@ export async function POST(request: NextRequest) {
     title,
     description,
     status,
+    jobType,
     priority,
     scheduledStart,
     scheduledEnd,
     estimateAmount,
     jobSite,
   } = validation.data
+
+  const resolvedType = await resolveJobTypeForWrite(user.id, user.tenantId, jobType)
+  if (!resolvedType.ok) {
+    return NextResponse.json({ error: resolvedType.error }, { status: 403 })
+  }
 
   try {
 
@@ -417,6 +426,7 @@ export async function POST(request: NextRequest) {
         title,
         description: description || null,
         status: status || 'QUOTE',
+        jobType: resolvedType.jobType,
         priority: typeof priority === 'number' ? priority : (priority ? parseInt(String(priority)) : 3),
         scheduledStart: scheduledStart ? new Date(scheduledStart) : null,
         scheduledEnd: scheduledEnd ? new Date(scheduledEnd) : null,
