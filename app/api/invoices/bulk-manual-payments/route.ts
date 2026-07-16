@@ -82,7 +82,9 @@ export async function POST(request: NextRequest) {
       const invoiceId = String(item?.invoiceId || '').trim()
       const requestedAmount = toNumber(item?.amount)
       const invoice = invoicesById.get(invoiceId)
-      const remaining = invoice ? Math.max(0, toNumber(invoice.total) - toNumber(invoice.paidAmount)) : 0
+      const remaining = invoice
+        ? Math.max(0, toNumber(toNumber(invoice.total) - toNumber(invoice.paidAmount)))
+        : 0
       return {
         invoiceId,
         invoice,
