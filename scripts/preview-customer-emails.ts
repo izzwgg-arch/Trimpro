@@ -8,7 +8,6 @@ import { buildEstimateApprovalEmail } from '../lib/email/templates/estimate-appr
 import { buildInvoiceEmail } from '../lib/email/templates/invoice'
 import {
   buildBulkPaymentReceiptEmail,
-  buildInvoicePaymentReceiptEmail,
   buildPaymentReceiptEmail,
 } from '../lib/email/templates/payment-receipt'
 import { buildStatementEmail } from '../lib/email/templates/statement'
@@ -46,19 +45,23 @@ const samples: Record<string, string> = {
     paidAt: new Date('2026-05-25T14:30:00'),
     transactionId: 'pay_abc123xyz',
     invoiceNumber: 'INV-2201',
-    receiptUrl: 'https://app.trimprony.com/receipt/example',
-    invoiceUrl: 'https://app.trimprony.com/portal/pay/example',
+    description: 'Invoice INV-2201 (Card)',
+    receiptUrl: 'https://app.trimprony.com/pay/receipt/example-token',
+    invoiceUrl: 'https://app.trimprony.com/portal/pay/example?token=example',
     companyName: 'TrimPro Demo',
+    hasPdfAttachment: true,
   }),
-  'payment-receipt-webhook.html': buildInvoicePaymentReceiptEmail({
-    clientName: 'Jane Client',
-    invoiceNumber: 'INV-2201',
+  'payment-receipt-webhook.html': buildPaymentReceiptEmail({
+    recipientName: 'Jane Client',
     amountPaid: '$500.00',
-    paidToDate: '$500.00',
-    balance: '$750.00',
+    paidAt: new Date('2026-05-25T14:30:00'),
     transactionId: 'txn_998877',
-    receiptUrl: 'https://app.trimprony.com/portal/pay/example',
+    invoiceNumber: 'INV-2201',
+    description: 'Invoice INV-2201 (Card)',
+    receiptUrl: 'https://app.trimprony.com/pay/receipt/example-token',
+    invoiceUrl: 'https://app.trimprony.com/portal/pay/example?token=example',
     companyName: 'TrimPro Demo',
+    hasPdfAttachment: true,
   }),
   'payment-receipt-bulk.html': buildBulkPaymentReceiptEmail({
     clientName: 'Jane Client',

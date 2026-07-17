@@ -24,6 +24,7 @@ export interface PaymentReceiptEmailOptions {
   receiptUrl?: string
   invoiceUrl?: string
   invoiceNumber?: string
+  hasPdfAttachment?: boolean
 }
 
 function formatDate(value: Date | string): string {
@@ -175,6 +176,7 @@ export function buildPaymentReceiptEmail(opts: PaymentReceiptEmailOptions): stri
     receiptUrl,
     invoiceUrl,
     invoiceNumber,
+    hasPdfAttachment = false,
   } = opts
 
   const dateString = formatDate(paidAt)
@@ -187,8 +189,16 @@ export function buildPaymentReceiptEmail(opts: PaymentReceiptEmailOptions): stri
     buildEmailParagraph(`Hi ${escapeHtml(recipientName)},`, { marginBottom: 6 }),
     buildEmailParagraph(
       'Thank you for your payment. We&rsquo;ve received and applied it to your outstanding invoice(s).',
-      { marginBottom: 22 }
+      { marginBottom: hasPdfAttachment ? 12 : 22 }
     ),
+    ...(hasPdfAttachment
+      ? [
+          buildEmailParagraph(
+            'A PDF copy of your receipt is attached to this email.',
+            { marginBottom: 22 }
+          ),
+        ]
+      : []),
     buildEmailDetailsCard({
       title: 'Receipt Details',
       rows: [

@@ -476,6 +476,7 @@ export async function sendInvoiceEmail(
 export async function sendPaymentReceiptEmail(params: {
   to: string
   tenantId?: string
+  recipientName?: string | null
   invoiceNumber: string
   amount: number
   paidAt?: Date | string | null
@@ -502,7 +503,7 @@ export async function sendPaymentReceiptEmail(params: {
 
   const subject = `Payment receipt for invoice ${params.invoiceNumber}`
   const html = buildPaymentReceiptEmail({
-    recipientName: 'there',
+    recipientName: params.recipientName || 'there',
     amountPaid: amountText,
     paidAt: params.paidAt || new Date(),
     transactionId: providerPaymentId || '-',
@@ -512,6 +513,7 @@ export async function sendPaymentReceiptEmail(params: {
     receiptUrl: params.receiptUrl || undefined,
     invoiceUrl: params.invoiceUrl || undefined,
     invoiceNumber: params.invoiceNumber,
+    hasPdfAttachment: Boolean(params.pdfAttachment),
   })
 
   const text = `
@@ -527,6 +529,7 @@ ${params.providerInvoiceId ? `Provider Invoice ID: ${params.providerInvoiceId}` 
 ${params.reference ? `Reference: ${params.reference}` : ''}
 ${params.receiptUrl ? `View receipt: ${params.receiptUrl}` : ''}
 ${params.invoiceUrl ? `View invoice: ${params.invoiceUrl}` : ''}
+${params.pdfAttachment ? 'A PDF copy of your receipt is attached to this email.' : ''}
 
 — ${company}
   `.trim()

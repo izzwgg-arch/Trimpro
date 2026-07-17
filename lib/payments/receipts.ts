@@ -136,6 +136,7 @@ type PaymentWithReceiptInclude = {
     id: string
     invoiceNumber: string
     tenantId: string
+    paymentToken: string | null
     tenant: { name: string } | null
     client: {
       name: string
@@ -184,7 +185,9 @@ function mapPaymentToReceiptContext(
     clientEmail,
     methodLabel: formatPaymentMethodLabel(payment),
     receiptUrl: token ? `${appUrl}/pay/receipt/${encodeURIComponent(token)}` : '',
-    invoiceUrl: `${appUrl}/portal/pay/${payment.invoice.id}`,
+    invoiceUrl: payment.invoice.paymentToken
+      ? `${appUrl}/portal/pay/${payment.invoice.id}?token=${encodeURIComponent(payment.invoice.paymentToken)}`
+      : `${appUrl}/portal/pay/${payment.invoice.id}`,
   }
 }
 
@@ -394,6 +397,7 @@ export async function sendPaymentReceiptForPayment(
     await sendPaymentReceiptEmail({
       to,
       tenantId,
+      recipientName: ctx.clientName,
       invoiceNumber: ctx.invoice.invoiceNumber,
       amount: ctx.payment.amount,
       paidAt: ctx.payment.processedAt || ctx.payment.createdAt,

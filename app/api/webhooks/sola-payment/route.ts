@@ -1,113 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { notifyInvoicePaid } from '@/lib/notifications'
-import { getIntegrationSecrets } from '@/lib/integrations/status'
-import { testEmailProvider } from '@/lib/integrations/providers/email'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
-import { getEmailBranding } from '@/lib/email/branding'
-import {
-  buildBulkPaymentReceiptEmail,
-  buildInvoicePaymentReceiptEmail,
-} from '@/lib/email/templates/payment-receipt'
 import { orderInvoicesByStoredIds } from '@/lib/payments/bulk-card-allocation'
 import { afterInvoicePayment } from '@/lib/payments/after-invoice-payment'
 import { applyInvoicePayment } from '@/lib/payments/apply-payment'
+import { sendPaymentReceiptForPayment } from '@/lib/payments/receipts'
 import crypto from 'crypto'
-
-function money(value: number) {
-  return `$${Number(value || 0).toFixed(2)}`
-}
-
-async function sendPaymentReceiptEmail(params: {
-  tenantId: string
-  to: string
-  clientName: string
-  invoiceId: string
-  invoiceNumber: string
-  invoiceToken?: string | null
-  amountPaid: number
-  paidToDate: number
-  balance: number
-  transactionId?: string
-}) {
-  const emailSecrets = await getIntegrationSecrets(params.tenantId, 'email')
-  if (!emailSecrets) {
-    console.warn('Receipt email skipped: Email integration not configured')
-    return
-  }
-
-  const appUrl =
-    process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.PUBLIC_APP_URL ||
-    process.env.APP_URL ||
-    'https://app.trimprony.com'
-
-  const now = new Date()
-  const subject = `Payment Receipt • Invoice ${params.invoiceNumber} • ${now.toISOString()}`
-  const receiptUrl = `${appUrl}/portal/pay/${params.invoiceId}${
-    params.invoiceToken ? `?token=${encodeURIComponent(params.invoiceToken)}` : ''
-  }`
-  const emailBranding = await getEmailBranding(params.tenantId)
-  const brandLogoUrl = String(emailBranding?.emailLogoUrl || emailBranding?.webLogoUrl || '').trim()
-  const html = buildInvoicePaymentReceiptEmail({
-    clientName: params.clientName,
-    invoiceNumber: params.invoiceNumber,
-    amountPaid: money(params.amountPaid),
-    paidToDate: money(params.paidToDate),
-    balance: money(params.balance),
-    transactionId: params.transactionId,
-    receiptUrl,
-    logoUrl: brandLogoUrl || undefined,
-    companyName:
-      (emailBranding as { businessName?: string; companyName?: string } | null)?.businessName ||
-      (emailBranding as { companyName?: string } | null)?.companyName ||
-      'TrimPro',
-  })
-
-  const result = await testEmailProvider(emailSecrets, params.to, subject, html)
-  if (!result.success) {
-    console.error('Failed to send payment receipt email:', result.error || result.message)
-  }
-}
-
-async function sendBulkPaymentReceiptEmail(params: {
-  tenantId: string
-  to: string
-  clientName: string
-  amountPaid: number
-  appliedCount: number
-  transactionId?: string
-}) {
-  const emailSecrets = await getIntegrationSecrets(params.tenantId, 'email')
-  if (!emailSecrets) return
-
-  const now = new Date()
-  const subject = `Payment Receipt • ${params.appliedCount} invoice(s) • ${now.toISOString()}`
-  const emailBranding = await getEmailBranding(params.tenantId)
-  const brandLogoUrl = String(emailBranding?.emailLogoUrl || emailBranding?.webLogoUrl || '').trim()
-  const portalUrl =
-    process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.PUBLIC_APP_URL ||
-    process.env.APP_URL ||
-    'https://app.trimprony.com'
-  const html = buildBulkPaymentReceiptEmail({
-    clientName: params.clientName,
-    amountPaid: money(params.amountPaid),
-    appliedCount: params.appliedCount,
-    transactionId: params.transactionId,
-    portalUrl: `${portalUrl.replace(/\/$/, '')}/portal`,
-    logoUrl: brandLogoUrl || undefined,
-    companyName:
-      (emailBranding as { businessName?: string; companyName?: string } | null)?.businessName ||
-      (emailBranding as { companyName?: string } | null)?.companyName ||
-      'TrimPro',
-  })
-
-  const result = await testEmailProvider(emailSecrets, params.to, subject, html)
-  if (!result.success) {
-    console.error('Failed to send bulk payment receipt email:', result.error || result.message)
-  }
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -368,21 +267,13 @@ export async function POST(request: NextRequest) {
         // ignore
       }
 
-      // Receipt email (single)
-      try {
-        const to = client.email || client.contacts?.[0]?.email
-        if (to && appliedCount > 0 && appliedTotal > 0) {
-          await sendBulkPaymentReceiptEmail({
-            tenantId: client.tenantId,
-            to,
-            clientName: client.name || 'Customer',
-            amountPaid: appliedTotal,
-            appliedCount,
-            transactionId: transactionId || undefined,
-          })
+      // One receipt email + PDF per invoice payment applied.
+      for (const paymentId of groupedPaymentIds) {
+        try {
+          await sendPaymentReceiptForPayment(paymentId, client.tenantId)
+        } catch (error) {
+          console.error('Bulk receipt email error:', error)
         }
-      } catch (error) {
-        console.error('Bulk receipt email error:', error)
       }
 
       return NextResponse.json({ ok: true, bulk: true, appliedCount, appliedTotal })
@@ -444,8 +335,6 @@ export async function POST(request: NextRequest) {
     const amount = result.invoice
       ? Math.max(0, Number(result.invoice.paidAmount) - Number(invoice.paidAmount))
       : 0
-    const newPaidAmount = result.invoice ? Number(result.invoice.paidAmount) : Number(invoice.paidAmount)
-    const newBalance = result.invoice ? Number(result.invoice.balance) : Number(invoice.balance)
 
     if (result.created && result.paymentId) {
       if (transactionId) {
@@ -460,20 +349,12 @@ export async function POST(request: NextRequest) {
         console.error('QuickBooks payment sync trigger error:', error)
       }
 
-      const recipientEmail = invoice.client.email || invoice.client.contacts?.[0]?.email
-      if (recipientEmail && amount > 0) {
-        await sendPaymentReceiptEmail({
-          tenantId: invoice.tenantId,
-          to: recipientEmail,
-          clientName: invoice.client.name || 'Customer',
-          invoiceId: invoice.id,
-          invoiceNumber: invoice.invoiceNumber,
-          invoiceToken: invoice.paymentToken,
-          amountPaid: amount,
-          paidToDate: newPaidAmount,
-          balance: newBalance,
-          transactionId: transactionId || undefined,
-        })
+      if (amount > 0) {
+        try {
+          await sendPaymentReceiptForPayment(result.paymentId, invoice.tenantId)
+        } catch (error) {
+          console.error('Failed to send payment receipt email:', error)
+        }
       }
 
       await notifyInvoicePaid(
