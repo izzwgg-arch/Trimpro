@@ -1,6 +1,12 @@
 import { prisma } from '@/lib/prisma'
 
-export type UnifiedDocumentKind = 'estimate' | 'invoice' | 'payment'
+export type UnifiedDocumentKind =
+  | 'estimate'
+  | 'invoice'
+  | 'payment'
+  | 'purchase_order'
+  | 'request'
+  | 'job'
 
 export interface UnifiedDocumentRow {
   id: string
@@ -52,6 +58,67 @@ function paymentCanReceipt(displayStatus: string) {
   return displayStatus === 'COMPLETED' || displayStatus === 'REFUNDED' || displayStatus === 'PARTIALLY_REFUNDED'
 }
 
+const estimateSelect = {
+  id: true,
+  clientId: true,
+  estimateNumber: true,
+  title: true,
+  status: true,
+  total: true,
+  createdAt: true,
+  client: { select: { id: true, name: true } },
+} as const
+
+const invoiceSelect = {
+  id: true,
+  clientId: true,
+  invoiceNumber: true,
+  title: true,
+  status: true,
+  total: true,
+  balance: true,
+  dueDate: true,
+  createdAt: true,
+  client: { select: { id: true, name: true } },
+} as const
+
+const purchaseOrderSelect = {
+  id: true,
+  clientId: true,
+  jobId: true,
+  poNumber: true,
+  vendor: true,
+  status: true,
+  total: true,
+  orderDate: true,
+  createdAt: true,
+  client: { select: { id: true, name: true } },
+} as const
+
+const requestSelect = {
+  id: true,
+  convertedToClientId: true,
+  firstName: true,
+  lastName: true,
+  company: true,
+  status: true,
+  value: true,
+  createdAt: true,
+  client: { select: { id: true, name: true } },
+} as const
+
+const jobSelect = {
+  id: true,
+  clientId: true,
+  jobNumber: true,
+  title: true,
+  status: true,
+  estimateAmount: true,
+  scheduledStart: true,
+  createdAt: true,
+  client: { select: { id: true, name: true } },
+} as const
+
 export async function fetchClientDocuments(tenantId: string, clientId: string) {
   const client = await prisma.client.findFirst({
     where: { id: clientId, tenantId },
@@ -63,36 +130,16 @@ export async function fetchClientDocuments(tenantId: string, clientId: string) {
   const descendantIds = await getDescendantClientIds(tenantId, [clientId])
   const clientIds = [clientId, ...descendantIds]
 
-  const [estimates, invoices, payments] = await Promise.all([
+  const [estimates, invoices, payments, purchaseOrders, requests, jobs] = await Promise.all([
     prisma.estimate.findMany({
       where: { tenantId, clientId: { in: clientIds } },
       orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        clientId: true,
-        estimateNumber: true,
-        title: true,
-        status: true,
-        total: true,
-        createdAt: true,
-        client: { select: { id: true, name: true } },
-      },
+      select: estimateSelect,
     }),
     prisma.invoice.findMany({
       where: { tenantId, clientId: { in: clientIds } },
       orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        clientId: true,
-        invoiceNumber: true,
-        title: true,
-        status: true,
-        total: true,
-        balance: true,
-        dueDate: true,
-        createdAt: true,
-        client: { select: { id: true, name: true } },
-      },
+      select: invoiceSelect,
     }),
     prisma.payment.findMany({
       where: {
@@ -110,9 +157,32 @@ export async function fetchClientDocuments(tenantId: string, clientId: string) {
         },
       },
     }),
+    prisma.purchaseOrder.findMany({
+      where: { tenantId, clientId: { in: clientIds } },
+      orderBy: { createdAt: 'desc' },
+      select: purchaseOrderSelect,
+    }),
+    prisma.lead.findMany({
+      where: { tenantId, convertedToClientId: { in: clientIds } },
+      orderBy: { createdAt: 'desc' },
+      select: requestSelect,
+    }),
+    prisma.job.findMany({
+      where: { tenantId, clientId: { in: clientIds } },
+      orderBy: { createdAt: 'desc' },
+      select: jobSelect,
+    }),
   ])
 
-  return buildDocumentRows({ estimates, invoices, payments, rootClientId: clientId })
+  return buildDocumentRows({
+    estimates,
+    invoices,
+    payments,
+    purchaseOrders,
+    requests,
+    jobs,
+    rootClientId: clientId,
+  })
 }
 
 export async function fetchJobDocuments(tenantId: string, jobId: string) {
@@ -123,7 +193,7 @@ export async function fetchJobDocuments(tenantId: string, jobId: string) {
 
   if (!job) return null
 
-  const [estimates, invoices, payments] = await Promise.all([
+  const [estimates, invoices, payments, purchaseOrders] = await Promise.all([
     prisma.estimate.findMany({
       where: { tenantId, jobId },
       orderBy: { createdAt: 'desc' },
@@ -161,9 +231,22 @@ export async function fetchJobDocuments(tenantId: string, jobId: string) {
         },
       },
     }),
+    prisma.purchaseOrder.findMany({
+      where: { tenantId, jobId },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        poNumber: true,
+        vendor: true,
+        status: true,
+        total: true,
+        orderDate: true,
+        createdAt: true,
+      },
+    }),
   ])
 
-  return buildDocumentRows({ estimates, invoices, payments })
+  return buildDocumentRows({ estimates, invoices, payments, purchaseOrders })
 }
 
 function subClientLabel(rootClientId: string | undefined, clientId: string | null | undefined, clientName: string | null | undefined) {
@@ -175,6 +258,9 @@ function buildDocumentRows({
   estimates,
   invoices,
   payments,
+  purchaseOrders = [],
+  requests = [],
+  jobs = [],
   rootClientId,
 }: {
   estimates: Array<{
@@ -215,6 +301,39 @@ function buildDocumentRows({
       clientId?: string
       client?: { id: string; name: string } | null
     } | null
+  }>
+  purchaseOrders?: Array<{
+    id: string
+    clientId?: string | null
+    poNumber: string
+    vendor: string
+    status: string
+    total: { toString(): string } | number
+    orderDate: Date | null
+    createdAt: Date
+    client?: { id: string; name: string } | null
+  }>
+  requests?: Array<{
+    id: string
+    convertedToClientId?: string | null
+    firstName: string
+    lastName: string
+    company: string | null
+    status: string
+    value: { toString(): string } | number | null
+    createdAt: Date
+    client?: { id: string; name: string } | null
+  }>
+  jobs?: Array<{
+    id: string
+    clientId?: string | null
+    jobNumber: string
+    title: string
+    status: string
+    estimateAmount: { toString(): string } | number | null
+    scheduledStart: Date | null
+    createdAt: Date
+    client?: { id: string; name: string } | null
   }>
   rootClientId?: string
 }): UnifiedDocumentRow[] {
@@ -272,6 +391,58 @@ function buildDocumentRows({
       canReceipt: paymentCanReceipt(displayStatus),
       receiptEmailSentAt: payment.receiptEmailSentAt?.toISOString() ?? null,
       clientName: subClientLabel(rootClientId, payment.invoice?.clientId, payment.invoice?.client?.name),
+    })
+  }
+
+  for (const po of purchaseOrders) {
+    rows.push({
+      id: po.id,
+      kind: 'purchase_order',
+      number: po.poNumber,
+      title: po.vendor,
+      status: po.status,
+      amount: Number(po.total),
+      balance: null,
+      isPaid: null,
+      date: (po.orderDate || po.createdAt).toISOString(),
+      href: `/dashboard/purchase-orders/${po.id}`,
+      meta: po.vendor ? `Vendor ${po.vendor}` : null,
+      clientName: subClientLabel(rootClientId, po.clientId, po.client?.name),
+    })
+  }
+
+  for (const request of requests) {
+    const fullName = `${request.firstName} ${request.lastName}`.trim()
+    rows.push({
+      id: request.id,
+      kind: 'request',
+      number: `REQ-${request.id.slice(-6).toUpperCase()}`,
+      title: request.company || fullName || 'Request',
+      status: request.status,
+      amount: request.value != null ? Number(request.value) : 0,
+      balance: null,
+      isPaid: null,
+      date: request.createdAt.toISOString(),
+      href: `/dashboard/requests/${request.id}`,
+      meta: fullName && request.company ? fullName : null,
+      clientName: subClientLabel(rootClientId, request.convertedToClientId, request.client?.name),
+    })
+  }
+
+  for (const job of jobs) {
+    rows.push({
+      id: job.id,
+      kind: 'job',
+      number: job.jobNumber,
+      title: job.title,
+      status: job.status,
+      amount: job.estimateAmount != null ? Number(job.estimateAmount) : 0,
+      balance: null,
+      isPaid: null,
+      date: (job.scheduledStart || job.createdAt).toISOString(),
+      href: `/dashboard/jobs/${job.id}`,
+      meta: job.status.replaceAll('_', ' '),
+      clientName: subClientLabel(rootClientId, job.clientId, job.client?.name),
     })
   }
 

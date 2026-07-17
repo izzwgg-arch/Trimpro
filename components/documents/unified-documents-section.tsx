@@ -16,18 +16,56 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { DollarSign, FileText, Search, ChevronDown, ChevronRight, Download, Mail, X } from 'lucide-react'
 import type { UnifiedDocumentKind, UnifiedDocumentRow } from '@/lib/documents/unified-documents'
 import { smartMatch, scoreHaystack } from '@/lib/search/scoring'
+import {
+  ACTIVE_JOB_STATUSES,
+  JOB_STATUSES,
+  formatJobStatus,
+  jobStatusColors,
+} from '@/lib/jobs/statuses'
 
 type TypeFilter = 'all' | UnifiedDocumentKind
 type InvoiceFilter = 'all' | 'paid' | 'unpaid'
 type EstimateFilter = 'all' | 'open' | 'converted'
-type SortOption = 'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc'
+type RequestFilter =
+  | 'all'
+  | 'open'
+  | 'NEW'
+  | 'CONTACTED'
+  | 'QUALIFIED'
+  | 'ESTIMATE_CREATED'
+  | 'ESTIMATE_SENT'
+  | 'FOLLOW_UP'
+  | 'CONVERTED'
+  | 'LOST'
+type JobFilter = 'all' | 'active' | 'completed' | 'cancelled' | (typeof JOB_STATUSES)[number]['value']
+type SortOption = 'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc' | 'status-asc' | 'status-desc'
 
 type DocumentPreferences = {
   sort: SortOption
   typeFilter: TypeFilter
   invoiceFilter: InvoiceFilter
   estimateFilter: EstimateFilter
+  requestFilter: RequestFilter
+  jobFilter: JobFilter
   search: string
+}
+
+const REQUEST_STATUS_OPTIONS: Array<{ value: RequestFilter; label: string }> = [
+  { value: 'all', label: 'All requests' },
+  { value: 'open', label: 'Open' },
+  { value: 'NEW', label: 'New' },
+  { value: 'CONTACTED', label: 'Contacted' },
+  { value: 'QUALIFIED', label: 'Qualified' },
+  { value: 'ESTIMATE_CREATED', label: 'Estimate created' },
+  { value: 'ESTIMATE_SENT', label: 'Estimate sent' },
+  { value: 'FOLLOW_UP', label: 'Follow up' },
+  { value: 'CONVERTED', label: 'Converted' },
+  { value: 'LOST', label: 'Lost' },
+]
+
+function formatDocumentStatus(kind: UnifiedDocumentKind, status: string) {
+  if (kind === 'job') return formatJobStatus(status)
+  return status.replaceAll('_', ' ')
 }
 
 function readDocumentPreferences(key?: string): Partial<DocumentPreferences> | null {
@@ -61,12 +99,29 @@ function compareDocuments(a: UnifiedDocumentRow, b: UnifiedDocumentRow, sort: So
     case 'amount-asc':
       primary = a.amount - b.amount
       break
+    case 'status-asc':
+      primary = formatDocumentStatus(a.kind, a.status).localeCompare(
+        formatDocumentStatus(b.kind, b.status)
+      )
+      break
+    case 'status-desc':
+      primary = formatDocumentStatus(b.kind, b.status).localeCompare(
+        formatDocumentStatus(a.kind, a.status)
+      )
+      break
     default:
       primary = new Date(b.date).getTime() - new Date(a.date).getTime()
   }
   if (primary !== 0) return primary
 
-  const kindOrder: Record<UnifiedDocumentKind, number> = { estimate: 0, invoice: 1, payment: 2 }
+  const kindOrder: Record<UnifiedDocumentKind, number> = {
+    job: 0,
+    request: 1,
+    estimate: 2,
+    invoice: 3,
+    payment: 4,
+    purchase_order: 5,
+  }
   const kindDiff = kindOrder[a.kind] - kindOrder[b.kind]
   if (kindDiff !== 0) return kindDiff
 
@@ -82,19 +137,42 @@ function matchesEstimateFilter(status: string, filter: EstimateFilter) {
   return !['CONVERTED', 'REJECTED', 'EXPIRED'].includes(status)
 }
 
+function matchesRequestFilter(status: string, filter: RequestFilter) {
+  if (filter === 'all') return true
+  if (filter === 'open') return !['CONVERTED', 'LOST'].includes(status)
+  return status === filter
+}
+
+function matchesJobFilter(status: string, filter: JobFilter) {
+  if (filter === 'all') return true
+  if (filter === 'active') return ACTIVE_JOB_STATUSES.includes(status as (typeof ACTIVE_JOB_STATUSES)[number])
+  if (filter === 'completed') return status === 'COMPLETED' || status === 'INVOICED'
+  if (filter === 'cancelled') return status === 'CANCELLED'
+  return status === filter
+}
+
 const kindLabels: Record<UnifiedDocumentKind, string> = {
   estimate: 'Estimate',
   invoice: 'Invoice',
   payment: 'Payment',
+  purchase_order: 'Purchase Order',
+  request: 'Request',
+  job: 'Job',
 }
 
 const kindBadgeClass: Record<UnifiedDocumentKind, string> = {
   estimate: 'bg-indigo-100 text-indigo-800',
   invoice: 'bg-slate-100 text-slate-800',
   payment: 'bg-emerald-100 text-emerald-800',
+  purchase_order: 'bg-amber-100 text-amber-900',
+  request: 'bg-violet-100 text-violet-800',
+  job: 'bg-sky-100 text-sky-800',
 }
 
 function statusClass(kind: UnifiedDocumentKind, status: string) {
+  if (kind === 'job') {
+    return jobStatusColors[status] || 'bg-gray-100 text-gray-800'
+  }
   if (kind === 'estimate') {
     if (status === 'ACCEPTED' || status === 'CONVERTED') return 'bg-green-100 text-green-800'
     if (status === 'SENT') return 'bg-blue-100 text-blue-800'
@@ -105,6 +183,19 @@ function statusClass(kind: UnifiedDocumentKind, status: string) {
     if (status === 'PAID') return 'bg-green-100 text-green-800'
     if (status === 'OVERDUE') return 'bg-red-100 text-red-800'
     if (status === 'PARTIAL') return 'bg-amber-100 text-amber-800'
+    return 'bg-gray-100 text-gray-800'
+  }
+  if (kind === 'purchase_order') {
+    if (status === 'RECEIVED') return 'bg-green-100 text-green-800'
+    if (status === 'ORDERED' || status === 'APPROVED') return 'bg-blue-100 text-blue-800'
+    if (status === 'CANCELLED') return 'bg-red-100 text-red-800'
+    return 'bg-gray-100 text-gray-800'
+  }
+  if (kind === 'request') {
+    if (status === 'CONVERTED') return 'bg-green-100 text-green-800'
+    if (status === 'QUALIFIED' || status === 'CONTACTED' || status === 'FOLLOW_UP') return 'bg-blue-100 text-blue-800'
+    if (status === 'ESTIMATE_CREATED' || status === 'ESTIMATE_SENT') return 'bg-indigo-100 text-indigo-800'
+    if (status === 'LOST') return 'bg-red-100 text-red-800'
     return 'bg-gray-100 text-gray-800'
   }
   if (status === 'COMPLETED') return 'bg-green-100 text-green-800'
@@ -131,7 +222,7 @@ export function UnifiedDocumentsSection({
   documents,
   loading = false,
   error = null,
-  description = 'Estimates, invoices, and payments in one place',
+  description = 'Estimates, invoices, payments, purchase orders, requests, and jobs',
   enableInvoiceSelection = false,
   selectedInvoiceIds = [],
   onToggleInvoice,
@@ -147,6 +238,8 @@ export function UnifiedDocumentsSection({
   const [typeFilter, setTypeFilter] = useState<TypeFilter>(storedPrefs?.typeFilter ?? 'all')
   const [invoiceFilter, setInvoiceFilter] = useState<InvoiceFilter>(storedPrefs?.invoiceFilter ?? 'all')
   const [estimateFilter, setEstimateFilter] = useState<EstimateFilter>(storedPrefs?.estimateFilter ?? 'all')
+  const [requestFilter, setRequestFilter] = useState<RequestFilter>(storedPrefs?.requestFilter ?? 'all')
+  const [jobFilter, setJobFilter] = useState<JobFilter>(storedPrefs?.jobFilter ?? 'all')
   const [sort, setSort] = useState<SortOption>(storedPrefs?.sort ?? 'date-desc')
   const [downloadingReceiptId, setDownloadingReceiptId] = useState<string | null>(null)
   const [showReceiptEmailDialog, setShowReceiptEmailDialog] = useState(false)
@@ -161,9 +254,11 @@ export function UnifiedDocumentsSection({
       typeFilter,
       invoiceFilter,
       estimateFilter,
+      requestFilter,
+      jobFilter,
       search,
     })
-  }, [preferencesKey, sort, typeFilter, invoiceFilter, estimateFilter, search])
+  }, [preferencesKey, sort, typeFilter, invoiceFilter, estimateFilter, requestFilter, jobFilter, search])
 
   const filtered = useMemo(() => {
     const query = search.trim()
@@ -177,11 +272,18 @@ export function UnifiedDocumentsSection({
       if (row.kind === 'estimate' && typeFilter === 'estimate') {
         if (!matchesEstimateFilter(row.status, estimateFilter)) return false
       }
+      if (row.kind === 'request' && typeFilter === 'request') {
+        if (!matchesRequestFilter(row.status, requestFilter)) return false
+      }
+      if (row.kind === 'job' && typeFilter === 'job') {
+        if (!matchesJobFilter(row.status, jobFilter)) return false
+      }
       if (!query) return true
       return smartMatch(query, [
         row.number,
         row.title,
         row.status,
+        formatDocumentStatus(row.kind, row.status),
         row.meta,
         row.clientName,
         kindLabels[row.kind],
@@ -202,7 +304,7 @@ export function UnifiedDocumentsSection({
     }
 
     return rows
-  }, [documents, search, typeFilter, invoiceFilter, estimateFilter, sort])
+  }, [documents, search, typeFilter, invoiceFilter, estimateFilter, requestFilter, jobFilter, sort])
 
   const visibleTotal = filtered.reduce((sum, row) => sum + row.amount, 0)
   const isInitialLoad = loading && documents.length === 0
@@ -210,7 +312,15 @@ export function UnifiedDocumentsSection({
 
   const showInvoiceFilter = typeFilter === 'invoice'
   const showEstimateFilter = typeFilter === 'estimate'
-  const filterCount = 1 + (showEstimateFilter ? 1 : 0) + (showInvoiceFilter ? 1 : 0) + 1
+  const showRequestFilter = typeFilter === 'request'
+  const showJobFilter = typeFilter === 'job'
+  const filterCount =
+    1 +
+    (showEstimateFilter ? 1 : 0) +
+    (showInvoiceFilter ? 1 : 0) +
+    (showRequestFilter ? 1 : 0) +
+    (showJobFilter ? 1 : 0) +
+    1
   const showReceiptActions = documents.some((row) => row.kind === 'payment' && row.canReceipt)
   const leadingColumns = (enableInvoiceSelection ? 1 : 0) + 6
   const totalColumns = leadingColumns + (showReceiptActions ? 1 : 0)
@@ -352,15 +462,20 @@ export function UnifiedDocumentsSection({
               setTypeFilter(next)
               if (next !== 'invoice') setInvoiceFilter('all')
               if (next !== 'estimate') setEstimateFilter('all')
+              if (next !== 'request') setRequestFilter('all')
+              if (next !== 'job') setJobFilter('all')
             }}>
               <SelectTrigger>
                 <SelectValue placeholder="Type" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All types</SelectItem>
+                <SelectItem value="job">Jobs</SelectItem>
+                <SelectItem value="request">Requests</SelectItem>
                 <SelectItem value="estimate">Estimates</SelectItem>
                 <SelectItem value="invoice">Invoices</SelectItem>
                 <SelectItem value="payment">Payments</SelectItem>
+                <SelectItem value="purchase_order">Purchase Orders</SelectItem>
               </SelectContent>
             </Select>
             {showEstimateFilter && (
@@ -387,6 +502,38 @@ export function UnifiedDocumentsSection({
                 </SelectContent>
               </Select>
             )}
+            {showRequestFilter && (
+              <Select value={requestFilter} onValueChange={(v) => setRequestFilter(v as RequestFilter)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Request status" />
+                </SelectTrigger>
+                <SelectContent>
+                  {REQUEST_STATUS_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {showJobFilter && (
+              <Select value={jobFilter} onValueChange={(v) => setJobFilter(v as JobFilter)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Job status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All jobs</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                  {JOB_STATUSES.map((status) => (
+                    <SelectItem key={status.value} value={status.value}>
+                      {status.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <Select value={sort} onValueChange={(v) => setSort(v as SortOption)}>
               <SelectTrigger>
                 <SelectValue placeholder="Sort" />
@@ -396,6 +543,8 @@ export function UnifiedDocumentsSection({
                 <SelectItem value="date-asc">Oldest first</SelectItem>
                 <SelectItem value="amount-desc">Amount high → low</SelectItem>
                 <SelectItem value="amount-asc">Amount low → high</SelectItem>
+                <SelectItem value="status-asc">Status A → Z</SelectItem>
+                <SelectItem value="status-desc">Status Z → A</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -480,7 +629,7 @@ export function UnifiedDocumentsSection({
                       </td>
                       <td className="px-3 py-2 align-top">
                         <span className={`inline-flex rounded px-2 py-0.5 text-xs ${statusClass(row.kind, row.status)}`}>
-                          {row.status.replace(/_/g, ' ')}
+                          {formatDocumentStatus(row.kind, row.status)}
                         </span>
                       </td>
                       {showReceiptActions && (

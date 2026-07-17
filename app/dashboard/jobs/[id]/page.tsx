@@ -920,7 +920,7 @@ export default function JobDetailPage() {
         documents={documents}
         loading={documentsLoading}
         error={documentsError}
-        description={`${job._count.estimates ?? 0} estimates, ${job._count.invoices ?? 0} invoices, and related payments`}
+        description={`${job._count.estimates ?? 0} estimates, ${job._count.invoices ?? 0} invoices, purchase orders, and related payments`}
         defaultReceiptEmail={primaryContact?.email}
         onDocumentsRefresh={fetchDocuments}
         preferencesKey={`documents-job-${jobId}`}

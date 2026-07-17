@@ -924,7 +924,7 @@ export default function ClientDetailPage() {
         documents={documents}
         loading={documentsLoading}
         error={documentsError}
-        description="All estimates, invoices, and payments for this client"
+        description="All estimates, invoices, payments, purchase orders, requests, and jobs for this client"
         enableInvoiceSelection
         selectedInvoiceIds={selectedInvoiceIds}
         onToggleInvoice={toggleSelectedInvoice}
