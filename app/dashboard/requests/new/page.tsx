@@ -18,6 +18,7 @@ import { PlaceAutocompleteInput } from '@/components/maps/PlaceAutocompleteInput
 import { refreshAccessToken } from '@/lib/auth/client'
 import { usePermissions, hasPermission } from '@/hooks/usePermissions'
 import { JobTypeCreateField } from '@/components/jobs/JobTypeCreateField'
+import { AttachmentGalleryDialog } from '@/components/common/attachment-gallery-dialog'
 
 interface User {
   id: string
@@ -78,6 +79,8 @@ export default function NewRequestPage() {
   const [stagedAttachments, setStagedAttachments] = useState<StagedAttachment[]>([])
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const [dragActive, setDragActive] = useState(false)
+  const [galleryOpen, setGalleryOpen] = useState(false)
+  const [galleryIndex, setGalleryIndex] = useState(0)
   const [clientMode, setClientMode] = useState<'new' | 'existing'>('existing')
   const [jobSitePlaceId, setJobSitePlaceId] = useState<string | null>(null)
   const [prefillValidationError, setPrefillValidationError] = useState<string | null>(null)
@@ -788,7 +791,7 @@ export default function NewRequestPage() {
                     multiple
                     className="hidden"
                     onChange={(e) => stageFiles(e.target.files)}
-                    accept=".pdf,.jpg,.jpeg,.png,.docx,application/pdf,image/jpeg,image/png,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip,.rar,.mp3,.mp4,.wav,.m4a,.jpg,.jpeg,.png"
                   />
                   <Button type="button" size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}>
                     <Upload className="mr-2 h-4 w-4" />
@@ -804,16 +807,28 @@ export default function NewRequestPage() {
                 <p className="text-sm text-gray-500">No files uploaded yet.</p>
               ) : (
                 <div className="space-y-2">
-                  {stagedAttachments.map((attachment) => (
+                  {stagedAttachments.map((attachment) => {
+                    const galleryItems = stagedAttachments.filter((item) => item.status === 'uploaded' && item.url)
+                    const galleryItemIndex = galleryItems.findIndex((item) => item.id === attachment.id)
+                    return (
                     <div key={attachment.id} className="flex items-center justify-between rounded border p-2">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{attachment.fileName}</p>
+                      <button
+                        type="button"
+                        className="min-w-0 flex-1 text-left"
+                        disabled={attachment.status !== 'uploaded' || !attachment.url}
+                        onClick={() => {
+                          if (galleryItemIndex < 0) return
+                          setGalleryIndex(galleryItemIndex)
+                          setGalleryOpen(true)
+                        }}
+                      >
+                        <p className="truncate text-sm font-medium hover:underline">{attachment.fileName}</p>
                         <p className="text-xs text-gray-500">
                           {attachment.status === 'uploading' && 'Uploading...'}
-                          {attachment.status === 'uploaded' && 'Uploaded'}
+                          {attachment.status === 'uploaded' && 'Uploaded — click to preview'}
                           {attachment.status === 'failed' && `Failed: ${attachment.error || 'Upload failed'}`}
                         </p>
-                      </div>
+                      </button>
                       <div className="ml-3 flex items-center gap-1">
                         {attachment.status === 'uploaded' && attachment.url ? (
                           <Button
@@ -821,6 +836,7 @@ export default function NewRequestPage() {
                             variant="ghost"
                             size="sm"
                             className="h-8 w-8 p-0"
+                            title="Open in new tab"
                             onClick={() => window.open(normalizePublicUrl(attachment.url), '_blank')}
                           >
                             <ExternalLink className="h-4 w-4" />
@@ -838,9 +854,26 @@ export default function NewRequestPage() {
                         </Button>
                       </div>
                     </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
+
+              <AttachmentGalleryDialog
+                open={galleryOpen}
+                attachments={stagedAttachments
+                  .filter((item) => item.status === 'uploaded' && item.url)
+                  .map((item) => ({
+                    id: item.id,
+                    fileName: item.fileName,
+                    fileSize: item.fileSize,
+                    mimeType: item.mimeType,
+                    url: item.url,
+                  }))}
+                index={galleryIndex}
+                onOpenChange={setGalleryOpen}
+                onIndexChange={setGalleryIndex}
+              />
             </div>
 
             <div className="flex justify-end space-x-4">

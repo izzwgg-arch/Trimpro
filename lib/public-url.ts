@@ -9,6 +9,15 @@ function isLocalHost(host: string) {
 }
 
 export function getPublicBaseUrl(request?: NextRequest): string {
+  // Prefer the actual request host in local/dev so /uploads stay reachable.
+  if (request) {
+    const host = request.headers.get('x-forwarded-host') || request.headers.get('host') || ''
+    if (host && (isLocalHost(host) || isIpHost(host))) {
+      const proto = request.headers.get('x-forwarded-proto') || 'http'
+      return `${proto}://${host}`.replace(/\/+$/, '')
+    }
+  }
+
   const envUrl =
     process.env.PUBLIC_APP_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||

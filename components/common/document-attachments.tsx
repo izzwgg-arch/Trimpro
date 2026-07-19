@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Paperclip, Upload, Trash2, ExternalLink } from 'lucide-react'
-import { useRef } from 'react'
+import { Paperclip, Upload, Trash2, ExternalLink, Film, Music, FileText } from 'lucide-react'
+import { AttachmentGalleryDialog } from '@/components/common/attachment-gallery-dialog'
 
 type EntityType = 'estimate' | 'invoice' | 'job' | 'request'
 
@@ -23,18 +23,34 @@ interface Props {
 
 function normalizePublicUrl(rawUrl: string) {
   try {
-    const parsed = new URL(rawUrl, window.location.origin)
+    const origin =
+      typeof window !== 'undefined' ? window.location.origin : 'https://app.trimprony.com'
+    const parsed = new URL(rawUrl, origin)
     const host = parsed.hostname
     const isInternalHost =
       host === 'localhost' ||
       host === '127.0.0.1' ||
       /^\d{1,3}(\.\d{1,3}){3}$/.test(host)
+
+    // In local/dev, keep files on the current origin so /uploads works.
+    const browsingLocally =
+      typeof window !== 'undefined' &&
+      (window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1' ||
+        /^\d{1,3}(\.\d{1,3}){3}$/.test(window.location.hostname))
+
     if (isInternalHost) {
+      if (browsingLocally) {
+        return `${window.location.origin}${parsed.pathname}${parsed.search}`
+      }
       return `https://app.trimprony.com${parsed.pathname}${parsed.search}`
     }
     return parsed.toString()
   } catch {
-    if (rawUrl.startsWith('/')) return `https://app.trimprony.com${rawUrl}`
+    if (rawUrl.startsWith('/')) {
+      if (typeof window !== 'undefined') return `${window.location.origin}${rawUrl}`
+      return `https://app.trimprony.com${rawUrl}`
+    }
     return rawUrl
   }
 }
@@ -51,6 +67,16 @@ function formatBytes(bytes: number) {
   return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
 }
 
+function getThumbKind(mimeType: string, fileName: string) {
+  const mime = (mimeType || '').toLowerCase()
+  const name = (fileName || '').toLowerCase()
+  if (mime.startsWith('image/') || /\.(jpe?g|png|gif|webp|bmp|svg)$/i.test(name)) return 'image'
+  if (mime.startsWith('video/') || /\.(mp4|webm|mov|m4v|avi)$/i.test(name)) return 'video'
+  if (mime.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(name)) return 'audio'
+  if (mime === 'application/pdf' || name.endsWith('.pdf')) return 'pdf'
+  return 'other'
+}
+
 export function DocumentAttachments({ entityType, entityId }: Props) {
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [loading, setLoading] = useState(false)
@@ -58,6 +84,8 @@ export function DocumentAttachments({ entityType, entityId }: Props) {
   const [dragActive, setDragActive] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; fileName: string } | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [galleryOpen, setGalleryOpen] = useState(false)
+  const [galleryIndex, setGalleryIndex] = useState(0)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const load = async () => {
@@ -85,6 +113,11 @@ export function DocumentAttachments({ entityType, entityId }: Props) {
   useEffect(() => {
     if (entityId) load()
   }, [entityType, entityId])
+
+  const openGallery = (index: number) => {
+    setGalleryIndex(index)
+    setGalleryOpen(true)
+  }
 
   const uploadFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return
@@ -180,7 +213,17 @@ export function DocumentAttachments({ entityType, entityId }: Props) {
         setErrorMessage(err.error || 'Failed to delete attachment')
         return
       }
-      setAttachments((prev) => prev.filter((a) => a.id !== id))
+      setAttachments((prev) => {
+        const next = prev.filter((a) => a.id !== id)
+        if (galleryOpen) {
+          if (next.length === 0) {
+            setGalleryOpen(false)
+          } else if (galleryIndex >= next.length) {
+            setGalleryIndex(next.length - 1)
+          }
+        }
+        return next
+      })
     } catch (error) {
       console.error('Delete attachment error:', error)
     }
@@ -207,7 +250,7 @@ export function DocumentAttachments({ entityType, entityId }: Props) {
             multiple
             className="hidden"
             onChange={(e) => uploadFiles(e.target.files)}
-            accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip,.rar"
+            accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip,.rar,.mp3,.mp4,.wav,.m4a"
           />
           <Button
             type="button"
@@ -238,104 +281,87 @@ export function DocumentAttachments({ entityType, entityId }: Props) {
         <p className="text-sm text-gray-500">No files uploaded yet.</p>
       ) : (
         <div className="grid grid-cols-3 gap-3">
-          {attachments.map((a) => (
-            <div key={a.id} className="rounded border p-2 relative">
-              {a.mimeType.startsWith('image/') && (
-                <>
-                  <img
-                    src={normalizePublicUrl(a.url)}
-                    alt={a.fileName}
-                    className="h-24 w-24 rounded object-cover border cursor-pointer hover:opacity-80"
-                    onClick={() => window.open(normalizePublicUrl(a.url), '_blank')}
-                  />
-                  <div className="absolute top-1 right-1 flex items-center gap-1">
+          {attachments.map((a, index) => {
+            const kind = getThumbKind(a.mimeType, a.fileName)
+            const publicUrl = normalizePublicUrl(a.url)
+            return (
+              <div key={a.id} className="relative rounded border p-2">
+                <button
+                  type="button"
+                  className="mb-2 block w-full overflow-hidden rounded border bg-gray-100"
+                  onClick={() => openGallery(index)}
+                  title={`Open ${a.fileName}`}
+                >
+                  {kind === 'image' ? (
+                    <img
+                      src={publicUrl}
+                      alt={a.fileName}
+                      className="h-24 w-full object-cover hover:opacity-90"
+                    />
+                  ) : (
+                    <div className="flex h-24 w-full flex-col items-center justify-center gap-1 bg-slate-100 text-slate-500 hover:bg-slate-200">
+                      {kind === 'video' ? (
+                        <Film className="h-8 w-8" />
+                      ) : kind === 'audio' ? (
+                        <Music className="h-8 w-8" />
+                      ) : kind === 'pdf' ? (
+                        <FileText className="h-8 w-8" />
+                      ) : (
+                        <Paperclip className="h-8 w-8" />
+                      )}
+                      <span className="text-[10px] font-semibold uppercase tracking-wide">
+                        {kind === 'video' ? 'Video' : kind === 'audio' ? 'Audio' : kind === 'pdf' ? 'PDF' : 'File'}
+                      </span>
+                    </div>
+                  )}
+                </button>
+
+                <div className="flex items-center justify-between gap-1">
+                  <div className="min-w-0 flex-1">
+                    <button
+                      type="button"
+                      className="block w-full truncate text-left text-xs font-medium hover:underline"
+                      onClick={() => openGallery(index)}
+                    >
+                      {a.fileName}
+                    </button>
+                    <div className="text-xs text-gray-500">{formatBytes(a.fileSize)}</div>
+                  </div>
+                  <div className="flex items-center gap-1">
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="h-6 w-6 p-0 bg-white/90 hover:bg-white"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        window.open(normalizePublicUrl(a.url), '_blank')
-                      }}
+                      className="h-6 w-6 p-0"
+                      title="Open in new tab"
+                      onClick={() => window.open(publicUrl, '_blank')}
                     >
                       <ExternalLink className="h-3 w-3" />
                     </Button>
-                    <Button 
-                      type="button" 
-                      variant="ghost" 
-                      size="sm" 
-                      className="h-6 w-6 p-0 bg-white/90 hover:bg-white" 
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        deleteAttachment(a.id)
-                      }}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0"
+                      onClick={() => deleteAttachment(a.id)}
                     >
                       <Trash2 className="h-3 w-3 text-red-600" />
                     </Button>
                   </div>
-                </>
-              )}
-              {a.mimeType.startsWith('video/') && (
-                <>
-                  <div className="mb-2 h-24 w-24 rounded border bg-black flex items-center justify-center cursor-pointer hover:opacity-80" onClick={() => window.open(normalizePublicUrl(a.url), '_blank')}>
-                    <svg className="h-8 w-8 text-white" fill="currentColor" viewBox="0 0 20 20">
-                      <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
-                    </svg>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-xs font-medium">{a.fileName}</div>
-                      <div className="text-xs text-gray-500">{formatBytes(a.fileSize)}</div>
-                    </div>
-                    <div className="flex items-center gap-1 ml-1">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 w-6 p-0"
-                        onClick={() => window.open(normalizePublicUrl(a.url), '_blank')}
-                      >
-                        <ExternalLink className="h-3 w-3" />
-                      </Button>
-                      <Button type="button" variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => deleteAttachment(a.id)}>
-                        <Trash2 className="h-3 w-3 text-red-600" />
-                      </Button>
-                    </div>
-                  </div>
-                </>
-              )}
-              {!a.mimeType.startsWith('image/') && !a.mimeType.startsWith('video/') && (
-                <>
-                  <div className="mb-2 h-24 w-24 rounded border bg-gray-100 flex items-center justify-center">
-                    <Paperclip className="h-8 w-8 text-gray-400" />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-xs font-medium">{a.fileName}</div>
-                      <div className="text-xs text-gray-500">{formatBytes(a.fileSize)}</div>
-                    </div>
-                    <div className="flex items-center gap-1 ml-1">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 w-6 p-0"
-                        onClick={() => window.open(normalizePublicUrl(a.url), '_blank')}
-                      >
-                        <ExternalLink className="h-3 w-3" />
-                      </Button>
-                      <Button type="button" variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => deleteAttachment(a.id)}>
-                        <Trash2 className="h-3 w-3 text-red-600" />
-                      </Button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          ))}
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
+
+      <AttachmentGalleryDialog
+        open={galleryOpen}
+        attachments={attachments}
+        index={galleryIndex}
+        onOpenChange={setGalleryOpen}
+        onIndexChange={setGalleryIndex}
+      />
     </div>
   )
 }
