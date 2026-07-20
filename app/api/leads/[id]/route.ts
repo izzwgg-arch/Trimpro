@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
-import { requirePermission } from '@/lib/authorization'
+import { requirePermission, requireWebOrMobilePermission, requireWebOrAnyMobilePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { parseAddressParts } from '@/lib/address/parse'
@@ -13,7 +13,11 @@ export async function GET(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
-  const permError = await requirePermission(request, 'leads.view')
+  const permError = await requireWebOrMobilePermission(
+    request,
+    'leads.view',
+    'mobile.requests.view'
+  )
   if (permError) return permError
 
   const user = getAuthUser(request)
@@ -142,7 +146,10 @@ export async function PUT(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
-  const permError = await requirePermission(request, 'leads.edit')
+  const permError = await requireWebOrAnyMobilePermission(request, 'leads.edit', [
+    'mobile.requests.edit',
+    'mobile.requests.assign',
+  ])
   if (permError) return permError
 
   const user = getAuthUser(request)

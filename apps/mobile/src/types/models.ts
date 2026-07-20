@@ -26,12 +26,26 @@ export interface Job {
   title: string
   description?: string | null
   status: string
-  priority: string
+  jobType?: string | null
+  priority: string | number
   scheduledStart: string | null
   scheduledEnd: string | null
+  actualStart?: string | null
+  actualEnd?: string | null
+  estimateAmount?: string | null
+  actualAmount?: string | null
+  laborCost?: string | null
+  materialCost?: string | null
+  totalCost?: string | null
+  totalInvoicedAmount?: string | null
+  openInvoiceBalance?: string | null
+  openInvoiceCount?: number
+  clientOpenInvoiceBalance?: string | null
   chargeByHour?: boolean
   hourlyRateCents?: number | null
   billableMinutesTotal?: number
+  billableHours?: number
+  billableAmountCents?: number
   currentUserActiveSession?: {
     id: string
     startedAt: string
@@ -41,8 +55,17 @@ export interface Job {
   client?: {
     id: string
     name: string
+    companyName?: string | null
     phone?: string | null
     email?: string | null
+    contacts?: Array<{
+      id: string
+      firstName: string
+      lastName: string
+      phone?: string | null
+      email?: string | null
+      title?: string | null
+    }>
   } | null
   address?: {
     street?: string | null
@@ -50,11 +73,83 @@ export interface Job {
     state?: string | null
     zipCode?: string | null
   } | null
+  jobSite?: {
+    id?: string
+    street?: string | null
+    city?: string | null
+    state?: string | null
+    zipCode?: string | null
+    country?: string | null
+  } | null
   assignedTo?: {
     id: string
     firstName: string
     lastName: string
+    email?: string | null
+    phone?: string | null
   } | null
+  assignments?: Array<{
+    id: string
+    role?: string | null
+    notes?: string | null
+    user: {
+      id: string
+      firstName: string
+      lastName: string
+      email?: string | null
+      phone?: string | null
+    }
+  }>
+  estimates?: Array<{
+    id: string
+    estimateNumber: string
+    title?: string | null
+    status: string
+    total: string
+    createdAt: string
+  }>
+  invoices?: Array<{
+    id: string
+    invoiceNumber: string
+    total: string
+    balance: string
+    status: string
+    createdAt?: string
+  }>
+  purchaseOrders?: Array<{
+    id: string
+    poNumber: string
+    status: string
+    total: string
+    createdAt: string
+  }>
+  payments?: Array<{
+    id: string
+    amount: string
+    status: string
+    paymentDate: string | null
+    method?: string | null
+    reference?: string | null
+    invoiceNumber?: string | null
+    invoiceId?: string | null
+  }>
+  notes?: Array<{
+    id: string
+    content: string
+    createdAt: string
+    createdBy?: { id: string; name: string } | null
+  }>
+  schedules?: Array<{
+    id: string
+    startTime: string
+    endTime: string
+    user?: { id: string; firstName: string; lastName: string } | null
+  }>
+  activeTimers?: Array<{
+    id: string
+    startedAt: string
+    worker?: { id: string; firstName: string; lastName: string; email?: string } | null
+  }>
   tasks?: Array<{
     id: string
     title: string
@@ -77,6 +172,12 @@ export interface Job {
     assignedTo: { id: string; name: string } | null
   }>
   attachments?: Attachment[]
+  _count?: {
+    tasks?: number
+    issues?: number
+    invoices?: number
+    estimates?: number
+  }
 }
 
 export interface TimeEntry {

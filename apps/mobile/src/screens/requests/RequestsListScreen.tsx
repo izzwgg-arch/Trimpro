@@ -11,6 +11,7 @@ import { JobsStackParamList } from '../../types/navigation'
 import { colors, spacing, typography } from '../../theme/tokens'
 import { API_BASE_URL } from '../../config/env'
 import { useAuth } from '../../auth/AuthContext'
+import { useMobilePermissions } from '../../hooks/useMobilePermissions'
 import {
   deleteRequestDraft,
   listRequestDrafts,
@@ -49,6 +50,8 @@ interface RequestsListResponse {
 
 export function RequestsListScreen({ navigation }: Props) {
   const { token } = useAuth()
+  const { canViewRequests } = useMobilePermissions()
+  const allowViewRequests = canViewRequests()
   const queryClient = useQueryClient()
   const [isPullRefreshing, setIsPullRefreshing] = useState(false)
   const [localDrafts, setLocalDrafts] = useState<LocalRequestDraft[]>([])
@@ -64,6 +67,7 @@ export function RequestsListScreen({ navigation }: Props) {
       apiRequest<RequestsListResponse>(`/api/leads?page=${pageParam}&limit=20`),
     refetchInterval: 8000,
     refetchOnWindowFocus: true,
+    enabled: allowViewRequests,
     getNextPageParam: (lastPage) => {
       const { page, totalPages } = lastPage.pagination
       return page < totalPages ? page + 1 : undefined
@@ -103,10 +107,11 @@ export function RequestsListScreen({ navigation }: Props) {
 
   useFocusEffect(
     React.useCallback(() => {
+      if (!allowViewRequests) return () => {}
       void query.refetch()
       void reloadLocalDrafts()
       return () => {}
-    }, [query.refetch, reloadLocalDrafts])
+    }, [allowViewRequests, query.refetch, reloadLocalDrafts])
   )
 
   const handlePullRefresh = React.useCallback(async () => {
@@ -226,6 +231,20 @@ export function RequestsListScreen({ navigation }: Props) {
       Alert.alert('Publish failed', error?.message || 'Unable to publish this request.')
     },
   })
+
+  if (!allowViewRequests) {
+    return (
+      <AppScreen>
+        <View style={styles.loadingWrap}>
+          <EmptyState
+            icon="lock-closed-outline"
+            title="Access restricted"
+            description="You don't have permission to view requests."
+          />
+        </View>
+      </AppScreen>
+    )
+  }
 
   if (query.isLoading && requests.length === 0) {
     return (

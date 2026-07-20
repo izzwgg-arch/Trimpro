@@ -7,6 +7,28 @@ import { PrismaClient } from '@prisma/client'
 
 const prisma = new PrismaClient()
 
+const mobileInfoPerms = [
+  'mobile.jobs.view_financials',
+  'mobile.jobs.view_documents',
+  'mobile.jobs.view_billing',
+  'mobile.jobs.view_time_entries',
+  'mobile.jobs.view_notes',
+  'mobile.jobs.view_crew',
+  'mobile.jobs.view_schedules',
+  'mobile.jobs.view_client_details',
+  'mobile.jobs.view_tasks_issues',
+  'mobile.requests.view',
+  'mobile.requests.create',
+  'mobile.requests.edit',
+  'mobile.requests.assign',
+  'mobile.requests.view_financials',
+  'mobile.requests.view_estimates',
+  'mobile.requests.view_communication',
+  'mobile.requests.view_activity',
+  'mobile.requests.view_tasks_issues',
+  'mobile.requests.view_converted_client',
+]
+
 const mobilePermissionsByRole: Record<string, string[]> = {
   Owner: [
     'mobile.access',
@@ -21,6 +43,7 @@ const mobilePermissionsByRole: Record<string, string[]> = {
     'mobile.issues.assign_to_any',
     'mobile.messaging.enabled',
     'mobile.media.upload',
+    ...mobileInfoPerms,
   ],
   Admin: [
     'mobile.access',
@@ -35,6 +58,7 @@ const mobilePermissionsByRole: Record<string, string[]> = {
     'mobile.issues.assign_to_any',
     'mobile.messaging.enabled',
     'mobile.media.upload',
+    ...mobileInfoPerms,
   ],
   Manager: [
     'mobile.access',
@@ -48,6 +72,7 @@ const mobilePermissionsByRole: Record<string, string[]> = {
     'mobile.issues.assign_to_any',
     'mobile.messaging.enabled',
     'mobile.media.upload',
+    ...mobileInfoPerms,
   ],
   Dispatcher: [
     'mobile.access',
@@ -61,6 +86,7 @@ const mobilePermissionsByRole: Record<string, string[]> = {
     'mobile.issues.assign_to_any',
     'mobile.messaging.enabled',
     'mobile.media.upload',
+    ...mobileInfoPerms,
   ],
   Tech: [
     'mobile.access',
@@ -72,15 +98,36 @@ const mobilePermissionsByRole: Record<string, string[]> = {
     'mobile.issues.assign_to_admin',
     'mobile.messaging.enabled',
     'mobile.media.upload',
+    'mobile.jobs.view_billing',
+    'mobile.jobs.view_time_entries',
+    'mobile.jobs.view_notes',
+    'mobile.jobs.view_crew',
+    'mobile.jobs.view_schedules',
+    'mobile.jobs.view_client_details',
+    'mobile.jobs.view_tasks_issues',
+    'mobile.requests.view',
+    'mobile.requests.view_activity',
+    'mobile.requests.view_tasks_issues',
   ],
   Accounting: [
     'mobile.access',
     'mobile.jobs.view_assigned',
     'mobile.messaging.enabled',
+    'mobile.jobs.view_financials',
+    'mobile.jobs.view_documents',
+    'mobile.jobs.view_billing',
+    'mobile.jobs.view_client_details',
+    'mobile.requests.view',
+    'mobile.requests.view_financials',
+    'mobile.requests.view_estimates',
+    'mobile.requests.view_converted_client',
   ],
   ReadOnly: [
     'mobile.access',
     'mobile.jobs.view_assigned',
+    'mobile.jobs.view_notes',
+    'mobile.jobs.view_tasks_issues',
+    'mobile.requests.view',
   ],
 }
 
@@ -100,12 +147,10 @@ async function main() {
       const defaultPerms = mobilePermissionsByRole[role.name] || ['mobile.access']
       const currentPerms = Array.isArray(role.mobilePermissions) ? (role.mobilePermissions as string[]) : []
 
-      // Merge with existing permissions (don't overwrite if already set)
-      const mergedPerms = currentPerms.length > 0 
-        ? [...new Set([...currentPerms, ...defaultPerms])]
-        : defaultPerms
+      // Merge with existing permissions (don't remove existing grants)
+      const mergedPerms = [...new Set([...currentPerms, ...defaultPerms])]
 
-      if (JSON.stringify(mergedPerms) !== JSON.stringify(currentPerms)) {
+      if (JSON.stringify(mergedPerms.sort()) !== JSON.stringify([...currentPerms].sort())) {
         await prisma.role.update({
           where: { id: role.id },
           data: { mobilePermissions: mergedPerms },
@@ -122,7 +167,7 @@ async function main() {
 
 main()
   .catch((e) => {
-    console.error('❌ Error:', e)
+    console.error(e)
     process.exit(1)
   })
   .finally(async () => {

@@ -507,3 +507,43 @@ export async function requireMobilePermission(
 
   return null // Permission granted
 }
+
+/**
+ * Allow either a web permission OR (on mobile requests) a mobile permission.
+ * Web permission checks are unchanged for non-mobile clients.
+ */
+export async function requireWebOrMobilePermission(
+  request: NextRequest,
+  webPermission: string,
+  mobilePermission: string
+): Promise<NextResponse | null> {
+  return requireWebOrAnyMobilePermission(request, webPermission, [mobilePermission])
+}
+
+/**
+ * Allow either a web permission OR (on mobile requests) any of the mobile permissions.
+ */
+export async function requireWebOrAnyMobilePermission(
+  request: NextRequest,
+  webPermission: string,
+  mobilePermissions: string[]
+): Promise<NextResponse | null> {
+  const user = (request as any).user
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const hasWeb = await hasPermission(user.id, user.tenantId, webPermission)
+  if (hasWeb) return null
+
+  if (isMobileRequest(request)) {
+    const hasMobile = await hasAnyMobilePermission(user.id, user.tenantId, mobilePermissions)
+    if (hasMobile) return null
+  }
+
+  logPermissionDenied(request, user, [webPermission, ...mobilePermissions], 'any')
+  return NextResponse.json(
+    { error: 'Forbidden: Insufficient permissions' },
+    { status: 403 }
+  )
+}

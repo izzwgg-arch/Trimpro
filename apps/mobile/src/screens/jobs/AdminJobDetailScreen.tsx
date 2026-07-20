@@ -1,15 +1,41 @@
 import React, { useState } from 'react'
-import { Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View, Platform } from 'react-native'
+import {
+  Alert,
+  Linking,
+  Modal,
+  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Ionicons } from '@expo/vector-icons'
 import { AppScreen } from '../../components/AppScreen'
+import { DetailSection } from '../../components/DetailSection'
 import { apiRequest } from '../../api/client'
 import { colors, radius, spacing, typography } from '../../theme/tokens'
 import { StatusBadge } from '../../components/StatusBadge'
-import { Card } from '../../components/Card'
 import { JobsStackParamList } from '../../types/navigation'
 import { useMobilePermissions } from '../../hooks/useMobilePermissions'
+import { Job, TimeEntry } from '../../types/models'
+import { formatJobType } from '../../utils/format'
+import {
+  JobBillingSummarySection,
+  JobClientSection,
+  JobCrewSection,
+  JobDocumentsSection,
+  JobInformationSection,
+  JobNotesHistorySection,
+  JobOpenBalancesBanner,
+  JobSchedulesSection,
+  JobSiteSection,
+  JobTasksIssuesSection,
+  JobTimeEntriesSection,
+} from './jobDetailSections'
 
 type Props = NativeStackScreenProps<JobsStackParamList, 'AdminJobDetail'>
 
@@ -38,71 +64,58 @@ function formatStatusLabel(status: string) {
     .replaceAll('_', ' ')
 }
 
-interface JobResponse {
-  job: {
-    id: string
-    jobNumber: string
-    title: string
-    description: string | null
-    status: string
-    priority: number
-    scheduledStart: string | null
-    scheduledEnd: string | null
-    clientId: string
-    client: {
-      id: string
-      name: string
-      phone: string | null
-    }
-    jobSite: {
-      street: string
-      city: string
-      state: string
-      zipCode: string
-    } | null
-    assignments: Array<{
-      id: string
-      role: string | null
-      user: {
-        id: string
-        firstName: string
-        lastName: string
-      }
-    }>
-  }
+function asArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : []
 }
 
-interface AssignmentsResponse {
-  assignments: Array<{
-    id: string
-    role: string | null
-    user: {
-      id: string
-      firstName: string
-      lastName: string
-      email: string
-      phone: string | null
-    }
-  }>
+interface JobResponse {
+  job: Job
+}
+
+interface JobTimeResponse {
+  entries: TimeEntry[]
+  activeEntries: TimeEntry[]
+  summary: {
+    totalMinutes: number
+    billableHours: number
+    billableAmountCents: number
+  }
 }
 
 export function AdminJobDetailScreen({ route, navigation }: Props) {
   const { jobId } = route.params
   const queryClient = useQueryClient()
-  const { canEditJobs, canAssignJobs, canScheduleJobs, canChangeJobStatus } = useMobilePermissions()
+  const {
+    canEditJobs,
+    canAssignJobs,
+    canScheduleJobs,
+    canChangeJobStatus,
+    canViewJobFinancials,
+    canViewJobDocuments,
+    canViewJobBilling,
+    canViewJobTimeEntries,
+    canViewJobNotes,
+    canViewJobCrew,
+    canViewJobSchedules,
+    canViewJobClientDetails,
+    canViewJobTasksIssues,
+  } = useMobilePermissions()
   const [statusPickerVisible, setStatusPickerVisible] = useState(false)
   const [assignPickerVisible, setAssignPickerVisible] = useState(false)
 
   const jobQuery = useQuery({
     queryKey: ['admin-job', jobId],
-    queryFn: () => apiRequest<JobResponse>(`/api/jobs/${jobId}`),
+    queryFn: () => apiRequest<JobResponse>(`/api/mobile/jobs/${jobId}`),
     refetchInterval: 45_000,
   })
 
-  const assignmentsQuery = useQuery({
-    queryKey: ['job-assignments', jobId],
-    queryFn: () => apiRequest<AssignmentsResponse>(`/api/jobs/${jobId}/assignments`),
+  const timeQuery = useQuery({
+    queryKey: ['admin-job-time', jobId],
+    queryFn: () => apiRequest<JobTimeResponse>(`/api/jobs/${jobId}/time`),
+    enabled: !!jobQuery.data?.job && canViewJobTimeEntries(),
+    refetchInterval: 45_000,
   })
+
   const usersQuery = useQuery({
     queryKey: ['assignable-users', jobId],
     queryFn: () =>
@@ -119,7 +132,7 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
   })
 
   const job = jobQuery.data?.job
-  const assignments = assignmentsQuery.data?.assignments ?? []
+  const assignments = asArray<NonNullable<Job['assignments']>[number]>(job?.assignments)
 
   const statusMutation = useMutation({
     mutationFn: async (status: string) => {
@@ -134,13 +147,13 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
       Alert.alert('Error', error?.message || 'Failed to update status')
     },
   })
+
   const assignMutation = useMutation({
     mutationFn: async (userId: string) => {
       await apiRequest(`/api/jobs/${jobId}/assignments`, 'POST', { userId })
     },
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['job-assignments', jobId] }),
         queryClient.invalidateQueries({ queryKey: ['admin-job', jobId] }),
         queryClient.invalidateQueries({ queryKey: ['all-jobs'] }),
         queryClient.invalidateQueries({ queryKey: ['mobile-assignments'] }),
@@ -152,6 +165,23 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
     },
   })
 
+  const onRefresh = async () => {
+    await Promise.all([jobQuery.refetch(), timeQuery.refetch()])
+  }
+
+  if (jobQuery.isError) {
+    return (
+      <AppScreen>
+        <View style={styles.centerContainer}>
+          <Text style={styles.loadingText}>Unable to load job details.</Text>
+          <Pressable style={styles.retryButton} onPress={() => jobQuery.refetch()}>
+            <Text style={styles.retryText}>Retry</Text>
+          </Pressable>
+        </View>
+      </AppScreen>
+    )
+  }
+
   if (!job) {
     return (
       <AppScreen>
@@ -162,13 +192,10 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
     )
   }
 
-  const address = job.jobSite
-    ? `${job.jobSite.street}, ${job.jobSite.city}, ${job.jobSite.state} ${job.jobSite.zipCode}`
-    : 'No job site address'
-
   const openMaps = () => {
-    if (!job.jobSite) return
-    const fullAddress = `${job.jobSite.street}, ${job.jobSite.city}, ${job.jobSite.state} ${job.jobSite.zipCode}`
+    const site = job.jobSite || job.address
+    if (!site?.street) return
+    const fullAddress = `${site.street}, ${site.city || ''}, ${site.state || ''} ${site.zipCode || ''}`.trim()
     const encoded = encodeURIComponent(fullAddress)
     const googleMapsUrl = Platform.OS === 'android' ? `comgooglemaps://?q=${encoded}` : `googlemaps://?q=${encoded}`
     const webMapsUrl = `https://maps.google.com/?q=${encoded}`
@@ -178,12 +205,14 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
   }
 
   const callClient = () => {
-    if (!job.client.phone) {
+    const phone = job.client?.phone || job.client?.contacts?.[0]?.phone
+    if (!phone) {
       Alert.alert('No phone number', 'This client does not have a phone number on file.')
       return
     }
-    Linking.openURL(`tel:${job.client.phone}`)
+    Linking.openURL(`tel:${phone}`)
   }
+
   const assignedUserIds = new Set(assignments.map((entry) => entry.user.id))
   const assignableUsers = (usersQuery.data?.users || []).filter((entry) => {
     if (assignedUserIds.has(entry.id)) return false
@@ -200,8 +229,12 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
+        refreshControl={
+          <RefreshControl refreshing={jobQuery.isRefetching || timeQuery.isRefetching} onRefresh={onRefresh} />
+        }
       >
-        <Card style={styles.headerCard}>
+        {/* Header */}
+        <View style={styles.headerCard}>
           <View style={styles.headerRow}>
             <View style={styles.headerText}>
               <Text style={styles.jobNumber}>{job.jobNumber}</Text>
@@ -209,31 +242,25 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
             </View>
             <StatusBadge status={job.status} />
           </View>
-          <Text style={styles.clientName}>{job.client.name}</Text>
-          {job.jobSite && (
-            <Pressable onPress={openMaps} style={styles.addressRow}>
-              <Ionicons name="location-outline" size={16} color={colors.brandPrimary} />
-              <Text style={styles.addressText}>{address}</Text>
-            </Pressable>
-          )}
+          {job.jobType ? <Text style={styles.jobTypeBadge}>{formatJobType(job.jobType)}</Text> : null}
+          <Text style={styles.clientName}>{job.client?.name || 'No client'}</Text>
+          {canViewJobFinancials() ? <JobOpenBalancesBanner job={job} /> : null}
+
           <View style={styles.actionRow}>
-            {job.client.phone && (
+            {!!(job.client?.phone || job.client?.contacts?.[0]?.phone) && (
               <Pressable style={styles.actionButton} onPress={callClient}>
                 <Ionicons name="call-outline" size={20} color={colors.brandPrimary} />
                 <Text style={styles.actionText}>Call</Text>
               </Pressable>
             )}
-            {job.jobSite && (
+            {(job.jobSite?.street || job.address?.street) && (
               <Pressable style={styles.actionButton} onPress={openMaps}>
                 <Ionicons name="map-outline" size={20} color={colors.brandPrimary} />
                 <Text style={styles.actionText}>Maps</Text>
               </Pressable>
             )}
             {canEditJobs() && (
-              <Pressable
-                style={styles.actionButton}
-                onPress={() => navigation.navigate('EditJob', { jobId })}
-              >
+              <Pressable style={styles.actionButton} onPress={() => navigation.navigate('EditJob', { jobId })}>
                 <Ionicons name="create-outline" size={20} color={colors.brandPrimary} />
                 <Text style={styles.actionText}>Edit</Text>
               </Pressable>
@@ -263,11 +290,11 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
               <Text style={styles.actionText}>Schedule</Text>
             </Pressable>
           </View>
-        </Card>
+        </View>
 
+        {/* Quick Actions / Status */}
         {canChangeJobStatus() && (
-          <Card style={styles.sectionCard}>
-            <Text style={styles.sectionTitle}>Status</Text>
+          <DetailSection title="Status">
             <Pressable
               style={styles.statusSelectTrigger}
               onPress={() => setStatusPickerVisible(true)}
@@ -276,56 +303,53 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
               <Text style={styles.statusSelectValue}>{formatStatusLabel(job.status)}</Text>
               <Ionicons name="chevron-down" size={18} color={colors.textPrimary} />
             </Pressable>
-          </Card>
+          </DetailSection>
         )}
 
-        {canAssignJobs() && (
-          <Card style={styles.sectionCard}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Assigned Crew</Text>
-              <Pressable
-                style={styles.assignButton}
-                onPress={() => {
-                  setAssignPickerVisible(true)
-                }}
-              >
-                <Ionicons name="person-add-outline" size={18} color={colors.brandPrimary} />
-                <Text style={styles.assignButtonText}>Assign</Text>
-              </Pressable>
-            </View>
-            {assignments.length === 0 ? (
-              <Text style={styles.emptyText}>No crew assigned</Text>
-            ) : (
-              assignments.map((assignment) => (
-                <View key={assignment.id} style={styles.assignmentRow}>
-                  <Text style={styles.assignmentName}>
-                    {assignment.user.firstName} {assignment.user.lastName}
-                  </Text>
-                  {assignment.role && <Text style={styles.assignmentRole}>{assignment.role}</Text>}
-                </View>
-              ))
-            )}
-          </Card>
-        )}
+        {canViewJobDocuments() ? <JobDocumentsSection job={job} /> : null}
 
-        {job.description && (
-          <Card style={styles.sectionCard}>
-            <Text style={styles.sectionTitle}>Description</Text>
-            <Text style={styles.descriptionText}>{job.description}</Text>
-          </Card>
-        )}
+        <JobInformationSection job={job} showFinancials={canViewJobFinancials()} />
 
-        {job.scheduledStart && (
-          <Card style={styles.sectionCard}>
-            <Text style={styles.sectionTitle}>Schedule</Text>
-            <Text style={styles.scheduleText}>
-              {new Date(job.scheduledStart).toLocaleString()}
-              {job.scheduledEnd && ` - ${new Date(job.scheduledEnd).toLocaleString()}`}
-            </Text>
-          </Card>
-        )}
+        {canViewJobBilling() ? <JobBillingSummarySection job={job} /> : null}
 
-        <Modal visible={statusPickerVisible} transparent animationType="fade" onRequestClose={() => setStatusPickerVisible(false)}>
+        {canViewJobTimeEntries() ? (
+          <JobTimeEntriesSection
+            entries={asArray<TimeEntry>(timeQuery.data?.entries)}
+            activeTimers={job.activeTimers}
+            loading={timeQuery.isLoading}
+          />
+        ) : null}
+
+        <JobSiteSection job={job} onOpenMaps={openMaps} />
+
+        {canViewJobCrew() || canAssignJobs() ? (
+          <JobCrewSection
+            job={job}
+            right={
+              canAssignJobs() ? (
+                <Pressable style={styles.assignButton} onPress={() => setAssignPickerVisible(true)}>
+                  <Ionicons name="person-add-outline" size={18} color={colors.brandPrimary} />
+                  <Text style={styles.assignButtonText}>Assign</Text>
+                </Pressable>
+              ) : undefined
+            }
+          />
+        ) : null}
+
+        {canViewJobNotes() ? <JobNotesHistorySection job={job} /> : null}
+
+        {canViewJobClientDetails() ? <JobClientSection job={job} /> : null}
+
+        {canViewJobTasksIssues() ? <JobTasksIssuesSection job={job} showLists /> : null}
+
+        {canViewJobSchedules() ? <JobSchedulesSection job={job} /> : null}
+
+        <Modal
+          visible={statusPickerVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setStatusPickerVisible(false)}
+        >
           <View style={styles.modalBackdrop}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setStatusPickerVisible(false)} />
             <View style={styles.modalCard}>
@@ -352,7 +376,13 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
             </View>
           </View>
         </Modal>
-        <Modal visible={assignPickerVisible} transparent animationType="fade" onRequestClose={() => setAssignPickerVisible(false)}>
+
+        <Modal
+          visible={assignPickerVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setAssignPickerVisible(false)}
+        >
           <View style={styles.modalBackdrop}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setAssignPickerVisible(false)} />
             <View style={styles.modalCard}>
@@ -395,25 +425,43 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
 
 const styles = StyleSheet.create({
   scrollView: { flex: 1 },
-  scrollContent: { padding: spacing.md, gap: spacing.md, paddingBottom: spacing.xxl },
+  scrollContent: { padding: spacing.md, paddingBottom: spacing.xxl },
   centerContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.xl,
+    gap: spacing.sm,
   },
   loadingText: {
     ...typography.sub,
     color: colors.textSecondary,
   },
+  retryButton: {
+    borderWidth: 1,
+    borderColor: colors.divider,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  retryText: {
+    ...typography.sub,
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
   headerCard: {
-    marginBottom: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.divider,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    gap: spacing.xs,
   },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: spacing.sm,
   },
   headerText: {
     flex: 1,
@@ -429,24 +477,25 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontWeight: '700',
   },
+  jobTypeBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#EEF2FF',
+    color: '#3730A3',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    fontSize: 11,
+    fontWeight: '700',
+    overflow: 'hidden',
+    textTransform: 'uppercase',
+  },
   clientName: {
     ...typography.sub,
     color: colors.textPrimary,
-    marginBottom: spacing.xs,
-  },
-  addressRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    marginBottom: spacing.sm,
-  },
-  addressText: {
-    ...typography.caption,
-    color: colors.brandPrimary,
-    flex: 1,
   },
   actionRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.sm,
     marginTop: spacing.xs,
   },
@@ -465,26 +514,6 @@ const styles = StyleSheet.create({
     color: colors.brandPrimary,
     fontWeight: '600',
   },
-  sectionCard: {
-    marginBottom: spacing.sm,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  sectionTitle: {
-    ...typography.sub,
-    color: colors.textPrimary,
-    fontWeight: '700',
-    marginBottom: spacing.sm,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-  },
   statusSelectTrigger: {
     minHeight: 44,
     borderWidth: 1,
@@ -501,26 +530,6 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontWeight: '600',
   },
-  statusButton: {
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.divider,
-    backgroundColor: colors.surface,
-  },
-  statusButtonActive: {
-    backgroundColor: colors.brandPrimary,
-    borderColor: colors.brandPrimary,
-  },
-  statusButtonText: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    fontWeight: '600',
-  },
-  statusButtonTextActive: {
-    color: '#E6C98B',
-  },
   assignButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -536,35 +545,10 @@ const styles = StyleSheet.create({
     color: colors.brandPrimary,
     fontWeight: '600',
   },
-  assignmentRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: spacing.xs,
-    borderTopWidth: 1,
-    borderTopColor: colors.divider,
-  },
-  assignmentName: {
-    ...typography.sub,
-    color: colors.textPrimary,
-  },
-  assignmentRole: {
-    ...typography.caption,
-    color: colors.textSecondary,
-  },
   emptyText: {
     ...typography.caption,
     color: colors.textSecondary,
     fontStyle: 'italic',
-  },
-  descriptionText: {
-    ...typography.sub,
-    color: colors.textPrimary,
-    lineHeight: 20,
-  },
-  scheduleText: {
-    ...typography.sub,
-    color: colors.textPrimary,
   },
   modalBackdrop: {
     flex: 1,

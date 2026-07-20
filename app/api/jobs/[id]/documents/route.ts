@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
-import { requirePermission } from '@/lib/authorization'
+import { requireWebOrMobilePermission } from '@/lib/authorization'
 import { fetchJobDocuments } from '@/lib/documents/unified-documents'
 
 export async function GET(
@@ -9,7 +9,11 @@ export async function GET(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
-  const permError = await requirePermission(request, 'jobs.view')
+  const permError = await requireWebOrMobilePermission(
+    request,
+    'jobs.view',
+    'mobile.jobs.view_documents'
+  )
   if (permError) return permError
 
   const user = getAuthUser(request)

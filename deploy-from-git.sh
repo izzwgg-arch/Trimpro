@@ -47,6 +47,11 @@ echo "🔧 Step 2: Generating Prisma Client..."
 npx prisma generate
 
 echo ""
+echo "🔐 Step 2b: Syncing permission catalog + mobile role defaults..."
+npx tsx scripts/sync-permissions.ts || echo "⚠️  Permission sync skipped/failed"
+npx tsx scripts/add-default-mobile-permissions.ts || echo "⚠️  Mobile permission defaults skipped/failed"
+
+echo ""
 echo "🗄️  Step 3: Checking database connection..."
 if ! npx prisma db push --skip-generate --accept-data-loss; then
     echo "⚠️  Warning: Database push failed. Check your DATABASE_URL in .env"

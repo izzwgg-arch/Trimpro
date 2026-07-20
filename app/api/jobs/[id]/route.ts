@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
-import { requirePermission } from '@/lib/authorization'
+import { requirePermission, requireWebOrMobilePermission, isMobileRequest, requireMobilePermission, hasMobilePermission, hasPermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { formatAddressParts, parseAddressParts } from '@/lib/address/parse'
 import { geocodeAddressPartsFromString } from '@/lib/geocoding'
-import { isMobileRequest, requireMobilePermission, hasMobilePermission, hasPermission } from '@/lib/authorization'
 import { getJobTimeSummary } from '@/lib/time-tracking'
 import { syncAutoJobSchedules } from '@/lib/services/job-schedule-sync'
 import { createNotificationsForUsers } from '@/lib/notifications'
@@ -16,7 +15,11 @@ export async function GET(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
-  const permError = await requirePermission(request, 'jobs.view')
+  const permError = await requireWebOrMobilePermission(
+    request,
+    'jobs.view',
+    'mobile.jobs.view_all'
+  )
   if (permError) return permError
 
   const user = getAuthUser(request)

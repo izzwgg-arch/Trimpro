@@ -355,7 +355,7 @@ function MainTabsNavigator() {
 function DrawerContent(props: DrawerContentComponentProps) {
   const { user, signOut } = useAuth()
   const outboxCount = useOutboxCount()
-  const { canViewAllJobs } = useMobilePermissions()
+  const { canViewAllJobs, canViewRequests } = useMobilePermissions()
   const unreadQuery = useQuery({
     queryKey: ['mobile-notifications-unread'],
     queryFn: () => apiRequest<{ unreadCount: number }>('/api/mobile/notifications?limit=1'),
@@ -380,7 +380,9 @@ function DrawerContent(props: DrawerContentComponentProps) {
     ...(canViewAllJobs()
       ? [{ key: 'AllJobsList', label: 'All Jobs', icon: 'list-outline', target: { screen: 'JobsTab', params: { screen: 'AllJobsList' } } } as const]
       : []),
-    { key: 'RequestsHome', label: 'Requests', icon: 'document-text-outline', target: { screen: 'JobsTab', params: { screen: 'RequestsHome' } } },
+    ...(canViewRequests()
+      ? [{ key: 'RequestsHome', label: 'Requests', icon: 'document-text-outline', target: { screen: 'JobsTab', params: { screen: 'RequestsHome' } } } as const]
+      : []),
     { key: 'CallsHome', label: 'Calls', icon: 'call-outline', target: { screen: 'JobsTab', params: { screen: 'CallsHome' } } },
     {
       key: 'OutboxHome',

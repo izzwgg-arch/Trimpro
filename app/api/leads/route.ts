@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
-import { requirePermission } from '@/lib/authorization'
+import { requirePermission, requireWebOrMobilePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { notifyRequestCreated } from '@/lib/notifications'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
@@ -11,7 +11,11 @@ import { jobTypeScopeWhere, resolveJobTypeForWrite, assertCanAccessJobType } fro
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
-  const permError = await requirePermission(request, 'leads.view')
+  const permError = await requireWebOrMobilePermission(
+    request,
+    'leads.view',
+    'mobile.requests.view'
+  )
   if (permError) return permError
 
   const user = getAuthUser(request)
@@ -134,7 +138,11 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
-  const permError = await requirePermission(request, 'leads.create')
+  const permError = await requireWebOrMobilePermission(
+    request,
+    'leads.create',
+    'mobile.requests.create'
+  )
   if (permError) return permError
 
   const user = getAuthUser(request)

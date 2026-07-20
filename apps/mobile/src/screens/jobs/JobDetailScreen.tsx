@@ -20,6 +20,7 @@ import { Ionicons } from '@expo/vector-icons'
 import * as Location from 'expo-location'
 import { Video, ResizeMode } from 'expo-av'
 import { Screen } from '../../components/Screen'
+import { DetailSection } from '../../components/DetailSection'
 import { apiRequest } from '../../api/client'
 import { Attachment, Job, TimeEntry } from '../../types/models'
 import { StatusChip } from '../../components/StatusChip'
@@ -33,6 +34,20 @@ import { AttachmentPickerSheet } from '../../components/attachments/AttachmentPi
 import { AttachmentUploadQueue } from '../../components/attachments/AttachmentUploadQueue'
 import { pickAttachmentsByAction, uploadFileWithProgress } from '../../services/attachment-upload'
 import { useAttachmentUploadQueue } from '../../hooks/useAttachmentUploadQueue'
+import { formatCents, formatJobType, formatMinutes } from '../../utils/format'
+import {
+  JobBillingSummarySection,
+  JobClientSection,
+  JobCrewSection,
+  JobDocumentsSection,
+  JobInformationSection,
+  JobNotesHistorySection,
+  JobOpenBalancesBanner,
+  JobSchedulesSection,
+  JobSiteSection,
+  JobTasksIssuesSection,
+  JobTimeEntriesSection,
+} from './jobDetailSections'
 
 type Props = NativeStackScreenProps<JobsStackParamList, 'JobDetail'>
 
@@ -73,9 +88,6 @@ interface JobResponse {
   job: Job
 }
 
-type JobTaskRow = NonNullable<Job['tasks']>[number]
-type JobIssueRow = NonNullable<Job['issues']>[number]
-
 interface AttachmentsResponse {
   attachments: Attachment[]
 }
@@ -114,11 +126,6 @@ function normalizeMediaUrl(rawUrl: string) {
   }
 }
 
-function formatCompactDate(value?: string | null) {
-  if (!value) return 'No date'
-  return new Date(value).toLocaleDateString()
-}
-
 function isPdfAttachment(mimeType?: string | null, fileName?: string | null) {
   const mime = String(mimeType || '').toLowerCase()
   const name = String(fileName || '').toLowerCase()
@@ -148,12 +155,19 @@ export function JobDetailScreen({ route, navigation }: Props) {
     canUploadMedia,
     canCreateTasks,
     canCreateIssues,
-    canAssignTasksToAdmin,
-    canAssignIssuesToAdmin,
     canScheduleJobs,
     canChangeJobStatus,
     canTrackTime,
     canEditOwnTimeEntries,
+    canViewJobFinancials,
+    canViewJobDocuments,
+    canViewJobBilling,
+    canViewJobTimeEntries,
+    canViewJobNotes,
+    canViewJobCrew,
+    canViewJobSchedules,
+    canViewJobClientDetails,
+    canViewJobTasksIssues,
   } = useMobilePermissions()
 
   const jobQuery = useQuery({
@@ -168,17 +182,19 @@ export function JobDetailScreen({ route, navigation }: Props) {
     refetchInterval: 45_000,
   })
 
+  const shouldFetchTime =
+    !!jobQuery.data?.job &&
+    (canViewJobTimeEntries() || (!!jobQuery.data.job.chargeByHour && canTrackTime()))
+
   const timeQuery = useQuery({
     queryKey: ['job-time', jobId],
     queryFn: () => apiRequest<JobTimeResponse>(`/api/jobs/${jobId}/time`),
-    enabled: !!jobQuery.data?.job?.chargeByHour && canTrackTime(),
+    enabled: shouldFetchTime,
     refetchInterval: 30_000,
   })
 
   const job = jobQuery.data?.job
   const jobStatus = asSafeText(job?.status, 'SCHEDULED')
-  const taskRows = asArray<JobTaskRow>(job?.tasks)
-  const issueRows = asArray<JobIssueRow>(job?.issues)
   const onRefresh = async () => {
     await Promise.all([jobQuery.refetch(), attachmentsQuery.refetch(), timeQuery.refetch()])
   }
@@ -218,7 +234,10 @@ export function JobDetailScreen({ route, navigation }: Props) {
       }
       await apiRequest(`/api/mobile/jobs/${jobId}/note`, 'POST', { content })
     },
-    onSuccess: () => setNoteText(''),
+    onSuccess: () => {
+      setNoteText('')
+      queryClient.invalidateQueries({ queryKey: ['mobile-job', jobId] })
+    },
   })
 
   const myActiveEntry = useMemo(
@@ -441,6 +460,188 @@ export function JobDetailScreen({ route, navigation }: Props) {
   }
   const tileColumns = 2
 
+  const openJobSiteMaps = () => {
+    if (!job) return
+    const addressObj = job.jobSite || job.address
+    if (!addressObj?.street) return
+    const address = `${addressObj.street}, ${addressObj.city || ''} ${addressObj.state || ''} ${addressObj.zipCode || ''}`.trim()
+    const encodedAddress = encodeURIComponent(address)
+    const androidGoogleMapsUrl = `comgooglemaps://?q=${encodedAddress}`
+    const iosGoogleMapsUrl = `googlemaps://?q=${encodedAddress}`
+    const appleMapsUrl = `maps://?q=${encodedAddress}`
+    const webMapsUrl = `https://maps.google.com/?q=${encodedAddress}`
+    const googleMapsUrl = Platform.OS === 'android' ? androidGoogleMapsUrl : iosGoogleMapsUrl
+    Linking.canOpenURL(googleMapsUrl)
+      .then((supported) => {
+        if (supported) return Linking.openURL(googleMapsUrl)
+        return Linking.canOpenURL(appleMapsUrl).then((nativeSupported) => {
+          if (nativeSupported) return Linking.openURL(appleMapsUrl)
+          return Linking.openURL(webMapsUrl)
+        })
+      })
+      .catch(() => Linking.openURL(webMapsUrl))
+  }
+
+  const timeTrackerBlock =
+    job?.chargeByHour && canTrackTime() ? (
+      <View style={styles.trackerBlock}>
+        <Text style={styles.sectionTitle}>Time Tracker</Text>
+        <Text style={styles.meta}>
+          Hourly rate:{' '}
+          {job.hourlyRateCents != null ? `${formatCents(job.hourlyRateCents)}/hr` : 'Not set'}
+        </Text>
+        <Text style={styles.meta}>
+          Total tracked:{' '}
+          {formatMinutes(timeQuery.data?.summary.totalMinutes || job.billableMinutesTotal || 0)}
+        </Text>
+        {!!myActiveEntry && <Text style={styles.meta}>Active timer: {formatElapsed(elapsedSeconds)}</Text>}
+
+        <View style={styles.row}>
+          {!myActiveEntry ? (
+            <Pressable style={styles.primaryButton} onPress={() => startTimeMutation.mutate()}>
+              <Text style={styles.primaryButtonText}>
+                {(timeQuery.data?.summary.totalMinutes || 0) > 0 ? 'Resume Timer' : 'Start Timer'}
+              </Text>
+            </Pressable>
+          ) : (
+            <>
+              <Pressable style={styles.secondaryButton} onPress={() => stopTimeMutation.mutate('Paused from mobile')}>
+                <Text style={styles.secondaryButtonText}>Pause</Text>
+              </Pressable>
+              <Pressable style={styles.primaryButton} onPress={() => stopTimeMutation.mutate('Stopped from mobile')}>
+                <Text style={styles.primaryButtonText}>Stop</Text>
+              </Pressable>
+            </>
+          )}
+          {!myActiveEntry && (
+            <Pressable style={styles.secondaryButton} onPress={() => setShowManualEntry((v) => !v)}>
+              <Text style={styles.secondaryButtonText}>Manual Time</Text>
+            </Pressable>
+          )}
+        </View>
+
+        {showManualEntry && canEditOwnTimeEntries() && (
+          <View style={{ gap: 8 }}>
+            <Text style={styles.meta}>Duration (minutes or hh:mm)</Text>
+            <TextInput
+              value={manualMinutes}
+              onChangeText={setManualMinutes}
+              placeholder="60 or 01:00"
+              placeholderTextColor={BRAND.text}
+              style={styles.noteInput}
+            />
+            <Text style={styles.meta}>Note (required)</Text>
+            <TextInput
+              value={manualNote}
+              onChangeText={setManualNote}
+              placeholder="Reason for manual entry"
+              placeholderTextColor={BRAND.text}
+              style={styles.noteInput}
+            />
+            <Pressable style={styles.primaryButton} onPress={() => manualTimeMutation.mutate()}>
+              <Text style={styles.primaryButtonText}>Save Manual Entry</Text>
+            </Pressable>
+          </View>
+        )}
+      </View>
+    ) : null
+
+  const noteComposeBlock = (
+    <View style={{ gap: 8 }}>
+      <TextInput
+        value={noteText}
+        onChangeText={setNoteText}
+        placeholder="Add internal note..."
+        placeholderTextColor={BRAND.text}
+        multiline
+        style={styles.noteInput}
+      />
+      <Pressable style={styles.primaryButton} onPress={() => noteMutation.mutate()}>
+        <Text style={styles.primaryButtonText}>Save Note</Text>
+      </Pressable>
+    </View>
+  )
+
+  const createTaskIssueActions = (
+    <View style={styles.row}>
+      {canCreateTasks() && (
+        <Pressable
+          style={styles.secondaryButton}
+          onPress={async () => {
+            if (!job) return
+            try {
+              const usersResponse = await apiRequest<{
+                users: Array<{ id: string; role: string; firstName: string; lastName: string }>
+              }>('/api/users?role=ADMIN&limit=10')
+              const adminUsers = usersResponse.users.filter((u) => u.role === 'ADMIN' || u.role === 'OFFICE')
+              if (adminUsers.length === 0) {
+                Alert.alert('No Admin Users', 'No admin users found to assign the task to.')
+                return
+              }
+              const assigneeId = adminUsers[0].id
+              await apiRequest('/api/tasks?mobile=true', 'POST', {
+                title: `Task for ${job.jobNumber}`,
+                description: `Task created from job ${job.jobNumber}: ${job.title}`,
+                assigneeId,
+                jobId: job.id,
+                priority: 'MEDIUM',
+                status: 'TODO',
+              })
+              Alert.alert(
+                'Success',
+                `Task created and assigned to ${adminUsers[0].firstName} ${adminUsers[0].lastName}`
+              )
+              queryClient.invalidateQueries({ queryKey: ['mobile-assignments'] })
+              queryClient.invalidateQueries({ queryKey: ['mobile-job', jobId] })
+            } catch (error: any) {
+              Alert.alert('Error', error?.message || 'Failed to create task')
+            }
+          }}
+        >
+          <Text style={styles.secondaryButtonText}>Create Task for Admin</Text>
+        </Pressable>
+      )}
+      {canCreateIssues() && (
+        <Pressable
+          style={styles.secondaryButton}
+          onPress={async () => {
+            if (!job) return
+            try {
+              const usersResponse = await apiRequest<{
+                users: Array<{ id: string; role: string; firstName: string; lastName: string }>
+              }>('/api/users?role=ADMIN&limit=10')
+              const adminUsers = usersResponse.users.filter((u) => u.role === 'ADMIN' || u.role === 'OFFICE')
+              if (adminUsers.length === 0) {
+                Alert.alert('No Admin Users', 'No admin users found to assign the issue to.')
+                return
+              }
+              const assigneeId = adminUsers[0].id
+              await apiRequest('/api/issues?mobile=true', 'POST', {
+                title: `Issue for ${job.jobNumber}`,
+                description: `Issue created from job ${job.jobNumber}: ${job.title}`,
+                assigneeId,
+                jobId: job.id,
+                type: 'OTHER',
+                priority: 'MEDIUM',
+                status: 'OPEN',
+              })
+              Alert.alert(
+                'Success',
+                `Issue created and assigned to ${adminUsers[0].firstName} ${adminUsers[0].lastName}`
+              )
+              queryClient.invalidateQueries({ queryKey: ['mobile-assignments'] })
+              queryClient.invalidateQueries({ queryKey: ['mobile-job', jobId] })
+            } catch (error: any) {
+              Alert.alert('Error', error?.message || 'Failed to create issue')
+            }
+          }}
+        >
+          <Text style={styles.secondaryButtonText}>Create Issue for Admin</Text>
+        </Pressable>
+      )}
+    </View>
+  )
+
   return (
     <Screen>
       <ScrollView
@@ -460,64 +661,20 @@ export function JobDetailScreen({ route, navigation }: Props) {
           <Text style={styles.empty}>Loading job details...</Text>
         ) : (
           <>
-            <Text style={styles.title}>
-              {job.jobNumber} - {job.title}
+            {/* Header */}
+            <Text style={styles.title}>{job.title}</Text>
+            <View style={styles.headerMetaRow}>
+              <StatusChip status={jobStatus} />
+              {job.jobType ? <Text style={styles.jobTypeBadge}>{formatJobType(job.jobType)}</Text> : null}
+            </View>
+            <Text style={styles.meta}>
+              {job.jobNumber} · {job.client?.name || 'N/A'}
             </Text>
-            <StatusChip status={jobStatus} />
-            <Text style={styles.meta}>Client: {job.client?.name || 'N/A'}</Text>
-            <Text style={styles.meta}>Phone: {job.client?.phone || 'N/A'}</Text>
-            {job.scheduledStart ? (
-              <Text style={styles.meta}>
-                Scheduled: {new Date(job.scheduledStart).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}
-              </Text>
-            ) : null}
+            {job.client?.phone ? <Text style={styles.meta}>Phone: {job.client.phone}</Text> : null}
+            {canViewJobFinancials() ? <JobOpenBalancesBanner job={job} /> : null}
             {!isOnline ? <Text style={styles.offlineBadge}>Offline - showing last synced data</Text> : null}
-            {job.address?.street ? (
-              <Pressable
-                onPress={() => {
-                  const addressObj = job.address
-                  if (!addressObj) return
-                  const address = `${addressObj.street}, ${addressObj.city || ''} ${addressObj.state || ''} ${addressObj.zipCode || ''}`.trim()
-                  const encodedAddress = encodeURIComponent(address)
-                  
-                  // Try Google Maps app first
-                  const androidGoogleMapsUrl = `comgooglemaps://?q=${encodedAddress}`
-                  const iosGoogleMapsUrl = `googlemaps://?q=${encodedAddress}`
-                  // Fallback to native maps
-                  const appleMapsUrl = `maps://?q=${encodedAddress}`
-                  // Final fallback to web Google Maps
-                  const webMapsUrl = `https://maps.google.com/?q=${encodedAddress}`
-                  
-                  const googleMapsUrl = Platform.OS === 'android' ? androidGoogleMapsUrl : iosGoogleMapsUrl
-                  
-                  // Try Google Maps app first
-                  Linking.canOpenURL(googleMapsUrl)
-                    .then((supported) => {
-                      if (supported) {
-                        return Linking.openURL(googleMapsUrl)
-                      }
-                      // Fallback to native maps (iOS Maps or Android Maps)
-                      return Linking.canOpenURL(appleMapsUrl).then((nativeSupported) => {
-                        if (nativeSupported) {
-                          return Linking.openURL(appleMapsUrl)
-                        }
-                        // Final fallback to web
-                        return Linking.openURL(webMapsUrl)
-                      })
-                    })
-                    .catch(() => Linking.openURL(webMapsUrl))
-                }}
-              >
-                <Text style={[styles.meta, styles.addressLink]}>
-                  Address: {`${job.address.street}, ${job.address.city || ''} ${job.address.state || ''}`}
-                </Text>
-              </Pressable>
-            ) : (
-              <Text style={styles.meta}>Address: No job site</Text>
-            )}
 
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Status</Text>
+            <DetailSection title="Status">
               <Pressable
                 style={styles.statusSelectTrigger}
                 onPress={() => {
@@ -532,256 +689,55 @@ export function JobDetailScreen({ route, navigation }: Props) {
                 <Ionicons name="chevron-down" size={18} color={BRAND.text} />
               </Pressable>
               <Text style={styles.meta}>Select a status to update this job.</Text>
-            </View>
+            </DetailSection>
 
-            {job.chargeByHour && canTrackTime() && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Time Tracker</Text>
-                <Text style={styles.meta}>
-                  Hourly rate: {job.hourlyRateCents ? `$${(job.hourlyRateCents / 100).toFixed(2)}/hr` : 'Not set'}
-                </Text>
-                <Text style={styles.meta}>
-                  Total tracked: {Math.floor((timeQuery.data?.summary.totalMinutes || job.billableMinutesTotal || 0) / 60)}h {(timeQuery.data?.summary.totalMinutes || job.billableMinutesTotal || 0) % 60}m
-                </Text>
-                {!!myActiveEntry && (
-                  <Text style={styles.meta}>Active timer: {formatElapsed(elapsedSeconds)}</Text>
-                )}
-
-                <View style={styles.row}>
-                  {!myActiveEntry ? (
-                    <Pressable style={styles.primaryButton} onPress={() => startTimeMutation.mutate()}>
-                      <Text style={styles.primaryButtonText}>
-                        {(timeQuery.data?.summary.totalMinutes || 0) > 0 ? 'Resume Timer' : 'Start Timer'}
-                      </Text>
-                    </Pressable>
-                  ) : (
-                    <>
-                      <Pressable style={styles.secondaryButton} onPress={() => stopTimeMutation.mutate('Paused from mobile')}>
-                        <Text style={styles.secondaryButtonText}>Pause</Text>
-                      </Pressable>
-                      <Pressable style={styles.primaryButton} onPress={() => stopTimeMutation.mutate('Stopped from mobile')}>
-                        <Text style={styles.primaryButtonText}>Stop</Text>
-                      </Pressable>
-                    </>
-                  )}
-                  {!myActiveEntry && (
-                    <Pressable style={styles.secondaryButton} onPress={() => setShowManualEntry((v) => !v)}>
-                      <Text style={styles.secondaryButtonText}>Manual Time</Text>
-                    </Pressable>
-                  )}
-                </View>
-
-                {showManualEntry && canEditOwnTimeEntries() && (
-                  <View style={styles.section}>
-                    <Text style={styles.meta}>Duration (minutes or hh:mm)</Text>
-                    <TextInput
-                      value={manualMinutes}
-                      onChangeText={setManualMinutes}
-                      placeholder="60 or 01:00"
-                      placeholderTextColor={BRAND.text}
-                      style={styles.noteInput}
-                    />
-                    <Text style={styles.meta}>Note (required)</Text>
-                    <TextInput
-                      value={manualNote}
-                      onChangeText={setManualNote}
-                      placeholder="Reason for manual entry"
-                      placeholderTextColor={BRAND.text}
-                      style={styles.noteInput}
-                    />
-                    <Pressable style={styles.primaryButton} onPress={() => manualTimeMutation.mutate()}>
-                      <Text style={styles.primaryButtonText}>Save Manual Entry</Text>
-                    </Pressable>
-                  </View>
-                )}
-              </View>
-            )}
-
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Notes</Text>
-              <TextInput
-                value={noteText}
-                onChangeText={setNoteText}
-                placeholder="Add internal note..."
-                placeholderTextColor={BRAND.text}
-                multiline
-                style={styles.noteInput}
-              />
-              <Pressable style={styles.primaryButton} onPress={() => noteMutation.mutate()}>
-                <Text style={styles.primaryButtonText}>Save Note</Text>
-              </Pressable>
-            </View>
-
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Tasks</Text>
-                <Text style={styles.countBadge}>{taskRows.length}</Text>
-              </View>
-              {taskRows.length === 0 ? (
-                <Text style={styles.meta}>No tasks for this job.</Text>
-              ) : (
-                taskRows.map((task) => (
-                  <Pressable
-                    key={task.id}
-                    style={styles.linkedRow}
-                    onPress={() => {
-                      void Linking.openURL(`trimpro://tasks/${task.id}`)
-                    }}
-                  >
-                    <View style={styles.linkedRowTop}>
-                      <Text style={styles.linkedTitle} numberOfLines={1}>
-                        {task.title}
-                      </Text>
-                      <View style={styles.inlinePills}>
-                        <Text style={styles.statusPill}>{asSafeText(task.status).replaceAll('_', ' ')}</Text>
-                        <Text style={styles.priorityPill}>{task.priority}</Text>
-                      </View>
-                    </View>
-                    <Text style={styles.meta} numberOfLines={1}>
-                      {task.assignedTo?.name || 'Unassigned'} • Due {formatCompactDate(task.dueDate)}
-                    </Text>
-                    {task.shortDescription ? (
-                      <Text style={styles.meta} numberOfLines={2}>
-                        {task.shortDescription}
-                      </Text>
-                    ) : null}
-                  </Pressable>
-                ))
-              )}
-            </View>
-
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Issues</Text>
-                <Text style={styles.countBadge}>{issueRows.length}</Text>
-              </View>
-              {issueRows.length === 0 ? (
-                <Text style={styles.meta}>No issues for this job.</Text>
-              ) : (
-                issueRows.map((issue) => (
-                  <Pressable
-                    key={issue.id}
-                    style={styles.linkedRow}
-                    onPress={() => {
-                      void Linking.openURL(`trimpro://issues/${issue.id}`)
-                    }}
-                  >
-                    <View style={styles.linkedRowTop}>
-                      <Text style={styles.linkedTitle} numberOfLines={1}>
-                        {issue.title}
-                      </Text>
-                      <View style={styles.inlinePills}>
-                        <Text style={styles.statusPill}>{asSafeText(issue.status).replaceAll('_', ' ')}</Text>
-                        <Text style={styles.priorityPill}>{issue.priority}</Text>
-                      </View>
-                    </View>
-                    <Text style={styles.meta} numberOfLines={1}>
-                      {issue.assignedTo?.name || 'Unassigned'} • Updated {formatCompactDate(issue.updatedAt)}
-                    </Text>
-                    {issue.shortDescription ? (
-                      <Text style={styles.meta} numberOfLines={2}>
-                        {issue.shortDescription}
-                      </Text>
-                    ) : null}
-                  </Pressable>
-                ))
-              )}
-            </View>
-
-            {canUploadMedia() && (
-              <View style={styles.section}>
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>Files and Media</Text>
-                  <Text style={styles.countBadge}>{attachmentRows.length}</Text>
-                </View>
-                <Pressable style={styles.secondaryButton} onPress={() => setShowAttachmentPicker(true)}>
-                  <Text style={styles.secondaryButtonText}>Add Attachment</Text>
+            {/* Quick Actions */}
+            <DetailSection title="Quick Actions">
+              <View style={styles.row}>
+                <Pressable
+                  style={styles.secondaryButton}
+                  onPress={async () => {
+                    if (!job) return
+                    try {
+                      const team = await apiRequest<{ conversationId: string }>('/api/messages/team/ensure', 'POST', {})
+                      const parentNav: any = navigation.getParent()?.getParent() || navigation.getParent()
+                      parentNav?.navigate('MainTabs', {
+                        screen: 'MessagesTab',
+                        params: {
+                          screen: 'MessageThread',
+                          params: {
+                            conversationId: team.conversationId,
+                            jobContext: {
+                              jobId: job.id,
+                              jobNumber: job.jobNumber,
+                              jobName: job.title,
+                            },
+                          },
+                        },
+                      })
+                    } catch (error: any) {
+                      Alert.alert('Error', error?.message || 'Failed to open Team Chat')
+                    }
+                  }}
+                >
+                  <Text style={styles.secondaryButtonText}>Send Message (Team)</Text>
                 </Pressable>
-                <AttachmentUploadQueue
-                  items={jobUploadQueue.items}
-                  onRetry={(item) => jobUploadQueue.retryItem(item.id)}
-                  onRemove={(item) => jobUploadQueue.removeItem(item.id)}
-                  onCancel={(item) => jobUploadQueue.cancelItem(item.id)}
-                />
-              {attachmentRows.length > 0 && (
-                <View style={styles.mediaGrid}>
-                  {attachmentRows.map((a) => {
-                    const mime = String(a.mimeType || '').toLowerCase()
-                    const isImage = mime.startsWith('image/')
-                    const isVideo = mime.startsWith('video/')
-                    const isPdf = isPdfAttachment(a.mimeType, a.fileName)
-                    const previewUrl =
-                      String((a as any).thumbnailUrl || (a as any).previewUrl || '').trim() || null
-                    return (
-                      <View key={a.id} style={[styles.mediaTileWrap, { width: `${100 / tileColumns}%` }]}>
-                        <Pressable
-                          style={styles.mediaTile}
-                          onPress={() => {
-                            if (isImage) {
-                              const idx = imageRows.findIndex((x) => x.id === a.id)
-                              setActiveImageIndex(Math.max(0, idx))
-                              setMediaViewerVisible(true)
-                              return
-                            }
-                            if (isVideo) {
-                              setActiveVideoUrl(a.url)
-                              setVideoViewerVisible(true)
-                              return
-                            }
-                            void openAttachmentUrl(a.url)
-                          }}
-                        >
-                          {isImage ? (
-                            <Image source={{ uri: a.url }} style={styles.mediaTileImage} />
-                          ) : isPdf && previewUrl ? (
-                            <Image source={{ uri: previewUrl }} style={styles.mediaTileImage} />
-                          ) : (
-                            <View style={styles.mediaTileIconWrap}>
-                              <Ionicons
-                                name={isVideo ? 'videocam-outline' : isPdf ? 'document-outline' : 'document-text-outline'}
-                                size={22}
-                                color={BRAND.text}
-                              />
-                              {!isVideo ? (
-                                <Text style={styles.mediaFileBadge}>{isPdf ? 'PDF FILE' : 'FILE'}</Text>
-                              ) : null}
-                            </View>
-                          )}
-                        </Pressable>
-                      </View>
-                    )
-                  })}
-                </View>
-              )}
-
-              {attachmentRows.length === 0 && <Text style={styles.meta}>No media for this job yet.</Text>}
-              </View>
-            )}
-
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Location</Text>
-              <View style={styles.row}>
-                <Text style={styles.meta}>Share location with dispatch while active</Text>
-                <Switch value={locationSharing} onValueChange={onToggleLocation} />
-              </View>
-            </View>
-
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Quick Actions</Text>
-              <View style={styles.row}>
+                {!!job.assignedTo?.id && job.assignedTo.id !== user?.id && (
                   <Pressable
                     style={styles.secondaryButton}
                     onPress={async () => {
-                      if (!job) return
+                      if (!job?.assignedTo?.id || !job) return
                       try {
-                        const team = await apiRequest<{ conversationId: string }>('/api/messages/team/ensure', 'POST', {})
+                        const dm = await apiRequest<{ conversationId: string }>('/api/messages/dm', 'POST', {
+                          userId: job.assignedTo.id,
+                        })
                         const parentNav: any = navigation.getParent()?.getParent() || navigation.getParent()
                         parentNav?.navigate('MainTabs', {
                           screen: 'MessagesTab',
                           params: {
                             screen: 'MessageThread',
                             params: {
-                              conversationId: team.conversationId,
+                              conversationId: dm.conversationId,
                               jobContext: {
                                 jobId: job.id,
                                 jobNumber: job.jobNumber,
@@ -791,149 +747,239 @@ export function JobDetailScreen({ route, navigation }: Props) {
                           },
                         })
                       } catch (error: any) {
-                        Alert.alert('Error', error?.message || 'Failed to open Team Chat')
+                        Alert.alert('Error', error?.message || 'Failed to open direct message')
                       }
                     }}
                   >
-                    <Text style={styles.secondaryButtonText}>Send Message (Team)</Text>
+                    <Text style={styles.secondaryButtonText}>Send DM to Assignee</Text>
                   </Pressable>
-                  {!!job.assignedTo?.id && job.assignedTo.id !== user?.id && (
-                    <Pressable
-                      style={styles.secondaryButton}
-                      onPress={async () => {
-                        if (!job?.assignedTo?.id || !job) return
-                        try {
-                          const dm = await apiRequest<{ conversationId: string }>('/api/messages/dm', 'POST', {
-                            userId: job.assignedTo.id,
-                          })
-                          const parentNav: any = navigation.getParent()?.getParent() || navigation.getParent()
-                          parentNav?.navigate('MainTabs', {
-                            screen: 'MessagesTab',
-                            params: {
-                              screen: 'MessageThread',
-                              params: {
-                                conversationId: dm.conversationId,
-                                jobContext: {
-                                  jobId: job.id,
-                                  jobNumber: job.jobNumber,
-                                  jobName: job.title,
-                                },
-                              },
-                            },
-                          })
-                        } catch (error: any) {
-                          Alert.alert('Error', error?.message || 'Failed to open direct message')
-                        }
-                      }}
-                    >
-                      <Text style={styles.secondaryButtonText}>Send DM to Assignee</Text>
-                    </Pressable>
-                  )}
-                  {canCreateTasks() && (
-                    <Pressable
-                      style={styles.secondaryButton}
-                      onPress={async () => {
-                        if (!job) return
-                        try {
-                          // Get admin users for assignment
-                          const usersResponse = await apiRequest<{ users: Array<{ id: string; role: string; firstName: string; lastName: string }> }>(
-                            '/api/users?role=ADMIN&limit=10'
-                          )
-                          const adminUsers = usersResponse.users.filter((u) => u.role === 'ADMIN' || u.role === 'OFFICE')
-                          
-                          if (adminUsers.length === 0) {
-                            Alert.alert('No Admin Users', 'No admin users found to assign the task to.')
-                            return
-                          }
-
-                          // If user can only assign to admin, use first admin
-                          // If user can assign to any, they could choose, but for simplicity, auto-assign to first admin
-                          const assigneeId = adminUsers[0].id
-                          
-                          await apiRequest('/api/tasks?mobile=true', 'POST', {
-                            title: `Task for ${job.jobNumber}`,
-                            description: `Task created from job ${job.jobNumber}: ${job.title}`,
-                            assigneeId,
-                            jobId: job.id,
-                            priority: 'MEDIUM',
-                            status: 'TODO',
-                          })
-
-                          Alert.alert('Success', `Task created and assigned to ${adminUsers[0].firstName} ${adminUsers[0].lastName}`)
-                          queryClient.invalidateQueries({ queryKey: ['mobile-assignments'] })
-                        } catch (error: any) {
-                          Alert.alert('Error', error?.message || 'Failed to create task')
-                        }
-                      }}
-                    >
-                      <Text style={styles.secondaryButtonText}>Create Task for Admin</Text>
-                    </Pressable>
-                  )}
-                  {canCreateIssues() && (
-                    <Pressable
-                      style={styles.secondaryButton}
-                      onPress={async () => {
-                        if (!job) return
-                        try {
-                          // Get admin users for assignment
-                          const usersResponse = await apiRequest<{ users: Array<{ id: string; role: string; firstName: string; lastName: string }> }>(
-                            '/api/users?role=ADMIN&limit=10'
-                          )
-                          const adminUsers = usersResponse.users.filter((u) => u.role === 'ADMIN' || u.role === 'OFFICE')
-                          
-                          if (adminUsers.length === 0) {
-                            Alert.alert('No Admin Users', 'No admin users found to assign the issue to.')
-                            return
-                          }
-
-                          const assigneeId = adminUsers[0].id
-                          
-                          await apiRequest('/api/issues?mobile=true', 'POST', {
-                            title: `Issue for ${job.jobNumber}`,
-                            description: `Issue created from job ${job.jobNumber}: ${job.title}`,
-                            assigneeId,
-                            jobId: job.id,
-                            type: 'OTHER',
-                            priority: 'MEDIUM',
-                            status: 'OPEN',
-                          })
-
-                          Alert.alert('Success', `Issue created and assigned to ${adminUsers[0].firstName} ${adminUsers[0].lastName}`)
-                          queryClient.invalidateQueries({ queryKey: ['mobile-assignments'] })
-                        } catch (error: any) {
-                          Alert.alert('Error', error?.message || 'Failed to create issue')
-                        }
-                      }}
-                    >
-                      <Text style={styles.secondaryButtonText}>Create Issue for Admin</Text>
-                    </Pressable>
-                  )}
+                )}
+                {canCreateTasks() && (
                   <Pressable
                     style={styles.secondaryButton}
-                    onPress={() => {
+                    onPress={async () => {
                       if (!job) return
-                      if (!canScheduleJobs()) {
-                        Alert.alert('Permission denied', 'You do not have permission to schedule jobs.')
-                        return
+                      try {
+                        const usersResponse = await apiRequest<{
+                          users: Array<{ id: string; role: string; firstName: string; lastName: string }>
+                        }>('/api/users?role=ADMIN&limit=10')
+                        const adminUsers = usersResponse.users.filter((u) => u.role === 'ADMIN' || u.role === 'OFFICE')
+                        if (adminUsers.length === 0) {
+                          Alert.alert('No Admin Users', 'No admin users found to assign the task to.')
+                          return
+                        }
+                        const assigneeId = adminUsers[0].id
+                        await apiRequest('/api/tasks?mobile=true', 'POST', {
+                          title: `Task for ${job.jobNumber}`,
+                          description: `Task created from job ${job.jobNumber}: ${job.title}`,
+                          assigneeId,
+                          jobId: job.id,
+                          priority: 'MEDIUM',
+                          status: 'TODO',
+                        })
+                        Alert.alert(
+                          'Success',
+                          `Task created and assigned to ${adminUsers[0].firstName} ${adminUsers[0].lastName}`
+                        )
+                        queryClient.invalidateQueries({ queryKey: ['mobile-assignments'] })
+                        queryClient.invalidateQueries({ queryKey: ['mobile-job', jobId] })
+                      } catch (error: any) {
+                        Alert.alert('Error', error?.message || 'Failed to create task')
                       }
-                      const rootNav: any = navigation.getParent()?.getParent() || navigation.getParent()
-                      rootNav?.navigate('MainTabs', {
-                        screen: 'ScheduleTab',
-                        params: {
-                          screen: 'ScheduleCreate',
-                          params: {
-                            jobId: job.id,
-                            assignedUserId: job.assignedTo?.id,
-                            title: `${job.jobNumber} - ${job.title}`,
-                          },
-                        },
-                      })
                     }}
                   >
-                    <Text style={styles.secondaryButtonText}>Create Schedule</Text>
+                    <Text style={styles.secondaryButtonText}>Create Task for Admin</Text>
                   </Pressable>
+                )}
+                {canCreateIssues() && (
+                  <Pressable
+                    style={styles.secondaryButton}
+                    onPress={async () => {
+                      if (!job) return
+                      try {
+                        const usersResponse = await apiRequest<{
+                          users: Array<{ id: string; role: string; firstName: string; lastName: string }>
+                        }>('/api/users?role=ADMIN&limit=10')
+                        const adminUsers = usersResponse.users.filter((u) => u.role === 'ADMIN' || u.role === 'OFFICE')
+                        if (adminUsers.length === 0) {
+                          Alert.alert('No Admin Users', 'No admin users found to assign the issue to.')
+                          return
+                        }
+                        const assigneeId = adminUsers[0].id
+                        await apiRequest('/api/issues?mobile=true', 'POST', {
+                          title: `Issue for ${job.jobNumber}`,
+                          description: `Issue created from job ${job.jobNumber}: ${job.title}`,
+                          assigneeId,
+                          jobId: job.id,
+                          type: 'OTHER',
+                          priority: 'MEDIUM',
+                          status: 'OPEN',
+                        })
+                        Alert.alert(
+                          'Success',
+                          `Issue created and assigned to ${adminUsers[0].firstName} ${adminUsers[0].lastName}`
+                        )
+                        queryClient.invalidateQueries({ queryKey: ['mobile-assignments'] })
+                        queryClient.invalidateQueries({ queryKey: ['mobile-job', jobId] })
+                      } catch (error: any) {
+                        Alert.alert('Error', error?.message || 'Failed to create issue')
+                      }
+                    }}
+                  >
+                    <Text style={styles.secondaryButtonText}>Create Issue for Admin</Text>
+                  </Pressable>
+                )}
+                <Pressable
+                  style={styles.secondaryButton}
+                  onPress={() => {
+                    if (!job) return
+                    if (!canScheduleJobs()) {
+                      Alert.alert('Permission denied', 'You do not have permission to schedule jobs.')
+                      return
+                    }
+                    const rootNav: any = navigation.getParent()?.getParent() || navigation.getParent()
+                    rootNav?.navigate('MainTabs', {
+                      screen: 'ScheduleTab',
+                      params: {
+                        screen: 'ScheduleCreate',
+                        params: {
+                          jobId: job.id,
+                          assignedUserId: job.assignedTo?.id,
+                          title: `${job.jobNumber} - ${job.title}`,
+                        },
+                      },
+                    })
+                  }}
+                >
+                  <Text style={styles.secondaryButtonText}>Create Schedule</Text>
+                </Pressable>
               </View>
-            </View>
+            </DetailSection>
+
+            {canViewJobDocuments() ? <JobDocumentsSection job={job} /> : null}
+
+            <JobInformationSection job={job} showFinancials={canViewJobFinancials()} />
+
+            {canViewJobBilling() ? (
+              <JobBillingSummarySection job={job}>{timeTrackerBlock}</JobBillingSummarySection>
+            ) : null}
+
+            {canViewJobTimeEntries() ? (
+              <JobTimeEntriesSection
+                entries={asArray<TimeEntry>(timeQuery.data?.entries)}
+                activeTimers={job.activeTimers}
+                loading={timeQuery.isLoading}
+              >
+                {!canViewJobBilling() ? timeTrackerBlock : null}
+              </JobTimeEntriesSection>
+            ) : !canViewJobBilling() && timeTrackerBlock ? (
+              <DetailSection title="Time Tracker">{timeTrackerBlock}</DetailSection>
+            ) : null}
+
+            <JobSiteSection job={job} onOpenMaps={openJobSiteMaps} />
+
+            {canViewJobCrew() ? <JobCrewSection job={job} /> : null}
+
+            {canViewJobNotes() ? (
+              <JobNotesHistorySection job={job}>{noteComposeBlock}</JobNotesHistorySection>
+            ) : (
+              <DetailSection title="Notes">{noteComposeBlock}</DetailSection>
+            )}
+
+            {canViewJobClientDetails() ? <JobClientSection job={job} /> : null}
+
+            {canViewJobTasksIssues() || canCreateTasks() || canCreateIssues() ? (
+              <JobTasksIssuesSection
+                job={job}
+                showLists={canViewJobTasksIssues()}
+                createActions={
+                  !canCreateTasks() && !canCreateIssues() ? undefined : createTaskIssueActions
+                }
+              />
+            ) : null}
+
+            {canViewJobSchedules() ? <JobSchedulesSection job={job} /> : null}
+
+            {canUploadMedia() && (
+              <DetailSection
+                title="Files and Media"
+                right={<Text style={styles.countBadge}>{attachmentRows.length}</Text>}
+              >
+                <Pressable style={styles.secondaryButton} onPress={() => setShowAttachmentPicker(true)}>
+                  <Text style={styles.secondaryButtonText}>Add Attachment</Text>
+                </Pressable>
+                <AttachmentUploadQueue
+                  items={jobUploadQueue.items}
+                  onRetry={(item) => jobUploadQueue.retryItem(item.id)}
+                  onRemove={(item) => jobUploadQueue.removeItem(item.id)}
+                  onCancel={(item) => jobUploadQueue.cancelItem(item.id)}
+                />
+                {attachmentRows.length > 0 && (
+                  <View style={styles.mediaGrid}>
+                    {attachmentRows.map((a) => {
+                      const mime = String(a.mimeType || '').toLowerCase()
+                      const isImage = mime.startsWith('image/')
+                      const isVideo = mime.startsWith('video/')
+                      const isPdf = isPdfAttachment(a.mimeType, a.fileName)
+                      const previewUrl =
+                        String((a as any).thumbnailUrl || (a as any).previewUrl || '').trim() || null
+                      return (
+                        <View key={a.id} style={[styles.mediaTileWrap, { width: `${100 / tileColumns}%` }]}>
+                          <Pressable
+                            style={styles.mediaTile}
+                            onPress={() => {
+                              if (isImage) {
+                                const idx = imageRows.findIndex((x) => x.id === a.id)
+                                setActiveImageIndex(Math.max(0, idx))
+                                setMediaViewerVisible(true)
+                                return
+                              }
+                              if (isVideo) {
+                                setActiveVideoUrl(a.url)
+                                setVideoViewerVisible(true)
+                                return
+                              }
+                              void openAttachmentUrl(a.url)
+                            }}
+                          >
+                            {isImage ? (
+                              <Image source={{ uri: a.url }} style={styles.mediaTileImage} />
+                            ) : isPdf && previewUrl ? (
+                              <Image source={{ uri: previewUrl }} style={styles.mediaTileImage} />
+                            ) : (
+                              <View style={styles.mediaTileIconWrap}>
+                                <Ionicons
+                                  name={
+                                    isVideo
+                                      ? 'videocam-outline'
+                                      : isPdf
+                                        ? 'document-outline'
+                                        : 'document-text-outline'
+                                  }
+                                  size={22}
+                                  color={BRAND.text}
+                                />
+                                {!isVideo ? (
+                                  <Text style={styles.mediaFileBadge}>{isPdf ? 'PDF FILE' : 'FILE'}</Text>
+                                ) : null}
+                              </View>
+                            )}
+                          </Pressable>
+                        </View>
+                      )
+                    })}
+                  </View>
+                )}
+                {attachmentRows.length === 0 && <Text style={styles.meta}>No media for this job yet.</Text>}
+              </DetailSection>
+            )}
+
+            <DetailSection title="Location">
+              <View style={styles.row}>
+                <Text style={styles.meta}>Share location with dispatch while active</Text>
+                <Switch value={locationSharing} onValueChange={onToggleLocation} />
+              </View>
+            </DetailSection>
 
             <Modal visible={statusPickerVisible} transparent animationType="fade" onRequestClose={() => setStatusPickerVisible(false)}>
               <View style={styles.modalBackdrop}>
@@ -1078,6 +1124,27 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '800',
     color: BRAND.text,
+  },
+  headerMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  jobTypeBadge: {
+    backgroundColor: '#EEF2FF',
+    color: '#3730A3',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    fontSize: 11,
+    fontWeight: '700',
+    overflow: 'hidden',
+    textTransform: 'uppercase',
+  },
+  trackerBlock: {
+    gap: 8,
+    marginTop: 4,
   },
   meta: {
     fontSize: 13,

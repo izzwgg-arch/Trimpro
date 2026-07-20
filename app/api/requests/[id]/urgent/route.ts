@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
-import { requirePermission } from '@/lib/authorization'
+import { requireWebOrAnyMobilePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { buildUrgentUpdateData } from '@/lib/requests/urgent'
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
-  const permError = await requirePermission(request, 'leads.edit')
+  const permError = await requireWebOrAnyMobilePermission(request, 'leads.edit', [
+    'mobile.requests.edit',
+    'mobile.requests.view',
+  ])
   if (permError) return permError
 
   const user = getAuthUser(request)
