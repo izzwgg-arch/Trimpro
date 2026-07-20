@@ -69,6 +69,25 @@ export async function assertCanAccessJobType(
   return { ok: false, error: 'You do not have access to this job type' }
 }
 
+/**
+ * Apply an optional list filter for a single job type onto a Prisma where object.
+ * Preserves existing jobType scope (`{ in: [...] }`) by intersecting when needed.
+ */
+export function applyJobTypeListFilter(
+  where: Record<string, any>,
+  jobTypeParam: string | null | undefined
+): void {
+  if (!jobTypeParam || jobTypeParam === 'all') return
+  if (!(JOB_TYPE_VALUES as readonly string[]).includes(jobTypeParam)) return
+
+  const existing = where.jobType
+  if (existing && typeof existing === 'object' && Array.isArray(existing.in)) {
+    where.jobType = existing.in.includes(jobTypeParam) ? jobTypeParam : { in: [] as JobTypeValue[] }
+    return
+  }
+  where.jobType = jobTypeParam
+}
+
 export async function resolveJobTypeForWrite(
   userId: string,
   tenantId: string,

@@ -19,7 +19,9 @@ import { useDocumentListAccess } from '@/hooks/useDocumentListAccess'
 import { CreateOnlyAccessCard } from '@/components/permissions/CreateOnlyAccessCard'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { JOB_STATUSES } from '@/lib/jobs/statuses'
+import { JOB_TYPES } from '@/lib/jobs/types'
 import { JobStatusSelect } from '@/components/jobs/JobStatusSelect'
+import { JobTypeBadge } from '@/components/jobs/JobTypeSelect'
 
 interface Job {
   id: string
@@ -27,6 +29,7 @@ interface Job {
   title: string
   description: string | null
   status: string
+  jobType?: string | null
   priority: number
   scheduledStart: string | null
   scheduledEnd: string | null
@@ -73,6 +76,7 @@ export default function JobsPage() {
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebouncedValue(search, 300)
   const [status, setStatus] = useState('all')
+  const [jobType, setJobType] = useState('all')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
@@ -90,13 +94,13 @@ export default function JobsPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [debouncedSearch, status])
+  }, [debouncedSearch, status, jobType])
 
   useEffect(() => {
     if (permissionsLoading) return
     fetchJobs()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch, status, page, permissionsLoading, canViewList])
+  }, [debouncedSearch, status, jobType, page, permissionsLoading, canViewList])
 
   const fetchJobs = async () => {
     if (!canViewList) {
@@ -112,6 +116,7 @@ export default function JobsPage() {
       const params = new URLSearchParams({
         search: debouncedSearch,
         status,
+        jobType,
         page: String(page),
         limit: '50',
       })
@@ -304,6 +309,19 @@ export default function JobsPage() {
                   ))}
                 </SelectContent>
               </Select>
+              <Select value={jobType} onValueChange={setJobType}>
+                <SelectTrigger className="w-[160px] text-sm">
+                  <SelectValue placeholder="All Types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  {JOB_TYPES.map((t) => (
+                    <SelectItem key={t.value} value={t.value}>
+                      {t.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </CardContent>
@@ -351,6 +369,7 @@ export default function JobsPage() {
                       className="h-4 w-4"
                       title="Select for duplicate"
                     />
+                    <JobTypeBadge jobType={job.jobType} />
                     <JobStatusSelect
                       jobId={job.id}
                       status={job.status}
@@ -491,14 +510,17 @@ export default function JobsPage() {
                 primary={`${job.jobNumber} - ${job.title}`}
                 secondary={`${job.client.name} | Client Open: ${formatCurrency(parseFloat(job.clientOpenInvoiceBalance || '0'))}`}
                 status={
-                  <JobStatusSelect
-                    jobId={job.id}
-                    status={job.status}
-                    compact
-                    onUpdated={(next) =>
-                      setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, status: next } : j)))
-                    }
-                  />
+                  <div className="flex items-center gap-2">
+                    <JobTypeBadge jobType={job.jobType} />
+                    <JobStatusSelect
+                      jobId={job.id}
+                      status={job.status}
+                      compact
+                      onUpdated={(next) =>
+                        setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, status: next } : j)))
+                      }
+                    />
+                  </div>
                 }
                 amount={job.totalCost ? formatCurrency(parseFloat(job.totalCost)) : (job.estimateAmount ? formatCurrency(parseFloat(job.estimateAmount)) : '-')}
                 date={`Open: ${formatCurrency(parseFloat(job.openInvoiceBalance || '0'))}`}
@@ -523,14 +545,17 @@ export default function JobsPage() {
                 href={`/dashboard/jobs/${job.id}`}
                 primary={`${job.jobNumber} - ${job.title}`}
                 status={
-                  <JobStatusSelect
-                    jobId={job.id}
-                    status={job.status}
-                    compact
-                    onUpdated={(next) =>
-                      setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, status: next } : j)))
-                    }
-                  />
+                  <div className="flex items-center gap-2">
+                    <JobTypeBadge jobType={job.jobType} />
+                    <JobStatusSelect
+                      jobId={job.id}
+                      status={job.status}
+                      compact
+                      onUpdated={(next) =>
+                        setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, status: next } : j)))
+                      }
+                    />
+                  </div>
                 }
                 line2={`${job.client.name} | Priority ${priorityLabels[job.priority] || 'Medium'} | Client Open ${formatCurrency(parseFloat(job.clientOpenInvoiceBalance || '0'))}`}
                 rightTop={job.totalCost ? formatCurrency(parseFloat(job.totalCost)) : (job.estimateAmount ? formatCurrency(parseFloat(job.estimateAmount)) : '-')}
@@ -573,6 +598,12 @@ export default function JobsPage() {
               header: 'Client',
               sortValue: (job) => job.client.name,
               render: (job) => job.client.name,
+            },
+            {
+              key: 'jobType',
+              header: 'Type',
+              sortValue: (job) => job.jobType || '',
+              render: (job) => <JobTypeBadge jobType={job.jobType} />,
             },
             {
               key: 'status',

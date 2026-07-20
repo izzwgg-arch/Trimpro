@@ -9,7 +9,7 @@ import { isMobileRequest, requireMobilePermission, hasMobilePermission } from '@
 import { jobRecordJobSiteAddressSearchClauses } from '@/lib/search/job-site-address'
 import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
 import { ACTIVE_JOB_STATUSES } from '@/lib/jobs/statuses'
-import { jobTypeScopeWhere, resolveJobTypeForWrite } from '@/lib/jobs/job-type-scope'
+import { applyJobTypeListFilter, jobTypeScopeWhere, resolveJobTypeForWrite } from '@/lib/jobs/job-type-scope'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -28,6 +28,21 @@ export async function GET(request: NextRequest) {
   const endDate = searchParams.get('endDate')
   const crewId = searchParams.get('crewId') || ''
   const priorityParam = searchParams.get('priority') || ''
+  const jobTypeParam = searchParams.get('jobType') || 'all'
+  const sortByRaw = searchParams.get('sortBy') || 'updatedAt'
+  const sortDirectionRaw = searchParams.get('sortDirection') || 'desc'
+  const sortDirection = sortDirectionRaw === 'asc' ? 'asc' : 'desc'
+  const sortMap: Record<string, any> = {
+    jobNumber: { jobNumber: sortDirection },
+    title: { title: sortDirection },
+    status: { status: sortDirection },
+    jobType: { jobType: sortDirection },
+    priority: { priority: sortDirection },
+    scheduledStart: { scheduledStart: sortDirection },
+    createdAt: { createdAt: sortDirection },
+    updatedAt: { updatedAt: sortDirection },
+  }
+  const orderBy = sortMap[sortByRaw] || sortMap.updatedAt
   const { skip, take, page, limit } = getPaginationParams(searchParams)
 
   try {
@@ -171,6 +186,8 @@ export async function GET(request: NextRequest) {
           }
         }
 
+        applyJobTypeListFilter(where, jobTypeParam)
+
         const [jobs, total] = await Promise.all([
           prisma.job.findMany({
             where,
@@ -211,9 +228,7 @@ export async function GET(request: NextRequest) {
                 },
               },
             },
-            orderBy: {
-              updatedAt: 'desc',
-            },
+            orderBy,
             skip,
             take,
           }),
@@ -298,6 +313,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    applyJobTypeListFilter(where, jobTypeParam)
+
     const [jobs, total] = await Promise.all([
       prisma.job.findMany({
         where,
@@ -338,9 +355,7 @@ export async function GET(request: NextRequest) {
             },
           },
         },
-        orderBy: {
-          updatedAt: 'desc',
-        },
+        orderBy,
         skip,
         take,
       }),

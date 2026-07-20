@@ -6,7 +6,12 @@ import { notifyRequestCreated } from '@/lib/notifications'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { leadJobSiteAddressSearchClauses } from '@/lib/search/job-site-address'
 import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
-import { jobTypeScopeWhere, resolveJobTypeForWrite, assertCanAccessJobType } from '@/lib/jobs/job-type-scope'
+import {
+  applyJobTypeListFilter,
+  jobTypeScopeWhere,
+  resolveJobTypeForWrite,
+  assertCanAccessJobType,
+} from '@/lib/jobs/job-type-scope'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -23,6 +28,7 @@ export async function GET(request: NextRequest) {
   const search = searchParams.get('search') || ''
   const status = searchParams.get('status') || 'all'
   const source = searchParams.get('source') || 'all'
+  const jobTypeParam = searchParams.get('jobType') || 'all'
   const assignedToId = searchParams.get('assignedToId') || ''
   const page = parseInt(searchParams.get('page') || '1')
   const limit = parseInt(searchParams.get('limit') || '50')
@@ -34,6 +40,7 @@ export async function GET(request: NextRequest) {
     name: [{ firstName: sortDirection }, { lastName: sortDirection }],
     status: { status: sortDirection },
     source: { source: sortDirection },
+    jobType: { jobType: sortDirection },
     assigned: { assignedTo: { firstName: sortDirection } },
     probability: { probability: sortDirection },
     createdAt: { createdAt: sortDirection },
@@ -75,6 +82,8 @@ export async function GET(request: NextRequest) {
     if (source !== 'all') {
       where.source = source
     }
+
+    applyJobTypeListFilter(where, jobTypeParam)
 
     if (assignedToId) {
       where.assignedToId = assignedToId

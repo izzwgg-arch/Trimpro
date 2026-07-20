@@ -18,6 +18,8 @@ import Link from 'next/link'
 import { usePermissions, hasPermission } from '@/hooks/usePermissions'
 import { CreateOnlyAccessCard } from '@/components/permissions/CreateOnlyAccessCard'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { JOB_TYPES } from '@/lib/jobs/types'
+import { JobTypeBadge } from '@/components/jobs/JobTypeSelect'
 
 interface Request {
   id: string
@@ -28,6 +30,7 @@ interface Request {
   company: string | null
   source: string
   status: string
+  jobType?: string | null
   isUrgent?: boolean
   urgentAt?: string | null
   urgentByUserId?: string | null
@@ -95,6 +98,7 @@ const REQUESTS_LIST_KEY = 'trimpro.requests.listState'
 type RequestsListState = {
   status: string
   source: string
+  jobType: string
   search: string
   sortKey: string | null
   sortDirection: 'asc' | 'desc'
@@ -103,6 +107,7 @@ type RequestsListState = {
 const REQUESTS_DEFAULTS: RequestsListState = {
   status: 'all',
   source: 'all',
+  jobType: 'all',
   search: '',
   sortKey: null,
   sortDirection: 'asc',
@@ -117,6 +122,7 @@ function loadRequestsListState(): RequestsListState {
     return {
       status: typeof p.status === 'string' ? p.status : REQUESTS_DEFAULTS.status,
       source: typeof p.source === 'string' ? p.source : REQUESTS_DEFAULTS.source,
+      jobType: typeof p.jobType === 'string' ? p.jobType : REQUESTS_DEFAULTS.jobType,
       search: typeof p.search === 'string' ? p.search : REQUESTS_DEFAULTS.search,
       sortKey: typeof p.sortKey === 'string' ? p.sortKey : null,
       sortDirection: p.sortDirection === 'desc' ? 'desc' : 'asc',
@@ -136,7 +142,7 @@ export default function RequestsPage() {
   const [initialLoading, setInitialLoading] = useState(true)
   const [isFetching, setIsFetching] = useState(false)
   const [listState, setListStateRaw] = useState<RequestsListState>(loadRequestsListState)
-  const { status, source, search, sortKey, sortDirection } = listState
+  const { status, source, jobType, search, sortKey, sortDirection } = listState
   const debouncedSearch = useDebouncedValue(search, 300)
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
@@ -164,7 +170,7 @@ export default function RequestsPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [debouncedSearch, status, source, sortKey, sortDirection])
+  }, [debouncedSearch, status, source, jobType, sortKey, sortDirection])
 
   const fetchRequests = useCallback(async (silent = false) => {
     if (!canViewList) {
@@ -181,6 +187,7 @@ export default function RequestsPage() {
         search: debouncedSearch,
         status,
         source,
+        jobType,
         page: String(page),
         limit: '50',
       })
@@ -210,7 +217,7 @@ export default function RequestsPage() {
       setInitialLoading(false)
       if (!silent) setIsFetching(false)
     }
-  }, [page, router, debouncedSearch, sortDirection, sortKey, source, status, canViewList])
+  }, [page, router, debouncedSearch, sortDirection, sortKey, source, status, jobType, canViewList])
 
   useEffect(() => {
     if (permissionsLoading) return
@@ -579,6 +586,19 @@ export default function RequestsPage() {
                   <SelectItem value="OTHER">Other</SelectItem>
                 </SelectContent>
               </Select>
+              <Select value={jobType} onValueChange={(v) => setListState({ jobType: v })}>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue placeholder="All Types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  {JOB_TYPES.map((t) => (
+                    <SelectItem key={t.value} value={t.value}>
+                      {t.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </CardContent>
@@ -637,6 +657,7 @@ export default function RequestsPage() {
                       <span className={`px-2 py-1 text-xs rounded-full ${statusColors[request.status] || 'bg-gray-100 text-gray-800'}`}>
                         {statusLabels[request.status] ?? request.status.replace(/_/g, ' ')}
                       </span>
+                      <JobTypeBadge jobType={request.jobType} />
                       <span className={`px-2 py-1 text-xs rounded ${sourceColors[request.source] || 'bg-gray-100 text-gray-800'}`}>
                         {request.source}
                       </span>
@@ -806,7 +827,14 @@ export default function RequestsPage() {
                     : 'Assigned: Unassigned',
                   request.createdBy ? `by ${request.createdBy.firstName} ${request.createdBy.lastName}` : null,
                 ].filter(Boolean).join(' · ')}
-                status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[request.status] || 'bg-gray-100 text-gray-800'}`}>{statusLabels[request.status] ?? request.status.replace(/_/g, ' ')}</span>}
+                status={
+                  <div className="flex items-center gap-2">
+                    <JobTypeBadge jobType={request.jobType} />
+                    <span className={`px-2 py-1 text-xs rounded-full ${statusColors[request.status] || 'bg-gray-100 text-gray-800'}`}>
+                      {statusLabels[request.status] ?? request.status.replace(/_/g, ' ')}
+                    </span>
+                  </div>
+                }
                 amount={<span>{request.probability}%</span>}
                 date={<span>{formatDate(request.createdAt)}</span>}
                 className="pl-10"
@@ -829,7 +857,14 @@ export default function RequestsPage() {
               <RowDetailedItem
                 href={`/dashboard/requests/${request.id}`}
                 primary={`${request.firstName} ${request.lastName}${request.isUrgent ? ' • URGENT' : ''}`.trim()}
-                status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[request.status] || 'bg-gray-100 text-gray-800'}`}>{statusLabels[request.status] ?? request.status.replace(/_/g, ' ')}</span>}
+                status={
+                  <div className="flex items-center gap-2">
+                    <JobTypeBadge jobType={request.jobType} />
+                    <span className={`px-2 py-1 text-xs rounded-full ${statusColors[request.status] || 'bg-gray-100 text-gray-800'}`}>
+                      {statusLabels[request.status] ?? request.status.replace(/_/g, ' ')}
+                    </span>
+                  </div>
+                }
                 line2={[
                   request.company || request.email || request.phone || 'No contact info',
                   request.assignedTo
@@ -888,6 +923,12 @@ export default function RequestsPage() {
               header: 'Status',
               sortValue: (request) => request.status,
               render: (request) => <span className={`px-2 py-1 text-xs rounded-full ${statusColors[request.status] || 'bg-gray-100 text-gray-800'}`}>{statusLabels[request.status] ?? request.status.replace(/_/g, ' ')}</span>,
+            },
+            {
+              key: 'jobType',
+              header: 'Type',
+              sortValue: (request) => request.jobType || '',
+              render: (request) => <JobTypeBadge jobType={request.jobType} />,
             },
             {
               key: 'source',
