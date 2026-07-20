@@ -54,7 +54,7 @@ export async function POST(
     const apkDownloadUrl =
       process.env.TRIMPRO_FIELD_APK_URL ||
       process.env.EXPO_ANDROID_APK_URL ||
-      'https://expo.dev/artifacts/eas/dRcgyHyA2NeJUs6EH5RbSv.apk'
+      `${appBaseUrl}/download`
 
     let emailSent = false
     let emailError: string | null = null
