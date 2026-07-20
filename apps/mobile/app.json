@@ -1,4 +1,4 @@
-{
+﻿{
   "expo": {
     "name": "TrimPro Field",
     "slug": "trimpro-field",
@@ -35,7 +35,7 @@
     },
     "android": {
       "package": "com.trimpro.field",
-      "versionCode": 11,
+      "versionCode": 12,
       "softwareKeyboardLayoutMode": "pan",
       "googleServicesFile": "./google-services.json",
       "notification": {
@@ -72,3 +72,4 @@
     "owner": "izz8457s-organization"
   }
 }
+
