@@ -28,6 +28,7 @@ import { BRAND } from '../../config/env'
 import { JobsStackParamList } from '../../types/navigation'
 import { enqueueOutbox } from '../../offline/outbox'
 import { useOnlineState } from '../../hooks/useOnlineState'
+import { isPdfAttachment, normalizeAttachmentUrl, openAttachment } from '../../services/open-attachment'
 import { useAuth } from '../../auth/AuthContext'
 import { useMobilePermissions } from '../../hooks/useMobilePermissions'
 import { AttachmentPickerSheet } from '../../components/attachments/AttachmentPickerSheet'
@@ -106,30 +107,8 @@ interface JobTimeResponse {
   }
 }
 
-const MEDIA_BASE_URL = 'https://app.trimprony.com'
-
 function normalizeMediaUrl(rawUrl: string) {
-  const value = String(rawUrl || '').trim()
-  if (!value) return value
-  try {
-    const parsed = new URL(value, MEDIA_BASE_URL)
-    const host = parsed.hostname
-    const isInternalHost = host === 'localhost' || host === '127.0.0.1' || /^\d{1,3}(\.\d{1,3}){3}$/.test(host)
-    if (isInternalHost) {
-      return `${MEDIA_BASE_URL}${parsed.pathname}${parsed.search}`
-    }
-    if (parsed.protocol === 'http:') parsed.protocol = 'https:'
-    return parsed.toString()
-  } catch {
-    if (value.startsWith('/')) return `${MEDIA_BASE_URL}${value}`
-    return value
-  }
-}
-
-function isPdfAttachment(mimeType?: string | null, fileName?: string | null) {
-  const mime = String(mimeType || '').toLowerCase()
-  const name = String(fileName || '').toLowerCase()
-  return mime.includes('pdf') || name.endsWith('.pdf')
+  return normalizeAttachmentUrl(rawUrl) || String(rawUrl || '').trim()
 }
 
 export function JobDetailScreen({ route, navigation }: Props) {
@@ -445,18 +424,15 @@ export function JobDetailScreen({ route, navigation }: Props) {
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
   }
 
-  const openAttachmentUrl = async (rawUrl: string) => {
-    const url = normalizeMediaUrl(rawUrl)
-    try {
-      const supported = await Linking.canOpenURL(url)
-      if (!supported) {
-        Alert.alert('Unable to open file', 'No app found to open this file type.')
-        return
-      }
-      await Linking.openURL(url)
-    } catch (error: any) {
-      Alert.alert('Unable to open file', error?.message || 'Please try again.')
-    }
+  const openAttachmentUrl = async (
+    rawUrl: string,
+    meta?: { fileName?: string | null; mimeType?: string | null }
+  ) => {
+    await openAttachment({
+      url: rawUrl,
+      fileName: meta?.fileName,
+      mimeType: meta?.mimeType,
+    })
   }
   const tileColumns = 2
 
@@ -900,14 +876,15 @@ export function JobDetailScreen({ route, navigation }: Props) {
 
             {canViewJobSchedules() ? <JobSchedulesSection job={job} /> : null}
 
-            {canUploadMedia() && (
-              <DetailSection
-                title="Files and Media"
-                right={<Text style={styles.countBadge}>{attachmentRows.length}</Text>}
-              >
+            <DetailSection
+              title="Files and Media"
+              right={<Text style={styles.countBadge}>{attachmentRows.length}</Text>}
+            >
+              {canUploadMedia() ? (
                 <Pressable style={styles.secondaryButton} onPress={() => setShowAttachmentPicker(true)}>
                   <Text style={styles.secondaryButtonText}>Add Attachment</Text>
                 </Pressable>
+              ) : null}
                 <AttachmentUploadQueue
                   items={jobUploadQueue.items}
                   onRetry={(item) => jobUploadQueue.retryItem(item.id)}
@@ -939,7 +916,10 @@ export function JobDetailScreen({ route, navigation }: Props) {
                                 setVideoViewerVisible(true)
                                 return
                               }
-                              void openAttachmentUrl(a.url)
+                              void openAttachmentUrl(a.url, {
+                                fileName: a.fileName,
+                                mimeType: a.mimeType,
+                              })
                             }}
                           >
                             {isImage ? (
@@ -965,6 +945,9 @@ export function JobDetailScreen({ route, navigation }: Props) {
                               </View>
                             )}
                           </Pressable>
+                          <Text style={styles.mediaFileName} numberOfLines={1}>
+                            {a.fileName || (isPdf ? 'PDF' : isVideo ? 'Video' : 'File')}
+                          </Text>
                         </View>
                       )
                     })}
@@ -972,7 +955,6 @@ export function JobDetailScreen({ route, navigation }: Props) {
                 )}
                 {attachmentRows.length === 0 && <Text style={styles.meta}>No media for this job yet.</Text>}
               </DetailSection>
-            )}
 
             <DetailSection title="Location">
               <View style={styles.row}>
@@ -1343,6 +1325,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: BRAND.text,
     textTransform: 'uppercase',
+  },
+  mediaFileName: {
+    marginTop: 4,
+    fontSize: 11,
+    color: BRAND.muted,
+    paddingHorizontal: 2,
   },
   viewerRoot: {
     flex: 1,

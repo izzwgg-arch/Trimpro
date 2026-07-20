@@ -43,10 +43,11 @@ interface ClientListResponse {
 type Props = NativeStackScreenProps<TasksStackParamList, 'TasksList'>
 
 export function TasksScreen({ navigation }: Props) {
-  const { canCreateTasks, canAssignTasksToAdmin } = useMobilePermissions()
+  const { canCreateTasks, canAssignTasksToAdmin, canViewAllTasks } = useMobilePermissions()
   const { user } = useAuth()
   const isOnline = useOnlineState()
   const queryClient = useQueryClient()
+  const [taskFilter, setTaskFilter] = useState<'all' | 'my' | 'assigned'>('my')
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [editingDraftId, setEditingDraftId] = useState<string | null>(null)
   const [taskDrafts, setTaskDrafts] = useState<LocalTaskDraft[]>([])
@@ -113,11 +114,21 @@ export function TasksScreen({ navigation }: Props) {
 
   const clientRows = useMemo(() => clientsQuery.data?.clients || [], [clientsQuery.data?.clients])
 
+  const effectiveFilter =
+    taskFilter === 'all' && !canViewAllTasks() ? 'my' : taskFilter
+
   const query = useQuery({
-    queryKey: ['mobile-tasks'],
-    queryFn: () => apiRequest<TasksResponse>('/api/tasks?filter=assigned&limit=100'),
+    queryKey: ['mobile-tasks', effectiveFilter],
+    queryFn: () => apiRequest<TasksResponse>(`/api/tasks?filter=${effectiveFilter}&limit=100`),
     refetchInterval: 60_000,
   })
+
+  const filterLabel =
+    effectiveFilter === 'all'
+      ? 'All Tasks'
+      : effectiveFilter === 'my'
+        ? 'My Tasks'
+        : 'Assigned to Me'
 
   const publishTaskMutation = useMutation({
     mutationFn: async (draft: LocalTaskDraft) => {
@@ -239,7 +250,7 @@ export function TasksScreen({ navigation }: Props) {
         <View style={styles.headerRow}>
           <View>
             <Text style={styles.title}>Tasks</Text>
-            <Text style={styles.subtitle}>Assigned work prioritized for field execution.</Text>
+            <Text style={styles.subtitle}>Same filters as the web Tasks page.</Text>
           </View>
           {canCreateTasks() && (
             <Pressable
@@ -256,6 +267,34 @@ export function TasksScreen({ navigation }: Props) {
               <Ionicons name="add" size={24} color="#E6C98B" />
             </Pressable>
           )}
+        </View>
+        <View style={styles.filterRow}>
+          {canViewAllTasks() ? (
+            <Pressable
+              style={[styles.filterChip, effectiveFilter === 'all' && styles.filterChipActive]}
+              onPress={() => setTaskFilter('all')}
+            >
+              <Text style={[styles.filterChipText, effectiveFilter === 'all' && styles.filterChipTextActive]}>
+                All Tasks
+              </Text>
+            </Pressable>
+          ) : null}
+          <Pressable
+            style={[styles.filterChip, effectiveFilter === 'my' && styles.filterChipActive]}
+            onPress={() => setTaskFilter('my')}
+          >
+            <Text style={[styles.filterChipText, effectiveFilter === 'my' && styles.filterChipTextActive]}>
+              My Tasks
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[styles.filterChip, effectiveFilter === 'assigned' && styles.filterChipActive]}
+            onPress={() => setTaskFilter('assigned')}
+          >
+            <Text style={[styles.filterChipText, effectiveFilter === 'assigned' && styles.filterChipTextActive]}>
+              Assigned to Me
+            </Text>
+          </Pressable>
         </View>
       </View>
       {showCreateForm && (
@@ -454,10 +493,16 @@ export function TasksScreen({ navigation }: Props) {
                 </PressableCard>
               ))
             )}
-            <SectionHeader title="Assigned Tasks" />
+            <SectionHeader title={filterLabel} />
           </View>
         }
-        ListEmptyComponent={<EmptyState icon="checkbox-outline" title="No assigned tasks" description="You have no pending tasks right now." />}
+        ListEmptyComponent={
+          <EmptyState
+            icon="checkbox-outline"
+            title={`No ${filterLabel.toLowerCase()}`}
+            description="Nothing matches this filter right now."
+          />
+        }
         renderItem={({ item }) => (
           <PressableCard
             style={styles.card}
@@ -539,6 +584,32 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   title: { ...typography.h2, color: colors.textPrimary },
   subtitle: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  filterRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: spacing.sm,
+  },
+  filterChip: {
+    borderWidth: 1,
+    borderColor: '#D0D5DD',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    backgroundColor: '#FFFFFF',
+  },
+  filterChipActive: {
+    backgroundColor: colors.brandPrimary,
+    borderColor: colors.brandPrimary,
+  },
+  filterChipText: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  filterChipTextActive: {
+    color: '#E6C98B',
+  },
   createButton: {
     width: 40,
     height: 40,

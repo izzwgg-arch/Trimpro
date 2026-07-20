@@ -4,18 +4,22 @@ import { useAuth } from '../auth/AuthContext'
  * Hook to check mobile permissions
  */
 export function useMobilePermissions() {
-  const { mobilePermissions } = useAuth()
+  const { mobilePermissions, permissions, user } = useAuth()
 
   const hasPermission = (permission: string): boolean => {
     return mobilePermissions.includes(permission)
   }
 
-  const hasAnyPermission = (permissions: string[]): boolean => {
-    return permissions.some((perm) => mobilePermissions.includes(perm))
+  const hasWebPermission = (permission: string): boolean => {
+    return permissions.includes(permission)
   }
 
-  const hasAllPermissions = (permissions: string[]): boolean => {
-    return permissions.every((perm) => mobilePermissions.includes(perm))
+  const hasAnyPermission = (permissionsList: string[]): boolean => {
+    return permissionsList.some((perm) => mobilePermissions.includes(perm))
+  }
+
+  const hasAllPermissions = (permissionsList: string[]): boolean => {
+    return permissionsList.every((perm) => mobilePermissions.includes(perm))
   }
 
   const canViewAllJobs = (): boolean => hasPermission('mobile.jobs.view_all')
@@ -29,6 +33,8 @@ export function useMobilePermissions() {
   const canAssignTasksToAdmin = (): boolean =>
     hasPermission('mobile.tasks.assign_to_admin') || hasPermission('mobile.tasks.assign_to_any')
   const canAssignTasksToAny = (): boolean => hasPermission('mobile.tasks.assign_to_any')
+  const canViewAllTasks = (): boolean =>
+    user?.role === 'ADMIN' || hasWebPermission('tasks.assign') || canAssignTasksToAny()
   const canCreateIssues = (): boolean => hasPermission('mobile.issues.create')
   const canAssignIssuesToAdmin = (): boolean =>
     hasPermission('mobile.issues.assign_to_admin') || hasPermission('mobile.issues.assign_to_any')
@@ -70,7 +76,9 @@ export function useMobilePermissions() {
 
   return {
     permissions: mobilePermissions,
+    webPermissions: permissions,
     hasPermission,
+    hasWebPermission,
     hasAnyPermission,
     hasAllPermissions,
     canViewAllJobs,
@@ -83,6 +91,7 @@ export function useMobilePermissions() {
     canCreateTasks,
     canAssignTasksToAdmin,
     canAssignTasksToAny,
+    canViewAllTasks,
     canCreateIssues,
     canAssignIssuesToAdmin,
     canAssignIssuesToAny,

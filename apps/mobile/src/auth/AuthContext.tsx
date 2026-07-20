@@ -11,6 +11,7 @@ interface AuthContextValue {
   token: string | null
   isLoading: boolean
   mobilePermissions: string[]
+  permissions: string[]
   signIn: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
   refreshPermissions: () => Promise<void>
@@ -29,19 +30,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [mobilePermissions, setMobilePermissions] = useState<string[]>([])
+  const [permissions, setPermissions] = useState<string[]>([])
 
   const fetchPermissions = useCallback(async () => {
     try {
       const meResponse = await apiRequest<{
         user: AuthUser
         mobilePermissions: string[]
+        permissions: string[]
       }>('/api/me')
 
       setMobilePermissions(meResponse.mobilePermissions || [])
+      setPermissions(meResponse.permissions || [])
       return meResponse.mobilePermissions || []
     } catch (error) {
       console.error('Failed to fetch permissions:', error)
       setMobilePermissions([])
+      setPermissions([])
       return []
     }
   }, [])
@@ -63,6 +68,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await unregisterPushToken().catch(() => null)
     setUser(null)
     setToken(null)
+    setMobilePermissions([])
+    setPermissions([])
     await clearAuth()
   }, [])
 
@@ -85,6 +92,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const meResponse = await apiRequest<{
             user: AuthUser
             mobilePermissions: string[]
+            permissions: string[]
           }>('/api/me')
           const latestAccessToken = await getAccessToken()
           if (latestAccessToken) {
@@ -92,6 +100,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
           setUser(meResponse.user)
           setMobilePermissions(meResponse.mobilePermissions || [])
+          setPermissions(meResponse.permissions || [])
         } else {
           await clearAuth()
         }
@@ -140,11 +149,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       token,
       isLoading,
       mobilePermissions,
+      permissions,
       signIn,
       signOut,
       refreshPermissions,
     }),
-    [isLoading, signIn, signOut, token, user, mobilePermissions, refreshPermissions]
+    [isLoading, signIn, signOut, token, user, mobilePermissions, permissions, refreshPermissions]
   )
 
   if (isLoading) {

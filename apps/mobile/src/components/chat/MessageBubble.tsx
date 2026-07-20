@@ -18,6 +18,7 @@ import { ChatMessage } from '../../types/models'
 import { VoiceNoteBubble } from './VoiceNoteBubble'
 import { ReplyPreview } from './ReplyPreview'
 import { API_BASE_URL } from '../../config/env'
+import { openAttachment } from '../../services/open-attachment'
 
 /**
  * Convert a relative server path (e.g. /uploads/tenant/file.m4a) to an absolute
@@ -408,7 +409,13 @@ export function MessageBubble({
               <Pressable
                 key={attachmentId}
                 style={[styles.fileContainer, isMine && styles.fileContainerMine]}
-                onPress={() => Linking.openURL(fileUrl)}
+                onPress={() =>
+                  void openAttachment({
+                    url: fileUrl,
+                    fileName: attachment.fileName,
+                    mimeType: attachment.mimeType,
+                  })
+                }
               >
                 <View style={[styles.fileIconWrap, isMine && styles.fileIconWrapMine]}>
                   <Ionicons name={fileIcon as any} size={22} color={isMine ? colors.brandPrimary : colors.surface} />

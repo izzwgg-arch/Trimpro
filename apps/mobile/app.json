@@ -35,7 +35,7 @@
     },
     "android": {
       "package": "com.trimpro.field",
-      "versionCode": 10,
+      "versionCode": 11,
       "softwareKeyboardLayoutMode": "pan",
       "googleServicesFile": "./google-services.json",
       "notification": {

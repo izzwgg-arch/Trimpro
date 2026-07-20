@@ -6,8 +6,9 @@ import { getPaginationParams, createPaginationResponse } from '@/lib/pagination'
 
 /**
  * Mobile API: Get jobs
- * - If user has mobile.jobs.view_all: returns all org jobs
- * - Otherwise: returns only jobs assigned to the user
+ * Query:
+ * - filter=assigned (default): only jobs assigned to the current user
+ * - filter=all: all org jobs (requires mobile.jobs.view_all)
  * Optimized for mobile with minimal payload
  */
 export async function GET(request: NextRequest) {
@@ -21,18 +22,26 @@ export async function GET(request: NextRequest) {
   const user = getAuthUser(request)
   const { searchParams } = new URL(request.url)
   const status = searchParams.get('status')
+  const filterRaw = (searchParams.get('filter') || 'assigned').toLowerCase()
+  const filter = filterRaw === 'all' ? 'all' : 'assigned'
   const { skip, take, limit, offset } = getPaginationParams(searchParams)
 
   try {
-    // Check if user can view all jobs
     const canViewAll = await hasMobilePermission(user.id, user.tenantId, 'mobile.jobs.view_all')
+
+    if (filter === 'all' && !canViewAll) {
+      return NextResponse.json(
+        { error: 'You do not have permission to view all jobs' },
+        { status: 403 }
+      )
+    }
 
     const where: any = {
       tenantId: user.tenantId,
     }
 
-    // If user doesn't have view_all, only show assigned jobs
-    if (!canViewAll) {
+    // Jobs tab always uses assigned; All Jobs (sidebar) uses filter=all when permitted.
+    if (filter === 'assigned' || !canViewAll) {
       where.assignments = {
         some: {
           userId: user.id,

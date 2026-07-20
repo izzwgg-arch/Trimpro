@@ -28,6 +28,7 @@ import { getRequestDetailsErrorCopy } from './request-utils'
 import { AttachmentPickerSheet } from '../../components/attachments/AttachmentPickerSheet'
 import { AttachmentUploadQueue } from '../../components/attachments/AttachmentUploadQueue'
 import { pickAttachmentsByAction, uploadFileWithProgress } from '../../services/attachment-upload'
+import { isPdfAttachment, openAttachment } from '../../services/open-attachment'
 import { useAttachmentUploadQueue } from '../../hooks/useAttachmentUploadQueue'
 import { useMobilePermissions } from '../../hooks/useMobilePermissions'
 
@@ -177,12 +178,6 @@ const STATUS_LABELS: Record<string, string> = {
   FOLLOW_UP: 'Follow Up',
   CONVERTED: 'Converted',
   LOST: 'Lost',
-}
-
-function isPdfAttachment(mimeType?: string | null, fileName?: string | null) {
-  const mime = String(mimeType || '').toLowerCase()
-  const name = String(fileName || '').toLowerCase()
-  return mime.includes('pdf') || name.endsWith('.pdf')
 }
 
 function formatLabel(value?: string | null) {
@@ -812,7 +807,11 @@ export function RequestDetailScreen({ route }: Props) {
                 setShowVideoViewer(true)
                 return
               }
-              void Linking.openURL(item.url)
+              void openAttachment({
+                url: item.url,
+                fileName: item.fileName,
+                mimeType: item.mimeType,
+              })
             }}
           >
             {String(item.mimeType || '').toLowerCase().startsWith('image/') ? (

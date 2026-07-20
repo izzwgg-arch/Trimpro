@@ -12,6 +12,7 @@ import { TasksStackParamList } from '../../types/navigation'
 import { useAuth } from '../../auth/AuthContext'
 import { useOnlineState } from '../../hooks/useOnlineState'
 import { enqueueOutbox } from '../../offline/outbox'
+import { openAttachment } from '../../services/open-attachment'
 
 type Props = NativeStackScreenProps<TasksStackParamList, 'TaskDetail'>
 
@@ -24,6 +25,8 @@ interface AttachmentResponse {
     id: string
     fileName: string
     fileSize: number
+    mimeType?: string | null
+    url?: string | null
   }>
 }
 
@@ -231,10 +234,25 @@ export function TaskDetailScreen({ route }: Props) {
                 <Text style={styles.secondaryButtonText}>Attach Photo/Video</Text>
               </Pressable>
               {(attachmentsQuery.data?.attachments || []).map((a) => (
-                <View key={a.id} style={styles.attachmentRow}>
+                <Pressable
+                  key={a.id}
+                  style={styles.attachmentRow}
+                  onPress={() => {
+                    if (!a.url) {
+                      return
+                    }
+                    void openAttachment({
+                      url: a.url,
+                      fileName: a.fileName,
+                      mimeType: a.mimeType,
+                    })
+                  }}
+                >
                   <Text style={styles.attachmentName}>{a.fileName}</Text>
-                  <Text style={styles.attachmentMeta}>{Math.round(a.fileSize / 1024)} KB</Text>
-                </View>
+                  <Text style={styles.attachmentMeta}>
+                    {Math.round(a.fileSize / 1024)} KB{a.url ? ' · Open' : ''}
+                  </Text>
+                </Pressable>
               ))}
             </View>
           </>
