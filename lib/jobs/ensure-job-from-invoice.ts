@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { getEstimateConversionSummary } from '@/lib/documents/conversion'
+import { parseJobType } from '@/lib/jobs/types'
 
 function normalizePhone(value: string | null | undefined) {
   return (value || '').replace(/\D/g, '')
@@ -76,7 +77,10 @@ export type EnsureJobFromInvoiceResult = {
  * Called at estimate→invoice conversion time, NOT on payment.
  * Idempotent: safe to call multiple times for the same invoice.
  */
-export async function ensureJobFromInvoice(invoiceId: string): Promise<EnsureJobFromInvoiceResult> {
+export async function ensureJobFromInvoice(
+  invoiceId: string,
+  options?: { jobType?: string | null }
+): Promise<EnsureJobFromInvoiceResult> {
   const invoice = await prisma.invoice.findFirst({
     where: { id: invoiceId },
     include: {
@@ -195,7 +199,7 @@ export async function ensureJobFromInvoice(invoiceId: string): Promise<EnsureJob
             title: formatJobNameFromEstimate(jobNumber, estimate?.jobSiteAddress || estimate?.lead?.jobSiteAddress, estimate?.title),
             description: mergedDescription || null,
             status: 'QUOTE',
-            jobType: 'CUSTOM',
+            jobType: parseJobType(options?.jobType, 'CUSTOM'),
             priority: 3,
             estimateAmount: estimate?.total || invoice.total,
           },

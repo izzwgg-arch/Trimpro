@@ -226,6 +226,7 @@ export const createInvoiceSchema = z.object({
   clientId: z.string().min(1),
   jobId: z.string().optional().nullable(),
   estimateId: z.string().optional().nullable(),
+  jobType: z.string().optional().nullable(),
   title: z.string().min(1).max(255),
   lineItems: z
     .array(

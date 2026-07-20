@@ -25,6 +25,7 @@ import {
 import { usePermissions } from '@/hooks/usePermissions'
 import { postCreateRedirectPath } from '@/hooks/useDocumentListAccess'
 import { reconcileEstimateConversionLineItems, toCents } from '@/lib/documents/progress-billing'
+import { JobTypeCreateField } from '@/components/jobs/JobTypeCreateField'
 
 interface Job {
   id: string
@@ -133,6 +134,7 @@ export default function NewInvoicePage() {
     clientId: clientIdParam || '',
     jobId: jobIdParam || '',
     estimateId: estimateIdParam || '',
+    jobType: 'CUSTOM',
     invoiceNumber: '',
     title: '',
     taxRate: '0',
@@ -143,6 +145,8 @@ export default function NewInvoicePage() {
     terms: '',
     memo: '',
   })
+  const [estimateAlreadyHasJob, setEstimateAlreadyHasJob] = useState(false)
+  const [jobTypeChosen, setJobTypeChosen] = useState(false)
 
   const lineItemRefs = useRef<(HTMLDivElement | null)[]>([])
   const pickerInputRefs = useRef<(HTMLInputElement | null)[]>([])
@@ -296,6 +300,7 @@ export default function NewInvoicePage() {
         setFormData(prev => ({
           ...prev,
           clientId: est.client?.id || prev.clientId,
+          jobId: est.job?.id || prev.jobId || '',
           title:
             prev.title ||
             `${est.title} - ${
@@ -313,6 +318,7 @@ export default function NewInvoicePage() {
           notes: est.notes || prev.notes,
           terms: est.terms || prev.terms,
         }))
+        setEstimateAlreadyHasJob(Boolean(est.job?.id || est.jobId))
 
         const sourceLines =
           effectiveMode === 'MANUAL' && selectedLineItemIdSet.size > 0
@@ -1219,6 +1225,13 @@ export default function NewInvoicePage() {
       alert('Please enter a title')
       return
     }
+
+    const willCreateNewJob =
+      Boolean(formData.estimateId) && !formData.jobId && !estimateAlreadyHasJob
+    if (willCreateNewJob && !jobTypeChosen) {
+      alert('Please choose a job type for the new job.')
+      return
+    }
     // Prevent double-submit (fast double-click before first re-render)
     if (submittingRef.current) return
     submittingRef.current = true
@@ -1328,6 +1341,7 @@ export default function NewInvoicePage() {
           clientId: formData.clientId,
           jobId: formData.jobId || null,
           estimateId: formData.estimateId || null,
+          ...(willCreateNewJob ? { jobType: formData.jobType || 'CUSTOM' } : {}),
           invoiceNumber: formData.invoiceNumber || null,
           title: formData.title,
           subtotal,
@@ -1443,7 +1457,9 @@ export default function NewInvoicePage() {
                   <Label htmlFor="jobId">Job (Optional)</Label>
                   <Select
                     value={formData.jobId || '__none__'}
-                    onValueChange={(value) => setFormData({ ...formData, jobId: value === '__none__' ? '' : value })}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, jobId: value === '__none__' ? '' : value })
+                    }
                     disabled={!formData.clientId}
                   >
                     <SelectTrigger id="jobId">
@@ -1459,6 +1475,21 @@ export default function NewInvoicePage() {
                     </SelectContent>
                   </Select>
                 </div>
+                {Boolean(formData.estimateId) && !formData.jobId && !estimateAlreadyHasJob ? (
+                  <div>
+                    <JobTypeCreateField
+                      forcePrompt
+                      value={formData.jobType}
+                      onValueChange={(value) => {
+                        setFormData((prev) => ({ ...prev, jobType: value }))
+                        setJobTypeChosen(true)
+                      }}
+                    />
+                    <p className="mt-1 text-xs text-gray-500">
+                      This invoice will create a new job. Choose which job type it should use.
+                    </p>
+                  </div>
+                ) : null}
                 <div>
                   <Label htmlFor="invoiceNumber">Invoice # (optional)</Label>
                   <Input

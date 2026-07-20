@@ -17,6 +17,11 @@ type JobTypeCreateFieldProps = {
   value: string
   onValueChange: (value: string) => void
   className?: string
+  /**
+   * When true, uses invoice-specific copy in the prompt dialog.
+   * Prompting itself always happens whenever the user has more than one type to choose.
+   */
+  forcePrompt?: boolean
 }
 
 type ScopeState = {
@@ -25,7 +30,12 @@ type ScopeState = {
   assignedTypes: JobTypeValue[]
 }
 
-export function JobTypeCreateField({ value, onValueChange, className }: JobTypeCreateFieldProps) {
+export function JobTypeCreateField({
+  value,
+  onValueChange,
+  className,
+  forcePrompt = false,
+}: JobTypeCreateFieldProps) {
   const [scope, setScope] = useState<ScopeState>({
     loading: true,
     canAccessAll: true,
@@ -41,14 +51,22 @@ export function JobTypeCreateField({ value, onValueChange, className }: JobTypeC
       try {
         const token = localStorage.getItem('accessToken')
         if (!token) {
-          if (!cancelled) setScope({ loading: false, canAccessAll: true, assignedTypes: [] })
+          if (!cancelled) {
+            setScope({ loading: false, canAccessAll: true, assignedTypes: [] })
+            setPendingChoice(value || 'CUSTOM')
+            setChoiceOpen(true)
+          }
           return
         }
         const response = await fetch('/api/auth/permissions', {
           headers: { Authorization: `Bearer ${token}` },
         })
         if (!response.ok) {
-          if (!cancelled) setScope({ loading: false, canAccessAll: true, assignedTypes: [] })
+          if (!cancelled) {
+            setScope({ loading: false, canAccessAll: true, assignedTypes: [] })
+            setPendingChoice(value || 'CUSTOM')
+            setChoiceOpen(true)
+          }
           return
         }
         const data = await response.json()
@@ -60,21 +78,29 @@ export function JobTypeCreateField({ value, onValueChange, className }: JobTypeC
 
         setScope({ loading: false, canAccessAll, assignedTypes })
 
+        // Only skip the prompt when the user is locked to exactly one type.
         if (!canAccessAll && assignedTypes.length === 1) {
           onValueChange(assignedTypes[0])
           setHasChosen(true)
           return
         }
 
-        if (!canAccessAll && assignedTypes.length > 1) {
-          setPendingChoice(assignedTypes[0])
-          setChoiceOpen(true)
-          return
-        }
-
-        setHasChosen(true)
+        // Ask whenever there is a choice:
+        // - access to all types
+        // - assigned to 2+ types
+        // - no assigned types yet (treated as all until set)
+        const initial =
+          !canAccessAll && assignedTypes.length > 0
+            ? assignedTypes[0]
+            : value || 'CUSTOM'
+        setPendingChoice(initial)
+        setChoiceOpen(true)
       } catch {
-        if (!cancelled) setScope({ loading: false, canAccessAll: true, assignedTypes: [] })
+        if (!cancelled) {
+          setScope({ loading: false, canAccessAll: true, assignedTypes: [] })
+          setPendingChoice(value || 'CUSTOM')
+          setChoiceOpen(true)
+        }
       }
     })()
     return () => {
@@ -90,7 +116,7 @@ export function JobTypeCreateField({ value, onValueChange, className }: JobTypeC
   }, [scope.assignedTypes, scope.canAccessAll])
 
   const lockedToSingle = !scope.canAccessAll && scope.assignedTypes.length === 1
-  const awaitingMultiChoice = !scope.canAccessAll && scope.assignedTypes.length > 1 && !hasChosen
+  const awaitingChoice = !hasChosen && !lockedToSingle
 
   const confirmChoice = () => {
     if (!pendingChoice) return
@@ -99,6 +125,12 @@ export function JobTypeCreateField({ value, onValueChange, className }: JobTypeC
     setChoiceOpen(false)
   }
 
+  const description = forcePrompt
+    ? 'This invoice will create a new job. Choose which job type it should use.'
+    : scope.canAccessAll || scope.assignedTypes.length === 0
+      ? 'Choose which job type this record should use.'
+      : 'You are assigned to more than one job type. Choose which type this record should use.'
+
   return (
     <>
       <JobTypeSelect
@@ -106,13 +138,13 @@ export function JobTypeCreateField({ value, onValueChange, className }: JobTypeC
         value={value}
         onValueChange={onValueChange}
         options={options}
-        disabled={scope.loading || lockedToSingle || awaitingMultiChoice}
+        disabled={scope.loading || lockedToSingle || awaitingChoice}
       />
 
       <Dialog
         open={choiceOpen}
         onOpenChange={(open) => {
-          // Require a choice when multiple types are assigned.
+          // Require a choice when a prompt is required.
           if (!open && !hasChosen) return
           setChoiceOpen(open)
         }}
@@ -120,9 +152,7 @@ export function JobTypeCreateField({ value, onValueChange, className }: JobTypeC
         <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>Please choose a job type</DialogTitle>
-            <DialogDescription>
-              You are assigned to more than one job type. Choose which type this record should use.
-            </DialogDescription>
+            <DialogDescription>{description}</DialogDescription>
           </DialogHeader>
           <JobTypeSelect
             value={pendingChoice || options[0]?.value || 'CUSTOM'}

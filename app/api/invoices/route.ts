@@ -19,6 +19,7 @@ import {
   normalizeInvoiceNumber,
 } from '@/lib/qbo/doc-numbers'
 import { ensureJobFromInvoice } from '@/lib/jobs/ensure-job-from-invoice'
+import { resolveJobTypeForWrite } from '@/lib/jobs/job-type-scope'
 import { invoiceJobSiteAddressSearchClauses } from '@/lib/search/job-site-address'
 import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
 
@@ -201,6 +202,7 @@ export async function POST(request: NextRequest) {
     clientId,
     jobId,
     estimateId,
+    jobType: requestedJobType,
     title,
     lineItems: lineItemsFromData,
     optionalItems,
@@ -640,7 +642,23 @@ export async function POST(request: NextRequest) {
     // ensureJobFromInvoice is idempotent — it is safe to call even if a job already exists.
     if (estimateId) {
       try {
-        const { job, created } = await ensureJobFromInvoice(invoice.id)
+        let jobTypeForCreate: string | undefined
+        if (requestedJobType) {
+          const resolved = await resolveJobTypeForWrite(
+            user.id,
+            user.tenantId,
+            requestedJobType,
+            'CUSTOM'
+          )
+          if (!resolved.ok) {
+            console.warn('[invoice-create] invalid jobType for auto job, falling back to CUSTOM:', resolved.error)
+          } else {
+            jobTypeForCreate = resolved.jobType
+          }
+        }
+        const { job, created } = await ensureJobFromInvoice(invoice.id, {
+          jobType: jobTypeForCreate,
+        })
         if (created && job) {
           try {
             await enqueueQboSync(user.tenantId, 'job', job.id, { processImmediately: false })
