@@ -1,7 +1,6 @@
 import type { Metadata } from 'next'
 import { Download, Smartphone, ShieldCheck, CheckCircle2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
 
 export const metadata: Metadata = {
   title: 'Download TrimPro Field App',
@@ -15,7 +14,7 @@ export default function DownloadAppPage() {
   return (
     <div className="space-y-8">
       <div className="space-y-3">
-        <p className="text-sm font-semibold uppercase tracking-wide text-[#2E4A59]/android app</p>
+        <p className="text-sm font-semibold uppercase tracking-wide text-[#2E4A59]">android app</p>
         <h1 className="text-3xl font-bold text-gray-900 sm:text-4xl">Download TrimPro Field</h1>
         <p className="max-w-2xl text-gray-700">
           Install the TrimPro Field app on your Android phone to manage jobs, requests, time tracking,
@@ -34,14 +33,16 @@ export default function DownloadAppPage() {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-1">
               <p className="text-lg font-semibold text-gray-900">Latest APK</p>
-              <p className="text-sm text-gray-600">Version {APP_VERSION} · Direct install file</p>
+              <p className="text-sm text-gray-600">Version {APP_VERSION} - Direct install file</p>
             </div>
-            <Button asChild size="lg" className="bg-[#2E4A59] hover:bg-[#243b47]">
-              <a href={APK_PATH} download>
-                <Download className="mr-2 h-5 w-5" />
-                Download APK
-              </a>
-            </Button>
+            <a
+              href={APK_PATH}
+              download
+              className="inline-flex items-center justify-center rounded-md bg-[#2E4A59] px-5 py-3 text-sm font-semibold text-white hover:bg-[#243b47]"
+            >
+              <Download className="mr-2 h-5 w-5" />
+              Download APK
+            </a>
           </div>
 
           <div className="rounded-lg border bg-gray-50 p-4 text-sm text-gray-700">
@@ -75,7 +76,7 @@ export default function DownloadAppPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <CheckCircle2 className="h-5 w-5 text-[#2E4A59]" />
-              What&apos;s included
+              What is included
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm text-gray-700">
