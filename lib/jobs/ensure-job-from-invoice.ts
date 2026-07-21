@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { getEstimateConversionSummary } from '@/lib/documents/conversion'
+import { copyRequestAttachmentsToJob } from '@/lib/jobs/copy-request-attachments-to-job'
 import { parseJobType } from '@/lib/jobs/types'
 
 function normalizePhone(value: string | null | undefined) {
@@ -99,7 +100,13 @@ export async function ensureJobFromInvoice(
   })
 
   if (!invoice) return { job: null, created: false, skippedReason: 'invoice_not_found' }
-  if (invoice.jobId && invoice.job) return { job: invoice.job, created: false, skippedReason: 'already_linked' }
+  if (invoice.jobId && invoice.job) {
+    await copyRequestAttachmentsToJob(prisma, {
+      leadId: invoice.estimate?.leadId,
+      jobId: invoice.job.id,
+    })
+    return { job: invoice.job, created: false, skippedReason: 'already_linked' }
+  }
 
   const estimate = invoice.estimate
   if (estimate?.jobId && estimate.job) {
@@ -109,6 +116,10 @@ export async function ensureJobFromInvoice(
         data: { jobId: estimate.job.id },
       })
     }
+    await copyRequestAttachmentsToJob(prisma, {
+      leadId: estimate.leadId,
+      jobId: estimate.job.id,
+    })
     return { job: estimate.job, created: false, skippedReason: 'already_linked' }
   }
 
@@ -243,6 +254,10 @@ export async function ensureJobFromInvoice(
           await tx.lead.update({
             where: { id: estimate.leadId },
             data: { status: 'CONVERTED' },
+          })
+          await copyRequestAttachmentsToJob(tx, {
+            leadId: estimate.leadId,
+            jobId: createdJob.id,
           })
         }
 

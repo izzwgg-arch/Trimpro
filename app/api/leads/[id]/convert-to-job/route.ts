@@ -3,6 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
+import { copyRequestAttachmentsToJob } from '@/lib/jobs/copy-request-attachments-to-job'
 
 function normalizePhone(value: string | null | undefined) {
   return (value || '').replace(/\D/g, '')
@@ -69,6 +70,10 @@ export async function POST(
         select: { id: true, jobNumber: true, title: true },
       })
       if (existingJob) {
+        await copyRequestAttachmentsToJob(prisma, {
+          leadId: lead.id,
+          jobId: existingJob.id,
+        })
         return NextResponse.json({ job: existingJob }, { status: 200 })
       }
     }
@@ -191,6 +196,11 @@ export async function POST(
               clientId,
               jobId: createdJob.id,
             },
+          })
+
+          await copyRequestAttachmentsToJob(tx, {
+            leadId: lead.id,
+            jobId: createdJob.id,
           })
 
           return createdJob

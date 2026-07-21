@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { getEstimateConversionSummary } from '@/lib/documents/conversion'
+import { copyRequestAttachmentsToJob } from '@/lib/jobs/copy-request-attachments-to-job'
 
 function normalizePhone(value: string | null | undefined) {
   return (value || '').replace(/\D/g, '')
@@ -60,6 +61,10 @@ export async function POST(
     }
 
     if (estimate.jobId && estimate.job) {
+      await copyRequestAttachmentsToJob(prisma, {
+        leadId: estimate.leadId,
+        jobId: estimate.job.id,
+      })
       return NextResponse.json({ job: estimate.job }, { status: 200 })
     }
 
@@ -186,6 +191,13 @@ export async function POST(
           leadId: estimate.leadId || undefined,
         },
       })
+
+      if (estimate.leadId) {
+        await copyRequestAttachmentsToJob(tx, {
+          leadId: estimate.leadId,
+          jobId: createdJob.id,
+        })
+      }
 
       return createdJob
     })
