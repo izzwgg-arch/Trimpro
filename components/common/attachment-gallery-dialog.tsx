@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import {
+  ArrowUpRight,
   ChevronLeft,
   ChevronRight,
   Download,
@@ -17,7 +18,9 @@ import {
   Pencil,
   Plus,
   RotateCcw,
+  Square,
   Trash2,
+  Type,
 } from 'lucide-react'
 
 export type GalleryAttachment = {
@@ -37,9 +40,56 @@ type Props = {
 }
 
 type Point = { x: number; y: number }
-type Stroke = { color: string; width: number; points: Point[] }
+type MarkupTool = 'pan' | 'pen' | 'arrow' | 'box' | 'text'
+type MarkupItem =
+  | { id: string; type: 'pen'; color: string; width: number; points: Point[] }
+  | { id: string; type: 'arrow'; color: string; width: number; start: Point; end: Point }
+  | { id: string; type: 'box'; color: string; width: number; start: Point; end: Point }
+  | { id: string; type: 'text'; color: string; size: number; point: Point; text: string }
 
 const MARKUP_COLORS = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#ffffff', '#111827']
+
+function newMarkupId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function drawArrowHead(
+  ctx: CanvasRenderingContext2D,
+  from: Point,
+  to: Point,
+  color: string,
+  lineWidth: number
+) {
+  const angle = Math.atan2(to.y - from.y, to.x - from.x)
+  const headLen = Math.max(10, lineWidth * 3.2)
+  ctx.strokeStyle = color
+  ctx.fillStyle = color
+  ctx.lineWidth = lineWidth
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  ctx.beginPath()
+  ctx.moveTo(from.x, from.y)
+  ctx.lineTo(to.x, to.y)
+  ctx.stroke()
+  ctx.beginPath()
+  ctx.moveTo(to.x, to.y)
+  ctx.lineTo(to.x - headLen * Math.cos(angle - Math.PI / 6), to.y - headLen * Math.sin(angle - Math.PI / 6))
+  ctx.lineTo(to.x - headLen * Math.cos(angle + Math.PI / 6), to.y - headLen * Math.sin(angle + Math.PI / 6))
+  ctx.closePath()
+  ctx.fill()
+}
+
+function projectPoint(
+  point: Point,
+  origin: Point,
+  fit: number,
+  zoom: number
+): Point {
+  return {
+    x: origin.x + point.x * fit * zoom,
+    y: origin.y + point.y * fit * zoom,
+  }
+}
 
 function normalizePublicUrl(rawUrl: string) {
   try {
@@ -108,38 +158,135 @@ function ImageMarkupViewer({
   const containerRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const imageRef = useRef<HTMLImageElement | null>(null)
+  const textInputRef = useRef<HTMLInputElement | null>(null)
   const [zoom, setZoom] = useState(1)
   const [offset, setOffset] = useState({ x: 0, y: 0 })
-  const [tool, setTool] = useState<'pan' | 'draw'>('pan')
+  const [tool, setTool] = useState<MarkupTool>('pan')
   const [color, setColor] = useState(MARKUP_COLORS[0])
   const [brush, setBrush] = useState(4)
-  const [strokes, setStrokes] = useState<Stroke[]>([])
+  const [items, setItems] = useState<MarkupItem[]>([])
+  const [draft, setDraft] = useState<MarkupItem | null>(null)
   const [drawing, setDrawing] = useState(false)
   const [panning, setPanning] = useState(false)
+  const [pendingText, setPendingText] = useState<{
+    point: Point
+    screenX: number
+    screenY: number
+    value: string
+  } | null>(null)
   const panStart = useRef({ x: 0, y: 0, ox: 0, oy: 0 })
-  const strokesRef = useRef<Stroke[]>([])
+  const itemsRef = useRef<MarkupItem[]>([])
+  const draftRef = useRef<MarkupItem | null>(null)
 
   useEffect(() => {
-    strokesRef.current = strokes
-  }, [strokes])
+    itemsRef.current = items
+  }, [items])
+
+  useEffect(() => {
+    draftRef.current = draft
+  }, [draft])
 
   useEffect(() => {
     if (!active) return
     setZoom(1)
     setOffset({ x: 0, y: 0 })
-    setStrokes([])
+    setItems([])
+    setDraft(null)
     setTool('pan')
     setDrawing(false)
     setPanning(false)
+    setPendingText(null)
   }, [src, active])
+
+  useEffect(() => {
+    if (pendingText) {
+      requestAnimationFrame(() => textInputRef.current?.focus())
+    }
+  }, [pendingText])
+
+  const getViewMetrics = () => {
+    const image = imageRef.current
+    const container = containerRef.current
+    if (!image || !container) return null
+    const rect = container.getBoundingClientRect()
+    const naturalW = image.naturalWidth || 1
+    const naturalH = image.naturalHeight || 1
+    const fit = Math.min(rect.width / naturalW, rect.height / naturalH)
+    const drawW = naturalW * fit * zoom
+    const drawH = naturalH * fit * zoom
+    const origin = {
+      x: (rect.width - drawW) / 2 + offset.x,
+      y: (rect.height - drawH) / 2 + offset.y,
+    }
+    return { rect, fit, origin, naturalW, naturalH }
+  }
+
+  const renderItem = (
+    ctx: CanvasRenderingContext2D,
+    item: MarkupItem,
+    origin: Point,
+    fit: number,
+    zoomValue: number
+  ) => {
+    if (item.type === 'pen') {
+      if (item.points.length < 2) return
+      ctx.strokeStyle = item.color
+      ctx.lineWidth = item.width * zoomValue
+      ctx.lineCap = 'round'
+      ctx.lineJoin = 'round'
+      ctx.beginPath()
+      const first = projectPoint(item.points[0], origin, fit, zoomValue)
+      ctx.moveTo(first.x, first.y)
+      for (let i = 1; i < item.points.length; i += 1) {
+        const point = projectPoint(item.points[i], origin, fit, zoomValue)
+        ctx.lineTo(point.x, point.y)
+      }
+      ctx.stroke()
+      return
+    }
+
+    if (item.type === 'arrow') {
+      const from = projectPoint(item.start, origin, fit, zoomValue)
+      const to = projectPoint(item.end, origin, fit, zoomValue)
+      drawArrowHead(ctx, from, to, item.color, item.width * zoomValue)
+      return
+    }
+
+    if (item.type === 'box') {
+      const a = projectPoint(item.start, origin, fit, zoomValue)
+      const b = projectPoint(item.end, origin, fit, zoomValue)
+      ctx.strokeStyle = item.color
+      ctx.lineWidth = item.width * zoomValue
+      ctx.lineJoin = 'miter'
+      ctx.strokeRect(
+        Math.min(a.x, b.x),
+        Math.min(a.y, b.y),
+        Math.abs(b.x - a.x),
+        Math.abs(b.y - a.y)
+      )
+      return
+    }
+
+    if (item.type === 'text') {
+      const at = projectPoint(item.point, origin, fit, zoomValue)
+      const fontSize = Math.max(10, item.size * zoomValue)
+      ctx.fillStyle = item.color
+      ctx.font = `700 ${fontSize}px ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif`
+      ctx.textBaseline = 'top'
+      ctx.shadowColor = 'rgba(0,0,0,0.55)'
+      ctx.shadowBlur = 2
+      ctx.fillText(item.text, at.x, at.y)
+      ctx.shadowBlur = 0
+    }
+  }
 
   const redraw = useCallback(() => {
     const canvas = canvasRef.current
     const image = imageRef.current
-    const container = containerRef.current
-    if (!canvas || !image || !container || !image.complete) return
+    const metrics = getViewMetrics()
+    if (!canvas || !image || !metrics || !image.complete) return
 
-    const rect = container.getBoundingClientRect()
+    const { rect, fit, origin } = metrics
     const dpr = window.devicePixelRatio || 1
     canvas.width = Math.max(1, Math.floor(rect.width * dpr))
     canvas.height = Math.max(1, Math.floor(rect.height * dpr))
@@ -153,34 +300,21 @@ function ImageMarkupViewer({
 
     const naturalW = image.naturalWidth || 1
     const naturalH = image.naturalHeight || 1
-    const fit = Math.min(rect.width / naturalW, rect.height / naturalH)
     const drawW = naturalW * fit * zoom
     const drawH = naturalH * fit * zoom
-    const x = (rect.width - drawW) / 2 + offset.x
-    const y = (rect.height - drawH) / 2 + offset.y
+    ctx.drawImage(image, origin.x, origin.y, drawW, drawH)
 
-    ctx.drawImage(image, x, y, drawW, drawH)
-
-    for (const stroke of strokesRef.current) {
-      if (stroke.points.length < 2) continue
-      ctx.strokeStyle = stroke.color
-      ctx.lineWidth = stroke.width * zoom
-      ctx.lineCap = 'round'
-      ctx.lineJoin = 'round'
-      ctx.beginPath()
-      const first = stroke.points[0]
-      ctx.moveTo(x + first.x * fit * zoom, y + first.y * fit * zoom)
-      for (let i = 1; i < stroke.points.length; i += 1) {
-        const point = stroke.points[i]
-        ctx.lineTo(x + point.x * fit * zoom, y + point.y * fit * zoom)
-      }
-      ctx.stroke()
+    for (const item of itemsRef.current) {
+      renderItem(ctx, item, origin, fit, zoom)
+    }
+    if (draftRef.current) {
+      renderItem(ctx, draftRef.current, origin, fit, zoom)
     }
   }, [offset.x, offset.y, zoom])
 
   useEffect(() => {
     redraw()
-  }, [redraw, strokes])
+  }, [redraw, items, draft])
 
   useEffect(() => {
     if (!active) return
@@ -190,50 +324,112 @@ function ImageMarkupViewer({
   }, [active, redraw])
 
   const getImageSpacePoint = (clientX: number, clientY: number): Point | null => {
-    const canvas = canvasRef.current
-    const image = imageRef.current
-    const container = containerRef.current
-    if (!canvas || !image || !container) return null
-    const rect = container.getBoundingClientRect()
-    const naturalW = image.naturalWidth || 1
-    const naturalH = image.naturalHeight || 1
-    const fit = Math.min(rect.width / naturalW, rect.height / naturalH)
-    const drawW = naturalW * fit * zoom
-    const drawH = naturalH * fit * zoom
-    const x = (rect.width - drawW) / 2 + offset.x
-    const y = (rect.height - drawH) / 2 + offset.y
-    const localX = clientX - rect.left
-    const localY = clientY - rect.top
+    const metrics = getViewMetrics()
+    if (!metrics) return null
+    const { rect, fit, origin } = metrics
     return {
-      x: (localX - x) / (fit * zoom),
-      y: (localY - y) / (fit * zoom),
+      x: (clientX - rect.left - origin.x) / (fit * zoom),
+      y: (clientY - rect.top - origin.y) / (fit * zoom),
     }
+  }
+
+  const commitPendingText = () => {
+    if (!pendingText) return
+    const text = pendingText.value.trim()
+    if (text) {
+      setItems((prev) => [
+        ...prev,
+        {
+          id: newMarkupId(),
+          type: 'text',
+          color,
+          size: Math.max(14, brush * 4),
+          point: pendingText.point,
+          text,
+        },
+      ])
+    }
+    setPendingText(null)
   }
 
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
     event.preventDefault()
-    canvasRef.current?.setPointerCapture(event.pointerId)
-    if (tool === 'draw') {
-      const point = getImageSpacePoint(event.clientX, event.clientY)
-      if (!point) return
-      setDrawing(true)
-      setStrokes((prev) => [...prev, { color, width: brush, points: [point] }])
+    if (pendingText) {
+      commitPendingText()
       return
     }
+    canvasRef.current?.setPointerCapture(event.pointerId)
+    const point = getImageSpacePoint(event.clientX, event.clientY)
+    if (!point) return
+
+    if (tool === 'pen') {
+      setDrawing(true)
+      setDraft({
+        id: newMarkupId(),
+        type: 'pen',
+        color,
+        width: brush,
+        points: [point],
+      })
+      return
+    }
+
+    if (tool === 'arrow') {
+      setDrawing(true)
+      setDraft({
+        id: newMarkupId(),
+        type: 'arrow',
+        color,
+        width: brush,
+        start: point,
+        end: point,
+      })
+      return
+    }
+
+    if (tool === 'box') {
+      setDrawing(true)
+      setDraft({
+        id: newMarkupId(),
+        type: 'box',
+        color,
+        width: brush,
+        start: point,
+        end: point,
+      })
+      return
+    }
+
+    if (tool === 'text') {
+      const container = containerRef.current
+      if (!container) return
+      const rect = container.getBoundingClientRect()
+      setPendingText({
+        point,
+        screenX: Math.min(Math.max(8, event.clientX - rect.left), rect.width - 180),
+        screenY: Math.min(Math.max(8, event.clientY - rect.top), rect.height - 44),
+        value: '',
+      })
+      return
+    }
+
     setPanning(true)
     panStart.current = { x: event.clientX, y: event.clientY, ox: offset.x, oy: offset.y }
   }
 
   const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    if (drawing && tool === 'draw') {
+    if (drawing) {
       const point = getImageSpacePoint(event.clientX, event.clientY)
       if (!point) return
-      setStrokes((prev) => {
-        if (prev.length === 0) return prev
-        const next = [...prev]
-        const last = { ...next[next.length - 1], points: [...next[next.length - 1].points, point] }
-        next[next.length - 1] = last
-        return next
+      setDraft((current) => {
+        if (!current) return current
+        if (current.type === 'pen') {
+          return { ...current, points: [...current.points, point] }
+        }
+        if (current.type === 'arrow' || current.type === 'box') {
+          return { ...current, end: point }
+        }
+        return current
       })
       return
     }
@@ -250,6 +446,19 @@ function ImageMarkupViewer({
       canvasRef.current?.releasePointerCapture(event.pointerId)
     } catch {
       // ignore
+    }
+    const currentDraft = draftRef.current
+    if (drawing && currentDraft) {
+      if (currentDraft.type === 'pen' && currentDraft.points.length >= 2) {
+        setItems((prev) => [...prev, currentDraft])
+      } else if (currentDraft.type === 'arrow' || currentDraft.type === 'box') {
+        const dx = currentDraft.end.x - currentDraft.start.x
+        const dy = currentDraft.end.y - currentDraft.start.y
+        if (Math.hypot(dx, dy) > 4) {
+          setItems((prev) => [...prev, currentDraft])
+        }
+      }
+      setDraft(null)
     }
     setDrawing(false)
     setPanning(false)
@@ -270,6 +479,11 @@ function ImageMarkupViewer({
     link.href = canvas.toDataURL('image/png')
     link.click()
   }
+
+  const toolButtonClass = (activeTool: MarkupTool) =>
+    `h-8 ${tool === activeTool ? 'bg-white text-zinc-900 hover:bg-zinc-100' : 'bg-white/10 text-white hover:bg-white/20'}`
+
+  const showStyleControls = tool === 'pen' || tool === 'arrow' || tool === 'box' || tool === 'text'
 
   return (
     <div className="flex h-full w-full min-h-0 flex-col">
@@ -313,7 +527,7 @@ function ImageMarkupViewer({
           type="button"
           size="sm"
           variant="secondary"
-          className={`h-8 ${tool === 'pan' ? 'bg-white text-zinc-900 hover:bg-zinc-100' : 'bg-white/10 text-white hover:bg-white/20'}`}
+          className={toolButtonClass('pan')}
           onClick={() => setTool('pan')}
           title="Pan / move"
         >
@@ -323,15 +537,48 @@ function ImageMarkupViewer({
           type="button"
           size="sm"
           variant="secondary"
-          className={`h-8 ${tool === 'draw' ? 'bg-white text-zinc-900 hover:bg-zinc-100' : 'bg-white/10 text-white hover:bg-white/20'}`}
-          onClick={() => setTool('draw')}
-          title="Draw markup"
+          className={toolButtonClass('pen')}
+          onClick={() => setTool('pen')}
+          title="Freehand markup"
         >
           <Pencil className="mr-1 h-4 w-4" />
-          Markup
+          Pen
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          className={toolButtonClass('arrow')}
+          onClick={() => setTool('arrow')}
+          title="Draw arrow"
+        >
+          <ArrowUpRight className="mr-1 h-4 w-4" />
+          Arrow
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          className={toolButtonClass('box')}
+          onClick={() => setTool('box')}
+          title="Draw box"
+        >
+          <Square className="mr-1 h-4 w-4" />
+          Box
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          className={toolButtonClass('text')}
+          onClick={() => setTool('text')}
+          title="Add text"
+        >
+          <Type className="mr-1 h-4 w-4" />
+          Text
         </Button>
 
-        {tool === 'draw' && (
+        {showStyleControls && (
           <>
             <div className="flex items-center gap-1">
               {MARKUP_COLORS.map((c) => (
@@ -364,8 +611,8 @@ function ImageMarkupViewer({
           size="sm"
           variant="secondary"
           className="h-8 bg-white/10 text-white hover:bg-white/20"
-          disabled={strokes.length === 0}
-          onClick={() => setStrokes((prev) => prev.slice(0, -1))}
+          disabled={items.length === 0}
+          onClick={() => setItems((prev) => prev.slice(0, -1))}
           title="Undo last mark"
         >
           <Eraser className="mr-1 h-4 w-4" />
@@ -376,8 +623,8 @@ function ImageMarkupViewer({
           size="sm"
           variant="secondary"
           className="h-8 bg-white/10 text-white hover:bg-white/20"
-          disabled={strokes.length === 0}
-          onClick={() => setStrokes([])}
+          disabled={items.length === 0}
+          onClick={() => setItems([])}
           title="Clear markup"
         >
           <Trash2 className="mr-1 h-4 w-4" />
@@ -401,7 +648,6 @@ function ImageMarkupViewer({
         className="relative min-h-0 flex-1 overflow-hidden bg-black"
         onWheel={onWheel}
       >
-        {/* Hidden image used as the drawing source */}
         <img
           ref={imageRef}
           src={src}
@@ -411,12 +657,39 @@ function ImageMarkupViewer({
         />
         <canvas
           ref={canvasRef}
-          className={`h-full w-full touch-none ${tool === 'draw' ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'}`}
+          className={`h-full w-full touch-none ${
+            tool === 'pan' ? 'cursor-grab active:cursor-grabbing' : 'cursor-crosshair'
+          }`}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
         />
+        {pendingText && (
+          <form
+            className="absolute z-30"
+            style={{ left: pendingText.screenX, top: pendingText.screenY }}
+            onSubmit={(event) => {
+              event.preventDefault()
+              commitPendingText()
+            }}
+          >
+            <input
+              ref={textInputRef}
+              value={pendingText.value}
+              onChange={(e) => setPendingText({ ...pendingText, value: e.target.value })}
+              onBlur={commitPendingText}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  e.preventDefault()
+                  setPendingText(null)
+                }
+              }}
+              placeholder="Type text…"
+              className="min-w-[160px] rounded-md border border-white/30 bg-zinc-900/95 px-2 py-1.5 text-sm text-white shadow-lg outline-none ring-2 ring-white/20"
+            />
+          </form>
+        )}
       </div>
     </div>
   )
