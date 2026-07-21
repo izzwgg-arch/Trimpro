@@ -19,6 +19,7 @@ import { refreshAccessToken } from '@/lib/auth/client'
 import { usePermissions, hasPermission } from '@/hooks/usePermissions'
 import { JobTypeCreateField } from '@/components/jobs/JobTypeCreateField'
 import { AttachmentGalleryDialog } from '@/components/common/attachment-gallery-dialog'
+import { getMaxBytesForMimeType, isAllowedUploadMimeType } from '@/lib/uploads/policy'
 
 interface User {
   id: string
@@ -356,35 +357,20 @@ export default function NewRequestPage() {
     console.log('[request-create] stageFiles called with', files.length, 'files')
     setAttachmentError(null)
     const fileList = Array.from(files)
-    
-    // Validate file types (PDF, JPG, PNG, DOCX only)
-    const allowedTypes = [
-      'application/pdf',
-      'image/jpeg',
-      'image/jpg', 
-      'image/png',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-    ]
-    const allowedExtensions = ['.pdf', '.jpg', '.jpeg', '.png', '.docx']
-    
-    const invalidFiles = fileList.filter(file => {
-      const type = (file.type || '').toLowerCase()
-      const name = file.name.toLowerCase()
-      const typeMatch = allowedTypes.some(allowed => type === allowed.toLowerCase())
-      const extMatch = allowedExtensions.some(ext => name.endsWith(ext))
-      return !typeMatch && !extMatch
-    })
-    
+
+    const invalidFiles = fileList.filter((file) => !isAllowedUploadMimeType(file.type || '', file.name))
     if (invalidFiles.length > 0) {
-      setAttachmentError(`Invalid file types. Only PDF, JPG, PNG, and DOCX files are allowed. Rejected: ${invalidFiles.map(f => f.name).join(', ')}`)
+      setAttachmentError(
+        `Unsupported file types. Attachments can include images, PDF/Office docs, MP3/MP4 and other audio/video. Rejected: ${invalidFiles
+          .map((f) => f.name)
+          .join(', ')}`
+      )
       return
     }
-    
-    // Validate file sizes (1GB max)
-    const maxSize = 1024 * 1024 * 1024 // 1GB
-    const oversized = fileList.filter(file => file.size > maxSize)
+
+    const oversized = fileList.filter((file) => file.size > getMaxBytesForMimeType(file.type || '', file.name))
     if (oversized.length > 0) {
-      setAttachmentError(`Files too large (max 1GB per file). Rejected: ${oversized.map(f => f.name).join(', ')}`)
+      setAttachmentError(`Files too large. Rejected: ${oversized.map((f) => f.name).join(', ')}`)
       return
     }
     

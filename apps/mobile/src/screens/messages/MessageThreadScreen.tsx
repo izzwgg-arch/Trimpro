@@ -142,6 +142,12 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   webm: 'video/webm',
   '3gp': 'video/3gpp',
   '3g2': 'video/3gpp2',
+  mp3: 'audio/mpeg',
+  m4a: 'audio/m4a',
+  aac: 'audio/aac',
+  wav: 'audio/wav',
+  ogg: 'audio/ogg',
+  flac: 'audio/flac',
 }
 
 function inferMimeTypeFromName(fileName?: string | null, fallback = 'application/octet-stream'): string {
@@ -166,6 +172,9 @@ function extFromMimeType(mimeType: string): string {
   if (normalized === 'video/webm') return 'webm'
   if (normalized === 'video/3gpp') return '3gp'
   if (normalized === 'video/3gpp2') return '3g2'
+  if (normalized === 'audio/mpeg' || normalized === 'audio/mp3') return 'mp3'
+  if (normalized === 'audio/m4a' || normalized === 'audio/mp4' || normalized === 'audio/x-m4a') return 'm4a'
+  if (normalized === 'audio/wav' || normalized === 'audio/x-wav') return 'wav'
   if (normalized === 'application/pdf') return 'pdf'
   if (normalized === 'application/msword') return 'doc'
   if (normalized === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'docx'
@@ -790,6 +799,7 @@ export function MessageThreadScreen({ route, navigation }: Props) {
         'text/plain',
         'image/*',
         'video/*',
+        'audio/*',
       ],
       multiple: false,
       copyToCacheDirectory: true,
@@ -800,7 +810,11 @@ export function MessageThreadScreen({ route, navigation }: Props) {
     setMediaDrafts((prev) => [
       ...prev,
       {
-        kind: mimeType.startsWith('image/') ? 'IMAGE' : mimeType.startsWith('video/') ? 'VIDEO' : 'FILE',
+        kind: mimeType.startsWith('image/')
+          ? 'IMAGE'
+          : mimeType.startsWith('video/')
+            ? 'VIDEO'
+            : 'FILE',
         localUri: file.uri,
         mimeType,
         fileName: ensureFileName(file.name, mimeType, 'file'),

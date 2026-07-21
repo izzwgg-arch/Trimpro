@@ -9,7 +9,8 @@ const OPTIONS: Array<{ action: AttachmentPickAction; label: string; icon: keyof 
   { action: 'record-video', label: 'Record Video', icon: 'videocam-outline' },
   { action: 'choose-photos', label: 'Choose Photos', icon: 'images-outline' },
   { action: 'choose-videos', label: 'Choose Videos', icon: 'film-outline' },
-  { action: 'choose-document', label: 'Choose Document', icon: 'document-attach-outline' },
+  { action: 'choose-audio', label: 'Choose Audio (MP3)', icon: 'musical-notes-outline' },
+  { action: 'choose-document', label: 'Choose Files (PDF, MP3, MP4…)', icon: 'document-attach-outline' },
 ]
 
 export function AttachmentPickerSheet({

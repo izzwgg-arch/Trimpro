@@ -1,8 +1,9 @@
 import React, { useState } from 'react'
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import * as ImagePicker from 'expo-image-picker'
+import * as DocumentPicker from 'expo-document-picker'
 import * as FileSystem from 'expo-file-system/legacy'
 import { Screen } from '../../components/Screen'
 import { apiRequest } from '../../api/client'
@@ -108,17 +109,63 @@ export function TaskDetailScreen({ route }: Props) {
 
   const uploadAttachment = async () => {
     if (!token) return
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync()
-    if (!permission.granted) return
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images', 'videos'],
-      quality: 0.72,
-    })
-    if (result.canceled || result.assets.length === 0) return
-    const asset = result.assets[0]
-    const mimeType = asset.mimeType || (asset.type === 'video' ? 'video/mp4' : 'image/jpeg')
-    const fileName = asset.fileName || `task-${taskId}-${Date.now()}`
+    Alert.alert('Add attachment', 'Choose what to upload', [
+      {
+        text: 'Photo / Video',
+        onPress: () => {
+          void (async () => {
+            const permission = await ImagePicker.requestMediaLibraryPermissionsAsync()
+            if (!permission.granted) return
+            const result = await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: ['images', 'videos'],
+              quality: 0.72,
+            })
+            if (result.canceled || result.assets.length === 0) return
+            const asset = result.assets[0]
+            const mimeType = asset.mimeType || (asset.type === 'video' ? 'video/mp4' : 'image/jpeg')
+            const fileName = asset.fileName || `task-${taskId}-${Date.now()}`
+            await uploadTaskFile({
+              uri: asset.uri,
+              mimeType,
+              fileName,
+              fileSize: asset.fileSize || 0,
+            })
+          })()
+        },
+      },
+      {
+        text: 'File (PDF, MP3, MP4…)',
+        onPress: () => {
+          void (async () => {
+            const result = await DocumentPicker.getDocumentAsync({
+              copyToCacheDirectory: true,
+              multiple: false,
+              type: ['*/*', 'audio/*', 'video/*', 'image/*', 'application/pdf'],
+            })
+            if (result.canceled || result.assets.length === 0) return
+            const file = result.assets[0]
+            await uploadTaskFile({
+              uri: file.uri,
+              mimeType: file.mimeType || 'application/octet-stream',
+              fileName: file.name || `task-${taskId}-${Date.now()}`,
+              fileSize: file.size || 0,
+            })
+          })()
+        },
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ])
+  }
+
+  const uploadTaskFile = async (asset: {
+    uri: string
+    mimeType: string
+    fileName: string
+    fileSize: number
+  }) => {
+    if (!token) return
+    const { uri, mimeType, fileName, fileSize } = asset
     if (!isOnline) {
       await enqueueOutbox({
         id: `${Date.now()}-task-media-${taskId}`,
@@ -126,29 +173,25 @@ export function TaskDetailScreen({ route }: Props) {
         payload: {
           entityType: 'task',
           entityId: taskId,
-          uri: asset.uri,
+          uri,
           mimeType,
           fileName,
-          fileSize: asset.fileSize || 0,
+          fileSize,
         },
       })
       queryClient.invalidateQueries({ queryKey: ['mobile-task-attachments', taskId] })
       return
     }
-    const upload = await FileSystem.uploadAsync(
-      `${API_BASE_URL}/api/uploads`,
-      asset.uri,
-      {
-        fieldName: 'file',
-        httpMethod: 'POST',
-        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/json',
-        },
-        mimeType,
-      }
-    )
+    const upload = await FileSystem.uploadAsync(`${API_BASE_URL}/api/uploads`, uri, {
+      fieldName: 'file',
+      httpMethod: 'POST',
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json',
+      },
+      mimeType,
+    })
     if (upload.status < 200 || upload.status >= 300) return
     const payload = JSON.parse(upload.body)
     await apiRequest('/api/attachments', 'POST', {
@@ -158,7 +201,7 @@ export function TaskDetailScreen({ route }: Props) {
       url: payload.url,
       key: payload.filename || payload.url,
       mimeType,
-      fileSize: asset.fileSize || 0,
+      fileSize,
     })
     queryClient.invalidateQueries({ queryKey: ['mobile-task-attachments', taskId] })
   }

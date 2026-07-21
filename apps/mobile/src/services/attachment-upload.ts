@@ -10,9 +10,10 @@ export type AttachmentPickAction =
   | 'record-video'
   | 'choose-photos'
   | 'choose-videos'
+  | 'choose-audio'
   | 'choose-document'
 
-export type AttachmentKind = 'image' | 'video' | 'document'
+export type AttachmentKind = 'image' | 'video' | 'audio' | 'document'
 
 export interface LocalAttachmentFile {
   localId: string
@@ -54,6 +55,13 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   mp4: 'video/mp4',
   mov: 'video/quicktime',
   m4v: 'video/x-m4v',
+  webm: 'video/webm',
+  mp3: 'audio/mpeg',
+  m4a: 'audio/m4a',
+  aac: 'audio/aac',
+  wav: 'audio/wav',
+  ogg: 'audio/ogg',
+  flac: 'audio/flac',
 }
 
 function inferMimeType(name: string, fallback: string): string {
@@ -66,6 +74,14 @@ function inferMimeType(name: string, fallback: string): string {
   return MIME_BY_EXTENSION[ext] || fallback
 }
 
+function kindFromMime(mimeType: string, fallback: AttachmentKind = 'document'): AttachmentKind {
+  const mime = String(mimeType || '').toLowerCase()
+  if (mime.startsWith('image/')) return 'image'
+  if (mime.startsWith('video/')) return 'video'
+  if (mime.startsWith('audio/')) return 'audio'
+  return fallback
+}
+
 function toLocalFile(input: {
   uri: string
   name?: string | null
@@ -76,21 +92,24 @@ function toLocalFile(input: {
   const fallbackNameByKind: Record<AttachmentKind, string> = {
     image: `image-${Date.now()}.jpg`,
     video: `video-${Date.now()}.mp4`,
+    audio: `audio-${Date.now()}.mp3`,
     document: `document-${Date.now()}.pdf`,
   }
   const name = input.name?.trim() || fallbackNameByKind[input.kind]
   const kindFallbackMime: Record<AttachmentKind, string> = {
     image: 'image/jpeg',
     video: 'video/mp4',
+    audio: 'audio/mpeg',
     document: 'application/octet-stream',
   }
+  const mimeType = inferMimeType(name, (input.mimeType || kindFallbackMime[input.kind]).toLowerCase())
   return {
     localId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     uri: input.uri,
     name,
-    mimeType: inferMimeType(name, (input.mimeType || kindFallbackMime[input.kind]).toLowerCase()),
+    mimeType,
     sizeBytes: Number(input.size || 0),
-    kind: input.kind,
+    kind: kindFromMime(mimeType, input.kind),
   }
 }
 
@@ -214,6 +233,24 @@ export async function pickAttachmentsByAction(action: AttachmentPickAction): Pro
     )
   }
 
+  if (action === 'choose-audio') {
+    const docs = await DocumentPicker.getDocumentAsync({
+      copyToCacheDirectory: true,
+      multiple: true,
+      type: ['audio/*', 'audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/wav'],
+    })
+    if (docs.canceled) return []
+    return docs.assets.map((asset) =>
+      toLocalFile({
+        uri: asset.uri,
+        name: asset.name,
+        mimeType: asset.mimeType,
+        size: asset.size,
+        kind: 'audio',
+      })
+    )
+  }
+
   const docs = await DocumentPicker.getDocumentAsync({
     copyToCacheDirectory: true,
     multiple: true,
@@ -227,6 +264,9 @@ export async function pickAttachmentsByAction(action: AttachmentPickAction): Pro
       'application/vnd.ms-powerpoint',
       'application/vnd.openxmlformats-officedocument.presentationml.presentation',
       'text/plain',
+      'image/*',
+      'video/*',
+      'audio/*',
     ],
   })
   if (docs.canceled) return []
@@ -244,6 +284,7 @@ export async function pickAttachmentsByAction(action: AttachmentPickAction): Pro
 export function fileTypeIconName(file: LocalAttachmentFile): string {
   if (file.kind === 'image') return 'image-outline'
   if (file.kind === 'video') return 'videocam-outline'
+  if (file.kind === 'audio') return 'musical-notes-outline'
   return 'document-text-outline'
 }
 
