@@ -1,5 +1,7 @@
 import { Alert, Linking, Platform } from 'react-native'
 import * as FileSystem from 'expo-file-system/legacy'
+import * as IntentLauncher from 'expo-intent-launcher'
+import * as Sharing from 'expo-sharing'
 import { API_BASE_URL } from '../config/env'
 
 const MEDIA_BASE_URL = API_BASE_URL || 'https://app.trimprony.com'
@@ -25,11 +27,51 @@ export function isPdfAttachment(mimeType?: string | null, fileName?: string | nu
   return mime.includes('pdf') || name.endsWith('.pdf')
 }
 
+export function getAttachmentKind(
+  mimeType?: string | null,
+  fileName?: string | null
+): 'image' | 'video' | 'audio' | 'pdf' | 'other' {
+  const mime = String(mimeType || '').toLowerCase()
+  const name = String(fileName || '').toLowerCase()
+  if (mime.startsWith('image/') || /\.(jpe?g|png|gif|webp|bmp|heic|heif)$/i.test(name)) return 'image'
+  if (mime.startsWith('video/') || /\.(mp4|webm|mov|m4v|avi|3gp)$/i.test(name)) return 'video'
+  if (mime.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(name)) return 'audio'
+  if (isPdfAttachment(mimeType, fileName)) return 'pdf'
+  return 'other'
+}
+
 function sanitizeFileName(fileName: string): string {
   const cleaned = String(fileName || 'attachment')
     .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_')
     .trim()
   return cleaned || `attachment-${Date.now()}`
+}
+
+function inferMimeType(mimeType?: string | null, fileName?: string | null): string {
+  const mime = String(mimeType || '').trim().toLowerCase()
+  if (mime && mime !== 'application/octet-stream') return mime
+  const name = String(fileName || '').toLowerCase()
+  const ext = name.includes('.') ? name.split('.').pop() || '' : ''
+  const byExt: Record<string, string> = {
+    pdf: 'application/pdf',
+    doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xls: 'application/vnd.ms-excel',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    csv: 'text/csv',
+    ppt: 'application/vnd.ms-powerpoint',
+    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    txt: 'text/plain',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    mp4: 'video/mp4',
+    mov: 'video/quicktime',
+    mp3: 'audio/mpeg',
+    m4a: 'audio/mp4',
+    wav: 'audio/wav',
+  }
+  return byExt[ext] || 'application/octet-stream'
 }
 
 async function downloadToCache(url: string, fileName: string): Promise<string> {
@@ -42,8 +84,8 @@ async function downloadToCache(url: string, fileName: string): Promise<string> {
 }
 
 /**
- * Open an attachment like the web gallery "Open" action.
- * Uses only Expo FileSystem + Linking (no extra native modules) to avoid startup crashes.
+ * Open an attachment with a system viewer (PDF/Office/images/etc).
+ * Downloads first, then uses Android VIEW intent or the share sheet.
  */
 export async function openAttachment(options: {
   url: string
@@ -57,42 +99,81 @@ export async function openAttachment(options: {
   }
 
   const fileName = sanitizeFileName(options.fileName || url.split('/').pop() || 'attachment')
-  const mime = String(options.mimeType || '').toLowerCase()
-  const isPdf = isPdfAttachment(options.mimeType, options.fileName)
-  const isImage = mime.startsWith('image/')
-  const isVideo = mime.startsWith('video/')
-  const isAudio = mime.startsWith('audio/')
+  const mimeType = inferMimeType(options.mimeType, fileName)
 
   try {
-    // Remote open works well for PDF/images in Chrome / Files.
-    if (isPdf || isImage || isVideo || isAudio) {
-      await Linking.openURL(url)
-      return
-    }
-
-    // Office/other docs: download, then hand off to a system viewer via content URI.
     const localUri = await downloadToCache(url, fileName)
 
     if (Platform.OS === 'android') {
       try {
         const contentUri = await FileSystem.getContentUriAsync(localUri)
-        await Linking.openURL(contentUri)
+        await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+          data: contentUri,
+          flags: 1,
+          type: mimeType,
+        })
         return
       } catch {
-        // Fall through.
+        // Fall through to share sheet / remote URL.
       }
     }
 
-    await Linking.openURL(localUri)
+    if (await Sharing.isAvailableAsync()) {
+      await Sharing.shareAsync(localUri, {
+        mimeType,
+        dialogTitle: fileName,
+        UTI: mimeType,
+      })
+      return
+    }
+
+    const canOpen = await Linking.canOpenURL(url)
+    if (canOpen) {
+      await Linking.openURL(url)
+      return
+    }
+
+    Alert.alert(
+      'Unable to open file',
+      'No app on this phone can open this document. Try installing a PDF or Office viewer.'
+    )
   } catch (error: any) {
     try {
       await Linking.openURL(url)
-      return
     } catch {
       Alert.alert(
         'Unable to open file',
-        error?.message || 'No app on this phone can open this document. Try installing a PDF/Office viewer.'
+        error?.message || 'No app on this phone can open this document. Try installing a PDF or Office viewer.'
       )
     }
   }
+}
+
+/** Save a data URL (e.g. marked PNG) and open the system share sheet. */
+export async function shareDataUrl(options: {
+  dataUrl: string
+  fileName?: string | null
+}): Promise<void> {
+  const match = String(options.dataUrl || '').match(/^data:([^;]+);base64,(.+)$/)
+  if (!match) {
+    Alert.alert('Unable to save', 'Marked image data was invalid.')
+    return
+  }
+  const mimeType = match[1] || 'image/png'
+  const base64 = match[2]
+  const ext = mimeType.includes('jpeg') ? 'jpg' : 'png'
+  const fileName = sanitizeFileName(
+    (options.fileName || 'attachment').replace(/\.[^.]+$/, '') + `-marked.${ext}`
+  )
+  const target = `${FileSystem.cacheDirectory}${Date.now()}-${fileName}`
+  await FileSystem.writeAsStringAsync(target, base64, {
+    encoding: FileSystem.EncodingType.Base64,
+  })
+
+  if (await Sharing.isAvailableAsync()) {
+    await Sharing.shareAsync(target, { mimeType, dialogTitle: fileName, UTI: mimeType })
+    return
+  }
+
+  Alert.alert('Saved', `Marked image written to cache as ${fileName}`)
 }

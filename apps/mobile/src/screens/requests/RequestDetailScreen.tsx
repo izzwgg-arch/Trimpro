@@ -16,7 +16,6 @@ import {
 import { useFocusEffect } from '@react-navigation/native'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { InfiniteData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ResizeMode, Video } from 'expo-av'
 import { Ionicons } from '@expo/vector-icons'
 import { AppScreen } from '../../components/AppScreen'
 import { EmptyState } from '../../components/EmptyState'
@@ -28,7 +27,8 @@ import { getRequestDetailsErrorCopy } from './request-utils'
 import { AttachmentPickerSheet } from '../../components/attachments/AttachmentPickerSheet'
 import { AttachmentUploadQueue } from '../../components/attachments/AttachmentUploadQueue'
 import { pickAttachmentsByAction, uploadFileWithProgress } from '../../services/attachment-upload'
-import { isPdfAttachment, openAttachment } from '../../services/open-attachment'
+import { isPdfAttachment, normalizeAttachmentUrl } from '../../services/open-attachment'
+import { AttachmentGalleryModal } from '../../components/attachments/AttachmentGalleryModal'
 import { useAttachmentUploadQueue } from '../../hooks/useAttachmentUploadQueue'
 import { useMobilePermissions } from '../../hooks/useMobilePermissions'
 
@@ -276,10 +276,8 @@ export function RequestDetailScreen({ route }: Props) {
   const [showAttachmentPicker, setShowAttachmentPicker] = React.useState(false)
   const [showAssignPicker, setShowAssignPicker] = React.useState(false)
   const [localAttachments, setLocalAttachments] = React.useState<AttachmentResponse['attachments']>([])
-  const [showImageViewer, setShowImageViewer] = React.useState(false)
-  const [showVideoViewer, setShowVideoViewer] = React.useState(false)
-  const [activeImageUrl, setActiveImageUrl] = React.useState<string | null>(null)
-  const [activeVideoUrl, setActiveVideoUrl] = React.useState<string | null>(null)
+  const [galleryVisible, setGalleryVisible] = React.useState(false)
+  const [galleryIndex, setGalleryIndex] = React.useState(0)
 
   const detailQuery = useQuery({
     queryKey: ['mobile-request-detail', requestId],
@@ -514,7 +512,7 @@ export function RequestDetailScreen({ route }: Props) {
   const teamMembers = teamQuery.data?.teamMembers || teamQuery.data?.users || []
 
   const onSelectAttachmentAction = async (
-    action: 'take-photo' | 'record-video' | 'choose-photos' | 'choose-videos' | 'choose-document'
+    action: 'take-photo' | 'record-video' | 'choose-photos' | 'choose-videos' | 'choose-audio' | 'choose-document'
   ) => {
     try {
       const picked = await pickAttachmentsByAction(action)
@@ -792,26 +790,14 @@ export function RequestDetailScreen({ route }: Props) {
           </View>
         }
         ListEmptyComponent={<Text style={styles.emptyAttachments}>No attachments.</Text>}
-        renderItem={({ item }) => (
+        renderItem={({ item }) => {
+          const idx = attachments.findIndex((row) => row.id === item.id)
+          return (
           <Pressable
             style={styles.attachmentCard}
             onPress={() => {
-              const mime = String(item.mimeType || '').toLowerCase()
-              if (mime.startsWith('image/')) {
-                setActiveImageUrl(item.url)
-                setShowImageViewer(true)
-                return
-              }
-              if (mime.startsWith('video/')) {
-                setActiveVideoUrl(item.url)
-                setShowVideoViewer(true)
-                return
-              }
-              void openAttachment({
-                url: item.url,
-                fileName: item.fileName,
-                mimeType: item.mimeType,
-              })
+              setGalleryIndex(Math.max(0, idx))
+              setGalleryVisible(true)
             }}
           >
             {String(item.mimeType || '').toLowerCase().startsWith('image/') ? (
@@ -844,34 +830,23 @@ export function RequestDetailScreen({ route }: Props) {
               </View>
             )}
           </Pressable>
-        )}
+          )
+        }}
       />
 
-      <Modal visible={showImageViewer} transparent={false} animationType="fade" onRequestClose={() => setShowImageViewer(false)}>
-        <View style={styles.viewerRoot}>
-          <Pressable style={styles.viewerClose} onPress={() => setShowImageViewer(false)}>
-            <Text style={styles.viewerCloseText}>Close</Text>
-          </Pressable>
-          {activeImageUrl ? <Image source={{ uri: activeImageUrl }} style={styles.viewerImage} resizeMode="contain" /> : null}
-        </View>
-      </Modal>
-
-      <Modal visible={showVideoViewer} transparent={false} animationType="fade" onRequestClose={() => setShowVideoViewer(false)}>
-        <View style={styles.viewerRoot}>
-          <Pressable style={styles.viewerClose} onPress={() => setShowVideoViewer(false)}>
-            <Text style={styles.viewerCloseText}>Close</Text>
-          </Pressable>
-          {activeVideoUrl ? (
-            <Video
-              source={{ uri: activeVideoUrl }}
-              style={styles.viewerVideo}
-              useNativeControls
-              shouldPlay
-              resizeMode={ResizeMode.CONTAIN}
-            />
-          ) : null}
-        </View>
-      </Modal>
+      <AttachmentGalleryModal
+        visible={galleryVisible}
+        attachments={attachments.map((row) => ({
+          id: row.id,
+          fileName: row.fileName || 'Attachment',
+          fileSize: row.fileSize,
+          mimeType: row.mimeType || 'application/octet-stream',
+          url: normalizeAttachmentUrl(row.url) || row.url,
+        }))}
+        index={galleryIndex}
+        onClose={() => setGalleryVisible(false)}
+        onIndexChange={setGalleryIndex}
+      />
 
       <Modal visible={showAssignPicker} transparent animationType="fade" onRequestClose={() => setShowAssignPicker(false)}>
         <View style={styles.modalBackdrop}>

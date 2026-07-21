@@ -13,7 +13,8 @@ import { TasksStackParamList } from '../../types/navigation'
 import { useAuth } from '../../auth/AuthContext'
 import { useOnlineState } from '../../hooks/useOnlineState'
 import { enqueueOutbox } from '../../offline/outbox'
-import { openAttachment } from '../../services/open-attachment'
+import { normalizeAttachmentUrl } from '../../services/open-attachment'
+import { AttachmentGalleryModal } from '../../components/attachments/AttachmentGalleryModal'
 
 type Props = NativeStackScreenProps<TasksStackParamList, 'TaskDetail'>
 
@@ -44,6 +45,8 @@ export function TaskDetailScreen({ route }: Props) {
   const { taskId } = route.params
   const queryClient = useQueryClient()
   const [noteText, setNoteText] = useState('')
+  const [galleryVisible, setGalleryVisible] = useState(false)
+  const [galleryIndex, setGalleryIndex] = useState(0)
   const { token } = useAuth()
   const isOnline = useOnlineState()
 
@@ -281,14 +284,11 @@ export function TaskDetailScreen({ route }: Props) {
                   key={a.id}
                   style={styles.attachmentRow}
                   onPress={() => {
-                    if (!a.url) {
-                      return
-                    }
-                    void openAttachment({
-                      url: a.url,
-                      fileName: a.fileName,
-                      mimeType: a.mimeType,
-                    })
+                    const list = (attachmentsQuery.data?.attachments || []).filter((row) => !!row.url)
+                    const idx = list.findIndex((row) => row.id === a.id)
+                    if (idx < 0) return
+                    setGalleryIndex(idx)
+                    setGalleryVisible(true)
                   }}
                 >
                   <Text style={styles.attachmentName}>{a.fileName}</Text>
@@ -301,6 +301,22 @@ export function TaskDetailScreen({ route }: Props) {
           </>
         )}
       </ScrollView>
+
+      <AttachmentGalleryModal
+        visible={galleryVisible}
+        attachments={(attachmentsQuery.data?.attachments || [])
+          .filter((row) => !!row.url)
+          .map((row) => ({
+            id: row.id,
+            fileName: row.fileName || 'Attachment',
+            fileSize: row.fileSize,
+            mimeType: row.mimeType || 'application/octet-stream',
+            url: normalizeAttachmentUrl(row.url || '') || String(row.url),
+          }))}
+        index={galleryIndex}
+        onClose={() => setGalleryVisible(false)}
+        onIndexChange={setGalleryIndex}
+      />
     </Screen>
   )
 }

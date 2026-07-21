@@ -138,7 +138,7 @@ export function CreateRequestScreen({ navigation, route }: Props) {
   }, [draftId])
 
   const onSelectAttachmentAction = async (
-    action: 'take-photo' | 'record-video' | 'choose-photos' | 'choose-videos' | 'choose-document'
+    action: 'take-photo' | 'record-video' | 'choose-photos' | 'choose-videos' | 'choose-audio' | 'choose-document'
   ) => {
     try {
       const picked = await pickAttachmentsByAction(action)

@@ -18,7 +18,6 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Ionicons } from '@expo/vector-icons'
 import * as Location from 'expo-location'
-import { Video, ResizeMode } from 'expo-av'
 import { Screen } from '../../components/Screen'
 import { DetailSection } from '../../components/DetailSection'
 import { apiRequest } from '../../api/client'
@@ -28,11 +27,12 @@ import { BRAND } from '../../config/env'
 import { JobsStackParamList } from '../../types/navigation'
 import { enqueueOutbox } from '../../offline/outbox'
 import { useOnlineState } from '../../hooks/useOnlineState'
-import { isPdfAttachment, normalizeAttachmentUrl, openAttachment } from '../../services/open-attachment'
+import { isPdfAttachment, normalizeAttachmentUrl } from '../../services/open-attachment'
 import { useAuth } from '../../auth/AuthContext'
 import { useMobilePermissions } from '../../hooks/useMobilePermissions'
 import { AttachmentPickerSheet } from '../../components/attachments/AttachmentPickerSheet'
 import { AttachmentUploadQueue } from '../../components/attachments/AttachmentUploadQueue'
+import { AttachmentGalleryModal } from '../../components/attachments/AttachmentGalleryModal'
 import { pickAttachmentsByAction, uploadFileWithProgress } from '../../services/attachment-upload'
 import { useAttachmentUploadQueue } from '../../hooks/useAttachmentUploadQueue'
 import { formatCents, formatJobType, formatMinutes } from '../../utils/format'
@@ -120,11 +120,9 @@ export function JobDetailScreen({ route, navigation }: Props) {
   const [locationSharing, setLocationSharing] = useState(false)
   const [showAttachmentPicker, setShowAttachmentPicker] = useState(false)
   const [localAttachments, setLocalAttachments] = useState<Attachment[]>([])
-  const [mediaViewerVisible, setMediaViewerVisible] = useState(false)
-  const [videoViewerVisible, setVideoViewerVisible] = useState(false)
+  const [galleryVisible, setGalleryVisible] = useState(false)
+  const [galleryIndex, setGalleryIndex] = useState(0)
   const [statusPickerVisible, setStatusPickerVisible] = useState(false)
-  const [activeImageIndex, setActiveImageIndex] = useState(0)
-  const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [manualMinutes, setManualMinutes] = useState('')
   const [manualNote, setManualNote] = useState('')
@@ -355,7 +353,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
   })
 
   const onSelectAttachmentAction = async (
-    action: 'take-photo' | 'record-video' | 'choose-photos' | 'choose-videos' | 'choose-document'
+    action: 'take-photo' | 'record-video' | 'choose-photos' | 'choose-videos' | 'choose-audio' | 'choose-document'
   ) => {
     if (!token) {
       Alert.alert('Not authenticated', 'Please sign in again.')
@@ -413,26 +411,11 @@ export function JobDetailScreen({ route, navigation }: Props) {
     return Array.from(deduped.values()).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
   }, [attachmentsQuery.data?.attachments, job?.attachments, localAttachments])
 
-  const imageRows = useMemo(
-    () => attachmentRows.filter((row) => String(row.mimeType || '').startsWith('image/')),
-    [attachmentRows]
-  )
   const formatElapsed = (seconds: number) => {
     const h = Math.floor(seconds / 3600)
     const m = Math.floor((seconds % 3600) / 60)
     const s = seconds % 60
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-  }
-
-  const openAttachmentUrl = async (
-    rawUrl: string,
-    meta?: { fileName?: string | null; mimeType?: string | null }
-  ) => {
-    await openAttachment({
-      url: rawUrl,
-      fileName: meta?.fileName,
-      mimeType: meta?.mimeType,
-    })
   }
   const tileColumns = 2
 
@@ -905,21 +888,9 @@ export function JobDetailScreen({ route, navigation }: Props) {
                           <Pressable
                             style={styles.mediaTile}
                             onPress={() => {
-                              if (isImage) {
-                                const idx = imageRows.findIndex((x) => x.id === a.id)
-                                setActiveImageIndex(Math.max(0, idx))
-                                setMediaViewerVisible(true)
-                                return
-                              }
-                              if (isVideo) {
-                                setActiveVideoUrl(a.url)
-                                setVideoViewerVisible(true)
-                                return
-                              }
-                              void openAttachmentUrl(a.url, {
-                                fileName: a.fileName,
-                                mimeType: a.mimeType,
-                              })
+                              const idx = attachmentRows.findIndex((x) => x.id === a.id)
+                              setGalleryIndex(Math.max(0, idx))
+                              setGalleryVisible(true)
                             }}
                           >
                             {isImage ? (
@@ -1017,68 +988,19 @@ export function JobDetailScreen({ route, navigation }: Props) {
               onSelect={onSelectAttachmentAction}
             />
 
-            <Modal visible={mediaViewerVisible} animationType="slide" onRequestClose={() => setMediaViewerVisible(false)}>
-              <View style={styles.viewerRoot}>
-                <View style={styles.viewerHeader}>
-                  <Pressable style={styles.secondaryButton} onPress={() => setMediaViewerVisible(false)}>
-                    <Text style={styles.secondaryButtonText}>Close</Text>
-                  </Pressable>
-                  <Text style={styles.viewerTitle}>
-                    {imageRows.length > 0 ? `${activeImageIndex + 1} / ${imageRows.length}` : 'Image'}
-                  </Text>
-                  <View style={{ width: 88 }} />
-                </View>
-                {imageRows[activeImageIndex] ? (
-                  <ScrollView
-                    contentContainerStyle={styles.viewerImageWrap}
-                    minimumZoomScale={1}
-                    maximumZoomScale={4}
-                    centerContent
-                  >
-                    <Image source={{ uri: imageRows[activeImageIndex].url }} style={styles.viewerImage} resizeMode="contain" />
-                  </ScrollView>
-                ) : null}
-                <View style={styles.viewerControls}>
-                  <Pressable
-                    style={styles.secondaryButton}
-                    onPress={() => setActiveImageIndex((idx) => Math.max(0, idx - 1))}
-                    disabled={activeImageIndex <= 0}
-                  >
-                    <Text style={styles.secondaryButtonText}>Prev</Text>
-                  </Pressable>
-                  <Pressable
-                    style={styles.secondaryButton}
-                    onPress={() => setActiveImageIndex((idx) => Math.min(imageRows.length - 1, idx + 1))}
-                    disabled={activeImageIndex >= imageRows.length - 1}
-                  >
-                    <Text style={styles.secondaryButtonText}>Next</Text>
-                  </Pressable>
-                </View>
-              </View>
-            </Modal>
-
-            <Modal visible={videoViewerVisible} animationType="slide" onRequestClose={() => setVideoViewerVisible(false)}>
-              <View style={styles.viewerRoot}>
-                <View style={styles.viewerHeader}>
-                  <Pressable style={styles.secondaryButton} onPress={() => setVideoViewerVisible(false)}>
-                    <Text style={styles.secondaryButtonText}>Close</Text>
-                  </Pressable>
-                  <Text style={styles.viewerTitle}>Video</Text>
-                  <View style={{ width: 88 }} />
-                </View>
-                {activeVideoUrl ? (
-                  <Video
-                    source={{ uri: activeVideoUrl }}
-                    style={styles.videoPlayer}
-                    useNativeControls
-                    shouldPlay
-                    resizeMode={ResizeMode.CONTAIN}
-                  />
-                ) : (
-                  <Text style={styles.meta}>No video selected.</Text>
-                )}
-              </View>
-            </Modal>
+            <AttachmentGalleryModal
+              visible={galleryVisible}
+              attachments={attachmentRows.map((row) => ({
+                id: row.id,
+                fileName: row.fileName || 'Attachment',
+                fileSize: row.fileSize,
+                mimeType: row.mimeType || 'application/octet-stream',
+                url: row.url,
+              }))}
+              index={galleryIndex}
+              onClose={() => setGalleryVisible(false)}
+              onIndexChange={setGalleryIndex}
+            />
           </>
         )}
       </ScrollView>

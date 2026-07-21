@@ -13,6 +13,8 @@ import { IssuesStackParamList } from '../../types/navigation'
 import { useAuth } from '../../auth/AuthContext'
 import { useOnlineState } from '../../hooks/useOnlineState'
 import { enqueueOutbox } from '../../offline/outbox'
+import { AttachmentGalleryModal } from '../../components/attachments/AttachmentGalleryModal'
+import { normalizeAttachmentUrl } from '../../services/open-attachment'
 
 type Props = NativeStackScreenProps<IssuesStackParamList, 'IssueDetail'>
 
@@ -25,6 +27,8 @@ interface AttachmentResponse {
     id: string
     fileName: string
     fileSize: number
+    mimeType?: string | null
+    url?: string | null
   }>
 }
 
@@ -42,6 +46,8 @@ export function IssueDetailScreen({ route, navigation }: Props) {
   const { issueId } = route.params
   const queryClient = useQueryClient()
   const [noteText, setNoteText] = React.useState('')
+  const [galleryVisible, setGalleryVisible] = React.useState(false)
+  const [galleryIndex, setGalleryIndex] = React.useState(0)
   const { token, user } = useAuth()
   const isOnline = useOnlineState()
   const issueQuery = useQuery({
@@ -319,15 +325,43 @@ export function IssueDetailScreen({ route, navigation }: Props) {
                 <Text style={styles.secondaryButtonText}>Attach Photo/Video</Text>
               </Pressable>
               {(attachmentsQuery.data?.attachments || []).map((a) => (
-                <View key={a.id} style={styles.attachmentRow}>
+                <Pressable
+                  key={a.id}
+                  style={styles.attachmentRow}
+                  onPress={() => {
+                    const list = (attachmentsQuery.data?.attachments || []).filter((row) => !!row.url)
+                    const idx = list.findIndex((row) => row.id === a.id)
+                    if (idx < 0) return
+                    setGalleryIndex(idx)
+                    setGalleryVisible(true)
+                  }}
+                >
                   <Text style={styles.attachmentName}>{a.fileName}</Text>
-                  <Text style={styles.attachmentMeta}>{Math.round(a.fileSize / 1024)} KB</Text>
-                </View>
+                  <Text style={styles.attachmentMeta}>
+                    {Math.round(a.fileSize / 1024)} KB{a.url ? ' · Open' : ''}
+                  </Text>
+                </Pressable>
               ))}
             </View>
           </>
         )}
       </ScrollView>
+
+      <AttachmentGalleryModal
+        visible={galleryVisible}
+        attachments={(attachmentsQuery.data?.attachments || [])
+          .filter((row) => !!row.url)
+          .map((row) => ({
+            id: row.id,
+            fileName: row.fileName || 'Attachment',
+            fileSize: row.fileSize,
+            mimeType: row.mimeType || 'application/octet-stream',
+            url: normalizeAttachmentUrl(row.url || '') || String(row.url),
+          }))}
+        index={galleryIndex}
+        onClose={() => setGalleryVisible(false)}
+        onIndexChange={setGalleryIndex}
+      />
     </Screen>
   )
 }
