@@ -73,6 +73,7 @@ model Tenant {
   estimateApprovalTokens EstimateApprovalToken[]
   estimateItemApprovals  EstimateItemApproval[]
   invoiceLineItemSources InvoiceLineItemSource[]
+  estimateMaterialLines  EstimateMaterialLine[]
   brandingSettings       BrandingSettings?
   measuringRequests      MeasuringRequest[]
 
@@ -587,6 +588,7 @@ model Estimate {
   approvalTokens EstimateApprovalToken[]
   itemApprovals  EstimateItemApproval[]
   invoiceLineItemSources InvoiceLineItemSource[]
+  materialLines  EstimateMaterialLine[]
 
   createdById String?
 
@@ -707,6 +709,35 @@ model EstimateLineItem {
   @@index([sourceItemId])
   @@index([vendorId])
   @@map("estimate_line_items")
+}
+
+/// Internal material pricing worksheet for an estimate (not synced to QuickBooks).
+/// Each row is a separate material/vendor/price line.
+model EstimateMaterialLine {
+  id          String   @id @default(cuid())
+  tenantId    String
+  estimateId  String
+  materialName String
+  vendorName  String?
+  vendorId    String?
+  quantity    Decimal  @default(1) @db.Decimal(10, 2)
+  unit        String?
+  unitPrice   Decimal  @default(0) @db.Decimal(10, 2)
+  notes       String?  @db.Text
+  sortOrder   Int      @default(0)
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  estimate Estimate  @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  vendor   Vendor?   @relation("EstimateMaterialLineVendor", fields: [vendorId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, estimateId])
+  @@index([estimateId, sortOrder])
+  @@index([vendorId])
+  @@map("estimate_material_lines")
 }
 
 model EstimateOptionalLineItem {
@@ -1103,6 +1134,7 @@ model Vendor {
   estimateLineItems      EstimateLineItem[]      @relation("EstimateLineItemVendor")
   invoiceLineItems       InvoiceLineItem[]       @relation("InvoiceLineItemVendor")
   purchaseOrderLineItems PurchaseOrderLineItem[] @relation("POLineItemVendor")
+  estimateMaterialLines  EstimateMaterialLine[]  @relation("EstimateMaterialLineVendor")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

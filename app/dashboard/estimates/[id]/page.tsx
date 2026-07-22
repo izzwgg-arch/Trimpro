@@ -36,6 +36,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { DocumentAttachments } from '@/components/common/document-attachments'
+import { EstimateMaterialList } from '@/components/estimates/estimate-material-list'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { buildCreateContextQuery } from '@/src/lib/create-context'
 import { calculateOrderedSubtotalRows, mergeApprovedOptionalItemsForSubtotals } from '@/lib/documents/subtotals'
@@ -186,6 +187,7 @@ export default function EstimateDetailPage() {
   const [loadingApprovals, setLoadingApprovals] = useState(false)
   const [regeneratingApprovalLink, setRegeneratingApprovalLink] = useState(false)
   const [reimportingLines, setReimportingLines] = useState(false)
+  const [activeTab, setActiveTab] = useState<'overview' | 'material-list'>('overview')
 
   useEffect(() => {
     fetchEstimate()
@@ -733,6 +735,28 @@ export default function EstimateDetailPage() {
         </MobileActionBar>
       </div>
 
+      <div className="border-b">
+        <nav className="flex space-x-8">
+          {[
+            { id: 'overview' as const, label: 'Overview' },
+            { id: 'material-list' as const, label: 'Material List' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`border-b-2 px-1 py-4 text-sm font-medium ${
+                activeTab === tab.id
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+      </div>
+
       <Dialog open={showSendModal} onOpenChange={setShowSendModal}>
         <DialogContent>
           <DialogHeader>
@@ -814,6 +838,13 @@ export default function EstimateDetailPage() {
       </Dialog>
 
       <div className="grid gap-6 md:grid-cols-3">
+        {activeTab === 'material-list' ? (
+          <div className="md:col-span-3">
+            <EstimateMaterialList estimateId={estimateId} />
+          </div>
+        ) : null}
+        {activeTab === 'overview' ? (
+        <>
         <div className="md:col-span-2 space-y-6">
           {/* Line Items */}
           <Card>
@@ -1381,6 +1412,8 @@ export default function EstimateDetailPage() {
           </Card>
 
         </div>
+        </>
+        ) : null}
       </div>
 
       {/* Item Picker for adding items to groups */}
