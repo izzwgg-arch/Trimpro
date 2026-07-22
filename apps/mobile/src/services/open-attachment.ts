@@ -6,14 +6,64 @@ import { API_BASE_URL } from '../config/env'
 
 const MEDIA_BASE_URL = API_BASE_URL || 'https://app.trimprony.com'
 
+/** FLAG_GRANT_READ_URI_PERMISSION | FLAG_ACTIVITY_NEW_TASK */
+const ANDROID_VIEW_FLAGS = 1 | 268435456
+
+const EXT_BY_MIME: Record<string, string> = {
+  'application/pdf': 'pdf',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'text/csv': 'csv',
+  'application/vnd.ms-powerpoint': 'ppt',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+  'text/plain': 'txt',
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'video/mp4': 'mp4',
+  'video/quicktime': 'mov',
+  'audio/mpeg': 'mp3',
+  'audio/mp4': 'm4a',
+  'audio/wav': 'wav',
+}
+
+const MIME_BY_EXT: Record<string, string> = {
+  pdf: 'application/pdf',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  csv: 'text/csv',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  txt: 'text/plain',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  mp4: 'video/mp4',
+  mov: 'video/quicktime',
+  mp3: 'audio/mpeg',
+  m4a: 'audio/mp4',
+  wav: 'audio/wav',
+}
+
+function isIpOrLocalHost(hostname: string): boolean {
+  const host = String(hostname || '').toLowerCase()
+  if (!host) return true
+  if (host === 'localhost' || host === '127.0.0.1') return true
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(host)
+}
+
 export function normalizeAttachmentUrl(rawUrl: string): string {
   const value = String(rawUrl || '').trim()
   if (!value) return ''
   try {
     const parsed = new URL(value, MEDIA_BASE_URL)
-    if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
+    if (isIpOrLocalHost(parsed.hostname)) {
       return `${MEDIA_BASE_URL}${parsed.pathname}${parsed.search}`
     }
+    if (parsed.protocol === 'http:') parsed.protocol = 'https:'
     return parsed.toString()
   } catch {
     if (value.startsWith('/')) return `${MEDIA_BASE_URL}${value}`
@@ -52,35 +102,61 @@ function inferMimeType(mimeType?: string | null, fileName?: string | null): stri
   if (mime && mime !== 'application/octet-stream') return mime
   const name = String(fileName || '').toLowerCase()
   const ext = name.includes('.') ? name.split('.').pop() || '' : ''
-  const byExt: Record<string, string> = {
-    pdf: 'application/pdf',
-    doc: 'application/msword',
-    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    xls: 'application/vnd.ms-excel',
-    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    csv: 'text/csv',
-    ppt: 'application/vnd.ms-powerpoint',
-    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    txt: 'text/plain',
-    jpg: 'image/jpeg',
-    jpeg: 'image/jpeg',
-    png: 'image/png',
-    mp4: 'video/mp4',
-    mov: 'video/quicktime',
-    mp3: 'audio/mpeg',
-    m4a: 'audio/mp4',
-    wav: 'audio/wav',
-  }
-  return byExt[ext] || 'application/octet-stream'
+  return MIME_BY_EXT[ext] || 'application/octet-stream'
 }
 
-async function downloadToCache(url: string, fileName: string): Promise<string> {
-  const target = `${FileSystem.cacheDirectory}${Date.now()}-${sanitizeFileName(fileName)}`
+function ensureFileExtension(fileName: string, mimeType: string): string {
+  const safe = sanitizeFileName(fileName)
+  if (safe.includes('.')) return safe
+  const ext = EXT_BY_MIME[mimeType]
+  return ext ? `${safe}.${ext}` : safe
+}
+
+export async function downloadAttachmentToCache(options: {
+  url: string
+  fileName?: string | null
+  mimeType?: string | null
+}): Promise<{ localUri: string; mimeType: string; fileName: string }> {
+  const url = normalizeAttachmentUrl(options.url)
+  if (!url) throw new Error('This attachment has no download URL.')
+  const mimeType = inferMimeType(options.mimeType, options.fileName)
+  const fileName = ensureFileExtension(
+    options.fileName || url.split('/').pop() || 'attachment',
+    mimeType
+  )
+  const target = `${FileSystem.cacheDirectory}${Date.now()}-${fileName}`
   const result = await FileSystem.downloadAsync(url, target)
   if (result.status && result.status >= 400) {
     throw new Error(`Download failed (${result.status})`)
   }
-  return result.uri
+  const info = await FileSystem.getInfoAsync(result.uri)
+  if (!info.exists || (typeof info.size === 'number' && info.size <= 0)) {
+    throw new Error('Downloaded file was empty.')
+  }
+  return { localUri: result.uri, mimeType, fileName }
+}
+
+async function openAndroidContentUri(contentUri: string, mimeType: string): Promise<boolean> {
+  const attempts: Array<{ type?: string; flags: number }> = [
+    { type: mimeType, flags: ANDROID_VIEW_FLAGS },
+    { flags: ANDROID_VIEW_FLAGS },
+    { type: mimeType, flags: 1 },
+    { flags: 1 },
+  ]
+
+  for (const attempt of attempts) {
+    try {
+      await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+        data: contentUri,
+        category: 'android.intent.category.DEFAULT',
+        ...attempt,
+      })
+      return true
+    } catch {
+      // try next variant
+    }
+  }
+  return false
 }
 
 /**
@@ -98,30 +174,19 @@ export async function openAttachment(options: {
     return
   }
 
-  const fileName = sanitizeFileName(options.fileName || url.split('/').pop() || 'attachment')
-  const mimeType = inferMimeType(options.mimeType, fileName)
-
   try {
-    const localUri = await downloadToCache(url, fileName)
+    const { localUri, mimeType, fileName } = await downloadAttachmentToCache(options)
 
     if (Platform.OS === 'android') {
-      try {
-        const contentUri = await FileSystem.getContentUriAsync(localUri)
-        await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
-          data: contentUri,
-          flags: 1,
-          type: mimeType,
-        })
-        return
-      } catch {
-        // Fall through to share sheet / remote URL.
-      }
+      const contentUri = await FileSystem.getContentUriAsync(localUri)
+      const opened = await openAndroidContentUri(contentUri, mimeType)
+      if (opened) return
     }
 
     if (await Sharing.isAvailableAsync()) {
       await Sharing.shareAsync(localUri, {
         mimeType,
-        dialogTitle: fileName,
+        dialogTitle: `Open ${fileName}`,
         UTI: mimeType,
       })
       return
@@ -135,15 +200,16 @@ export async function openAttachment(options: {
 
     Alert.alert(
       'Unable to open file',
-      'No app on this phone can open this document. Try installing a PDF or Office viewer.'
+      'Install a PDF/Office viewer (Google Drive, Adobe Reader, or Microsoft Office), then try again.'
     )
   } catch (error: any) {
+    const detail = error?.message || 'Unknown error'
     try {
       await Linking.openURL(url)
     } catch {
       Alert.alert(
         'Unable to open file',
-        error?.message || 'No app on this phone can open this document. Try installing a PDF or Office viewer.'
+        `${detail}\n\nInstall a PDF/Office viewer and try again.`
       )
     }
   }

@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -10,8 +11,10 @@ import {
 import { Ionicons } from '@expo/vector-icons'
 import { Audio, ResizeMode, Video } from 'expo-av'
 import { WebView } from 'react-native-webview'
+import * as FileSystem from 'expo-file-system/legacy'
 import { ImageMarkupWebView } from './ImageMarkupWebView'
 import {
+  downloadAttachmentToCache,
   getAttachmentKind,
   normalizeAttachmentUrl,
   openAttachment,
@@ -60,12 +63,10 @@ export function AttachmentGalleryModal({
   const kind = current ? getAttachmentKind(current.mimeType, current.fileName) : 'other'
   const canNavigate = total > 1
   const [opening, setOpening] = useState(false)
+  const [pdfUri, setPdfUri] = useState<string | null>(null)
+  const [pdfLoading, setPdfLoading] = useState(false)
+  const [pdfError, setPdfError] = useState<string | null>(null)
   const soundRef = useRef<Audio.Sound | null>(null)
-
-  const pdfViewerUrl = useMemo(() => {
-    if (!url || kind !== 'pdf') return ''
-    return `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(url)}`
-  }, [kind, url])
 
   useEffect(() => {
     return () => {
@@ -99,6 +100,51 @@ export function AttachmentGalleryModal({
       soundRef.current = null
     }
   }, [visible, kind, url, current?.id])
+
+  useEffect(() => {
+    let cancelled = false
+    setPdfUri(null)
+    setPdfError(null)
+    if (!visible || kind !== 'pdf' || !current || !url) {
+      setPdfLoading(false)
+      return
+    }
+
+    setPdfLoading(true)
+    void (async () => {
+      try {
+        const downloaded = await downloadAttachmentToCache({
+          url: current.url,
+          fileName: current.fileName,
+          mimeType: current.mimeType || 'application/pdf',
+        })
+        let viewerUri = downloaded.localUri
+        if (Platform.OS === 'android') {
+          viewerUri = await FileSystem.getContentUriAsync(downloaded.localUri)
+        }
+        if (cancelled) return
+        setPdfUri(viewerUri)
+      } catch (error: any) {
+        if (cancelled) return
+        setPdfError(error?.message || 'Could not load PDF')
+      } finally {
+        if (!cancelled) setPdfLoading(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [visible, kind, url, current?.id, current?.url, current?.fileName, current?.mimeType])
+
+  useEffect(() => {
+    if (!visible || kind !== 'other' || !current) return
+    void openAttachment({
+      url: current.url,
+      fileName: current.fileName,
+      mimeType: current.mimeType,
+    })
+  }, [visible, kind, current?.id, current?.url, current?.fileName, current?.mimeType])
 
   const goPrev = () => {
     if (!canNavigate) return
@@ -180,17 +226,38 @@ export function AttachmentGalleryModal({
               <Text style={styles.meta}>Playing audio… Use Open to share/download.</Text>
             </View>
           ) : kind === 'pdf' ? (
-            <WebView
-              key={current.id}
-              source={{ uri: pdfViewerUrl || url }}
-              style={styles.fill}
-              startInLoadingState
-              renderLoading={() => (
-                <View style={styles.loading}>
-                  <ActivityIndicator color="#fff" />
-                </View>
-              )}
-            />
+            pdfLoading ? (
+              <View style={styles.loading}>
+                <ActivityIndicator color="#fff" size="large" />
+                <Text style={[styles.meta, { marginTop: 12 }]}>Loading PDF…</Text>
+              </View>
+            ) : pdfUri ? (
+              <WebView
+                key={`${current.id}-${pdfUri}`}
+                source={{ uri: pdfUri }}
+                style={styles.fill}
+                originWhitelist={['*']}
+                allowFileAccess
+                allowUniversalAccessFromFileURLs
+                mixedContentMode="always"
+                setSupportMultipleWindows={false}
+                startInLoadingState
+                renderLoading={() => (
+                  <View style={styles.loading}>
+                    <ActivityIndicator color="#fff" />
+                  </View>
+                )}
+              />
+            ) : (
+              <View style={styles.centerCard}>
+                <Ionicons name="document-outline" size={48} color="#fff" />
+                <Text style={styles.centerTitle}>{current.fileName}</Text>
+                <Text style={styles.meta}>{pdfError || 'PDF preview unavailable on this device.'}</Text>
+                <Pressable style={styles.primaryBtn} onPress={onOpenExternal} disabled={opening}>
+                  <Text style={styles.primaryBtnText}>{opening ? 'Opening…' : 'Open in Viewer App'}</Text>
+                </Pressable>
+              </View>
+            )
           ) : (
             <View style={styles.centerCard}>
               <Ionicons name="document-text-outline" size={48} color="#fff" />
@@ -227,7 +294,7 @@ const styles = StyleSheet.create({
   },
   headerTextWrap: { flex: 1, minWidth: 0 },
   title: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  meta: { color: '#a1a1aa', fontSize: 12, marginTop: 2 },
+  meta: { color: '#a1a1aa', fontSize: 12, marginTop: 2, textAlign: 'center' },
   headerBtn: {
     flexDirection: 'row',
     alignItems: 'center',
