@@ -459,11 +459,7 @@ export async function POST(
           )
         }
 
-        try {
-          await enqueueQboSync(user.tenantId, 'job', job.id, { processImmediately: false })
-        } catch (qboErr) {
-          console.error('QuickBooks job/project sync trigger error (estimate convert):', qboErr)
-        }
+        // Job → QBO project/subcustomer sync is disabled.
       }
     } catch (jobErr) {
       // Job creation failure must not roll back the invoice — log and continue.

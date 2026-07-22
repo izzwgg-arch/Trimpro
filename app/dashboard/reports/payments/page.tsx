@@ -54,6 +54,8 @@ export default function PaymentHistoryPage() {
   const canRefund =
     hasPermission(permissions, 'payments.refund') ||
     hasPermission(permissions, 'payments.manage')
+  const canManagePayments = hasPermission(permissions, 'payments.manage')
+  const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null)
 
   const [rows, setRows] = useState<PaymentRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -147,6 +149,37 @@ export default function PaymentHistoryPage() {
     if (s === 'FAILED') return 'Failed'
     if (s === 'PENDING' || s === 'PROCESSING') return 'Pending'
     return s || 'Unknown'
+  }
+
+  const deletePayment = async (row: PaymentRow) => {
+    if (!canManagePayments) return
+    const confirmed = window.confirm(
+      `Delete payment ${row.id} (${row.currency} ${Number(row.amount || 0).toFixed(2)})?\n\n` +
+        'This removes it from TrimPro and recalculates the invoice. Gateway/QuickBooks may still need a separate void/refund.'
+    )
+    if (!confirmed) return
+
+    setDeletingPaymentId(row.id)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        window.location.href = '/auth/login'
+        return
+      }
+      const res = await fetch(`/api/payments/${row.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(data.error || 'Delete failed')
+      }
+      await fetchHistory()
+    } catch (err: any) {
+      alert(err?.message || 'Delete failed')
+    } finally {
+      setDeletingPaymentId(null)
+    }
   }
 
   const submitRefund = async () => {
@@ -339,18 +372,32 @@ export default function PaymentHistoryPage() {
                         <td className="p-2">{new Date(row.createdAt).toLocaleString()}</td>
                         <td className="p-2">{row.refundedAt ? new Date(row.refundedAt).toLocaleString() : '-'}</td>
                         <td className="p-2">
-                          {canRefund ? (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={fullyRefunded}
-                              onClick={() => openRefundModal(row)}
-                            >
-                              Refund
-                            </Button>
-                          ) : (
-                            <span className="text-xs text-gray-400">No access</span>
-                          )}
+                          <div className="flex flex-wrap gap-2">
+                            {canRefund ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={fullyRefunded}
+                                onClick={() => openRefundModal(row)}
+                              >
+                                Refund
+                              </Button>
+                            ) : null}
+                            {canManagePayments ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-red-700 border-red-200 hover:bg-red-50"
+                                disabled={deletingPaymentId === row.id || row.refundedAmount > 0}
+                                onClick={() => void deletePayment(row)}
+                              >
+                                {deletingPaymentId === row.id ? 'Deleting...' : 'Delete'}
+                              </Button>
+                            ) : null}
+                            {!canRefund && !canManagePayments ? (
+                              <span className="text-xs text-gray-400">No access</span>
+                            ) : null}
+                          </div>
                         </td>
                       </tr>
                     )

@@ -2165,47 +2165,11 @@ export async function syncLeadToQuickBooksProject(tenantId: string, leadId: stri
   }
 }
 
-export async function syncJobToQuickBooksProject(tenantId: string, jobId: string) {
-  const session = await getQboSession(tenantId)
-  if (!session) return
-  try {
-    const job = await prisma.job.findFirst({
-      where: { id: jobId, tenantId },
-      include: {
-        client: true,
-      },
-    })
-    if (!job?.clientId) return
-
-    const parentQboCustomerId = await ensureClientCustomer({
-      tenantId,
-      clientId: job.clientId,
-      accessToken: session.accessToken,
-      realmId: session.realmId,
-      integrationId: session.integrationId,
-      createIfMissing: false,
-    })
-    if (!parentQboCustomerId) return
-
-    const displayName = `${job.jobNumber} - ${job.title}`.replace(/[\r\n\t]+/g, ' ').trim().slice(0, 100)
-    await ensureProjectCustomer({
-      integrationId: session.integrationId,
-      accessToken: session.accessToken,
-      realmId: session.realmId,
-      localEntityId: job.id,
-      displayName,
-      parentCustomerQboId: parentQboCustomerId,
-    })
-  } catch (error: any) {
-    await logSync({
-      integrationId: session.integrationId,
-      type: 'project',
-      action: 'create',
-      status: 'error',
-      entityId: jobId,
-      error: error?.message || 'QuickBooks job project sync failed',
-    })
-  }
+export async function syncJobToQuickBooksProject(_tenantId: string, _jobId: string) {
+  // Disabled: QBO models jobs as Customer subcustomers (Job: true + ParentRef).
+  // That cluttered QBO with job-named "subclients". Jobs remain TrimPro-only;
+  // invoices/estimates still sync to the parent QBO customer.
+  return
 }
 
 export async function syncEstimateToQuickBooks(tenantId: string, estimateId: string) {

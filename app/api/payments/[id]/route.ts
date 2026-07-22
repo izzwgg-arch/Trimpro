@@ -3,9 +3,9 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
+import { removeInvoicePayment } from '@/lib/payments/remove-invoice-payment'
 import {
   buildCustomPaymentNotes,
-  isCustomPayment,
   mapCustomPaymentMethodToDb,
   type CustomPaymentUiMethod,
 } from '@/lib/payments/custom-payment'
@@ -25,7 +25,7 @@ export async function PATCH(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
-  const permError = await requirePermission(request, 'payments.view')
+  const permError = await requirePermission(request, 'payments.manage')
   if (permError) return permError
 
   const user = getAuthUser(request)
@@ -61,15 +61,9 @@ export async function PATCH(
       return NextResponse.json({ error: 'Payment not found' }, { status: 404 })
     }
 
-    if (!isCustomPayment(payment)) {
-      return NextResponse.json(
-        { error: 'Only custom (manually recorded) payments can be edited.' },
-        { status: 400 }
-      )
-    }
-
     const ALLOWED_METHODS = new Set(['CHECK', 'QUICK_PAY', 'OTHER'])
     const resolvedMethod = (methodRaw || '') as CustomPaymentUiMethod | ''
+    const wantsMethodUpdate = Boolean(resolvedMethod) && ALLOWED_METHODS.has(resolvedMethod)
     if (resolvedMethod && !ALLOWED_METHODS.has(resolvedMethod)) {
       return NextResponse.json({ error: 'Invalid payment method.' }, { status: 400 })
     }
@@ -125,24 +119,23 @@ export async function PATCH(
         if (newAmount <= 0) throw new Error('No remaining balance to apply payment to.')
       }
 
-      // Map method label — preserve existing values when the client omits method.
-      const mapped =
-        resolvedMethod && ALLOWED_METHODS.has(resolvedMethod)
-          ? mapCustomPaymentMethodToDb(resolvedMethod, methodLabel)
-          : { method: payment.method as 'CHECK' | 'CASH' | 'OTHER', provider: payment.provider || 'manual' }
+      // Only remap method when explicitly updating a custom payment type.
+      // Gateway / imported payments keep their original method + provider.
+      const mapped = wantsMethodUpdate
+        ? mapCustomPaymentMethodToDb(resolvedMethod as CustomPaymentUiMethod, methodLabel)
+        : null
 
-      const newMethod = mapped.method
-      const newProvider = mapped.provider
-      const newNotes =
-        resolvedMethod && ALLOWED_METHODS.has(resolvedMethod)
-          ? buildCustomPaymentNotes(resolvedMethod, methodLabel)
-          : payment.notes
+      const newMethod = mapped?.method ?? payment.method
+      const newProvider = mapped?.provider ?? payment.provider
+      const newNotes = wantsMethodUpdate
+        ? buildCustomPaymentNotes(resolvedMethod as CustomPaymentUiMethod, methodLabel)
+        : payment.notes
 
       const updatedPayment = await tx.payment.update({
         where: { id: params.id },
         data: {
           amount: newAmount,
-          method: newMethod,
+          method: newMethod as any,
           provider: newProvider,
           reference: reference !== null ? reference : payment.reference,
           processedAt,
@@ -233,6 +226,88 @@ export async function PATCH(
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
     console.error('Edit payment error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const authError = await authenticateRequest(request)
+  if (authError) return authError
+  const permError = await requirePermission(request, 'payments.manage')
+  if (permError) return permError
+
+  const user = getAuthUser(request)
+
+  try {
+    const payment = await prisma.payment.findUnique({
+      where: { id: params.id },
+      select: {
+        id: true,
+        amount: true,
+        method: true,
+        provider: true,
+        reference: true,
+        invoice: {
+          select: {
+            id: true,
+            tenantId: true,
+            invoiceNumber: true,
+          },
+        },
+      },
+    })
+
+    if (!payment || payment.invoice.tenantId !== user.tenantId) {
+      return NextResponse.json({ error: 'Payment not found' }, { status: 404 })
+    }
+
+    const result = await removeInvoicePayment(params.id, user.tenantId)
+    if (!result.removed) {
+      if (result.reason === 'has_refunds') {
+        return NextResponse.json(
+          { error: 'Cannot delete a payment that has refunds. Remove or void the refunds first.' },
+          { status: 409 }
+        )
+      }
+      return NextResponse.json({ error: 'Payment not found' }, { status: 404 })
+    }
+
+    await prisma.auditLog.create({
+      data: {
+        tenantId: user.tenantId,
+        userId: user.id,
+        action: 'DELETE',
+        entityType: 'Payment',
+        entityId: params.id,
+        ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || undefined,
+        userAgent: request.headers.get('user-agent') || undefined,
+        changes: {
+          invoiceId: payment.invoice.id,
+          invoiceNumber: payment.invoice.invoiceNumber,
+          amount: Number(payment.amount),
+          method: payment.method,
+          provider: payment.provider,
+          reference: payment.reference,
+        },
+      },
+    })
+
+    try {
+      await enqueueQboSync(user.tenantId, 'invoice', payment.invoice.id)
+    } catch (error) {
+      console.error('QuickBooks sync trigger error (delete payment):', error)
+    }
+
+    return NextResponse.json({
+      ok: true,
+      paymentId: params.id,
+      invoice: result.invoice,
+    })
+  } catch (error) {
+    console.error('Delete payment error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

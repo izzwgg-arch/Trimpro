@@ -4,7 +4,6 @@ import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { getPaginationParams, createPaginationResponse } from '@/lib/pagination'
 import { validateRequest, createJobSchema } from '@/lib/validation'
-import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { isMobileRequest, requireMobilePermission, hasMobilePermission } from '@/lib/authorization'
 import { jobRecordJobSiteAddressSearchClauses } from '@/lib/search/job-site-address'
 import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
@@ -161,14 +160,13 @@ export async function GET(request: NextRequest) {
 
         if (scheduled === 'false') {
           where.scheduledStart = null
+        } else if (startDate || endDate) {
+          where.createdAt = {
+            ...(startDate ? { gte: new Date(startDate) } : {}),
+            ...(endDate ? { lte: new Date(`${endDate}T23:59:59.999`) } : {}),
+          }
         } else if (scheduled === 'true') {
           where.scheduledStart = { not: null }
-          if (startDate || endDate) {
-            where.scheduledStart = {
-              ...(startDate ? { gte: new Date(startDate) } : {}),
-              ...(endDate ? { lte: new Date(endDate) } : {}),
-            }
-          }
         }
 
         if (crewId) {
@@ -288,14 +286,13 @@ export async function GET(request: NextRequest) {
 
     if (scheduled === 'false') {
       where.scheduledStart = null
+    } else if (startDate || endDate) {
+      where.createdAt = {
+        ...(startDate ? { gte: new Date(startDate) } : {}),
+        ...(endDate ? { lte: new Date(`${endDate}T23:59:59.999`) } : {}),
+      }
     } else if (scheduled === 'true') {
       where.scheduledStart = { not: null }
-      if (startDate || endDate) {
-        where.scheduledStart = {
-          ...(startDate ? { gte: new Date(startDate) } : {}),
-          ...(endDate ? { lte: new Date(endDate) } : {}),
-        }
-      }
     }
 
     if (crewId) {
@@ -496,12 +493,6 @@ export async function POST(request: NextRequest) {
         },
       },
     })
-
-    try {
-      await enqueueQboSync(user.tenantId, 'job', job.id)
-    } catch (error) {
-      console.error('QuickBooks job/project sync trigger error:', error)
-    }
 
     return NextResponse.json({ job }, { status: 201 })
   } catch (error) {

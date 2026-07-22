@@ -19,9 +19,21 @@ export function JobCard({
   hasNewMedia?: boolean
   hasOpenIssue?: boolean
 }) {
-  const scheduleText = job.scheduledStart
-    ? new Date(job.scheduledStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    : 'No schedule'
+  const scheduleText = job.createdAt
+    ? `Created ${new Date(job.createdAt).toLocaleDateString([], {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })}`
+    : job.scheduledStart
+      ? new Date(job.scheduledStart).toLocaleString([], {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        })
+      : 'No date'
 
   const address = job.address?.street
     ? `${job.address.street}, ${job.address.city || ''} ${job.address.state || ''}`.trim()

@@ -656,16 +656,9 @@ export async function POST(request: NextRequest) {
             jobTypeForCreate = resolved.jobType
           }
         }
-        const { job, created } = await ensureJobFromInvoice(invoice.id, {
+        await ensureJobFromInvoice(invoice.id, {
           jobType: jobTypeForCreate,
         })
-        if (created && job) {
-          try {
-            await enqueueQboSync(user.tenantId, 'job', job.id, { processImmediately: false })
-          } catch (qboErr) {
-            console.error('QuickBooks job/project sync trigger error (invoice create):', qboErr)
-          }
-        }
       } catch (jobErr) {
         // Job creation failure must not fail the invoice — log and continue.
         console.error('Failed to auto-create job from invoice creation:', jobErr)

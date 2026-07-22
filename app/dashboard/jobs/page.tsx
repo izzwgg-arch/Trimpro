@@ -13,7 +13,7 @@ import { RowDetailedItem } from '@/components/lists/RowDetailedItem'
 import { TableView } from '@/components/lists/TableView'
 import { PaginationControls } from '@/components/ui/PaginationControls'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { Plus, Search, Filter, Briefcase, Calendar, DollarSign, Trash2, Copy } from 'lucide-react'
+import { Plus, Search, Filter, Briefcase, Calendar, DollarSign, Trash2, Copy, MapPin } from 'lucide-react'
 import Link from 'next/link'
 import { useDocumentListAccess } from '@/hooks/useDocumentListAccess'
 import { CreateOnlyAccessCard } from '@/components/permissions/CreateOnlyAccessCard'
@@ -33,6 +33,7 @@ interface Job {
   priority: number
   scheduledStart: string | null
   scheduledEnd: string | null
+  createdAt: string
   estimateAmount: string | null
   totalCost?: string | null
   openInvoiceBalance?: string
@@ -43,6 +44,13 @@ interface Job {
     name: string
     companyName: string | null
   }
+  addresses?: Array<{
+    id: string
+    street: string
+    city: string
+    state: string
+    zipCode: string
+  }>
   assignments: Array<{
     id: string
     role: string | null
@@ -66,6 +74,21 @@ const priorityLabels: Record<number, string> = {
   5: 'High',
 }
 
+function formatJobSiteAddress(job: Job): string | null {
+  const address = job.addresses?.[0]
+  if (!address) return null
+  const line = [address.street, address.city, address.state, address.zipCode]
+    .map((part) => String(part || '').trim())
+    .filter(Boolean)
+    .join(', ')
+  return line || null
+}
+
+function formatJobCreatedDate(job: Job): string {
+  if (!job.createdAt) return 'No date'
+  return formatDate(job.createdAt)
+}
+
 export default function JobsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -77,6 +100,8 @@ export default function JobsPage() {
   const debouncedSearch = useDebouncedValue(search, 300)
   const [status, setStatus] = useState('all')
   const [jobType, setJobType] = useState('all')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
@@ -94,13 +119,13 @@ export default function JobsPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [debouncedSearch, status, jobType])
+  }, [debouncedSearch, status, jobType, startDate, endDate])
 
   useEffect(() => {
     if (permissionsLoading) return
     fetchJobs()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch, status, jobType, page, permissionsLoading, canViewList])
+  }, [debouncedSearch, status, jobType, startDate, endDate, page, permissionsLoading, canViewList])
 
   const fetchJobs = async () => {
     if (!canViewList) {
@@ -120,6 +145,8 @@ export default function JobsPage() {
         page: String(page),
         limit: '50',
       })
+      if (startDate) params.set('startDate', startDate)
+      if (endDate) params.set('endDate', endDate)
 
       const response = await fetch(`/api/jobs?${params}`, {
         headers: {
@@ -282,8 +309,8 @@ export default function JobsPage() {
         <>
       {/* Search and Filters */}
       <Card>
-        <CardContent className="pt-6">
-          <div className="flex items-center space-x-4">
+        <CardContent className="pt-6 space-y-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               <Input
@@ -293,7 +320,7 @@ export default function JobsPage() {
                 className="pl-10"
               />
             </div>
-            <div className="flex items-center space-x-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Filter className="h-4 w-4 text-gray-400" />
               <Select value={status} onValueChange={setStatus}>
                 <SelectTrigger className="w-[220px] text-sm">
@@ -323,6 +350,44 @@ export default function JobsPage() {
                 </SelectContent>
               </Select>
             </div>
+          </div>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Calendar className="h-4 w-4" />
+              <span>Created</span>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">From</label>
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="w-[160px]"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">To</label>
+              <Input
+                type="date"
+                value={endDate}
+                min={startDate || undefined}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="w-[160px]"
+              />
+            </div>
+            {(startDate || endDate) && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setStartDate('')
+                  setEndDate('')
+                }}
+              >
+                Clear dates
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -388,15 +453,13 @@ export default function JobsPage() {
                   )}
                   
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    {job.scheduledStart && (
-                      <div className="flex items-center text-gray-600">
-                        <Calendar className="mr-2 h-4 w-4 text-gray-400" />
-                        <div>
-                          <p className="text-xs text-gray-500">Scheduled</p>
-                          <p className="font-medium">{formatDate(job.scheduledStart)}</p>
-                        </div>
+                    <div className="flex items-center text-gray-600">
+                      <Calendar className="mr-2 h-4 w-4 text-gray-400 shrink-0" />
+                      <div>
+                        <p className="text-xs text-gray-500">Created</p>
+                        <p className="font-medium">{formatJobCreatedDate(job)}</p>
                       </div>
-                    )}
+                    </div>
                     {job.estimateAmount && (
                       <div className="flex items-center text-gray-600">
                         <DollarSign className="mr-2 h-4 w-4 text-gray-400" />
@@ -413,6 +476,14 @@ export default function JobsPage() {
                     <div>
                       <p className="text-xs text-gray-500">Crew</p>
                       <p className="font-medium text-gray-700">{job.assignments.length} assigned</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2 text-sm text-gray-600">
+                    <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                    <div>
+                      <p className="text-xs text-gray-500">Site address</p>
+                      <p className="font-medium">{formatJobSiteAddress(job) || 'No site address'}</p>
                     </div>
                   </div>
 
@@ -508,7 +579,13 @@ export default function JobsPage() {
               <RowCompactItem
                 href={`/dashboard/jobs/${job.id}`}
                 primary={`${job.jobNumber} - ${job.title}`}
-                secondary={`${job.client.name} | Client Open: ${formatCurrency(parseFloat(job.clientOpenInvoiceBalance || '0'))}`}
+                secondary={[
+                  job.client.name,
+                  formatJobSiteAddress(job),
+                  `Client Open: ${formatCurrency(parseFloat(job.clientOpenInvoiceBalance || '0'))}`,
+                ]
+                  .filter(Boolean)
+                  .join(' | ')}
                 status={
                   <div className="flex items-center gap-2">
                     <JobTypeBadge jobType={job.jobType} />
@@ -523,7 +600,7 @@ export default function JobsPage() {
                   </div>
                 }
                 amount={job.totalCost ? formatCurrency(parseFloat(job.totalCost)) : (job.estimateAmount ? formatCurrency(parseFloat(job.estimateAmount)) : '-')}
-                date={`Open: ${formatCurrency(parseFloat(job.openInvoiceBalance || '0'))}`}
+                date={formatJobCreatedDate(job)}
                 className="pl-10"
               />
             </div>
@@ -557,9 +634,16 @@ export default function JobsPage() {
                     />
                   </div>
                 }
-                line2={`${job.client.name} | Priority ${priorityLabels[job.priority] || 'Medium'} | Client Open ${formatCurrency(parseFloat(job.clientOpenInvoiceBalance || '0'))}`}
+                line2={[
+                  job.client.name,
+                  formatJobSiteAddress(job),
+                  `Priority ${priorityLabels[job.priority] || 'Medium'}`,
+                  `Client Open ${formatCurrency(parseFloat(job.clientOpenInvoiceBalance || '0'))}`,
+                ]
+                  .filter(Boolean)
+                  .join(' | ')}
                 rightTop={job.totalCost ? formatCurrency(parseFloat(job.totalCost)) : (job.estimateAmount ? formatCurrency(parseFloat(job.estimateAmount)) : '-')}
-                rightBottom={`Job Open ${formatCurrency(parseFloat(job.openInvoiceBalance || '0'))}`}
+                rightBottom={`${formatJobCreatedDate(job)} · Job Open ${formatCurrency(parseFloat(job.openInvoiceBalance || '0'))}`}
                 className="pl-10"
               />
             </div>
@@ -598,6 +682,18 @@ export default function JobsPage() {
               header: 'Client',
               sortValue: (job) => job.client.name,
               render: (job) => job.client.name,
+            },
+            {
+              key: 'site',
+              header: 'Site',
+              sortValue: (job) => formatJobSiteAddress(job) || '',
+              render: (job) => formatJobSiteAddress(job) || '—',
+            },
+            {
+              key: 'scheduled',
+              header: 'Created',
+              sortValue: (job) => job.createdAt || '',
+              render: (job) => formatJobCreatedDate(job),
             },
             {
               key: 'jobType',

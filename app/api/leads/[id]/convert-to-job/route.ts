@@ -226,12 +226,6 @@ export async function POST(
       }
     }
 
-    try {
-      await enqueueQboSync(user.tenantId, 'job', job.id)
-    } catch (error) {
-      console.error('QuickBooks job/project sync trigger error (request convert-to-job):', error)
-    }
-
     return NextResponse.json({ job }, { status: 201 })
   } catch (error) {
     console.error('Convert request to job error:', error)

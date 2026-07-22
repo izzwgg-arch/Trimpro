@@ -30,6 +30,7 @@ export interface Job {
   priority: string | number
   scheduledStart: string | null
   scheduledEnd: string | null
+  createdAt?: string | null
   actualStart?: string | null
   actualEnd?: string | null
   estimateAmount?: string | null
