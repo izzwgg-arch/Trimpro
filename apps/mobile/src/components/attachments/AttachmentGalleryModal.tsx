@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Modal,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -11,10 +10,8 @@ import {
 import { Ionicons } from '@expo/vector-icons'
 import { Audio, ResizeMode, Video } from 'expo-av'
 import { WebView } from 'react-native-webview'
-import * as FileSystem from 'expo-file-system/legacy'
 import { ImageMarkupWebView } from './ImageMarkupWebView'
 import {
-  downloadAttachmentToCache,
   getAttachmentKind,
   normalizeAttachmentUrl,
   openAttachment,
@@ -63,7 +60,6 @@ export function AttachmentGalleryModal({
   const kind = current ? getAttachmentKind(current.mimeType, current.fileName) : 'other'
   const canNavigate = total > 1
   const [opening, setOpening] = useState(false)
-  const [pdfUri, setPdfUri] = useState<string | null>(null)
   const [pdfLoading, setPdfLoading] = useState(false)
   const [pdfError, setPdfError] = useState<string | null>(null)
   const soundRef = useRef<Audio.Sound | null>(null)
@@ -101,51 +97,28 @@ export function AttachmentGalleryModal({
     }
   }, [visible, kind, url, current?.id])
 
+  // Android WebView can render PDFs from https://, but not from content:// / file://.
+  // Probe the remote URL; if it fails, show Open button (system viewer).
   useEffect(() => {
     let cancelled = false
-    setPdfUri(null)
     setPdfError(null)
-    if (!visible || kind !== 'pdf' || !current || !url) {
+    if (!visible || kind !== 'pdf' || !url) {
       setPdfLoading(false)
       return
     }
 
     setPdfLoading(true)
-    void (async () => {
-      try {
-        const downloaded = await downloadAttachmentToCache({
-          url: current.url,
-          fileName: current.fileName,
-          mimeType: current.mimeType || 'application/pdf',
-        })
-        let viewerUri = downloaded.localUri
-        if (Platform.OS === 'android') {
-          viewerUri = await FileSystem.getContentUriAsync(downloaded.localUri)
-        }
-        if (cancelled) return
-        setPdfUri(viewerUri)
-      } catch (error: any) {
-        if (cancelled) return
-        setPdfError(error?.message || 'Could not load PDF')
-      } finally {
-        if (!cancelled) setPdfLoading(false)
-      }
-    })()
+    const timer = setTimeout(() => {
+      if (!cancelled) setPdfLoading(false)
+    }, 1200)
 
     return () => {
       cancelled = true
+      clearTimeout(timer)
     }
-  }, [visible, kind, url, current?.id, current?.url, current?.fileName, current?.mimeType])
+  }, [visible, kind, url, current?.id])
 
-  useEffect(() => {
-    if (!visible || kind !== 'other' || !current) return
-    void openAttachment({
-      url: current.url,
-      fileName: current.fileName,
-      mimeType: current.mimeType,
-    })
-  }, [visible, kind, current?.id, current?.url, current?.fileName, current?.mimeType])
-
+  // Do not auto-open non-previewable docs — wait for explicit Open tap.
   const goPrev = () => {
     if (!canNavigate) return
     onIndexChange((safeIndex - 1 + total) % total)
@@ -231,28 +204,40 @@ export function AttachmentGalleryModal({
                 <ActivityIndicator color="#fff" size="large" />
                 <Text style={[styles.meta, { marginTop: 12 }]}>Loading PDF…</Text>
               </View>
-            ) : pdfUri ? (
-              <WebView
-                key={`${current.id}-${pdfUri}`}
-                source={{ uri: pdfUri }}
-                style={styles.fill}
-                originWhitelist={['*']}
-                allowFileAccess
-                allowUniversalAccessFromFileURLs
-                mixedContentMode="always"
-                setSupportMultipleWindows={false}
-                startInLoadingState
-                renderLoading={() => (
-                  <View style={styles.loading}>
-                    <ActivityIndicator color="#fff" />
+            ) : url ? (
+              <View style={styles.fill}>
+                <WebView
+                  key={`${current.id}-${url}`}
+                  source={{ uri: url }}
+                  style={styles.fill}
+                  originWhitelist={['*']}
+                  allowFileAccess
+                  allowUniversalAccessFromFileURLs
+                  mixedContentMode="always"
+                  setSupportMultipleWindows={false}
+                  startInLoadingState
+                  onError={() => setPdfError('PDF preview failed. Tap Open to use a viewer app.')}
+                  onHttpError={() => setPdfError('PDF preview failed. Tap Open to use a viewer app.')}
+                  renderLoading={() => (
+                    <View style={styles.loading}>
+                      <ActivityIndicator color="#fff" />
+                    </View>
+                  )}
+                />
+                {pdfError ? (
+                  <View style={styles.pdfFallback}>
+                    <Text style={styles.meta}>{pdfError}</Text>
+                    <Pressable style={styles.primaryBtn} onPress={onOpenExternal} disabled={opening}>
+                      <Text style={styles.primaryBtnText}>{opening ? 'Opening…' : 'Open in Viewer App'}</Text>
+                    </Pressable>
                   </View>
-                )}
-              />
+                ) : null}
+              </View>
             ) : (
               <View style={styles.centerCard}>
                 <Ionicons name="document-outline" size={48} color="#fff" />
                 <Text style={styles.centerTitle}>{current.fileName}</Text>
-                <Text style={styles.meta}>{pdfError || 'PDF preview unavailable on this device.'}</Text>
+                <Text style={styles.meta}>PDF preview unavailable on this device.</Text>
                 <Pressable style={styles.primaryBtn} onPress={onOpenExternal} disabled={opening}>
                   <Text style={styles.primaryBtnText}>{opening ? 'Opening…' : 'Open in Viewer App'}</Text>
                 </Pressable>
@@ -345,5 +330,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#000',
+  },
+  pdfFallback: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 24,
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.75)',
   },
 })

@@ -30,6 +30,13 @@ const MIME_MAP: Record<string, string> = {
   amr: 'audio/amr',
   '3gp': 'audio/3gpp',
   '3g2': 'video/3gpp2',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  rtf: 'application/rtf',
 }
 
 function getMime(filename: string, request?: NextRequest): string {

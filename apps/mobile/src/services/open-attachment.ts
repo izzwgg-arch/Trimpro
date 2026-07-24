@@ -3,11 +3,14 @@ import * as FileSystem from 'expo-file-system/legacy'
 import * as IntentLauncher from 'expo-intent-launcher'
 import * as Sharing from 'expo-sharing'
 import { API_BASE_URL } from '../config/env'
+import { getAccessToken } from '../auth/secure-storage'
 
 const MEDIA_BASE_URL = API_BASE_URL || 'https://app.trimprony.com'
 
-/** FLAG_GRANT_READ_URI_PERMISSION | FLAG_ACTIVITY_NEW_TASK */
-const ANDROID_VIEW_FLAGS = 1 | 268435456
+/** FLAG_GRANT_READ_URI_PERMISSION */
+const FLAG_GRANT_READ = 1
+/** FLAG_ACTIVITY_NEW_TASK */
+const FLAG_NEW_TASK = 268435456
 
 const EXT_BY_MIME: Record<string, string> = {
   'application/pdf': 'pdf',
@@ -116,7 +119,7 @@ export async function downloadAttachmentToCache(options: {
   url: string
   fileName?: string | null
   mimeType?: string | null
-}): Promise<{ localUri: string; mimeType: string; fileName: string }> {
+}): Promise<{ localUri: string; mimeType: string; fileName: string; remoteUrl: string }> {
   const url = normalizeAttachmentUrl(options.url)
   if (!url) throw new Error('This attachment has no download URL.')
   const mimeType = inferMimeType(options.mimeType, options.fileName)
@@ -125,7 +128,16 @@ export async function downloadAttachmentToCache(options: {
     mimeType
   )
   const target = `${FileSystem.cacheDirectory}${Date.now()}-${fileName}`
-  const result = await FileSystem.downloadAsync(url, target)
+
+  const headers: Record<string, string> = {}
+  try {
+    const token = await getAccessToken()
+    if (token) headers.Authorization = `Bearer ${token}`
+  } catch {
+    // Public /uploads paths work without auth.
+  }
+
+  const result = await FileSystem.downloadAsync(url, target, { headers })
   if (result.status && result.status >= 400) {
     throw new Error(`Download failed (${result.status})`)
   }
@@ -133,15 +145,17 @@ export async function downloadAttachmentToCache(options: {
   if (!info.exists || (typeof info.size === 'number' && info.size <= 0)) {
     throw new Error('Downloaded file was empty.')
   }
-  return { localUri: result.uri, mimeType, fileName }
+  return { localUri: result.uri, mimeType, fileName, remoteUrl: url }
 }
 
 async function openAndroidContentUri(contentUri: string, mimeType: string): Promise<boolean> {
   const attempts: Array<{ type?: string; flags: number }> = [
-    { type: mimeType, flags: ANDROID_VIEW_FLAGS },
-    { flags: ANDROID_VIEW_FLAGS },
-    { type: mimeType, flags: 1 },
-    { flags: 1 },
+    // Most reliable for FileProvider: grant read only (matches Expo docs / SO).
+    { type: mimeType, flags: FLAG_GRANT_READ },
+    { type: mimeType, flags: FLAG_GRANT_READ | FLAG_NEW_TASK },
+    { flags: FLAG_GRANT_READ },
+    { type: '*/*', flags: FLAG_GRANT_READ },
+    { type: mimeType, flags: FLAG_NEW_TASK },
   ]
 
   for (const attempt of attempts) {
@@ -159,9 +173,21 @@ async function openAndroidContentUri(contentUri: string, mimeType: string): Prom
   return false
 }
 
+async function openRemoteInBrowser(url: string): Promise<boolean> {
+  if (!/^https?:\/\//i.test(url)) return false
+  try {
+    const canOpen = await Linking.canOpenURL(url)
+    if (!canOpen) return false
+    await Linking.openURL(url)
+    return true
+  } catch {
+    return false
+  }
+}
+
 /**
  * Open an attachment with a system viewer (PDF/Office/images/etc).
- * Downloads first, then uses Android VIEW intent or the share sheet.
+ * Downloads first, then uses Android VIEW intent, browser, or share sheet.
  */
 export async function openAttachment(options: {
   url: string
@@ -174,13 +200,26 @@ export async function openAttachment(options: {
     return
   }
 
+  const kind = getAttachmentKind(options.mimeType, options.fileName)
+
   try {
+    // PDFs: Chrome/WebView often opens https URLs better than local content://.
+    if (kind === 'pdf') {
+      const openedRemote = await openRemoteInBrowser(url)
+      if (openedRemote) return
+    }
+
     const { localUri, mimeType, fileName } = await downloadAttachmentToCache(options)
 
     if (Platform.OS === 'android') {
       const contentUri = await FileSystem.getContentUriAsync(localUri)
       const opened = await openAndroidContentUri(contentUri, mimeType)
       if (opened) return
+    }
+
+    if (Platform.OS === 'ios') {
+      const openedRemote = await openRemoteInBrowser(url)
+      if (openedRemote) return
     }
 
     if (await Sharing.isAvailableAsync()) {
@@ -192,11 +231,8 @@ export async function openAttachment(options: {
       return
     }
 
-    const canOpen = await Linking.canOpenURL(url)
-    if (canOpen) {
-      await Linking.openURL(url)
-      return
-    }
+    const openedFallback = await openRemoteInBrowser(url)
+    if (openedFallback) return
 
     Alert.alert(
       'Unable to open file',
@@ -204,14 +240,12 @@ export async function openAttachment(options: {
     )
   } catch (error: any) {
     const detail = error?.message || 'Unknown error'
-    try {
-      await Linking.openURL(url)
-    } catch {
-      Alert.alert(
-        'Unable to open file',
-        `${detail}\n\nInstall a PDF/Office viewer and try again.`
-      )
-    }
+    const openedRemote = await openRemoteInBrowser(url)
+    if (openedRemote) return
+    Alert.alert(
+      'Unable to open file',
+      `${detail}\n\nInstall a PDF/Office viewer and try again.`
+    )
   }
 }
 

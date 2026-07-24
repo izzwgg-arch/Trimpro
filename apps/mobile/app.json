@@ -35,7 +35,7 @@
     },
     "android": {
       "package": "com.trimpro.field",
-      "versionCode": 14,
+      "versionCode": 15,
       "softwareKeyboardLayoutMode": "pan",
       "googleServicesFile": "./google-services.json",
       "notification": {
@@ -62,7 +62,8 @@
     "plugins": [
       "expo-secure-store",
       "expo-notifications",
-      "expo-font"
+      "expo-font",
+      "./plugins/withAndroidViewerQueries.js"
     ],
     "extra": {
       "eas": {
