@@ -150,12 +150,10 @@ export async function downloadAttachmentToCache(options: {
 
 async function openAndroidContentUri(contentUri: string, mimeType: string): Promise<boolean> {
   const attempts: Array<{ type?: string; flags: number }> = [
-    // Most reliable for FileProvider: grant read only (matches Expo docs / SO).
     { type: mimeType, flags: FLAG_GRANT_READ },
     { type: mimeType, flags: FLAG_GRANT_READ | FLAG_NEW_TASK },
     { flags: FLAG_GRANT_READ },
     { type: '*/*', flags: FLAG_GRANT_READ },
-    { type: mimeType, flags: FLAG_NEW_TASK },
   ]
 
   for (const attempt of attempts) {
@@ -173,21 +171,9 @@ async function openAndroidContentUri(contentUri: string, mimeType: string): Prom
   return false
 }
 
-async function openRemoteInBrowser(url: string): Promise<boolean> {
-  if (!/^https?:\/\//i.test(url)) return false
-  try {
-    const canOpen = await Linking.canOpenURL(url)
-    if (!canOpen) return false
-    await Linking.openURL(url)
-    return true
-  } catch {
-    return false
-  }
-}
-
 /**
- * Open an attachment with a system viewer (PDF/Office/images/etc).
- * Downloads first, then uses Android VIEW intent, browser, or share sheet.
+ * Open an attachment with a system viewer.
+ * Prefer the Android share/"Open with" sheet — it is the most reliable path.
  */
 export async function openAttachment(options: {
   url: string
@@ -200,28 +186,10 @@ export async function openAttachment(options: {
     return
   }
 
-  const kind = getAttachmentKind(options.mimeType, options.fileName)
-
   try {
-    // PDFs: Chrome/WebView often opens https URLs better than local content://.
-    if (kind === 'pdf') {
-      const openedRemote = await openRemoteInBrowser(url)
-      if (openedRemote) return
-    }
-
     const { localUri, mimeType, fileName } = await downloadAttachmentToCache(options)
 
-    if (Platform.OS === 'android') {
-      const contentUri = await FileSystem.getContentUriAsync(localUri)
-      const opened = await openAndroidContentUri(contentUri, mimeType)
-      if (opened) return
-    }
-
-    if (Platform.OS === 'ios') {
-      const openedRemote = await openRemoteInBrowser(url)
-      if (openedRemote) return
-    }
-
+    // 1) Share / Open-with sheet (most reliable on Android + iOS)
     if (await Sharing.isAvailableAsync()) {
       await Sharing.shareAsync(localUri, {
         mimeType,
@@ -231,8 +199,18 @@ export async function openAttachment(options: {
       return
     }
 
-    const openedFallback = await openRemoteInBrowser(url)
-    if (openedFallback) return
+    // 2) Android VIEW intent
+    if (Platform.OS === 'android') {
+      const contentUri = await FileSystem.getContentUriAsync(localUri)
+      const opened = await openAndroidContentUri(contentUri, mimeType)
+      if (opened) return
+    }
+
+    // 3) Browser fallback for public https URLs
+    if (/^https?:\/\//i.test(url)) {
+      await Linking.openURL(url)
+      return
+    }
 
     Alert.alert(
       'Unable to open file',
@@ -240,12 +218,15 @@ export async function openAttachment(options: {
     )
   } catch (error: any) {
     const detail = error?.message || 'Unknown error'
-    const openedRemote = await openRemoteInBrowser(url)
-    if (openedRemote) return
-    Alert.alert(
-      'Unable to open file',
-      `${detail}\n\nInstall a PDF/Office viewer and try again.`
-    )
+    try {
+      if (/^https?:\/\//i.test(url)) {
+        await Linking.openURL(url)
+        return
+      }
+    } catch {
+      // fall through
+    }
+    Alert.alert('Unable to open file', `${detail}\n\nInstall a PDF/Office viewer and try again.`)
   }
 }
 

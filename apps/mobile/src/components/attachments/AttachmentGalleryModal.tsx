@@ -9,8 +9,8 @@ import {
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { Audio, ResizeMode, Video } from 'expo-av'
-import { WebView } from 'react-native-webview'
 import { ImageMarkupWebView } from './ImageMarkupWebView'
+import { PdfJsWebView } from './PdfJsWebView'
 import {
   getAttachmentKind,
   normalizeAttachmentUrl,
@@ -60,8 +60,6 @@ export function AttachmentGalleryModal({
   const kind = current ? getAttachmentKind(current.mimeType, current.fileName) : 'other'
   const canNavigate = total > 1
   const [opening, setOpening] = useState(false)
-  const [pdfLoading, setPdfLoading] = useState(false)
-  const [pdfError, setPdfError] = useState<string | null>(null)
   const soundRef = useRef<Audio.Sound | null>(null)
 
   useEffect(() => {
@@ -97,28 +95,6 @@ export function AttachmentGalleryModal({
     }
   }, [visible, kind, url, current?.id])
 
-  // Android WebView can render PDFs from https://, but not from content:// / file://.
-  // Probe the remote URL; if it fails, show Open button (system viewer).
-  useEffect(() => {
-    let cancelled = false
-    setPdfError(null)
-    if (!visible || kind !== 'pdf' || !url) {
-      setPdfLoading(false)
-      return
-    }
-
-    setPdfLoading(true)
-    const timer = setTimeout(() => {
-      if (!cancelled) setPdfLoading(false)
-    }, 1200)
-
-    return () => {
-      cancelled = true
-      clearTimeout(timer)
-    }
-  }, [visible, kind, url, current?.id])
-
-  // Do not auto-open non-previewable docs — wait for explicit Open tap.
   const goPrev = () => {
     if (!canNavigate) return
     onIndexChange((safeIndex - 1 + total) % total)
@@ -163,7 +139,7 @@ export function AttachmentGalleryModal({
             ) : (
               <>
                 <Ionicons name="open-outline" size={16} color="#fff" />
-                <Text style={styles.headerBtnText}>Open</Text>
+                <Text style={styles.headerBtnText}>Open with…</Text>
               </>
             )}
           </Pressable>
@@ -196,60 +172,24 @@ export function AttachmentGalleryModal({
             <View style={styles.centerCard}>
               <Ionicons name="musical-notes-outline" size={48} color="#fff" />
               <Text style={styles.centerTitle}>{current.fileName}</Text>
-              <Text style={styles.meta}>Playing audio… Use Open to share/download.</Text>
+              <Text style={styles.meta}>Playing audio… Use Open with… to share/download.</Text>
             </View>
           ) : kind === 'pdf' ? (
-            pdfLoading ? (
-              <View style={styles.loading}>
-                <ActivityIndicator color="#fff" size="large" />
-                <Text style={[styles.meta, { marginTop: 12 }]}>Loading PDF…</Text>
-              </View>
-            ) : url ? (
-              <View style={styles.fill}>
-                <WebView
-                  key={`${current.id}-${url}`}
-                  source={{ uri: url }}
-                  style={styles.fill}
-                  originWhitelist={['*']}
-                  allowFileAccess
-                  allowUniversalAccessFromFileURLs
-                  mixedContentMode="always"
-                  setSupportMultipleWindows={false}
-                  startInLoadingState
-                  onError={() => setPdfError('PDF preview failed. Tap Open to use a viewer app.')}
-                  onHttpError={() => setPdfError('PDF preview failed. Tap Open to use a viewer app.')}
-                  renderLoading={() => (
-                    <View style={styles.loading}>
-                      <ActivityIndicator color="#fff" />
-                    </View>
-                  )}
-                />
-                {pdfError ? (
-                  <View style={styles.pdfFallback}>
-                    <Text style={styles.meta}>{pdfError}</Text>
-                    <Pressable style={styles.primaryBtn} onPress={onOpenExternal} disabled={opening}>
-                      <Text style={styles.primaryBtnText}>{opening ? 'Opening…' : 'Open in Viewer App'}</Text>
-                    </Pressable>
-                  </View>
-                ) : null}
-              </View>
-            ) : (
-              <View style={styles.centerCard}>
-                <Ionicons name="document-outline" size={48} color="#fff" />
-                <Text style={styles.centerTitle}>{current.fileName}</Text>
-                <Text style={styles.meta}>PDF preview unavailable on this device.</Text>
-                <Pressable style={styles.primaryBtn} onPress={onOpenExternal} disabled={opening}>
-                  <Text style={styles.primaryBtnText}>{opening ? 'Opening…' : 'Open in Viewer App'}</Text>
-                </Pressable>
-              </View>
-            )
+            <PdfJsWebView
+              key={current.id}
+              url={current.url}
+              fileName={current.fileName}
+              mimeType={current.mimeType || 'application/pdf'}
+              onOpenExternal={onOpenExternal}
+              openingExternal={opening}
+            />
           ) : (
             <View style={styles.centerCard}>
               <Ionicons name="document-text-outline" size={48} color="#fff" />
               <Text style={styles.centerTitle}>{current.fileName}</Text>
-              <Text style={styles.meta}>Tap Open to view this file in another app.</Text>
+              <Text style={styles.meta}>Tap Open with… to view this file in another app.</Text>
               <Pressable style={styles.primaryBtn} onPress={onOpenExternal} disabled={opening}>
-                <Text style={styles.primaryBtnText}>{opening ? 'Opening…' : 'Open Document'}</Text>
+                <Text style={styles.primaryBtnText}>{opening ? 'Opening…' : 'Open with…'}</Text>
               </Pressable>
             </View>
           )}
@@ -293,7 +233,6 @@ const styles = StyleSheet.create({
   },
   headerBtnText: { color: '#fff', fontWeight: '700', fontSize: 12 },
   body: { flex: 1, minHeight: 0, backgroundColor: '#000' },
-  fill: { flex: 1, backgroundColor: '#000' },
   video: { width: '100%', height: '100%' },
   empty: { color: '#a1a1aa', textAlign: 'center', marginTop: 40 },
   centerCard: {
@@ -325,21 +264,4 @@ const styles = StyleSheet.create({
   },
   navLeft: { left: 8 },
   navRight: { right: 8 },
-  loading: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#000',
-  },
-  pdfFallback: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    bottom: 24,
-    alignItems: 'center',
-    gap: 8,
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: 'rgba(0,0,0,0.75)',
-  },
 })
