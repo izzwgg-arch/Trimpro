@@ -220,15 +220,15 @@ export async function listJobThreadRecipients(
 }
 
 /**
- * Find or create the JOB_THREAD conversation for a job. Members are the job's
- * current assignees plus the actor plus active ADMIN/OFFICE users (capped).
- * Optional participantIds also get membership (e.g. selected recipients).
+ * Find or create a JOB_THREAD conversation for a job.
+ * Jobs can have multiple named threads (default title: "General").
+ * Members are assignees + ADMIN/OFFICE + actor (+ optional participantIds).
  */
 export async function ensureJobThread(
   tenantId: string,
   jobId: string,
   actorUserId: string,
-  options?: { participantIds?: string[] }
+  options?: { participantIds?: string[]; title?: string | null; conversationId?: string | null }
 ) {
   const job = await prisma.job.findFirst({
     where: { id: jobId, tenantId },
@@ -238,9 +238,38 @@ export async function ensureJobThread(
     throw new Error('Job not found')
   }
 
-  let conversation = await prisma.chatConversation.findFirst({
-    where: { tenantId, type: ChatConversationType.JOB_THREAD, jobId },
-  })
+  const requestedTitle = typeof options?.title === 'string' ? options.title.trim() : ''
+  const title = requestedTitle || 'General'
+  const conversationId =
+    typeof options?.conversationId === 'string' && options.conversationId
+      ? options.conversationId
+      : null
+
+  let conversation = conversationId
+    ? await prisma.chatConversation.findFirst({
+        where: {
+          id: conversationId,
+          tenantId,
+          type: ChatConversationType.JOB_THREAD,
+          jobId,
+        },
+      })
+    : null
+
+  if (!conversation) {
+    conversation = await prisma.chatConversation.findFirst({
+      where: { tenantId, type: ChatConversationType.JOB_THREAD, jobId, title },
+      orderBy: { createdAt: 'asc' },
+    })
+  }
+
+  // Legacy: one unnamed / "Job N" thread from before multi-thread support
+  if (!conversation && title === 'General' && !conversationId) {
+    conversation = await prisma.chatConversation.findFirst({
+      where: { tenantId, type: ChatConversationType.JOB_THREAD, jobId },
+      orderBy: { createdAt: 'asc' },
+    })
+  }
 
   if (!conversation) {
     conversation = await prisma.chatConversation.create({
@@ -248,13 +277,8 @@ export async function ensureJobThread(
         tenantId,
         type: ChatConversationType.JOB_THREAD,
         jobId,
-        title: `Job ${job.jobNumber}`,
+        title,
       },
-    })
-  } else if (conversation.title !== `Job ${job.jobNumber}`) {
-    conversation = await prisma.chatConversation.update({
-      where: { id: conversation.id },
-      data: { title: `Job ${job.jobNumber}` },
     })
   }
 
@@ -293,6 +317,25 @@ export async function ensureJobThread(
   }
 
   return conversation
+}
+
+export async function listJobThreads(tenantId: string, jobId: string) {
+  const job = await prisma.job.findFirst({
+    where: { id: jobId, tenantId },
+    select: { id: true },
+  })
+  if (!job) throw new Error('Job not found')
+
+  return prisma.chatConversation.findMany({
+    where: { tenantId, type: ChatConversationType.JOB_THREAD, jobId },
+    orderBy: [{ lastMessageAt: 'desc' }, { createdAt: 'asc' }],
+    select: {
+      id: true,
+      title: true,
+      lastMessageAt: true,
+      createdAt: true,
+    },
+  })
 }
 
 /**
@@ -334,7 +377,7 @@ export async function getUnreadJobThreadCounts(
         },
       })
       const jobId = conversationToJob.get(conversationId)
-      if (jobId) result.set(jobId, count)
+      if (jobId) result.set(jobId, (result.get(jobId) || 0) + count)
     })
   )
 

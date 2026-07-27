@@ -274,6 +274,27 @@ export default function MessagesPage() {
     }
   }, [selectedThread, fetchAuth])
 
+  const handleDelete = useCallback(async (msg: NormalizedMsg) => {
+    if (!selectedThread || selectedThread.kind !== 'team' || !msg.isMine) return
+    if (!window.confirm('Delete this message for everyone?')) return
+    try {
+      const res = await fetchAuth(`/api/messages/conversations/${selectedThread.id}/messages/${msg.id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'EVERYONE' }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        alert(data.error || 'Failed to delete message')
+        return
+      }
+      setMessages((prev) => prev.filter((m) => m.id !== msg.id))
+      if (replyTarget?.id === msg.id) setReplyTarget(null)
+    } catch {
+      alert('Failed to delete message')
+    }
+  }, [selectedThread, fetchAuth, replyTarget])
+
   // ── SSE for team chats ─────────────────────────────────────────────────────
   useEffect(() => {
     if (!selectedThread || selectedThread.kind !== 'team') return
@@ -577,11 +598,13 @@ export default function MessagesPage() {
                         <MsgBubble
                           msg={msg}
                           showSenderName={showName}
+                          showJobLink={selectedThread.convType !== 'JOB_THREAD'}
                           myId={myId}
                           isHighlighted={highlightedId === msg.id}
                           onReply={handleReply}
                           onToggleReaction={handleToggleReaction}
                           onJumpTo={jumpToMessage}
+                          onDelete={selectedThread.kind === 'team' ? handleDelete : undefined}
                         />
                       </div>
                     </React.Fragment>

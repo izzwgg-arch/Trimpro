@@ -3048,7 +3048,6 @@ model ChatConversation {
   @@index([tenantId, userAId, userBId])
   @@index([tenantId, jobId])
   @@unique([tenantId, type, userAId, userBId])
-  @@unique([tenantId, jobId])
   @@map("chat_conversations")
 }
 

@@ -25,6 +25,13 @@ type Recipient = {
   isAssignee: boolean
 }
 
+type JobThread = {
+  id: string
+  title: string | null
+  lastMessageAt: string | null
+  createdAt: string
+}
+
 type Props = {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -36,14 +43,20 @@ function recipientLabel(r: Recipient) {
   return `${r.firstName || ''} ${r.lastName || ''}`.trim() || r.email
 }
 
+function threadLabel(t: JobThread) {
+  const title = (t.title || '').trim()
+  if (title) return title
+  return 'General'
+}
+
 /**
- * Full job chat popup: same reply / reactions / attachments / voice as Messages,
- * plus a recipient picker for who to notify on send.
+ * Full job chat popup: threads, recipients, reply / reactions / attachments / voice / delete.
  */
 export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props) {
   const router = useRouter()
   const [myId, setMyId] = useState('')
   const [conversationId, setConversationId] = useState<string | null>(null)
+  const [threads, setThreads] = useState<JobThread[]>([])
   const [messages, setMessages] = useState<NormalizedMsg[]>([])
   const [recipients, setRecipients] = useState<Recipient[]>([])
   const [selectedRecipientIds, setSelectedRecipientIds] = useState<string[]>([])
@@ -53,6 +66,9 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
   const [replyTarget, setReplyTarget] = useState<NormalizedMsg | null>(null)
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [newThreadOpen, setNewThreadOpen] = useState(false)
+  const [newThreadTitle, setNewThreadTitle] = useState('')
+  const [creatingThread, setCreatingThread] = useState(false)
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -118,6 +134,47 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
     [fetchAuth]
   )
 
+  const applyEnsurePayload = useCallback(
+    async (data: any, uid: string) => {
+      const id = data.conversationId as string
+      const list: Recipient[] = Array.isArray(data.recipients) ? data.recipients : []
+      const threadList: JobThread[] = Array.isArray(data.threads) ? data.threads : []
+      setConversationId(id)
+      setRecipients(list)
+      setThreads(threadList)
+      setSelectedRecipientIds((prev) => {
+        if (prev.length > 0) {
+          const allowed = new Set(list.map((r) => r.id))
+          const kept = prev.filter((rid) => allowed.has(rid) && rid !== uid)
+          if (kept.length > 0) return kept
+        }
+        return list.map((r) => r.id).filter((rid) => rid !== uid)
+      })
+      if (id) await loadMessages(id, uid)
+    },
+    [loadMessages]
+  )
+
+  const ensureThread = useCallback(
+    async (opts?: { title?: string; conversationId?: string }) => {
+      const res = await fetchAuth('/api/messages/job/ensure', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jobId,
+          title: opts?.title,
+          conversationId: opts?.conversationId,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(typeof data?.error === 'string' ? data.error : 'Failed to open job chat')
+      }
+      return data
+    },
+    [fetchAuth, jobId]
+  )
+
   useEffect(() => {
     if (!open || !jobId || !myId) return
     let cancelled = false
@@ -125,25 +182,11 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
       setLoading(true)
       setError(null)
       try {
-        const res = await fetchAuth('/api/messages/job/ensure', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ jobId }),
-        })
-        const data = await res.json().catch(() => ({}))
+        const data = await ensureThread()
         if (cancelled) return
-        if (!res.ok) {
-          setError(typeof data?.error === 'string' ? data.error : 'Failed to open job chat')
-          return
-        }
-        const id = data.conversationId as string
-        const list: Recipient[] = Array.isArray(data.recipients) ? data.recipients : []
-        setConversationId(id)
-        setRecipients(list)
-        setSelectedRecipientIds(list.map((r) => r.id).filter((rid) => rid !== myId))
-        if (id) await loadMessages(id, myId)
-      } catch {
-        if (!cancelled) setError('Failed to open job chat')
+        await applyEnsurePayload(data, myId)
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message || 'Failed to open job chat')
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -151,15 +194,18 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
     return () => {
       cancelled = true
     }
-  }, [open, jobId, myId, fetchAuth, loadMessages])
+  }, [open, jobId, myId, ensureThread, applyEnsurePayload])
 
   useEffect(() => {
     if (!open) {
       setConversationId(null)
       setMessages([])
+      setThreads([])
       setReplyTarget(null)
       setError(null)
       setPickerOpen(false)
+      setNewThreadOpen(false)
+      setNewThreadTitle('')
     }
   }, [open])
 
@@ -179,10 +225,16 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, open])
 
+  const activeThread = useMemo(
+    () => threads.find((t) => t.id === conversationId) || null,
+    [threads, conversationId]
+  )
+
   const selectedCount = selectedRecipientIds.length
   const selectedSummary = useMemo(() => {
+    const others = recipients.filter((r) => r.id !== myId)
     if (selectedCount === 0) return 'No recipients'
-    if (selectedCount === recipients.filter((r) => r.id !== myId).length) return 'Everyone'
+    if (others.length > 0 && selectedCount === others.length) return 'Everyone'
     if (selectedCount <= 2) {
       return recipients
         .filter((r) => selectedRecipientIds.includes(r.id))
@@ -203,6 +255,38 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
   }
 
   const clearRecipients = () => setSelectedRecipientIds([])
+
+  const switchThread = async (threadId: string) => {
+    if (threadId === conversationId) return
+    setLoading(true)
+    setError(null)
+    setReplyTarget(null)
+    try {
+      const data = await ensureThread({ conversationId: threadId })
+      await applyEnsurePayload(data, myId)
+    } catch (e: any) {
+      setError(e?.message || 'Failed to switch thread')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const createThread = async () => {
+    const title = newThreadTitle.trim()
+    if (!title || creatingThread) return
+    setCreatingThread(true)
+    setError(null)
+    try {
+      const data = await ensureThread({ title })
+      await applyEnsurePayload(data, myId)
+      setNewThreadOpen(false)
+      setNewThreadTitle('')
+    } catch (e: any) {
+      setError(e?.message || 'Failed to create thread')
+    } finally {
+      setCreatingThread(false)
+    }
+  }
 
   const handleReply = useCallback((msg: NormalizedMsg) => {
     if (!msg.canInteract) return
@@ -239,6 +323,33 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
     [conversationId, fetchAuth]
   )
 
+  const handleDelete = useCallback(
+    async (msg: NormalizedMsg) => {
+      if (!conversationId || !msg.isMine) return
+      if (!window.confirm('Delete this message for everyone?')) return
+      try {
+        const res = await fetchAuth(
+          `/api/messages/conversations/${conversationId}/messages/${msg.id}`,
+          {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode: 'EVERYONE' }),
+          }
+        )
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          alert(data.error || 'Failed to delete message')
+          return
+        }
+        setMessages((prev) => prev.filter((m) => m.id !== msg.id))
+        if (replyTarget?.id === msg.id) setReplyTarget(null)
+      } catch {
+        alert('Failed to delete message')
+      }
+    },
+    [conversationId, fetchAuth, replyTarget]
+  )
+
   const handleSend = useCallback(
     async (text: string, media: DraftMedia[], durationMs?: number) => {
       if (!conversationId) return
@@ -268,7 +379,6 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
         body: JSON.stringify({
           text: text || null,
           clientTempId: `job-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-          jobId,
           notifyUserIds: selectedRecipientIds,
           replyToMessageId: replyTarget?.id || null,
           replyToSenderName: replyTarget
@@ -297,28 +407,87 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
       setReplyTarget(null)
       await loadMessages(conversationId, myId)
     },
-    [
-      conversationId,
-      fetchAuth,
-      jobId,
-      loadMessages,
-      myId,
-      replyTarget,
-      selectedRecipientIds,
-    ]
+    [conversationId, fetchAuth, loadMessages, myId, replyTarget, selectedRecipientIds]
   )
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl p-0 gap-0 overflow-hidden flex flex-col max-h-[min(90vh,820px)]">
-        <DialogHeader className="px-4 pt-4 pb-2 border-b space-y-2">
-          <DialogTitle>{jobNumber ? `Job Chat · ${jobNumber}` : 'Job Chat'}</DialogTitle>
-          <p className="text-xs text-muted-foreground font-normal">
-            Assigned crew &amp; office · reply, reactions, attachments &amp; voice
-          </p>
+      <DialogContent className="sm:max-w-4xl w-[min(96vw,920px)] p-0 gap-0 overflow-hidden flex flex-col h-[min(92vh,880px)] max-h-[92vh]">
+        <DialogHeader className="px-5 pt-5 pb-3 border-b space-y-3">
+          <div className="flex items-start justify-between gap-3 pr-8">
+            <div>
+              <DialogTitle>{jobNumber ? `Job Chat · ${jobNumber}` : 'Job Chat'}</DialogTitle>
+              <p className="text-xs text-muted-foreground font-normal mt-1">
+                Multiple threads · pick who to notify · reply, reactions, attachments &amp; voice
+              </p>
+            </div>
+          </div>
+
+          {/* Thread switcher */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 flex-1 min-w-0 overflow-x-auto pb-0.5">
+              {threads.map((t) => {
+                const active = t.id === conversationId
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => void switchThread(t.id)}
+                    className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                      active
+                        ? 'bg-amber-100 border-amber-300 text-amber-900'
+                        : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    {threadLabel(t)}
+                  </button>
+                )
+              })}
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="shrink-0"
+              onClick={() => setNewThreadOpen((v) => !v)}
+            >
+              + New thread
+            </Button>
+          </div>
+
+          {newThreadOpen && (
+            <div className="flex items-center gap-2">
+              <input
+                value={newThreadTitle}
+                onChange={(e) => setNewThreadTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    void createThread()
+                  }
+                }}
+                placeholder="Thread name (e.g. Materials, Punch list)"
+                className="flex-1 rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              />
+              <Button
+                type="button"
+                size="sm"
+                disabled={!newThreadTitle.trim() || creatingThread}
+                onClick={() => void createThread()}
+              >
+                Create
+              </Button>
+            </div>
+          )}
+
+          {activeThread && (
+            <p className="text-[11px] text-muted-foreground">
+              Active thread: <span className="font-medium text-foreground">{threadLabel(activeThread)}</span>
+            </p>
+          )}
 
           {/* Recipient picker */}
-          <div className="relative pt-1">
+          <div className="relative">
             <button
               type="button"
               onClick={() => setPickerOpen((v) => !v)}
@@ -380,7 +549,7 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
           </div>
         </DialogHeader>
 
-        <div className="flex-1 min-h-[320px] overflow-y-auto bg-gray-50 px-3 py-3 space-y-1">
+        <div className="flex-1 min-h-0 overflow-y-auto bg-gray-50 px-4 py-3 space-y-1">
           {loading && !conversationId ? (
             <p className="text-sm text-muted-foreground text-center mt-10">Opening chat…</p>
           ) : error ? (
@@ -392,30 +561,10 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
                 onClick={() => {
                   setError(null)
                   setLoading(true)
-                  void (async () => {
-                    try {
-                      const res = await fetchAuth('/api/messages/job/ensure', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ jobId }),
-                      })
-                      const data = await res.json().catch(() => ({}))
-                      if (!res.ok) {
-                        setError(typeof data?.error === 'string' ? data.error : 'Failed to open job chat')
-                        return
-                      }
-                      const id = data.conversationId as string
-                      const list: Recipient[] = Array.isArray(data.recipients) ? data.recipients : []
-                      setConversationId(id)
-                      setRecipients(list)
-                      setSelectedRecipientIds(list.map((r) => r.id).filter((rid) => rid !== myId))
-                      if (id) await loadMessages(id, myId)
-                    } catch {
-                      setError('Failed to open job chat')
-                    } finally {
-                      setLoading(false)
-                    }
-                  })()
+                  void ensureThread()
+                    .then((data) => applyEnsurePayload(data, myId))
+                    .catch((e: any) => setError(e?.message || 'Failed to open job chat'))
+                    .finally(() => setLoading(false))
                 }}
               >
                 Try again
@@ -448,11 +597,13 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
                   <MsgBubble
                     msg={msg}
                     showSenderName={showName}
+                    showJobLink={false}
                     myId={myId}
                     isHighlighted={highlightedId === msg.id}
                     onReply={handleReply}
                     onToggleReaction={handleToggleReaction}
                     onJumpTo={jumpToMessage}
+                    onDelete={handleDelete}
                   />
                 </div>
               )

@@ -162,17 +162,21 @@ export function MsgBubble({
   showSenderName,
   myId,
   isHighlighted,
+  showJobLink = true,
   onReply,
   onToggleReaction,
   onJumpTo,
+  onDelete,
 }: {
   msg: NormalizedMsg
   showSenderName: boolean
   myId: string
   isHighlighted?: boolean
+  showJobLink?: boolean
   onReply: (msg: NormalizedMsg) => void
   onToggleReaction: (messageId: string, emoji: string) => void
   onJumpTo: (messageId: string) => void
+  onDelete?: (msg: NormalizedMsg) => void
 }) {
   const [pickerOpen, setPickerOpen] = useState(false)
 
@@ -196,7 +200,7 @@ export function MsgBubble({
       }`}
     >
       <div className={`flex items-end gap-1 max-w-[80%] ${msg.isMine ? 'flex-row-reverse' : 'flex-row'}`}>
-        {/* Hover toolbar: reply + react */}
+        {/* Hover toolbar: reply + react + delete */}
         {msg.canInteract && (
           <div className="relative flex items-center gap-0.5 pb-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity flex-shrink-0">
             <button
@@ -215,6 +219,16 @@ export function MsgBubble({
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
             </button>
+            {msg.isMine && onDelete && (
+              <button
+                type="button"
+                title="Delete"
+                onClick={() => onDelete(msg)}
+                className="w-6 h-6 flex items-center justify-center rounded-full text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+              </button>
+            )}
             {pickerOpen && (
               <ReactionPicker
                 onPick={(emoji) => { onToggleReaction(msg.id, emoji); setPickerOpen(false) }}
@@ -246,8 +260,8 @@ export function MsgBubble({
           </button>
         )}
 
-        {/* Job link */}
-        {msg.jobId && (
+        {/* Job link (hidden inside job chat popup) */}
+        {showJobLink && msg.jobId && (
           <a
             href={`/dashboard/jobs/${msg.jobId}`}
             className={`mb-1.5 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-colors ${
