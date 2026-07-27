@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { refreshAccessToken } from '@/lib/auth/client'
 import { smartMatch, scoreHaystack } from '@/lib/search/scoring'
 
@@ -59,7 +59,7 @@ type NormalizedMsg = {
   attachments: MsgAttachment[]
   replyTo?: ReplyInfo
   reactions: ReactionEntry[]
-  canInteract: boolean   // reply/react are only supported on TEAM chat messages today
+  canInteract: boolean   // reply/react supported on internal chats (TEAM / DM / JOB_THREAD)
 }
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏']
@@ -788,15 +788,17 @@ function Composer({
 
 export default function MessagesPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const deepLinkConversationId = searchParams.get('conversationId')
   const [myId, setMyId] = useState('')
   const [threads, setThreads] = useState<UnifiedThread[]>([])
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(deepLinkConversationId)
   const [messages, setMessages] = useState<NormalizedMsg[]>([])
   const [threadsLoading, setThreadsLoading] = useState(true)
   const [msgsLoading, setMsgsLoading] = useState(false)
   const [search, setSearch] = useState('')
 
-  // Reply / reaction state (TEAM messages only)
+  // Reply / reaction state (internal team / DM / job threads)
   const [replyTarget, setReplyTarget] = useState<NormalizedMsg | null>(null)
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
 
@@ -850,6 +852,11 @@ export default function MessagesPage() {
     setThreads(list)
     if (selectFirst && !selectedId && list.length > 0) setSelectedId(list[0].id)
   }, [fetchAuth, selectedId])
+
+  useEffect(() => {
+    if (!deepLinkConversationId) return
+    setSelectedId(deepLinkConversationId)
+  }, [deepLinkConversationId])
 
   useEffect(() => {
     setThreadsLoading(true)
@@ -1207,7 +1214,10 @@ export default function MessagesPage() {
                   // Group consecutive same-sender messages
                   const next = i < messages.length - 1 ? messages[i + 1] : null
                   const isLastInGroup = !next || next.isMine !== msg.isMine
-                  const showName = !msg.isMine && selectedThread.convType === 'TEAM' && (!prev || prev.isMine !== msg.isMine)
+                  const showName =
+                    !msg.isMine &&
+                    (selectedThread.convType === 'TEAM' || selectedThread.convType === 'JOB_THREAD') &&
+                    (!prev || prev.isMine !== msg.isMine)
 
                   return (
                     <React.Fragment key={msg.id}>

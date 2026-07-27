@@ -398,7 +398,8 @@ export function MessageThreadScreen({ route, navigation }: Props) {
             to: '',
             from: user?.id || '',
             body: trimmed,
-            channel: conversationType === 'TEAM' ? 'TEAM' : 'DM',
+            channel:
+              conversationType === 'TEAM' || conversationType === 'JOB_THREAD' ? 'TEAM' : 'DM',
             media: readyAttachments.map((a) => ({
               type: a.kind.toLowerCase(),
               url: a.url!,
@@ -1183,7 +1184,7 @@ export function MessageThreadScreen({ route, navigation }: Props) {
   const conversation = conversationQuery.data?.conversation
   const listedConversation = conversationsQuery.data?.conversations?.find((item) => item.id === conversationId)
   const conversationType = listedConversation?.type || conversation?.type
-  const isTeamChat = conversationType === 'TEAM'
+  const isGroupChat = conversationType === 'TEAM' || conversationType === 'JOB_THREAD'
   const threadTitle = useMemo(() => {
     const normalizeTitle = (value?: string | null) => value?.trim() || ''
     const isPlaceholderTitle = (value: string) =>
@@ -1192,6 +1193,12 @@ export function MessageThreadScreen({ route, navigation }: Props) {
     if (conversationType === 'TEAM') {
       const teamTitle = normalizeTitle(listedConversation?.title) || normalizeTitle(conversation?.title)
       return teamTitle || 'Team Chat'
+    }
+
+    if (conversationType === 'JOB_THREAD') {
+      const jobTitle = normalizeTitle(listedConversation?.title) || normalizeTitle(conversation?.title)
+      if (jobTitle && !isPlaceholderTitle(jobTitle)) return jobTitle
+      return 'Job Thread'
     }
 
     const otherUser = listedConversation?.otherUser
@@ -1204,7 +1211,6 @@ export function MessageThreadScreen({ route, navigation }: Props) {
     const preferredTitle = normalizeTitle(listedConversation?.title) || normalizeTitle(conversation?.title)
     if (preferredTitle && !isPlaceholderTitle(preferredTitle)) return preferredTitle
 
-    if (conversationType === 'JOB_THREAD') return 'Job Thread'
     return 'Direct Message'
   }, [listedConversation, conversation, conversationType])
   const otherUserAvatar = listedConversation?.otherUser?.avatar || null
@@ -1215,7 +1221,7 @@ export function MessageThreadScreen({ route, navigation }: Props) {
         <Pressable onPress={() => navigation.goBack()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
         </Pressable>
-        {isTeamChat ? (
+        {isGroupChat ? (
           <View style={styles.teamAvatarCircle}>
             <Text style={styles.teamAvatarLetter}>{threadTitle.slice(0, 1).toUpperCase()}</Text>
           </View>
@@ -1224,7 +1230,11 @@ export function MessageThreadScreen({ route, navigation }: Props) {
         ) : null}
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>{threadTitle}</Text>
-          {isTeamChat ? <Text style={styles.headerSubtitle}>Group</Text> : null}
+          {isGroupChat ? (
+            <Text style={styles.headerSubtitle}>
+              {conversationType === 'JOB_THREAD' ? 'Job chat' : 'Group'}
+            </Text>
+          ) : null}
         </View>
       </View>
 
@@ -1255,7 +1265,7 @@ export function MessageThreadScreen({ route, navigation }: Props) {
               <MessageBubble
                 message={{ ...(message as ChatMessage), replyTo: resolvedReplyTo } as ChatMessage}
                 isMine={isMine}
-                showSender={isTeamChat && !isMine}
+                showSender={isGroupChat && !isMine}
                 reactionCounts={messageReactions[String(message.id)]}
                 onReaction={(emoji) => applyMessageReaction(String(message.id), emoji)}
                 onSwipeReply={(swipedMessage) => {
