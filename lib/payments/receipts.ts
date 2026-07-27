@@ -354,10 +354,31 @@ export async function generatePaymentReceiptPdfByToken(receiptToken: string) {
   }
 }
 
+function resolveReceiptRecipients(options?: {
+  to?: string
+  emails?: string[] | string
+}): string[] {
+  const fromList = Array.isArray(options?.emails)
+    ? options.emails
+    : splitEmailList(options?.emails || '')
+  const fromTo = splitEmailList(options?.to || '')
+  const seen = new Set<string>()
+  const unique: string[] = []
+  for (const email of [...fromList, ...fromTo]) {
+    const trimmed = String(email || '').trim()
+    if (!trimmed) continue
+    const key = trimmed.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    unique.push(trimmed)
+  }
+  return unique
+}
+
 export async function sendPaymentReceiptForPayment(
   paymentId: string,
   tenantId: string,
-  options?: { to?: string; forceResend?: boolean }
+  options?: { to?: string; emails?: string[] | string; forceResend?: boolean }
 ) {
   const ctx = await loadPaymentReceiptContext(paymentId, tenantId)
   if (!ctx) {
@@ -368,8 +389,16 @@ export async function sendPaymentReceiptForPayment(
     return { sent: false, reason: 'already_sent' as const, receiptUrl: ctx.receiptUrl }
   }
 
-  const to = String(options?.to || '').trim() || ctx.clientEmail || ''
-  if (!to) {
+  const explicitRecipients = resolveReceiptRecipients(options)
+  // Manual sends pass explicit recipients; automatic paths fall back to client email.
+  const recipients =
+    explicitRecipients.length > 0
+      ? explicitRecipients
+      : ctx.clientEmail
+        ? [ctx.clientEmail]
+        : []
+
+  if (recipients.length === 0) {
     await prisma.payment.update({
       where: { id: paymentId },
       data: {
@@ -395,7 +424,7 @@ export async function sendPaymentReceiptForPayment(
 
   try {
     await sendPaymentReceiptEmail({
-      to,
+      to: recipients,
       tenantId,
       recipientName: ctx.clientName,
       invoiceNumber: ctx.invoice.invoiceNumber,
@@ -422,7 +451,12 @@ export async function sendPaymentReceiptForPayment(
       },
     })
 
-    return { sent: true, reason: 'sent' as const, sentTo: to, receiptUrl: ctx.receiptUrl }
+    return {
+      sent: true,
+      reason: 'sent' as const,
+      sentTo: recipients.join(', '),
+      receiptUrl: ctx.receiptUrl,
+    }
   } catch (error: any) {
     await prisma.payment.update({
       where: { id: paymentId },

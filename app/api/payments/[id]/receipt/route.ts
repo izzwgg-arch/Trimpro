@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
-import { requirePermission } from '@/lib/authorization'
-import { isValidEmail } from '@/lib/email'
+import { requireWebOrMobilePermission } from '@/lib/authorization'
+import { isValidEmail, splitEmailList } from '@/lib/email'
 import {
   generatePaymentReceiptPdf,
   sendPaymentReceiptForPayment,
@@ -11,11 +11,33 @@ async function assertReceiptAccess(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return { error: authError }
 
-  const permError = await requirePermission(request, 'payments.view')
+  const permError = await requireWebOrMobilePermission(
+    request,
+    'payments.view',
+    'mobile.jobs.view_documents'
+  )
   if (permError) return { error: permError }
 
   const user = getAuthUser(request)
   return { user }
+}
+
+function parseRecipientEmails(body: any): string[] {
+  const fromEmails = Array.isArray(body?.emails)
+    ? body.emails.flatMap((value: unknown) => splitEmailList(String(value || '')))
+    : splitEmailList(body?.emails)
+  const fromEmail = splitEmailList(body?.email)
+  const seen = new Set<string>()
+  const unique: string[] = []
+  for (const email of [...fromEmails, ...fromEmail]) {
+    const trimmed = String(email || '').trim()
+    if (!trimmed) continue
+    const key = trimmed.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    unique.push(trimmed)
+  }
+  return unique
 }
 
 export async function GET(
@@ -56,14 +78,19 @@ export async function POST(
 
   try {
     const body = await request.json().catch(() => ({}))
-    const email = String(body?.email || '').trim()
+    const emails = parseRecipientEmails(body)
 
-    if (email && !isValidEmail(email)) {
-      return NextResponse.json({ error: 'Invalid email address' }, { status: 400 })
+    if (emails.length === 0) {
+      return NextResponse.json({ error: 'No recipient email address provided' }, { status: 400 })
+    }
+
+    const invalid = emails.find((email) => !isValidEmail(email))
+    if (invalid) {
+      return NextResponse.json({ error: `Invalid email address: ${invalid}` }, { status: 400 })
     }
 
     const result = await sendPaymentReceiptForPayment(params.id, user.tenantId, {
-      to: email || undefined,
+      emails,
       forceResend: true,
     })
 

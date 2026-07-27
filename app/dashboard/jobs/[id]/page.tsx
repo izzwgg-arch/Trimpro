@@ -24,6 +24,7 @@ import {
   Copy,
   Clock,
 } from 'lucide-react'
+import { JobThreadDialog } from '@/components/messages/JobThreadDialog'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
@@ -220,10 +221,14 @@ export default function JobDetailPage() {
   const [documentsError, setDocumentsError] = useState<string | null>(null)
   const [noteText, setNoteText] = useState('')
   const [addingNote, setAddingNote] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [unreadMessages, setUnreadMessages] = useState(0)
+  const [unreadNotes, setUnreadNotes] = useState(0)
 
   useEffect(() => {
     fetchJob()
     fetchDocuments()
+    fetchUnread()
   }, [jobId])
 
   useEffect(() => {
@@ -273,6 +278,30 @@ export default function JobDetailPage() {
       setDocumentsError('Failed to load documents')
     } finally {
       setDocumentsLoading(false)
+    }
+  }
+
+  const fetchUnread = async () => {
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) return
+
+      const notesKey = `job-notes-last-viewed-${jobId}`
+      const notesSince = localStorage.getItem(notesKey) || new Date().toISOString()
+
+      const response = await fetch(
+        `/api/jobs/${jobId}/unread?notesSince=${encodeURIComponent(notesSince)}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      // Mark notes as viewed as of now regardless of fetch outcome, so the
+      // badge reflects only notes added since this page load next time.
+      localStorage.setItem(notesKey, new Date().toISOString())
+      if (!response.ok) return
+      const data = await response.json()
+      setUnreadMessages(Number(data.messages || 0))
+      setUnreadNotes(Number(data.notes || 0))
+    } catch (error) {
+      console.error('Failed to fetch unread counts:', error)
     }
   }
 
@@ -803,6 +832,22 @@ export default function JobDetailPage() {
           </p>
         </div>
         <div className="flex items-center space-x-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              setChatOpen(true)
+              setUnreadMessages(0)
+            }}
+            className="relative"
+          >
+            <MessageSquare className="mr-2 h-4 w-4" />
+            Send Message
+            {unreadMessages > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold bg-red-600 text-white flex items-center justify-center">
+                {unreadMessages > 99 ? '99+' : unreadMessages}
+              </span>
+            )}
+          </Button>
           <Button variant="outline" onClick={handleDuplicate} disabled={duplicating}>
             <Copy className="mr-2 h-4 w-4" />
             {duplicating ? 'Duplicating...' : 'Duplicate'}
@@ -921,7 +966,7 @@ export default function JobDetailPage() {
         loading={documentsLoading}
         error={documentsError}
         description={`${job._count.estimates ?? 0} estimates, ${job._count.invoices ?? 0} invoices, purchase orders, and related payments`}
-        defaultReceiptEmail={primaryContact?.email}
+        receiptClientId={job.client?.id}
         onDocumentsRefresh={fetchDocuments}
         preferencesKey={`documents-job-${jobId}`}
       />
@@ -1280,7 +1325,14 @@ export default function JobDetailPage() {
           {/* Notes */}
           <Card>
             <CardHeader>
-              <CardTitle>Notes</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                Notes
+                {unreadNotes > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-600 text-white text-[11px] font-bold">
+                    {unreadNotes > 99 ? '99+' : unreadNotes} new
+                  </span>
+                )}
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
@@ -1433,6 +1485,16 @@ export default function JobDetailPage() {
           </Card>
         </div>
       </div>
+
+      <JobThreadDialog
+        open={chatOpen}
+        onOpenChange={(next) => {
+          setChatOpen(next)
+          if (!next) setUnreadMessages(0)
+        }}
+        jobId={jobId}
+        jobNumber={job.jobNumber}
+      />
     </div>
   )
 }

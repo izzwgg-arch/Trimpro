@@ -143,6 +143,119 @@ export async function createOrGetDmConversation(tenantId: string, currentUserId:
   return conversation
 }
 
+const JOB_THREAD_MEMBER_CAP = 100
+
+/**
+ * Find or create the JOB_THREAD conversation for a job. Members are the job's
+ * current assignees plus the actor plus active ADMIN/OFFICE users (capped).
+ */
+export async function ensureJobThread(tenantId: string, jobId: string, actorUserId: string) {
+  const job = await prisma.job.findFirst({
+    where: { id: jobId, tenantId },
+    select: { id: true, jobNumber: true, title: true },
+  })
+  if (!job) {
+    throw new Error('Job not found')
+  }
+
+  let conversation = await prisma.chatConversation.findFirst({
+    where: { tenantId, type: ChatConversationType.JOB_THREAD, jobId },
+  })
+
+  if (!conversation) {
+    conversation = await prisma.chatConversation.create({
+      data: {
+        tenantId,
+        type: ChatConversationType.JOB_THREAD,
+        jobId,
+        title: `Job ${job.jobNumber}`,
+      },
+    })
+  } else if (conversation.title !== `Job ${job.jobNumber}`) {
+    conversation = await prisma.chatConversation.update({
+      where: { id: conversation.id },
+      data: { title: `Job ${job.jobNumber}` },
+    })
+  }
+
+  const [assignments, staff] = await Promise.all([
+    prisma.jobAssignment.findMany({
+      where: { jobId },
+      select: { userId: true },
+    }),
+    prisma.user.findMany({
+      where: { tenantId, status: 'ACTIVE', role: { in: ['ADMIN', 'OFFICE'] } },
+      select: { id: true },
+      take: JOB_THREAD_MEMBER_CAP,
+    }),
+  ])
+
+  const memberIds = new Set<string>([
+    actorUserId,
+    ...assignments.map((a) => a.userId),
+    ...staff.map((s) => s.id),
+  ])
+
+  if (memberIds.size > 0) {
+    await prisma.chatConversationMember.createMany({
+      data: Array.from(memberIds).map((userId) => ({
+        tenantId,
+        conversationId: conversation!.id,
+        userId,
+      })),
+      skipDuplicates: true,
+    })
+  }
+
+  return conversation
+}
+
+/**
+ * Number of unread messages (created after the member's lastReadAt) in each
+ * job's JOB_THREAD conversation, scoped to jobs the user is a member of.
+ */
+export async function getUnreadJobThreadCounts(
+  tenantId: string,
+  userId: string,
+  jobIds: string[]
+): Promise<Map<string, number>> {
+  const result = new Map<string, number>()
+  if (jobIds.length === 0) return result
+
+  const conversations = await prisma.chatConversation.findMany({
+    where: { tenantId, type: ChatConversationType.JOB_THREAD, jobId: { in: jobIds } },
+    select: { id: true, jobId: true },
+  })
+  if (conversations.length === 0) return result
+
+  const conversationIds = conversations.map((c) => c.id)
+  const members = await prisma.chatConversationMember.findMany({
+    where: { tenantId, userId, conversationId: { in: conversationIds } },
+    select: { conversationId: true, lastReadAt: true },
+  })
+  const memberMap = new Map(members.map((m) => [m.conversationId, m.lastReadAt]))
+  const conversationToJob = new Map(conversations.map((c) => [c.id, c.jobId as string]))
+
+  await Promise.all(
+    conversationIds.map(async (conversationId) => {
+      if (!memberMap.has(conversationId)) return
+      const lastReadAt = memberMap.get(conversationId) || new Date(0)
+      const count = await prisma.chatMessage.count({
+        where: {
+          tenantId,
+          conversationId,
+          createdAt: { gt: lastReadAt },
+          senderId: { not: userId },
+        },
+      })
+      const jobId = conversationToJob.get(conversationId)
+      if (jobId) result.set(jobId, count)
+    })
+  )
+
+  return result
+}
+
 export async function getConversationForMember(tenantId: string, conversationId: string, userId: string) {
   const member = await prisma.chatConversationMember.findFirst({
     where: { tenantId, conversationId, userId },
@@ -217,19 +330,23 @@ export async function listConversationsForUser(tenantId: string, userId: string)
       if (!conversation) return null
     const lastMessage = lastMessageMap.get(conversation.id)
     const isTeam = conversation.type === ChatConversationType.TEAM
+    const isJobThread = conversation.type === ChatConversationType.JOB_THREAD
     const otherUserId = conversation.userAId === userId ? conversation.userBId : conversation.userAId
     const otherUser = otherUserId ? dmUserMap.get(otherUserId) : null
     const title = isTeam
       ? conversation.title || 'Team Chat'
-      : otherUser
-        ? `${otherUser.firstName || ''} ${otherUser.lastName || ''}`.trim() || otherUser.email
-        : 'Direct Message'
+      : isJobThread
+        ? conversation.title || 'Job Chat'
+        : otherUser
+          ? `${otherUser.firstName || ''} ${otherUser.lastName || ''}`.trim() || otherUser.email
+          : 'Direct Message'
 
     return {
       id: conversation.id,
       type: conversation.type,
       title,
       pinned: isTeam || conversation.pinned,
+      jobId: conversation.jobId || null,
       lastMessageAt: conversation.lastMessageAt,
       unreadCount: unreadMap.get(conversation.id) || 0,
       otherUser: otherUser

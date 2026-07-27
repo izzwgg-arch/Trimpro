@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Save, AlertCircle } from 'lucide-react'
+import { ArrowLeft, Save, AlertCircle, Plus, Trash2, Pencil, X, Check } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
 import { PlaceAutocompleteInput } from '@/components/maps/PlaceAutocompleteInput'
@@ -20,6 +21,37 @@ type AddressForm = {
   state: string
   zipCode: string
   country: string
+}
+
+type Contact = {
+  id: string
+  firstName: string
+  lastName: string
+  email: string | null
+  phone: string | null
+  mobile: string | null
+  title: string | null
+  isPrimary: boolean
+}
+
+type ContactFormState = {
+  firstName: string
+  lastName: string
+  email: string
+  phone: string
+  mobile: string
+  title: string
+  isPrimary: boolean
+}
+
+const EMPTY_CONTACT_FORM: ContactFormState = {
+  firstName: '',
+  lastName: '',
+  email: '',
+  phone: '',
+  mobile: '',
+  title: '',
+  isPrimary: false,
 }
 
 type ClientResponse = {
@@ -59,6 +91,17 @@ export default function EditClientPage() {
   const [availableClients, setAvailableClients] = useState<PickerClient[]>([])
   const [isSubClient, setIsSubClient] = useState(false)
   const [selectedParentId, setSelectedParentId] = useState('')
+
+  const [contacts, setContacts] = useState<Contact[]>([])
+  const [contactsLoading, setContactsLoading] = useState(true)
+  const [contactsError, setContactsError] = useState<string | null>(null)
+  const [editingContactId, setEditingContactId] = useState<string | null>(null)
+  const [editContactForm, setEditContactForm] = useState<ContactFormState>(EMPTY_CONTACT_FORM)
+  const [savingContactId, setSavingContactId] = useState<string | null>(null)
+  const [deletingContactId, setDeletingContactId] = useState<string | null>(null)
+  const [showAddContact, setShowAddContact] = useState(false)
+  const [newContactForm, setNewContactForm] = useState<ContactFormState>(EMPTY_CONTACT_FORM)
+  const [addingContact, setAddingContact] = useState(false)
 
   const [formData, setFormData] = useState({
     name: '',
@@ -176,6 +219,179 @@ export default function EditClientPage() {
 
     fetchClient()
   }, [normalizedClientId, router])
+
+  const fetchContacts = async () => {
+    if (!normalizedClientId) return
+    setContactsLoading(true)
+    setContactsError(null)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+      const res = await fetch(`/api/clients/${normalizedClientId}/contacts`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.status === 401) {
+        router.push('/auth/login')
+        return
+      }
+      if (!res.ok) {
+        setContactsError('Failed to load contacts')
+        return
+      }
+      const data = await res.json()
+      setContacts(Array.isArray(data.contacts) ? data.contacts : [])
+    } catch (e) {
+      console.error('Error loading contacts:', e)
+      setContactsError('Failed to load contacts')
+    } finally {
+      setContactsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!normalizedClientId) return
+    fetchContacts()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [normalizedClientId])
+
+  const startEditContact = (contact: Contact) => {
+    setEditingContactId(contact.id)
+    setEditContactForm({
+      firstName: contact.firstName || '',
+      lastName: contact.lastName || '',
+      email: contact.email || '',
+      phone: contact.phone || '',
+      mobile: contact.mobile || '',
+      title: contact.title || '',
+      isPrimary: Boolean(contact.isPrimary),
+    })
+  }
+
+  const cancelEditContact = () => {
+    setEditingContactId(null)
+    setEditContactForm(EMPTY_CONTACT_FORM)
+  }
+
+  const saveEditContact = async () => {
+    if (!normalizedClientId || !editingContactId) return
+    if (!editContactForm.firstName.trim() || !editContactForm.lastName.trim()) {
+      alert('First and last name are required')
+      return
+    }
+    setSavingContactId(editingContactId)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+      const res = await fetch(`/api/clients/${normalizedClientId}/contacts/${editingContactId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          firstName: editContactForm.firstName.trim(),
+          lastName: editContactForm.lastName.trim(),
+          email: editContactForm.email.trim() || null,
+          phone: editContactForm.phone.trim() || null,
+          mobile: editContactForm.mobile.trim() || null,
+          title: editContactForm.title.trim() || null,
+          isPrimary: editContactForm.isPrimary,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        alert(data.error || 'Failed to update contact')
+        return
+      }
+      cancelEditContact()
+      await fetchContacts()
+    } catch (e) {
+      console.error('Error updating contact:', e)
+      alert('Failed to update contact')
+    } finally {
+      setSavingContactId(null)
+    }
+  }
+
+  const deleteContact = async (contact: Contact) => {
+    if (!normalizedClientId) return
+    if (!confirm(`Delete contact "${contact.firstName} ${contact.lastName}"?`)) return
+    setDeletingContactId(contact.id)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+      const res = await fetch(`/api/clients/${normalizedClientId}/contacts/${contact.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        alert(data.error || 'Failed to delete contact')
+        return
+      }
+      if (editingContactId === contact.id) cancelEditContact()
+      await fetchContacts()
+    } catch (e) {
+      console.error('Error deleting contact:', e)
+      alert('Failed to delete contact')
+    } finally {
+      setDeletingContactId(null)
+    }
+  }
+
+  const addContact = async () => {
+    if (!normalizedClientId) return
+    if (!newContactForm.firstName.trim() || !newContactForm.lastName.trim()) {
+      alert('First and last name are required')
+      return
+    }
+    setAddingContact(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+      const res = await fetch(`/api/clients/${normalizedClientId}/contacts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          firstName: newContactForm.firstName.trim(),
+          lastName: newContactForm.lastName.trim(),
+          email: newContactForm.email.trim() || null,
+          phone: newContactForm.phone.trim() || null,
+          mobile: newContactForm.mobile.trim() || null,
+          title: newContactForm.title.trim() || null,
+          isPrimary: newContactForm.isPrimary,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        alert(data.error || 'Failed to add contact')
+        return
+      }
+      setNewContactForm(EMPTY_CONTACT_FORM)
+      setShowAddContact(false)
+      await fetchContacts()
+    } catch (e) {
+      console.error('Error adding contact:', e)
+      alert('Failed to add contact')
+    } finally {
+      setAddingContact(false)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -430,6 +646,267 @@ export default function EditClientPage() {
                 placeholder="Additional notes about this client..."
               />
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <CardTitle>Contacts</CardTitle>
+                <CardDescription>
+                  Additional people at this client (used when choosing recipients for estimates/invoices)
+                </CardDescription>
+              </div>
+              {!showAddContact && (
+                <Button type="button" variant="outline" size="sm" onClick={() => setShowAddContact(true)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Contact
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {contactsLoading && <p className="text-sm text-gray-500">Loading contacts...</p>}
+            {contactsError && <p className="text-sm text-red-600">{contactsError}</p>}
+
+            {!contactsLoading && !contactsError && contacts.length === 0 && !showAddContact && (
+              <p className="text-sm text-gray-500">No additional contacts yet.</p>
+            )}
+
+            <div className="space-y-3">
+              {contacts.map((contact) => {
+                const isEditing = editingContactId === contact.id
+                if (isEditing) {
+                  return (
+                    <div key={contact.id} className="rounded-md border p-3 space-y-3 bg-gray-50">
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <div>
+                          <Label htmlFor={`edit-firstName-${contact.id}`}>First Name *</Label>
+                          <Input
+                            id={`edit-firstName-${contact.id}`}
+                            value={editContactForm.firstName}
+                            onChange={(e) => setEditContactForm({ ...editContactForm, firstName: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor={`edit-lastName-${contact.id}`}>Last Name *</Label>
+                          <Input
+                            id={`edit-lastName-${contact.id}`}
+                            value={editContactForm.lastName}
+                            onChange={(e) => setEditContactForm({ ...editContactForm, lastName: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor={`edit-email-${contact.id}`}>Email</Label>
+                          <Input
+                            id={`edit-email-${contact.id}`}
+                            type="email"
+                            value={editContactForm.email}
+                            onChange={(e) => setEditContactForm({ ...editContactForm, email: e.target.value })}
+                            placeholder="name@example.com"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor={`edit-title-${contact.id}`}>Title</Label>
+                          <Input
+                            id={`edit-title-${contact.id}`}
+                            value={editContactForm.title}
+                            onChange={(e) => setEditContactForm({ ...editContactForm, title: e.target.value })}
+                            placeholder="Office Manager"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor={`edit-phone-${contact.id}`}>Phone</Label>
+                          <Input
+                            id={`edit-phone-${contact.id}`}
+                            type="tel"
+                            value={editContactForm.phone}
+                            onChange={(e) => setEditContactForm({ ...editContactForm, phone: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor={`edit-mobile-${contact.id}`}>Mobile</Label>
+                          <Input
+                            id={`edit-mobile-${contact.id}`}
+                            type="tel"
+                            value={editContactForm.mobile}
+                            onChange={(e) => setEditContactForm({ ...editContactForm, mobile: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                      <label className="flex items-center gap-2 text-sm">
+                        <Checkbox
+                          checked={editContactForm.isPrimary}
+                          onCheckedChange={(checked) =>
+                            setEditContactForm({ ...editContactForm, isPrimary: Boolean(checked) })
+                          }
+                        />
+                        Primary contact
+                      </label>
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={cancelEditContact}
+                          disabled={savingContactId === contact.id}
+                        >
+                          <X className="mr-2 h-4 w-4" />
+                          Cancel
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={saveEditContact}
+                          disabled={savingContactId === contact.id}
+                        >
+                          <Check className="mr-2 h-4 w-4" />
+                          {savingContactId === contact.id ? 'Saving...' : 'Save'}
+                        </Button>
+                      </div>
+                    </div>
+                  )
+                }
+
+                return (
+                  <div
+                    key={contact.id}
+                    className="flex items-start justify-between gap-3 rounded-md border p-3"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium text-gray-900">
+                          {contact.firstName} {contact.lastName}
+                        </span>
+                        {contact.isPrimary && (
+                          <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-blue-700">
+                            Primary
+                          </span>
+                        )}
+                        {contact.title && <span className="text-sm text-gray-500">{contact.title}</span>}
+                      </div>
+                      <div className="mt-1 space-y-0.5 text-sm text-gray-600">
+                        {contact.email && <p>{contact.email}</p>}
+                        {contact.phone && <p>Phone: {contact.phone}</p>}
+                        {contact.mobile && <p>Mobile: {contact.mobile}</p>}
+                        {!contact.email && !contact.phone && !contact.mobile && (
+                          <p className="text-gray-400">No contact details on file</p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => startEditContact(contact)}
+                        title="Edit contact"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => deleteContact(contact)}
+                        disabled={deletingContactId === contact.id}
+                        title="Delete contact"
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            {showAddContact && (
+              <div className="rounded-md border p-3 space-y-3 bg-gray-50">
+                <p className="text-sm font-medium text-gray-700">New Contact</p>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div>
+                    <Label htmlFor="new-firstName">First Name *</Label>
+                    <Input
+                      id="new-firstName"
+                      value={newContactForm.firstName}
+                      onChange={(e) => setNewContactForm({ ...newContactForm, firstName: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="new-lastName">Last Name *</Label>
+                    <Input
+                      id="new-lastName"
+                      value={newContactForm.lastName}
+                      onChange={(e) => setNewContactForm({ ...newContactForm, lastName: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="new-email">Email</Label>
+                    <Input
+                      id="new-email"
+                      type="email"
+                      value={newContactForm.email}
+                      onChange={(e) => setNewContactForm({ ...newContactForm, email: e.target.value })}
+                      placeholder="name@example.com"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="new-title">Title</Label>
+                    <Input
+                      id="new-title"
+                      value={newContactForm.title}
+                      onChange={(e) => setNewContactForm({ ...newContactForm, title: e.target.value })}
+                      placeholder="Office Manager"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="new-phone">Phone</Label>
+                    <Input
+                      id="new-phone"
+                      type="tel"
+                      value={newContactForm.phone}
+                      onChange={(e) => setNewContactForm({ ...newContactForm, phone: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="new-mobile">Mobile</Label>
+                    <Input
+                      id="new-mobile"
+                      type="tel"
+                      value={newContactForm.mobile}
+                      onChange={(e) => setNewContactForm({ ...newContactForm, mobile: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={newContactForm.isPrimary}
+                    onCheckedChange={(checked) => setNewContactForm({ ...newContactForm, isPrimary: Boolean(checked) })}
+                  />
+                  Primary contact
+                </label>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setShowAddContact(false)
+                      setNewContactForm(EMPTY_CONTACT_FORM)
+                    }}
+                    disabled={addingContact}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="button" size="sm" onClick={addContact} disabled={addingContact}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    {addingContact ? 'Adding...' : 'Add Contact'}
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 

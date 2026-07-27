@@ -5,7 +5,6 @@ import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { splitEmailList } from '@/lib/email'
 import {
   ArrowLeft,
   Calendar,
@@ -47,7 +46,7 @@ import { DocumentAttachments } from '@/components/common/document-attachments'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ContactRecipientPicker } from '@/components/email/contact-recipient-picker'
 
 interface InvoiceDetail {
   id: string
@@ -165,8 +164,8 @@ export default function InvoiceDetailPage() {
   const [billRest, setBillRest] = useState(false)
   const [sending, setSending] = useState(false)
   const [showSendModal, setShowSendModal] = useState(false)
-  const [sendTo, setSendTo] = useState('')
-  const [sendToPreset, setSendToPreset] = useState<string>('custom')
+  const [selectedRecipientEmails, setSelectedRecipientEmails] = useState<string[]>([])
+  const [customEmails, setCustomEmails] = useState('')
   const [sendSubject, setSendSubject] = useState('')
   const [sendMessage, setSendMessage] = useState('')
 
@@ -809,20 +808,8 @@ export default function InvoiceDetailPage() {
 
   const handleSendInvoice = async () => {
     if (!invoice || sending) return
-    const emailsOnFile = Array.from(
-      new Set(
-        [
-          ...splitEmailList(invoice.client?.email || ''),
-          ...(invoice.client?.contacts || []).map((c) => c.email || ''),
-        ]
-          .map((v) => String(v || '').trim())
-          .filter(Boolean)
-      )
-    )
-
-    const defaultEmail = emailsOnFile[0] || ''
-    setSendTo(defaultEmail)
-    setSendToPreset(emailsOnFile.length === 1 ? emailsOnFile[0] : 'custom')
+    setSelectedRecipientEmails([])
+    setCustomEmails('')
     setSendSubject(`Invoice ${invoice.invoiceNumber}`)
     setSendMessage(`Please review and pay invoice ${invoice.invoiceNumber}.`)
     setShowSendModal(true)
@@ -831,12 +818,11 @@ export default function InvoiceDetailPage() {
 
   const submitSendInvoice = async () => {
     if (!invoice || sending) return
-    const raw = String(sendTo || '').trim()
-    if (!raw) return
-    const emails = raw
+    const customEmailList = customEmails
       .split(/[,\s;]+/g)
       .map((v) => v.trim())
       .filter(Boolean)
+    const emails = Array.from(new Set([...selectedRecipientEmails, ...customEmailList]))
     if (emails.length === 0) return
 
     setSending(true)
@@ -1181,56 +1167,25 @@ export default function InvoiceDetailPage() {
           <DialogHeader>
             <DialogTitle>Send Invoice</DialogTitle>
             <DialogDescription>
-              Email on file is prefilled. Choose one, or type one or more recipients (comma-separated).
+              Choose which contacts should receive this invoice, or add a custom email below.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            {(() => {
-              const emailsOnFile = Array.from(
-                new Set(
-                  [
-                    ...splitEmailList(invoice?.client?.email || ''),
-                    ...(invoice?.client?.contacts || []).map((c) => c.email || ''),
-                  ]
-                    .map((v) => String(v || '').trim())
-                    .filter(Boolean)
-                )
-              )
-              return (
-                <div className="space-y-2">
-                  <Label>Choose email</Label>
-                  <Select
-                    value={sendToPreset}
-                    onValueChange={(v) => {
-                      setSendToPreset(v)
-                      if (v !== 'custom') setSendTo(v)
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select email" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {emailsOnFile.map((e) => (
-                        <SelectItem key={e} value={e}>
-                          {e}
-                        </SelectItem>
-                      ))}
-                      <SelectItem value="custom">Custom...</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              )
-            })()}
+            <div className="space-y-2">
+              <Label>Recipients</Label>
+              <ContactRecipientPicker
+                clientId={invoice.client?.id || null}
+                onSelectionChange={(emails) => setSelectedRecipientEmails(emails)}
+                manageContactsHref={invoice.client ? `/dashboard/clients/${invoice.client.id}/edit` : undefined}
+              />
+            </div>
 
             <div className="space-y-2">
-              <Label>To</Label>
+              <Label>Additional email(s) (optional)</Label>
               <Input
-                value={sendTo}
-                onChange={(e) => {
-                  setSendTo(e.target.value)
-                  setSendToPreset('custom')
-                }}
-                placeholder="client@email.com"
+                value={customEmails}
+                onChange={(e) => setCustomEmails(e.target.value)}
+                placeholder="someone-else@email.com"
               />
               <p className="text-xs text-muted-foreground">Multiple emails: separate with commas.</p>
             </div>
@@ -1249,7 +1204,13 @@ export default function InvoiceDetailPage() {
             <Button variant="outline" onClick={() => setShowSendModal(false)} disabled={sending}>
               Cancel
             </Button>
-            <Button onClick={() => submitSendInvoice()} disabled={sending || !sendTo.trim()}>
+            <Button
+              onClick={() => submitSendInvoice()}
+              disabled={
+                sending ||
+                (selectedRecipientEmails.length === 0 && !customEmails.trim())
+              }
+            >
               {sending ? 'Sending...' : 'Send'}
             </Button>
           </DialogFooter>

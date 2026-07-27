@@ -474,7 +474,7 @@ export async function sendInvoiceEmail(
 }
 
 export async function sendPaymentReceiptEmail(params: {
-  to: string
+  to: string | string[]
   tenantId?: string
   recipientName?: string | null
   invoiceNumber: string

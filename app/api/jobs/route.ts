@@ -9,6 +9,7 @@ import { jobRecordJobSiteAddressSearchClauses } from '@/lib/search/job-site-addr
 import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
 import { ACTIVE_JOB_STATUSES } from '@/lib/jobs/statuses'
 import { applyJobTypeListFilter, jobTypeScopeWhere, resolveJobTypeForWrite } from '@/lib/jobs/job-type-scope'
+import { getUnreadJobThreadCounts } from '@/lib/chat/service'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -90,6 +91,8 @@ export async function GET(request: NextRequest) {
         clientInvoiceAgg.map((row) => [String(row.clientId), row._sum.balance?.toString() || '0'])
       )
 
+      const unreadByJob = await getUnreadJobThreadCounts(user.tenantId, user.id, jobIds)
+
       return jobs.map((job) => {
         const jobTotals = byJobId.get(String(job.id)) || {
           totalInvoicedAmount: '0',
@@ -105,6 +108,7 @@ export async function GET(request: NextRequest) {
           openInvoiceBalance: jobTotals.openInvoiceBalance,
           openInvoiceCount: jobTotals.openInvoiceCount,
           clientOpenInvoiceBalance,
+          unreadMessages: unreadByJob.get(String(job.id)) || 0,
         }
       })
     }

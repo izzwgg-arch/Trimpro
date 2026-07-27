@@ -63,6 +63,7 @@ export async function GET(request: NextRequest) {
       : undefined,
     pinned: Boolean(conv.pinned),
     convType: String(conv.type || ''),
+    jobId: conv.jobId || null,
   }))
 
   // Normalise SMS/MMS conversations

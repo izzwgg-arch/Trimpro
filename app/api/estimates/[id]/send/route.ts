@@ -83,18 +83,23 @@ export async function POST(
       return NextResponse.json({ error: 'Estimate not found' }, { status: 404 })
     }
 
-    // Determine recipient email(s)
-    const recipientEmails = [
+    // Prefer explicit recipients from the contact picker / custom emails.
+    // Only fall back to client contacts when the caller did not pass any recipients
+    // (legacy/API callers). Never auto-append client contacts on top of a selection.
+    const explicitRecipients = parseEmailList([
       ...parseEmailList(emails),
       ...parseEmailList(email),
-      ...parseEmailList(estimate.client?.email),
-      ...(estimate.client?.contacts || []).flatMap((c) => parseEmailList(c.email)),
-    ]
-
-    const uniqueRecipientEmails = parseEmailList(recipientEmails)
+    ])
+    const uniqueRecipientEmails =
+      explicitRecipients.length > 0
+        ? explicitRecipients
+        : parseEmailList([
+            ...parseEmailList(estimate.client?.email),
+            ...(estimate.client?.contacts || []).flatMap((c) => parseEmailList(c.email)),
+          ])
 
     if (uniqueRecipientEmails.length === 0) {
-      return NextResponse.json({ error: 'No email address found for client' }, { status: 400 })
+      return NextResponse.json({ error: 'No recipient email address provided' }, { status: 400 })
     }
 
     const invalidRecipients = uniqueRecipientEmails.filter((addr) => !isValidEmail(addr))

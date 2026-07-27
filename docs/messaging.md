@@ -39,9 +39,20 @@ Migration:
 - `POST /api/messages/conversations/:id/read`
 - `POST /api/messages/team/ensure`
 - `POST /api/messages/dm`
+- `POST /api/messages/job/ensure` (find/create the JOB_THREAD for a job)
 - `GET /api/messages/users`
 - `POST /api/uploads/messages`
 - `GET /api/messages/stream` (SSE)
+- `GET /api/jobs/:id/unread` (unread message + note counts for a job)
+
+## Job Threads
+
+- `ChatConversation.jobId` links a `JOB_THREAD` conversation to its job (unique per tenant+job).
+- `ensureJobThread(tenantId, jobId, actorUserId)` in `lib/chat/service.ts` finds or creates the thread and
+  syncs membership to: the job's current assignees, the actor, and active ADMIN/OFFICE users (capped).
+- Unread counts use `ChatConversationMember.lastReadAt` (real read receipts). Note unread counts on the
+  job detail page are an MVP approximation using a `job-notes-last-viewed-<jobId>` timestamp in
+  `localStorage` (web) / should use `AsyncStorage` (mobile) — no server-side read-state table yet.
 
 ## Realtime
 

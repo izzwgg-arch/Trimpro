@@ -14,6 +14,8 @@ import {
 } from '@/components/ui/select'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { DollarSign, FileText, Search, ChevronDown, ChevronRight, Download, Mail, X } from 'lucide-react'
+import { Label } from '@/components/ui/label'
+import { ContactRecipientPicker } from '@/components/email/contact-recipient-picker'
 import type { UnifiedDocumentKind, UnifiedDocumentRow } from '@/lib/documents/unified-documents'
 import { smartMatch, scoreHaystack } from '@/lib/search/scoring'
 import {
@@ -213,7 +215,8 @@ interface UnifiedDocumentsSectionProps {
   onToggleInvoice?: (invoiceId: string, checked: boolean) => void
   onAddPayment?: () => void
   defaultOpen?: boolean
-  defaultReceiptEmail?: string | null
+  /** Fallback client for payment receipt recipient picker when a row has no clientId. */
+  receiptClientId?: string | null
   onDocumentsRefresh?: () => void | Promise<void>
   preferencesKey?: string
 }
@@ -228,7 +231,7 @@ export function UnifiedDocumentsSection({
   onToggleInvoice,
   onAddPayment,
   defaultOpen = true,
-  defaultReceiptEmail = null,
+  receiptClientId = null,
   onDocumentsRefresh,
   preferencesKey,
 }: UnifiedDocumentsSectionProps) {
@@ -244,7 +247,8 @@ export function UnifiedDocumentsSection({
   const [downloadingReceiptId, setDownloadingReceiptId] = useState<string | null>(null)
   const [showReceiptEmailDialog, setShowReceiptEmailDialog] = useState(false)
   const [receiptEmailPayment, setReceiptEmailPayment] = useState<UnifiedDocumentRow | null>(null)
-  const [receiptEmailTo, setReceiptEmailTo] = useState('')
+  const [selectedRecipientEmails, setSelectedRecipientEmails] = useState<string[]>([])
+  const [customEmails, setCustomEmails] = useState('')
   const [receiptEmailSending, setReceiptEmailSending] = useState(false)
   const [receiptEmailResult, setReceiptEmailResult] = useState<{ ok: boolean; message: string } | null>(null)
 
@@ -364,13 +368,32 @@ export function UnifiedDocumentsSection({
 
   const openReceiptEmailDialog = (row: UnifiedDocumentRow) => {
     setReceiptEmailPayment(row)
-    setReceiptEmailTo(defaultReceiptEmail || '')
+    setSelectedRecipientEmails([])
+    setCustomEmails('')
     setReceiptEmailResult(null)
     setShowReceiptEmailDialog(true)
   }
 
+  const closeReceiptEmailDialog = () => {
+    setShowReceiptEmailDialog(false)
+    setReceiptEmailPayment(null)
+    setSelectedRecipientEmails([])
+    setCustomEmails('')
+    setReceiptEmailResult(null)
+  }
+
+  const receiptPickerClientId =
+    receiptEmailPayment?.clientId || receiptClientId || null
+
   const sendReceiptEmail = async () => {
-    if (!receiptEmailPayment || !receiptEmailTo.trim()) return
+    if (!receiptEmailPayment) return
+    const customEmailList = customEmails
+      .split(/[,\s;]+/g)
+      .map((v) => v.trim())
+      .filter(Boolean)
+    const emails = Array.from(new Set([...selectedRecipientEmails, ...customEmailList]))
+    if (emails.length === 0) return
+
     setReceiptEmailSending(true)
     setReceiptEmailResult(null)
     try {
@@ -381,7 +404,7 @@ export function UnifiedDocumentsSection({
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email: receiptEmailTo.trim() }),
+        body: JSON.stringify({ emails }),
       })
       const data = await response.json()
       if (!response.ok) {
@@ -391,8 +414,7 @@ export function UnifiedDocumentsSection({
       setReceiptEmailResult({ ok: true, message: `Receipt sent to ${data.sentTo}` })
       await onDocumentsRefresh?.()
       setTimeout(() => {
-        setShowReceiptEmailDialog(false)
-        setReceiptEmailPayment(null)
+        closeReceiptEmailDialog()
       }, 2000)
     } catch {
       setReceiptEmailResult({ ok: false, message: 'Network error — please try again' })
@@ -700,38 +722,45 @@ export function UnifiedDocumentsSection({
               </div>
               <button
                 type="button"
-                onClick={() => {
-                  setShowReceiptEmailDialog(false)
-                  setReceiptEmailPayment(null)
-                  setReceiptEmailResult(null)
-                }}
+                onClick={closeReceiptEmailDialog}
                 className="text-gray-400 hover:text-gray-600"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
             <div className="p-5 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Send To</label>
-                <input
-                  type="email"
-                  value={receiptEmailTo}
-                  onChange={(e) => setReceiptEmailTo(e.target.value)}
-                  placeholder="client@example.com"
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1e4d6e] focus:border-transparent"
-                  onKeyDown={(e) => { if (e.key === 'Enter') sendReceiptEmail() }}
-                  autoFocus
+              <div className="space-y-2">
+                <Label>Recipients</Label>
+                <ContactRecipientPicker
+                  key={receiptEmailPayment.id}
+                  clientId={receiptPickerClientId}
+                  onSelectionChange={(emails) => setSelectedRecipientEmails(emails)}
+                  manageContactsHref={
+                    receiptPickerClientId
+                      ? `/dashboard/clients/${receiptPickerClientId}/edit`
+                      : undefined
+                  }
+                  disabled={receiptEmailSending}
                 />
-                {defaultReceiptEmail && receiptEmailTo !== defaultReceiptEmail && (
-                  <button
-                    type="button"
-                    className="mt-1 text-xs text-blue-600 hover:underline"
-                    onClick={() => setReceiptEmailTo(defaultReceiptEmail)}
-                  >
-                    Use {defaultReceiptEmail}
-                  </button>
-                )}
+                <p className="text-xs text-muted-foreground">
+                  Choose which contacts should receive this receipt, or add a custom email below.
+                </p>
               </div>
+
+              <div className="space-y-2">
+                <Label>Additional email(s) (optional)</Label>
+                <Input
+                  value={customEmails}
+                  onChange={(e) => setCustomEmails(e.target.value)}
+                  placeholder="someone-else@email.com"
+                  disabled={receiptEmailSending}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') sendReceiptEmail()
+                  }}
+                />
+                <p className="text-xs text-muted-foreground">Multiple emails: separate with commas.</p>
+              </div>
+
               {receiptEmailResult && (
                 <div className={`rounded-lg px-4 py-3 text-sm font-medium ${
                   receiptEmailResult.ok
@@ -746,11 +775,8 @@ export function UnifiedDocumentsSection({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  setShowReceiptEmailDialog(false)
-                  setReceiptEmailPayment(null)
-                  setReceiptEmailResult(null)
-                }}
+                onClick={closeReceiptEmailDialog}
+                disabled={receiptEmailSending}
               >
                 Cancel
               </Button>
@@ -758,7 +784,10 @@ export function UnifiedDocumentsSection({
                 size="sm"
                 className="bg-[#1e4d6e] hover:bg-[#163a54] text-white"
                 onClick={sendReceiptEmail}
-                disabled={receiptEmailSending || !receiptEmailTo.trim()}
+                disabled={
+                  receiptEmailSending ||
+                  (selectedRecipientEmails.length === 0 && !customEmails.trim())
+                }
               >
                 <Mail className="h-4 w-4 mr-1" />
                 {receiptEmailSending ? 'Sending...' : 'Send Receipt'}

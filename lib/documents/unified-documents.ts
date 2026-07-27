@@ -22,6 +22,7 @@ export interface UnifiedDocumentRow {
   meta?: string | null
   canReceipt?: boolean
   receiptEmailSentAt?: string | null
+  clientId?: string | null
   clientName?: string | null
 }
 
@@ -351,6 +352,7 @@ function buildDocumentRows({
       isPaid: null,
       date: estimate.createdAt.toISOString(),
       href: `/dashboard/estimates/${estimate.id}`,
+      clientId: estimate.clientId || estimate.client?.id || null,
       clientName: subClientLabel(rootClientId, estimate.clientId, estimate.client?.name),
     })
   }
@@ -370,12 +372,14 @@ function buildDocumentRows({
       date: (invoice.dueDate || invoice.createdAt).toISOString(),
       href: `/dashboard/invoices/${invoice.id}`,
       meta: balance > 0 ? `Balance ${balance.toFixed(2)}` : null,
+      clientId: invoice.clientId || invoice.client?.id || null,
       clientName: subClientLabel(rootClientId, invoice.clientId, invoice.client?.name),
     })
   }
 
   for (const payment of payments) {
     const displayStatus = paymentDisplayStatus(payment.status, payment.refundStatus)
+    const paymentClientId = payment.invoice?.clientId || payment.invoice?.client?.id || null
     rows.push({
       id: payment.id,
       kind: 'payment',
@@ -390,6 +394,7 @@ function buildDocumentRows({
       meta: payment.invoice ? `Invoice ${payment.invoice.invoiceNumber}` : null,
       canReceipt: paymentCanReceipt(displayStatus),
       receiptEmailSentAt: payment.receiptEmailSentAt?.toISOString() ?? null,
+      clientId: paymentClientId,
       clientName: subClientLabel(rootClientId, payment.invoice?.clientId, payment.invoice?.client?.name),
     })
   }
@@ -407,6 +412,7 @@ function buildDocumentRows({
       date: (po.orderDate || po.createdAt).toISOString(),
       href: `/dashboard/purchase-orders/${po.id}`,
       meta: po.vendor ? `Vendor ${po.vendor}` : null,
+      clientId: po.clientId || po.client?.id || null,
       clientName: subClientLabel(rootClientId, po.clientId, po.client?.name),
     })
   }
@@ -442,6 +448,7 @@ function buildDocumentRows({
       date: (job.scheduledStart || job.createdAt).toISOString(),
       href: `/dashboard/jobs/${job.id}`,
       meta: job.status.replaceAll('_', ' '),
+      clientId: job.clientId || job.client?.id || null,
       clientName: subClientLabel(rootClientId, job.clientId, job.client?.name),
     })
   }

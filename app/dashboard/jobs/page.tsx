@@ -39,6 +39,7 @@ interface Job {
   openInvoiceBalance?: string
   openInvoiceCount?: number
   clientOpenInvoiceBalance?: string
+  unreadMessages?: number
   client: {
     id: string
     name: string
@@ -87,6 +88,18 @@ function formatJobSiteAddress(job: Job): string | null {
 function formatJobCreatedDate(job: Job): string {
   if (!job.createdAt) return 'No date'
   return formatDate(job.createdAt)
+}
+
+function UnreadMessagesBadge({ count }: { count?: number }) {
+  if (!count || count <= 0) return null
+  return (
+    <span
+      title={`${count} unread message${count === 1 ? '' : 's'}`}
+      className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-600 text-white text-[11px] font-bold"
+    >
+      {count > 99 ? '99+' : count}
+    </span>
+  )
 }
 
 export default function JobsPage() {
@@ -417,10 +430,11 @@ export default function JobsPage() {
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <Link href={`/dashboard/jobs/${job.id}`}>
+                    <Link href={`/dashboard/jobs/${job.id}`} className="flex items-center gap-2">
                       <CardTitle className="text-lg hover:text-primary cursor-pointer">
                         {job.title}
                       </CardTitle>
+                      <UnreadMessagesBadge count={job.unreadMessages} />
                     </Link>
                     <CardDescription className="mt-1">
                       {job.jobNumber} - {job.client.name}
@@ -578,7 +592,12 @@ export default function JobsPage() {
               />
               <RowCompactItem
                 href={`/dashboard/jobs/${job.id}`}
-                primary={`${job.jobNumber} - ${job.title}`}
+                primary={
+                  <span className="inline-flex items-center gap-2">
+                    {job.jobNumber} - {job.title}
+                    <UnreadMessagesBadge count={job.unreadMessages} />
+                  </span>
+                }
                 secondary={[
                   job.client.name,
                   formatJobSiteAddress(job),
@@ -620,7 +639,12 @@ export default function JobsPage() {
               />
               <RowDetailedItem
                 href={`/dashboard/jobs/${job.id}`}
-                primary={`${job.jobNumber} - ${job.title}`}
+                primary={
+                  <span className="inline-flex items-center gap-2">
+                    {job.jobNumber} - {job.title}
+                    <UnreadMessagesBadge count={job.unreadMessages} />
+                  </span>
+                }
                 status={
                   <div className="flex items-center gap-2">
                     <JobTypeBadge jobType={job.jobType} />
@@ -675,7 +699,12 @@ export default function JobsPage() {
               key: 'job',
               header: 'Job',
               sortValue: (job) => `${job.jobNumber} ${job.title}`,
-              render: (job) => <span className="font-medium">{job.jobNumber} - {job.title}</span>,
+              render: (job) => (
+                <span className="inline-flex items-center gap-2 font-medium">
+                  {job.jobNumber} - {job.title}
+                  <UnreadMessagesBadge count={job.unreadMessages} />
+                </span>
+              ),
             },
             {
               key: 'client',

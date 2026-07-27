@@ -135,6 +135,7 @@ export const SIDEBAR_PAGE_MODULE_IDS: Record<string, string> = {
   Reports: 'reports',
   'Payment History': 'payment-history',
   Dispatch: 'dispatch',
+  'Audit Logs': 'audit',
   Settings: 'settings',
   Help: 'dashboard',
 }

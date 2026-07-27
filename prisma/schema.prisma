@@ -169,7 +169,9 @@ model User {
   assignedConversations        Conversation[]
   conversationReadReceipts     ConversationReadReceipt[]
   createdInvoicePaymentIntents InvoicePaymentIntent[]    @relation("InvoicePaymentIntentCreatedBy")
+  // Push devices + optional per-user notification category toggles (JSON)
   pushDevices                  UserPushDevice[]
+  notificationPreferences      Json?
   requestedPaymentRefunds      PaymentRefund[]
   assignedMeasuringRequests    MeasuringRequest[]            @relation("MeasuringRequestAssignee")
   createdMeasuringRequests     MeasuringRequest[]            @relation("MeasuringRequestCreatedBy")
@@ -3036,6 +3038,7 @@ model ChatConversation {
   pinned        Boolean              @default(false)
   userAId       String?
   userBId       String?
+  jobId         String?
   lastMessageAt DateTime?
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
@@ -3043,7 +3046,9 @@ model ChatConversation {
   @@index([tenantId, type, pinned])
   @@index([tenantId, lastMessageAt])
   @@index([tenantId, userAId, userBId])
+  @@index([tenantId, jobId])
   @@unique([tenantId, type, userAId, userBId])
+  @@unique([tenantId, jobId])
   @@map("chat_conversations")
 }
 

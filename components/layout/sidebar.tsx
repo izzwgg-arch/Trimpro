@@ -33,6 +33,7 @@ import {
   ChevronRight,
   X,
   History,
+  ScrollText,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 
@@ -58,6 +59,7 @@ const navigation = [
   { name: 'Reports', href: '/dashboard/reports', icon: FileBarChart, permission: 'reports.view' },
   { name: 'Payment History', href: '/dashboard/reports/payments', icon: History, permission: 'payments.view' },
   { name: 'Dispatch', href: '/dashboard/dispatch', icon: Radio, permission: 'dispatch.view' },
+  { name: 'Audit Logs', href: '/dashboard/audit-logs', icon: ScrollText, permission: 'audit_logs.access' },
   { name: 'Settings', href: '/dashboard/settings', icon: Settings, permission: 'settings.view' },
   { name: 'Help', href: '/dashboard/help', icon: HelpCircle, permission: 'dashboard.view' },
 ]

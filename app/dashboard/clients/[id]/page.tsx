@@ -929,7 +929,7 @@ export default function ClientDetailPage() {
         selectedInvoiceIds={selectedInvoiceIds}
         onToggleInvoice={toggleSelectedInvoice}
         onAddPayment={openPaymentModal}
-        defaultReceiptEmail={client?.email}
+        receiptClientId={clientId}
         onDocumentsRefresh={fetchDocuments}
         preferencesKey={clientId ? `documents-client-${clientId}` : undefined}
       />

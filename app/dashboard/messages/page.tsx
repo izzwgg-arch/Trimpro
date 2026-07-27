@@ -20,7 +20,8 @@ type UnifiedThread = {
   preview: string | null
   previewIsOutbound?: boolean
   pinned: boolean
-  convType: string     // TEAM / DM / SMS / MMS
+  convType: string     // TEAM / DM / JOB_THREAD / SMS / MMS
+  jobId?: string | null
 }
 
 // ─── Normalised message shape for rendering ────────────────────────────────────
@@ -36,10 +37,19 @@ type MsgAttachment = {
   longitude?: number | null
 }
 
+type ReactionEntry = { emoji: string; userId: string; userName: string }
+
+type ReplyInfo = {
+  messageId: string
+  senderName: string
+  textPreview: string
+  type?: string | null
+} | null
+
 type NormalizedMsg = {
   id: string
   isMine: boolean
-  senderName?: string | null   // only shown in TEAM group chat
+  senderName?: string | null   // sender display name (only rendered in TEAM group chat, but kept for reply quotes)
   text: string | null
   createdAt: string
   status?: string
@@ -47,6 +57,24 @@ type NormalizedMsg = {
   jobNumber?: string | null
   jobName?: string | null
   attachments: MsgAttachment[]
+  replyTo?: ReplyInfo
+  reactions: ReactionEntry[]
+  canInteract: boolean   // reply/react are only supported on TEAM chat messages today
+}
+
+const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏']
+
+function attachmentPreviewLabel(att?: MsgAttachment) {
+  if (!att) return 'Attachment'
+  if (att.kind === 'IMAGE') return 'Photo'
+  if (att.kind === 'VIDEO') return 'Video'
+  if (att.kind === 'AUDIO') return 'Voice note'
+  if (att.kind === 'LOCATION') return 'Location'
+  return att.fileName || 'File'
+}
+
+function replyPreviewText(msg: NormalizedMsg) {
+  return msg.text || attachmentPreviewLabel(msg.attachments[0])
 }
 
 type UserRow = { id: string; firstName: string | null; lastName: string | null; email: string }
@@ -94,7 +122,7 @@ function resolveMessageMediaUrl(url: string): string {
 }
 
 // Convert a raw ChatMessage (team) to NormalizedMsg
-function normaliseTeamMsg(raw: any, myId: string, isGroup: boolean): NormalizedMsg {
+function normaliseTeamMsg(raw: any, myId: string): NormalizedMsg {
   const atts: MsgAttachment[] = (raw.attachments || []).map((a: any): MsgAttachment => {
     const k = String(a.kind || '').toUpperCase()
     const kind: MsgAttachment['kind'] =
@@ -115,9 +143,22 @@ function normaliseTeamMsg(raw: any, myId: string, isGroup: boolean): NormalizedM
     }
   })
   const sender = raw.sender
-  const senderName = isGroup && sender
+  // Always resolve the sender's display name (used for group labels and reply quotes),
+  // even though the bubble only renders it visibly for non-mine messages in group chats.
+  const senderName = sender
     ? (`${sender.firstName || ''} ${sender.lastName || ''}`.trim() || sender.email)
     : null
+  const replyTo: ReplyInfo = raw.replyTo
+    ? {
+        messageId: raw.replyTo.messageId,
+        senderName: raw.replyTo.senderName || 'Unknown',
+        textPreview: raw.replyTo.textPreview || '',
+        type: raw.replyTo.type || null,
+      }
+    : null
+  const reactions: ReactionEntry[] = Array.isArray(raw.reactions)
+    ? raw.reactions.map((r: any) => ({ emoji: r.emoji, userId: r.userId, userName: r.userName }))
+    : []
   return {
     id: raw.id,
     isMine: String(raw.senderId) === String(myId),
@@ -129,6 +170,9 @@ function normaliseTeamMsg(raw: any, myId: string, isGroup: boolean): NormalizedM
     jobNumber: raw.jobNumber,
     jobName: raw.jobName,
     attachments: atts,
+    replyTo,
+    reactions,
+    canInteract: true,
   }
 }
 
@@ -157,6 +201,9 @@ function normaliseSmsMsg(raw: any): NormalizedMsg {
     createdAt: raw.createdAt,
     status: raw.status,
     attachments: atts,
+    replyTo: null,
+    reactions: [],
+    canInteract: false, // reply/react are not yet supported on the SMS/MMS backend
   }
 }
 
@@ -177,13 +224,21 @@ function ThreadBadge({ kind, convType }: { kind: 'team' | 'sms'; convType: strin
       </span>
     )
   }
+  if (convType === 'JOB_THREAD') {
+    return (
+      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide bg-amber-50 text-amber-600 border border-amber-100">
+        JOB
+      </span>
+    )
+  }
   return null
 }
 
-function AvatarCircle({ label, color }: { label: string; color: 'blue' | 'emerald' | 'violet' | 'gray' }) {
+function AvatarCircle({ label, color }: { label: string; color: 'blue' | 'emerald' | 'violet' | 'gray' | 'amber' }) {
   const cls =
     color === 'emerald' ? 'bg-emerald-50 text-emerald-600 ring-emerald-100'
     : color === 'violet' ? 'bg-violet-50 text-violet-600 ring-violet-100'
+    : color === 'amber' ? 'bg-amber-50 text-amber-600 ring-amber-100'
     : color === 'gray' ? 'bg-gray-100 text-gray-500 ring-gray-200'
     : 'bg-blue-50 text-blue-600 ring-blue-100'
   return (
@@ -193,13 +248,120 @@ function AvatarCircle({ label, color }: { label: string; color: 'blue' | 'emeral
   )
 }
 
-function MsgBubble({ msg, showSenderName }: { msg: NormalizedMsg; showSenderName: boolean }) {
+function ReactionPicker({ onPick, onClose }: { onPick: (emoji: string) => void; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [onClose])
   return (
-    <div className={`flex ${msg.isMine ? 'justify-end' : 'justify-start'}`}>
-      <div className={`max-w-[65%] flex flex-col ${msg.isMine ? 'items-end' : 'items-start'}`}>
+    <div
+      ref={ref}
+      className="absolute bottom-full mb-1.5 z-20 flex items-center gap-0.5 px-1.5 py-1 rounded-2xl bg-white shadow-lg border border-gray-100"
+    >
+      {QUICK_REACTIONS.map((emoji) => (
+        <button
+          key={emoji}
+          onClick={() => onPick(emoji)}
+          className="w-7 h-7 flex items-center justify-center text-base rounded-full hover:bg-gray-100 hover:scale-110 transition-transform"
+        >
+          {emoji}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function MsgBubble({
+  msg,
+  showSenderName,
+  myId,
+  isHighlighted,
+  onReply,
+  onToggleReaction,
+  onJumpTo,
+}: {
+  msg: NormalizedMsg
+  showSenderName: boolean
+  myId: string
+  isHighlighted?: boolean
+  onReply: (msg: NormalizedMsg) => void
+  onToggleReaction: (messageId: string, emoji: string) => void
+  onJumpTo: (messageId: string) => void
+}) {
+  const [pickerOpen, setPickerOpen] = useState(false)
+
+  const reactionGroups = useMemo(() => {
+    const map = new Map<string, { emoji: string; count: number; mine: boolean; names: string[] }>()
+    for (const r of msg.reactions) {
+      const entry = map.get(r.emoji) || { emoji: r.emoji, count: 0, mine: false, names: [] }
+      entry.count += 1
+      entry.names.push(r.userName)
+      if (String(r.userId) === String(myId)) entry.mine = true
+      map.set(r.emoji, entry)
+    }
+    return Array.from(map.values())
+  }, [msg.reactions, myId])
+
+  return (
+    <div
+      id={`msg-${msg.id}`}
+      className={`flex group ${msg.isMine ? 'justify-end' : 'justify-start'} ${
+        isHighlighted ? 'transition-colors duration-500' : ''
+      }`}
+    >
+      <div className={`flex items-end gap-1 max-w-[80%] ${msg.isMine ? 'flex-row-reverse' : 'flex-row'}`}>
+        {/* Hover toolbar: reply + react */}
+        {msg.canInteract && (
+          <div className="relative flex items-center gap-0.5 pb-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity flex-shrink-0">
+            <button
+              type="button"
+              title="Reply"
+              onClick={() => onReply(msg)}
+              className="w-6 h-6 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 016 6v1" /></svg>
+            </button>
+            <button
+              type="button"
+              title="React"
+              onClick={() => setPickerOpen((p) => !p)}
+              className="w-6 h-6 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            </button>
+            {pickerOpen && (
+              <ReactionPicker
+                onPick={(emoji) => { onToggleReaction(msg.id, emoji); setPickerOpen(false) }}
+                onClose={() => setPickerOpen(false)}
+              />
+            )}
+          </div>
+        )}
+
+      <div className={`max-w-full flex flex-col ${msg.isMine ? 'items-end' : 'items-start'} ${isHighlighted ? 'rounded-2xl ring-2 ring-amber-300' : ''}`}>
         {/* Sender name (group only) */}
         {!msg.isMine && showSenderName && msg.senderName && (
           <span className="text-[11px] font-semibold text-indigo-500 mb-0.5 ml-1">{msg.senderName}</span>
+        )}
+
+        {/* Reply quote */}
+        {msg.replyTo && (
+          <button
+            type="button"
+            onClick={() => onJumpTo(msg.replyTo!.messageId)}
+            className={`mb-1 max-w-[280px] text-left px-2.5 py-1.5 rounded-lg border-l-2 text-xs transition-colors ${
+              msg.isMine
+                ? 'bg-blue-50 border-blue-300 text-blue-800 hover:bg-blue-100'
+                : 'bg-gray-100 border-gray-300 text-gray-600 hover:bg-gray-150'
+            }`}
+          >
+            <div className="font-semibold truncate">{msg.replyTo.senderName}</div>
+            <div className="truncate opacity-80">{msg.replyTo.textPreview || 'Attachment'}</div>
+          </button>
         )}
 
         {/* Job link */}
@@ -250,6 +412,29 @@ function MsgBubble({ msg, showSenderName }: { msg: NormalizedMsg; showSenderName
             {msg.isMine && <span className="ml-1">{msg.status === 'READ' || msg.status === 'DELIVERED' ? '✓✓' : '✓'}</span>}
           </span>
         )}
+
+        {/* Reaction chips */}
+        {reactionGroups.length > 0 && (
+          <div className={`flex flex-wrap gap-1 mt-1 ${msg.isMine ? 'justify-end' : 'justify-start'}`}>
+            {reactionGroups.map((g) => (
+              <button
+                key={g.emoji}
+                type="button"
+                title={g.names.join(', ')}
+                onClick={() => onToggleReaction(msg.id, g.emoji)}
+                className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] border transition-colors ${
+                  g.mine
+                    ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
+                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                <span>{g.emoji}</span>
+                <span className="font-medium">{g.count}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
       </div>
     </div>
   )
@@ -338,10 +523,14 @@ function Composer({
   isSms,
   onSend,
   disabled,
+  replyPreview,
+  onClearReply,
 }: {
   isSms: boolean
   onSend: (text: string, media: DraftMedia[], durationMs?: number) => Promise<void>
   disabled?: boolean
+  replyPreview?: { senderName: string; textPreview: string } | null
+  onClearReply?: () => void
 }) {
   const [text, setText] = useState('')
   const [media, setMedia] = useState<DraftMedia[]>([])
@@ -482,6 +671,23 @@ function Composer({
 
   return (
     <div className="bg-white border-t border-gray-100 px-4 py-3">
+      {/* Reply preview */}
+      {replyPreview && (
+        <div className="mb-2 flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-xl bg-blue-50 border-l-2 border-blue-400">
+          <div className="min-w-0 flex-1">
+            <div className="text-xs font-semibold text-blue-700 truncate">Replying to {replyPreview.senderName}</div>
+            <div className="text-xs text-blue-500 truncate">{replyPreview.textPreview}</div>
+          </div>
+          <button
+            type="button"
+            onClick={onClearReply}
+            className="w-5 h-5 flex-shrink-0 flex items-center justify-center rounded-full text-blue-400 hover:text-blue-700 hover:bg-blue-100 transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+      )}
+
       {/* Draft media row */}
       {media.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-2">
@@ -590,6 +796,10 @@ export default function MessagesPage() {
   const [msgsLoading, setMsgsLoading] = useState(false)
   const [search, setSearch] = useState('')
 
+  // Reply / reaction state (TEAM messages only)
+  const [replyTarget, setReplyTarget] = useState<NormalizedMsg | null>(null)
+  const [highlightedId, setHighlightedId] = useState<string | null>(null)
+
   // New chat modal state
   const [newOpen, setNewOpen] = useState(false)
   const [newType, setNewType] = useState<'team' | 'sms'>('team')
@@ -654,9 +864,8 @@ export default function MessagesPage() {
         const res = await fetchAuth(`/api/messages/conversations/${thread.id}/messages?limit=80`)
         if (!res.ok) return
         const data = await res.json()
-        const isGroup = thread.convType === 'TEAM'
         const rawMsgs: any[] = (data.messages || []).reverse()
-        setMessages(rawMsgs.map((m) => normaliseTeamMsg(m, myId, isGroup)))
+        setMessages(rawMsgs.map((m) => normaliseTeamMsg(m, myId)))
         // Mark read
         fetchAuth(`/api/messages/conversations/${thread.id}/read`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
@@ -676,6 +885,42 @@ export default function MessagesPage() {
     if (!selectedThread) return
     loadMessages(selectedThread)
   }, [selectedId]) // eslint-disable-line
+
+  // Clear any pending reply / jump-highlight when switching threads
+  useEffect(() => {
+    setReplyTarget(null)
+    setHighlightedId(null)
+  }, [selectedId])
+
+  const jumpToMessage = useCallback((messageId: string) => {
+    const el = document.getElementById(`msg-${messageId}`)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setHighlightedId(messageId)
+    window.setTimeout(() => setHighlightedId((cur) => (cur === messageId ? null : cur)), 1600)
+  }, [])
+
+  const handleReply = useCallback((msg: NormalizedMsg) => {
+    if (!msg.canInteract) return
+    setReplyTarget(msg)
+  }, [])
+
+  const handleToggleReaction = useCallback(async (messageId: string, emoji: string) => {
+    if (!selectedThread || selectedThread.kind !== 'team') return
+    try {
+      const res = await fetchAuth(`/api/messages/conversations/${selectedThread.id}/messages/${messageId}/react`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ emoji }),
+      })
+      if (!res.ok) return
+      const data = await res.json()
+      const reactions: ReactionEntry[] = data.reactions || []
+      setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, reactions } : m)))
+    } catch {
+      /* best-effort; UI will resync on next poll/SSE update */
+    }
+  }, [selectedThread, fetchAuth])
 
   // ── SSE for team chats ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -722,6 +967,15 @@ export default function MessagesPage() {
           text: text || null,
           clientTempId: `web-${Date.now()}-${Math.random().toString(36).slice(2)}`,
           attachments,
+          replyToMessageId: replyTarget?.id || null,
+          replyToSenderName: replyTarget ? (replyTarget.isMine ? 'You' : (replyTarget.senderName || 'Unknown')) : null,
+          replyToText: replyTarget ? replyPreviewText(replyTarget) : null,
+          replyToType: replyTarget
+            ? (replyTarget.attachments.length === 0 ? 'TEXT'
+              : replyTarget.attachments[0].kind === 'AUDIO' ? 'VOICE'
+              : replyTarget.attachments[0].kind === 'LOCATION' ? 'LOCATION'
+              : 'MEDIA')
+            : null,
         }),
       })
       if (!res.ok) {
@@ -729,6 +983,7 @@ export default function MessagesPage() {
         alert(err.error || `Failed to send message (${res.status})`)
         return
       }
+      setReplyTarget(null)
     } else {
       // SMS / MMS
       const mediaPayload = media.map((m) => ({
@@ -743,7 +998,7 @@ export default function MessagesPage() {
     }
     await loadMessages(selectedThread)
     await loadThreads()
-  }, [selectedThread, fetchAuth, loadMessages, loadThreads])
+  }, [selectedThread, fetchAuth, loadMessages, loadThreads, replyTarget])
 
   // ── New chat ───────────────────────────────────────────────────────────────
   const openNewChat = async () => {
@@ -805,9 +1060,10 @@ export default function MessagesPage() {
   }, [threads, search])
 
   // ── Avatar color by kind ───────────────────────────────────────────────────
-  function threadAvatarColor(t: UnifiedThread): 'blue' | 'emerald' | 'violet' | 'gray' {
+  function threadAvatarColor(t: UnifiedThread): 'blue' | 'emerald' | 'violet' | 'gray' | 'amber' {
     if (t.kind === 'sms') return 'emerald'
     if (t.convType === 'TEAM') return 'violet'
+    if (t.convType === 'JOB_THREAD') return 'amber'
     return 'blue'
   }
 
@@ -914,10 +1170,21 @@ export default function MessagesPage() {
                 <div className="text-xs text-gray-400 truncate">
                   {selectedThread.kind === 'sms'
                     ? (selectedThread.subtitle || selectedThread.phoneDisplay || 'SMS conversation')
-                    : selectedThread.convType === 'TEAM' ? 'Team · all members' : 'Direct message'
+                    : selectedThread.convType === 'TEAM' ? 'Team · all members'
+                    : selectedThread.convType === 'JOB_THREAD' ? 'Job thread · assigned crew & office'
+                    : 'Direct message'
                   }
                 </div>
               </div>
+              {selectedThread.convType === 'JOB_THREAD' && selectedThread.jobId && (
+                <a
+                  href={`/dashboard/jobs/${selectedThread.jobId}`}
+                  className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-amber-50 text-amber-700 border border-amber-100 hover:bg-amber-100 transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                  View Job
+                </a>
+              )}
             </header>
 
             {/* Messages */}
@@ -952,7 +1219,15 @@ export default function MessagesPage() {
                         </div>
                       )}
                       <div className={isLastInGroup ? 'mb-2' : 'mb-0.5'}>
-                        <MsgBubble msg={msg} showSenderName={showName} />
+                        <MsgBubble
+                          msg={msg}
+                          showSenderName={showName}
+                          myId={myId}
+                          isHighlighted={highlightedId === msg.id}
+                          onReply={handleReply}
+                          onToggleReaction={handleToggleReaction}
+                          onJumpTo={jumpToMessage}
+                        />
                       </div>
                     </React.Fragment>
                   )
@@ -965,6 +1240,12 @@ export default function MessagesPage() {
             <Composer
               isSms={selectedThread.kind === 'sms'}
               onSend={handleSend}
+              replyPreview={
+                replyTarget
+                  ? { senderName: replyTarget.isMine ? 'You' : (replyTarget.senderName || 'Unknown'), textPreview: replyPreviewText(replyTarget) }
+                  : null
+              }
+              onClearReply={() => setReplyTarget(null)}
             />
           </>
         )}

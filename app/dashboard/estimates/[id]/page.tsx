@@ -5,7 +5,6 @@ import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { splitEmailList } from '@/lib/email'
 import {
   ArrowLeft,
   Calendar,
@@ -37,7 +36,7 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { DocumentAttachments } from '@/components/common/document-attachments'
 import { EstimateMaterialList } from '@/components/estimates/estimate-material-list'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ContactRecipientPicker } from '@/components/email/contact-recipient-picker'
 import { buildCreateContextQuery } from '@/src/lib/create-context'
 import { calculateOrderedSubtotalRows, mergeApprovedOptionalItemsForSubtotals } from '@/lib/documents/subtotals'
 
@@ -173,8 +172,8 @@ export default function EstimateDetailPage() {
   }
   const [sending, setSending] = useState(false)
   const [showSendModal, setShowSendModal] = useState(false)
-  const [sendTo, setSendTo] = useState('')
-  const [sendToPreset, setSendToPreset] = useState<string>('custom')
+  const [selectedRecipientEmails, setSelectedRecipientEmails] = useState<string[]>([])
+  const [customEmails, setCustomEmails] = useState('')
   const [sendSubject, setSendSubject] = useState('')
   const [sendMessage, setSendMessage] = useState('')
 
@@ -525,21 +524,8 @@ export default function EstimateDetailPage() {
 
   const handleSendEstimate = async () => {
     if (!estimate || sending) return
-    const emailsOnFile = Array.from(
-      new Set(
-        [
-          ...splitEmailList(estimate.client?.email || ''),
-          ...(estimate.client?.contacts || []).map((c) => c.email || ''),
-        ]
-          .map((v) => String(v || '').trim())
-          .filter(Boolean)
-      )
-    )
-
-    // If there are multiple emails on file, default to sending to all of them.
-    const defaultEmail = emailsOnFile.length > 1 ? emailsOnFile.join(', ') : emailsOnFile[0] || ''
-    setSendTo(defaultEmail)
-    setSendToPreset(emailsOnFile.length === 1 ? emailsOnFile[0] : 'custom')
+    setSelectedRecipientEmails([])
+    setCustomEmails('')
     setSendSubject(`Estimate ${estimate.estimateNumber}`)
     setSendMessage(`Please review estimate ${estimate.estimateNumber}.`)
     setShowSendModal(true)
@@ -548,12 +534,11 @@ export default function EstimateDetailPage() {
 
   const submitSendEstimate = async () => {
     if (!estimate || sending) return
-    const raw = String(sendTo || '').trim()
-    if (!raw) return
-    const emails = raw
+    const customEmailList = customEmails
       .split(/[,\s;]+/g)
       .map((v) => v.trim())
       .filter(Boolean)
+    const emails = Array.from(new Set([...selectedRecipientEmails, ...customEmailList]))
     if (emails.length === 0) return
 
     setSending(true)
@@ -762,56 +747,25 @@ export default function EstimateDetailPage() {
           <DialogHeader>
             <DialogTitle>Send Estimate</DialogTitle>
             <DialogDescription>
-              Select an email on file or enter one or more recipients (comma-separated).
+              Choose which contacts should receive this estimate, or add a custom email below.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            {(() => {
-              const emailsOnFile = Array.from(
-                new Set(
-                  [
-                    ...splitEmailList(estimate.client?.email || ''),
-                    ...(estimate.client?.contacts || []).map((c) => c.email || ''),
-                  ]
-                    .map((v) => String(v || '').trim())
-                    .filter(Boolean)
-                )
-              )
-              return (
-                <div className="space-y-2">
-                  <Label>Choose email</Label>
-                  <Select
-                    value={sendToPreset}
-                    onValueChange={(v) => {
-                      setSendToPreset(v)
-                      if (v !== 'custom') setSendTo(v)
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select email" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {emailsOnFile.map((e) => (
-                        <SelectItem key={e} value={e}>
-                          {e}
-                        </SelectItem>
-                      ))}
-                      <SelectItem value="custom">Custom...</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              )
-            })()}
+            <div className="space-y-2">
+              <Label>Recipients</Label>
+              <ContactRecipientPicker
+                clientId={estimate.client?.id || null}
+                onSelectionChange={(emails) => setSelectedRecipientEmails(emails)}
+                manageContactsHref={estimate.client ? `/dashboard/clients/${estimate.client.id}/edit` : undefined}
+              />
+            </div>
 
             <div className="space-y-2">
-              <Label>To</Label>
+              <Label>Additional email(s) (optional)</Label>
               <Input
-                value={sendTo}
-                onChange={(e) => {
-                  setSendTo(e.target.value)
-                  setSendToPreset('custom')
-                }}
-                placeholder="client@email.com"
+                value={customEmails}
+                onChange={(e) => setCustomEmails(e.target.value)}
+                placeholder="someone-else@email.com"
               />
               <p className="text-xs text-muted-foreground">You can enter multiple emails separated by commas.</p>
             </div>
@@ -830,7 +784,13 @@ export default function EstimateDetailPage() {
             <Button variant="outline" onClick={() => setShowSendModal(false)} disabled={sending}>
               Cancel
             </Button>
-            <Button onClick={() => submitSendEstimate()} disabled={sending || !sendTo.trim()}>
+            <Button
+              onClick={() => submitSendEstimate()}
+              disabled={
+                sending ||
+                (selectedRecipientEmails.length === 0 && !customEmails.trim())
+              }
+            >
               {sending ? 'Sending...' : 'Send'}
             </Button>
           </DialogFooter>

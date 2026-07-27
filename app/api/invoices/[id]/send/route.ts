@@ -88,18 +88,23 @@ export async function POST(
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
     }
 
-    // Determine recipient email(s)
-    const recipientEmails = [
+    // Prefer explicit recipients from the contact picker / custom emails.
+    // Only fall back to client email when the caller did not pass any recipients
+    // (legacy/API callers). Never auto-append client contacts on top of a selection.
+    const explicitRecipients = parseEmailList([
       ...parseEmailList(emails),
       ...parseEmailList(email),
-      ...parseEmailList(invoice.client?.email),
-      ...parseEmailList(invoice.client?.contacts?.[0]?.email),
-    ]
-
-    const uniqueRecipientEmails = parseEmailList(recipientEmails)
+    ])
+    const uniqueRecipientEmails =
+      explicitRecipients.length > 0
+        ? explicitRecipients
+        : parseEmailList([
+            ...parseEmailList(invoice.client?.email),
+            ...parseEmailList(invoice.client?.contacts?.[0]?.email),
+          ])
 
     if (uniqueRecipientEmails.length === 0) {
-      return NextResponse.json({ error: 'No email address found for client' }, { status: 400 })
+      return NextResponse.json({ error: 'No recipient email address provided' }, { status: 400 })
     }
 
     // Force public base URL in recipient emails to avoid internal/private links.
