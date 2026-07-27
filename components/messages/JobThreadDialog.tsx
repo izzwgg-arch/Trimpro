@@ -23,13 +23,32 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
   const [error, setError] = useState<string | null>(null)
 
   const fetchAuth = useCallback(async (url: string, init?: RequestInit) => {
-    let res = await fetch(url, { ...init, credentials: 'include' })
+    let token = localStorage.getItem('accessToken')
+    if (!token) {
+      if (!(await refreshAccessToken())) {
+        router.push('/auth/login')
+        throw new Error('unauthenticated')
+      }
+      token = localStorage.getItem('accessToken')
+    }
+    const withAuth = (authToken: string | null): RequestInit => ({
+      ...init,
+      headers: {
+        ...(init?.headers || {}),
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+      },
+    })
+    let res = await fetch(url, withAuth(token))
     if (res.status === 401) {
-      const ok = await refreshAccessToken()
-      if (ok) res = await fetch(url, { ...init, credentials: 'include' })
+      if (!(await refreshAccessToken())) {
+        router.push('/auth/login')
+        throw new Error('unauthenticated')
+      }
+      token = localStorage.getItem('accessToken')
+      res = await fetch(url, withAuth(token))
     }
     return res
-  }, [])
+  }, [router])
 
   const openFullChat = useCallback(async () => {
     if (!jobId) return
