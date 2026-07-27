@@ -102,6 +102,9 @@ export async function POST(
         replyToSenderName: typeof body?.replyToSenderName === 'string' ? body.replyToSenderName : null,
         replyToText: typeof body?.replyToText === 'string' ? body.replyToText : null,
         replyToType: replyToType || null,
+        notifyUserIds: Array.isArray(body?.notifyUserIds)
+          ? body.notifyUserIds.filter((id: unknown) => typeof id === 'string' && id)
+          : null,
         attachments,
       }
     )

@@ -38,6 +38,8 @@ type SendMessageInput = {
   replyToSenderName?: string | null
   replyToText?: string | null
   replyToType?: ChatMessageType | null
+  /** When set, only these member userIds (excluding sender) are notified. */
+  notifyUserIds?: string[] | null
 }
 
 function normalizeDmPair(userIdA: string, userIdB: string) {
@@ -145,11 +147,89 @@ export async function createOrGetDmConversation(tenantId: string, currentUserId:
 
 const JOB_THREAD_MEMBER_CAP = 100
 
+export type JobThreadRecipient = {
+  id: string
+  firstName: string | null
+  lastName: string | null
+  email: string
+  role: string
+  isAssignee: boolean
+}
+
+/**
+ * Assignees + active ADMIN/OFFICE users eligible for a job thread.
+ */
+export async function listJobThreadRecipients(
+  tenantId: string,
+  jobId: string
+): Promise<JobThreadRecipient[]> {
+  const job = await prisma.job.findFirst({
+    where: { id: jobId, tenantId },
+    select: { id: true },
+  })
+  if (!job) throw new Error('Job not found')
+
+  const [assignments, staff] = await Promise.all([
+    prisma.jobAssignment.findMany({
+      where: { jobId },
+      select: {
+        userId: true,
+        user: {
+          select: { id: true, firstName: true, lastName: true, email: true, role: true, status: true },
+        },
+      },
+    }),
+    prisma.user.findMany({
+      where: { tenantId, status: 'ACTIVE', role: { in: ['ADMIN', 'OFFICE'] } },
+      select: { id: true, firstName: true, lastName: true, email: true, role: true },
+      take: JOB_THREAD_MEMBER_CAP,
+      orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+    }),
+  ])
+
+  const byId = new Map<string, JobThreadRecipient>()
+  for (const a of assignments) {
+    if (!a.user || a.user.status !== 'ACTIVE') continue
+    byId.set(a.user.id, {
+      id: a.user.id,
+      firstName: a.user.firstName,
+      lastName: a.user.lastName,
+      email: a.user.email,
+      role: a.user.role,
+      isAssignee: true,
+    })
+  }
+  for (const s of staff) {
+    const existing = byId.get(s.id)
+    if (existing) continue
+    byId.set(s.id, {
+      id: s.id,
+      firstName: s.firstName,
+      lastName: s.lastName,
+      email: s.email,
+      role: s.role,
+      isAssignee: false,
+    })
+  }
+
+  return Array.from(byId.values()).sort((a, b) => {
+    const an = `${a.firstName || ''} ${a.lastName || ''}`.trim() || a.email
+    const bn = `${b.firstName || ''} ${b.lastName || ''}`.trim() || b.email
+    return an.localeCompare(bn)
+  })
+}
+
 /**
  * Find or create the JOB_THREAD conversation for a job. Members are the job's
  * current assignees plus the actor plus active ADMIN/OFFICE users (capped).
+ * Optional participantIds also get membership (e.g. selected recipients).
  */
-export async function ensureJobThread(tenantId: string, jobId: string, actorUserId: string) {
+export async function ensureJobThread(
+  tenantId: string,
+  jobId: string,
+  actorUserId: string,
+  options?: { participantIds?: string[] }
+) {
   const job = await prisma.job.findFirst({
     where: { id: jobId, tenantId },
     select: { id: true, jobNumber: true, title: true },
@@ -190,10 +270,15 @@ export async function ensureJobThread(tenantId: string, jobId: string, actorUser
     }),
   ])
 
+  const extraIds = Array.isArray(options?.participantIds)
+    ? options!.participantIds!.filter((id) => typeof id === 'string' && id.length > 0)
+    : []
+
   const memberIds = new Set<string>([
     actorUserId,
     ...assignments.map((a) => a.userId),
     ...staff.map((s) => s.id),
+    ...extraIds,
   ])
 
   if (memberIds.size > 0) {
@@ -544,11 +629,31 @@ export async function sendMessageToConversation(
   })
   const senderName = senderProfile ? displayName(senderProfile) : sender.email || 'Team member'
 
+  const notifyFilter =
+    Array.isArray(input.notifyUserIds) && input.notifyUserIds.length > 0
+      ? Array.from(new Set(input.notifyUserIds.filter((id) => id && id !== sender.id)))
+      : null
+
+  // Ensure explicitly selected recipients are conversation members (job chat picker).
+  if (notifyFilter && notifyFilter.length > 0) {
+    await prisma.chatConversationMember.createMany({
+      data: notifyFilter.map((userId) => ({
+        tenantId: sender.tenantId,
+        conversationId,
+        userId,
+      })),
+      skipDuplicates: true,
+    })
+  }
+
   const recipientMembers = await prisma.chatConversationMember.findMany({
     where: {
       tenantId: sender.tenantId,
       conversationId,
-      userId: { not: sender.id },
+      userId: {
+        not: sender.id,
+        ...(notifyFilter ? { in: notifyFilter } : {}),
+      },
       OR: [{ mutedUntil: null }, { mutedUntil: { lt: new Date() } }],
     },
     select: { userId: true },

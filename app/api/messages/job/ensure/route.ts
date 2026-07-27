@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
-import { ensureJobThread } from '@/lib/chat/service'
+import { ensureJobThread, listJobThreadRecipients } from '@/lib/chat/service'
 
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -18,8 +18,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'jobId is required' }, { status: 400 })
     }
 
-    const conversation = await ensureJobThread(user.tenantId, jobId, user.id)
-    return NextResponse.json({ conversationId: conversation.id, conversation })
+    const participantIds = Array.isArray(body?.participantIds)
+      ? body.participantIds.filter((id: unknown) => typeof id === 'string' && id)
+      : undefined
+
+    const [conversation, recipients] = await Promise.all([
+      ensureJobThread(user.tenantId, jobId, user.id, { participantIds }),
+      listJobThreadRecipients(user.tenantId, jobId),
+    ])
+
+    return NextResponse.json({
+      conversationId: conversation.id,
+      conversation,
+      recipients,
+    })
   } catch (error: any) {
     const message = String(error?.message || 'Internal server error')
     if (message.includes('not found')) {
