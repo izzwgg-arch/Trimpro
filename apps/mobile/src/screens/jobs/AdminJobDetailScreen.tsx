@@ -306,9 +306,9 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
           </DetailSection>
         )}
 
-        {canViewJobDocuments() ? <JobDocumentsSection job={job} /> : null}
-
         <JobInformationSection job={job} showFinancials={canViewJobFinancials()} />
+
+        {canViewJobDocuments() ? <JobDocumentsSection job={job} /> : null}
 
         {canViewJobBilling() ? <JobBillingSummarySection job={job} /> : null}
 

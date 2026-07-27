@@ -1,10 +1,15 @@
 import React from 'react'
 import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { NativeStackScreenProps } from '@react-navigation/native-stack'
+import { Ionicons } from '@expo/vector-icons'
 import { Screen } from '../../components/Screen'
 import { apiRequest } from '../../api/client'
 import { BRAND } from '../../config/env'
 import { openFromNotificationPayload } from '../../notifications/openFromNotification'
+import { JobsStackParamList } from '../../types/navigation'
+
+type Props = NativeStackScreenProps<JobsStackParamList, 'NotificationsHome'>
 
 type MobileNotification = {
   id: string
@@ -19,7 +24,7 @@ type MobileNotification = {
   createdAt: string
 }
 
-export function NotificationsScreen() {
+export function NotificationsScreen({ navigation }: Props) {
   const queryClient = useQueryClient()
 
   const notificationsQuery = useQuery({
@@ -65,6 +70,17 @@ export function NotificationsScreen() {
           <Text style={styles.markAllText}>Mark all read</Text>
         </Pressable>
       </View>
+
+      <Pressable
+        style={styles.settingsButton}
+        onPress={() => navigation.navigate('NotificationSettings')}
+        accessibilityRole="button"
+        accessibilityLabel="Notification settings"
+      >
+        <Ionicons name="settings-outline" size={18} color="#fff" />
+        <Text style={styles.settingsText}>Notification settings</Text>
+      </Pressable>
+
       <Text style={styles.subTitle}>Unread: {unreadCount}</Text>
 
       <FlatList
@@ -95,13 +111,24 @@ const styles = StyleSheet.create({
   screen: { padding: 12, gap: 8 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   title: { fontSize: 24, fontWeight: '800', color: BRAND.text },
-  subTitle: { color: BRAND.textMuted, fontSize: 13 },
+  subTitle: { color: BRAND.muted, fontSize: 13 },
+  settingsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: BRAND.primary,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  settingsText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   markAllButton: { borderWidth: 1, borderColor: BRAND.primary, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
   markAllText: { color: BRAND.primary, fontWeight: '700' },
   row: { borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10, backgroundColor: '#fff', padding: 10, marginBottom: 8 },
   rowUnread: { borderColor: BRAND.primary, backgroundColor: '#F0F9FF' },
   rowTitle: { color: BRAND.text, fontSize: 15, fontWeight: '700' },
   rowBody: { marginTop: 4, color: BRAND.text, fontSize: 13 },
-  rowMeta: { marginTop: 6, color: BRAND.textMuted, fontSize: 11 },
-  empty: { marginTop: 20, color: BRAND.textMuted, textAlign: 'center' },
+  rowMeta: { marginTop: 6, color: BRAND.muted, fontSize: 11 },
+  empty: { marginTop: 20, color: BRAND.muted, textAlign: 'center' },
 })

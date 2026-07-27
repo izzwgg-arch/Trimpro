@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
-import { requirePermission } from '@/lib/authorization'
+import { requireWebOrMobilePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { renderPdfFromHtml } from '@/lib/pdf/render-html-to-pdf'
 import { buildPurchaseOrderPdfHtml } from '@/lib/documents/pdf-templates'
@@ -19,7 +19,11 @@ export async function GET(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
-  const permError = await requirePermission(request, 'purchase_orders.view')
+  const permError = await requireWebOrMobilePermission(
+    request,
+    'purchase_orders.view',
+    'mobile.jobs.view_documents'
+  )
   if (permError) return permError
 
   const user = getAuthUser(request)

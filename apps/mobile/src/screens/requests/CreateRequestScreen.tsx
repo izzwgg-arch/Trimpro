@@ -16,6 +16,7 @@ import {
   upsertRequestDraft,
 } from '../../drafts/storage'
 import { formatScheduledAt } from '../../utils/schedule'
+import { publishRequestDraft } from '../../services/publish-request-draft'
 
 interface ResolvedAddress {
   street: string
@@ -183,6 +184,15 @@ export function CreateRequestScreen({ navigation, route }: Props) {
   }
 
   const submit = async () => {
+    if (!firstName.trim() || !lastName.trim()) {
+      Alert.alert('Missing info', 'First name and last name are required.')
+      return
+    }
+    if (clientMode === 'existing' && !selectedClient?.id) {
+      Alert.alert('Missing client', 'Select an existing client or switch to Add New Client.')
+      return
+    }
+
     setLoading(true)
     try {
       const existingDraft = draftId ? await getRequestDraft(draftId) : null
@@ -202,16 +212,22 @@ export function CreateRequestScreen({ navigation, route }: Props) {
         notes,
         attachments: draftAttachments,
         scheduledAt,
-        publishState:
-          firstName.trim() && lastName.trim() && (clientMode === 'new' || selectedClient?.id)
-            ? 'readyToPublish'
-            : 'localDraft',
+        publishState: 'pendingPublish',
         publishError: null,
       })
-      navigation.replace('RequestCreate', { draftId: savedDraft.id })
-      Alert.alert('Saved locally', 'Request draft stays on this phone until you publish it from the Requests list.')
+
+      const { requestId, attachmentErrors } = await publishRequestDraft(savedDraft)
+      void navigation.replace('RequestDetail', { requestId })
+      if (attachmentErrors.length > 0) {
+        Alert.alert(
+          'Saved with warnings',
+          `Request was saved for everyone, but ${attachmentErrors.length} attachment(s) failed.`
+        )
+      } else {
+        Alert.alert('Saved', 'Request saved and is visible to your team.')
+      }
     } catch (error: any) {
-      Alert.alert('Failed', error?.message || 'Could not save request draft.')
+      Alert.alert('Failed', error?.message || 'Could not save request.')
     } finally {
       setLoading(false)
     }
@@ -220,10 +236,10 @@ export function CreateRequestScreen({ navigation, route }: Props) {
   return (
     <Screen style={styles.screen}>
       <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.title}>{draftId ? 'Edit Local Request Draft' : 'Create Local Request Draft'}</Text>
+        <Text style={styles.title}>{draftId ? 'Edit Request' : 'Create Request'}</Text>
         <View style={styles.statusCard}>
-          <Text style={styles.statusTitle}>Local draft</Text>
-          <Text style={styles.statusText}>This request stays unpublished until you explicitly publish it.</Text>
+          <Text style={styles.statusTitle}>Team request</Text>
+          <Text style={styles.statusText}>Saving publishes this request for everyone on your team.</Text>
           <Text style={styles.statusText}>Schedule: {formatScheduledAt(scheduledAt)}</Text>
         </View>
         <View style={styles.clientModeWrap}>
@@ -341,14 +357,14 @@ export function CreateRequestScreen({ navigation, route }: Props) {
         <View style={styles.uploadSection}>
           <View style={styles.uploadHeader}>
             <Ionicons name="attach-outline" size={18} color={BRAND.text} />
-            <Text style={styles.uploadTitle}>Local attachments</Text>
+            <Text style={styles.uploadTitle}>Attachments</Text>
           </View>
           <Pressable style={styles.uploadButton} onPress={() => setShowAttachmentPicker(true)}>
             <Ionicons name="add-circle-outline" size={18} color={BRAND.primary} />
             <Text style={styles.uploadButtonText}>Add Attachment</Text>
           </Pressable>
           <Text style={styles.uploadHint}>
-            Files stay local until publish. Supports photos, videos, PDF, Word, Excel, CSV, PowerPoint, and TXT.
+            Files upload when you save. Supports photos, videos, PDF, Word, Excel, CSV, PowerPoint, and TXT.
           </Text>
           {draftAttachments.map((attachment) => (
             <View key={attachment.id} style={styles.localAttachmentRow}>
@@ -373,7 +389,7 @@ export function CreateRequestScreen({ navigation, route }: Props) {
           onPress={submit}
           disabled={loading}
         >
-          <Text style={styles.buttonText}>{loading ? 'Saving...' : 'Save locally'}</Text>
+          <Text style={styles.buttonText}>{loading ? 'Saving...' : 'Save request'}</Text>
         </Pressable>
       </ScrollView>
       <AttachmentPickerSheet

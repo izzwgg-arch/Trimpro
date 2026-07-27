@@ -6,6 +6,7 @@ import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { parseAddressParts } from '@/lib/address/parse'
 import { geocodeAddressPartsFromString } from '@/lib/geocoding'
 import { assertCanAccessJobType, resolveJobTypeForWrite } from '@/lib/jobs/job-type-scope'
+import { notifyRequestStatusChanged } from '@/lib/notifications'
 
 export async function GET(
   request: NextRequest,
@@ -315,6 +316,18 @@ export async function PUT(
           description: `Lead "${lead.firstName} ${lead.lastName}" status changed to ${lead.status}`,
           leadId: lead.id,
         },
+      })
+      await notifyRequestStatusChanged({
+        tenantId: user.tenantId,
+        requestId: lead.id,
+        requestName: `${lead.firstName} ${lead.lastName}`.trim(),
+        oldStatus: existing.status,
+        newStatus: lead.status,
+        createdById: existing.createdByUserId || null,
+        assignedToId: lead.assignedToId || existing.assignedToId || null,
+        actorUserId: user.id,
+      }).catch((error) => {
+        console.error('Request status notification error:', error)
       })
     }
 

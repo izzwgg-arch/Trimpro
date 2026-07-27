@@ -6,14 +6,18 @@ import * as Notifications from 'expo-notifications'
 import * as ImagePicker from 'expo-image-picker'
 import * as FileSystem from 'expo-file-system/legacy'
 import { useQuery } from '@tanstack/react-query'
+import { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { Screen } from '../../components/Screen'
 import { BRAND } from '../../config/env'
 import { useAuth } from '../../auth/AuthContext'
 import { apiRequest } from '../../api/client'
 import { getLastPushReceivedAt, getStoredPushToken, registerPushToken } from '../../notifications/registerPush'
 import { API_BASE_URL } from '../../config/env'
+import { JobsStackParamList } from '../../types/navigation'
 
-export function ProfileScreen() {
+type Props = NativeStackScreenProps<JobsStackParamList, 'ProfileHome'>
+
+export function ProfileScreen({ navigation }: Props) {
   const { user, signOut, token } = useAuth()
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
   const [isRegisteringPush, setIsRegisteringPush] = useState(false)
@@ -217,6 +221,13 @@ export function ProfileScreen() {
             <Text style={styles.secondaryButtonText}>Send test push</Text>
           </Pressable>
         ) : null}
+      </View>
+      <View style={styles.card}>
+        <Text style={styles.subtitle}>Sharing</Text>
+        <Text style={styles.row}>Share photos, videos, and documents into TrimPro from other apps.</Text>
+        <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate('ShareIngress')}>
+          <Text style={styles.secondaryButtonText}>Test Share Ingress</Text>
+        </Pressable>
       </View>
       <Pressable style={styles.button} onPress={() => signOut()}>
         <Text style={styles.buttonText}>Logout</Text>

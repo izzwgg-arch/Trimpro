@@ -29,6 +29,7 @@ import { AttachmentUploadQueue } from '../../components/attachments/AttachmentUp
 import { pickAttachmentsByAction, uploadFileWithProgress } from '../../services/attachment-upload'
 import { isPdfAttachment, normalizeAttachmentUrl } from '../../services/open-attachment'
 import { AttachmentGalleryModal } from '../../components/attachments/AttachmentGalleryModal'
+import { AttachmentOpenPressable } from '../../components/attachments/AttachmentOpenPressable'
 import { useAttachmentUploadQueue } from '../../hooks/useAttachmentUploadQueue'
 import { useMobilePermissions } from '../../hooks/useMobilePermissions'
 
@@ -793,9 +794,10 @@ export function RequestDetailScreen({ route }: Props) {
         renderItem={({ item }) => {
           const idx = attachments.findIndex((row) => row.id === item.id)
           return (
-          <Pressable
+          <AttachmentOpenPressable
+            attachment={item}
             style={styles.attachmentCard}
-            onPress={() => {
+            onOpenGallery={() => {
               setGalleryIndex(Math.max(0, idx))
               setGalleryVisible(true)
             }}
@@ -829,7 +831,7 @@ export function RequestDetailScreen({ route }: Props) {
                 ) : null}
               </View>
             )}
-          </Pressable>
+          </AttachmentOpenPressable>
           )
         }}
       />
@@ -846,6 +848,11 @@ export function RequestDetailScreen({ route }: Props) {
         index={galleryIndex}
         onClose={() => setGalleryVisible(false)}
         onIndexChange={setGalleryIndex}
+        entityType="request"
+        entityId={requestId}
+        onAttachmentCreated={() => {
+          queryClient.invalidateQueries({ queryKey: ['mobile-request-attachments', requestId] })
+        }}
       />
 
       <Modal visible={showAssignPicker} transparent animationType="fade" onRequestClose={() => setShowAssignPicker(false)}>

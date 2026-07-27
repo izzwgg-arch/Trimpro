@@ -3,24 +3,20 @@ import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, StyleShe
 import { useFocusEffect } from '@react-navigation/native'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { InfiniteData, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import * as FileSystem from 'expo-file-system/legacy'
 import { AppScreen } from '../../components/AppScreen'
 import { EmptyState } from '../../components/EmptyState'
 import { apiRequest } from '../../api/client'
 import { JobsStackParamList } from '../../types/navigation'
 import { colors, spacing, typography } from '../../theme/tokens'
-import { API_BASE_URL } from '../../config/env'
 import { useAuth } from '../../auth/AuthContext'
 import { useMobilePermissions } from '../../hooks/useMobilePermissions'
 import {
-  deleteRequestDraft,
   listRequestDrafts,
   LocalRequestDraft,
   setRequestDraftPublishState,
-  upsertRequestDraft,
 } from '../../drafts/storage'
 import { formatScheduledAt } from '../../utils/schedule'
-import { extractCreatedRequestId } from './request-utils'
+import { publishRequestDraft } from '../../services/publish-request-draft'
 
 type Props = NativeStackScreenProps<JobsStackParamList, 'RequestsHome'>
 
@@ -129,93 +125,8 @@ export function RequestsListScreen({ navigation }: Props) {
   )
 
   const publishDraftMutation = useMutation({
-    mutationFn: async (draft: LocalRequestDraft) => {
-      if (!token) {
-        throw new Error('You must be logged in to publish requests.')
-      }
-      if (draft.clientMode === 'existing' && !draft.selectedClientId) {
-        throw new Error('Select an existing client before publishing.')
-      }
-      if (!draft.firstName.trim() || !draft.lastName.trim()) {
-        throw new Error('First name and last name are required before publishing.')
-      }
-
-      await setRequestDraftPublishState(draft.id, 'pendingPublish')
-      await reloadLocalDrafts()
-
-      let resolvedAddress = draft.jobSiteAddress
-      let addressSelected = draft.addressSelectedFromSuggestions
-      if (resolvedAddress.trim() && !addressSelected) {
-        const resolved = await apiRequest<{ address: { street: string; city: string; state: string; zipCode: string } }>(
-          `/api/mobile/places?mode=resolve&address=${encodeURIComponent(resolvedAddress.trim())}`
-        )
-        const locality = [resolved.address.city, resolved.address.state, resolved.address.zipCode].filter(Boolean).join(' ')
-        resolvedAddress = [resolved.address.street, locality].filter(Boolean).join(', ')
-        addressSelected = true
-        await upsertRequestDraft({
-          id: draft.id,
-          jobSiteAddress: resolvedAddress,
-          addressSelectedFromSuggestions: true,
-          publishState: 'pendingPublish',
-        })
-      }
-
-      const response = await apiRequest<{ lead?: { id?: string; createdAt?: string; status?: string }; id?: string }>(
-        '/api/leads',
-        'POST',
-        {
-          firstName: draft.firstName.trim(),
-          lastName: draft.lastName.trim(),
-          phone: draft.phone.trim() || null,
-          email: draft.email.trim() || null,
-          company: draft.company.trim() || null,
-          clientId: draft.clientMode === 'existing' ? draft.selectedClientId : null,
-          jobSiteAddress: resolvedAddress.trim() || null,
-          notes: draft.notes.trim() || null,
-          source: 'OTHER',
-          status: 'NEW',
-        }
-      )
-
-      const requestId = extractCreatedRequestId(response)
-      const attachmentErrors: string[] = []
-
-      for (const attachment of draft.attachments || []) {
-        try {
-          const upload = await FileSystem.uploadAsync(`${API_BASE_URL}/api/uploads`, attachment.uri, {
-            fieldName: 'file',
-            httpMethod: 'POST',
-            uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-            headers: {
-              Authorization: `Bearer ${token}`,
-              Accept: 'application/json',
-            },
-            mimeType: attachment.mimeType,
-          })
-
-          if (upload.status < 200 || upload.status >= 300) {
-            throw new Error('Upload failed')
-          }
-
-          const payload = JSON.parse(upload.body)
-          await apiRequest('/api/attachments', 'POST', {
-            entityType: 'request',
-            entityId: requestId,
-            fileName: attachment.fileName,
-            fileSize: attachment.fileSize,
-            mimeType: attachment.mimeType,
-            url: payload.url,
-            key: payload.relativeUrl || payload.filename || payload.url,
-          })
-        } catch (error: any) {
-          attachmentErrors.push(error?.message || `Failed to upload ${attachment.fileName}`)
-        }
-      }
-
-      return { requestId, attachmentErrors }
-    },
-    onSuccess: async ({ requestId, attachmentErrors }, draft) => {
-      await deleteRequestDraft(draft.id)
+    mutationFn: async (draft: LocalRequestDraft) => publishRequestDraft(draft),
+    onSuccess: async ({ requestId, attachmentErrors }) => {
       await reloadLocalDrafts()
       void queryClient.invalidateQueries({ queryKey: ['mobile-requests-list'] })
       navigation.navigate('RequestDetail', { requestId })
@@ -294,7 +205,7 @@ export function RequestsListScreen({ navigation }: Props) {
                 style={styles.newButton}
                 onPress={() => navigation.navigate('RequestCreate')}
               >
-                <Text style={styles.newButtonText}>New Draft</Text>
+                <Text style={styles.newButtonText}>New Request</Text>
               </Pressable>
             </View>
             <Text style={styles.sectionLabel}>Local drafts</Text>

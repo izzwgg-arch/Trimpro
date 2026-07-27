@@ -3,13 +3,13 @@
     "name": "TrimPro Field",
     "slug": "trimpro-field",
     "scheme": ["trimprofield", "trimpro"],
-    "version": "1.0.1",
+    "version": "1.0.6",
     "runtimeVersion": {
       "policy": "appVersion"
     },
     "updates": {
-      "enabled": true,
-      "checkAutomatically": "ON_LOAD",
+      "enabled": false,
+      "checkAutomatically": "NEVER",
       "fallbackToCacheTimeout": 0,
       "url": "https://u.expo.dev/5d6344e3-86ce-4e96-93e8-13893313d47f"
     },
@@ -35,7 +35,7 @@
     },
     "android": {
       "package": "com.trimpro.field",
-      "versionCode": 16,
+      "versionCode": 22,
       "softwareKeyboardLayoutMode": "pan",
       "googleServicesFile": "./google-services.json",
       "notification": {
@@ -63,7 +63,18 @@
       "expo-secure-store",
       "expo-notifications",
       "expo-font",
-      "./plugins/withAndroidViewerQueries.js"
+      "./plugins/withAndroidViewerQueries.js",
+      [
+        "expo-share-intent",
+        {
+          "disableIOS": true,
+          "androidIntentFilters": ["*/*", "image/*", "video/*", "application/pdf"],
+          "androidMultiIntentFilters": ["*/*", "image/*", "video/*", "application/pdf"],
+          "androidMainActivityAttributes": {
+            "android:launchMode": "singleTask"
+          }
+        }
+      ]
     ],
     "extra": {
       "eas": {

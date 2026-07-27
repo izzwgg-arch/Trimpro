@@ -28,6 +28,7 @@ import { JobsStackParamList } from '../../types/navigation'
 import { enqueueOutbox } from '../../offline/outbox'
 import { useOnlineState } from '../../hooks/useOnlineState'
 import { isPdfAttachment, normalizeAttachmentUrl } from '../../services/open-attachment'
+import { AttachmentOpenPressable } from '../../components/attachments/AttachmentOpenPressable'
 import { useAuth } from '../../auth/AuthContext'
 import { useMobilePermissions } from '../../hooks/useMobilePermissions'
 import { AttachmentPickerSheet } from '../../components/attachments/AttachmentPickerSheet'
@@ -658,14 +659,16 @@ export function JobDetailScreen({ route, navigation }: Props) {
                   onPress={async () => {
                     if (!job) return
                     try {
-                      const team = await apiRequest<{ conversationId: string }>('/api/messages/team/ensure', 'POST', {})
+                      const thread = await apiRequest<{ conversationId: string }>('/api/messages/job/ensure', 'POST', {
+                        jobId: job.id,
+                      })
                       const parentNav: any = navigation.getParent()?.getParent() || navigation.getParent()
                       parentNav?.navigate('MainTabs', {
                         screen: 'MessagesTab',
                         params: {
                           screen: 'MessageThread',
                           params: {
-                            conversationId: team.conversationId,
+                            conversationId: thread.conversationId,
                             jobContext: {
                               jobId: job.id,
                               jobNumber: job.jobNumber,
@@ -675,11 +678,11 @@ export function JobDetailScreen({ route, navigation }: Props) {
                         },
                       })
                     } catch (error: any) {
-                      Alert.alert('Error', error?.message || 'Failed to open Team Chat')
+                      Alert.alert('Error', error?.message || 'Failed to open Job Chat')
                     }
                   }}
                 >
-                  <Text style={styles.secondaryButtonText}>Send Message (Team)</Text>
+                  <Text style={styles.secondaryButtonText}>Send Message</Text>
                 </Pressable>
                 {!!job.assignedTo?.id && job.assignedTo.id !== user?.id && (
                   <Pressable
@@ -815,9 +818,9 @@ export function JobDetailScreen({ route, navigation }: Props) {
               </View>
             </DetailSection>
 
-            {canViewJobDocuments() ? <JobDocumentsSection job={job} /> : null}
-
             <JobInformationSection job={job} showFinancials={canViewJobFinancials()} />
+
+            {canViewJobDocuments() ? <JobDocumentsSection job={job} /> : null}
 
             {canViewJobBilling() ? (
               <JobBillingSummarySection job={job}>{timeTrackerBlock}</JobBillingSummarySection>
@@ -885,40 +888,43 @@ export function JobDetailScreen({ route, navigation }: Props) {
                         String((a as any).thumbnailUrl || (a as any).previewUrl || '').trim() || null
                       return (
                         <View key={a.id} style={[styles.mediaTileWrap, { width: `${100 / tileColumns}%` }]}>
-                          <Pressable
-                            style={styles.mediaTile}
-                            onPress={() => {
+                          <AttachmentOpenPressable
+                            attachment={a}
+                            onOpenGallery={() => {
                               const idx = attachmentRows.findIndex((x) => x.id === a.id)
                               setGalleryIndex(Math.max(0, idx))
                               setGalleryVisible(true)
                             }}
                           >
-                            {isImage ? (
-                              <Image source={{ uri: a.url }} style={styles.mediaTileImage} />
-                            ) : isPdf && previewUrl ? (
-                              <Image source={{ uri: previewUrl }} style={styles.mediaTileImage} />
-                            ) : (
-                              <View style={styles.mediaTileIconWrap}>
-                                <Ionicons
-                                  name={
-                                    isVideo
-                                      ? 'videocam-outline'
-                                      : isPdf
-                                        ? 'document-outline'
-                                        : 'document-text-outline'
-                                  }
-                                  size={22}
-                                  color={BRAND.text}
-                                />
-                                {!isVideo ? (
-                                  <Text style={styles.mediaFileBadge}>{isPdf ? 'PDF FILE' : 'FILE'}</Text>
-                                ) : null}
-                              </View>
-                            )}
-                          </Pressable>
-                          <Text style={styles.mediaFileName} numberOfLines={1}>
-                            {a.fileName || (isPdf ? 'PDF' : isVideo ? 'Video' : 'File')}
-                          </Text>
+                            <View style={styles.mediaTile}>
+                              {isImage ? (
+                                <Image source={{ uri: a.url }} style={styles.mediaTileImage} />
+                              ) : isPdf && previewUrl ? (
+                                <Image source={{ uri: previewUrl }} style={styles.mediaTileImage} />
+                              ) : (
+                                <View style={styles.mediaTileIconWrap}>
+                                  <Ionicons
+                                    name={
+                                      isVideo
+                                        ? 'videocam-outline'
+                                        : isPdf
+                                          ? 'document-outline'
+                                          : 'document-text-outline'
+                                    }
+                                    size={22}
+                                    color={BRAND.text}
+                                  />
+                                  {!isVideo ? (
+                                    <Text style={styles.mediaFileBadge}>{isPdf ? 'PDF FILE' : 'FILE'}</Text>
+                                  ) : null}
+                                </View>
+                              )}
+                            </View>
+                            <Text style={styles.mediaFileName} numberOfLines={1}>
+                              {a.fileName || (isPdf ? 'PDF' : isVideo ? 'Video' : 'File')}
+                            </Text>
+                            <Text style={styles.mediaTapHint}>Tap to open</Text>
+                          </AttachmentOpenPressable>
                         </View>
                       )
                     })}
@@ -987,23 +993,29 @@ export function JobDetailScreen({ route, navigation }: Props) {
               onClose={() => setShowAttachmentPicker(false)}
               onSelect={onSelectAttachmentAction}
             />
-
-            <AttachmentGalleryModal
-              visible={galleryVisible}
-              attachments={attachmentRows.map((row) => ({
-                id: row.id,
-                fileName: row.fileName || 'Attachment',
-                fileSize: row.fileSize,
-                mimeType: row.mimeType || 'application/octet-stream',
-                url: row.url,
-              }))}
-              index={galleryIndex}
-              onClose={() => setGalleryVisible(false)}
-              onIndexChange={setGalleryIndex}
-            />
           </>
         )}
       </ScrollView>
+
+      <AttachmentGalleryModal
+        visible={galleryVisible}
+        attachments={attachmentRows.map((row) => ({
+          id: row.id,
+          fileName: row.fileName || 'Attachment',
+          fileSize: row.fileSize,
+          mimeType: row.mimeType || 'application/octet-stream',
+          url: row.url,
+        }))}
+        index={galleryIndex}
+        onClose={() => setGalleryVisible(false)}
+        onIndexChange={setGalleryIndex}
+        entityType="job"
+        entityId={jobId}
+        onAttachmentCreated={() => {
+          queryClient.invalidateQueries({ queryKey: ['mobile-job-attachments', jobId] })
+          queryClient.invalidateQueries({ queryKey: ['mobile-job', jobId] })
+        }}
+      />
     </Screen>
   )
 }
@@ -1252,6 +1264,13 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 11,
     color: BRAND.muted,
+    paddingHorizontal: 2,
+  },
+  mediaTapHint: {
+    marginTop: 1,
+    fontSize: 10,
+    color: '#64748B',
+    fontWeight: '600',
     paddingHorizontal: 2,
   },
   viewerRoot: {

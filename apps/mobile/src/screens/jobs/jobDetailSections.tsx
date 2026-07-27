@@ -1,8 +1,22 @@
-import React from 'react'
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native'
+import React, { useMemo, useState } from 'react'
+import {
+  Linking,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import { DetailRow, DetailSection } from '../../components/DetailSection'
 import { Job, TimeEntry } from '../../types/models'
 import { colors, spacing, typography } from '../../theme/tokens'
+import { API_BASE_URL } from '../../config/env'
+import {
+  JobDocumentPdfModal,
+  type JobDocumentPreview,
+} from '../../components/attachments/JobDocumentPdfModal'
 import {
   formatCents,
   formatDate,
@@ -16,114 +30,295 @@ function asArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : []
 }
 
-function DocListItem({
-  title,
-  subtitle,
-  amount,
-  status,
-}: {
+type DocKind = 'estimate' | 'invoice' | 'purchase_order' | 'payment'
+type SortOption = 'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc'
+
+type JobDocRow = {
+  key: string
+  kind: DocKind
+  number: string
   title: string
+  status: string
+  amount: number
+  date: string
   subtitle?: string
-  amount?: string | null
-  status?: string
-}) {
-  return (
-    <View style={styles.docRow}>
-      <View style={styles.docMain}>
-        <Text style={styles.docTitle} numberOfLines={1}>
-          {title}
-        </Text>
-        {subtitle ? (
-          <Text style={styles.docMeta} numberOfLines={1}>
-            {subtitle}
-          </Text>
-        ) : null}
-      </View>
-      <View style={styles.docRight}>
-        {amount != null && amount !== '' ? <Text style={styles.docAmount}>{formatMoney(amount)}</Text> : null}
-        {status ? <Text style={styles.docStatus}>{String(status).replaceAll('_', ' ')}</Text> : null}
-      </View>
-    </View>
-  )
+  preview: JobDocumentPreview
+}
+
+const KIND_LABEL: Record<DocKind, string> = {
+  estimate: 'Estimate',
+  invoice: 'Invoice',
+  purchase_order: 'PO',
+  payment: 'Payment',
+}
+
+const SORT_OPTIONS: Array<{ value: SortOption; label: string }> = [
+  { value: 'date-desc', label: 'Newest' },
+  { value: 'date-asc', label: 'Oldest' },
+  { value: 'amount-desc', label: 'Amount ↓' },
+  { value: 'amount-asc', label: 'Amount ↑' },
+]
+
+const TYPE_OPTIONS: Array<{ value: 'all' | DocKind; label: string }> = [
+  { value: 'all', label: 'All' },
+  { value: 'estimate', label: 'Estimates' },
+  { value: 'invoice', label: 'Invoices' },
+  { value: 'purchase_order', label: 'POs' },
+  { value: 'payment', label: 'Payments' },
+]
+
+function parseAmount(value?: string | number | null): number {
+  if (value == null || value === '') return 0
+  const n = typeof value === 'number' ? value : Number.parseFloat(String(value).replace(/[^0-9.-]/g, ''))
+  return Number.isFinite(n) ? n : 0
+}
+
+function buildJobDocumentRows(job: Job): JobDocRow[] {
+  const rows: JobDocRow[] = []
+
+  for (const row of asArray<NonNullable<Job['estimates']>[number]>(job.estimates)) {
+    const number = row.estimateNumber || 'Estimate'
+    const fileName = `Estimate-${number}.pdf`
+    rows.push({
+      key: `estimate-${row.id}`,
+      kind: 'estimate',
+      number,
+      title: row.title || number,
+      status: row.status,
+      amount: parseAmount(row.total),
+      date: row.createdAt,
+      subtitle: row.title || undefined,
+      preview: {
+        id: row.id,
+        title: `Estimate ${number}`,
+        fileName,
+        url: `${API_BASE_URL}/api/estimates/${row.id}/pdf`,
+      },
+    })
+  }
+
+  for (const row of asArray<NonNullable<Job['invoices']>[number]>(job.invoices)) {
+    const number = row.invoiceNumber || 'Invoice'
+    const fileName = `Invoice-${number}.pdf`
+    rows.push({
+      key: `invoice-${row.id}`,
+      kind: 'invoice',
+      number,
+      title: number,
+      status: row.status,
+      amount: parseAmount(row.total),
+      date: row.createdAt || '',
+      subtitle: row.balance != null ? `Balance ${formatMoney(row.balance)}` : undefined,
+      preview: {
+        id: row.id,
+        title: `Invoice ${number}`,
+        fileName,
+        url: `${API_BASE_URL}/api/invoices/${row.id}/pdf`,
+      },
+    })
+  }
+
+  for (const row of asArray<NonNullable<Job['purchaseOrders']>[number]>(job.purchaseOrders)) {
+    const number = row.poNumber || 'PO'
+    const fileName = `PO-${number}.pdf`
+    rows.push({
+      key: `po-${row.id}`,
+      kind: 'purchase_order',
+      number,
+      title: number,
+      status: row.status,
+      amount: parseAmount(row.total),
+      date: row.createdAt,
+      preview: {
+        id: row.id,
+        title: `PO ${number}`,
+        fileName,
+        url: `${API_BASE_URL}/api/purchase-orders/${row.id}/pdf`,
+      },
+    })
+  }
+
+  for (const row of asArray<NonNullable<Job['payments']>[number]>(job.payments)) {
+    const number = row.invoiceNumber || row.reference || 'Payment'
+    const fileName = `Receipt-${number}.pdf`
+    rows.push({
+      key: `payment-${row.id}`,
+      kind: 'payment',
+      number,
+      title: number,
+      status: row.status,
+      amount: parseAmount(row.amount),
+      date: row.paymentDate || '',
+      subtitle: [row.method, formatDate(row.paymentDate)].filter(Boolean).join(' · ') || undefined,
+      preview: {
+        id: row.id,
+        title: `Payment ${number}`,
+        fileName,
+        url: `${API_BASE_URL}/api/payments/${row.id}/receipt`,
+      },
+    })
+  }
+
+  return rows
+}
+
+function compareDocs(a: JobDocRow, b: JobDocRow, sort: SortOption) {
+  switch (sort) {
+    case 'date-asc':
+      return new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime()
+    case 'amount-desc':
+      return b.amount - a.amount
+    case 'amount-asc':
+      return a.amount - b.amount
+    case 'date-desc':
+    default:
+      return new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime()
+  }
 }
 
 export function JobDocumentsSection({ job }: { job: Job }) {
-  const estimates = asArray<NonNullable<Job['estimates']>[number]>(job.estimates)
-  const invoices = asArray<NonNullable<Job['invoices']>[number]>(job.invoices)
-  const purchaseOrders = asArray<NonNullable<Job['purchaseOrders']>[number]>(job.purchaseOrders)
-  const payments = asArray<NonNullable<Job['payments']>[number]>(job.payments)
-  const total =
-    estimates.length + invoices.length + purchaseOrders.length + payments.length
+  const [search, setSearch] = useState('')
+  const [sort, setSort] = useState<SortOption>('date-desc')
+  const [typeFilter, setTypeFilter] = useState<'all' | DocKind>('all')
+  const [preview, setPreview] = useState<JobDocumentPreview | null>(null)
+  const [expanded, setExpanded] = useState(true)
+
+  const allRows = useMemo(() => buildJobDocumentRows(job), [job])
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return allRows
+      .filter((row) => (typeFilter === 'all' ? true : row.kind === typeFilter))
+      .filter((row) => {
+        if (!q) return true
+        const haystack = [
+          row.number,
+          row.title,
+          row.status,
+          row.subtitle,
+          KIND_LABEL[row.kind],
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+        return haystack.includes(q)
+      })
+      .sort((a, b) => compareDocs(a, b, sort))
+  }, [allRows, search, sort, typeFilter])
 
   return (
-    <DetailSection
-      title="Documents"
-      right={<Text style={styles.countBadge}>{total}</Text>}
-    >
-      {total === 0 ? <Text style={styles.empty}>No estimates, invoices, POs, or payments.</Text> : null}
-
-      {estimates.length > 0 ? (
-        <View style={styles.subBlock}>
-          <Text style={styles.subTitle}>Estimates ({estimates.length})</Text>
-          {estimates.map((row) => (
-            <DocListItem
-              key={row.id}
-              title={row.estimateNumber}
-              subtitle={row.title || formatDate(row.createdAt)}
-              amount={row.total}
-              status={row.status}
+    <>
+      <DetailSection
+        title="Documents"
+        right={
+          <View style={styles.docHeaderRight}>
+            <Text style={styles.countBadge}>{allRows.length}</Text>
+            <TouchableOpacity
+              onPress={() => setExpanded((v) => !v)}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel={expanded ? 'Collapse documents' : 'Expand documents'}
+            >
+              <Ionicons
+                name={expanded ? 'chevron-up' : 'chevron-down'}
+                size={20}
+                color={colors.textPrimary}
+              />
+            </TouchableOpacity>
+          </View>
+        }
+      >
+        {!expanded ? (
+          <Text style={styles.empty}>Tap the arrow to show estimates, invoices, POs, and payments.</Text>
+        ) : allRows.length === 0 ? (
+          <Text style={styles.empty}>No estimates, invoices, POs, or payments.</Text>
+        ) : (
+          <>
+            <TextInput
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Search documents…"
+              placeholderTextColor={colors.muted}
+              style={styles.searchInput}
+              autoCorrect={false}
+              autoCapitalize="none"
+              clearButtonMode="while-editing"
             />
-          ))}
-        </View>
-      ) : null}
 
-      {invoices.length > 0 ? (
-        <View style={styles.subBlock}>
-          <Text style={styles.subTitle}>Invoices ({invoices.length})</Text>
-          {invoices.map((row) => (
-            <DocListItem
-              key={row.id}
-              title={row.invoiceNumber}
-              subtitle={row.balance != null ? `Balance ${formatMoney(row.balance)}` : undefined}
-              amount={row.total}
-              status={row.status}
-            />
-          ))}
-        </View>
-      ) : null}
+            <View style={styles.filterRow}>
+              {TYPE_OPTIONS.map((opt) => {
+                const active = typeFilter === opt.value
+                return (
+                  <TouchableOpacity
+                    key={opt.value}
+                    style={[styles.chip, active && styles.chipActive]}
+                    activeOpacity={0.7}
+                    onPress={() => setTypeFilter(opt.value)}
+                  >
+                    <Text style={[styles.chipText, active && styles.chipTextActive]}>{opt.label}</Text>
+                  </TouchableOpacity>
+                )
+              })}
+            </View>
 
-      {purchaseOrders.length > 0 ? (
-        <View style={styles.subBlock}>
-          <Text style={styles.subTitle}>Purchase Orders ({purchaseOrders.length})</Text>
-          {purchaseOrders.map((row) => (
-            <DocListItem
-              key={row.id}
-              title={row.poNumber}
-              subtitle={formatDate(row.createdAt)}
-              amount={row.total}
-              status={row.status}
-            />
-          ))}
-        </View>
-      ) : null}
+            <View style={styles.filterRow}>
+              {SORT_OPTIONS.map((opt) => {
+                const active = sort === opt.value
+                return (
+                  <TouchableOpacity
+                    key={opt.value}
+                    style={[styles.chip, active && styles.chipActive]}
+                    activeOpacity={0.7}
+                    onPress={() => setSort(opt.value)}
+                  >
+                    <Text style={[styles.chipText, active && styles.chipTextActive]}>{opt.label}</Text>
+                  </TouchableOpacity>
+                )
+              })}
+            </View>
 
-      {payments.length > 0 ? (
-        <View style={styles.subBlock}>
-          <Text style={styles.subTitle}>Payments ({payments.length})</Text>
-          {payments.map((row) => (
-            <DocListItem
-              key={row.id}
-              title={row.invoiceNumber || row.reference || 'Payment'}
-              subtitle={[row.method, formatDate(row.paymentDate)].filter(Boolean).join(' · ')}
-              amount={row.amount}
-              status={row.status}
-            />
-          ))}
-        </View>
-      ) : null}
-    </DetailSection>
+            {filtered.length === 0 ? (
+              <Text style={styles.empty}>No documents match your search.</Text>
+            ) : (
+              filtered.map((row) => (
+                <TouchableOpacity
+                  key={row.key}
+                  style={styles.docRow}
+                  activeOpacity={0.55}
+                  onPress={() => setPreview(row.preview)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open ${KIND_LABEL[row.kind]} ${row.number}`}
+                >
+                  <View style={styles.docMain}>
+                    <Text style={styles.docKind}>{KIND_LABEL[row.kind]}</Text>
+                    <Text style={styles.docTitle} numberOfLines={1}>
+                      {row.number}
+                    </Text>
+                    {row.subtitle ? (
+                      <Text style={styles.docMeta} numberOfLines={1}>
+                        {row.subtitle}
+                      </Text>
+                    ) : null}
+                    <Text style={styles.docMeta} numberOfLines={1}>
+                      {formatDate(row.date)} · Tap to open
+                    </Text>
+                  </View>
+                  <View style={styles.docRight}>
+                    <Text style={styles.docAmount}>{formatMoney(row.amount)}</Text>
+                    <Text style={styles.docStatus}>{String(row.status).replace(/_/g, ' ')}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))
+            )}
+          </>
+        )}
+      </DetailSection>
+
+      <JobDocumentPdfModal document={preview} onClose={() => setPreview(null)} />
+    </>
   )
 }
+
 
 export function JobInformationSection({
   job,
@@ -507,6 +702,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     overflow: 'hidden',
   },
+  docHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   subBlock: {
     gap: spacing.xs,
     paddingTop: spacing.xs,
@@ -526,10 +726,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: spacing.sm,
-    paddingVertical: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.divider,
+    backgroundColor: colors.surface,
   },
   docMain: { flex: 1, gap: 2 },
   docRight: { alignItems: 'flex-end', gap: 2 },
+  docKind: {
+    ...typography.caption,
+    color: colors.brandPrimary,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
   docTitle: {
     ...typography.sub,
     color: colors.textPrimary,
@@ -548,6 +759,43 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.muted,
     textTransform: 'uppercase',
+  },
+  searchInput: {
+    borderWidth: 1,
+    borderColor: colors.divider,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: colors.textPrimary,
+    backgroundColor: colors.background,
+    marginBottom: 8,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 8,
+  },
+  chip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.divider,
+    backgroundColor: colors.background,
+  },
+  chipActive: {
+    backgroundColor: colors.brandPrimary,
+    borderColor: colors.brandPrimary,
+  },
+  chipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  chipTextActive: {
+    color: '#fff',
   },
   listRow: {
     gap: 2,

@@ -9,6 +9,7 @@ export type JobsStackParamList = {
   CreateJob: undefined
   EditJob: { jobId: string }
   NotificationsHome: undefined
+  NotificationSettings: undefined
   RequestsHome: undefined
   MeasuringRequestsHome: undefined
   MeasuringRequestDetail: { measuringRequestId: string }
@@ -21,6 +22,14 @@ export type JobsStackParamList = {
   CallsHome: undefined
   OutboxHome: undefined
   ProfileHome: undefined
+  ShareIngress:
+    | {
+        uri?: string
+        name?: string
+        mimeType?: string
+        size?: string
+      }
+    | undefined
 }
 
 export type ScheduleStackParamList = {

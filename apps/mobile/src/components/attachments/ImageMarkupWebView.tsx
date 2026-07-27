@@ -1,12 +1,15 @@
 import React, { useMemo, useRef } from 'react'
-import { StyleSheet, View } from 'react-native'
+import { Alert, StyleSheet, View } from 'react-native'
 import { WebView, WebViewMessageEvent } from 'react-native-webview'
-import { shareDataUrl } from '../../services/open-attachment'
+import { saveMarkupAsAttachmentCopy, shareDataUrl } from '../../services/open-attachment'
 
 type Props = {
   src: string
   fileName: string
   active: boolean
+  entityType?: 'job' | 'request' | 'task' | 'issue' | string
+  entityId?: string
+  onSavedCopy?: () => void
 }
 
 function buildMarkupHtml(src: string, fileName: string) {
@@ -40,7 +43,8 @@ function buildMarkupHtml(src: string, fileName: string) {
     <button type="button" id="zoomOut">−</button>
     <span id="zoomLabel">100%</span>
     <button type="button" id="resetZoom">Reset</button>
-    <button type="button" class="tool active" data-tool="pan">Move</button>
+    <button type="button" class="tool active" data-tool="pan">Pan</button>
+    <button type="button" class="tool" data-tool="select">Select</button>
     <button type="button" class="tool" data-tool="pen">Pen</button>
     <button type="button" class="tool" data-tool="arrow">Arrow</button>
     <button type="button" class="tool" data-tool="box">Box</button>
@@ -61,6 +65,8 @@ function buildMarkupHtml(src: string, fileName: string) {
   const SRC = ${safeSrc};
   const FILE_NAME = ${safeName};
   const COLORS = ['#ef4444','#f59e0b','#22c55e','#3b82f6','#ffffff','#111827'];
+  const HIT_PAD = 14;
+  const HANDLE_RADIUS = 16;
   const canvas = document.getElementById('canvas');
   const stage = document.getElementById('stage');
   const textInput = document.getElementById('textInput');
@@ -75,6 +81,11 @@ function buildMarkupHtml(src: string, fileName: string) {
   let items = [], draft = null, drawing = false, panning = false;
   let panStart = { x: 0, y: 0, ox: 0, oy: 0 };
   let pendingText = null;
+  let selectedId = null;
+  let dragMode = null; // 'move' | 'start' | 'end'
+  let draggingSelect = false;
+  let dragOrigin = null;
+  let dragStartClient = { x: 0, y: 0 };
 
   COLORS.forEach((c) => {
     const b = document.createElement('button');
@@ -132,6 +143,57 @@ function buildMarkupHtml(src: string, fileName: string) {
     return { rect, fit, origin, naturalW, naturalH, drawW, drawH };
   }
 
+  function boxBoundsScreen(item, m) {
+    const a = project(item.start, m.origin, m.fit, zoom);
+    const b = project(item.end, m.origin, m.fit, zoom);
+    return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y) };
+  }
+
+  function textBoundsScreen(item, m) {
+    const at = project(item.point, m.origin, m.fit, zoom);
+    const fontSize = Math.max(10, item.size * zoom);
+    const ctx = canvas.getContext('2d');
+    ctx.font = '700 ' + fontSize + 'px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif';
+    const width = ctx.measureText(item.text).width;
+    return { x: at.x, y: at.y, w: width, h: fontSize };
+  }
+
+  function pointInRect(pt, rect, pad) {
+    return (
+      pt.x >= rect.x - pad &&
+      pt.x <= rect.x + rect.w + pad &&
+      pt.y >= rect.y - pad &&
+      pt.y <= rect.y + rect.h + pad
+    );
+  }
+
+  function distanceToSegment(pt, a, b) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const lenSq = dx * dx + dy * dy;
+    const t = lenSq > 0 ? Math.max(0, Math.min(1, ((pt.x - a.x) * dx + (pt.y - a.y) * dy) / lenSq)) : 0;
+    const projX = a.x + t * dx;
+    const projY = a.y + t * dy;
+    return Math.hypot(pt.x - projX, pt.y - projY);
+  }
+
+  function hitTest(screenPt) {
+    const m = metrics();
+    for (let i = items.length - 1; i >= 0; i--) {
+      const item = items[i];
+      if (item.type === 'box') {
+        if (pointInRect(screenPt, boxBoundsScreen(item, m), HIT_PAD)) return item;
+      } else if (item.type === 'text') {
+        if (pointInRect(screenPt, textBoundsScreen(item, m), HIT_PAD)) return item;
+      } else if (item.type === 'arrow') {
+        const a = project(item.start, m.origin, m.fit, zoom);
+        const b = project(item.end, m.origin, m.fit, zoom);
+        if (distanceToSegment(screenPt, a, b) <= HIT_PAD) return item;
+      }
+    }
+    return null;
+  }
+
   function renderItem(ctx, item, origin, fit, z) {
     if (item.type === 'pen') {
       if (item.points.length < 2) return;
@@ -174,6 +236,36 @@ function buildMarkupHtml(src: string, fileName: string) {
     }
   }
 
+  function renderSelectionHighlight(ctx, item, m) {
+    const PAD = 6;
+    ctx.save();
+    ctx.setLineDash([6, 4]);
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#38bdf8';
+    if (item.type === 'box') {
+      const r = boxBoundsScreen(item, m);
+      ctx.strokeRect(r.x - PAD, r.y - PAD, r.w + PAD * 2, r.h + PAD * 2);
+    } else if (item.type === 'text') {
+      const r = textBoundsScreen(item, m);
+      ctx.strokeRect(r.x - PAD, r.y - PAD, r.w + PAD * 2, r.h + PAD * 2);
+    } else if (item.type === 'arrow') {
+      const a = project(item.start, m.origin, m.fit, zoom);
+      const b = project(item.end, m.origin, m.fit, zoom);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#38bdf8';
+      [a, b].forEach((p) => {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+    ctx.restore();
+  }
+
   function redraw() {
     if (!image.complete) return;
     const m = metrics();
@@ -189,6 +281,10 @@ function buildMarkupHtml(src: string, fileName: string) {
     ctx.drawImage(image, m.origin.x, m.origin.y, m.drawW, m.drawH);
     items.forEach((item) => renderItem(ctx, item, m.origin, m.fit, zoom));
     if (draft) renderItem(ctx, draft, m.origin, m.fit, zoom);
+    if (tool === 'select' && selectedId) {
+      const selected = items.find((it) => it.id === selectedId);
+      if (selected) renderSelectionHighlight(ctx, selected, m);
+    }
     zoomLabel.textContent = Math.round(zoom * 100) + '%';
     document.getElementById('undo').disabled = items.length === 0;
     document.getElementById('clear').disabled = items.length === 0;
@@ -202,12 +298,23 @@ function buildMarkupHtml(src: string, fileName: string) {
     };
   }
 
+  function screenPoint(clientX, clientY) {
+    const m = metrics();
+    return { x: clientX - m.rect.left, y: clientY - m.rect.top };
+  }
+
   function setTool(next) {
     tool = next;
+    if (tool !== 'select') {
+      selectedId = null;
+      dragMode = null;
+      draggingSelect = false;
+    }
     Array.from(document.querySelectorAll('.tool')).forEach((el) => {
       el.classList.toggle('active', el.getAttribute('data-tool') === tool);
     });
-    canvas.style.cursor = tool === 'pan' ? 'grab' : 'crosshair';
+    canvas.style.cursor = tool === 'pan' ? 'grab' : tool === 'select' ? 'default' : 'crosshair';
+    redraw();
   }
 
   function commitText() {
@@ -257,6 +364,44 @@ function buildMarkupHtml(src: string, fileName: string) {
       setTimeout(() => textInput.focus(), 10);
       return;
     }
+    if (tool === 'select') {
+      const sp = screenPoint(event.clientX, event.clientY);
+      const current = items.find((it) => it.id === selectedId);
+      if (current && current.type === 'arrow') {
+        const m = metrics();
+        const startPt = project(current.start, m.origin, m.fit, zoom);
+        const endPt = project(current.end, m.origin, m.fit, zoom);
+        if (Math.hypot(sp.x - startPt.x, sp.y - startPt.y) <= HANDLE_RADIUS) {
+          dragMode = 'start';
+          dragOrigin = { start: { ...current.start }, end: { ...current.end } };
+          dragStartClient = { x: event.clientX, y: event.clientY };
+          draggingSelect = true;
+          return;
+        }
+        if (Math.hypot(sp.x - endPt.x, sp.y - endPt.y) <= HANDLE_RADIUS) {
+          dragMode = 'end';
+          dragOrigin = { start: { ...current.start }, end: { ...current.end } };
+          dragStartClient = { x: event.clientX, y: event.clientY };
+          draggingSelect = true;
+          return;
+        }
+      }
+      const hit = hitTest(sp);
+      if (hit) {
+        selectedId = hit.id;
+        dragMode = 'move';
+        dragOrigin =
+          hit.type === 'text' ? { point: { ...hit.point } } : { start: { ...hit.start }, end: { ...hit.end } };
+        dragStartClient = { x: event.clientX, y: event.clientY };
+        draggingSelect = true;
+      } else {
+        selectedId = null;
+        dragMode = null;
+        draggingSelect = false;
+      }
+      redraw();
+      return;
+    }
     panning = true;
     panStart = { x: event.clientX, y: event.clientY, ox: offset.x, oy: offset.y };
   });
@@ -266,6 +411,27 @@ function buildMarkupHtml(src: string, fileName: string) {
       const point = imagePoint(event.clientX, event.clientY);
       if (draft.type === 'pen') draft.points.push(point);
       else draft.end = point;
+      redraw();
+      return;
+    }
+    if (draggingSelect && selectedId && dragMode) {
+      const item = items.find((it) => it.id === selectedId);
+      if (item) {
+        const m = metrics();
+        const scale = m.fit * zoom;
+        const dx = (event.clientX - dragStartClient.x) / scale;
+        const dy = (event.clientY - dragStartClient.y) / scale;
+        if (item.type === 'text') {
+          item.point = { x: dragOrigin.point.x + dx, y: dragOrigin.point.y + dy };
+        } else if (dragMode === 'start') {
+          item.start = { x: dragOrigin.start.x + dx, y: dragOrigin.start.y + dy };
+        } else if (dragMode === 'end') {
+          item.end = { x: dragOrigin.end.x + dx, y: dragOrigin.end.y + dy };
+        } else {
+          item.start = { x: dragOrigin.start.x + dx, y: dragOrigin.start.y + dy };
+          item.end = { x: dragOrigin.end.x + dx, y: dragOrigin.end.y + dy };
+        }
+      }
       redraw();
       return;
     }
@@ -290,6 +456,8 @@ function buildMarkupHtml(src: string, fileName: string) {
     }
     drawing = false;
     panning = false;
+    draggingSelect = false;
+    dragMode = null;
   }
 
   canvas.addEventListener('pointerup', endPointer);
@@ -304,8 +472,12 @@ function buildMarkupHtml(src: string, fileName: string) {
   document.getElementById('zoomIn').onclick = () => { zoom = Math.min(5, +(zoom + 0.25).toFixed(2)); redraw(); };
   document.getElementById('zoomOut').onclick = () => { zoom = Math.max(0.4, +(zoom - 0.25).toFixed(2)); redraw(); };
   document.getElementById('resetZoom').onclick = () => { zoom = 1; offset = { x: 0, y: 0 }; redraw(); };
-  document.getElementById('undo').onclick = () => { items = items.slice(0, -1); redraw(); };
-  document.getElementById('clear').onclick = () => { items = []; redraw(); };
+  document.getElementById('undo').onclick = () => {
+    items = items.slice(0, -1);
+    if (!items.find((it) => it.id === selectedId)) selectedId = null;
+    redraw();
+  };
+  document.getElementById('clear').onclick = () => { items = []; selectedId = null; redraw(); };
   document.getElementById('save').onclick = () => {
     redraw();
     post({ type: 'save', dataUrl: canvas.toDataURL('image/png'), fileName: FILE_NAME });
@@ -333,17 +505,39 @@ function buildMarkupHtml(src: string, fileName: string) {
 </html>`
 }
 
-export function ImageMarkupWebView({ src, fileName, active }: Props) {
+export function ImageMarkupWebView({ src, fileName, active, entityType, entityId, onSavedCopy }: Props) {
   const webRef = useRef<WebView>(null)
   const html = useMemo(() => buildMarkupHtml(src, fileName), [src, fileName])
 
   if (!active) return <View style={styles.fill} />
 
+  const handleSave = async (dataUrl: string, savedFileName: string) => {
+    if (entityType && entityId) {
+      try {
+        await saveMarkupAsAttachmentCopy({
+          dataUrl,
+          fileName: savedFileName,
+          entityType,
+          entityId,
+        })
+        Alert.alert('Saved', 'Saved as new attachment')
+        onSavedCopy?.()
+      } catch (error: any) {
+        Alert.alert(
+          'Save failed',
+          error?.message || 'Unable to save the marked-up image as a new attachment.'
+        )
+      }
+      return
+    }
+    void shareDataUrl({ dataUrl, fileName: savedFileName })
+  }
+
   const onMessage = (event: WebViewMessageEvent) => {
     try {
       const payload = JSON.parse(event.nativeEvent.data)
       if (payload?.type === 'save' && payload.dataUrl) {
-        void shareDataUrl({ dataUrl: payload.dataUrl, fileName: payload.fileName || fileName })
+        void handleSave(payload.dataUrl, payload.fileName || fileName)
       }
     } catch {
       // ignore malformed messages

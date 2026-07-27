@@ -14,6 +14,7 @@ import { useAuth } from '../../auth/AuthContext'
 import { useOnlineState } from '../../hooks/useOnlineState'
 import { enqueueOutbox } from '../../offline/outbox'
 import { AttachmentGalleryModal } from '../../components/attachments/AttachmentGalleryModal'
+import { AttachmentOpenPressable } from '../../components/attachments/AttachmentOpenPressable'
 import { normalizeAttachmentUrl } from '../../services/open-attachment'
 
 type Props = NativeStackScreenProps<IssuesStackParamList, 'IssueDetail'>
@@ -325,10 +326,11 @@ export function IssueDetailScreen({ route, navigation }: Props) {
                 <Text style={styles.secondaryButtonText}>Attach Photo/Video</Text>
               </Pressable>
               {(attachmentsQuery.data?.attachments || []).map((a) => (
-                <Pressable
+                <AttachmentOpenPressable
                   key={a.id}
+                  attachment={a}
                   style={styles.attachmentRow}
-                  onPress={() => {
+                  onOpenGallery={() => {
                     const list = (attachmentsQuery.data?.attachments || []).filter((row) => !!row.url)
                     const idx = list.findIndex((row) => row.id === a.id)
                     if (idx < 0) return
@@ -338,9 +340,9 @@ export function IssueDetailScreen({ route, navigation }: Props) {
                 >
                   <Text style={styles.attachmentName}>{a.fileName}</Text>
                   <Text style={styles.attachmentMeta}>
-                    {Math.round(a.fileSize / 1024)} KB{a.url ? ' · Open' : ''}
+                    {Math.round(a.fileSize / 1024)} KB{a.url ? ' · Tap to open' : ''}
                   </Text>
-                </Pressable>
+                </AttachmentOpenPressable>
               ))}
             </View>
           </>
@@ -361,6 +363,11 @@ export function IssueDetailScreen({ route, navigation }: Props) {
         index={galleryIndex}
         onClose={() => setGalleryVisible(false)}
         onIndexChange={setGalleryIndex}
+        entityType="issue"
+        entityId={issueId}
+        onAttachmentCreated={() => {
+          queryClient.invalidateQueries({ queryKey: ['mobile-issue-attachments', issueId] })
+        }}
       />
     </Screen>
   )

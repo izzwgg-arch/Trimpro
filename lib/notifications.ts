@@ -2,6 +2,10 @@ import crypto from 'crypto'
 import { NotificationType } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { sendPushToDevices } from '@/lib/services/mobile-push'
+import {
+  normalizeNotificationPreferences,
+  preferenceKeyForNotification,
+} from '@/lib/notifications/preferences'
 
 export type CreateNotificationResult = {
   ok: boolean
@@ -65,6 +69,18 @@ async function shouldCollapseByRateLimit(tenantId: string, userId: string) {
 }
 
 async function createAndSendNotification(params: CreateNotificationParams): Promise<CreateNotificationResult> {
+  const preferenceKey = preferenceKeyForNotification(params.type, params.linkType)
+  if (preferenceKey) {
+    const user = await prisma.user.findFirst({
+      where: { id: params.userId, tenantId: params.tenantId },
+      select: { notificationPreferences: true },
+    })
+    const prefs = normalizeNotificationPreferences(user?.notificationPreferences)
+    if (!prefs[preferenceKey]) {
+      return { ok: true, reason: 'disabled_by_user_preference' }
+    }
+  }
+
   const traceId = makeTraceId()
   const deepLink = buildMobileDeepLink(params.linkType, params.linkId)
   const rateLimited = await shouldCollapseByRateLimit(params.tenantId, params.userId)
@@ -394,8 +410,25 @@ export async function notifyInvoicePaid(
     dedupeKey?: string | null
   }
 ) {
-  const recipientIds = await getPaymentNotificationRecipientUserIds(tenantId)
-  if (recipientIds.length === 0) return
+  const recipientIds = new Set(await getPaymentNotificationRecipientUserIds(tenantId))
+
+  // Also notify techs assigned to the related job (user toggle: paymentReceived).
+  const invoice = await prisma.invoice.findFirst({
+    where: { id: invoiceId, tenantId },
+    select: {
+      jobId: true,
+      job: {
+        select: {
+          assignments: { select: { userId: true } },
+        },
+      },
+    },
+  })
+  for (const row of invoice?.job?.assignments || []) {
+    if (row.userId) recipientIds.add(row.userId)
+  }
+
+  if (recipientIds.size === 0) return
 
   const methodLabel =
     options?.paymentMethod === 'ACH'
@@ -411,7 +444,7 @@ export async function notifyInvoicePaid(
     options?.dedupeKey ||
     `payment-received:${tenantId}:${invoiceId}:${options?.providerPaymentId || invoiceNumber}`
 
-  await createNotificationsForUsers(tenantId, recipientIds, {
+  await createNotificationsForUsers(tenantId, Array.from(recipientIds), {
     type: 'PAYMENT_RECEIVED',
     title: 'Payment Received',
     message: `${clientName} paid ${amountText} via ${methodLabel} for invoice ${invoiceNumber}`,
@@ -477,6 +510,40 @@ export async function notifyRequestCreated(
       action: 'request_created',
     })
   }
+}
+
+/**
+ * Notify creator + assignee when a request status changes.
+ */
+export async function notifyRequestStatusChanged(params: {
+  tenantId: string
+  requestId: string
+  requestName: string
+  oldStatus: string
+  newStatus: string
+  createdById?: string | null
+  assignedToId?: string | null
+  actorUserId?: string | null
+}) {
+  const recipients = new Set<string>()
+  if (params.createdById) recipients.add(params.createdById)
+  if (params.assignedToId) recipients.add(params.assignedToId)
+  if (params.actorUserId) recipients.delete(params.actorUserId)
+  if (recipients.size === 0) return
+
+  const oldLabel = String(params.oldStatus || '').replace(/_/g, ' ')
+  const newLabel = String(params.newStatus || '').replace(/_/g, ' ')
+
+  await createNotificationsForUsers(params.tenantId, Array.from(recipients), {
+    type: 'OTHER',
+    title: 'Request Status Updated',
+    message: `${params.requestName}: ${oldLabel} → ${newLabel}`,
+    linkUrl: `/dashboard/requests/${params.requestId}`,
+    linkType: 'request',
+    linkId: params.requestId,
+    action: 'request_status_changed',
+    actorUserId: params.actorUserId || null,
+  })
 }
 
 /**

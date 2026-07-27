@@ -1,5 +1,7 @@
-import React from 'react'
-import { NavigationContainer, DefaultTheme, LinkingOptions } from '@react-navigation/native'
+import React, { useEffect } from 'react'
+import { NavigationContainer, DefaultTheme, LinkingOptions, createNavigationContainerRef } from '@react-navigation/native'
+import { useShareIntentContext } from 'expo-share-intent'
+import { buildShareAwareLinking } from '../share/shareIntentLinking'
 import { createDrawerNavigator, DrawerContentComponentProps, DrawerContentScrollView } from '@react-navigation/drawer'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
@@ -48,6 +50,8 @@ import { useOutboxCount } from '../hooks/useOutboxCount'
 import { Card } from '../components/Card'
 import { useMobilePermissions } from '../hooks/useMobilePermissions'
 import { NotificationsScreen } from '../screens/notifications/NotificationsScreen'
+import { NotificationSettingsScreen } from '../screens/notifications/NotificationSettingsScreen'
+import { ShareIngressScreen } from '../screens/share/ShareIngressScreen'
 import { apiRequest } from '../api/client'
 
 const Drawer = createDrawerNavigator<RootDrawerParamList>()
@@ -63,7 +67,9 @@ const TAB_BAR_MIN_BOTTOM_INSET = 8
 const TAB_ACTIVE_COLOR = colors.brandPrimary
 const TAB_INACTIVE_COLOR = colors.muted
 
-const linking: LinkingOptions<RootDrawerParamList> = {
+const navigationRef = createNavigationContainerRef<RootDrawerParamList>()
+
+const baseLinking: LinkingOptions<RootDrawerParamList> = {
   prefixes: ['trimprofield://', 'trimpro://'],
   config: {
     screens: {
@@ -87,6 +93,7 @@ const linking: LinkingOptions<RootDrawerParamList> = {
               OutboxHome: 'outbox',
               ProfileHome: 'profile',
               NotificationsHome: 'notifications',
+              ShareIngress: 'share-ingress',
             },
           } as never,
           MessagesTab: {
@@ -121,6 +128,23 @@ const linking: LinkingOptions<RootDrawerParamList> = {
   },
 }
 
+const linking = buildShareAwareLinking(baseLinking)
+
+function ShareIntentNavigator() {
+  const { hasShareIntent } = useShareIntentContext()
+  const { token } = useAuth()
+
+  useEffect(() => {
+    if (!token || !hasShareIntent || !navigationRef.isReady()) return
+    navigationRef.navigate('MainTabs', {
+      screen: 'JobsTab',
+      params: { screen: 'ShareIngress' },
+    } as never)
+  }, [hasShareIntent, token])
+
+  return null
+}
+
 function JobsStackNavigator() {
   return (
     <JobsStack.Navigator screenOptions={stackOptions}>
@@ -135,6 +159,11 @@ function JobsStackNavigator() {
         name="NotificationsHome"
         component={NotificationsScreen}
         options={mainHeaderOptions('Notifications')}
+      />
+      <JobsStack.Screen
+        name="NotificationSettings"
+        component={NotificationSettingsScreen}
+        options={detailsHeaderOptions('Notification Settings')}
       />
       <JobsStack.Screen name="RequestsHome" component={RequestsListScreen} options={mainHeaderOptions('Requests')} />
       <JobsStack.Screen
@@ -152,6 +181,11 @@ function JobsStackNavigator() {
       <JobsStack.Screen name="CallsHome" component={CallsScreen} options={mainHeaderOptions('Calls')} />
       <JobsStack.Screen name="OutboxHome" component={OutboxScreen} options={mainHeaderOptions('Outbox')} />
       <JobsStack.Screen name="ProfileHome" component={ProfileScreen} options={mainHeaderOptions('Profile')} />
+      <JobsStack.Screen
+        name="ShareIngress"
+        component={ShareIngressScreen}
+        options={detailsHeaderOptions('Share to TrimPro')}
+      />
     </JobsStack.Navigator>
   )
 }
@@ -461,6 +495,7 @@ export function RootNavigator() {
   const { token } = useAuth()
   return (
     <NavigationContainer
+      ref={navigationRef}
       linking={linking}
       theme={{
         ...DefaultTheme,
@@ -470,6 +505,7 @@ export function RootNavigator() {
         },
       }}
     >
+      <ShareIntentNavigator />
       {!token ? (
         <AuthStack.Navigator screenOptions={{ headerShown: false }}>
           <AuthStack.Screen name="Login" component={LoginScreen} />

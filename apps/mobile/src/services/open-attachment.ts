@@ -4,6 +4,7 @@ import * as IntentLauncher from 'expo-intent-launcher'
 import * as Sharing from 'expo-sharing'
 import { API_BASE_URL } from '../config/env'
 import { getAccessToken } from '../auth/secure-storage'
+import { apiRequest, getValidAccessToken } from '../api/client'
 
 const MEDIA_BASE_URL = API_BASE_URL || 'https://app.trimprony.com'
 
@@ -129,7 +130,10 @@ export async function downloadAttachmentToCache(options: {
   )
   const target = `${FileSystem.cacheDirectory}${Date.now()}-${fileName}`
 
-  const headers: Record<string, string> = {}
+  const headers: Record<string, string> = {
+    // Required so API can treat this as a mobile client for permission checks.
+    'User-Agent': 'TrimProMobile',
+  }
   try {
     const token = await getAccessToken()
     if (token) headers.Authorization = `Bearer ${token}`
@@ -257,4 +261,66 @@ export async function shareDataUrl(options: {
   }
 
   Alert.alert('Saved', `Marked image written to cache as ${fileName}`)
+}
+
+/**
+ * Write a marked-up image data URL to the cache, upload it, and create a brand-new
+ * attachment record linked to the given entity (job/request/task/issue/etc). This
+ * always produces a copy — the original attachment is left untouched.
+ */
+export async function saveMarkupAsAttachmentCopy(options: {
+  dataUrl: string
+  fileName?: string | null
+  entityType: string
+  entityId: string
+}): Promise<{ attachment: any }> {
+  const match = String(options.dataUrl || '').match(/^data:([^;]+);base64,(.+)$/)
+  if (!match) {
+    throw new Error('Marked image data was invalid.')
+  }
+  const mimeType = match[1] || 'image/png'
+  const base64 = match[2]
+  const ext = mimeType.includes('jpeg') ? 'jpg' : 'png'
+  const fileName = sanitizeFileName(
+    (options.fileName || 'attachment').replace(/\.[^.]+$/, '') + `-marked.${ext}`
+  )
+  const target = `${FileSystem.cacheDirectory}${Date.now()}-${fileName}`
+
+  try {
+    await FileSystem.writeAsStringAsync(target, base64, {
+      encoding: FileSystem.EncodingType.Base64,
+    })
+
+    const token = await getValidAccessToken()
+    if (!token) throw new Error('Not authenticated')
+
+    const upload = await FileSystem.uploadAsync(`${API_BASE_URL}/api/uploads`, target, {
+      fieldName: 'file',
+      httpMethod: 'POST',
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json',
+      },
+      mimeType,
+    })
+    if (upload.status < 200 || upload.status >= 300) {
+      throw new Error(`Upload failed (${upload.status})`)
+    }
+    const uploadBody = JSON.parse(upload.body || '{}')
+    const info = await FileSystem.getInfoAsync(target)
+    const fileSize = info.exists && typeof info.size === 'number' ? info.size : 0
+
+    return await apiRequest<{ attachment: any }>('/api/attachments', 'POST', {
+      entityType: options.entityType,
+      entityId: options.entityId,
+      fileName,
+      url: uploadBody.url,
+      key: uploadBody.filename || uploadBody.url,
+      mimeType,
+      fileSize,
+    })
+  } finally {
+    void FileSystem.deleteAsync(target, { idempotent: true }).catch(() => {})
+  }
 }

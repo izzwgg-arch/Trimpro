@@ -32,6 +32,9 @@ type Props = {
   index: number
   onClose: () => void
   onIndexChange: (index: number) => void
+  entityType?: 'job' | 'request' | 'task' | 'issue' | string
+  entityId?: string
+  onAttachmentCreated?: () => void
 }
 
 function formatBytes(bytes?: number) {
@@ -52,6 +55,9 @@ export function AttachmentGalleryModal({
   index,
   onClose,
   onIndexChange,
+  entityType,
+  entityId,
+  onAttachmentCreated,
 }: Props) {
   const total = attachments.length
   const safeIndex = total > 0 ? ((index % total) + total) % total : 0
@@ -158,7 +164,15 @@ export function AttachmentGalleryModal({
           {!current ? (
             <Text style={styles.empty}>No attachments</Text>
           ) : kind === 'image' ? (
-            <ImageMarkupWebView key={current.id} src={url} fileName={current.fileName} active={visible} />
+            <ImageMarkupWebView
+              key={current.id}
+              src={url}
+              fileName={current.fileName}
+              active={visible}
+              entityType={entityType}
+              entityId={entityId}
+              onSavedCopy={onAttachmentCreated}
+            />
           ) : kind === 'video' ? (
             <Video
               key={current.id}

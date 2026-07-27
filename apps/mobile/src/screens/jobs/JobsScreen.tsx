@@ -13,7 +13,6 @@ import { JobsStackParamList } from '../../types/navigation'
 import { EmptyState } from '../../components/EmptyState'
 import { JobCard } from '../../components/JobCard'
 import { SectionHeader } from '../../components/SectionHeader'
-import { Card } from '../../components/Card'
 
 type Props = NativeStackScreenProps<JobsStackParamList, 'JobsList'>
 
@@ -46,7 +45,14 @@ export function JobsScreen({ navigation }: Props) {
     refetchInterval: 45_000,
   })
 
-  const jobs = useMemo(() => jobsQuery.data?.jobs ?? [], [jobsQuery.data])
+  const jobs = useMemo(() => {
+    const list = jobsQuery.data?.jobs ?? []
+    const byId = new Map<string, Job>()
+    for (const job of list) {
+      if (job?.id && !byId.has(job.id)) byId.set(job.id, job)
+    }
+    return Array.from(byId.values())
+  }, [jobsQuery.data])
 
   const unreadMessagesByJob = useMemo(() => {
     const map = new Map<string, number>()
@@ -82,28 +88,12 @@ export function JobsScreen({ navigation }: Props) {
               lastSyncAt={lastSyncAt}
               outboxCount={outboxCount}
             />
-
-            <Card>
-              <SectionHeader title="Assigned Jobs" />
-              {jobs.length === 0 ? (
-                <EmptyState icon="briefcase-outline" title="No assigned jobs" description="You have no assigned jobs yet." />
-              ) : (
-                jobs.slice(0, 5).map((job) => (
-                  <View key={job.id} style={styles.stackItem}>
-                    <JobCard
-                      job={job}
-                      onPress={() => navigation.navigate('JobDetail', { jobId: job.id })}
-                      hasUnreadMessages={(unreadMessagesByJob.get(job.id) || 0) > 0}
-                      hasNewMedia={false}
-                      hasOpenIssue={false}
-                    />
-                  </View>
-                ))
-              )}
-            </Card>
+            <SectionHeader title="Assigned Jobs" />
           </View>
         }
-        ListEmptyComponent={<EmptyState icon="briefcase-outline" title="No assigned jobs" description="You have no assigned jobs yet." />}
+        ListEmptyComponent={
+          <EmptyState icon="briefcase-outline" title="No assigned jobs" description="You have no assigned jobs yet." />
+        }
         renderItem={({ item }) => (
           <View style={styles.stackItem}>
             <JobCard
@@ -124,4 +114,3 @@ const styles = StyleSheet.create({
   listHeader: { gap: spacing.sm, paddingTop: spacing.sm, paddingBottom: spacing.md },
   stackItem: { marginBottom: spacing.sm },
 })
-

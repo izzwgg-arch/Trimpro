@@ -279,6 +279,7 @@ export interface Conversation {
   pinned?: boolean
   channel?: string
   status?: string
+  jobId?: string | null
   unreadCount: number
   participants?: string[]
   lastMessageAt: string | null
