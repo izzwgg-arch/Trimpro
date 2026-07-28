@@ -92,6 +92,14 @@ function formatJobCreatedDate(job: Job): string {
   return formatDate(job.createdAt)
 }
 
+function formatJobAssignees(job: Job): string {
+  if (!job.assignments?.length) return 'Unassigned'
+  return job.assignments
+    .map((a) => `${a.user.firstName || ''} ${a.user.lastName || ''}`.trim() || 'Unknown')
+    .filter(Boolean)
+    .join(', ')
+}
+
 function UnreadMessagesBadge({ count }: { count?: number }) {
   if (!count || count <= 0) return null
   return (
@@ -520,8 +528,8 @@ export default function JobsPage() {
                       <p className="font-medium text-gray-700">{priorityLabels[job.priority] || 'Medium'}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-gray-500">Crew</p>
-                      <p className="font-medium text-gray-700">{job.assignments.length} assigned</p>
+                      <p className="text-xs text-gray-500">Assignees</p>
+                      <p className="font-medium text-gray-700">{formatJobAssignees(job)}</p>
                     </div>
                   </div>
 
@@ -635,6 +643,7 @@ export default function JobsPage() {
                 secondary={[
                   job.client.name,
                   formatJobSiteAddress(job),
+                  `Assignees: ${formatJobAssignees(job)}`,
                   `Client Open: ${formatCurrency(parseFloat(job.clientOpenInvoiceBalance || '0'))}`,
                 ]
                   .filter(Boolean)
@@ -697,6 +706,7 @@ export default function JobsPage() {
                 line2={[
                   job.client.name,
                   formatJobSiteAddress(job),
+                  `Assignees: ${formatJobAssignees(job)}`,
                   `Priority ${priorityLabels[job.priority] || 'Medium'}`,
                   `Client Open ${formatCurrency(parseFloat(job.clientOpenInvoiceBalance || '0'))}`,
                 ]
@@ -783,6 +793,16 @@ export default function JobsPage() {
                     setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, status: next } : j)))
                   }
                 />
+              ),
+            },
+            {
+              key: 'assignees',
+              header: 'Assignees',
+              sortValue: (job) => formatJobAssignees(job),
+              render: (job) => (
+                <span className={job.assignments?.length ? 'text-gray-900' : 'italic text-gray-400'}>
+                  {formatJobAssignees(job)}
+                </span>
               ),
             },
             {

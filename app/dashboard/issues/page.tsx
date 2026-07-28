@@ -413,7 +413,7 @@ export default function IssuesPage() {
               key={issue.id}
               href={`/dashboard/issues/${issue.id}`}
               primary={issue.title}
-              secondary={issue.client?.name || issue.job?.jobNumber || 'No link'}
+              secondary={`${issue.assignee ? `${issue.assignee.firstName} ${issue.assignee.lastName}` : 'Unassigned'}${issue.client?.name ? ` • ${issue.client.name}` : issue.job?.jobNumber ? ` • ${issue.job.jobNumber}` : ''}`}
               status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[issue.status] || 'bg-gray-100 text-gray-800'}`}>{issue.status.replace('_', ' ')}</span>}
               amount={issue.priority}
               date={issue.resolvedAt ? formatDate(issue.resolvedAt) : '-'}
