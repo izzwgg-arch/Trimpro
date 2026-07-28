@@ -1,6 +1,5 @@
 'use client'
 import { useListRestore } from '@/hooks/useListRestore'
-import { usePersistedSort } from '@/hooks/useListPreferences'
 import { openFromList } from '@/lib/navigation/nav-stack'
 
 import { useEffect, useState } from 'react'
@@ -61,7 +60,6 @@ const typeLabels: Record<string, string> = {
 export default function ItemsPage() {
   const router = useRouter()
   const { highlightedId } = useListRestore('items')
-  const { sortKey: persistedSortKey, sortDirection: persistedSortDirection, setSort: setPersistedSort } = usePersistedSort('items')
   const [items, setItems] = useState<Item[]>([])
   const [categories, setCategories] = useState<ItemCategory[]>([])
   const [loading, setLoading] = useState(true)

@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ViewModeSelector } from '@/components/ui/ViewModeSelector'
 import { useViewMode } from '@/hooks/useViewMode'
+import { usePersistedSort } from '@/hooks/useListPreferences'
 import { RowCompactItem } from '@/components/lists/RowCompactItem'
 import { RowDetailedItem } from '@/components/lists/RowDetailedItem'
 import { TableView } from '@/components/lists/TableView'
@@ -74,6 +75,8 @@ export default function TeamsPage() {
   const [reinviteLoadingById, setReinviteLoadingById] = useState<Record<string, boolean>>({})
   const [deleteLoadingById, setDeleteLoadingById] = useState<Record<string, boolean>>({})
   const [viewMode, setViewMode] = useViewMode('team', 'grid')
+  const { sortKey: persistedSortKey, sortDirection: persistedSortDirection, setSort: setPersistedSort } =
+    usePersistedSort('teams')
   const [editingUserId, setEditingUserId] = useState<string | null>(null)
   const [availableRoles, setAvailableRoles] = useState<AvailableRole[]>([])
   const [inviteForm, setInviteForm] = useState({
@@ -524,6 +527,9 @@ export default function TeamsPage() {
         <TableView
           data={filteredMembers}
           rowKey={(member) => member.id}
+          sortKey={persistedSortKey}
+          sortDirection={persistedSortDirection}
+          onSortChange={setPersistedSort}
           columns={[
             {
               key: 'name',

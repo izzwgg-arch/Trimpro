@@ -107,12 +107,30 @@ export function EstimateMaterialList({
   demoMode = false,
   initialLines,
 }: Props) {
+  const sortStorageKey = `trimpro.list.prefs.estimate-material.${estimateId || (demoMode ? 'demo' : 'draft')}`
   const [lines, setLines] = useState<MaterialLine[]>(initialLines || (demoMode ? EXAMPLE_MATERIAL_LINES : []))
   const [loading, setLoading] = useState(!demoMode && !initialLines)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState<DraftLine>(EMPTY_DRAFT)
-  const [sortKey, setSortKey] = useState<'manual' | 'material' | 'vendor' | 'price'>('manual')
+  const [sortKey, setSortKeyState] = useState<'manual' | 'material' | 'vendor' | 'price'>(() => {
+    if (typeof window === 'undefined') return 'manual'
+    try {
+      const raw = localStorage.getItem(sortStorageKey)
+      const v = raw ? (JSON.parse(raw) as { sortKey?: string }).sortKey : null
+      return v === 'material' || v === 'vendor' || v === 'price' || v === 'manual' ? v : 'manual'
+    } catch {
+      return 'manual'
+    }
+  })
+  const setSortKey = (next: 'manual' | 'material' | 'vendor' | 'price') => {
+    setSortKeyState(next)
+    try {
+      localStorage.setItem(sortStorageKey, JSON.stringify({ sortKey: next }))
+    } catch {
+      /* ignore */
+    }
+  }
 
   const totalCost = useMemo(
     () => lines.reduce((sum, line) => sum + Number(line.lineTotal || 0), 0),
