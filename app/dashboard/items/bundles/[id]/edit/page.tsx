@@ -392,7 +392,7 @@ export default function EditBundlePage() {
         setSaving(false)
         return
       }
-      router.push(`/dashboard/items/${data.bundle.item.id}`)
+      router.replace(`/dashboard/items/${data.bundle.item.id}`)
     } catch (error) {
       console.error('Error updating bundle:', error)
       alert('Failed to update bundle. Check console for details.')

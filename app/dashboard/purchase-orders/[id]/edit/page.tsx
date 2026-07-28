@@ -1,4 +1,5 @@
 'use client'
+import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
@@ -7,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ArrowLeft, Save, Plus, Trash2, Copy } from 'lucide-react'
+import { Save, Plus, Trash2, Copy } from 'lucide-react'
 import Link from 'next/link'
 import { LineItemDragHandle } from '@/components/documents/line-item-drag-handle'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
@@ -498,7 +499,7 @@ export default function EditPurchaseOrderPage() {
         return
       }
 
-      router.push(`/dashboard/purchase-orders/${poId}`)
+      router.replace(`/dashboard/purchase-orders/${poId}`)
     } catch (error) {
       console.error('Error updating purchase order:', error)
       alert('Failed to update purchase order. Please try again.')
@@ -557,12 +558,7 @@ export default function EditPurchaseOrderPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center space-x-4">
-        <Link href={`/dashboard/purchase-orders/${poId}`}>
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back
-          </Button>
-        </Link>
+        <EntityBackButton fallbackHref={`/dashboard/purchase-orders/${poId}`} parentHref={`/dashboard/purchase-orders/${poId}`} mode="parent" />
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Edit Purchase Order</h1>
           <p className="mt-2 text-gray-600">PO #{poNumber}</p>

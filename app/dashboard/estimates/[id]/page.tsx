@@ -1,31 +1,12 @@
 'use client'
+import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import {
-  ArrowLeft,
-  Calendar,
-  DollarSign,
-  Mail,
-  User,
-  Building2,
-  FileText,
-  Send,
-  Download,
-  Edit,
-  ChevronDown,
-  ChevronRight,
-  Package,
-  Trash2,
-  RefreshCw,
-  Unlink,
-  Plus,
-  Printer,
-  Copy,
-} from 'lucide-react'
+import { Calendar, DollarSign, Mail, User, Building2, FileText, Send, Download, Edit, ChevronDown, ChevronRight, Package, Trash2, RefreshCw, Unlink, Plus, Printer, Copy } from 'lucide-react'
 import Link from 'next/link'
 import { MobileActionBar } from '@/components/layout/MobileActionBar'
 import { ResponsivePage } from '@/components/layout/ResponsivePage'
@@ -634,12 +615,7 @@ export default function EstimateDetailPage() {
     <ResponsivePage>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex min-w-0 items-start gap-3 sm:items-center sm:gap-4">
-          <Link href="/dashboard/estimates">
-            <Button variant="ghost" size="sm">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back
-            </Button>
-          </Link>
+          <EntityBackButton fallbackHref="/dashboard/estimates" />
           <div className="min-w-0">
             <h1 className="text-2xl font-bold text-gray-900 break-words sm:text-3xl">{estimate.title}</h1>
             <p className="mt-1 text-sm text-gray-600 sm:text-base">

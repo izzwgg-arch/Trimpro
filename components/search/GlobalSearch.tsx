@@ -25,6 +25,7 @@ import {
   StickyNote,
 } from 'lucide-react'
 import type { SearchGroup } from '@/lib/search/global-search'
+import { pushReturnTo } from '@/lib/navigation/nav-stack'
 
 // ── icons & colours per entity type ─────────────────────────────────────────
 
@@ -146,6 +147,7 @@ export function GlobalSearch() {
       setOpen(false)
       setQuery('')
       setGroups([])
+      pushReturnTo()
       router.push(url)
     },
     [router]

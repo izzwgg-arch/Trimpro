@@ -22,6 +22,33 @@ interface TableViewProps<T> {
   sortKey?: string | null
   sortDirection?: 'asc' | 'desc'
   onSortChange?: (sortKey: string, sortDirection: 'asc' | 'desc') => void
+  highlightedRowId?: string | null
+  /** When set and sort is uncontrolled, persist sort in localStorage. */
+  persistSortEntity?: string
+}
+
+function readStoredSort(entity?: string): { sortKey: string | null; sortDirection: 'asc' | 'desc' } {
+  if (!entity || typeof window === 'undefined') return { sortKey: null, sortDirection: 'asc' }
+  try {
+    const raw = localStorage.getItem(`trimpro.list.prefs.${entity}`)
+    if (!raw) return { sortKey: null, sortDirection: 'asc' }
+    const p = JSON.parse(raw)
+    return {
+      sortKey: typeof p.sortKey === 'string' ? p.sortKey : null,
+      sortDirection: p.sortDirection === 'desc' ? 'desc' : 'asc',
+    }
+  } catch {
+    return { sortKey: null, sortDirection: 'asc' }
+  }
+}
+
+function writeStoredSort(entity: string | undefined, sortKey: string | null, sortDirection: 'asc' | 'desc') {
+  if (!entity || typeof window === 'undefined') return
+  try {
+    localStorage.setItem(`trimpro.list.prefs.${entity}`, JSON.stringify({ sortKey, sortDirection }))
+  } catch {
+    /* ignore */
+  }
 }
 
 export function TableView<T>({
@@ -32,9 +59,12 @@ export function TableView<T>({
   sortKey: controlledSortKey,
   sortDirection: controlledSortDirection,
   onSortChange,
+  highlightedRowId,
+  persistSortEntity,
 }: TableViewProps<T>) {
-  const [localSortKey, setLocalSortKey] = useState<string | null>(null)
-  const [localSortDirection, setLocalSortDirection] = useState<'asc' | 'desc'>('asc')
+  const stored = readStoredSort(persistSortEntity)
+  const [localSortKey, setLocalSortKey] = useState<string | null>(stored.sortKey)
+  const [localSortDirection, setLocalSortDirection] = useState<'asc' | 'desc'>(stored.sortDirection)
   const sortKey = controlledSortKey ?? localSortKey
   const sortDirection = controlledSortDirection ?? localSortDirection
 
@@ -68,9 +98,14 @@ export function TableView<T>({
     if (sortKey !== key) {
       setLocalSortKey(key)
       setLocalSortDirection('asc')
+      writeStoredSort(persistSortEntity, key, 'asc')
       return
     }
-    setLocalSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+    setLocalSortDirection((prev) => {
+      const next = prev === 'asc' ? 'desc' : 'asc'
+      writeStoredSort(persistSortEntity, key, next)
+      return next
+    })
   }
 
   return (
@@ -102,12 +137,17 @@ export function TableView<T>({
           </tr>
         </thead>
         <tbody>
-          {sortedData.map((item) => (
+          {sortedData.map((item) => {
+            const id = rowKey(item)
+            const highlighted = Boolean(highlightedRowId && highlightedRowId === id)
+            return (
             <tr
-              key={rowKey(item)}
+              key={id}
+              data-row-id={id}
               className={cn(
-                'border-t active:bg-muted/40 sm:hover:bg-muted/30',
-                onRowClick ? 'cursor-pointer touch-active-row' : ''
+                'border-t active:bg-muted/40 sm:hover:bg-muted/30 transition-colors',
+                onRowClick ? 'cursor-pointer touch-active-row' : '',
+                highlighted ? 'bg-amber-50 ring-2 ring-inset ring-amber-300' : ''
               )}
               onClick={() => onRowClick?.(item)}
             >
@@ -117,7 +157,8 @@ export function TableView<T>({
                 </td>
               ))}
             </tr>
-          ))}
+            )
+          })}
         </tbody>
       </table>
     </ResponsiveTableContainer>

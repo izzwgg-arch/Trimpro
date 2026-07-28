@@ -1,4 +1,5 @@
 'use client'
+import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
@@ -7,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ArrowLeft, Save, Trash2 } from 'lucide-react'
+import { Save, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
 
@@ -348,12 +349,7 @@ export default function NewBundlePage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center space-x-4">
-        <Link href="/dashboard/items">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back
-          </Button>
-        </Link>
+        <EntityBackButton fallbackHref="/dashboard/items" />
         <div>
           <h1 className="text-3xl font-bold text-gray-900">New Bundle</h1>
           <p className="mt-2 text-gray-600">Create a bundle of items and/or other bundles</p>

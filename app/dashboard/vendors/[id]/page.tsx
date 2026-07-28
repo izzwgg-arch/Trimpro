@@ -1,28 +1,12 @@
 'use client'
+import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import {
-  ArrowLeft,
-  Edit,
-  Plus,
-  ShoppingCart,
-  Package,
-  FileText,
-  Eye,
-  Download,
-  Trash2,
-  Building2,
-  Phone,
-  Mail,
-  Globe,
-  MapPin,
-  DollarSign,
-  Calendar,
-} from 'lucide-react'
+import { Edit, Plus, ShoppingCart, Package, FileText, Eye, Download, Trash2, Building2, Phone, Mail, Globe, MapPin, DollarSign, Calendar } from 'lucide-react'
 import Link from 'next/link'
 
 interface VendorDetail {
@@ -224,12 +208,7 @@ export default function VendorDetailPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
-          <Link href="/dashboard/vendors">
-            <Button variant="ghost" size="sm">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back
-            </Button>
-          </Link>
+          <EntityBackButton fallbackHref="/dashboard/vendors" />
           <div>
             <div className="flex items-center space-x-3">
               <h1 className="text-3xl font-bold text-gray-900">{vendor.name}</h1>

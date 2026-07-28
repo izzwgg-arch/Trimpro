@@ -1,4 +1,5 @@
 'use client'
+import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
@@ -323,9 +324,7 @@ export default function TaskDetailPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <Link href="/dashboard/tasks" className="text-gray-500 hover:text-gray-700">
-            ← Back to Tasks
-          </Link>
+          <EntityBackButton fallbackHref="/dashboard/tasks" />
           <div className="flex items-center gap-3 mt-2">
             <h1 className="text-3xl font-bold text-gray-900">{task.title}</h1>
             {canEditStatus ? (

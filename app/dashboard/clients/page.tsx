@@ -1,4 +1,7 @@
 'use client'
+import { useListRestore } from '@/hooks/useListRestore'
+import { usePersistedSort } from '@/hooks/useListPreferences'
+import { openFromList } from '@/lib/navigation/nav-stack'
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -54,6 +57,8 @@ function clientListBalance(c: Client) {
 
 export default function ClientsPage() {
   const router = useRouter()
+  const { highlightedId } = useListRestore('clients')
+  const { sortKey: persistedSortKey, sortDirection: persistedSortDirection, setSort: setPersistedSort } = usePersistedSort('clients')
   const { permissionsLoading, canViewList, canCreate } = useDocumentListAccess(
     'clients.view',
     'clients.create'
@@ -575,9 +580,13 @@ export default function ClientsPage() {
         </div>
       ) : (
         <TableView
+          highlightedRowId={highlightedId}
+          sortKey={persistedSortKey}
+          sortDirection={persistedSortDirection}
+          onSortChange={setPersistedSort}
           data={flattenedClients.map((x) => x.client)}
           rowKey={(client) => client.id}
-          onRowClick={(client) => router.push(`/dashboard/clients/${client.id}`)}
+          onRowClick={(client) => openFromList(router, { entity: 'clients', detailHref: `/dashboard/clients/${client.id}`, itemId: client.id })}
           columns={[
             {
               key: 'select',

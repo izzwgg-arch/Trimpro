@@ -1,4 +1,7 @@
 'use client'
+import { useListRestore } from '@/hooks/useListRestore'
+import { usePersistedSort } from '@/hooks/useListPreferences'
+import { openFromList } from '@/lib/navigation/nav-stack'
 
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -87,6 +90,8 @@ const typeColors: Record<string, string> = {
 
 export default function IssuesPage() {
   const router = useRouter()
+  const { highlightedId } = useListRestore('issues')
+  const { sortKey: persistedSortKey, sortDirection: persistedSortDirection, setSort: setPersistedSort } = usePersistedSort('issues')
   const searchParams = useSearchParams()
   const { permissionsLoading, canViewList, canCreate } = useDocumentListAccess('issues.view', 'issues.create')
   const [issues, setIssues] = useState<Issue[]>([])
@@ -431,9 +436,13 @@ export default function IssuesPage() {
         </div>
       ) : (
         <TableView
+          highlightedRowId={highlightedId}
+          sortKey={persistedSortKey}
+          sortDirection={persistedSortDirection}
+          onSortChange={setPersistedSort}
           data={issues}
           rowKey={(issue) => issue.id}
-          onRowClick={(issue) => router.push(`/dashboard/issues/${issue.id}`)}
+          onRowClick={(issue) => openFromList(router, { entity: 'issues', detailHref: `/dashboard/issues/${issue.id}`, itemId: issue.id })}
           columns={[
             {
               key: 'title',

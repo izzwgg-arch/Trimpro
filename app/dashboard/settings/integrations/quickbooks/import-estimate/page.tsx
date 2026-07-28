@@ -1,9 +1,10 @@
 'use client'
+import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 
 import { FormEvent, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, CheckCircle, DownloadCloud, ExternalLink, Loader2, XCircle } from 'lucide-react'
+import { CheckCircle, DownloadCloud, ExternalLink, Loader2, XCircle } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -125,12 +126,7 @@ export default function QuickBooksEstimateImportPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Link href="/dashboard/settings/integrations/quickbooks">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back
-          </Button>
-        </Link>
+        <EntityBackButton fallbackHref="/dashboard/settings/integrations/quickbooks" />
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Import QuickBooks Estimate by ID</h1>
           <p className="mt-1 text-gray-600">

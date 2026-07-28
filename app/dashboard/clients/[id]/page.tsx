@@ -1,4 +1,6 @@
 'use client'
+import { EntityBackButton } from '@/components/navigation/EntityBackButton'
+import { navigateWithReturn } from '@/lib/navigation/nav-stack'
 
 import { useEffect, useState, type ReactNode } from 'react'
 import { useParams, useRouter } from 'next/navigation'
@@ -7,28 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { formatCurrency, formatDate, formatPhoneNumber } from '@/lib/utils'
-import {
-  Phone,
-  Mail,
-  MapPin,
-  Building2,
-  Calendar,
-  FileText,
-  DollarSign,
-  Briefcase,
-  MessageSquare,
-  AlertCircle,
-  CheckSquare,
-  UserPlus,
-  Edit,
-  Plus,
-  Trash2,
-  Download,
-  Printer,
-  X,
-  ChevronDown,
-  ChevronRight,
-} from 'lucide-react'
+import { Phone, Mail, MapPin, Building2, Calendar, FileText, DollarSign, Briefcase, MessageSquare, AlertCircle, CheckSquare, UserPlus, Edit, Plus, Trash2, Download, Printer, X, ChevronDown, ChevronRight } from 'lucide-react'
 import Link from 'next/link'
 import { AddressMapSection } from './map-section'
 import { usePermissions, hasPermission } from '@/hooks/usePermissions'
@@ -838,9 +819,7 @@ export default function ClientDetailPage() {
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center space-x-3">
-            <Link href="/dashboard/clients" className="text-gray-500 hover:text-gray-700">
-              Back to Clients
-            </Link>
+            <EntityBackButton fallbackHref="/dashboard/clients" />
           </div>
           <h1 className="text-3xl font-bold text-gray-900 mt-2">{client.name}</h1>
           {client.parent && (
@@ -890,25 +869,25 @@ export default function ClientDetailPage() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <Button variant="outline" onClick={() => router.push(`/dashboard/jobs/new?clientId=${clientId}`)}>
+            <Button variant="outline" onClick={() => navigateWithReturn(router, `/dashboard/jobs/new?clientId=${clientId}`)}>
               <Briefcase className="mr-2 h-4 w-4" />
               New Job
             </Button>
-            <Button variant="outline" onClick={() => router.push(`/dashboard/invoices/new?clientId=${clientId}`)}>
+            <Button variant="outline" onClick={() => navigateWithReturn(router, `/dashboard/invoices/new?clientId=${clientId}`)}>
               <DollarSign className="mr-2 h-4 w-4" />
               New Invoice
             </Button>
-            <Button variant="outline" onClick={() => router.push(`/dashboard/estimates/new?clientId=${clientId}`)}>
+            <Button variant="outline" onClick={() => navigateWithReturn(router, `/dashboard/estimates/new?clientId=${clientId}`)}>
               <FileText className="mr-2 h-4 w-4" />
               New Estimate
             </Button>
             {canCreateRequest && (
-              <Button variant="outline" onClick={() => router.push(`/dashboard/requests/new?clientId=${clientId}`)}>
+              <Button variant="outline" onClick={() => navigateWithReturn(router, `/dashboard/requests/new?clientId=${clientId}`)}>
                 <UserPlus className="mr-2 h-4 w-4" />
                 New Request
               </Button>
             )}
-            <Button variant="outline" onClick={() => router.push(`/dashboard/tasks/new?clientId=${clientId}`)}>
+            <Button variant="outline" onClick={() => navigateWithReturn(router, `/dashboard/tasks/new?clientId=${clientId}`)}>
               <CheckSquare className="mr-2 h-4 w-4" />
               New Task
             </Button>

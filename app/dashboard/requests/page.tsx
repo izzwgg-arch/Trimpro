@@ -1,5 +1,7 @@
 'use client'
 
+import { openFromList } from '@/lib/navigation/nav-stack'
+import { useListRestore } from '@/hooks/useListRestore'
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -116,7 +118,7 @@ const REQUESTS_DEFAULTS: RequestsListState = {
 function loadRequestsListState(): RequestsListState {
   if (typeof window === 'undefined') return REQUESTS_DEFAULTS
   try {
-    const raw = sessionStorage.getItem(REQUESTS_LIST_KEY)
+    const raw = localStorage.getItem(REQUESTS_LIST_KEY)
     if (!raw) return REQUESTS_DEFAULTS
     const p = JSON.parse(raw) as Partial<RequestsListState>
     return {
@@ -133,11 +135,12 @@ function loadRequestsListState(): RequestsListState {
 }
 
 function saveRequestsListState(s: RequestsListState) {
-  sessionStorage.setItem(REQUESTS_LIST_KEY, JSON.stringify(s))
+  localStorage.setItem(REQUESTS_LIST_KEY, JSON.stringify(s))
 }
 
 export default function RequestsPage() {
   const router = useRouter()
+  const { highlightedId } = useListRestore('requests')
   const [requests, setRequests] = useState<Request[]>([])
   const [initialLoading, setInitialLoading] = useState(true)
   const [isFetching, setIsFetching] = useState(false)
@@ -237,13 +240,6 @@ export default function RequestsPage() {
       window.removeEventListener('focus', onFocus)
     }
   }, [fetchRequests])
-
-  // Clear persisted state on a real full-page reload / tab close
-  useEffect(() => {
-    const clear = () => sessionStorage.removeItem(REQUESTS_LIST_KEY)
-    window.addEventListener('beforeunload', clear)
-    return () => window.removeEventListener('beforeunload', clear)
-  }, [])
 
   const handleTableSortChange = (nextSortKey: string, nextSortDirection: 'asc' | 'desc') => {
     setListState({ sortKey: nextSortKey, sortDirection: nextSortDirection })
@@ -882,9 +878,10 @@ export default function RequestsPage() {
         </div>
       ) : (
         <TableView
+          highlightedRowId={highlightedId}
           data={requests}
           rowKey={(request) => request.id}
-          onRowClick={(request) => router.push(`/dashboard/requests/${request.id}`)}
+          onRowClick={(request) => openFromList(router, { entity: 'requests', detailHref: `/dashboard/requests/${request.id}`, itemId: request.id })}
           sortKey={sortKey}
           sortDirection={sortDirection}
           onSortChange={handleTableSortChange}

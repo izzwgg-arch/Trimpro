@@ -4,19 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import {
-  Mail,
-  MessageSquare,
-  MessageCircle,
-  DollarSign,
-  CreditCard,
-  CheckCircle,
-  XCircle,
-  Clock,
-  AlertCircle,
-  Settings as SettingsIcon,
-  ArrowRight,
-} from 'lucide-react'
+import { Mail, MessageSquare, MessageCircle, DollarSign, CreditCard, CheckCircle, XCircle, Clock, AlertCircle, Settings as SettingsIcon, ArrowRight } from 'lucide-react'
 import Link from 'next/link'
 import { formatDate } from '@/lib/utils'
 

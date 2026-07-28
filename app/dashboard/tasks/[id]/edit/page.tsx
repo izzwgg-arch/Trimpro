@@ -1,9 +1,10 @@
 'use client'
+import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, AlertCircle, Save, Trash2 } from 'lucide-react'
+import { AlertCircle, Save, Trash2 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -180,7 +181,7 @@ export default function EditTaskPage() {
         return
       }
 
-      router.push(`/dashboard/tasks/${normalizedTaskId}`)
+      router.replace(`/dashboard/tasks/${normalizedTaskId}`)
     } catch (e) {
       console.error('Error updating task:', e)
       alert('Failed to update task')
@@ -255,12 +256,7 @@ export default function EditTaskPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center space-x-4">
-        <Link href={`/dashboard/tasks/${normalizedTaskId}`}>
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back
-          </Button>
-        </Link>
+        <EntityBackButton fallbackHref={`/dashboard/tasks/${normalizedTaskId}`} parentHref={`/dashboard/tasks/${normalizedTaskId}`} mode="parent" />
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Edit Task</h1>
           <p className="mt-2 text-gray-600">Update task details</p>

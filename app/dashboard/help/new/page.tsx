@@ -1,4 +1,5 @@
 'use client'
+import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -7,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ArrowLeft, Save } from 'lucide-react'
+import { Save } from 'lucide-react'
 import Link from 'next/link'
 
 export default function NewHelpArticlePage() {
@@ -64,12 +65,7 @@ export default function NewHelpArticlePage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center space-x-4">
-        <Link href="/dashboard/help">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back
-          </Button>
-        </Link>
+        <EntityBackButton fallbackHref="/dashboard/help" />
         <div>
           <h1 className="text-3xl font-bold text-gray-900">New Help Article</h1>
           <p className="mt-2 text-gray-600">Create a new help article</p>

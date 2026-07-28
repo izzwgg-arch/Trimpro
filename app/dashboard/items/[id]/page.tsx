@@ -1,11 +1,12 @@
 'use client'
+import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
-import { ArrowLeft, Edit, Copy, Archive, Package } from 'lucide-react'
+import { Edit, Copy, Archive, Package } from 'lucide-react'
 import Link from 'next/link'
 
 interface Item {
@@ -215,12 +216,7 @@ export default function ItemDetailPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
-          <Link href="/dashboard/items">
-            <Button variant="ghost" size="sm">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back
-            </Button>
-          </Link>
+          <EntityBackButton fallbackHref="/dashboard/items" />
           <div>
             <div className="flex items-center space-x-3">
               <h1 className="text-3xl font-bold text-gray-900">{item.name}</h1>

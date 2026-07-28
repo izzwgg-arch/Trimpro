@@ -1,4 +1,7 @@
 'use client'
+import { useListRestore } from '@/hooks/useListRestore'
+import { usePersistedSort } from '@/hooks/useListPreferences'
+import { openFromList } from '@/lib/navigation/nav-stack'
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -53,6 +56,8 @@ const paymentTermsLabels: Record<string, string> = {
 
 export default function VendorsPage() {
   const router = useRouter()
+  const { highlightedId } = useListRestore('vendors')
+  const { sortKey: persistedSortKey, sortDirection: persistedSortDirection, setSort: setPersistedSort } = usePersistedSort('vendors')
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')

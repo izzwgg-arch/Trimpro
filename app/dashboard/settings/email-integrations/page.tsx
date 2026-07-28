@@ -1,4 +1,5 @@
 'use client'
+import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
@@ -8,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ArrowLeft, Mail, Plus, Save, Send, Trash2 } from 'lucide-react'
+import { Mail, Plus, Save, Send, Trash2 } from 'lucide-react'
 import { refreshAccessToken } from '@/lib/auth/client'
 
 interface EmailIntegration {
@@ -236,12 +237,7 @@ export default function EmailIntegrationsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Link href="/dashboard/settings/integrations">
-            <Button variant="outline" size="sm">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back
-            </Button>
-          </Link>
+          <EntityBackButton fallbackHref="/dashboard/settings/integrations" />
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Email Integrations</h1>
             <p className="text-gray-600">Invoice and estimate sender overrides by user assignment.</p>

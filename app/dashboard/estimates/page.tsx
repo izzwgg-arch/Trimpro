@@ -1,5 +1,7 @@
 'use client'
 
+import { openFromList } from '@/lib/navigation/nav-stack'
+import { useListRestore } from '@/hooks/useListRestore'
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -99,7 +101,7 @@ const LIST_DEFAULTS: EstimatesListState = {
 function loadEstimatesListState(): EstimatesListState {
   if (typeof window === 'undefined') return LIST_DEFAULTS
   try {
-    const raw = sessionStorage.getItem(ESTIMATES_LIST_KEY)
+    const raw = localStorage.getItem(ESTIMATES_LIST_KEY)
     if (!raw) return LIST_DEFAULTS
     const p = JSON.parse(raw) as Partial<EstimatesListState>
     return {
@@ -114,11 +116,12 @@ function loadEstimatesListState(): EstimatesListState {
 }
 
 function saveEstimatesListState(s: EstimatesListState) {
-  sessionStorage.setItem(ESTIMATES_LIST_KEY, JSON.stringify(s))
+  localStorage.setItem(ESTIMATES_LIST_KEY, JSON.stringify(s))
 }
 
 export default function EstimatesPage() {
   const router = useRouter()
+  const { highlightedId } = useListRestore('estimates')
   const { permissions, loading: permissionsLoading } = usePermissions()
   const canViewList = hasPermission(permissions, 'estimates.view')
   const canCreate = hasPermission(permissions, 'estimates.create')
@@ -153,13 +156,6 @@ export default function EstimatesPage() {
   useEffect(() => {
     setPage(1)
   }, [debouncedSearch, status, sortKey, sortDirection])
-
-  // Clear persisted state on a real full-page reload / tab close
-  useEffect(() => {
-    const clear = () => sessionStorage.removeItem(ESTIMATES_LIST_KEY)
-    window.addEventListener('beforeunload', clear)
-    return () => window.removeEventListener('beforeunload', clear)
-  }, [])
 
   const fetchEstimates = useCallback(async () => {
     if (!canViewList) {
@@ -447,7 +443,13 @@ export default function EstimatesPage() {
           </div>
         ) : (
           estimates.map((estimate) => (
-            <Card key={estimate.id} className="hover:shadow-lg transition-shadow">
+            <Card
+              key={estimate.id}
+              data-row-id={estimate.id}
+              className={`hover:shadow-lg transition-shadow ${
+                highlightedId === estimate.id ? 'ring-2 ring-amber-300 bg-amber-50' : ''
+              }`}
+            >
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
@@ -556,6 +558,8 @@ export default function EstimatesPage() {
           {estimates.map((estimate) => (
             <RowCompactItem
               key={estimate.id}
+              rowId={estimate.id}
+              highlighted={highlightedId === estimate.id}
               href={`/dashboard/estimates/${estimate.id}`}
               leading={
                 <input
@@ -616,7 +620,15 @@ export default function EstimatesPage() {
         <TableView
           data={estimates}
           rowKey={(estimate) => estimate.id}
-          onRowClick={(estimate) => router.push(`/dashboard/estimates/${estimate.id}`)}
+          highlightedRowId={highlightedId}
+          onRowClick={(estimate) =>
+            openFromList(router, {
+              entity: 'estimates',
+              detailHref: `/dashboard/estimates/${estimate.id}`,
+              itemId: estimate.id,
+              page,
+            })
+          }
           sortKey={sortKey}
           sortDirection={sortDirection}
           onSortChange={handleTableSortChange}

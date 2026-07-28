@@ -1,4 +1,7 @@
 'use client'
+import { useListRestore } from '@/hooks/useListRestore'
+import { usePersistedSort } from '@/hooks/useListPreferences'
+import { openFromList } from '@/lib/navigation/nav-stack'
 
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -104,6 +107,8 @@ function UnreadMessagesBadge({ count }: { count?: number }) {
 
 export default function JobsPage() {
   const router = useRouter()
+  const { highlightedId } = useListRestore('jobs')
+  const { sortKey: persistedSortKey, sortDirection: persistedSortDirection, setSort: setPersistedSort } = usePersistedSort('jobs')
   const searchParams = useSearchParams()
   const { permissionsLoading, canViewList, canCreate } = useDocumentListAccess('jobs.view', 'jobs.create')
   const [jobs, setJobs] = useState<Job[]>([])
@@ -675,9 +680,13 @@ export default function JobsPage() {
         </div>
       ) : (
         <TableView
+          highlightedRowId={highlightedId}
+          sortKey={persistedSortKey}
+          sortDirection={persistedSortDirection}
+          onSortChange={setPersistedSort}
           data={jobs}
           rowKey={(job) => job.id}
-          onRowClick={(job) => router.push(`/dashboard/jobs/${job.id}`)}
+          onRowClick={(job) => openFromList(router, { entity: 'jobs', detailHref: `/dashboard/jobs/${job.id}`, itemId: job.id })}
           columns={[
             {
               key: 'select',

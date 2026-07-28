@@ -1,4 +1,7 @@
 'use client'
+import { useListRestore } from '@/hooks/useListRestore'
+import { usePersistedSort } from '@/hooks/useListPreferences'
+import { openFromList } from '@/lib/navigation/nav-stack'
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -69,6 +72,8 @@ function renderJobSiteAddress(address?: string) {
 
 export default function PurchaseOrdersPage() {
   const router = useRouter()
+  const { highlightedId } = useListRestore('purchase-orders')
+  const { sortKey: persistedSortKey, sortDirection: persistedSortDirection, setSort: setPersistedSort } = usePersistedSort('purchase-orders')
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -403,9 +408,13 @@ export default function PurchaseOrdersPage() {
         </div>
       ) : (
         <TableView
+          highlightedRowId={highlightedId}
+          sortKey={persistedSortKey}
+          sortDirection={persistedSortDirection}
+          onSortChange={setPersistedSort}
           data={purchaseOrders}
           rowKey={(po) => po.id}
-          onRowClick={(po) => router.push(`/dashboard/purchase-orders/${po.id}`)}
+          onRowClick={(po) => openFromList(router, { entity: 'purchase-orders', detailHref: `/dashboard/purchase-orders/${po.id}`, itemId: po.id })}
           columns={[
             {
               key: 'select',

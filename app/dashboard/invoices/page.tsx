@@ -1,4 +1,7 @@
 'use client'
+import { useListRestore } from '@/hooks/useListRestore'
+import { usePersistedSort } from '@/hooks/useListPreferences'
+import { openFromList } from '@/lib/navigation/nav-stack'
 
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -84,6 +87,8 @@ function renderJobSiteAddress(address?: string) {
 
 export default function InvoicesPage() {
   const router = useRouter()
+  const { highlightedId } = useListRestore('invoices')
+  const { sortKey: persistedSortKey, sortDirection: persistedSortDirection, setSort: setPersistedSort } = usePersistedSort('invoices')
   const searchParams = useSearchParams()
   const { permissions, loading: permissionsLoading } = usePermissions()
   const canViewList = hasPermission(permissions, 'invoices.view')
@@ -910,9 +915,13 @@ export default function InvoicesPage() {
         </div>
       ) : (
         <TableView
+          highlightedRowId={highlightedId}
+          sortKey={persistedSortKey}
+          sortDirection={persistedSortDirection}
+          onSortChange={setPersistedSort}
           data={invoices}
           rowKey={(invoice) => invoice.id}
-          onRowClick={(invoice) => router.push(`/dashboard/invoices/${invoice.id}`)}
+          onRowClick={(invoice) => openFromList(router, { entity: 'invoices', detailHref: `/dashboard/invoices/${invoice.id}`, itemId: invoice.id })}
           columns={[
             {
               key: 'select',

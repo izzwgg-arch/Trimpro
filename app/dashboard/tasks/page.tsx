@@ -1,4 +1,7 @@
 'use client'
+import { useListRestore } from '@/hooks/useListRestore'
+import { usePersistedSort } from '@/hooks/useListPreferences'
+import { openFromList } from '@/lib/navigation/nav-stack'
 
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -81,6 +84,8 @@ const priorityColors: Record<string, string> = {
 
 export default function TasksPage() {
   const router = useRouter()
+  const { highlightedId } = useListRestore('tasks')
+  const { sortKey: persistedSortKey, sortDirection: persistedSortDirection, setSort: setPersistedSort } = usePersistedSort('tasks')
   const searchParams = useSearchParams()
   const { permissions, loading: permissionsFetchLoading } = usePermissions()
   const { permissionsLoading, canViewList, canCreate } = useDocumentListAccess('tasks.view', 'tasks.create')
@@ -500,9 +505,13 @@ export default function TasksPage() {
         </div>
       ) : (
         <TableView
+          highlightedRowId={highlightedId}
+          sortKey={persistedSortKey}
+          sortDirection={persistedSortDirection}
+          onSortChange={setPersistedSort}
           data={tasks}
           rowKey={(task) => task.id}
-          onRowClick={(task) => router.push(`/dashboard/tasks/${task.id}`)}
+          onRowClick={(task) => openFromList(router, { entity: 'tasks', detailHref: `/dashboard/tasks/${task.id}`, itemId: task.id })}
           columns={[
             {
               key: 'title',

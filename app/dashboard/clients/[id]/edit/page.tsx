@@ -1,9 +1,10 @@
 'use client'
+import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Save, AlertCircle, Plus, Trash2, Pencil, X, Check } from 'lucide-react'
+import { Save, AlertCircle, Plus, Trash2, Pencil, X, Check } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -466,7 +467,7 @@ export default function EditClientPage() {
       }
 
       alert('Client updated')
-      router.push(`/dashboard/clients/${normalizedClientId}`)
+      router.replace(`/dashboard/clients/${normalizedClientId}`)
     } catch (e) {
       console.error('Error updating client:', e)
       alert('Failed to update client')
@@ -496,7 +497,7 @@ export default function EditClientPage() {
           <div className="mt-6 flex items-center justify-center gap-2">
             <Button onClick={() => router.push('/dashboard/clients')}>Back to Clients</Button>
             {normalizedClientId && (
-              <Button variant="outline" onClick={() => router.push(`/dashboard/clients/${normalizedClientId}`)}>
+              <Button variant="outline" onClick={() => router.replace(`/dashboard/clients/${normalizedClientId}`)}>
                 Back to Client
               </Button>
             )}
@@ -509,12 +510,7 @@ export default function EditClientPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center space-x-4">
-        <Link href={`/dashboard/clients/${normalizedClientId}`}>
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back
-          </Button>
-        </Link>
+        <EntityBackButton fallbackHref={`/dashboard/clients/${normalizedClientId}`} parentHref={`/dashboard/clients/${normalizedClientId}`} mode="parent" />
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Edit Client</h1>
           <p className="mt-2 text-gray-600">Update this client’s information</p>

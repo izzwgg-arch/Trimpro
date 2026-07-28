@@ -1,4 +1,5 @@
 'use client'
+import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -8,7 +9,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ArrowLeft, Save, Plus, Trash2, Eye, EyeOff } from 'lucide-react'
+import { Save, Plus, Trash2, Eye, EyeOff } from 'lucide-react'
 import { LineItemDragHandle } from '@/components/documents/line-item-drag-handle'
 import Link from 'next/link'
 import { ResponsivePage } from '@/components/layout/ResponsivePage'
@@ -1091,12 +1092,7 @@ export default function NewEstimatePage() {
   return (
     <ResponsivePage>
       <div className="flex items-center space-x-4">
-        <Link href="/dashboard/estimates">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back
-          </Button>
-        </Link>
+        <EntityBackButton fallbackHref="/dashboard/estimates" />
         <div>
           <h1 className="text-3xl font-bold text-gray-900">New Estimate</h1>
           <p className="mt-2 text-gray-600">Create a new estimate for a client</p>

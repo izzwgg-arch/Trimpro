@@ -1,4 +1,5 @@
 'use client'
+import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
@@ -9,25 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import {
-  ArrowLeft,
-  Edit,
-  Phone,
-  Mail,
-  User,
-  Building2,
-  Calendar,
-  DollarSign,
-  TrendingUp,
-  CheckCircle,
-  CheckSquare,
-  FileText,
-  MessageSquare,
-  AlertCircle,
-  Plus,
-  Trash2,
-  Ruler,
-} from 'lucide-react'
+import { Edit, Phone, Mail, User, Building2, Calendar, DollarSign, TrendingUp, CheckCircle, CheckSquare, FileText, MessageSquare, AlertCircle, Plus, Trash2, Ruler } from 'lucide-react'
 import Link from 'next/link'
 import { parseAddressParts } from '@/lib/address/parse'
 import { buildCreateContextQuery } from '@/src/lib/create-context'
@@ -564,9 +547,7 @@ export default function RequestDetailPage() {
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center space-x-3">
-            <Link href="/dashboard/requests" className="text-gray-500 hover:text-gray-700">
-              ← Back to Requests
-            </Link>
+            <EntityBackButton fallbackHref="/dashboard/requests" />
           </div>
           <div className="flex items-center space-x-3 mt-2">
             <h1 className="text-3xl font-bold text-gray-900">

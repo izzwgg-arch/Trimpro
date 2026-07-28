@@ -1,4 +1,5 @@
 'use client'
+import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
@@ -300,9 +301,7 @@ export default function IssueDetailPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <Link href="/dashboard/issues" className="text-gray-500 hover:text-gray-700">
-            ← Back to Issues
-          </Link>
+          <EntityBackButton fallbackHref="/dashboard/issues" />
           <div className="flex items-center gap-3 mt-2">
             <h1 className="text-3xl font-bold text-gray-900">{issue.title}</h1>
             <span className={`px-3 py-1 text-sm rounded-full ${badgeClass}`}>{issue.status.replaceAll('_', ' ')}</span>

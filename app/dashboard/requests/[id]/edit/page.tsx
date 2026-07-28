@@ -1,9 +1,10 @@
 'use client'
+import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Save, AlertCircle, Copy, Trash2 } from 'lucide-react'
+import { Save, AlertCircle, Copy, Trash2 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -243,7 +244,7 @@ export default function EditRequestPage() {
       }
 
       alert('Request updated')
-      router.push(`/dashboard/requests/${normalizedRequestId}`)
+      router.replace(`/dashboard/requests/${normalizedRequestId}`)
     } catch (e) {
       console.error('Error updating request:', e)
       alert('Failed to update request')
@@ -358,7 +359,7 @@ export default function EditRequestPage() {
           <div className="mt-6 flex items-center justify-center gap-2">
             <Button onClick={() => router.push('/dashboard/requests')}>Back to Requests</Button>
             {normalizedRequestId && (
-              <Button variant="outline" onClick={() => router.push(`/dashboard/requests/${normalizedRequestId}`)}>
+              <Button variant="outline" onClick={() => router.replace(`/dashboard/requests/${normalizedRequestId}`)}>
                 Back to Request
               </Button>
             )}
@@ -371,12 +372,7 @@ export default function EditRequestPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center space-x-4">
-        <Link href={`/dashboard/requests/${normalizedRequestId}`}>
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back
-          </Button>
-        </Link>
+        <EntityBackButton fallbackHref={`/dashboard/requests/${normalizedRequestId}`} parentHref={`/dashboard/requests/${normalizedRequestId}`} mode="parent" />
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Edit Request</h1>
           <p className="mt-2 text-gray-600">Update this request&apos;s information</p>

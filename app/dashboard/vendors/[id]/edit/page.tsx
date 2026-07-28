@@ -1,4 +1,5 @@
 'use client'
+import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
@@ -7,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ArrowLeft, Save, Plus, Trash2 } from 'lucide-react'
+import { Save, Plus, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 
 interface VendorContact {
@@ -217,7 +218,7 @@ export default function EditVendorPage() {
         setSaving(false)
         return
       }
-      router.push(`/dashboard/vendors/${data.vendor.id}`)
+      router.replace(`/dashboard/vendors/${data.vendor.id}`)
     } catch (error) {
       console.error('Error updating vendor:', error)
       alert('Failed to update vendor. Check console for details.')
@@ -240,12 +241,7 @@ export default function EditVendorPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center space-x-4">
-        <Link href={`/dashboard/vendors/${vendorId}`}>
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back
-          </Button>
-        </Link>
+        <EntityBackButton fallbackHref={`/dashboard/vendors/${vendorId}`} parentHref={`/dashboard/vendors/${vendorId}`} mode="parent" />
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Edit Vendor</h1>
           <p className="mt-2 text-gray-600">Update vendor information</p>

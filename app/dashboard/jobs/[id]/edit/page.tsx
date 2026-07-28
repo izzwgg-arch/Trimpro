@@ -253,9 +253,9 @@ export default function EditJobPage() {
 
       const data = await response.json()
       if (data.job && data.job.id) {
-        router.push(`/dashboard/jobs/${data.job.id}`)
+        router.replace(`/dashboard/jobs/${data.job.id}`)
       } else {
-        router.push(`/dashboard/jobs/${jobId}`)
+        router.replace(`/dashboard/jobs/${jobId}`)
       }
     } catch (error) {
       console.error('Error updating job:', error)

@@ -8,6 +8,7 @@ import { Menu } from 'lucide-react'
 import { QboSyncFailureNotifier } from '@/components/qbo/QboSyncFailureNotifier'
 import { GlobalSearch } from '@/components/search/GlobalSearch'
 import { RoutePermissionGuard } from '@/components/permissions/RoutePermissionGuard'
+import { DashboardNavCapture } from '@/components/navigation/DashboardNavCapture'
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -51,6 +52,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-full min-h-screen bg-gray-100">
+      <DashboardNavCapture />
       {isAdmin && <QboSyncFailureNotifier />}
 
       <Sidebar

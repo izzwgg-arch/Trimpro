@@ -1,29 +1,13 @@
 'use client'
+import { navigateWithReturn } from '@/lib/navigation/nav-stack'
+import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils'
-import {
-  Briefcase,
-  Calendar,
-  DollarSign,
-  Users,
-  MapPin,
-  FileText,
-  CheckSquare,
-  AlertCircle,
-  Phone,
-  MessageSquare,
-  Mail,
-  Edit,
-  Plus,
-  Building2,
-  Trash2,
-  Copy,
-  Clock,
-} from 'lucide-react'
+import { Briefcase, Calendar, DollarSign, Users, MapPin, FileText, CheckSquare, AlertCircle, Phone, MessageSquare, Mail, Edit, Plus, Building2, Trash2, Copy, Clock } from 'lucide-react'
 import { JobThreadDialog } from '@/components/messages/JobThreadDialog'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
@@ -810,9 +794,7 @@ export default function JobDetailPage() {
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center space-x-3">
-            <Link href="/dashboard/jobs" className="text-gray-500 hover:text-gray-700">
-              Back to Jobs
-            </Link>
+            <EntityBackButton fallbackHref="/dashboard/jobs" />
           </div>
           <div className="flex items-center space-x-3 mt-2">
             <h1 className="text-3xl font-bold text-gray-900">{job.title}</h1>
@@ -880,7 +862,8 @@ export default function JobDetailPage() {
               size="sm"
               className="h-8 text-xs px-2"
               onClick={() =>
-                router.push(
+                navigateWithReturn(
+                  router,
                   `/dashboard/tasks/new${buildCreateContextQuery({
                     clientId: job.client.id,
                     sourceType: 'job',
@@ -903,7 +886,8 @@ export default function JobDetailPage() {
               size="sm"
               className="h-8 text-xs px-2"
               onClick={() =>
-                router.push(
+                navigateWithReturn(
+                  router,
                   `/dashboard/issues/new${buildCreateContextQuery({
                     clientId: job.client.id,
                     sourceType: 'job',
@@ -926,7 +910,8 @@ export default function JobDetailPage() {
               size="sm"
               className="h-8 text-xs px-2"
               onClick={() =>
-                router.push(
+                navigateWithReturn(
+                  router,
                   `/dashboard/estimates/new${buildCreateContextQuery({
                     clientId: job.client.id,
                     sourceType: 'job',
@@ -943,7 +928,7 @@ export default function JobDetailPage() {
               variant="outline"
               size="sm"
               className="h-8 text-xs px-2"
-              onClick={() => router.push(`/dashboard/invoices/new?jobId=${jobId}`)}
+              onClick={() => navigateWithReturn(router, `/dashboard/invoices/new?jobId=${jobId}`)}
             >
               <DollarSign className="mr-1.5 h-3.5 w-3.5" />
               New Invoice
@@ -952,7 +937,7 @@ export default function JobDetailPage() {
               variant="outline"
               size="sm"
               className="h-8 text-xs px-2"
-              onClick={() => router.push(`/dashboard/schedule/new?jobId=${jobId}`)}
+              onClick={() => navigateWithReturn(router, `/dashboard/schedule/new?jobId=${jobId}`)}
             >
               <Calendar className="mr-1.5 h-3.5 w-3.5" />
               Schedule

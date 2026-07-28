@@ -73,7 +73,7 @@ function formatDocumentStatus(kind: UnifiedDocumentKind, status: string) {
 function readDocumentPreferences(key?: string): Partial<DocumentPreferences> | null {
   if (!key || typeof window === 'undefined') return null
   try {
-    const raw = sessionStorage.getItem(key)
+    const raw = localStorage.getItem(key)
     return raw ? (JSON.parse(raw) as Partial<DocumentPreferences>) : null
   } catch {
     return null
@@ -83,7 +83,7 @@ function readDocumentPreferences(key?: string): Partial<DocumentPreferences> | n
 function writeDocumentPreferences(key: string | undefined, prefs: DocumentPreferences) {
   if (!key || typeof window === 'undefined') return
   try {
-    sessionStorage.setItem(key, JSON.stringify(prefs))
+    localStorage.setItem(key, JSON.stringify(prefs))
   } catch {
     // ignore storage failures
   }

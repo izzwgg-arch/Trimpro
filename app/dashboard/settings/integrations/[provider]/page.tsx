@@ -1,4 +1,5 @@
 'use client'
+import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 
 import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
@@ -9,16 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { formatDate } from '@/lib/utils'
-import {
-  ArrowLeft,
-  Save,
-  TestTube,
-  Trash2,
-  CheckCircle,
-  XCircle,
-  Clock,
-  AlertCircle,
-} from 'lucide-react'
+import { Save, TestTube, Trash2, CheckCircle, XCircle, Clock, AlertCircle } from 'lucide-react'
 import Link from 'next/link'
 import { getIntegration, IntegrationProvider } from '@/lib/integrations/registry'
 import { SecretField } from '@/components/integrations/SecretField'
@@ -827,12 +819,7 @@ export default function IntegrationProviderPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
-          <Link href="/dashboard/settings/integrations">
-            <Button variant="ghost" size="sm">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back
-            </Button>
-          </Link>
+          <EntityBackButton fallbackHref="/dashboard/settings/integrations" />
           <div>
             <h1 className="text-3xl font-bold text-gray-900">{integration.name}</h1>
             <p className="mt-1 text-gray-600">{integration.description}</p>
