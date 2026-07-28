@@ -20,6 +20,8 @@ export interface SendEmailWithAttachmentsInput {
   text?: string
   attachments?: EmailAttachment[]
   cc?: string[]
+  /** Internal/staff alerts should not CC the global admin list. */
+  skipGlobalCc?: boolean
 }
 
 /**
@@ -30,7 +32,11 @@ export async function sendEmailWithAttachments(
   input: SendEmailWithAttachmentsInput
 ): Promise<IntegrationTestResult> {
   const { secrets, to, subject, html, text, attachments } = input
-  const recipients = mergeConfiguredGlobalCc({ to, cc: input.cc })
+  const recipients = mergeConfiguredGlobalCc({
+    to,
+    cc: input.cc,
+    skipGlobalCc: Boolean(input.skipGlobalCc),
+  })
   const normalizedTo = recipients.to
   const cc = recipients.cc
 
@@ -41,6 +47,7 @@ export async function sendEmailWithAttachments(
     ccCount: cc.length,
     cc,
     globalCcCount: recipients.globalCc.length,
+    skipGlobalCc: Boolean(input.skipGlobalCc),
   })
 
   try {
