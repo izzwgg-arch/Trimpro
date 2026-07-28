@@ -6,6 +6,7 @@ import {
   normalizeNotificationPreferences,
   preferenceKeyForNotification,
 } from '@/lib/notifications/preferences'
+import { sendStaffNotificationEmail } from '@/lib/notifications/email'
 
 export type CreateNotificationResult = {
   ok: boolean
@@ -70,15 +71,19 @@ async function shouldCollapseByRateLimit(tenantId: string, userId: string) {
 
 async function createAndSendNotification(params: CreateNotificationParams): Promise<CreateNotificationResult> {
   const preferenceKey = preferenceKeyForNotification(params.type, params.linkType)
-  if (preferenceKey) {
-    const user = await prisma.user.findFirst({
-      where: { id: params.userId, tenantId: params.tenantId },
-      select: { notificationPreferences: true },
-    })
-    const prefs = normalizeNotificationPreferences(user?.notificationPreferences)
-    if (!prefs[preferenceKey]) {
-      return { ok: true, reason: 'disabled_by_user_preference' }
-    }
+  const user = await prisma.user.findFirst({
+    where: { id: params.userId, tenantId: params.tenantId },
+    select: {
+      email: true,
+      firstName: true,
+      lastName: true,
+      notificationPreferences: true,
+    },
+  })
+  const prefs = normalizeNotificationPreferences(user?.notificationPreferences)
+
+  if (preferenceKey && !prefs[preferenceKey]) {
+    return { ok: true, reason: 'disabled_by_user_preference' }
   }
 
   const traceId = makeTraceId()
@@ -149,11 +154,35 @@ async function createAndSendNotification(params: CreateNotificationParams): Prom
     },
   })
 
+  let emailError: string | null = null
+  if (prefs.emailNotifications && user?.email) {
+    const emailResult = await sendStaffNotificationEmail({
+      tenantId: params.tenantId,
+      to: user.email,
+      recipientName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || null,
+      title,
+      message,
+      linkUrl: params.linkUrl,
+      notificationId: notification.id,
+    })
+    if (!emailResult.sent) {
+      emailError = emailResult.error || 'email_failed'
+      console.warn('notification.email_failed', {
+        notificationId: notification.id,
+        userId: params.userId,
+        error: emailError,
+      })
+    }
+  }
+
   const deliveryStatus: 'FAILED' | 'SENT' = pushResult.failed > 0 && pushResult.sent === 0 ? 'FAILED' : 'SENT'
-  const failureReason =
+  const failureParts = [
     pushResult.failed > 0
       ? `tickets_failed=${pushResult.failed};receipts_failed=${pushResult.receiptErrors.length}`
-      : null
+      : null,
+    emailError ? `email_failed=${emailError}` : null,
+  ].filter(Boolean)
+  const failureReason = failureParts.length ? failureParts.join('|') : null
 
   await prisma.notification.update({
     where: { id: notification.id },

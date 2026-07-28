@@ -1,31 +1,130 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Settings, User, Bell, Shield, Link as LinkIcon, Mail, Phone, Users, Palette } from 'lucide-react'
+import { User, Bell, Link as LinkIcon, Users, Palette } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import {
+  DEFAULT_NOTIFICATION_PREFERENCES,
+  type UserNotificationPreferences,
+} from '@/lib/notifications/preferences'
+
+const PREF_ROWS: Array<{
+  key: keyof UserNotificationPreferences
+  title: string
+  description: string
+}> = [
+  {
+    key: 'emailNotifications',
+    title: 'Email Notifications',
+    description: 'Also send in-app alerts to your account email',
+  },
+  {
+    key: 'newJobAssigned',
+    title: 'New Job Assigned',
+    description: 'When a job is assigned to you',
+  },
+  {
+    key: 'jobStatusChanges',
+    title: 'Job Updates',
+    description: 'When a job you are on changes status or schedule',
+  },
+  {
+    key: 'requestStatusChanges',
+    title: 'Request Updates',
+    description: 'When a request you created or are assigned to changes',
+  },
+  {
+    key: 'newMessage',
+    title: 'New Messages',
+    description: 'When you receive a chat or job message',
+  },
+  {
+    key: 'paymentReceived',
+    title: 'Payment Alerts',
+    description: 'When a payment is received',
+  },
+]
 
 export default function SettingsPage() {
   const router = useRouter()
   const pathname = usePathname()
-  
-  // Determine active tab based on current path
+  const [prefs, setPrefs] = useState<UserNotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES)
+  const [prefsLoading, setPrefsLoading] = useState(false)
+  const [prefsSaving, setPrefsSaving] = useState(false)
+  const [prefsMessage, setPrefsMessage] = useState<string | null>(null)
+
   const getActiveTab = () => {
     if (pathname?.includes('/settings/branding')) return 'branding'
     if (pathname?.includes('/settings/integrations')) return 'integrations'
     if (pathname?.includes('/settings/roles')) return 'roles'
     return 'profile'
   }
-  
+
   const [activeTab, setActiveTab] = useState(getActiveTab())
-  
+
   useEffect(() => {
     setActiveTab(getActiveTab())
   }, [pathname])
+
+  const authHeaders = useCallback(() => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
+    return {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    }
+  }, [])
+
+  const loadPreferences = useCallback(async () => {
+    setPrefsLoading(true)
+    setPrefsMessage(null)
+    try {
+      const response = await fetch('/api/notifications/preferences', {
+        headers: authHeaders(),
+        credentials: 'include',
+      })
+      if (!response.ok) throw new Error('Failed to load preferences')
+      const data = await response.json()
+      setPrefs({ ...DEFAULT_NOTIFICATION_PREFERENCES, ...(data.preferences || {}) })
+    } catch (error) {
+      console.error(error)
+      setPrefsMessage('Could not load notification preferences.')
+    } finally {
+      setPrefsLoading(false)
+    }
+  }, [authHeaders])
+
+  useEffect(() => {
+    if (activeTab === 'notifications') {
+      void loadPreferences()
+    }
+  }, [activeTab, loadPreferences])
+
+  const savePreferences = async () => {
+    setPrefsSaving(true)
+    setPrefsMessage(null)
+    try {
+      const response = await fetch('/api/notifications/preferences', {
+        method: 'PATCH',
+        headers: authHeaders(),
+        credentials: 'include',
+        body: JSON.stringify({ preferences: prefs }),
+      })
+      if (!response.ok) throw new Error('Failed to save preferences')
+      const data = await response.json()
+      setPrefs({ ...DEFAULT_NOTIFICATION_PREFERENCES, ...(data.preferences || prefs) })
+      setPrefsMessage('Preferences saved.')
+    } catch (error) {
+      console.error(error)
+      setPrefsMessage('Could not save preferences.')
+    } finally {
+      setPrefsSaving(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -98,7 +197,6 @@ export default function SettingsPage() {
               : 'border-transparent text-gray-600 hover:text-gray-900'
           }`}
         >
-          <Shield className="inline mr-2 h-4 w-4" />
           Security
         </button>
       </div>
@@ -137,42 +235,38 @@ export default function SettingsPage() {
         <Card>
           <CardHeader>
             <CardTitle>Notification Preferences</CardTitle>
-            <CardDescription>Configure how you receive notifications</CardDescription>
+            <CardDescription>
+              Choose which alerts you get in-app/push, and whether they are also emailed
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Email Notifications</p>
-                <p className="text-sm text-gray-500">Receive notifications via email</p>
-              </div>
-              <input type="checkbox" defaultChecked className="h-4 w-4" />
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">SMS Notifications</p>
-                <p className="text-sm text-gray-500">Receive notifications via SMS</p>
-              </div>
-              <input type="checkbox" className="h-4 w-4" />
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Payment Alerts</p>
-                <p className="text-sm text-gray-500">Get notified when payments are received</p>
-              </div>
-              <input type="checkbox" defaultChecked className="h-4 w-4" />
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Job Updates</p>
-                <p className="text-sm text-gray-500">Get notified about job status changes</p>
-              </div>
-              <input type="checkbox" defaultChecked className="h-4 w-4" />
-            </div>
-            <Button>Save Preferences</Button>
+            {prefsLoading ? (
+              <p className="text-sm text-gray-500">Loading preferences...</p>
+            ) : (
+              PREF_ROWS.map((row) => (
+                <div key={row.key} className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="font-medium">{row.title}</p>
+                    <p className="text-sm text-gray-500">{row.description}</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={Boolean(prefs[row.key])}
+                    onChange={(event) =>
+                      setPrefs((prev) => ({ ...prev, [row.key]: event.target.checked }))
+                    }
+                  />
+                </div>
+              ))
+            )}
+            {prefsMessage ? <p className="text-sm text-gray-600">{prefsMessage}</p> : null}
+            <Button onClick={() => void savePreferences()} disabled={prefsLoading || prefsSaving}>
+              {prefsSaving ? 'Saving...' : 'Save Preferences'}
+            </Button>
           </CardContent>
         </Card>
       )}
-
 
       {activeTab === 'security' && (
         <Card>

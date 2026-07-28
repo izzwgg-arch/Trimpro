@@ -6,6 +6,7 @@ export type NotificationPreferenceKey =
   | 'newMessage'
   | 'newJobAssigned'
   | 'paymentReceived'
+  | 'emailNotifications'
 
 export type UserNotificationPreferences = Record<NotificationPreferenceKey, boolean>
 
@@ -15,6 +16,7 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: UserNotificationPreferences = {
   newMessage: true,
   newJobAssigned: true,
   paymentReceived: true,
+  emailNotifications: true,
 }
 
 export function normalizeNotificationPreferences(raw: unknown): UserNotificationPreferences {
@@ -40,23 +42,23 @@ export function normalizeNotificationPreferences(raw: unknown): UserNotification
       typeof source.paymentReceived === 'boolean'
         ? source.paymentReceived
         : DEFAULT_NOTIFICATION_PREFERENCES.paymentReceived,
+    emailNotifications:
+      typeof source.emailNotifications === 'boolean'
+        ? source.emailNotifications
+        : DEFAULT_NOTIFICATION_PREFERENCES.emailNotifications,
   }
 }
 
 export function preferenceKeyForNotification(
   type: NotificationType,
   linkType?: string | null
-): NotificationPreferenceKey | null {
+): Exclude<NotificationPreferenceKey, 'emailNotifications'> | null {
   if (type === 'MESSAGE_RECEIVED') return 'newMessage'
   if (type === 'JOB_ASSIGNED') return 'newJobAssigned'
   if (type === 'JOB_UPDATED') return 'jobStatusChanges'
   if (type === 'PAYMENT_RECEIVED') return 'paymentReceived'
-  if (
-    type === 'OTHER' &&
-    (linkType === 'request' || linkType === 'lead')
-  ) {
+  if (type === 'OTHER' && (linkType === 'request' || linkType === 'lead')) {
     return 'requestStatusChanges'
   }
-  // Treat request-ish OTHER without linkType as request when title/message handled by callers using linkType
   return null
 }

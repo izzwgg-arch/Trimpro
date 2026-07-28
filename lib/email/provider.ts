@@ -13,6 +13,8 @@ interface SendEmailOptions {
   replyTo?: string
   cc?: string | string[]
   bcc?: string | string[]
+  /** Staff/internal alerts should not CC the global admin list. */
+  skipGlobalCc?: boolean
   metadata?: Record<string, any>
 }
 
@@ -37,6 +39,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
     to,
     cc: options.cc,
     bcc: options.bcc,
+    skipGlobalCc: Boolean(options.skipGlobalCc),
   })
 
   try {

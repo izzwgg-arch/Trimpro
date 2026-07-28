@@ -15,10 +15,16 @@ type PrefKey =
   | 'newMessage'
   | 'newJobAssigned'
   | 'paymentReceived'
+  | 'emailNotifications'
 
 type Prefs = Record<PrefKey, boolean>
 
 const ROWS: Array<{ key: PrefKey; title: string; description: string }> = [
+  {
+    key: 'emailNotifications',
+    title: 'Email notifications',
+    description: 'Also send alerts to your account email.',
+  },
   {
     key: 'requestStatusChanges',
     title: 'Request status changes',
@@ -52,6 +58,7 @@ const DEFAULTS: Prefs = {
   newMessage: true,
   newJobAssigned: true,
   paymentReceived: true,
+  emailNotifications: true,
 }
 
 export function NotificationSettingsScreen({}: Props) {
