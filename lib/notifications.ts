@@ -472,7 +472,7 @@ export async function notifyJobStatusChanged(params: {
 
   await createNotificationsForUsers(params.tenantId, Array.from(recipientIds), {
     type: 'JOB_UPDATED',
-    title: message,
+    title: 'Job Update',
     message,
     linkUrl: `/dashboard/jobs/${params.jobId}`,
     linkType: 'job',

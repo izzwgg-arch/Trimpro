@@ -221,6 +221,7 @@ export async function PUT(
       let notificationMessage = `"${task.title}" has been updated`
 
       if (statusChanged) {
+        notificationTitle = 'Task Update'
         notificationMessage = formatEntityStatusChangedMessage({
           entityType: 'Task',
           entityNumber: task.id.slice(-8).toUpperCase(),
@@ -228,7 +229,6 @@ export async function PUT(
           oldStatusLabel: formatTaskStatus(existing.status),
           newStatusLabel: formatTaskStatus(status),
         })
-        notificationTitle = notificationMessage
       }
 
       await createNotificationsForUsers(user.tenantId, [task.assigneeId], {
