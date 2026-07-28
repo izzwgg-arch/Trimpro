@@ -404,7 +404,8 @@ export async function notifyDispatchJobActivity(params: {
 }
 
 /**
- * Notify assignees (and dispatch office) when a job status changes.
+ * Notify assignees and office/dispatch users when a job status changes.
+ * Includes the user who made the change (so dropdown updates email them too).
  */
 export async function notifyJobStatusChanged(params: {
   tenantId: string
@@ -420,33 +421,41 @@ export async function notifyJobStatusChanged(params: {
   const jobLabel = params.jobNumber || params.jobTitle
   const message = `${jobLabel}: ${fromLabel} → ${toLabel}`
 
-  const assignments = await prisma.jobAssignment.findMany({
-    where: { jobId: params.jobId },
-    select: { userId: true },
-  })
-  const assigneeIds = assignments
-    .map((a) => a.userId)
-    .filter((id) => id && id !== params.actorUserId)
+  const [assignments, dispatchUsers] = await Promise.all([
+    prisma.jobAssignment.findMany({
+      where: { jobId: params.jobId },
+      select: { userId: true },
+    }),
+    prisma.user.findMany({
+      where: {
+        tenantId: params.tenantId,
+        role: { in: ['ADMIN', 'OFFICE', 'ACCOUNTING'] },
+        status: 'ACTIVE',
+      },
+      select: { id: true },
+    }),
+  ])
 
-  if (assigneeIds.length > 0) {
-    await createNotificationsForUsers(params.tenantId, assigneeIds, {
-      type: 'JOB_UPDATED',
-      title: 'Job Status Updated',
-      message,
-      linkUrl: `/dashboard/jobs/${params.jobId}`,
-      linkType: 'job',
-      linkId: params.jobId,
-      actorUserId: params.actorUserId || null,
-      action: 'status_changed',
-    })
+  const recipientIds = new Set<string>()
+  for (const a of assignments) {
+    if (a.userId) recipientIds.add(a.userId)
+  }
+  for (const u of dispatchUsers) {
+    recipientIds.add(u.id)
+  }
+  if (params.actorUserId) {
+    recipientIds.add(params.actorUserId)
   }
 
-  await notifyDispatchJobActivity({
-    tenantId: params.tenantId,
-    jobId: params.jobId,
-    title: `Status updated: ${jobLabel}`,
-    message: `${fromLabel} → ${toLabel}`,
-    excludeUserId: params.actorUserId || null,
+  if (recipientIds.size === 0) return
+
+  await createNotificationsForUsers(params.tenantId, Array.from(recipientIds), {
+    type: 'JOB_UPDATED',
+    title: 'Job Status Updated',
+    message,
+    linkUrl: `/dashboard/jobs/${params.jobId}`,
+    linkType: 'job',
+    linkId: params.jobId,
     actorUserId: params.actorUserId || null,
     action: 'status_changed',
   })
