@@ -7,6 +7,7 @@ import {
   preferenceKeyForNotification,
 } from '@/lib/notifications/preferences'
 import { sendStaffNotificationEmail } from '@/lib/notifications/email'
+import { formatJobStatus } from '@/lib/jobs/statuses'
 
 export type CreateNotificationResult = {
   ok: boolean
@@ -400,6 +401,55 @@ export async function notifyDispatchJobActivity(params: {
       action: params.action || 'job_updated',
     }
   )
+}
+
+/**
+ * Notify assignees (and dispatch office) when a job status changes.
+ */
+export async function notifyJobStatusChanged(params: {
+  tenantId: string
+  jobId: string
+  jobNumber?: string | null
+  jobTitle: string
+  oldStatus: string
+  newStatus: string
+  actorUserId?: string | null
+}) {
+  const fromLabel = formatJobStatus(params.oldStatus)
+  const toLabel = formatJobStatus(params.newStatus)
+  const jobLabel = params.jobNumber || params.jobTitle
+  const message = `${jobLabel}: ${fromLabel} → ${toLabel}`
+
+  const assignments = await prisma.jobAssignment.findMany({
+    where: { jobId: params.jobId },
+    select: { userId: true },
+  })
+  const assigneeIds = assignments
+    .map((a) => a.userId)
+    .filter((id) => id && id !== params.actorUserId)
+
+  if (assigneeIds.length > 0) {
+    await createNotificationsForUsers(params.tenantId, assigneeIds, {
+      type: 'JOB_UPDATED',
+      title: 'Job Status Updated',
+      message,
+      linkUrl: `/dashboard/jobs/${params.jobId}`,
+      linkType: 'job',
+      linkId: params.jobId,
+      actorUserId: params.actorUserId || null,
+      action: 'status_changed',
+    })
+  }
+
+  await notifyDispatchJobActivity({
+    tenantId: params.tenantId,
+    jobId: params.jobId,
+    title: `Status updated: ${jobLabel}`,
+    message: `${fromLabel} → ${toLabel}`,
+    excludeUserId: params.actorUserId || null,
+    actorUserId: params.actorUserId || null,
+    action: 'status_changed',
+  })
 }
 
 /**

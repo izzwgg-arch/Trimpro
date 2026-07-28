@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requireMobilePermission, hasMobilePermission } from '@/lib/authorization'
 import { publishDispatchRealtime } from '@/lib/dispatch-realtime'
-import { notifyDispatchJobActivity, createNotificationsForUsers } from '@/lib/notifications'
+import { notifyJobStatusChanged } from '@/lib/notifications'
 
 /**
  * Mobile API: Update job status
@@ -117,34 +117,15 @@ export async function POST(
       },
     })
 
-    await notifyDispatchJobActivity({
+    await notifyJobStatusChanged({
       tenantId: user.tenantId,
       jobId: job.id,
-      title: `Status updated: ${job.jobNumber}`,
-      message: `${job.status} -> ${status}`,
+      jobNumber: job.jobNumber,
+      jobTitle: job.title,
+      oldStatus: job.status,
+      newStatus: status,
       actorUserId: user.id,
-      action: 'status_changed',
     })
-
-    // Notify other assigned users about status change
-    const assignments = await prisma.jobAssignment.findMany({
-      where: { jobId: job.id },
-      select: { userId: true },
-    })
-    const assignedUserIds = assignments.map((a) => a.userId).filter((id) => id !== user.id)
-
-    if (assignedUserIds.length > 0) {
-      await createNotificationsForUsers(user.tenantId, assignedUserIds, {
-        type: 'JOB_UPDATED',
-        title: `Job Status Updated`,
-        message: `${job.jobNumber || job.title}: ${job.status} → ${status}`,
-        linkType: 'job',
-        linkId: job.id,
-        linkUrl: `/dashboard/jobs/${job.id}`,
-        actorUserId: user.id,
-        action: 'status_changed',
-      })
-    }
 
     return NextResponse.json({ job: updatedJob })
   } catch (error) {

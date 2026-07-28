@@ -6,7 +6,7 @@ import { formatAddressParts, parseAddressParts } from '@/lib/address/parse'
 import { geocodeAddressPartsFromString } from '@/lib/geocoding'
 import { getJobTimeSummary } from '@/lib/time-tracking'
 import { syncAutoJobSchedules } from '@/lib/services/job-schedule-sync'
-import { createNotificationsForUsers } from '@/lib/notifications'
+import { createNotificationsForUsers, notifyJobStatusChanged } from '@/lib/notifications'
 import { assertCanAccessJobType, resolveJobTypeForWrite } from '@/lib/jobs/job-type-scope'
 
 export async function GET(
@@ -492,6 +492,16 @@ export async function PUT(
           jobId: job.id,
           clientId: job.clientId,
         },
+      })
+
+      await notifyJobStatusChanged({
+        tenantId: user.tenantId,
+        jobId: job.id,
+        jobNumber: job.jobNumber,
+        jobTitle: job.title,
+        oldStatus: existing.status,
+        newStatus: job.status,
+        actorUserId: user.id,
       })
     }
 

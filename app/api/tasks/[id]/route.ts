@@ -3,6 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { notifyTaskAssigned, createNotificationsForUsers } from '@/lib/notifications'
+import { formatTaskStatus } from '@/lib/tasks/statuses'
 
 export async function GET(
   request: NextRequest,
@@ -221,7 +222,10 @@ export async function PUT(
 
       if (statusChanged) {
         notificationTitle = status === 'COMPLETED' ? 'Task Completed' : 'Task Status Updated'
-        notificationMessage = `"${task.title}" ${status === 'COMPLETED' ? 'has been completed' : `status changed to ${status}`}`
+        notificationMessage =
+          status === 'COMPLETED'
+            ? `"${task.title}" has been completed (was ${formatTaskStatus(existing.status)})`
+            : `"${task.title}" changed from ${formatTaskStatus(existing.status)} → ${formatTaskStatus(status)}`
       }
 
       await createNotificationsForUsers(user.tenantId, [task.assigneeId], {

@@ -4,6 +4,13 @@ import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { notifyIssueAssigned, createNotificationsForUsers } from '@/lib/notifications'
 
+function formatIssueStatus(status: string): string {
+  return String(status || '')
+    .replaceAll('_', ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
 function isMobileRequest(request: NextRequest): boolean {
   const userAgent = request.headers.get('user-agent') || ''
   const isMobileUA = /Mobile|Android|iPhone|iPad/i.test(userAgent)
@@ -325,7 +332,10 @@ export async function PUT(
 
       if (statusChanged) {
         notificationTitle = status === 'RESOLVED' ? 'Issue Resolved' : 'Issue Status Updated'
-        notificationMessage = `"${issue.title}" ${status === 'RESOLVED' ? 'has been resolved' : `status changed to ${status}`}`
+        notificationMessage =
+          status === 'RESOLVED'
+            ? `"${issue.title}" has been resolved (was ${formatIssueStatus(existing.status)})`
+            : `"${issue.title}" changed from ${formatIssueStatus(existing.status)} → ${formatIssueStatus(status)}`
       }
 
       await createNotificationsForUsers(user.tenantId, notifyUserIds, {
