@@ -22,7 +22,7 @@ export function formatEntityStatusChangedMessage(params: {
   const name = String(params.entityName || '').trim() || '—'
   const from = String(params.oldStatusLabel || '').trim() || '—'
   const to = String(params.newStatusLabel || '').trim() || '—'
-  return `Status for (${type})(${number}) (${name}) has been changed from (${from}) to (${to})`
+  return `Status for ${type} ${number} ${name} has been changed from ${from} to ${to}`
 }
 
 export type CreateNotificationResult = {
