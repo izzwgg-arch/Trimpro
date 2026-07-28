@@ -9,6 +9,22 @@ import {
 import { sendStaffNotificationEmail } from '@/lib/notifications/email'
 import { formatJobStatus } from '@/lib/jobs/statuses'
 
+/** Shared copy for status-change emails/notifications. */
+export function formatEntityStatusChangedMessage(params: {
+  entityType: string
+  entityNumber?: string | null
+  entityName: string
+  oldStatusLabel: string
+  newStatusLabel: string
+}) {
+  const type = String(params.entityType || 'Item').trim()
+  const number = String(params.entityNumber || '').trim() || '—'
+  const name = String(params.entityName || '').trim() || '—'
+  const from = String(params.oldStatusLabel || '').trim() || '—'
+  const to = String(params.newStatusLabel || '').trim() || '—'
+  return `Status for (${type})(${number}) (${name}) has been changed from (${from}) to (${to})`
+}
+
 export type CreateNotificationResult = {
   ok: boolean
   notificationId?: string
@@ -418,8 +434,13 @@ export async function notifyJobStatusChanged(params: {
 }) {
   const fromLabel = formatJobStatus(params.oldStatus)
   const toLabel = formatJobStatus(params.newStatus)
-  const jobLabel = params.jobNumber || params.jobTitle
-  const message = `${jobLabel}: ${fromLabel} → ${toLabel}`
+  const message = formatEntityStatusChangedMessage({
+    entityType: 'Job',
+    entityNumber: params.jobNumber,
+    entityName: params.jobTitle,
+    oldStatusLabel: fromLabel,
+    newStatusLabel: toLabel,
+  })
 
   const [assignments, dispatchUsers] = await Promise.all([
     prisma.jobAssignment.findMany({
@@ -451,7 +472,7 @@ export async function notifyJobStatusChanged(params: {
 
   await createNotificationsForUsers(params.tenantId, Array.from(recipientIds), {
     type: 'JOB_UPDATED',
-    title: 'Job Status Updated',
+    title: message,
     message,
     linkUrl: `/dashboard/jobs/${params.jobId}`,
     linkType: 'job',

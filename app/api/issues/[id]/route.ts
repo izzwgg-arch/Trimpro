@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
-import { notifyIssueAssigned, createNotificationsForUsers } from '@/lib/notifications'
+import { notifyIssueAssigned, createNotificationsForUsers, formatEntityStatusChangedMessage } from '@/lib/notifications'
 
 function formatIssueStatus(status: string): string {
   return String(status || '')
@@ -331,11 +331,14 @@ export async function PUT(
       let notificationMessage = `"${issue.title}" has been updated`
 
       if (statusChanged) {
-        notificationTitle = status === 'RESOLVED' ? 'Issue Resolved' : 'Issue Status Updated'
-        notificationMessage =
-          status === 'RESOLVED'
-            ? `"${issue.title}" has been resolved (was ${formatIssueStatus(existing.status)})`
-            : `"${issue.title}" changed from ${formatIssueStatus(existing.status)} → ${formatIssueStatus(status)}`
+        notificationMessage = formatEntityStatusChangedMessage({
+          entityType: 'Issue',
+          entityNumber: issue.id.slice(-8).toUpperCase(),
+          entityName: issue.title,
+          oldStatusLabel: formatIssueStatus(existing.status),
+          newStatusLabel: formatIssueStatus(status),
+        })
+        notificationTitle = notificationMessage
       }
 
       await createNotificationsForUsers(user.tenantId, notifyUserIds, {

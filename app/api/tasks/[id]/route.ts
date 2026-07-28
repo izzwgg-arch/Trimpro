@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
-import { notifyTaskAssigned, createNotificationsForUsers } from '@/lib/notifications'
+import { notifyTaskAssigned, createNotificationsForUsers, formatEntityStatusChangedMessage } from '@/lib/notifications'
 import { formatTaskStatus } from '@/lib/tasks/statuses'
 
 export async function GET(
@@ -221,11 +221,14 @@ export async function PUT(
       let notificationMessage = `"${task.title}" has been updated`
 
       if (statusChanged) {
-        notificationTitle = status === 'COMPLETED' ? 'Task Completed' : 'Task Status Updated'
-        notificationMessage =
-          status === 'COMPLETED'
-            ? `"${task.title}" has been completed (was ${formatTaskStatus(existing.status)})`
-            : `"${task.title}" changed from ${formatTaskStatus(existing.status)} → ${formatTaskStatus(status)}`
+        notificationMessage = formatEntityStatusChangedMessage({
+          entityType: 'Task',
+          entityNumber: task.id.slice(-8).toUpperCase(),
+          entityName: task.title,
+          oldStatusLabel: formatTaskStatus(existing.status),
+          newStatusLabel: formatTaskStatus(status),
+        })
+        notificationTitle = notificationMessage
       }
 
       await createNotificationsForUsers(user.tenantId, [task.assigneeId], {
