@@ -15,6 +15,8 @@ interface RowDetailedItemProps {
   rightBottom?: ReactNode
   actions?: ReactNode
   className?: string
+  rowId?: string
+  highlighted?: boolean
 }
 
 export function RowDetailedItem({
@@ -28,11 +30,15 @@ export function RowDetailedItem({
   rightBottom,
   actions,
   className,
+  rowId,
+  highlighted,
 }: RowDetailedItemProps) {
   const content = (
     <div
+      data-row-id={rowId}
       className={cn(
-        'rounded-md border bg-card px-4 py-3 hover:bg-muted/30',
+        'rounded-md border bg-card px-4 py-3 hover:bg-muted/30 transition-colors',
+        highlighted ? 'ring-2 ring-amber-300 bg-amber-50' : '',
         className
       )}
     >

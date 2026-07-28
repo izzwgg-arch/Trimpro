@@ -181,6 +181,24 @@ export function smartBack(
     return
   }
 
+  // If this detail was opened from its entity list, always return to that list
+  // so highlight + scroll restore can run (don't get stuck on unrelated history).
+  const detailMatch = pathname.match(/^\/dashboard\/([a-z0-9-]+)\/([^/]+)\/?$/)
+  if (opts.mode !== 'parent' && detailMatch) {
+    const entity = detailMatch[1]
+    const itemId = detailMatch[2]
+    const session = readListSession(entity)
+    if (session?.lastOpenedId && session.lastOpenedId === itemId) {
+      const stamped = popReturnTo()
+      const listBase = `/dashboard/${entity}`
+      const stampedIsList =
+        typeof stamped === 'string' &&
+        (stamped === listBase || stamped.startsWith(`${listBase}?`))
+      router.push(stampedIsList ? stamped! : listBase)
+      return
+    }
+  }
+
   const stamped = popReturnTo()
   if (stamped && stamped !== currentHref()) {
     router.push(stamped)

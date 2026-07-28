@@ -1,9 +1,9 @@
 'use client'
 import { useListRestore } from '@/hooks/useListRestore'
 import { usePersistedSort } from '@/hooks/useListPreferences'
-import { openFromList } from '@/lib/navigation/nav-stack'
+import { openFromList, readListSession } from '@/lib/navigation/nav-stack'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -107,8 +107,6 @@ function UnreadMessagesBadge({ count }: { count?: number }) {
 
 export default function JobsPage() {
   const router = useRouter()
-  const { highlightedId } = useListRestore('jobs')
-  const { sortKey: persistedSortKey, sortDirection: persistedSortDirection, setSort: setPersistedSort } = usePersistedSort('jobs')
   const searchParams = useSearchParams()
   const { permissionsLoading, canViewList, canCreate } = useDocumentListAccess('jobs.view', 'jobs.create')
   const [jobs, setJobs] = useState<Job[]>([])
@@ -120,13 +118,31 @@ export default function JobsPage() {
   const [jobType, setJobType] = useState('all')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
-  const [page, setPage] = useState(1)
+  const [page, setPage] = useState(() => {
+    if (typeof window === 'undefined') return 1
+    return readListSession('jobs')?.page || 1
+  })
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [duplicating, setDuplicating] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [viewMode, setViewMode] = useViewMode('jobs', 'grid')
+  const { highlightedId } = useListRestore('jobs', {
+    ready: !initialLoading && !isFetching && jobs.length > 0,
+  })
+  const { sortKey: persistedSortKey, sortDirection: persistedSortDirection, setSort: setPersistedSort } =
+    usePersistedSort('jobs')
+  const filtersReadyRef = useRef(false)
+
+  const openJob = (jobId: string) => {
+    openFromList(router, {
+      entity: 'jobs',
+      detailHref: `/dashboard/jobs/${jobId}`,
+      itemId: jobId,
+      page,
+    })
+  }
 
   useEffect(() => {
     const statusParam = searchParams.get('status')
@@ -136,6 +152,11 @@ export default function JobsPage() {
   }, [searchParams])
 
   useEffect(() => {
+    // Don't wipe the restored page on the first mount.
+    if (!filtersReadyRef.current) {
+      filtersReadyRef.current = true
+      return
+    }
     setPage(1)
   }, [debouncedSearch, status, jobType, startDate, endDate])
 
@@ -431,21 +452,28 @@ export default function JobsPage() {
           </Card>
         ) : (
           jobs.map((job) => (
-            <Card key={job.id} className="hover:shadow-lg transition-shadow">
+            <Card
+              key={job.id}
+              data-row-id={job.id}
+              className={`hover:shadow-lg transition-shadow cursor-pointer ${
+                highlightedId === job.id ? 'ring-2 ring-amber-300 bg-amber-50' : ''
+              }`}
+              onClick={() => openJob(job.id)}
+            >
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <Link href={`/dashboard/jobs/${job.id}`} className="flex items-center gap-2">
+                    <div className="flex items-center gap-2">
                       <CardTitle className="text-lg hover:text-primary cursor-pointer">
                         {job.title}
                       </CardTitle>
                       <UnreadMessagesBadge count={job.unreadMessages} />
-                    </Link>
+                    </div>
                     <CardDescription className="mt-1">
                       {job.jobNumber} - {job.client.name}
                     </CardDescription>
                   </div>
-                  <div className="flex items-center space-x-2">
+                  <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
                       checked={selectedIds.includes(job.id)}
@@ -596,7 +624,9 @@ export default function JobsPage() {
                 title="Select for duplicate"
               />
               <RowCompactItem
-                href={`/dashboard/jobs/${job.id}`}
+                rowId={job.id}
+                highlighted={highlightedId === job.id}
+                onClick={() => openJob(job.id)}
                 primary={
                   <span className="inline-flex items-center gap-2">
                     {job.jobNumber} - {job.title}
@@ -643,7 +673,9 @@ export default function JobsPage() {
                 title="Select for duplicate"
               />
               <RowDetailedItem
-                href={`/dashboard/jobs/${job.id}`}
+                rowId={job.id}
+                highlighted={highlightedId === job.id}
+                onClick={() => openJob(job.id)}
                 primary={
                   <span className="inline-flex items-center gap-2">
                     {job.jobNumber} - {job.title}
@@ -686,7 +718,7 @@ export default function JobsPage() {
           onSortChange={setPersistedSort}
           data={jobs}
           rowKey={(job) => job.id}
-          onRowClick={(job) => openFromList(router, { entity: 'jobs', detailHref: `/dashboard/jobs/${job.id}`, itemId: job.id })}
+          onRowClick={(job) => openJob(job.id)}
           columns={[
             {
               key: 'select',
