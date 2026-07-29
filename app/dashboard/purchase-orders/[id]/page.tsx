@@ -384,7 +384,8 @@ export default function PurchaseOrderDetailPage() {
     )
   }
 
-  const canEdit = ['DRAFT', 'PENDING_APPROVAL'].includes(po.status)
+  // Allow edits until the PO is received or cancelled (including after approve/send).
+  const canEdit = !['RECEIVED', 'CANCELLED'].includes(po.status)
   const canApprove = po.status === 'PENDING_APPROVAL' || po.status === 'DRAFT'
   const canReceive = po.status === 'ORDERED'
   const canCancel = !['RECEIVED', 'CANCELLED'].includes(po.status)

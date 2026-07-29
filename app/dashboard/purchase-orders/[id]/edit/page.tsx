@@ -106,15 +106,22 @@ export default function EditPurchaseOrderPage() {
     }
   }
 
-  const fetchJobs = async () => {
+  const fetchJobs = async (search = '') => {
     try {
       const token = localStorage.getItem('accessToken')
-      const response = await fetch('/api/jobs?limit=1000', {
+      const params = new URLSearchParams({ limit: '100' })
+      if (search.trim()) params.set('search', search.trim())
+      const response = await fetch(`/api/jobs?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (response.ok) {
         const data = await response.json()
-        setJobs(data.jobs || [])
+        const nextJobs: Job[] = data.jobs || []
+        setJobs((prev) => {
+          const selected = prev.find((job) => job.id === formData.jobId)
+          if (!selected || nextJobs.some((job) => job.id === selected.id)) return nextJobs
+          return [selected, ...nextJobs]
+        })
       }
     } catch (error) {
       console.error('Error fetching jobs:', error)
@@ -184,6 +191,28 @@ export default function EditPurchaseOrderPage() {
         shipping: data.purchaseOrder.shipping?.toString() || '0',
       })
 
+      // Ensure the currently linked job is always present in the searchable list.
+      if (po.job?.id) {
+        setJobs((prev) => {
+          if (prev.some((job) => job.id === po.job.id)) return prev
+          return [
+            {
+              id: po.job.id,
+              jobNumber: po.job.jobNumber,
+              title: po.job.title,
+              status: po.job.status || null,
+              client: po.job.client
+                ? {
+                    id: po.job.client.id,
+                    name: po.job.client.name,
+                    companyName: po.job.client.companyName || null,
+                  }
+                : null,
+            },
+            ...prev,
+          ]
+        })
+      }
       // Map line items, handling groups
       const groupsMap = new Map<string, { name: string; sourceBundleId?: string }>()
       const mappedItems: LineItem[] = []
@@ -214,20 +243,26 @@ export default function EditPurchaseOrderPage() {
           processedGroups.add(group.id)
         }
 
+        const unitCostValue =
+          li.unitCost != null && li.unitCost !== ''
+            ? li.unitCost
+            : li.unitPrice != null && li.unitPrice !== ''
+              ? li.unitPrice
+              : 0
         mappedItems.push({
           id: li.id,
           description: li.description,
           details: li.details || undefined,
-          quantity: li.quantity.toString(),
-          unitCost: li.unitCost ? li.unitCost.toString() : li.unitPrice.toString(), // PO uses unitPrice for cost
-          unitPrice: li.unitPrice ? li.unitPrice.toString() : undefined,
+          quantity: String(li.quantity ?? 1),
+          unitCost: String(unitCostValue), // PO uses unitPrice for cost
+          unitPrice: li.unitPrice != null ? String(li.unitPrice) : undefined,
           notes: li.notes || undefined,
           vendorId: li.vendorId || undefined,
           vendorName: li.vendor?.name || undefined,
           groupId: li.groupId || undefined,
           sourceItemId: li.sourceItemId || undefined,
           sourceBundleId: li.sourceBundleId || undefined,
-        tag: '',
+          tag: '',
         })
       })
 
@@ -615,6 +650,7 @@ export default function EditPurchaseOrderPage() {
                     jobs={jobs}
                     value={formData.jobId || ''}
                     onSelect={(jobId) => setFormData({ ...formData, jobId })}
+                    onSearch={fetchJobs}
                     placeholder="Search jobs by number, title, or client..."
                     allowNone
                     noneLabel="No job"

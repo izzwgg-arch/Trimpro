@@ -106,15 +106,22 @@ export default function NewPurchaseOrderPage() {
     }
   }
 
-  const fetchJobs = async () => {
+  const fetchJobs = async (search = '') => {
     try {
       const token = localStorage.getItem('accessToken')
-      const response = await fetch('/api/jobs?limit=1000', {
+      const params = new URLSearchParams({ limit: '100' })
+      if (search.trim()) params.set('search', search.trim())
+      const response = await fetch(`/api/jobs?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (response.ok) {
         const data = await response.json()
-        setJobs(data.jobs || [])
+        const nextJobs: Job[] = data.jobs || []
+        setJobs((prev) => {
+          const selected = prev.find((job) => job.id === formData.jobId)
+          if (!selected || nextJobs.some((job) => job.id === selected.id)) return nextJobs
+          return [selected, ...nextJobs]
+        })
       }
     } catch (error) {
       console.error('Error fetching jobs:', error)
@@ -462,6 +469,7 @@ export default function NewPurchaseOrderPage() {
                     jobs={jobs}
                     value={formData.jobId || ''}
                     onSelect={(jobId) => setFormData({ ...formData, jobId })}
+                    onSearch={fetchJobs}
                     placeholder="Search jobs by number, title, or client..."
                     allowNone
                     noneLabel="No job"

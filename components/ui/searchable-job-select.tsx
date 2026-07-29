@@ -27,6 +27,8 @@ interface SearchableJobSelectProps {
   disabled?: boolean
   allowNone?: boolean
   noneLabel?: string
+  /** Optional remote search — called as the user types (debounced). */
+  onSearch?: (query: string) => void | Promise<void>
 }
 
 function jobLabel(job: JobOption) {
@@ -46,16 +48,23 @@ export function SearchableJobSelect({
   disabled = false,
   allowNone = true,
   noneLabel = 'No job',
+  onSearch,
 }: SearchableJobSelectProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const [searching, setSearching] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
+  const onSearchRef = useRef(onSearch)
+  onSearchRef.current = onSearch
+  const remote = Boolean(onSearch)
 
   const selectedJob = jobs.find((job) => job.id === value) || null
 
   const filteredJobs = useMemo(() => {
     const q = query.trim()
+    // When remote search is wired, trust the provided jobs list (already filtered server-side).
+    if (remote) return jobs
     if (!q) return jobs
     return [...jobs]
       .filter((job) =>
@@ -80,7 +89,7 @@ export function SearchableJobSelect({
             [a.client?.name, a.client?.companyName, a.status]
           )
       )
-  }, [jobs, query])
+  }, [jobs, query, remote])
 
   useEffect(() => {
     if (!open) return
@@ -107,6 +116,24 @@ export function SearchableJobSelect({
       setQuery('')
     }
   }, [open])
+
+  useEffect(() => {
+    if (!open || !onSearchRef.current) return
+    const q = query.trim()
+    let cancelled = false
+    const timer = window.setTimeout(async () => {
+      setSearching(true)
+      try {
+        await onSearchRef.current?.(q)
+      } finally {
+        if (!cancelled) setSearching(false)
+      }
+    }, 250)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [open, query])
 
   return (
     <div className="relative" ref={containerRef}>
@@ -155,7 +182,9 @@ export function SearchableJobSelect({
               </button>
             )}
             {filteredJobs.length === 0 ? (
-              <div className="px-3 py-2 text-sm text-muted-foreground">No jobs found</div>
+              <div className="px-3 py-2 text-sm text-muted-foreground">
+                {searching ? 'Searching…' : 'No jobs found'}
+              </div>
             ) : (
               filteredJobs.map((job) => {
                 const selected = job.id === value
