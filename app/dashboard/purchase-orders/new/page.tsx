@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { SearchableJobSelect } from '@/components/ui/searchable-job-select'
 import { Save, Plus, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import { LineItemDragHandle } from '@/components/documents/line-item-drag-handle'
@@ -29,6 +30,8 @@ interface Job {
   id: string
   jobNumber: string
   title: string
+  status?: string | null
+  client?: { id?: string; name?: string | null; companyName?: string | null } | null
 }
 
 interface LineItem {
@@ -455,22 +458,14 @@ export default function NewPurchaseOrderPage() {
                 </div>
                 <div>
                   <Label htmlFor="jobId">Job (Optional)</Label>
-                  <Select
-                    value={formData.jobId || '__none__'}
-                    onValueChange={(value) => setFormData({ ...formData, jobId: value === '__none__' ? '' : value })}
-                  >
-                    <SelectTrigger id="jobId">
-                      <SelectValue placeholder="No job" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">No job</SelectItem>
-                      {jobs.map((job) => (
-                        <SelectItem key={job.id} value={job.id}>
-                          {job.jobNumber} - {job.title}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <SearchableJobSelect
+                    jobs={jobs}
+                    value={formData.jobId || ''}
+                    onSelect={(jobId) => setFormData({ ...formData, jobId })}
+                    placeholder="Search jobs by number, title, or client..."
+                    allowNone
+                    noneLabel="No job"
+                  />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
