@@ -29,7 +29,11 @@ export interface UnifiedDocumentRow {
 async function getDescendantClientIds(tenantId: string, parentIds: string[]): Promise<string[]> {
   const all = new Set<string>()
   let frontier = [...parentIds]
+  let loops = 0
   while (frontier.length > 0) {
+    loops += 1
+    // Guard against accidental parent cycles so documents never hang.
+    if (loops > 50) break
     const children = await prisma.client.findMany({
       where: { tenantId, parentId: { in: frontier } },
       select: { id: true },
@@ -384,7 +388,7 @@ function buildDocumentRows({
       id: payment.id,
       kind: 'payment',
       number: payment.invoice?.invoiceNumber || payment.reference || payment.id.slice(-8),
-      title: payment.method.replace(/_/g, ' '),
+      title: String(payment.method || 'PAYMENT').replace(/_/g, ' '),
       status: displayStatus,
       amount: Number(payment.amount),
       balance: null,
@@ -418,7 +422,7 @@ function buildDocumentRows({
   }
 
   for (const request of requests) {
-    const fullName = `${request.firstName} ${request.lastName}`.trim()
+    const fullName = `${request.firstName || ''} ${request.lastName || ''}`.trim()
     rows.push({
       id: request.id,
       kind: 'request',
@@ -447,7 +451,7 @@ function buildDocumentRows({
       isPaid: null,
       date: (job.scheduledStart || job.createdAt).toISOString(),
       href: `/dashboard/jobs/${job.id}`,
-      meta: job.status.replaceAll('_', ' '),
+      meta: String(job.status || '').replace(/_/g, ' '),
       clientId: job.clientId || job.client?.id || null,
       clientName: subClientLabel(rootClientId, job.clientId, job.client?.name),
     })

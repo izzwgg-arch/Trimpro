@@ -253,7 +253,11 @@ export default function JobDetailPage() {
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}))
-        setDocumentsError(data.error || 'Failed to load documents')
+        if (response.status === 401) {
+          router.push('/auth/login')
+          return
+        }
+        setDocumentsError(data.error || `Failed to load documents (${response.status})`)
         return
       }
 

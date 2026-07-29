@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { TrimProLogo } from '@/components/branding/TrimProLogo'
 import { PermissionGuard } from '@/components/permissions/PermissionGuard'
+import { resetPermissionsCache } from '@/hooks/usePermissions'
 import { SIDEBAR_PAGE_MODULE_IDS, getModuleById, getModuleSidebarPermissions } from '@/lib/page-module-permissions'
 import { NotificationBell } from '@/components/notifications/NotificationBell'
 import {
@@ -98,6 +99,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
     localStorage.removeItem('accessToken')
     localStorage.removeItem('refreshToken')
     localStorage.removeItem('user')
+    resetPermissionsCache()
     window.location.href = '/auth/login'
   }
 
