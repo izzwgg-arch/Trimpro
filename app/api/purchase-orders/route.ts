@@ -5,6 +5,10 @@ import { prisma } from '@/lib/prisma'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { purchaseOrderJobSiteAddressSearchClauses } from '@/lib/search/job-site-address'
 import { applySmartSearch, buildSmartSearchAnd, ilike } from '@/lib/search/prisma-filters'
+import {
+  allocateNextPurchaseOrderNumber,
+  normalizePurchaseOrderNumber,
+} from '@/lib/qbo/doc-numbers'
 
 function formatJobSiteAddress(parts?: {
   street?: string | null
@@ -189,19 +193,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Vendor is required' }, { status: 400 })
     }
 
-    // Generate PO number if not provided
-    let finalPONumber = poNumber
+    // Use provided PO number, or allocate the next sequential one
+    const normalizedPoNumber = normalizePurchaseOrderNumber(poNumber)
+    let finalPONumber = normalizedPoNumber
     if (!finalPONumber) {
-      const lastPO = await prisma.purchaseOrder.findFirst({
-        where: { tenantId: user.tenantId },
-        orderBy: { createdAt: 'desc' },
-        select: { poNumber: true },
+      finalPONumber = await allocateNextPurchaseOrderNumber({ tenantId: user.tenantId })
+    } else {
+      const clash = await prisma.purchaseOrder.findFirst({
+        where: { poNumber: finalPONumber },
+        select: { id: true },
       })
-
-      const nextNumber = lastPO
-        ? parseInt(lastPO.poNumber.replace('PO-', '')) + 1
-        : 1
-      finalPONumber = `PO-${nextNumber.toString().padStart(6, '0')}`
+      if (clash) {
+        return NextResponse.json(
+          { error: `Purchase order number ${finalPONumber} already exists. Use a different number.` },
+          { status: 400 }
+        )
+      }
     }
 
     // Calculate totals from line items
@@ -213,51 +220,58 @@ export async function POST(request: NextRequest) {
     const total = subtotal + taxAmount + shippingAmount
 
     // Create purchase order
-    const purchaseOrder = await prisma.purchaseOrder.create({
-      data: {
-        tenantId: user.tenantId,
-        poNumber: finalPONumber,
-        vendor: vendorName,
-        vendorId: vendorId || null,
-        jobId: jobId || null,
-        status: status || 'DRAFT',
-        orderDate: orderDate ? new Date(orderDate) : new Date(),
-        expectedDate: expectedDate ? new Date(expectedDate) : null,
-        notes: notes ? String(notes) : null,
-        total,
-      },
-      include: {
-        vendorRef: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            phone: true,
-            address: true,
-            city: true,
-            state: true,
-            zipCode: true,
-            contactPerson: true,
-          },
+    let purchaseOrder
+    try {
+      purchaseOrder = await prisma.purchaseOrder.create({
+        data: {
+          tenantId: user.tenantId,
+          poNumber: finalPONumber,
+          vendor: vendorName,
+          vendorId: vendorId || null,
+          jobId: jobId || null,
+          status: status || 'DRAFT',
+          orderDate: orderDate ? new Date(orderDate) : new Date(),
+          expectedDate: expectedDate ? new Date(expectedDate) : null,
+          notes: notes ? String(notes) : null,
+          total,
         },
-        job: {
-          include: {
-            client: {
-              select: {
-                id: true,
-                name: true,
+        include: {
+          vendorRef: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+              address: true,
+              city: true,
+              state: true,
+              zipCode: true,
+              contactPerson: true,
+            },
+          },
+          job: {
+            include: {
+              client: {
+                select: {
+                  id: true,
+                  name: true,
+                },
               },
             },
           },
-        },
-        lineItems: {
-          orderBy: {
-            sortOrder: 'asc',
+          lineItems: {
+            orderBy: {
+              sortOrder: 'asc',
+            },
           },
         },
-      },
-    })
-
+      })
+    } catch (err: any) {
+      if (err?.code === 'P2002' && err?.meta?.target?.includes?.('poNumber')) {
+        return NextResponse.json({ error: 'Purchase order number already exists' }, { status: 400 })
+      }
+      throw err
+    }
     // Create document line groups first (for bundles)
     const groupMap = new Map<string, string>() // groupId -> database group ID
     if (groups && Array.isArray(groups)) {

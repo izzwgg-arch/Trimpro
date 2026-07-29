@@ -70,6 +70,48 @@ export function normalizeInvoiceNumber(value: unknown): string | null {
   return raw
 }
 
+export function normalizePurchaseOrderNumber(value: unknown): string | null {
+  if (value === null || value === undefined) return null
+  const raw = String(value).trim()
+  if (!raw) return null
+  if (/^\d+$/.test(raw)) return `PO-${raw.padStart(6, '0')}`
+  const match = raw.match(/^PO-(\d+)$/i)
+  if (match) return `PO-${match[1].padStart(6, '0')}`
+  return raw
+}
+
+export async function allocateNextPurchaseOrderNumber(params: {
+  tenantId: string
+  db?: any
+  maxAttempts?: number
+}) {
+  const db = params.db || prisma
+  const maxAttempts = params.maxAttempts ?? 300
+  const latestPo = await db.purchaseOrder.findFirst({
+    where: {
+      tenantId: params.tenantId,
+      poNumber: { startsWith: 'PO-' },
+    },
+    orderBy: { poNumber: 'desc' },
+    select: { poNumber: true },
+  })
+  const latestNumMatch = latestPo?.poNumber?.match(/^PO-(\d+)/)
+  const latestNum = latestNumMatch ? parseInt(latestNumMatch[1], 10) : 0
+  const baseNum = Number.isFinite(latestNum) ? latestNum : 0
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const candidate = `PO-${String(baseNum + attempt).padStart(6, '0')}`
+    const localCollision = await db.purchaseOrder.findFirst({
+      where: { poNumber: candidate },
+      select: { id: true },
+    })
+    if (localCollision) continue
+    return candidate
+  }
+
+  throw new Error('Unable to allocate an unused purchase order number.')
+}
+
 /** True when tenant has QuickBooks configured and DocNumber must be verified in QBO at save time. */
 export async function tenantRequiresQboEstimateDocNumberCheck(tenantId: string): Promise<boolean> {
   const connection = await getIntegrationConnection(tenantId, 'quickbooks')

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
+import { allocateNextPurchaseOrderNumber } from '@/lib/qbo/doc-numbers'
 
 export async function POST(
   request: NextRequest,
@@ -34,15 +35,7 @@ export async function POST(
       return NextResponse.json({ error: 'Purchase order not found' }, { status: 404 })
     }
 
-    const lastPO = await prisma.purchaseOrder.findFirst({
-      where: { tenantId: user.tenantId },
-      orderBy: { createdAt: 'desc' },
-      select: { poNumber: true },
-    })
-    const nextNumber = lastPO
-      ? parseInt(lastPO.poNumber.replace('PO-', ''), 10) + 1
-      : 1
-    const poNumber = `PO-${nextNumber.toString().padStart(6, '0')}`
+    const poNumber = await allocateNextPurchaseOrderNumber({ tenantId: user.tenantId })
 
     const duplicate = await prisma.purchaseOrder.create({
       data: {

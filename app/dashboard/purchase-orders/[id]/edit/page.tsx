@@ -521,6 +521,7 @@ export default function EditPurchaseOrderPage() {
         },
         body: JSON.stringify({
           vendorId: formData.vendorId,
+          poNumber,
           jobId: formData.jobId || null,
           status: formData.status,
           expectedDate: formData.expectedDate || null,
@@ -626,6 +627,15 @@ export default function EditPurchaseOrderPage() {
                 <CardTitle>Purchase Order Details</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div>
+                  <Label htmlFor="poNumber">PO #</Label>
+                  <Input
+                    id="poNumber"
+                    value={poNumber}
+                    onChange={(e) => setPoNumber(e.target.value)}
+                    placeholder="ex: PO-000123"
+                  />
+                </div>
                 <div>
                   <Label htmlFor="vendorId">Vendor *</Label>
                   <Select

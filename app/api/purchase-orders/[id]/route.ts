@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { formatAddressParts } from '@/lib/address/parse'
+import { normalizePurchaseOrderNumber } from '@/lib/qbo/doc-numbers'
 
 export async function GET(
   request: NextRequest,
@@ -134,6 +135,7 @@ export async function PUT(
     const {
       vendor,
       vendorId,
+      poNumber,
       jobId,
       status,
       expectedDate,
@@ -155,6 +157,20 @@ export async function PUT(
 
     if (!existing) {
       return NextResponse.json({ error: 'Purchase order not found' }, { status: 404 })
+    }
+
+    const normalizedPoNumber = normalizePurchaseOrderNumber(poNumber)
+    if (normalizedPoNumber && normalizedPoNumber !== existing.poNumber) {
+      const clash = await prisma.purchaseOrder.findFirst({
+        where: { poNumber: normalizedPoNumber },
+        select: { id: true },
+      })
+      if (clash) {
+        return NextResponse.json(
+          { error: `Purchase order number ${normalizedPoNumber} already exists. Use a different number.` },
+          { status: 400 }
+        )
+      }
     }
 
     // Get vendor info if vendorId provided
@@ -190,12 +206,18 @@ export async function PUT(
     }
 
     // Update purchase order
-    const purchaseOrder = await prisma.purchaseOrder.update({
+    let purchaseOrder
+    try {
+      purchaseOrder = await prisma.purchaseOrder.update({
       where: { id: params.id },
       data: {
         vendor: vendorName,
         vendorId: vendorId !== undefined ? (vendorId || null) : existing.vendorId,
         jobId: jobId !== undefined ? (jobId || null) : existing.jobId,
+        poNumber:
+          normalizedPoNumber && normalizedPoNumber !== existing.poNumber
+            ? normalizedPoNumber
+            : existing.poNumber,
         status: status !== undefined ? status : existing.status,
         orderDate: orderDate !== undefined ? (orderDate ? new Date(orderDate) : null) : existing.orderDate,
         expectedDate: expectedDate !== undefined ? (expectedDate ? new Date(expectedDate) : null) : existing.expectedDate,
@@ -253,7 +275,12 @@ export async function PUT(
         },
       },
     })
-
+    } catch (err: any) {
+      if (err?.code === 'P2002' && err?.meta?.target?.includes?.('poNumber')) {
+        return NextResponse.json({ error: 'Purchase order number already exists' }, { status: 400 })
+      }
+      throw err
+    }
     // Update line items if provided
     if (lineItems && Array.isArray(lineItems)) {
       // Delete existing groups and line items

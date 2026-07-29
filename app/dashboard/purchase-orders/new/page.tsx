@@ -1,7 +1,7 @@
 'use client'
 import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -74,6 +74,7 @@ export default function NewPurchaseOrderPage() {
   const [formData, setFormData] = useState({
     vendorId: '',
     jobId: jobIdParam || '',
+    poNumber: '',
     status: 'DRAFT',
     expectedDate: '',
     orderDate: new Date().toISOString().split('T')[0],
@@ -85,12 +86,28 @@ export default function NewPurchaseOrderPage() {
   const lineItemRefs = useRef<(HTMLDivElement | null)[]>([])
   const pickerInputRefs = useRef<(HTMLInputElement | null)[]>([])
 
+  const loadNextPoNumber = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch('/api/purchase-orders/next-number', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!response.ok) return
+      const data = await response.json()
+      if (typeof data.poNumber === 'string' && data.poNumber) {
+        setFormData((prev) => (prev.poNumber.trim() ? prev : { ...prev, poNumber: data.poNumber }))
+      }
+    } catch (error) {
+      console.error('Error loading next PO number:', error)
+    }
+  }, [])
+
   useEffect(() => {
     fetchVendors()
     fetchJobs()
     fetchPickerData()
-  }, [])
-
+    loadNextPoNumber()
+  }, [loadNextPoNumber])
   const fetchVendors = async () => {
     try {
       const token = localStorage.getItem('accessToken')
@@ -381,6 +398,7 @@ export default function NewPurchaseOrderPage() {
         },
         body: JSON.stringify({
           vendorId: formData.vendorId,
+          poNumber: formData.poNumber || null,
           jobId: formData.jobId || null,
           status: formData.status,
           expectedDate: formData.expectedDate || null,
@@ -445,6 +463,18 @@ export default function NewPurchaseOrderPage() {
                 <CardTitle>Purchase Order Details</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div>
+                  <Label htmlFor="poNumber">PO #</Label>
+                  <Input
+                    id="poNumber"
+                    value={formData.poNumber}
+                    onChange={(e) => setFormData({ ...formData, poNumber: e.target.value })}
+                    placeholder="ex: PO-000123"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Prefills with the next number. You can change it; future POs continue from the highest used number.
+                  </p>
+                </div>
                 <div>
                   <Label htmlFor="vendorId">Vendor *</Label>
                   <Select
