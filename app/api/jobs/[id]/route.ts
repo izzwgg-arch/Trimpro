@@ -7,6 +7,7 @@ import { geocodeAddressPartsFromString } from '@/lib/geocoding'
 import { getJobTimeSummary } from '@/lib/time-tracking'
 import { syncAutoJobSchedules } from '@/lib/services/job-schedule-sync'
 import { createNotificationsForUsers, notifyJobStatusChanged } from '@/lib/notifications'
+import { getJobBillingStatus } from '@/lib/jobs/billing-status'
 import { assertCanAccessJobType, resolveJobTypeForWrite } from '@/lib/jobs/job-type-scope'
 
 export async function GET(
@@ -261,11 +262,19 @@ export async function GET(
       openInvoiceBalance: jobInvoiceAgg._sum.balance?.toString() || '0',
       openInvoiceCount: Number(jobInvoiceAgg._count?.id || 0),
       clientOpenInvoiceBalance: clientOpenAgg._sum.balance?.toString() || '0',
+      billingStatus: getJobBillingStatus({
+        estimateAmount: job.estimateAmount,
+        actualAmount: job.actualAmount,
+        totalInvoicedAmount: jobInvoiceAgg._sum.total?.toString() || '0',
+        invoices: safeJob.invoices || [],
+      }),
       invoices: safeJob.invoices.map(inv => ({
         id: inv.id,
         invoiceNumber: inv.invoiceNumber,
         total: inv.total.toString(),
         balance: inv.balance.toString(),
+        paidAmount: inv.paidAmount?.toString?.() || String(inv.paidAmount ?? '0'),
+        dueDate: inv.dueDate ? inv.dueDate.toISOString() : null,
         status: inv.status,
       })),
       estimates: linkedEstimates.map((est) => ({

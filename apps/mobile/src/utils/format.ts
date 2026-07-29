@@ -50,3 +50,16 @@ export function formatJobType(jobType?: string | null): string {
   if (!jobType) return ''
   return String(jobType).replaceAll('_', ' ')
 }
+
+export function formatBillingStatus(status?: string | null): string {
+  if (!status) return 'Unbilled'
+  const trimmed = String(status).trim()
+  if (!trimmed || /^unbilled$/i.test(trimmed)) return 'Unbilled'
+  if (/%\s*billed/i.test(trimmed)) return trimmed
+  const match = trimmed.match(/(\d+)\s*%/)
+  if (match) {
+    const percent = Math.max(0, Math.min(100, parseInt(match[1], 10)))
+    return percent <= 0 ? 'Unbilled' : `${percent}% billed`
+  }
+  return trimmed
+}

@@ -19,6 +19,7 @@ import { EditableNotesList } from '@/components/notes/editable-notes-list'
 import type { UnifiedDocumentRow } from '@/lib/documents/unified-documents'
 import { JobTypeBadge } from '@/components/jobs/JobTypeSelect'
 import { JobStatusSelect } from '@/components/jobs/JobStatusSelect'
+import { JobBillingStatusBadge } from '@/components/jobs/JobBillingStatusBadge'
 
 const JobSiteMap = dynamic(() => import('@/components/maps/JobSiteMap').then(mod => ({ default: mod.JobSiteMap })), {
   ssr: false,
@@ -31,6 +32,7 @@ interface JobDetail {
   title: string
   description: string | null
   status: string
+  billingStatus?: string | null
   jobType?: string
   priority: number
   scheduledStart: string | null
@@ -803,6 +805,7 @@ export default function JobDetailPage() {
               status={job.status}
               onUpdated={(next) => setJob((prev) => (prev ? { ...prev, status: next } : prev))}
             />
+            <JobBillingStatusBadge status={job.billingStatus} />
             <JobTypeBadge jobType={job.jobType} />
           </div>
           <p className="text-gray-600 mt-1">

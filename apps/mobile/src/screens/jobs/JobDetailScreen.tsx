@@ -23,6 +23,7 @@ import { DetailSection } from '../../components/DetailSection'
 import { apiRequest } from '../../api/client'
 import { Attachment, Job, TimeEntry } from '../../types/models'
 import { StatusChip } from '../../components/StatusChip'
+import { BillingStatusBadge } from '../../components/BillingStatusBadge'
 import { BRAND } from '../../config/env'
 import { JobsStackParamList } from '../../types/navigation'
 import { enqueueOutbox } from '../../offline/outbox'
@@ -625,6 +626,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
             <Text style={styles.title}>{job.title}</Text>
             <View style={styles.headerMetaRow}>
               <StatusChip status={jobStatus} />
+              <BillingStatusBadge status={job.billingStatus} />
               {job.jobType ? <Text style={styles.jobTypeBadge}>{formatJobType(job.jobType)}</Text> : null}
             </View>
             <Text style={styles.meta}>

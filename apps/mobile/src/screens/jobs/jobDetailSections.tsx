@@ -21,6 +21,7 @@ import {
   formatCents,
   formatDate,
   formatDateTime,
+  formatBillingStatus,
   formatJobType,
   formatMinutes,
   formatMoney,
@@ -676,11 +677,14 @@ export function JobSchedulesSection({ job }: { job: Job }) {
 
 export function JobOpenBalancesBanner({ job }: { job: Job }) {
   return (
-    <Text style={styles.balanceBanner}>
-      Job Open Invoices: {formatMoney(job.openInvoiceBalance || '0')} ({job.openInvoiceCount || 0})
-      {' | '}
-      Client Open Balance: {formatMoney(job.clientOpenInvoiceBalance || '0')}
-    </Text>
+    <View style={styles.balanceBannerWrap}>
+      <Text style={styles.balanceBannerLabel}>Billing: {formatBillingStatus(job.billingStatus)}</Text>
+      <Text style={styles.balanceBanner}>
+        Job Open Invoices: {formatMoney(job.openInvoiceBalance || '0')} ({job.openInvoiceCount || 0})
+        {' | '}
+        Client Open Balance: {formatMoney(job.clientOpenInvoiceBalance || '0')}
+      </Text>
+    </View>
   )
 }
 
@@ -841,10 +845,18 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginTop: spacing.xs,
   },
+  balanceBannerWrap: {
+    marginTop: 4,
+    gap: 2,
+  },
+  balanceBannerLabel: {
+    ...typography.caption,
+    color: '#92400E',
+    fontWeight: '700',
+  },
   balanceBanner: {
     ...typography.caption,
     color: '#92400E',
     fontWeight: '700',
-    marginTop: 4,
   },
 })

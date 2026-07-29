@@ -26,6 +26,7 @@ export interface Job {
   title: string
   description?: string | null
   status: string
+  billingStatus?: string | null
   jobType?: string | null
   priority: string | number
   scheduledStart: string | null

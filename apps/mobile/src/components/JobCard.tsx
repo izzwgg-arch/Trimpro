@@ -5,6 +5,7 @@ import { Job } from '../types/models'
 import { colors, spacing, typography } from '../theme/tokens'
 import { PressableCard } from './Card'
 import { StatusBadge } from './StatusBadge'
+import { BillingStatusBadge } from './BillingStatusBadge'
 
 export function JobCard({
   job,
@@ -50,7 +51,10 @@ export function JobCard({
             {job.client?.name || 'No client'}
           </Text>
         </View>
-        <StatusBadge status={job.status} />
+        <View style={styles.badgeCol}>
+          <StatusBadge status={job.status} />
+          <BillingStatusBadge status={job.billingStatus} />
+        </View>
       </View>
 
       <Text style={styles.meta} numberOfLines={1}>
@@ -133,6 +137,10 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     marginBottom: spacing.sm,
+  },
+  badgeCol: {
+    alignItems: 'flex-end',
+    gap: 4,
   },
   jobTitle: {
     ...typography.sub,

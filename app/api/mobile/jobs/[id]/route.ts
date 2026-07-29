@@ -4,6 +4,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requireMobilePermission, hasMobilePermission } from '@/lib/authorization'
 import { normalizePublicFileUrl } from '@/lib/public-url'
 import { getJobTimeSummary } from '@/lib/time-tracking'
+import { getJobBillingStatus } from '@/lib/jobs/billing-status'
 
 /**
  * Mobile API: Get single job details (parity with web job detail payload).
@@ -322,6 +323,12 @@ export async function GET(
         openInvoiceBalance: jobInvoiceAgg._sum.balance?.toString() || '0',
         openInvoiceCount: Number(jobInvoiceAgg._count?.id || 0),
         clientOpenInvoiceBalance: clientOpenAgg._sum.balance?.toString() || '0',
+        billingStatus: getJobBillingStatus({
+          estimateAmount: job.estimateAmount,
+          actualAmount: job.actualAmount,
+          totalInvoicedAmount: jobInvoiceAgg._sum.total?.toString() || '0',
+          invoices: job.invoices || [],
+        }),
         chargeByHour: job.chargeByHour,
         hourlyRateCents: job.hourlyRateCents,
         billableMinutesTotal: summary.totalMinutes,
@@ -360,6 +367,8 @@ export async function GET(
           invoiceNumber: inv.invoiceNumber,
           total: inv.total.toString(),
           balance: inv.balance.toString(),
+          paidAmount: inv.paidAmount?.toString?.() || String(inv.paidAmount ?? '0'),
+          dueDate: inv.dueDate ? inv.dueDate.toISOString() : null,
           status: inv.status,
           createdAt: inv.createdAt.toISOString(),
         })),

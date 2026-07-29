@@ -24,6 +24,8 @@ import { JOB_STATUSES } from '@/lib/jobs/statuses'
 import { JOB_TYPES } from '@/lib/jobs/types'
 import { JobStatusSelect } from '@/components/jobs/JobStatusSelect'
 import { JobTypeBadge } from '@/components/jobs/JobTypeSelect'
+import { JobBillingStatusBadge } from '@/components/jobs/JobBillingStatusBadge'
+import { formatJobBillingStatus } from '@/lib/jobs/billing-status'
 
 interface Job {
   id: string
@@ -31,6 +33,7 @@ interface Job {
   title: string
   description: string | null
   status: string
+  billingStatus?: string | null
   jobType?: string | null
   priority: number
   scheduledStart: string | null
@@ -489,6 +492,7 @@ export default function JobsPage() {
                       title="Select for duplicate"
                     />
                     <JobTypeBadge jobType={job.jobType} />
+                    <JobBillingStatusBadge status={job.billingStatus} />
                     <JobStatusSelect
                       jobId={job.id}
                       status={job.status}
@@ -526,6 +530,12 @@ export default function JobsPage() {
                     <div>
                       <p className="text-xs text-gray-500">Priority</p>
                       <p className="font-medium text-gray-700">{priorityLabels[job.priority] || 'Medium'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Billing</p>
+                      <div className="mt-0.5">
+                        <JobBillingStatusBadge status={job.billingStatus} />
+                      </div>
                     </div>
                     <div>
                       <p className="text-xs text-gray-500">Assignees</p>
@@ -651,6 +661,7 @@ export default function JobsPage() {
                 status={
                   <div className="flex items-center gap-2">
                     <JobTypeBadge jobType={job.jobType} />
+                    <JobBillingStatusBadge status={job.billingStatus} />
                     <JobStatusSelect
                       jobId={job.id}
                       status={job.status}
@@ -693,6 +704,7 @@ export default function JobsPage() {
                 status={
                   <div className="flex items-center gap-2">
                     <JobTypeBadge jobType={job.jobType} />
+                    <JobBillingStatusBadge status={job.billingStatus} />
                     <JobStatusSelect
                       jobId={job.id}
                       status={job.status}
@@ -707,6 +719,7 @@ export default function JobsPage() {
                   job.client.name,
                   formatJobSiteAddress(job),
                   `Assignees: ${formatJobAssignees(job)}`,
+                  `Billing: ${formatJobBillingStatus(job.billingStatus || 'UNBILLED')}`,
                   `Priority ${priorityLabels[job.priority] || 'Medium'}`,
                   `Client Open ${formatCurrency(parseFloat(job.clientOpenInvoiceBalance || '0'))}`,
                 ]
@@ -794,6 +807,12 @@ export default function JobsPage() {
                   }
                 />
               ),
+            },
+            {
+              key: 'billing',
+              header: 'Billing',
+              sortValue: (job) => parseInt(String(job.billingStatus || '0').match(/(\d+)/)?.[1] || '0', 10),
+              render: (job) => <JobBillingStatusBadge status={job.billingStatus} />,
             },
             {
               key: 'assignees',

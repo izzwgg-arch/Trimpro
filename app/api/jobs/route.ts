@@ -8,6 +8,7 @@ import { isMobileRequest, requireMobilePermission, hasMobilePermission } from '@
 import { jobRecordJobSiteAddressSearchClauses } from '@/lib/search/job-site-address'
 import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
 import { ACTIVE_JOB_STATUSES } from '@/lib/jobs/statuses'
+import { getJobBillingStatus } from '@/lib/jobs/billing-status'
 import { applyJobTypeListFilter, jobTypeScopeWhere, resolveJobTypeForWrite } from '@/lib/jobs/job-type-scope'
 import { getUnreadJobThreadCounts } from '@/lib/chat/service'
 
@@ -101,6 +102,11 @@ export async function GET(request: NextRequest) {
         }
         const clientOpenInvoiceBalance = byClientId.get(String(job.clientId || job.client?.id || '')) || '0'
         const totalCost = job.actualAmount ?? job.estimateAmount ?? null
+        const billingStatus = getJobBillingStatus({
+          estimateAmount: job.estimateAmount,
+          actualAmount: job.actualAmount,
+          totalInvoicedAmount: jobTotals.totalInvoicedAmount,
+        })
         return {
           ...job,
           totalCost: totalCost != null ? totalCost.toString() : null,
@@ -108,6 +114,7 @@ export async function GET(request: NextRequest) {
           openInvoiceBalance: jobTotals.openInvoiceBalance,
           openInvoiceCount: jobTotals.openInvoiceCount,
           clientOpenInvoiceBalance,
+          billingStatus,
           unreadMessages: unreadByJob.get(String(job.id)) || 0,
         }
       })

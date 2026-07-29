@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requireMobilePermission, hasMobilePermission } from '@/lib/authorization'
 import { getPaginationParams, createPaginationResponse } from '@/lib/pagination'
+import { getJobBillingStatus } from '@/lib/jobs/billing-status'
 
 /**
  * Mobile API: Get jobs
@@ -63,6 +64,8 @@ export async function GET(request: NextRequest) {
         priority: true,
         scheduledStart: true,
         scheduledEnd: true,
+        estimateAmount: true,
+        actualAmount: true,
         chargeByHour: true,
         hourlyRateCents: true,
         billableMinutesTotal: true,
@@ -134,12 +137,32 @@ export async function GET(request: NextRequest) {
     const activeMap = new Map(activeByJob.map((row) => [row.jobId, row]))
     const todayMap = new Map(todayTotals.map((row) => [row.jobId, Number(row._sum.durationMinutes || 0)]))
 
+    const invoiceAgg = jobIds.length
+      ? await prisma.invoice.groupBy({
+          by: ['jobId'],
+          where: {
+            tenantId: user.tenantId,
+            jobId: { in: jobIds },
+            status: { notIn: ['CANCELLED', 'REFUNDED'] as any },
+          } as any,
+          _sum: { total: true },
+        })
+      : []
+    const invoicedByJobId = new Map(
+      invoiceAgg.map((row) => [String(row.jobId), row._sum.total?.toString() || '0'])
+    )
+
     return NextResponse.json({
       jobs: jobs.map((job) => ({
         id: job.id,
         jobNumber: job.jobNumber,
         title: job.title,
         status: job.status,
+        billingStatus: getJobBillingStatus({
+          estimateAmount: job.estimateAmount,
+          actualAmount: job.actualAmount,
+          totalInvoicedAmount: invoicedByJobId.get(String(job.id)) || '0',
+        }),
         priority: job.priority,
         scheduledStart: job.scheduledStart?.toISOString() || null,
         scheduledEnd: job.scheduledEnd?.toISOString() || null,

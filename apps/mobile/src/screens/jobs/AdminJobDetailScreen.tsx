@@ -19,6 +19,7 @@ import { DetailSection } from '../../components/DetailSection'
 import { apiRequest } from '../../api/client'
 import { colors, radius, spacing, typography } from '../../theme/tokens'
 import { StatusBadge } from '../../components/StatusBadge'
+import { BillingStatusBadge } from '../../components/BillingStatusBadge'
 import { JobsStackParamList } from '../../types/navigation'
 import { useMobilePermissions } from '../../hooks/useMobilePermissions'
 import { Job, TimeEntry } from '../../types/models'
@@ -240,7 +241,10 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
               <Text style={styles.jobNumber}>{job.jobNumber}</Text>
               <Text style={styles.jobTitle}>{job.title}</Text>
             </View>
-            <StatusBadge status={job.status} />
+            <View style={styles.headerBadges}>
+              <StatusBadge status={job.status} />
+              <BillingStatusBadge status={job.billingStatus} />
+            </View>
           </View>
           {job.jobType ? <Text style={styles.jobTypeBadge}>{formatJobType(job.jobType)}</Text> : null}
           <Text style={styles.clientName}>{job.client?.name || 'No client'}</Text>
@@ -466,6 +470,10 @@ const styles = StyleSheet.create({
   headerText: {
     flex: 1,
     marginRight: spacing.sm,
+  },
+  headerBadges: {
+    alignItems: 'flex-end',
+    gap: 4,
   },
   jobNumber: {
     ...typography.caption,
