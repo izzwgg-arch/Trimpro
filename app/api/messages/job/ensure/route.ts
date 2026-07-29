@@ -25,12 +25,12 @@ export async function POST(request: NextRequest) {
     const conversationId =
       typeof body?.conversationId === 'string' ? body.conversationId : undefined
 
-    const [conversation, recipients, threads] = await Promise.all([
-      ensureJobThread(user.tenantId, jobId, user.id, {
-        participantIds,
-        title,
-        conversationId,
-      }),
+    const conversation = await ensureJobThread(user.tenantId, jobId, user.id, {
+      participantIds,
+      title,
+      conversationId,
+    })
+    const [recipients, threads] = await Promise.all([
       listJobThreadRecipients(user.tenantId, jobId),
       listJobThreads(user.tenantId, jobId),
     ])

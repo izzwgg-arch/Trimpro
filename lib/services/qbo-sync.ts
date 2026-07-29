@@ -1190,7 +1190,7 @@ function extractAllQboLines(qboLines: any): any[] {
 }
 
 /** Build the QBO Line array from TrimPro line items. Subtotal rows become SubTotalLineDetail. */
-function buildQboLines(lineItems: any[], serviceItemId: string): any[] {
+function buildQboLines(lineItems: any[], itemIdByName: Map<string, string>, fallbackItemId: string): any[] {
   return calculateOrderedSubtotalRows(lineItems as any[]).map((li: any) => {
     if (li.isSubtotal) {
       return {
@@ -1199,12 +1199,16 @@ function buildQboLines(lineItems: any[], serviceItemId: string): any[] {
         SubTotalLineDetail: {},
       }
     }
+    const itemName = sanitizeQboItemName(li.description) || 'Trim Pro Service'
+    const itemId = itemIdByName.get(itemName.toLowerCase()) || fallbackItemId
+    const notes = String(li.notes || '').trim()
     return {
       DetailType: 'SalesItemLineDetail',
-      Description: li.notes || li.description,
+      // Item name lives on ItemRef; Description carries special notes only.
+      Description: notes || undefined,
       Amount: toNumber(li.quantity) * toNumber(li.unitPrice),
       SalesItemLineDetail: {
-        ItemRef: { value: serviceItemId },
+        ItemRef: { value: itemId, name: itemName },
         Qty: toNumber(li.quantity),
         UnitPrice: toNumber(li.unitPrice),
       },
@@ -1216,7 +1220,8 @@ function buildQboLines(lineItems: any[], serviceItemId: string): any[] {
 function buildQboLinesWithIds(params: {
   localLineItems: any[]
   existingQboLines: any[]
-  serviceItemId: string
+  itemIdByName: Map<string, string>
+  fallbackItemId: string
 }): any[] {
   const local = Array.isArray(params.localLineItems) ? params.localLineItems : []
   const existingSales = Array.isArray(params.existingQboLines)
@@ -1241,12 +1246,15 @@ function buildQboLinesWithIds(params: {
       return out
     }
     const existingLine = existingSales[salesIdx++] || null
+    const itemName = sanitizeQboItemName(li?.description) || 'Trim Pro Service'
+    const itemId = params.itemIdByName.get(itemName.toLowerCase()) || params.fallbackItemId
+    const notes = String(li?.notes || '').trim()
     const out: any = {
       DetailType: 'SalesItemLineDetail',
-      Description: li?.notes || li?.description,
+      Description: notes || undefined,
       Amount: toNumber(li?.quantity) * toNumber(li?.unitPrice),
       SalesItemLineDetail: {
-        ItemRef: { value: params.serviceItemId },
+        ItemRef: { value: itemId, name: itemName },
         Qty: toNumber(li?.quantity),
         UnitPrice: toNumber(li?.unitPrice),
       },
@@ -1260,13 +1268,27 @@ function buildQboLinesWithIds(params: {
 function buildSalesItemLinesWithIds(params: {
   localLineItems: any[]
   existingQboSalesLines: any[]
-  serviceItemId: string
+  itemIdByName: Map<string, string>
+  fallbackItemId: string
 }) {
   return buildQboLinesWithIds({
     localLineItems: params.localLineItems,
     existingQboLines: params.existingQboSalesLines,
-    serviceItemId: params.serviceItemId,
+    itemIdByName: params.itemIdByName,
+    fallbackItemId: params.fallbackItemId,
   })
+}
+
+function sanitizeQboItemName(value: unknown): string {
+  return String(value || '')
+    .replace(/[\u0000-\u001f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 100)
+}
+
+function escapeQboQueryLiteral(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
 }
 
 async function findCustomerByDisplayName(
@@ -1462,6 +1484,96 @@ async function ensureDefaultServiceItem(params: {
   } catch {}
 
   return itemId
+}
+
+/**
+ * Find or create a QBO Service Item whose Name matches the TrimPro line description
+ * (e.g. "railing" → QBO Item "railing"). Falls back to the default service item.
+ */
+async function ensureQboSalesItemForName(params: {
+  accessToken: string
+  realmId: string
+  tenantId: string
+  incomeAccountId: string | null
+  name: string
+  fallbackItemId: string
+  cache: Map<string, string>
+}): Promise<string> {
+  const name = sanitizeQboItemName(params.name)
+  if (!name) return params.fallbackItemId
+
+  const cacheKey = name.toLowerCase()
+  const cached = params.cache.get(cacheKey)
+  if (cached) return cached
+
+  try {
+    const found = await quickBooksService.query(
+      params.accessToken,
+      params.realmId,
+      `select * from Item where Name='${escapeQboQueryLiteral(name)}' maxresults 1`
+    )
+    const existing = found?.QueryResponse?.Item?.[0]
+    let itemId = existing?.Id ? String(existing.Id) : null
+
+    if (!itemId) {
+      let incomeAccountId = params.incomeAccountId
+      if (!incomeAccountId) {
+        incomeAccountId = await ensureIncomeAccount(params.accessToken, params.realmId, params.tenantId)
+      }
+      if (!incomeAccountId) return params.fallbackItemId
+
+      const created = await quickBooksService.createItem(params.accessToken, params.realmId, {
+        Name: name,
+        Type: 'Service',
+        IncomeAccountRef: { value: incomeAccountId },
+        Active: true,
+      })
+      itemId = String(created?.Item?.Id || '')
+    }
+
+    if (!itemId) return params.fallbackItemId
+    params.cache.set(cacheKey, itemId)
+    return itemId
+  } catch (error) {
+    console.warn(
+      JSON.stringify({
+        area: 'qbo_item_sync',
+        step: 'ensure_named_item_failed',
+        name,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    )
+    return params.fallbackItemId
+  }
+}
+
+async function resolveSalesItemIdsForLines(params: {
+  accessToken: string
+  realmId: string
+  tenantId: string
+  incomeAccountId: string | null
+  fallbackItemId: string
+  lineItems: any[]
+}): Promise<Map<string, string>> {
+  const cache = new Map<string, string>()
+  const names = new Set<string>()
+  for (const li of params.lineItems || []) {
+    if (li?.isSubtotal || li?.isGroupHeader) continue
+    const name = sanitizeQboItemName(li?.description)
+    if (name) names.add(name)
+  }
+  for (const name of names) {
+    await ensureQboSalesItemForName({
+      accessToken: params.accessToken,
+      realmId: params.realmId,
+      tenantId: params.tenantId,
+      incomeAccountId: params.incomeAccountId,
+      name,
+      fallbackItemId: params.fallbackItemId,
+      cache,
+    })
+  }
+  return cache
 }
 
 async function ensureClientCustomer(params: {
@@ -2243,6 +2355,15 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
           },
         ]
 
+    const itemIdByName = await resolveSalesItemIdsForLines({
+      accessToken: session.accessToken,
+      realmId: session.realmId,
+      tenantId: session.tenantId,
+      incomeAccountId: session.incomeAccountId,
+      fallbackItemId: serviceItemId,
+      lineItems,
+    })
+
     attemptedDocNumber = estimate.estimateNumber
     const payload: any = {
       DocNumber: estimate.estimateNumber,
@@ -2250,7 +2371,7 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
       TxnDate: qboDate(estimate.createdAt),
       ExpirationDate: qboDate(estimate.validUntil || estimate.createdAt),
       PrivateNote: estimate.notes || undefined,
-      Line: buildQboLines(lineItems, serviceItemId),
+      Line: buildQboLines(lineItems, itemIdByName, serviceItemId),
     }
     qboReferenceSnapshot = buildEstimateQboReferenceSnapshot({
       estimateId: estimate.id,
@@ -2318,7 +2439,8 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
           Line: buildQboLinesWithIds({
             localLineItems: lineItems,
             existingQboLines,
-            serviceItemId,
+            itemIdByName,
+            fallbackItemId: serviceItemId,
           }),
         }
 
@@ -2533,6 +2655,15 @@ export async function syncInvoiceToQuickBooks(tenantId: string, invoiceId: strin
           },
         ]
 
+    const itemIdByName = await resolveSalesItemIdsForLines({
+      accessToken: session.accessToken,
+      realmId: session.realmId,
+      tenantId: session.tenantId,
+      incomeAccountId: session.incomeAccountId,
+      fallbackItemId: serviceItemId,
+      lineItems,
+    })
+
     attemptedDocNumber = invoice.invoiceNumber
     const payload: any = {
       DocNumber: invoice.invoiceNumber,
@@ -2540,16 +2671,7 @@ export async function syncInvoiceToQuickBooks(tenantId: string, invoiceId: strin
       TxnDate: qboDate(invoice.invoiceDate),
       DueDate: qboDate(invoice.dueDate || invoice.invoiceDate),
       PrivateNote: invoice.notes || undefined,
-      Line: lineItems.map((li: any) => ({
-        DetailType: 'SalesItemLineDetail',
-        Description: li.notes || li.description, // Use notes (description) if available, otherwise use item name
-        Amount: toNumber(li.quantity) * toNumber(li.unitPrice),
-        SalesItemLineDetail: {
-          ItemRef: { value: serviceItemId },
-          Qty: toNumber(li.quantity),
-          UnitPrice: toNumber(li.unitPrice),
-        },
-      })),
+      Line: buildQboLines(lineItems, itemIdByName, serviceItemId),
     }
 
     // Link to Estimate when present so QBO treats this like a conversion.
@@ -2617,7 +2739,8 @@ export async function syncInvoiceToQuickBooks(tenantId: string, invoiceId: strin
         Line: buildQboLinesWithIds({
           localLineItems: lineItems,
           existingQboLines,
-          serviceItemId,
+          itemIdByName,
+          fallbackItemId: serviceItemId,
         }),
       }
 
@@ -3020,33 +3143,93 @@ export async function syncPurchaseOrderToQuickBooks(tenantId: string, purchaseOr
     )
     if (!expenseAccountId) throw new Error('Unable to resolve QuickBooks expense account')
 
-    const lines = po.lineItems.length
-      ? po.lineItems.map((li) => ({
-          DetailType: 'AccountBasedExpenseLineDetail',
-          Description: li.description,
-          Amount: toNumber(li.total),
-          AccountBasedExpenseLineDetail: {
-            AccountRef: { value: expenseAccountId },
-            BillableStatus: 'NotBillable',
-          },
-        }))
-      : [
-          {
+    const purchaseItemCache = new Map<string, string>()
+    async function ensurePurchaseItem(nameRaw: string): Promise<string | null> {
+      const name = sanitizeQboItemName(nameRaw)
+      if (!name) return null
+      const cacheKey = name.toLowerCase()
+      const cached = purchaseItemCache.get(cacheKey)
+      if (cached) return cached
+      try {
+        const found = await quickBooksService.query(
+          session!.accessToken,
+          session!.realmId,
+          `select * from Item where Name='${escapeQboQueryLiteral(name)}' maxresults 1`
+        )
+        let itemId = found?.QueryResponse?.Item?.[0]?.Id
+          ? String(found.QueryResponse.Item[0].Id)
+          : null
+        if (!itemId) {
+          const created = await quickBooksService.createItem(session!.accessToken, session!.realmId, {
+            Name: name,
+            Type: 'NonInventory',
+            ExpenseAccountRef: { value: expenseAccountId },
+            Active: true,
+          })
+          itemId = String(created?.Item?.Id || '') || null
+        }
+        if (itemId) purchaseItemCache.set(cacheKey, itemId)
+        return itemId
+      } catch (error) {
+        console.warn(
+          JSON.stringify({
+            area: 'qbo_po_item_sync',
+            step: 'ensure_purchase_item_failed',
+            name,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        )
+        return null
+      }
+    }
+
+    const lines = []
+    if (po.lineItems.length) {
+      for (const li of po.lineItems) {
+        const itemName = sanitizeQboItemName(li.description) || 'Purchase'
+        const itemId = await ensurePurchaseItem(itemName)
+        const notes = String(li.notes || '').trim()
+        if (itemId) {
+          lines.push({
+            DetailType: 'ItemBasedExpenseLineDetail',
+            Description: [li.description, notes].filter(Boolean).join(' — '),
+            Amount: toNumber(li.total),
+            ItemBasedExpenseLineDetail: {
+              ItemRef: { value: itemId, name: itemName },
+              Qty: toNumber(li.quantity),
+              UnitPrice: toNumber(li.unitCost ?? li.unitPrice),
+              BillableStatus: 'NotBillable',
+            },
+          })
+        } else {
+          lines.push({
             DetailType: 'AccountBasedExpenseLineDetail',
-            Description: po.vendor || 'Purchase Order',
-            Amount: toNumber(po.total),
+            Description: [li.description, notes].filter(Boolean).join(' — '),
+            Amount: toNumber(li.total),
             AccountBasedExpenseLineDetail: {
               AccountRef: { value: expenseAccountId },
               BillableStatus: 'NotBillable',
             },
-          },
-        ]
+          })
+        }
+      }
+    } else {
+      lines.push({
+        DetailType: 'AccountBasedExpenseLineDetail',
+        Description: po.vendor || 'Purchase Order',
+        Amount: toNumber(po.total),
+        AccountBasedExpenseLineDetail: {
+          AccountRef: { value: expenseAccountId },
+          BillableStatus: 'NotBillable',
+        },
+      })
+    }
 
     const payload: any = {
       DocNumber: po.poNumber,
       VendorRef: { value: vendorQboId },
       TxnDate: qboDate(po.orderDate || po.createdAt),
-      PrivateNote: `Trim Pro Purchase Order ${po.poNumber}`,
+      PrivateNote: po.notes?.trim() || `Trim Pro Purchase Order ${po.poNumber}`,
       Line: lines,
     }
 

@@ -12,6 +12,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native'
 import * as Haptics from 'expo-haptics'
@@ -29,7 +30,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import ReactNativeModal from 'react-native-modal'
 import { API_BASE_URL } from '../../config/env'
 import { apiRequest, getValidAccessToken } from '../../api/client'
-import { ChatMessage } from '../../types/models'
+import { ChatMessage, Conversation } from '../../types/models'
 import { MessagesStackParamList } from '../../types/navigation'
 import { useAuth } from '../../auth/AuthContext'
 import { useOnlineState } from '../../hooks/useOnlineState'
@@ -49,26 +50,11 @@ interface ThreadResponse {
 }
 
 interface ConversationResponse {
-  conversation: {
-    id: string
-    type: 'TEAM' | 'DM' | 'JOB_THREAD'
-    title?: string | null
-  }
+  conversation: Conversation
 }
 
 interface ConversationsResponse {
-  conversations: Array<{
-    id: string
-    type?: 'TEAM' | 'DM' | 'JOB_THREAD'
-    title?: string | null
-    otherUser?: {
-      id: string
-      firstName?: string | null
-      lastName?: string | null
-      email: string
-      avatar?: string | null
-    } | null
-  }>
+  conversations: Conversation[]
 }
 
 interface OptimisticMessage {
@@ -209,6 +195,8 @@ export function MessageThreadScreen({ route, navigation }: Props) {
   const [optimisticMessages, setOptimisticMessages] = useState<OptimisticMessage[]>([])
   const [replyFallbackByMessageId, setReplyFallbackByMessageId] = useState<Record<string, NonNullable<ChatMessage['replyTo']>>>({})
   const [showAttachMenu, setShowAttachMenu] = useState(false)
+  const [showNewThreadModal, setShowNewThreadModal] = useState(false)
+  const [newThreadTitle, setNewThreadTitle] = useState('')
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null)
   const [showMessageOptions, setShowMessageOptions] = useState(false)
@@ -318,6 +306,38 @@ export function MessageThreadScreen({ route, navigation }: Props) {
     queryKey: ['mobile-chat-conversations'],
     queryFn: () => apiRequest<ConversationsResponse>('/api/messages/conversations'),
     refetchInterval: 20_000,
+  })
+
+  const switchJobThreadMutation = useMutation({
+    mutationFn: ({ jobId, targetConversationId, title }: { jobId: string; targetConversationId?: string; title?: string }) =>
+      apiRequest<{
+        conversationId: string
+        conversation: Conversation
+        threads: Array<{ id: string; title?: string | null }>
+      }>('/api/messages/job/ensure', 'POST', {
+        jobId,
+        conversationId: targetConversationId,
+        title,
+      }),
+    onSuccess: async (result) => {
+      setShowNewThreadModal(false)
+      setNewThreadTitle('')
+      await queryClient.invalidateQueries({ queryKey: ['mobile-chat-conversations'] })
+      const next = result.conversation
+      navigation.replace('MessageThread', {
+        conversationId: result.conversationId,
+        jobContext: next.jobId
+          ? {
+              jobId: next.jobId,
+              jobNumber: next.jobNumber || jobContext?.jobNumber || '',
+              jobName: next.jobTitle || jobContext?.jobName || '',
+            }
+          : jobContext,
+      })
+    },
+    onError: (error: any) => {
+      Alert.alert('Job thread', error?.message || 'Unable to open this job thread.')
+    },
   })
 
   const threadQuery = useQuery({
@@ -1184,6 +1204,16 @@ export function MessageThreadScreen({ route, navigation }: Props) {
   const conversation = conversationQuery.data?.conversation
   const listedConversation = conversationsQuery.data?.conversations?.find((item) => item.id === conversationId)
   const conversationType = listedConversation?.type || conversation?.type
+  const jobConversation = conversationType === 'JOB_THREAD' ? (listedConversation || conversation) : null
+  const siblingJobThreads = useMemo(
+    () =>
+      jobConversation?.jobId
+        ? (conversationsQuery.data?.conversations || []).filter(
+            (item) => item.type === 'JOB_THREAD' && item.jobId === jobConversation.jobId
+          )
+        : [],
+    [conversationsQuery.data?.conversations, jobConversation?.jobId]
+  )
   const isGroupChat = conversationType === 'TEAM' || conversationType === 'JOB_THREAD'
   const threadTitle = useMemo(() => {
     const normalizeTitle = (value?: string | null) => value?.trim() || ''
@@ -1196,7 +1226,11 @@ export function MessageThreadScreen({ route, navigation }: Props) {
     }
 
     if (conversationType === 'JOB_THREAD') {
-      const jobTitle = normalizeTitle(listedConversation?.title) || normalizeTitle(conversation?.title)
+      const jobTitle =
+        normalizeTitle(listedConversation?.threadTitle) ||
+        normalizeTitle(conversation?.threadTitle) ||
+        normalizeTitle(listedConversation?.title) ||
+        normalizeTitle(conversation?.title)
       if (jobTitle && !isPlaceholderTitle(jobTitle)) return jobTitle
       return 'Job Thread'
     }
@@ -1232,11 +1266,47 @@ export function MessageThreadScreen({ route, navigation }: Props) {
           <Text style={styles.headerTitle}>{threadTitle}</Text>
           {isGroupChat ? (
             <Text style={styles.headerSubtitle}>
-              {conversationType === 'JOB_THREAD' ? 'Job chat' : 'Group'}
+              {conversationType === 'JOB_THREAD'
+                ? [
+                    jobConversation?.jobNumber ? `Job ${jobConversation.jobNumber}` : 'Job chat',
+                    jobConversation?.jobTitle,
+                  ].filter(Boolean).join(' — ')
+                : 'Group'}
             </Text>
           ) : null}
         </View>
       </View>
+
+      {jobConversation?.jobId ? (
+        <View style={styles.threadSwitcher}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.threadSwitcherContent}>
+            {siblingJobThreads.map((thread) => {
+              const active = thread.id === conversationId
+              return (
+                <Pressable
+                  key={thread.id}
+                  style={[styles.threadChip, active && styles.threadChipActive]}
+                  disabled={active || switchJobThreadMutation.isPending}
+                  onPress={() =>
+                    switchJobThreadMutation.mutate({
+                      jobId: jobConversation.jobId!,
+                      targetConversationId: thread.id,
+                    })
+                  }
+                >
+                  <Text style={[styles.threadChipText, active && styles.threadChipTextActive]}>
+                    {thread.threadTitle || thread.title || 'General'}
+                  </Text>
+                </Pressable>
+              )
+            })}
+            <Pressable style={styles.newThreadChip} onPress={() => setShowNewThreadModal(true)}>
+              <Ionicons name="add" size={15} color={colors.brandPrimary} />
+              <Text style={styles.newThreadChipText}>New thread</Text>
+            </Pressable>
+          </ScrollView>
+        </View>
+      ) : null}
 
       <FlatList
           ref={listRef}
@@ -1473,6 +1543,48 @@ export function MessageThreadScreen({ route, navigation }: Props) {
           </Pressable>
         </Pressable>
       </RNModal>
+      <RNModal
+        visible={showNewThreadModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowNewThreadModal(false)}
+      >
+        <Pressable style={styles.threadModalBackdrop} onPress={() => setShowNewThreadModal(false)}>
+          <Pressable style={styles.threadModalCard} onPress={(event) => event.stopPropagation()}>
+            <Text style={styles.threadModalTitle}>New job thread</Text>
+            <TextInput
+              value={newThreadTitle}
+              onChangeText={setNewThreadTitle}
+              placeholder="e.g. Materials or Punch list"
+              autoFocus
+              style={styles.threadModalInput}
+              returnKeyType="done"
+              onSubmitEditing={() => {
+                const title = newThreadTitle.trim()
+                if (title && jobConversation?.jobId) {
+                  switchJobThreadMutation.mutate({ jobId: jobConversation.jobId, title })
+                }
+              }}
+            />
+            <View style={styles.threadModalActions}>
+              <Pressable style={styles.threadModalCancel} onPress={() => setShowNewThreadModal(false)}>
+                <Text style={styles.threadModalCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.threadModalCreate, !newThreadTitle.trim() && styles.threadModalCreateDisabled]}
+                disabled={!newThreadTitle.trim() || switchJobThreadMutation.isPending}
+                onPress={() => {
+                  if (jobConversation?.jobId) {
+                    switchJobThreadMutation.mutate({ jobId: jobConversation.jobId, title: newThreadTitle.trim() })
+                  }
+                }}
+              >
+                <Text style={styles.threadModalCreateText}>Create</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </RNModal>
     </SafeAreaView>
   )
 }
@@ -1541,6 +1653,52 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 1,
   },
+  threadSwitcher: {
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+  },
+  threadSwitcherContent: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    gap: spacing.xs,
+  },
+  threadChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.divider,
+    backgroundColor: colors.surface,
+  },
+  threadChipActive: {
+    borderColor: colors.brandPrimary,
+    backgroundColor: colors.brandPrimary + '15',
+  },
+  threadChipText: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  threadChipTextActive: {
+    color: colors.brandPrimary,
+  },
+  newThreadChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.brandPrimary + '55',
+    backgroundColor: colors.surface,
+  },
+  newThreadChipText: {
+    ...typography.caption,
+    color: colors.brandPrimary,
+    fontWeight: '700',
+  },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1598,6 +1756,64 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.35)',
     justifyContent: 'flex-end',
+  },
+  threadModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  threadModalCard: {
+    width: '100%',
+    maxWidth: 420,
+    borderRadius: 16,
+    backgroundColor: colors.surface,
+    padding: spacing.md,
+  },
+  threadModalTitle: {
+    ...typography.sub,
+    color: colors.textPrimary,
+    fontWeight: '700',
+    marginBottom: spacing.sm,
+  },
+  threadModalInput: {
+    ...typography.body,
+    color: colors.textPrimary,
+    borderWidth: 1,
+    borderColor: colors.divider,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  threadModalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  threadModalCancel: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  threadModalCancelText: {
+    ...typography.body,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  threadModalCreate: {
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 9,
+    backgroundColor: colors.brandPrimary,
+  },
+  threadModalCreateDisabled: {
+    opacity: 0.45,
+  },
+  threadModalCreateText: {
+    ...typography.body,
+    color: colors.surface,
+    fontWeight: '700',
   },
   messageOptionsModal: {
     justifyContent: 'flex-end',

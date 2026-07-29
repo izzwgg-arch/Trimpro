@@ -1190,6 +1190,9 @@ model PurchaseOrder {
   expectedDate DateTime?
   receivedDate DateTime?
 
+  // Notes
+  notes String? @db.Text
+
   // Relationships
   tenant      Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   vendorRef   Vendor?                 @relation(fields: [vendorId], references: [id], onDelete: SetNull)

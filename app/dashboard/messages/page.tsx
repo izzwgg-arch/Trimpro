@@ -34,6 +34,9 @@ type UnifiedThread = {
   pinned: boolean
   convType: string     // TEAM / DM / JOB_THREAD / SMS / MMS
   jobId?: string | null
+  jobNumber?: string | null
+  jobTitle?: string | null
+  threadTitle?: string | null
 }
 
 type UserRow = { id: string; firstName: string | null; lastName: string | null; email: string }
@@ -428,9 +431,20 @@ export default function MessagesPage() {
     const q = search.trim()
     if (!q) return threads
     return threads.filter((t) =>
-      smartMatch(q, [t.title, t.subtitle, t.phoneDisplay, t.phone, t.preview])
+      smartMatch(q, [t.title, t.subtitle, t.phoneDisplay, t.phone, t.preview, t.jobNumber, t.jobTitle, t.threadTitle])
     )
   }, [threads, search])
+
+  const sidebarGroups = useMemo(() => {
+    const regular = filteredThreads.filter((thread) => thread.convType !== 'JOB_THREAD')
+    const jobs = new Map<string, UnifiedThread[]>()
+    for (const thread of filteredThreads) {
+      if (thread.convType !== 'JOB_THREAD') continue
+      const key = thread.jobId || thread.id
+      jobs.set(key, [...(jobs.get(key) || []), thread])
+    }
+    return { regular, jobs: Array.from(jobs.values()) }
+  }, [filteredThreads])
 
   // ── Avatar color by kind ───────────────────────────────────────────────────
   function threadAvatarColor(t: UnifiedThread): 'blue' | 'emerald' | 'violet' | 'gray' | 'amber' {
@@ -474,7 +488,8 @@ export default function MessagesPage() {
           ) : filteredThreads.length === 0 ? (
             <div className="pt-12 text-center text-sm text-gray-400">No conversations yet</div>
           ) : (
-            filteredThreads.map((t) => (
+            <>
+              {sidebarGroups.regular.map((t) => (
               <button
                 key={t.id}
                 onClick={() => setSelectedId(t.id)}
@@ -510,7 +525,55 @@ export default function MessagesPage() {
                   </div>
                 </div>
               </button>
-            ))
+              ))}
+              {sidebarGroups.jobs.map((jobThreads) => {
+                const job = jobThreads[0]
+                const jobLabel = `Job ${job.jobNumber || ''}${job.jobTitle ? ` — ${job.jobTitle}` : ''}`.trim()
+                const unreadCount = jobThreads.reduce((sum, thread) => sum + thread.unreadCount, 0)
+                return (
+                  <div key={job.jobId || job.id} className="border-b border-gray-100">
+                    <div className="px-4 pt-3 pb-1.5 flex items-center gap-2 bg-amber-50/40">
+                      <svg className="w-4 h-4 text-amber-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7h-4V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2H4a2 2 0 00-2 2v9a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2zM10 5h4v2h-4V5z" /></svg>
+                      <span className="text-xs font-semibold text-amber-900 truncate flex-1">{jobLabel}</span>
+                      {unreadCount > 0 && (
+                        <span className="min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold bg-amber-600 text-white flex items-center justify-center">
+                          {unreadCount > 99 ? '99+' : unreadCount}
+                        </span>
+                      )}
+                    </div>
+                    {jobThreads.map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => setSelectedId(t.id)}
+                        className={`w-full text-left pl-8 pr-4 py-2.5 flex items-start gap-3 transition-colors ${
+                          selectedId === t.id ? 'bg-amber-50' : 'hover:bg-gray-50'
+                        }`}
+                      >
+                        <AvatarCircle label={t.threadTitle || t.subtitle || 'General'} color="amber" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-1 mb-0.5">
+                            <span className={`text-sm truncate ${t.unreadCount > 0 ? 'font-semibold text-gray-900' : 'font-medium text-gray-700'}`}>
+                              {t.threadTitle || t.subtitle || 'General'}
+                            </span>
+                            {t.lastMessageAt && <span className="text-[10px] text-gray-400">{relTime(t.lastMessageAt)}</span>}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-400 truncate flex-1">
+                              {t.previewIsOutbound ? '→ ' : ''}{t.preview || 'No messages'}
+                            </span>
+                            {t.unreadCount > 0 && (
+                              <span className="min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold bg-amber-600 text-white flex items-center justify-center">
+                                {t.unreadCount > 99 ? '99+' : t.unreadCount}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )
+              })}
+            </>
           )}
         </div>
       </aside>

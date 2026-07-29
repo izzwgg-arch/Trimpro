@@ -163,6 +163,7 @@ export async function POST(request: NextRequest) {
       status,
       expectedDate,
       orderDate,
+      notes,
       lineItems,
       groups, // Array of { groupId, name, sourceBundleId }
       tax,
@@ -222,6 +223,7 @@ export async function POST(request: NextRequest) {
         status: status || 'DRAFT',
         orderDate: orderDate ? new Date(orderDate) : new Date(),
         expectedDate: expectedDate ? new Date(expectedDate) : null,
+        notes: notes ? String(notes) : null,
         total,
       },
       include: {

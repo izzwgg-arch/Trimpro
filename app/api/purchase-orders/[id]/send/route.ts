@@ -3,6 +3,22 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
+import { getIntegrationSecrets } from '@/lib/integrations/status'
+import { sendEmailWithAttachments } from '@/lib/integrations/providers/email'
+import { isValidEmail } from '@/lib/email'
+import { renderPurchaseOrderEmailPdfAttachment } from '@/lib/documents/email-pdf-attachments'
+import { loadEmailEntityAttachments } from '@/lib/documents/email-entity-attachments'
+
+export const runtime = 'nodejs'
+
+function escapeHtml(value: unknown) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
 
 export async function POST(
   request: NextRequest,
@@ -41,10 +57,14 @@ export async function POST(
           },
         },
         job: {
-          select: {
-            id: true,
-            jobNumber: true,
-            title: true,
+          include: {
+            addresses: {
+              where: { type: 'job_site' },
+              take: 1,
+            },
+            client: {
+              select: { id: true, name: true },
+            },
           },
         },
       },
@@ -55,7 +75,7 @@ export async function POST(
     }
 
     // Determine recipient email
-    const recipientEmail = email || purchaseOrder.vendorRef?.email
+    const recipientEmail = String(email || purchaseOrder.vendorRef?.email || '').trim()
 
     if (!recipientEmail) {
       return NextResponse.json(
@@ -63,9 +83,9 @@ export async function POST(
         { status: 400 }
       )
     }
-
-    // TODO: Generate PDF (implement PDF generation)
-    const pdfUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/purchase-orders/${params.id}/pdf`
+    if (!isValidEmail(recipientEmail)) {
+      return NextResponse.json({ error: 'Invalid vendor email address' }, { status: 400 })
+    }
 
     // Calculate totals
     const subtotal = purchaseOrder.lineItems.reduce((sum, item) => {
@@ -73,18 +93,32 @@ export async function POST(
     }, 0)
     const total = Number(purchaseOrder.total)
 
-    try {
-      const { sendEmail } = await import('@/lib/email/provider')
-      await sendEmail({
-        to: recipientEmail,
-        subject: subject || `Purchase Order ${purchaseOrder.poNumber} from Trim Pro`,
-        html: `
+    const emailSecrets = await getIntegrationSecrets(user.tenantId, 'email')
+    if (!emailSecrets) {
+      return NextResponse.json(
+        { error: 'Email integration is not configured. Please configure Email Provider first.' },
+        { status: 400 }
+      )
+    }
+
+    const pdfAttachment = await renderPurchaseOrderEmailPdfAttachment(purchaseOrder, {
+      logoUrl: process.env.PDF_LOGO_URL || process.env.NEXT_PUBLIC_PDF_LOGO_URL || null,
+      businessName: 'Trim Pro',
+    })
+    const uploadedAttachments = await loadEmailEntityAttachments({
+      tenantId: user.tenantId,
+      entityType: 'purchase_order',
+      entityId: purchaseOrder.id,
+    })
+    const documentNotes = purchaseOrder.notes?.trim() || ''
+    const html = `
           <html>
             <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
               <h2>Purchase Order ${purchaseOrder.poNumber}</h2>
-              ${message ? `<p>${message}</p>` : ''}
-              <p>Dear ${purchaseOrder.vendorRef?.contactPerson || purchaseOrder.vendorRef?.name || 'Vendor'},</p>
+              ${message ? `<p>${escapeHtml(message)}</p>` : ''}
+              <p>Dear ${escapeHtml(purchaseOrder.vendorRef?.contactPerson || purchaseOrder.vendorRef?.name || 'Vendor')},</p>
               <p>Please find attached purchase order ${purchaseOrder.poNumber}.</p>
+              ${documentNotes ? `<h3>Notes:</h3><p style="white-space:pre-wrap;">${escapeHtml(documentNotes)}</p>` : ''}
               <h3>Order Summary:</h3>
               <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
                 <thead>
@@ -99,8 +133,8 @@ export async function POST(
                   ${purchaseOrder.lineItems.map((item) => `
                     <tr>
                       <td style="padding: 10px; border: 1px solid #ddd;">
-                        ${item.description}
-                        ${item.notes?.trim() ? `<div style="font-size:12px;color:#64748b;margin-top:4px;">${item.notes.trim().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>` : ''}
+                        ${escapeHtml(item.description)}
+                        ${item.notes?.trim() ? `<div style="font-size:12px;color:#64748b;margin-top:4px;">${escapeHtml(item.notes.trim())}</div>` : ''}
                       </td>
                       <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">${item.quantity}</td>
                       <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">$${Number(item.unitPrice).toFixed(2)}</td>
@@ -120,12 +154,11 @@ export async function POST(
                 </tfoot>
               </table>
               ${purchaseOrder.expectedDate ? `<p><strong>Expected Delivery Date:</strong> ${new Date(purchaseOrder.expectedDate).toLocaleDateString()}</p>` : ''}
-              <p><a href="${pdfUrl}" style="display:inline-block;padding:16px 48px;font-size:17px;font-weight:700;letter-spacing:0.2px;line-height:1.2;text-decoration:none;text-align:center;border-radius:12px;background:linear-gradient(135deg,#2a5f82 0%,#f0c974 100%);color:#1e2937;margin-top:20px;">Download Purchase Order PDF</a></p>
               <p>Thank you for your business.</p>
             </body>
           </html>
-        `,
-        text: `
+        `
+    const text = `
           Purchase Order ${purchaseOrder.poNumber}
           
           ${message || ''}
@@ -133,6 +166,8 @@ export async function POST(
           Dear ${purchaseOrder.vendorRef?.contactPerson || purchaseOrder.vendorRef?.name || 'Vendor'},
           
           Please find attached purchase order ${purchaseOrder.poNumber}.
+
+          ${documentNotes ? `Notes:\n${documentNotes}\n` : ''}
           
           Order Summary:
           ${purchaseOrder.lineItems.map((item) => {
@@ -146,14 +181,22 @@ export async function POST(
           Total: $${total.toFixed(2)}
           ${purchaseOrder.expectedDate ? `Expected Delivery: ${new Date(purchaseOrder.expectedDate).toLocaleDateString()}` : ''}
           
-          Download PDF: ${pdfUrl}
-          
           Thank you for your business.
-        `,
-      })
-    } catch (error) {
-      console.error('Failed to send purchase order email:', error)
-      // Continue anyway - email sending is not critical
+        `
+
+    const sendResult = await sendEmailWithAttachments({
+      secrets: emailSecrets,
+      to: recipientEmail,
+      subject: subject || `Purchase Order ${purchaseOrder.poNumber} from Trim Pro`,
+      html,
+      text,
+      attachments: [pdfAttachment, ...uploadedAttachments],
+    })
+    if (!sendResult.success) {
+      return NextResponse.json(
+        { error: sendResult.error || sendResult.message || 'Failed to send purchase order email' },
+        { status: 502 }
+      )
     }
 
     // Update status to ORDERED if it was APPROVED or DRAFT
@@ -171,6 +214,7 @@ export async function POST(
         userId: user.id,
         type: 'OTHER',
         description: `Purchase order ${purchaseOrder.poNumber} sent to ${recipientEmail}`,
+        purchaseOrderId: purchaseOrder.id,
       },
     })
 

@@ -281,6 +281,10 @@ export interface Conversation {
   channel?: string
   status?: string
   jobId?: string | null
+  jobNumber?: string | null
+  jobTitle?: string | null
+  threadTitle?: string | null
+  displayTitle?: string
   unreadCount: number
   participants?: string[]
   lastMessageAt: string | null

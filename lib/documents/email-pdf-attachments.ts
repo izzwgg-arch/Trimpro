@@ -1,6 +1,11 @@
 import { renderPdfFromHtml } from '@/lib/pdf/render-html-to-pdf'
 import type { PdfBranding } from '@/lib/branding/pdf'
-import { buildInvoicePdfHtml, buildEstimatePdfHtml } from '@/lib/documents/pdf-templates'
+import {
+  buildInvoicePdfHtml,
+  buildEstimatePdfHtml,
+  buildPurchaseOrderPdfHtml,
+  type PurchaseOrderPdfBranding,
+} from '@/lib/documents/pdf-templates'
 
 type AnyRecord = Record<string, any>
 
@@ -45,6 +50,17 @@ export async function renderEstimateEmailPdfAttachment(
   return {
     filename: `Estimate-${safeFilenamePart(estimate.estimateNumber, 'estimate')}.pdf`,
     content: await renderPdfFromHtml(buildEstimatePdfHtml(estimate, brand, approvedOptionalItemIds)),
+    contentType: 'application/pdf',
+  }
+}
+
+export async function renderPurchaseOrderEmailPdfAttachment(
+  purchaseOrder: AnyRecord,
+  branding: PurchaseOrderPdfBranding
+): Promise<PdfEmailAttachment> {
+  return {
+    filename: `PO-${safeFilenamePart(purchaseOrder.poNumber, 'purchase-order')}.pdf`,
+    content: await renderPdfFromHtml(buildPurchaseOrderPdfHtml(purchaseOrder, branding)),
     contentType: 'application/pdf',
   }
 }

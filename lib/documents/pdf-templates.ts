@@ -697,6 +697,13 @@ export function buildPurchaseOrderPdfHtml(
             </tbody>
           </table>
 
+          ${purchaseOrder.notes?.trim() ? `
+            <div class="panel" style="margin-top:18px;">
+              <h3>Notes</h3>
+              <div style="white-space:pre-wrap;">${escapeHtml(purchaseOrder.notes.trim())}</div>
+            </div>
+          ` : ''}
+
           <div class="summary">
             <h4>Summary</h4>
             <div class="summary-row"><span>Subtotal</span><span>$${subtotal.toFixed(2)}</span></div>

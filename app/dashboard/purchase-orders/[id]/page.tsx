@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { ShoppingCart, Calendar, DollarSign, Building2, FileText, CheckCircle, XCircle, Send, Download, Edit, Package, AlertCircle, Trash2, Mail, Phone, Briefcase, Printer, Copy } from 'lucide-react'
 import Link from 'next/link'
+import { DocumentAttachments } from '@/components/common/document-attachments'
 
 interface PurchaseOrderDetail {
   id: string
@@ -29,6 +30,7 @@ interface PurchaseOrderDetail {
   orderDate: string | null
   expectedDate: string | null
   receivedDate: string | null
+  notes?: string | null
   jobSiteAddress?: string | null
   job: {
     id: string
@@ -146,10 +148,10 @@ export default function PurchaseOrderDetailPage() {
   }
 
   const handleSend = async () => {
-    if (!po?.vendorRef?.email) {
-      alert('Vendor email is required to send purchase order')
-      return
-    }
+    const recipientEmail =
+      po?.vendorRef?.email ||
+      window.prompt('Enter the vendor email address:', '')?.trim()
+    if (!recipientEmail) return
 
     try {
       const token = localStorage.getItem('accessToken')
@@ -160,7 +162,7 @@ export default function PurchaseOrderDetailPage() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          email: po.vendorRef.email,
+          email: recipientEmail,
         }),
       })
 
@@ -373,7 +375,7 @@ export default function PurchaseOrderDetailPage() {
       <div className="text-center py-12">
         <AlertCircle className="mx-auto h-12 w-12 text-gray-400" />
         <h3 className="mt-2 text-sm font-medium text-gray-900">Purchase order not found</h3>
-        <p className="mt-1 text-sm text-gray-500">The purchase order you're looking for doesn't exist.</p>
+        <p className="mt-1 text-sm text-gray-500">The requested purchase order does not exist.</p>
         <div className="mt-6">
           <Button onClick={() => router.push('/dashboard/purchase-orders')}>Back to Purchase Orders</Button>
         </div>
@@ -383,7 +385,6 @@ export default function PurchaseOrderDetailPage() {
 
   const canEdit = ['DRAFT', 'PENDING_APPROVAL'].includes(po.status)
   const canApprove = po.status === 'PENDING_APPROVAL' || po.status === 'DRAFT'
-  const canSend = ['APPROVED', 'DRAFT'].includes(po.status)
   const canReceive = po.status === 'ORDERED'
   const canCancel = !['RECEIVED', 'CANCELLED'].includes(po.status)
 
@@ -418,12 +419,10 @@ export default function PurchaseOrderDetailPage() {
               Approve
             </Button>
           )}
-          {canSend && po.vendorRef?.email && (
-            <Button onClick={handleSend} variant="outline">
-              <Send className="mr-2 h-4 w-4" />
-              Send to Vendor
-            </Button>
-          )}
+          <Button onClick={handleSend} variant="outline">
+            <Send className="mr-2 h-4 w-4" />
+            Send to Vendor
+          </Button>
           {canReceive && (
             <Button onClick={handleReceive} variant="outline">
               <Package className="mr-2 h-4 w-4" />
@@ -535,6 +534,23 @@ export default function PurchaseOrderDetailPage() {
                   </tbody>
                 </table>
               </div>
+            </CardContent>
+          </Card>
+
+          {po.notes?.trim() && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Notes</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="whitespace-pre-wrap text-sm text-gray-700">{po.notes}</p>
+              </CardContent>
+            </Card>
+          )}
+
+          <Card>
+            <CardContent className="pt-6">
+              <DocumentAttachments entityType="purchase_order" entityId={po.id} />
             </CardContent>
           </Card>
 

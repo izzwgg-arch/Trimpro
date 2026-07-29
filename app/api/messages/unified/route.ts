@@ -48,23 +48,34 @@ export async function GET(request: NextRequest) {
   ])
 
   // Normalise team conversations
-  const teamThreads = (teamConvs as any[]).map((conv) => ({
-    id: conv.id,
-    kind: 'team' as const,
-    channel: 'team' as const,
-    title: conv.pinned ? 'Team Chat' : (conv.title || 'Direct Message'),
-    subtitle: null as string | null,
-    unreadCount: conv.unreadCount || 0,
-    lastMessageAt: conv.lastMessageAt ? new Date(conv.lastMessageAt).toISOString() : null,
-    preview: conv.lastMessage?.text
-      || (conv.lastMessage?.type ? `[${String(conv.lastMessage.type).toLowerCase()}]` : null),
-    previewIsOutbound: conv.lastMessage
-      ? String(conv.lastMessage.senderId) === String(user.id)
-      : undefined,
-    pinned: Boolean(conv.pinned),
-    convType: String(conv.type || ''),
-    jobId: conv.jobId || null,
-  }))
+  const teamThreads = (teamConvs as any[]).map((conv) => {
+    const isJobThread = String(conv.type || '') === 'JOB_THREAD'
+    const jobContext = [conv.jobNumber, conv.jobTitle].filter(Boolean).join(' — ')
+    return {
+      id: conv.id,
+      kind: 'team' as const,
+      channel: 'team' as const,
+      title: conv.pinned
+        ? 'Team Chat'
+        : isJobThread
+          ? `Job ${jobContext || 'chat'}`
+          : (conv.title || 'Direct Message'),
+      subtitle: isJobThread ? (conv.threadTitle || conv.title || 'General') : null as string | null,
+      unreadCount: conv.unreadCount || 0,
+      lastMessageAt: conv.lastMessageAt ? new Date(conv.lastMessageAt).toISOString() : null,
+      preview: conv.lastMessage?.text
+        || (conv.lastMessage?.type ? `[${String(conv.lastMessage.type).toLowerCase()}]` : null),
+      previewIsOutbound: conv.lastMessage
+        ? String(conv.lastMessage.senderId) === String(user.id)
+        : undefined,
+      pinned: Boolean(conv.pinned),
+      convType: String(conv.type || ''),
+      jobId: conv.jobId || null,
+      jobNumber: conv.jobNumber || null,
+      jobTitle: conv.jobTitle || null,
+      threadTitle: isJobThread ? (conv.threadTitle || conv.title || 'General') : null,
+    }
+  })
 
   // Normalise SMS/MMS conversations
   const smsThreads = (smsConvs as any[]).map((conv) => {

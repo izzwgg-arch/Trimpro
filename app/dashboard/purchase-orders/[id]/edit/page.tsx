@@ -38,14 +38,14 @@ interface LineItem {
   unitCost: string // Primary field for POs
   unitPrice?: string // Optional, for reference
   notes?: string
-  vendorId?: string
-  vendorName?: string
+  vendorId?: string | null
+  vendorName?: string | null
   // Bundle support
   groupId?: string
   groupName?: string
   isGroupHeader?: boolean
-  sourceItemId?: string
-  sourceBundleId?: string
+  sourceItemId?: string | null
+  sourceBundleId?: string | null
   tag?: string
 }
 
@@ -70,6 +70,7 @@ export default function EditPurchaseOrderPage() {
     status: 'DRAFT',
     expectedDate: '',
     orderDate: '',
+    notes: '',
     tax: '0',
     shipping: '0',
   })
@@ -174,6 +175,7 @@ export default function EditPurchaseOrderPage() {
         status: po.status || 'DRAFT',
         expectedDate: po.expectedDate ? new Date(po.expectedDate).toISOString().split('T')[0] : '',
         orderDate: po.orderDate ? new Date(po.orderDate).toISOString().split('T')[0] : '',
+        notes: po.notes || '',
         tax: data.purchaseOrder.tax?.toString() || '0',
         shipping: data.purchaseOrder.shipping?.toString() || '0',
       })
@@ -460,7 +462,7 @@ export default function EditPurchaseOrderPage() {
         if (item.groupId && item.groupName && !groups.has(item.groupId)) {
           groups.set(item.groupId, {
             name: item.groupName,
-            sourceBundleId: item.sourceBundleId,
+            sourceBundleId: item.sourceBundleId || undefined,
           })
         }
       })
@@ -477,6 +479,7 @@ export default function EditPurchaseOrderPage() {
           status: formData.status,
           expectedDate: formData.expectedDate || null,
           orderDate: formData.orderDate || new Date().toISOString().split('T')[0],
+          notes: formData.notes || null,
           tax,
           shipping,
           total,
@@ -654,6 +657,17 @@ export default function EditPurchaseOrderPage() {
                     </SelectContent>
                   </Select>
                 </div>
+                <div>
+                  <Label htmlFor="notes">Notes</Label>
+                  <textarea
+                    id="notes"
+                    value={formData.notes}
+                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    placeholder="Purchase order notes"
+                    rows={4}
+                    className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-y"
+                  />
+                </div>
               </CardContent>
             </Card>
 
@@ -732,7 +746,7 @@ export default function EditPurchaseOrderPage() {
                               <textarea
                                 value={item.notes || ''}
                                 onChange={(e) => updateLineItem(index, 'notes', e.target.value)}
-                                placeholder="Description (optional)"
+                                placeholder="Special notes"
                                 rows={1}
                                 className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
                               />

@@ -416,7 +416,7 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
         <DialogHeader className="px-5 pt-5 pb-3 border-b space-y-3">
           <div className="flex items-start justify-between gap-3 pr-8">
             <div>
-              <DialogTitle>{jobNumber ? `Job Chat · ${jobNumber}` : 'Job Chat'}</DialogTitle>
+              <DialogTitle>{jobNumber ? `Job chat · ${jobNumber}` : 'Job chat'}</DialogTitle>
               <p className="text-xs text-muted-foreground font-normal mt-1">
                 Multiple threads · pick who to notify · reply, reactions, attachments &amp; voice
               </p>
@@ -433,10 +433,10 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
                     key={t.id}
                     type="button"
                     onClick={() => void switchThread(t.id)}
-                    className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                    className={`shrink-0 px-3.5 py-2 rounded-full text-xs font-semibold border transition-colors ${
                       active
-                        ? 'bg-amber-100 border-amber-300 text-amber-900'
-                        : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                        ? 'bg-amber-100 border-amber-400 text-amber-950 shadow-sm'
+                        : 'bg-white border-gray-300 text-gray-700 hover:border-amber-300 hover:bg-amber-50/50'
                     }`}
                   >
                     {threadLabel(t)}

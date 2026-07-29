@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Paperclip, Upload, Trash2, ExternalLink, Film, Music, FileText } from 'lucide-react'
 import { AttachmentGalleryDialog } from '@/components/common/attachment-gallery-dialog'
 
-type EntityType = 'estimate' | 'invoice' | 'job' | 'request'
+type EntityType = 'estimate' | 'invoice' | 'purchase_order' | 'job' | 'request'
 
 interface Attachment {
   id: string

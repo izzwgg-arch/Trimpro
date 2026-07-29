@@ -423,19 +423,30 @@ export async function listConversationsForUser(tenantId: string, userId: string)
   const lastMessageMap = new Map(lastMessages.map((m) => [m.conversationId, m]))
 
   const dmUserIds = new Set<string>()
+  const jobIds = new Set<string>()
   for (const m of members) {
     const conversation = conversationMap.get(m.conversationId)
     if (conversation?.type === ChatConversationType.DM) {
       if (conversation.userAId && conversation.userAId !== userId) dmUserIds.add(conversation.userAId)
       if (conversation.userBId && conversation.userBId !== userId) dmUserIds.add(conversation.userBId)
     }
+    if (conversation?.type === ChatConversationType.JOB_THREAD && conversation.jobId) {
+      jobIds.add(conversation.jobId)
+    }
   }
 
-  const dmUsers = await prisma.user.findMany({
-    where: { id: { in: Array.from(dmUserIds) }, tenantId },
-    select: { id: true, firstName: true, lastName: true, email: true, avatar: true },
-  })
+  const [dmUsers, jobs] = await Promise.all([
+    prisma.user.findMany({
+      where: { id: { in: Array.from(dmUserIds) }, tenantId },
+      select: { id: true, firstName: true, lastName: true, email: true, avatar: true },
+    }),
+    prisma.job.findMany({
+      where: { id: { in: Array.from(jobIds) }, tenantId },
+      select: { id: true, jobNumber: true, title: true },
+    }),
+  ])
   const dmUserMap = new Map(dmUsers.map((u) => [u.id, u]))
+  const jobMap = new Map(jobs.map((job) => [job.id, job]))
 
   const unreadCounts = await Promise.all(
     members.map(async (member) => {
@@ -456,49 +467,57 @@ export async function listConversationsForUser(tenantId: string, userId: string)
     .map((member) => {
       const conversation = conversationMap.get(member.conversationId)
       if (!conversation) return null
-    const lastMessage = lastMessageMap.get(conversation.id)
-    const isTeam = conversation.type === ChatConversationType.TEAM
-    const isJobThread = conversation.type === ChatConversationType.JOB_THREAD
-    const otherUserId = conversation.userAId === userId ? conversation.userBId : conversation.userAId
-    const otherUser = otherUserId ? dmUserMap.get(otherUserId) : null
-    const title = isTeam
-      ? conversation.title || 'Team Chat'
-      : isJobThread
-        ? conversation.title || 'Job Chat'
-        : otherUser
-          ? `${otherUser.firstName || ''} ${otherUser.lastName || ''}`.trim() || otherUser.email
-          : 'Direct Message'
+      const lastMessage = lastMessageMap.get(conversation.id)
+      const isTeam = conversation.type === ChatConversationType.TEAM
+      const isJobThread = conversation.type === ChatConversationType.JOB_THREAD
+      const otherUserId = conversation.userAId === userId ? conversation.userBId : conversation.userAId
+      const otherUser = otherUserId ? dmUserMap.get(otherUserId) : null
+      const job = conversation.jobId ? jobMap.get(conversation.jobId) : null
+      const threadTitle = isJobThread ? conversation.title?.trim() || 'General' : null
+      const title = isTeam
+        ? conversation.title || 'Team Chat'
+        : isJobThread
+          ? threadTitle!
+          : otherUser
+            ? `${otherUser.firstName || ''} ${otherUser.lastName || ''}`.trim() || otherUser.email
+            : 'Direct Message'
 
-    return {
-      id: conversation.id,
-      type: conversation.type,
-      title,
-      pinned: isTeam || conversation.pinned,
-      jobId: conversation.jobId || null,
-      lastMessageAt: conversation.lastMessageAt,
-      unreadCount: unreadMap.get(conversation.id) || 0,
-      otherUser: otherUser
-        ? {
-            id: otherUser.id,
-            firstName: otherUser.firstName,
-            lastName: otherUser.lastName,
-            email: otherUser.email,
-            avatar: otherUser.avatar,
-          }
-        : null,
-      lastMessage: lastMessage
-        ? {
-            id: lastMessage.id,
-            text: lastMessage.text,
-            type: lastMessage.type,
-            createdAt: lastMessage.createdAt,
-            senderId: lastMessage.senderId,
-            status: lastMessage.status,
-            jobId: lastMessage.jobId,
-            jobNumber: lastMessage.jobNumber,
-            jobName: lastMessage.jobName,
-          }
-        : null,
+      return {
+        id: conversation.id,
+        type: conversation.type,
+        title,
+        pinned: isTeam || conversation.pinned,
+        jobId: conversation.jobId || null,
+        jobNumber: job?.jobNumber || null,
+        jobTitle: job?.title || null,
+        threadTitle,
+        displayTitle: isJobThread
+          ? `Job ${job?.jobNumber || 'chat'} · ${threadTitle}`
+          : title,
+        lastMessageAt: conversation.lastMessageAt,
+        unreadCount: unreadMap.get(conversation.id) || 0,
+        otherUser: otherUser
+          ? {
+              id: otherUser.id,
+              firstName: otherUser.firstName,
+              lastName: otherUser.lastName,
+              email: otherUser.email,
+              avatar: otherUser.avatar,
+            }
+          : null,
+        lastMessage: lastMessage
+          ? {
+              id: lastMessage.id,
+              text: lastMessage.text,
+              type: lastMessage.type,
+              createdAt: lastMessage.createdAt,
+              senderId: lastMessage.senderId,
+              status: lastMessage.status,
+              jobId: lastMessage.jobId,
+              jobNumber: lastMessage.jobNumber,
+              jobName: lastMessage.jobName,
+            }
+          : null,
       }
     })
     .filter((row): row is NonNullable<typeof row> => Boolean(row))

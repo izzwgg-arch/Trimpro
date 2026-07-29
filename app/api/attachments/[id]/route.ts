@@ -9,7 +9,7 @@ export async function DELETE(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
-  const permError = await requireAnyPermission(request, ['jobs.view', 'leads.view', 'clients.view'])
+  const permError = await requireAnyPermission(request, ['jobs.view', 'leads.view', 'clients.view', 'purchase_orders.view'])
   if (permError) return permError
 
   const user = getAuthUser(request)
@@ -19,6 +19,7 @@ export async function DELETE(
       include: {
         estimate: { select: { tenantId: true } },
         invoice: { select: { tenantId: true } },
+        purchaseOrder: { select: { tenantId: true } },
         job: { select: { tenantId: true } },
         task: { select: { tenantId: true } },
         issue: { select: { tenantId: true } },
@@ -33,6 +34,7 @@ export async function DELETE(
     const tenantId =
       attachment.estimate?.tenantId ||
       attachment.invoice?.tenantId ||
+      attachment.purchaseOrder?.tenantId ||
       attachment.job?.tenantId ||
       attachment.task?.tenantId ||
       attachment.issue?.tenantId ||

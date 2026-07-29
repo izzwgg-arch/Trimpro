@@ -138,6 +138,7 @@ export async function PUT(
       status,
       expectedDate,
       orderDate,
+      notes,
       lineItems,
       groups, // Array of { groupId, name, sourceBundleId }
       tax,
@@ -198,6 +199,7 @@ export async function PUT(
         status: status !== undefined ? status : existing.status,
         orderDate: orderDate !== undefined ? (orderDate ? new Date(orderDate) : null) : existing.orderDate,
         expectedDate: expectedDate !== undefined ? (expectedDate ? new Date(expectedDate) : null) : existing.expectedDate,
+        notes: notes !== undefined ? (notes ? String(notes) : null) : existing.notes,
         total,
       },
       include: {

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native'
+import { Pressable, RefreshControl, SectionList, StyleSheet, Text, View } from 'react-native'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { Ionicons } from '@expo/vector-icons'
@@ -61,11 +61,30 @@ export function MessagesScreen({ navigation }: Props) {
     },
   })
 
-  const conversations = useMemo(() => {
+  const conversationSections = useMemo(() => {
     const rows = conversationsQuery.data?.conversations || []
     const pinned = rows.find((c) => c.pinned)
     const others = rows.filter((c) => !c.pinned)
-    return pinned ? [pinned, ...others] : others
+    const ordered = pinned ? [pinned, ...others] : others
+    const regular = ordered.filter((conversation) => conversation.type !== 'JOB_THREAD')
+    const jobGroups = new Map<string, Conversation[]>()
+
+    for (const conversation of ordered) {
+      if (conversation.type !== 'JOB_THREAD') continue
+      const key = conversation.jobId || conversation.id
+      const group = jobGroups.get(key) || []
+      group.push(conversation)
+      jobGroups.set(key, group)
+    }
+
+    return [
+      ...(regular.length > 0 ? [{ key: 'regular', title: null, data: regular }] : []),
+      ...Array.from(jobGroups.entries()).map(([key, data]) => ({
+        key: `job-${key}`,
+        title: `Job ${data[0].jobNumber || ''}${data[0].jobTitle ? ` — ${data[0].jobTitle}` : ''}`.trim(),
+        data,
+      })),
+    ]
   }, [conversationsQuery.data?.conversations])
 
   const userOptions = useMemo(() => usersQuery.data?.users || [], [usersQuery.data?.users])
@@ -82,8 +101,8 @@ export function MessagesScreen({ navigation }: Props) {
         </Pressable>
       </View>
 
-      <FlatList
-        data={conversations}
+      <SectionList
+        sections={conversationSections}
         keyExtractor={(item) => item.id}
         refreshControl={
           <RefreshControl
@@ -92,6 +111,15 @@ export function MessagesScreen({ navigation }: Props) {
           />
         }
         contentContainerStyle={styles.listContent}
+        stickySectionHeadersEnabled={false}
+        renderSectionHeader={({ section }) =>
+          section.title ? (
+            <View style={styles.sectionHeader}>
+              <Ionicons name="briefcase-outline" size={16} color={colors.brandPrimary} />
+              <Text style={styles.sectionTitle} numberOfLines={1}>{section.title}</Text>
+            </View>
+          ) : null
+        }
         ListEmptyComponent={
           conversationsQuery.isLoading ? null : (
             <EmptyState icon="chatbubbles-outline" title="No conversations yet" description="Start a new message to begin chatting." />
@@ -147,5 +175,20 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingBottom: spacing.xl,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xs,
+    backgroundColor: colors.background,
+  },
+  sectionTitle: {
+    ...typography.caption,
+    color: colors.textPrimary,
+    fontWeight: '700',
+    flex: 1,
   },
 })

@@ -6,12 +6,13 @@ import { publishDispatchRealtime } from '@/lib/dispatch-realtime'
 import { hasMobilePermission, isMobileRequest, requireAnyPermission } from '@/lib/authorization'
 import { normalizePublicFileUrl } from '@/lib/public-url'
 
-type EntityType = 'estimate' | 'invoice' | 'job' | 'task' | 'issue' | 'request' | 'lead'
+type EntityType = 'estimate' | 'invoice' | 'purchase_order' | 'job' | 'task' | 'issue' | 'request' | 'lead'
 
 function isValidEntityType(value: string): value is EntityType {
   return (
     value === 'estimate' ||
     value === 'invoice' ||
+    value === 'purchase_order' ||
     value === 'job' ||
     value === 'task' ||
     value === 'issue' ||
@@ -33,6 +34,10 @@ async function ensureEntityAccess(
   if (entityType === 'invoice') {
     const invoice = await prisma.invoice.findFirst({ where: { id: entityId, tenantId }, select: { id: true } })
     return Boolean(invoice)
+  }
+  if (entityType === 'purchase_order') {
+    const purchaseOrder = await prisma.purchaseOrder.findFirst({ where: { id: entityId, tenantId }, select: { id: true } })
+    return Boolean(purchaseOrder)
   }
   if (entityType === 'task') {
     const task = await prisma.task.findFirst({ where: { id: entityId, tenantId }, select: { id: true } })
@@ -66,7 +71,7 @@ async function ensureEntityAccess(
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
-  const permError = await requireAnyPermission(request, ['jobs.view', 'leads.view', 'clients.view'])
+  const permError = await requireAnyPermission(request, ['jobs.view', 'leads.view', 'clients.view', 'purchase_orders.view'])
   if (permError) return permError
 
   const user = getAuthUser(request)
@@ -94,6 +99,8 @@ export async function GET(request: NextRequest) {
         ? { estimateId: entityId }
         : entityTypeRaw === 'invoice'
           ? { invoiceId: entityId }
+          : entityTypeRaw === 'purchase_order'
+            ? { purchaseOrderId: entityId }
           : entityTypeRaw === 'task'
             ? { taskId: entityId }
             : entityTypeRaw === 'issue'
@@ -121,7 +128,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
-  const permError = await requireAnyPermission(request, ['jobs.view', 'leads.view', 'clients.view'])
+  const permError = await requireAnyPermission(request, ['jobs.view', 'leads.view', 'clients.view', 'purchase_orders.view'])
   if (permError) return permError
 
   const user = getAuthUser(request)
@@ -158,6 +165,8 @@ export async function POST(request: NextRequest) {
         ? { estimateId: entityId }
         : entityTypeRaw === 'invoice'
           ? { invoiceId: entityId }
+          : entityTypeRaw === 'purchase_order'
+            ? { purchaseOrderId: entityId }
           : entityTypeRaw === 'task'
             ? { taskId: entityId }
             : entityTypeRaw === 'issue'

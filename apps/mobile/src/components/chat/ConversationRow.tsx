@@ -33,7 +33,15 @@ function formatTime(dateString: string | null | undefined): string {
 }
 
 export function ConversationRow({ conversation, onPress, isSelected }: ConversationRowProps) {
-  const title = conversation.pinned ? 'Team Chat' : conversation.title || displayName(conversation.otherUser)
+  const isJobThread = conversation.type === 'JOB_THREAD'
+  const title = conversation.pinned
+    ? 'Team Chat'
+    : isJobThread
+      ? conversation.threadTitle || conversation.title || 'General'
+      : conversation.title || displayName(conversation.otherUser)
+  const jobContext = isJobThread
+    ? [`Job ${conversation.jobNumber || ''}`.trim(), conversation.jobTitle].filter(Boolean).join(' — ')
+    : null
   const preview = conversation.lastMessage?.text || (conversation.lastMessage ? `[${conversation.lastMessage.type}]` : 'No messages yet')
   const time = formatTime(conversation.lastMessageAt)
   const avatarUrl = conversation.otherUser?.avatar || null
@@ -47,6 +55,8 @@ export function ConversationRow({ conversation, onPress, isSelected }: Conversat
       <View style={styles.avatar}>
         {conversation.pinned ? (
           <Ionicons name="people" size={20} color={colors.brandPrimary} />
+        ) : isJobThread ? (
+          <Ionicons name="briefcase-outline" size={20} color={colors.brandPrimary} />
         ) : avatarUrl ? (
           <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
         ) : (
@@ -64,7 +74,7 @@ export function ConversationRow({ conversation, onPress, isSelected }: Conversat
         </View>
         <View style={styles.footer}>
           <Text style={styles.preview} numberOfLines={1}>
-            {preview}
+            {jobContext ? `${jobContext} · ${preview}` : preview}
           </Text>
           {conversation.unreadCount > 0 && (
             <View style={styles.badge}>

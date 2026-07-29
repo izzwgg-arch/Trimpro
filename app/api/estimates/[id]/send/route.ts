@@ -11,6 +11,7 @@ import { getEmailBranding } from '@/lib/email/branding'
 import { buildEstimateApprovalEmail } from '@/lib/email/templates/estimate-approval'
 import { getPdfBranding } from '@/lib/branding/pdf'
 import { renderEstimateEmailPdfAttachment } from '@/lib/documents/email-pdf-attachments'
+import { loadEmailEntityAttachments } from '@/lib/documents/email-entity-attachments'
 
 export const runtime = 'nodejs'
 
@@ -168,6 +169,11 @@ export async function POST(
     const approvedOptionalItemIds = new Set(itemApprovals.map((approval) => approval.estimateLineItemId))
     const pdfBranding = await getPdfBranding(user.tenantId)
     const pdfAttachment = await renderEstimateEmailPdfAttachment(estimate, pdfBranding, approvedOptionalItemIds)
+    const uploadedAttachments = await loadEmailEntityAttachments({
+      tenantId: user.tenantId,
+      entityType: 'estimate',
+      entityId: estimate.id,
+    })
     const text = `Estimate ${estimate.estimateNumber}
 
 ${message ? String(message) : `Please review estimate ${estimate.estimateNumber}.`}
@@ -182,7 +188,7 @@ Approve estimate: ${approveUrl}`.trim()
       subject: effectiveSubject,
       html,
       text,
-      attachments: [pdfAttachment],
+      attachments: [pdfAttachment, ...uploadedAttachments],
     })
     for (const recipientEmail of uniqueRecipientEmails) {
       results.push({

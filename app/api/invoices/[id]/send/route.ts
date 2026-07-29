@@ -10,6 +10,7 @@ import { parseEmailList } from '@/lib/email/recipients'
 import { buildInvoiceEmail } from '@/lib/email/templates/invoice'
 import { getPdfBranding } from '@/lib/branding/pdf'
 import { renderInvoiceEmailPdfAttachment } from '@/lib/documents/email-pdf-attachments'
+import { loadEmailEntityAttachments } from '@/lib/documents/email-entity-attachments'
 
 export const runtime = 'nodejs'
 
@@ -169,6 +170,11 @@ export async function POST(
 
     const pdfBranding = await getPdfBranding(user.tenantId)
     const pdfAttachment = await renderInvoiceEmailPdfAttachment(invoice, pdfBranding)
+    const uploadedAttachments = await loadEmailEntityAttachments({
+      tenantId: user.tenantId,
+      entityType: 'invoice',
+      entityId: invoice.id,
+    })
     const text = `Invoice ${invoice.invoiceNumber}
 
 ${message ? String(message) : `Please review invoice ${invoice.invoiceNumber}.`}
@@ -184,7 +190,7 @@ ${paymentLink ? `Pay Online: ${paymentLink}` : ''}`.trim()
       subject: effectiveSubject,
       html,
       text,
-      attachments: [pdfAttachment],
+      attachments: [pdfAttachment, ...uploadedAttachments],
     })
     if (!sendResult.success) {
       console.error('Failed to send invoice email:', sendResult.error || sendResult.message)
