@@ -172,7 +172,7 @@ async function createAndSendNotification(params: CreateNotificationParams): Prom
   })
 
   let emailError: string | null = null
-  if (prefs.emailNotifications && user?.email) {
+  if (prefs.emailNotifications === true && user?.email) {
     const emailResult = await sendStaffNotificationEmail({
       tenantId: params.tenantId,
       to: user.email,
@@ -190,6 +190,12 @@ async function createAndSendNotification(params: CreateNotificationParams): Prom
         error: emailError,
       })
     }
+  } else if (user?.email && prefs.emailNotifications !== true) {
+    console.info('notification.email_skipped', {
+      notificationId: notification.id,
+      userId: params.userId,
+      reason: 'emailNotifications_disabled',
+    })
   }
 
   const deliveryStatus: 'FAILED' | 'SENT' = pushResult.failed > 0 && pushResult.sent === 0 ? 'FAILED' : 'SENT'
@@ -380,7 +386,8 @@ async function getRequestNotificationRecipientUserIds(tenantId: string) {
 }
 
 /**
- * Notify dispatch-facing users about job activity (status, notes, media, messages).
+ * Notify assigned users about job activity (status, notes, media, messages).
+ * If the job has no assignees, nobody is notified.
  */
 export async function notifyDispatchJobActivity(params: {
   tenantId: string
@@ -391,37 +398,31 @@ export async function notifyDispatchJobActivity(params: {
   actorUserId?: string | null
   action?: string | null
 }) {
-  const dispatchUsers = await prisma.user.findMany({
-    where: {
-      tenantId: params.tenantId,
-      role: { in: ['ADMIN', 'OFFICE', 'ACCOUNTING'] },
-      status: 'ACTIVE',
-      ...(params.excludeUserId ? { id: { not: params.excludeUserId } } : {}),
-    },
-    select: { id: true },
+  const assignments = await prisma.jobAssignment.findMany({
+    where: { jobId: params.jobId },
+    select: { userId: true },
   })
+  const recipientIds = assignments
+    .map((a) => a.userId)
+    .filter((id) => Boolean(id) && id !== params.excludeUserId)
 
-  if (dispatchUsers.length === 0) return
+  if (recipientIds.length === 0) return
 
-  await createNotificationsForUsers(
-    params.tenantId,
-    dispatchUsers.map((u) => u.id),
-    {
-      type: 'JOB_UPDATED',
-      title: params.title,
-      message: params.message || null,
-      linkUrl: `/dashboard/dispatch?jobId=${params.jobId}`,
-      linkType: 'job',
-      linkId: params.jobId,
-      actorUserId: params.actorUserId || null,
-      action: params.action || 'job_updated',
-    }
-  )
+  await createNotificationsForUsers(params.tenantId, recipientIds, {
+    type: 'JOB_UPDATED',
+    title: params.title,
+    message: params.message || null,
+    linkUrl: `/dashboard/jobs/${params.jobId}`,
+    linkType: 'job',
+    linkId: params.jobId,
+    actorUserId: params.actorUserId || null,
+    action: params.action || 'job_updated',
+  })
 }
 
 /**
- * Notify assignees and office/dispatch users when a job status changes.
- * Includes the user who made the change (so dropdown updates email them too).
+ * Notify assigned users when a job status changes.
+ * If the job has no assignees, nobody is notified (including office/admin).
  */
 export async function notifyJobStatusChanged(params: {
   tenantId: string
@@ -442,35 +443,18 @@ export async function notifyJobStatusChanged(params: {
     newStatusLabel: toLabel,
   })
 
-  const [assignments, dispatchUsers] = await Promise.all([
-    prisma.jobAssignment.findMany({
-      where: { jobId: params.jobId },
-      select: { userId: true },
-    }),
-    prisma.user.findMany({
-      where: {
-        tenantId: params.tenantId,
-        role: { in: ['ADMIN', 'OFFICE', 'ACCOUNTING'] },
-        status: 'ACTIVE',
-      },
-      select: { id: true },
-    }),
-  ])
+  const assignments = await prisma.jobAssignment.findMany({
+    where: { jobId: params.jobId },
+    select: { userId: true },
+  })
+  const recipientIds = Array.from(
+    new Set(assignments.map((a) => a.userId).filter(Boolean))
+  )
 
-  const recipientIds = new Set<string>()
-  for (const a of assignments) {
-    if (a.userId) recipientIds.add(a.userId)
-  }
-  for (const u of dispatchUsers) {
-    recipientIds.add(u.id)
-  }
-  if (params.actorUserId) {
-    recipientIds.add(params.actorUserId)
-  }
+  // No assignees → no notifications / emails.
+  if (recipientIds.length === 0) return
 
-  if (recipientIds.size === 0) return
-
-  await createNotificationsForUsers(params.tenantId, Array.from(recipientIds), {
+  await createNotificationsForUsers(params.tenantId, recipientIds, {
     type: 'JOB_UPDATED',
     title: 'Job Update',
     message,

@@ -23,7 +23,7 @@ const ROWS: Array<{ key: PrefKey; title: string; description: string }> = [
   {
     key: 'emailNotifications',
     title: 'Email notifications',
-    description: 'Also send alerts to your account email.',
+    description: 'Also send alerts to your account email (off by default).',
   },
   {
     key: 'requestStatusChanges',
@@ -58,7 +58,7 @@ const DEFAULTS: Prefs = {
   newMessage: true,
   newJobAssigned: true,
   paymentReceived: true,
-  emailNotifications: true,
+  emailNotifications: false,
 }
 
 export function NotificationSettingsScreen({}: Props) {

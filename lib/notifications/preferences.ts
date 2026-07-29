@@ -16,7 +16,7 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: UserNotificationPreferences = {
   newMessage: true,
   newJobAssigned: true,
   paymentReceived: true,
-  emailNotifications: true,
+  emailNotifications: false,
 }
 
 export function normalizeNotificationPreferences(raw: unknown): UserNotificationPreferences {

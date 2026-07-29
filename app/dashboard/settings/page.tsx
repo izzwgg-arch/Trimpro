@@ -21,7 +21,7 @@ const PREF_ROWS: Array<{
   {
     key: 'emailNotifications',
     title: 'Email Notifications',
-    description: 'Also send in-app alerts to your account email',
+    description: 'Also send in-app alerts to your account email (off by default)',
   },
   {
     key: 'newJobAssigned',
