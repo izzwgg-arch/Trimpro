@@ -241,7 +241,7 @@ export function MsgBubble({
       <div className={`max-w-full flex flex-col ${msg.isMine ? 'items-end' : 'items-start'} ${isHighlighted ? 'rounded-2xl ring-2 ring-amber-300' : ''}`}>
         {/* Sender name (group only) */}
         {!msg.isMine && showSenderName && msg.senderName && (
-          <span className="text-[11px] font-semibold text-indigo-500 mb-0.5 ml-1">{msg.senderName}</span>
+          <span className="text-[11px] font-semibold text-emerald-700 mb-0.5 ml-1">{msg.senderName}</span>
         )}
 
         {/* Reply quote */}
@@ -251,8 +251,8 @@ export function MsgBubble({
             onClick={() => onJumpTo(msg.replyTo!.messageId)}
             className={`mb-1 max-w-[280px] text-left px-2.5 py-1.5 rounded-lg border-l-2 text-xs transition-colors ${
               msg.isMine
-                ? 'bg-blue-50 border-blue-300 text-blue-800 hover:bg-blue-100'
-                : 'bg-gray-100 border-gray-300 text-gray-600 hover:bg-gray-150'
+                ? 'bg-[#d9fdd3] border-[#25d366] text-[#075e54] hover:bg-[#c6f0bf]'
+                : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
             }`}
           >
             <div className="font-semibold truncate">{msg.replyTo.senderName}</div>
@@ -266,8 +266,8 @@ export function MsgBubble({
             href={`/dashboard/jobs/${msg.jobId}`}
             className={`mb-1.5 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-colors ${
               msg.isMine
-                ? 'bg-blue-500 text-blue-50 hover:bg-blue-400'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-150'
+                ? 'bg-[#25d366] text-white hover:bg-[#1ebe57]'
+                : 'bg-white text-gray-700 hover:bg-gray-50 shadow-sm'
             }`}
           >
             <svg className="w-3.5 h-3.5 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
@@ -283,17 +283,17 @@ export function MsgBubble({
         {/* Text bubble */}
         {(msg.text || msg.attachments.length === 0) && (
           <div
-            className={`relative px-4 py-2.5 leading-relaxed ${
+            className={`relative px-3 py-1.5 leading-relaxed shadow-sm ${
               msg.isMine
-                ? 'bg-blue-600 text-white rounded-2xl rounded-br-sm'
-                : 'bg-gray-100 text-gray-900 rounded-2xl rounded-bl-sm'
+                ? 'bg-[#dcf8c6] text-[#111b21] rounded-2xl rounded-br-md'
+                : 'bg-white text-[#111b21] rounded-2xl rounded-bl-md'
             }`}
           >
             {msg.text && <p className="text-sm whitespace-pre-wrap break-words">{msg.text}</p>}
-            <div className={`mt-1 flex items-center gap-1 justify-end ${msg.isMine ? 'text-blue-200' : 'text-gray-400'}`}>
+            <div className={`mt-0.5 flex items-center gap-1 justify-end ${msg.isMine ? 'text-[#667781]' : 'text-[#667781]'}`}>
               <span className="text-[10px]">{msgTimeStr(msg.createdAt)}</span>
               {msg.isMine && (
-                <span className="text-[10px]">
+                <span className="text-[10px] text-[#53bdeb]">
                   {msg.status === 'READ' || msg.status === 'DELIVERED' ? '✓✓' : '✓'}
                 </span>
               )}
@@ -320,7 +320,7 @@ export function MsgBubble({
                 onClick={() => onToggleReaction(msg.id, g.emoji)}
                 className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] border transition-colors ${
                   g.mine
-                    ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
+                    ? 'bg-[#dcf8c6] border-[#25d366]/40 text-[#075e54] hover:bg-[#c6f0bf]'
                     : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
                 }`}
               >
@@ -362,19 +362,19 @@ function AttachmentItem({ att, isMine }: { att: MsgAttachment; isMine: boolean }
   if (att.kind === 'AUDIO') {
     const src = resolveMessageMediaUrl(att.url)
     return (
-      <div className={`flex items-center gap-2 px-3 py-2 rounded-2xl mb-1 ${isMine ? 'bg-blue-500' : 'bg-gray-200'}`}>
-        <svg className={`w-4 h-4 flex-shrink-0 ${isMine ? 'text-white' : 'text-gray-500'}`} fill="currentColor" viewBox="0 0 24 24"><path d="M12 3a9 9 0 110 18A9 9 0 0112 3zm0 2a7 7 0 100 14A7 7 0 0012 5zm-1 4h2v6h-2V9zM10 9a1 1 0 11-2 0 1 1 0 012 0zm6 0a1 1 0 11-2 0 1 1 0 012 0z"/></svg>
+      <div className={`flex items-center gap-2 px-3 py-2 rounded-2xl mb-1 ${isMine ? 'bg-[#dcf8c6]' : 'bg-white shadow-sm'}`}>
+        <svg className={`w-4 h-4 flex-shrink-0 ${isMine ? 'text-[#075e54]' : 'text-gray-500'}`} fill="currentColor" viewBox="0 0 24 24"><path d="M12 3a9 9 0 110 18A9 9 0 0112 3zm0 2a7 7 0 100 14A7 7 0 0012 5zm-1 4h2v6h-2V9zM10 9a1 1 0 11-2 0 1 1 0 012 0zm6 0a1 1 0 11-2 0 1 1 0 012 0z"/></svg>
         <audio controls src={src} preload="metadata" className="h-7 w-40 opacity-90" />
         <a
           href={src}
           target="_blank"
           rel="noreferrer"
-          className={`text-[10px] underline ${isMine ? 'text-blue-100' : 'text-gray-500'}`}
+          className={`text-[10px] underline ${isMine ? 'text-[#075e54]' : 'text-gray-500'}`}
         >
           Open
         </a>
         {att.durationMs && (
-          <span className={`text-[10px] flex-shrink-0 ${isMine ? 'text-blue-100' : 'text-gray-500'}`}>
+          <span className={`text-[10px] flex-shrink-0 ${isMine ? 'text-[#667781]' : 'text-gray-500'}`}>
             {Math.round(att.durationMs / 1000)}s
           </span>
         )}
@@ -387,7 +387,7 @@ function AttachmentItem({ att, isMine }: { att: MsgAttachment; isMine: boolean }
         href={`https://maps.google.com/?q=${att.latitude},${att.longitude}`}
         target="_blank"
         rel="noreferrer"
-        className={`flex items-center gap-2 px-3 py-2 rounded-2xl mb-1 text-sm ${isMine ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'} hover:opacity-80 transition-opacity`}
+        className={`flex items-center gap-2 px-3 py-2 rounded-2xl mb-1 text-sm shadow-sm ${isMine ? 'bg-[#dcf8c6] text-[#111b21]' : 'bg-white text-gray-700'} hover:opacity-80 transition-opacity`}
       >
         <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
         Open in Maps
@@ -400,7 +400,7 @@ function AttachmentItem({ att, isMine }: { att: MsgAttachment; isMine: boolean }
       href={resolveMessageMediaUrl(att.url)}
       target="_blank"
       rel="noreferrer"
-      className={`flex items-center gap-2 px-3 py-2 rounded-2xl mb-1 text-sm max-w-[240px] transition-opacity hover:opacity-80 ${isMine ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'}`}
+      className={`flex items-center gap-2 px-3 py-2 rounded-2xl mb-1 text-sm max-w-[240px] transition-opacity hover:opacity-80 shadow-sm ${isMine ? 'bg-[#dcf8c6] text-[#111b21]' : 'bg-white text-gray-700'}`}
     >
       <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
       <div className="min-w-0">
@@ -566,18 +566,18 @@ export function Composer({
   }
 
   return (
-    <div className="bg-white border-t border-gray-100 px-4 py-3">
+    <div className="bg-[#f0f2f5] border-t border-black/5 px-3 py-2.5">
       {/* Reply preview */}
       {replyPreview && (
-        <div className="mb-2 flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-xl bg-blue-50 border-l-2 border-blue-400">
+        <div className="mb-2 flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-xl bg-white border-l-[3px] border-[#00a884] shadow-sm">
           <div className="min-w-0 flex-1">
-            <div className="text-xs font-semibold text-blue-700 truncate">Replying to {replyPreview.senderName}</div>
-            <div className="text-xs text-blue-500 truncate">{replyPreview.textPreview}</div>
+            <div className="text-xs font-semibold text-[#008069] truncate">Replying to {replyPreview.senderName}</div>
+            <div className="text-xs text-[#667781] truncate">{replyPreview.textPreview}</div>
           </div>
           <button
             type="button"
             onClick={onClearReply}
-            className="w-5 h-5 flex-shrink-0 flex items-center justify-center rounded-full text-blue-400 hover:text-blue-700 hover:bg-blue-100 transition-colors"
+            className="w-5 h-5 flex-shrink-0 flex items-center justify-center rounded-full text-gray-400 hover:text-[#008069] hover:bg-emerald-50 transition-colors"
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
@@ -617,7 +617,7 @@ export function Composer({
           <button onClick={cancelRecording} className="text-xs text-gray-400 hover:text-gray-600 px-2">Cancel</button>
           <button
             onClick={stopRecording}
-            className="h-9 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors"
+            className="h-9 px-4 rounded-full bg-[#25d366] hover:bg-[#1ebe57] text-white text-sm font-medium transition-colors"
           >
             Send
           </button>
@@ -656,7 +656,7 @@ export function Composer({
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
             placeholder={isSms ? 'Type an SMS…' : 'Type a message…'}
             disabled={disabled || sending}
-            className="flex-1 resize-none rounded-2xl border border-gray-200 bg-gray-50 px-4 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-300 transition-shadow min-h-[36px]"
+            className="flex-1 resize-none rounded-3xl border border-gray-200 bg-white px-4 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/15 focus:border-emerald-300 transition-shadow min-h-[38px] shadow-sm"
           />
 
           {/* Send */}
@@ -664,7 +664,7 @@ export function Composer({
             type="button"
             onClick={handleSend}
             disabled={!canSend}
-            className="h-9 w-9 rounded-xl flex items-center justify-center bg-blue-600 hover:bg-blue-700 disabled:opacity-30 text-white transition-colors flex-shrink-0"
+            className="h-9 w-9 rounded-full flex items-center justify-center bg-[#25d366] hover:bg-[#1ebe57] disabled:opacity-30 text-white transition-colors flex-shrink-0"
           >
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" /></svg>
           </button>

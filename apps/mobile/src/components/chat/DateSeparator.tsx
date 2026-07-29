@@ -1,6 +1,6 @@
 import React from 'react'
 import { StyleSheet, Text, View } from 'react-native'
-import { colors, spacing, typography } from '../../theme/tokens'
+import { spacing, typography } from '../../theme/tokens'
 
 interface DateSeparatorProps {
   date: Date
@@ -24,29 +24,31 @@ export function DateSeparator({ date }: DateSeparatorProps) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.line} />
       <Text style={styles.label}>{label}</Text>
-      <View style={styles.line} />
     </View>
   )
 }
 
 const styles = StyleSheet.create({
   container: {
-    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     marginVertical: spacing.md,
     paddingHorizontal: spacing.md,
   },
-  line: {
-    flex: 1,
-    height: 1,
-    backgroundColor: colors.divider,
-  },
   label: {
     ...typography.caption,
-    color: colors.textSecondary,
-    marginHorizontal: spacing.sm,
-    fontWeight: '500',
+    color: '#54656F',
+    fontWeight: '600',
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 1,
   },
 })

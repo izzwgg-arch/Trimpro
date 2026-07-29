@@ -449,25 +449,25 @@ export default function MessagesPage() {
   // ── Avatar color by kind ───────────────────────────────────────────────────
   function threadAvatarColor(t: UnifiedThread): 'blue' | 'emerald' | 'violet' | 'gray' | 'amber' {
     if (t.kind === 'sms') return 'emerald'
-    if (t.convType === 'TEAM') return 'violet'
+    if (t.convType === 'TEAM') return 'emerald'
     if (t.convType === 'JOB_THREAD') return 'amber'
     return 'blue'
   }
 
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="flex h-[calc(100vh-4rem)] bg-white overflow-hidden">
+    <div className="flex h-[calc(100vh-4rem)] bg-[#f0f2f5] overflow-hidden">
 
       {/* ── Sidebar ─────────────────────────────────────────────────────────── */}
-      <aside className="w-[300px] flex-shrink-0 border-r border-gray-100 flex flex-col">
+      <aside className="w-[320px] flex-shrink-0 border-r border-gray-200 bg-white flex flex-col">
 
         {/* Header */}
-        <div className="px-4 py-4 border-b border-gray-100">
+        <div className="px-4 py-3.5 border-b border-gray-100 bg-[#f0f2f5]">
           <div className="flex items-center justify-between mb-3">
             <h1 className="text-base font-bold text-gray-900">Messages</h1>
             <button
               onClick={openNewChat}
-              className="w-8 h-8 rounded-xl bg-blue-600 hover:bg-blue-700 flex items-center justify-center text-white transition-colors"
+              className="w-8 h-8 rounded-full bg-[#00a884] hover:bg-[#008f72] flex items-center justify-center text-white transition-colors shadow-sm"
               title="New conversation"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
@@ -477,7 +477,7 @@ export default function MessagesPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search conversations…"
-            className="w-full h-8 px-3 rounded-xl bg-gray-50 border border-gray-100 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            className="w-full h-9 px-3 rounded-lg bg-white border border-gray-200 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/15"
           />
         </div>
 
@@ -493,8 +493,8 @@ export default function MessagesPage() {
               <button
                 key={t.id}
                 onClick={() => setSelectedId(t.id)}
-                className={`w-full text-left px-4 py-3 flex items-start gap-3 border-b border-gray-50 transition-colors ${
-                  selectedId === t.id ? 'bg-blue-50/80' : 'hover:bg-gray-50'
+                className={`w-full text-left px-4 py-3 flex items-start gap-3 border-b border-gray-100 transition-colors ${
+                  selectedId === t.id ? 'bg-[#f0f2f5]' : 'hover:bg-[#f5f6f6]'
                 }`}
               >
                 <AvatarCircle label={t.title} color={threadAvatarColor(t)} />
@@ -508,7 +508,7 @@ export default function MessagesPage() {
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       {t.lastMessageAt && (
-                        <span className="text-[10px] text-gray-400">{relTime(t.lastMessageAt)}</span>
+                        <span className={`text-[10px] ${t.unreadCount > 0 ? 'text-[#00a884] font-semibold' : 'text-gray-400'}`}>{relTime(t.lastMessageAt)}</span>
                       )}
                     </div>
                   </div>
@@ -518,7 +518,7 @@ export default function MessagesPage() {
                       {t.previewIsOutbound ? '→ ' : ''}{t.preview || 'No messages'}
                     </span>
                     {t.unreadCount > 0 && (
-                      <span className="min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold bg-blue-600 text-white flex items-center justify-center">
+                      <span className="min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold bg-[#25d366] text-white flex items-center justify-center">
                         {t.unreadCount > 99 ? '99+' : t.unreadCount}
                       </span>
                     )}
@@ -536,7 +536,7 @@ export default function MessagesPage() {
                       <svg className="w-4 h-4 text-amber-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7h-4V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2H4a2 2 0 00-2 2v9a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2zM10 5h4v2h-4V5z" /></svg>
                       <span className="text-xs font-semibold text-amber-900 truncate flex-1">{jobLabel}</span>
                       {unreadCount > 0 && (
-                        <span className="min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold bg-amber-600 text-white flex items-center justify-center">
+                        <span className="min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold bg-[#25d366] text-white flex items-center justify-center">
                           {unreadCount > 99 ? '99+' : unreadCount}
                         </span>
                       )}
@@ -555,14 +555,14 @@ export default function MessagesPage() {
                             <span className={`text-sm truncate ${t.unreadCount > 0 ? 'font-semibold text-gray-900' : 'font-medium text-gray-700'}`}>
                               {t.threadTitle || t.subtitle || 'General'}
                             </span>
-                            {t.lastMessageAt && <span className="text-[10px] text-gray-400">{relTime(t.lastMessageAt)}</span>}
+                            {t.lastMessageAt && <span className={`text-[10px] ${t.unreadCount > 0 ? 'text-[#00a884] font-semibold' : 'text-gray-400'}`}>{relTime(t.lastMessageAt)}</span>}
                           </div>
                           <div className="flex items-center gap-2">
                             <span className="text-xs text-gray-400 truncate flex-1">
                               {t.previewIsOutbound ? '→ ' : ''}{t.preview || 'No messages'}
                             </span>
                             {t.unreadCount > 0 && (
-                              <span className="min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold bg-amber-600 text-white flex items-center justify-center">
+                              <span className="min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold bg-[#25d366] text-white flex items-center justify-center">
                                 {t.unreadCount > 99 ? '99+' : t.unreadCount}
                               </span>
                             )}
@@ -579,15 +579,15 @@ export default function MessagesPage() {
       </aside>
 
       {/* ── Thread pane ─────────────────────────────────────────────────────── */}
-      <section className="flex-1 flex flex-col min-w-0 bg-gray-50">
+      <section className="flex-1 flex flex-col min-w-0" style={{ backgroundColor: '#efeae2' }}>
         {!selectedThread ? (
           <div className="flex-1 flex items-center justify-center">
-            <div className="text-center text-gray-400 select-none">
+            <div className="text-center text-gray-500 select-none">
               <div className="text-5xl mb-3 opacity-30">💬</div>
-              <div className="text-sm font-medium text-gray-400">Select a conversation</div>
+              <div className="text-sm font-medium text-gray-500">Select a conversation</div>
               <button
                 onClick={openNewChat}
-                className="mt-3 text-xs text-blue-500 hover:text-blue-700 underline underline-offset-2"
+                className="mt-3 text-xs text-[#25d366] hover:text-[#1ebe57] underline underline-offset-2"
               >
                 or start a new one
               </button>
@@ -596,14 +596,14 @@ export default function MessagesPage() {
         ) : (
           <>
             {/* Thread header */}
-            <header className="h-14 px-5 bg-white border-b border-gray-100 flex items-center gap-3 flex-shrink-0">
+            <header className="h-14 px-5 bg-[#f0f2f5] border-b border-black/5 flex items-center gap-3 flex-shrink-0">
               <AvatarCircle label={selectedThread.title} color={threadAvatarColor(selectedThread)} />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold text-gray-900 text-sm truncate">{selectedThread.title}</span>
+                  <span className="font-semibold text-[#111b21] text-sm truncate">{selectedThread.title}</span>
                   <ThreadBadge kind={selectedThread.kind} convType={selectedThread.convType} />
                 </div>
-                <div className="text-xs text-gray-400 truncate">
+                <div className="text-xs text-[#667781] truncate">
                   {selectedThread.kind === 'sms'
                     ? (selectedThread.subtitle || selectedThread.phoneDisplay || 'SMS conversation')
                     : selectedThread.convType === 'TEAM' ? 'Team · all members'
@@ -624,7 +624,7 @@ export default function MessagesPage() {
             </header>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-5 py-5 flex flex-col gap-1">
+            <div className="flex-1 overflow-y-auto px-5 py-5 flex flex-col gap-1" style={{ backgroundImage: 'radial-gradient(rgba(0,0,0,0.03) 1px, transparent 1px)', backgroundSize: '18px 18px' }}>
               {msgsLoading ? (
                 <div className="flex-1 flex items-center justify-center">
                   <div className="text-sm text-gray-400">Loading messages…</div>
@@ -651,10 +651,8 @@ export default function MessagesPage() {
                   return (
                     <React.Fragment key={msg.id}>
                       {showDate && (
-                        <div className="flex items-center gap-3 my-3">
-                          <div className="flex-1 h-px bg-gray-200" />
-                          <span className="text-[11px] text-gray-400 font-medium px-2">{dateSep(msg.createdAt)}</span>
-                          <div className="flex-1 h-px bg-gray-200" />
+                        <div className="flex justify-center my-3">
+                          <span className="text-[11px] text-[#54656f] font-medium px-3 py-1 rounded-lg bg-white/90 shadow-sm border border-black/5">{dateSep(msg.createdAt)}</span>
                         </div>
                       )}
                       <div className={isLastInGroup ? 'mb-2' : 'mb-0.5'}>

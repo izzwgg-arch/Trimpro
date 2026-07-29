@@ -7,7 +7,7 @@ import { AppScreen } from '../../components/AppScreen'
 import { apiRequest } from '../../api/client'
 import { Conversation } from '../../types/models'
 import { MessagesStackParamList } from '../../types/navigation'
-import { colors, spacing, typography } from '../../theme/tokens'
+import { colors, shadows, spacing, typography } from '../../theme/tokens'
 import { ConversationRow } from '../../components/chat/ConversationRow'
 import { StartMessageSheet } from '../../components/chat/StartMessageSheet'
 import { EmptyState } from '../../components/EmptyState'
@@ -102,6 +102,7 @@ export function MessagesScreen({ navigation }: Props) {
       </View>
 
       <SectionList
+        style={styles.list}
         sections={conversationSections}
         keyExtractor={(item) => item.id}
         refreshControl={
@@ -150,9 +151,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: colors.divider,
+    backgroundColor: '#F0F2F5',
   },
   title: {
     ...typography.h2,
@@ -168,13 +170,16 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: colors.brandPrimary,
+    backgroundColor: '#00A884',
     alignItems: 'center',
     justifyContent: 'center',
-    ...typography.shadows?.card,
+    ...shadows.card,
   },
   listContent: {
     paddingBottom: spacing.xl,
+  },
+  list: {
+    backgroundColor: colors.surface,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -183,11 +188,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingTop: spacing.md,
     paddingBottom: spacing.xs,
-    backgroundColor: colors.background,
+    backgroundColor: '#F7F8F8',
   },
   sectionTitle: {
     ...typography.caption,
-    color: colors.textPrimary,
+    color: '#075E54',
     fontWeight: '700',
     flex: 1,
   },

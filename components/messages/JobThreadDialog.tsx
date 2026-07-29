@@ -412,8 +412,8 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl w-[min(96vw,920px)] p-0 gap-0 overflow-hidden flex flex-col h-[min(92vh,880px)] max-h-[92vh]">
-        <DialogHeader className="px-5 pt-5 pb-3 border-b space-y-3">
+      <DialogContent className="sm:max-w-4xl w-[min(96vw,920px)] p-0 gap-0 overflow-hidden flex flex-col h-[min(92vh,880px)] max-h-[92vh] bg-[#f0f2f5]">
+        <DialogHeader className="px-5 pt-5 pb-3 border-b border-black/5 space-y-3 bg-white">
           <div className="flex items-start justify-between gap-3 pr-8">
             <div>
               <DialogTitle>{jobNumber ? `Job chat · ${jobNumber}` : 'Job chat'}</DialogTitle>
@@ -435,8 +435,8 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
                     onClick={() => void switchThread(t.id)}
                     className={`shrink-0 px-3.5 py-2 rounded-full text-xs font-semibold border transition-colors ${
                       active
-                        ? 'bg-amber-100 border-amber-400 text-amber-950 shadow-sm'
-                        : 'bg-white border-gray-300 text-gray-700 hover:border-amber-300 hover:bg-amber-50/50'
+                        ? 'bg-[#d9fdd3] border-[#25d366] text-[#075e54] shadow-sm'
+                        : 'bg-white border-gray-300 text-gray-700 hover:border-[#25d366] hover:bg-emerald-50'
                     }`}
                   >
                     {threadLabel(t)}
@@ -467,7 +467,7 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
                   }
                 }}
                 placeholder="Thread name (e.g. Materials, Punch list)"
-                className="flex-1 rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="flex-1 rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
               />
               <Button
                 type="button"
@@ -508,11 +508,11 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
             {pickerOpen && (
               <div className="absolute z-30 left-0 right-0 mt-1 rounded-xl border bg-white shadow-lg max-h-56 overflow-y-auto">
                 <div className="sticky top-0 flex items-center gap-2 px-3 py-2 bg-white border-b text-xs">
-                  <button type="button" className="text-blue-600 hover:underline" onClick={selectAllRecipients}>
+                  <button type="button" className="text-[#008069] hover:underline" onClick={selectAllRecipients}>
                     Select all
                   </button>
                   <span className="text-muted-foreground">·</span>
-                  <button type="button" className="text-blue-600 hover:underline" onClick={clearRecipients}>
+                  <button type="button" className="text-[#008069] hover:underline" onClick={clearRecipients}>
                     Clear
                   </button>
                 </div>
@@ -549,7 +549,10 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
           </div>
         </DialogHeader>
 
-        <div className="flex-1 min-h-0 overflow-y-auto bg-gray-50 px-4 py-3 space-y-1">
+        <div
+          className="flex-1 min-h-0 overflow-y-auto bg-[#efeae2] px-4 py-3 space-y-1"
+          style={{ backgroundImage: 'radial-gradient(rgba(0,0,0,0.03) 1px, transparent 1px)', backgroundSize: '18px 18px' }}
+        >
           {loading && !conversationId ? (
             <p className="text-sm text-muted-foreground text-center mt-10">Opening chat…</p>
           ) : error ? (
@@ -586,12 +589,10 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
               return (
                 <div key={msg.id} className={isLastInGroup ? 'mb-2' : 'mb-0.5'}>
                   {showDate && (
-                    <div className="flex items-center gap-3 my-3">
-                      <div className="flex-1 h-px bg-gray-200" />
-                      <span className="text-[11px] text-gray-400 font-medium px-2">
+                    <div className="flex justify-center my-3">
+                      <span className="text-[11px] text-[#54656f] font-medium px-3 py-1 rounded-lg bg-white/90 shadow-sm border border-black/5">
                         {dateSep(msg.createdAt)}
                       </span>
-                      <div className="flex-1 h-px bg-gray-200" />
                     </div>
                   )}
                   <MsgBubble

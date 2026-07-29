@@ -123,7 +123,7 @@ export async function POST(
               <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
                 <thead>
                   <tr style="background-color: #f4f4f4;">
-                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Description</th>
+                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Item</th>
                     <th style="padding: 10px; text-align: right; border: 1px solid #ddd;">Quantity</th>
                     <th style="padding: 10px; text-align: right; border: 1px solid #ddd;">Unit Price</th>
                     <th style="padding: 10px; text-align: right; border: 1px solid #ddd;">Total</th>
@@ -134,7 +134,8 @@ export async function POST(
                     <tr>
                       <td style="padding: 10px; border: 1px solid #ddd;">
                         ${escapeHtml(item.description)}
-                        ${item.notes?.trim() ? `<div style="font-size:12px;color:#64748b;margin-top:4px;">${escapeHtml(item.notes.trim())}</div>` : ''}
+                        ${item.details?.trim() ? `<div style="font-size:12px;color:#334155;margin-top:4px;"><strong>Description:</strong> ${escapeHtml(item.details.trim())}</div>` : ''}
+                        ${item.notes?.trim() ? `<div style="font-size:12px;color:#64748b;margin-top:4px;"><strong>Special notes:</strong> ${escapeHtml(item.notes.trim())}</div>` : ''}
                       </td>
                       <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">${item.quantity}</td>
                       <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">$${Number(item.unitPrice).toFixed(2)}</td>
@@ -171,9 +172,11 @@ export async function POST(
           
           Order Summary:
           ${purchaseOrder.lineItems.map((item) => {
-            const desc = item.notes?.trim()
-              ? `${item.description}\n  ${item.notes.trim()}`
-              : item.description
+            const detailLines = [
+              item.details?.trim() ? `  Description: ${item.details.trim()}` : '',
+              item.notes?.trim() ? `  Special notes: ${item.notes.trim()}` : '',
+            ].filter(Boolean)
+            const desc = [item.description, ...detailLines].join('\n')
             return `${desc} - Qty: ${item.quantity} @ $${Number(item.unitPrice).toFixed(2)} = $${Number(item.total).toFixed(2)}`
           }).join('\n')}
           

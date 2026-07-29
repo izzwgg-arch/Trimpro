@@ -91,6 +91,7 @@ export async function POST(
           poId: duplicate.id,
           groupId: item.groupId ? groupMap.get(item.groupId) || null : null,
           description: item.description,
+          details: item.details,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
           unitCost: item.unitCost,

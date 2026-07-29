@@ -28,10 +28,10 @@ interface AttachmentDraft {
 /* ─── Composer pill colours — soft-light premium ──────────────────────────
    Light frosted pill that floats above the chat background.
    Uses neutral dark tones for icons/text to keep strong contrast. */
-const WA_PILL_BG  = '#F8F9FB'       // pill fill — off-white, soft premium
-const WA_ICON     = '#6B7280'       // icons + placeholder  — neutral gray
-const WA_TEXT     = '#111827'       // input / timer text   — near black
-const WA_FAB_BG   = '#2E4A59'       // mic circle — brand accent, stands out
+const WA_PILL_BG  = '#FFFFFF'       // WhatsApp-style white input pill
+const WA_ICON     = '#667781'       // icons + placeholder
+const WA_TEXT     = '#111B21'       // input / timer text
+const WA_FAB_BG   = '#00A884'       // WhatsApp green action button
 const WA_FAB_ICON = '#FFFFFF'       // mic icon on accent circle
 
 const EMOJI_PICKER_ROWS: string[][] = [
@@ -395,7 +395,7 @@ const FAB_SIZE = 46
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: 'transparent',
+    backgroundColor: '#F0F2F5',
     paddingTop: spacing.xs,
     paddingHorizontal: spacing.sm,
   },
@@ -500,7 +500,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     /* subtle border so pill edge is visible against #F5F7FA chat bg */
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.05)',
+    borderColor: 'rgba(0,0,0,0.08)',
     /* soft shadow to give floating / lifted feel */
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -586,7 +586,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     /* slightly stronger shadow so accent circle pops against light bg */
-    shadowColor: '#2E4A59',
+    shadowColor: '#006B59',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.22,
     shadowRadius: 5,
@@ -602,7 +602,7 @@ const styles = StyleSheet.create({
     opacity: 0.45,
   },
   fabSend: {
-    backgroundColor: colors.brandPrimary,
+    backgroundColor: '#00A884',
   },
   fabSendDisabled: {
     opacity: 0.42,

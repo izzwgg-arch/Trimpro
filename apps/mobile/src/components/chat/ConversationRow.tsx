@@ -67,10 +67,10 @@ export function ConversationRow({ conversation, onPress, isSelected }: Conversat
       </View>
       <View style={styles.content}>
         <View style={styles.header}>
-          <Text style={styles.title} numberOfLines={1}>
+          <Text style={[styles.title, conversation.unreadCount > 0 && styles.titleUnread]} numberOfLines={1}>
             {title}
           </Text>
-          {time ? <Text style={styles.time}>{time}</Text> : null}
+          {time ? <Text style={[styles.time, conversation.unreadCount > 0 && styles.timeUnread]}>{time}</Text> : null}
         </View>
         <View style={styles.footer}>
           <Text style={styles.preview} numberOfLines={1}>
@@ -91,29 +91,29 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: spacing.sm,
+    paddingVertical: 12,
     paddingHorizontal: spacing.md,
     backgroundColor: colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: colors.divider,
   },
   selected: {
-    backgroundColor: colors.brandPrimary + '08',
+    backgroundColor: '#F0F2F5',
   },
   avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.brandPrimary + '15',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#E7F5F1',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing.sm,
   },
   avatarInitials: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.brandPrimary,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#00A884',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -123,9 +123,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   avatarImage: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
   },
   content: {
     flex: 1,
@@ -140,12 +140,20 @@ const styles = StyleSheet.create({
   title: {
     ...typography.sub,
     color: colors.textPrimary,
-    fontWeight: '600',
+    fontWeight: '500',
     flex: 1,
+  },
+  titleUnread: {
+    fontWeight: '700',
+    color: '#111B21',
   },
   time: {
     ...typography.caption,
     color: colors.textSecondary,
+  },
+  timeUnread: {
+    color: '#00A884',
+    fontWeight: '600',
   },
   footer: {
     flexDirection: 'row',
@@ -159,7 +167,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   badge: {
-    backgroundColor: colors.brandPrimary,
+    backgroundColor: '#25D366',
     borderRadius: 10,
     minWidth: 20,
     height: 20,

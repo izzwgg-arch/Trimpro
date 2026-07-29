@@ -228,10 +228,11 @@ export function bundleExpandedLineToPurchaseOrderLine(
 ) {
   return {
     description: line.description,
+    details: line.notes,
     quantity: line.quantity,
     unitCost: line.unitCost,
     unitPrice: line.unitPrice,
-    notes: line.notes,
+    notes: '',
     vendorId: line.vendorId ?? overrides?.vendorId ?? null,
     vendorName: line.vendorName ?? overrides?.vendorName ?? null,
     groupId: line.groupId,

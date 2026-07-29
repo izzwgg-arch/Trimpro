@@ -1261,7 +1261,11 @@ export function MessageThreadScreen({ route, navigation }: Props) {
           </View>
         ) : otherUserAvatar ? (
           <Image source={{ uri: otherUserAvatar }} style={styles.headerAvatar} />
-        ) : null}
+        ) : (
+          <View style={styles.directAvatarCircle}>
+            <Text style={styles.teamAvatarLetter}>{threadTitle.slice(0, 1).toUpperCase()}</Text>
+          </View>
+        )}
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>{threadTitle}</Text>
           {isGroupChat ? (
@@ -1592,7 +1596,7 @@ export function MessageThreadScreen({ route, navigation }: Props) {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: '#EFEAE2',
   },
   fill: {
     flex: 1,
@@ -1605,6 +1609,7 @@ const styles = StyleSheet.create({
   threadList: {
     flex: 1,
     minHeight: 0,
+    backgroundColor: '#EFEAE2',
   },
   header: {
     flexDirection: 'row',
@@ -1612,7 +1617,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: colors.divider,
+    borderBottomColor: 'rgba(0,0,0,0.08)',
     backgroundColor: colors.surface,
   },
   backButton: {
@@ -1629,7 +1634,7 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: colors.brandPrimary,
+    backgroundColor: '#00A884',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing.xs,
@@ -1638,6 +1643,15 @@ const styles = StyleSheet.create({
     color: colors.surface,
     fontSize: 15,
     fontWeight: '700',
+  },
+  directAvatarCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#00A884',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.xs,
   },
   headerContent: {
     flex: 1,
@@ -1672,8 +1686,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   threadChipActive: {
-    borderColor: colors.brandPrimary,
-    backgroundColor: colors.brandPrimary + '15',
+    borderColor: '#25D366',
+    backgroundColor: '#D9FDD3',
   },
   threadChipText: {
     ...typography.caption,
@@ -1681,7 +1695,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   threadChipTextActive: {
-    color: colors.brandPrimary,
+    color: '#075E54',
   },
   newThreadChip: {
     flexDirection: 'row',
@@ -1715,7 +1729,7 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
   },
   composerDock: {
-    backgroundColor: 'transparent',
+    backgroundColor: '#F0F2F5',
   },
   editingBar: {
     backgroundColor: colors.surface,

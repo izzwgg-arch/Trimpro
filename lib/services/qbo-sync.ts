@@ -3188,11 +3188,13 @@ export async function syncPurchaseOrderToQuickBooks(tenantId: string, purchaseOr
       for (const li of po.lineItems) {
         const itemName = sanitizeQboItemName(li.description) || 'Purchase'
         const itemId = await ensurePurchaseItem(itemName)
+        const details = String(li.details || '').trim()
         const notes = String(li.notes || '').trim()
+        const lineDescription = [details, notes].filter(Boolean).join(' — ') || li.description
         if (itemId) {
           lines.push({
             DetailType: 'ItemBasedExpenseLineDetail',
-            Description: [li.description, notes].filter(Boolean).join(' — '),
+            Description: lineDescription,
             Amount: toNumber(li.total),
             ItemBasedExpenseLineDetail: {
               ItemRef: { value: itemId, name: itemName },
@@ -3204,7 +3206,7 @@ export async function syncPurchaseOrderToQuickBooks(tenantId: string, purchaseOr
         } else {
           lines.push({
             DetailType: 'AccountBasedExpenseLineDetail',
-            Description: [li.description, notes].filter(Boolean).join(' — '),
+            Description: lineDescription,
             Amount: toNumber(li.total),
             AccountBasedExpenseLineDetail: {
               AccountRef: { value: expenseAccountId },

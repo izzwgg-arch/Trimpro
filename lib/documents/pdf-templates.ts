@@ -613,6 +613,7 @@ export function buildPurchaseOrderPdfHtml(
         <meta charset="utf-8">
         <title>Purchase Order ${escapeHtml(purchaseOrder.poNumber)}</title>
         <style>${SHARED_DOC_CSS('#12344d', '#f5e7b8')}
+          .line-details { color: #334155; font-size: 12px; margin-top: 4px; white-space: pre-wrap; }
           .line-notes { color: #64748b; font-size: 12px; margin-top: 4px; white-space: pre-wrap; }
           .footer {
             margin-top: 22px;
@@ -672,7 +673,7 @@ export function buildPurchaseOrderPdfHtml(
           <table>
             <thead>
               <tr>
-                <th>Description</th>
+                <th>Item</th>
                 <th class="text-right">Quantity</th>
                 <th class="text-right">Unit Price</th>
                 <th class="text-right">Total</th>
@@ -685,7 +686,8 @@ export function buildPurchaseOrderPdfHtml(
                     <tr>
                       <td>
                         ${escapeHtml(item.description)}
-                        ${item.notes?.trim() ? `<div class="line-notes">${escapeHtml(item.notes.trim())}</div>` : ''}
+                        ${item.details?.trim() ? `<div class="line-details"><strong>Description:</strong> ${escapeHtml(item.details.trim())}</div>` : ''}
+                        ${item.notes?.trim() ? `<div class="line-notes"><strong>Special notes:</strong> ${escapeHtml(item.notes.trim())}</div>` : ''}
                       </td>
                       <td class="text-right">${Number(item.quantity).toFixed(2)}</td>
                       <td class="text-right">$${Number(item.unitPrice).toFixed(2)}</td>

@@ -34,6 +34,7 @@ interface Job {
 interface LineItem {
   id?: string
   description: string
+  details?: string
   quantity: string
   unitCost: string // Primary field for POs
   unitPrice?: string // Optional, for reference
@@ -213,6 +214,7 @@ export default function EditPurchaseOrderPage() {
         mappedItems.push({
           id: li.id,
           description: li.description,
+          details: li.details || undefined,
           quantity: li.quantity.toString(),
           unitCost: li.unitCost ? li.unitCost.toString() : li.unitPrice.toString(), // PO uses unitPrice for cost
           unitPrice: li.unitPrice ? li.unitPrice.toString() : undefined,
@@ -343,6 +345,8 @@ export default function EditPurchaseOrderPage() {
             quantity: '1',
             unitCost: item.defaultUnitCost?.toString() || '0',
             unitPrice: item.defaultUnitPrice.toString(),
+            details: catalogNotesFromItem(item),
+            notes: '',
             vendorId: item.vendorId || null,
             vendorName: item.vendorName || null,
             sourceBundleId: bundleDefId,
@@ -357,6 +361,8 @@ export default function EditPurchaseOrderPage() {
           quantity: '1',
           unitCost: item.defaultUnitCost?.toString() || '0',
           unitPrice: item.defaultUnitPrice.toString(),
+          details: catalogNotesFromItem(item),
+          notes: '',
           vendorId: item.vendorId || null,
           vendorName: item.vendorName || null,
           sourceBundleId: item.bundleId || undefined,
@@ -370,7 +376,8 @@ export default function EditPurchaseOrderPage() {
         quantity: '1',
         unitCost: item.defaultUnitCost?.toString() || '0',
         unitPrice: item.defaultUnitPrice.toString(),
-        notes: catalogNotesFromItem(item),
+        details: catalogNotesFromItem(item),
+        notes: '',
         vendorId: item.vendorId || null,
         vendorName: item.vendorName || null,
         sourceItemId: item.id,
@@ -451,6 +458,7 @@ export default function EditPurchaseOrderPage() {
           total: parseFloat(item.quantity || '1') * parseFloat(item.unitCost || '0'),
           sortOrder: index,
           vendorId: item.vendorId || null,
+          details: item.details || null,
           notes: item.notes || null,
           groupId: item.groupId || null,
           sourceItemId: item.sourceItemId || null,
@@ -674,7 +682,7 @@ export default function EditPurchaseOrderPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Line Items</CardTitle>
-                <CardDescription>Click in Description field to search and add items. Focus on vendor costs.</CardDescription>
+                <CardDescription>Click in Item to search and add catalog products. Focus on vendor costs.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
                 <div className="space-y-2">
@@ -729,27 +737,43 @@ export default function EditPurchaseOrderPage() {
                             </div>
                           ) : (
                             <>
-                              <FastPicker
-                                value={item.description}
-                                onChange={(value) => updateLineItem(index, 'description', value)}
-                                onSelect={(selectedItem) => handleItemSelect(selectedItem, index)}
-                                onNextLine={() => handleNextLine(index)}
-                                items={pickerItems}
-                                bundles={pickerBundles}
-                                placeholder="Type to search items..."
-                                className="w-full"
-                                showTagColumn
-                                inputRef={(el) => {
-                                  pickerInputRefs.current[index] = el
-                                }}
-                              />
-                              <textarea
-                                value={item.notes || ''}
-                                onChange={(e) => updateLineItem(index, 'notes', e.target.value)}
-                                placeholder="Special notes"
-                                rows={1}
-                                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
-                              />
+                              <div>
+                                <Label className="text-xs text-gray-500 mb-1 block">Item</Label>
+                                <FastPicker
+                                  value={item.description}
+                                  onChange={(value) => updateLineItem(index, 'description', value)}
+                                  onSelect={(selectedItem) => handleItemSelect(selectedItem, index)}
+                                  onNextLine={() => handleNextLine(index)}
+                                  items={pickerItems}
+                                  bundles={pickerBundles}
+                                  placeholder="Type to search items..."
+                                  className="w-full"
+                                  showTagColumn
+                                  inputRef={(el) => {
+                                    pickerInputRefs.current[index] = el
+                                  }}
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs text-gray-500 mb-1 block">Description</Label>
+                                <textarea
+                                  value={item.details || ''}
+                                  onChange={(e) => updateLineItem(index, 'details', e.target.value)}
+                                  placeholder="Description"
+                                  rows={2}
+                                  className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs text-gray-500 mb-1 block">Special notes</Label>
+                                <textarea
+                                  value={item.notes || ''}
+                                  onChange={(e) => updateLineItem(index, 'notes', e.target.value)}
+                                  placeholder="Special notes"
+                                  rows={2}
+                                  className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
+                                />
+                              </div>
                             </>
                           )}
                         </div>

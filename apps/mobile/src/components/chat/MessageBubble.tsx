@@ -317,7 +317,7 @@ export function MessageBubble({
             style={[styles.jobBadge, isMine && styles.jobBadgeMine]}
             onPress={() => (onJobPress ? onJobPress(message.jobId!) : Linking.openURL(`trimpro://jobs/${message.jobId}`))}
           >
-            <Ionicons name="briefcase-outline" size={12} color={isMine ? colors.surface : colors.brandPrimary} />
+            <Ionicons name="briefcase-outline" size={12} color={isMine ? '#075E54' : colors.brandPrimary} />
             <Text style={[styles.jobBadgeText, isMine && styles.jobBadgeTextMine]}>
               {message.jobNumber || 'JOB'} • {message.jobName || 'View Job'}
             </Text>
@@ -380,7 +380,7 @@ export function MessageBubble({
                 style={[styles.locationContainer, isMine && styles.locationContainerMine]}
                 onPress={() => Linking.openURL(attachment.url)}
               >
-                <Ionicons name="location" size={20} color={isMine ? colors.surface : colors.brandPrimary} />
+                <Ionicons name="location" size={20} color={isMine ? '#075E54' : colors.brandPrimary} />
                 <Text style={[styles.locationText, isMine && styles.locationTextMine]}>Open in Maps</Text>
                 {attachment.latitude && attachment.longitude && (
                   <Text style={[styles.locationCoords, isMine && styles.locationCoordsMine]}>
@@ -428,7 +428,7 @@ export function MessageBubble({
                     <Text style={[styles.fileSize, isMine && styles.fileSizeMine]}>{sizeLabel}</Text>
                   ) : null}
                 </View>
-                <Ionicons name="open-outline" size={18} color={isMine ? 'rgba(255,255,255,0.7)' : colors.textSecondary} />
+                <Ionicons name="open-outline" size={18} color={isMine ? '#667781' : colors.textSecondary} />
               </Pressable>
             )
           }
@@ -589,9 +589,11 @@ const styles = StyleSheet.create({
     minWidth: REPLY_BUBBLE_MIN_WIDTH_OTHER,
   },
   mineBubble: {
-    backgroundColor: colors.brandPrimary,
+    backgroundColor: '#DCF8C6',
     borderBottomRightRadius: 3,
     alignSelf: 'flex-end',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#C8E7B2',
   },
   otherBubble: {
     backgroundColor: colors.surface,
@@ -599,6 +601,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.divider,
     alignSelf: 'flex-start',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 1,
   },
   senderName: {
     ...typography.caption,
@@ -628,7 +635,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   jobBadgeMine: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'rgba(7, 94, 84, 0.08)',
   },
   jobBadgeText: {
     ...typography.caption,
@@ -637,7 +644,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   jobBadgeTextMine: {
-    color: colors.surface,
+    color: '#075E54',
   },
   text: {
     ...typography.body,
@@ -646,7 +653,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   textMine: {
-    color: colors.surface,
+    color: '#111B21',
   },
   linkText: {
     ...typography.body,
@@ -654,7 +661,7 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
   linkTextMine: {
-    color: '#BFE0FF',
+    color: '#027EB5',
   },
   // Minimal bubble frame for image/video messages — nearly flush to photo edges
   mediaOnlyBubble: {
@@ -727,8 +734,8 @@ const styles = StyleSheet.create({
     borderColor: colors.divider,
   },
   locationContainerMine: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderColor: 'rgba(255,255,255,0.3)',
+    backgroundColor: 'rgba(255,255,255,0.45)',
+    borderColor: 'rgba(7,94,84,0.12)',
   },
   locationText: {
     ...typography.sub,
@@ -736,7 +743,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   locationTextMine: {
-    color: colors.surface,
+    color: '#075E54',
   },
   locationCoords: {
     ...typography.caption,
@@ -744,7 +751,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
   locationCoordsMine: {
-    color: colors.surface + 'CC',
+    color: '#667781',
   },
   fileIconWrap: {
     width: 40,
@@ -771,8 +778,8 @@ const styles = StyleSheet.create({
     borderColor: colors.divider,
   },
   fileContainerMine: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderColor: 'rgba(255,255,255,0.3)',
+    backgroundColor: 'rgba(255,255,255,0.45)',
+    borderColor: 'rgba(7,94,84,0.12)',
   },
   fileInfo: {
     flex: 1,
@@ -784,7 +791,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   fileNameMine: {
-    color: colors.surface,
+    color: '#111B21',
   },
   fileSize: {
     ...typography.caption,
@@ -792,7 +799,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
   fileSizeMine: {
-    color: colors.surface + 'CC',
+    color: '#667781',
   },
   footer: {
     flexDirection: 'row',
@@ -807,7 +814,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   timeMine: {
-    color: colors.surface + 'CC',
+    color: '#667781',
   },
   status: {
     ...typography.caption,
@@ -815,7 +822,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   statusMine: {
-    color: colors.surface + 'CC',
+    color: '#53BDEB',
   },
   reactionChipsRow: {
     flexDirection: 'row',
@@ -838,8 +845,8 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
   },
   reactionChipMine: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderColor: 'rgba(255,255,255,0.35)',
+    backgroundColor: '#F7FFF3',
+    borderColor: '#B9DDA1',
   },
   reactionChipOther: {
     backgroundColor: colors.background,

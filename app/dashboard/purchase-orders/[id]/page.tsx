@@ -44,6 +44,7 @@ interface PurchaseOrderDetail {
   lineItems: Array<{
     id: string
     description: string
+    details?: string | null
     notes?: string | null
     quantity: number
     unitPrice: number
@@ -509,7 +510,7 @@ export default function PurchaseOrderDetailPage() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b">
-                      <th className="text-left py-2 px-3">Description</th>
+                      <th className="text-left py-2 px-3">Item</th>
                       <th className="text-right py-2 px-3">Quantity</th>
                       <th className="text-right py-2 px-3">Unit Price</th>
                       <th className="text-right py-2 px-3">Total</th>
@@ -519,12 +520,25 @@ export default function PurchaseOrderDetailPage() {
                     {po.lineItems.map((item) => (
                       <tr key={item.id} className="border-b">
                         <td className="py-2 px-3">
-                          <div>{item.description}</div>
+                          <div>
+                            <span className="text-xs font-medium text-gray-500">Item</span>
+                            <div>{item.description}</div>
+                          </div>
+                          <div className="text-sm mt-1 whitespace-pre-wrap">
+                            <span className="text-xs font-medium text-gray-500">Description</span>
+                            <div className="text-gray-700">{item.details?.trim() || '—'}</div>
+                          </div>
                           {item.notes?.trim() ? (
-                            <div className="text-sm text-gray-500 mt-0.5 whitespace-pre-wrap">
-                              {item.notes}
+                            <div className="text-sm mt-1 whitespace-pre-wrap">
+                              <span className="text-xs font-medium text-gray-500">Special notes</span>
+                              <div className="text-gray-500">{item.notes}</div>
                             </div>
-                          ) : null}
+                          ) : (
+                            <div className="text-sm mt-1">
+                              <span className="text-xs font-medium text-gray-500">Special notes</span>
+                              <div className="text-gray-500">—</div>
+                            </div>
+                          )}
                         </td>
                         <td className="text-right py-2 px-3">{item.quantity}</td>
                         <td className="text-right py-2 px-3">{formatCurrency(item.unitPrice)}</td>

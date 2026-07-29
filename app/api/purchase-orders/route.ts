@@ -292,6 +292,7 @@ export async function POST(request: NextRequest) {
             poId: purchaseOrder.id,
             groupId: dbGroupId,
             description: item.description || '',
+            details: item.details || null,
             quantity: qty || 1,
             unitPrice: price || 0,
             unitCost: item.unitCost ? parseFloat(item.unitCost) : null,

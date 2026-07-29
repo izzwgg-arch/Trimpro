@@ -1219,6 +1219,7 @@ model PurchaseOrderLineItem {
   sourceItemId   String? // FK to Item (template reference)
   sourceBundleId String? // FK to BundleDefinition (if derived from nested bundle)
   description    String
+  details        String?  @db.Text // Customer/vendor-facing description (UI label: Description)
   quantity       Decimal  @db.Decimal(10, 2)
   unitPrice      Decimal  @db.Decimal(10, 2)
   unitCost       Decimal? @db.Decimal(10, 2) // Vendor cost (primary for PO)
