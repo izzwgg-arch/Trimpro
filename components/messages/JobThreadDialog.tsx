@@ -49,8 +49,32 @@ function threadLabel(t: JobThread) {
   return 'General'
 }
 
+function recipientsStorageKey(jobId: string) {
+  return `trimpro.jobChat.recipients.${jobId}`
+}
+
+function loadSavedRecipientIds(jobId: string): string[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = window.sessionStorage.getItem(recipientsStorageKey(jobId))
+    const parsed = raw ? JSON.parse(raw) : []
+    return Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string' && id) : []
+  } catch {
+    return []
+  }
+}
+
+function saveRecipientIds(jobId: string, ids: string[]) {
+  if (typeof window === 'undefined') return
+  try {
+    window.sessionStorage.setItem(recipientsStorageKey(jobId), JSON.stringify(ids))
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
- * Full job chat popup: threads, recipients, reply / reactions / attachments / voice / delete.
+ * Full job chat popup: left thread list, right chat pane, sticky recipients.
  */
 export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props) {
   const router = useRouter()
@@ -60,6 +84,7 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
   const [messages, setMessages] = useState<NormalizedMsg[]>([])
   const [recipients, setRecipients] = useState<Recipient[]>([])
   const [selectedRecipientIds, setSelectedRecipientIds] = useState<string[]>([])
+  const [recipientsLocked, setRecipientsLocked] = useState(false)
   const [loading, setLoading] = useState(false)
   const [msgsLoading, setMsgsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -71,6 +96,7 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
   const [creatingThread, setCreatingThread] = useState(false)
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const selectionTouchedRef = useRef(false)
 
   const fetchAuth = useCallback(async (url: string, init?: RequestInit) => {
     let token = localStorage.getItem('accessToken')
@@ -120,8 +146,8 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
         const res = await fetchAuth(`/api/messages/conversations/${id}/messages?limit=80`)
         if (!res.ok) return
         const data = await res.json()
-        const rawMsgs: any[] = (data.messages || []).reverse()
-        setMessages(rawMsgs.map((m) => normaliseTeamMsg(m, uid)))
+        const raw: any[] = (data.messages || []).reverse()
+        setMessages(raw.map((m) => normaliseTeamMsg(m, uid)))
         fetchAuth(`/api/messages/conversations/${id}/read`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -142,17 +168,22 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
       setConversationId(id)
       setRecipients(list)
       setThreads(threadList)
+
+      const allowed = new Set(list.map((r) => r.id).filter((rid) => rid !== uid))
       setSelectedRecipientIds((prev) => {
-        if (prev.length > 0) {
-          const allowed = new Set(list.map((r) => r.id))
-          const kept = prev.filter((rid) => allowed.has(rid) && rid !== uid)
-          if (kept.length > 0) return kept
+        const candidates = [...prev, ...loadSavedRecipientIds(jobId)]
+        const next = Array.from(new Set(candidates)).filter((rid) => allowed.has(rid))
+        if (next.length > 0) {
+          setRecipientsLocked(true)
+          selectionTouchedRef.current = true
+          saveRecipientIds(jobId, next)
         }
-        return list.map((r) => r.id).filter((rid) => rid !== uid)
+        return next
       })
+
       if (id) await loadMessages(id, uid)
     },
-    [loadMessages]
+    [jobId, loadMessages]
   )
 
   const ensureThread = useCallback(
@@ -178,6 +209,7 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
   useEffect(() => {
     if (!open || !jobId || !myId) return
     let cancelled = false
+    selectionTouchedRef.current = loadSavedRecipientIds(jobId).length > 0
     ;(async () => {
       setLoading(true)
       setError(null)
@@ -206,6 +238,7 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
       setPickerOpen(false)
       setNewThreadOpen(false)
       setNewThreadTitle('')
+      // Keep recipient selection sticky across reopen for this job (sessionStorage).
     }
   }, [open])
 
@@ -225,36 +258,46 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, open])
 
+  useEffect(() => {
+    if (!jobId) return
+    saveRecipientIds(jobId, selectedRecipientIds)
+  }, [jobId, selectedRecipientIds])
+
   const activeThread = useMemo(
     () => threads.find((t) => t.id === conversationId) || null,
     [threads, conversationId]
   )
 
-  const selectedCount = selectedRecipientIds.length
+  const selectedRecipients = useMemo(
+    () => recipients.filter((r) => selectedRecipientIds.includes(r.id) && r.id !== myId),
+    [recipients, selectedRecipientIds, myId]
+  )
+
   const selectedSummary = useMemo(() => {
-    const others = recipients.filter((r) => r.id !== myId)
-    if (selectedCount === 0) return 'No recipients'
-    if (others.length > 0 && selectedCount === others.length) return 'Everyone'
-    if (selectedCount <= 2) {
-      return recipients
-        .filter((r) => selectedRecipientIds.includes(r.id))
-        .map(recipientLabel)
-        .join(', ')
-    }
-    return `${selectedCount} people`
-  }, [selectedCount, recipients, selectedRecipientIds, myId])
+    if (selectedRecipients.length === 0) return 'Select who receives messages'
+    if (selectedRecipients.length <= 2) return selectedRecipients.map(recipientLabel).join(', ')
+    return `${selectedRecipients.length} people selected`
+  }, [selectedRecipients])
+
+  const setSelection = (ids: string[]) => {
+    selectionTouchedRef.current = true
+    setRecipientsLocked(ids.length > 0)
+    setSelectedRecipientIds(ids)
+    saveRecipientIds(jobId, ids)
+  }
 
   const toggleRecipient = (id: string) => {
-    setSelectedRecipientIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    )
+    const next = selectedRecipientIds.includes(id)
+      ? selectedRecipientIds.filter((x) => x !== id)
+      : [...selectedRecipientIds, id]
+    setSelection(next.filter((rid) => rid !== myId))
   }
 
   const selectAllRecipients = () => {
-    setSelectedRecipientIds(recipients.map((r) => r.id).filter((id) => id !== myId))
+    setSelection(recipients.map((r) => r.id).filter((id) => id !== myId))
   }
 
-  const clearRecipients = () => setSelectedRecipientIds([])
+  const clearRecipients = () => setSelection([])
 
   const switchThread = async (threadId: string) => {
     if (threadId === conversationId) return
@@ -328,14 +371,11 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
       if (!conversationId || !msg.isMine) return
       if (!window.confirm('Delete this message for everyone?')) return
       try {
-        const res = await fetchAuth(
-          `/api/messages/conversations/${conversationId}/messages/${msg.id}`,
-          {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mode: 'EVERYONE' }),
-          }
-        )
+        const res = await fetchAuth(`/api/messages/conversations/${conversationId}/messages/${msg.id}`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: 'EVERYONE' }),
+        })
         const data = await res.json().catch(() => ({}))
         if (!res.ok) {
           alert(data.error || 'Failed to delete message')
@@ -354,7 +394,8 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
     async (text: string, media: DraftMedia[], durationMs?: number) => {
       if (!conversationId) return
       if (selectedRecipientIds.length === 0) {
-        alert('Select at least one person to send to')
+        alert('Select at least one recipient. Messages only go to the people you pick.')
+        setPickerOpen(true)
         return
       }
 
@@ -379,6 +420,7 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
         body: JSON.stringify({
           text: text || null,
           clientTempId: `job-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          // Always notify ONLY the selected recipients (sticky selection).
           notifyUserIds: selectedRecipientIds,
           replyToMessageId: replyTarget?.id || null,
           replyToSenderName: replyTarget
@@ -405,6 +447,7 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
         return
       }
       setReplyTarget(null)
+      setRecipientsLocked(true)
       await loadMessages(conversationId, myId)
     },
     [conversationId, fetchAuth, loadMessages, myId, replyTarget, selectedRecipientIds]
@@ -412,221 +455,277 @@ export function JobThreadDialog({ open, onOpenChange, jobId, jobNumber }: Props)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl w-[min(96vw,920px)] p-0 gap-0 overflow-hidden flex flex-col h-[min(92vh,880px)] max-h-[92vh] bg-[#f0f2f5]">
-        <DialogHeader className="px-5 pt-5 pb-3 border-b border-black/5 space-y-3 bg-white">
+      <DialogContent className="sm:max-w-5xl w-[min(96vw,1100px)] p-0 gap-0 overflow-hidden flex flex-col h-[min(92vh,880px)] max-h-[92vh] bg-[#f0f2f5]">
+        <DialogHeader className="px-5 pt-4 pb-3 border-b border-black/5 space-y-1 bg-white shrink-0">
           <div className="flex items-start justify-between gap-3 pr-8">
             <div>
               <DialogTitle>{jobNumber ? `Job chat · ${jobNumber}` : 'Job chat'}</DialogTitle>
               <p className="text-xs text-muted-foreground font-normal mt-1">
-                Multiple threads · pick who to notify · reply, reactions, attachments &amp; voice
+                Threads on the left · chat on the right · messages only notify selected recipients
               </p>
             </div>
           </div>
-
-          {/* Thread switcher */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-1.5 flex-1 min-w-0 overflow-x-auto pb-0.5">
-              {threads.map((t) => {
-                const active = t.id === conversationId
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => void switchThread(t.id)}
-                    className={`shrink-0 px-3.5 py-2 rounded-full text-xs font-semibold border transition-colors ${
-                      active
-                        ? 'bg-[#d9fdd3] border-[#25d366] text-[#075e54] shadow-sm'
-                        : 'bg-white border-gray-300 text-gray-700 hover:border-[#25d366] hover:bg-emerald-50'
-                    }`}
-                  >
-                    {threadLabel(t)}
-                  </button>
-                )
-              })}
-            </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="shrink-0"
-              onClick={() => setNewThreadOpen((v) => !v)}
-            >
-              + New thread
-            </Button>
-          </div>
-
-          {newThreadOpen && (
-            <div className="flex items-center gap-2">
-              <input
-                value={newThreadTitle}
-                onChange={(e) => setNewThreadTitle(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    void createThread()
-                  }
-                }}
-                placeholder="Thread name (e.g. Materials, Punch list)"
-                className="flex-1 rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-              />
-              <Button
-                type="button"
-                size="sm"
-                disabled={!newThreadTitle.trim() || creatingThread}
-                onClick={() => void createThread()}
-              >
-                Create
-              </Button>
-            </div>
-          )}
-
-          {activeThread && (
-            <p className="text-[11px] text-muted-foreground">
-              Active thread: <span className="font-medium text-foreground">{threadLabel(activeThread)}</span>
-            </p>
-          )}
-
-          {/* Recipient picker */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setPickerOpen((v) => !v)}
-              className="w-full flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-left text-sm hover:bg-muted/70 transition-colors"
-            >
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">To</span>
-              <span className="flex-1 truncate font-medium text-foreground">{selectedSummary}</span>
-              <svg
-                className={`w-4 h-4 text-muted-foreground transition-transform ${pickerOpen ? 'rotate-180' : ''}`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-
-            {pickerOpen && (
-              <div className="absolute z-30 left-0 right-0 mt-1 rounded-xl border bg-white shadow-lg max-h-56 overflow-y-auto">
-                <div className="sticky top-0 flex items-center gap-2 px-3 py-2 bg-white border-b text-xs">
-                  <button type="button" className="text-[#008069] hover:underline" onClick={selectAllRecipients}>
-                    Select all
-                  </button>
-                  <span className="text-muted-foreground">·</span>
-                  <button type="button" className="text-[#008069] hover:underline" onClick={clearRecipients}>
-                    Clear
-                  </button>
-                </div>
-                {recipients.length === 0 ? (
-                  <p className="px-3 py-4 text-sm text-muted-foreground">No recipients available</p>
-                ) : (
-                  recipients
-                    .filter((r) => r.id !== myId)
-                    .map((r) => {
-                      const checked = selectedRecipientIds.includes(r.id)
-                      return (
-                        <label
-                          key={r.id}
-                          className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 cursor-pointer text-sm"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleRecipient(r.id)}
-                            className="rounded border-gray-300"
-                          />
-                          <span className="flex-1 min-w-0">
-                            <span className="font-medium block truncate">{recipientLabel(r)}</span>
-                            <span className="text-[11px] text-muted-foreground">
-                              {r.isAssignee ? 'Assignee' : r.role}
-                            </span>
-                          </span>
-                        </label>
-                      )
-                    })
-                )}
-              </div>
-            )}
-          </div>
         </DialogHeader>
 
-        <div
-          className="flex-1 min-h-0 overflow-y-auto bg-[#efeae2] px-4 py-3 space-y-1"
-          style={{ backgroundImage: 'radial-gradient(rgba(0,0,0,0.03) 1px, transparent 1px)', backgroundSize: '18px 18px' }}
-        >
-          {loading && !conversationId ? (
-            <p className="text-sm text-muted-foreground text-center mt-10">Opening chat…</p>
-          ) : error ? (
-            <div className="text-center mt-10 space-y-3">
-              <p className="text-sm text-destructive">{error}</p>
+        <div className="flex-1 min-h-0 flex">
+          {/* Left: thread list */}
+          <aside className="w-[240px] shrink-0 border-r border-black/5 bg-white flex flex-col">
+            <div className="px-3 py-2 border-b border-black/5 flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-[#667781]">Threads</span>
               <Button
                 type="button"
                 size="sm"
-                onClick={() => {
-                  setError(null)
-                  setLoading(true)
-                  void ensureThread()
-                    .then((data) => applyEnsurePayload(data, myId))
-                    .catch((e: any) => setError(e?.message || 'Failed to open job chat'))
-                    .finally(() => setLoading(false))
-                }}
+                variant="outline"
+                className="h-7 px-2 text-xs"
+                onClick={() => setNewThreadOpen((v) => !v)}
               >
-                Try again
+                + New
               </Button>
             </div>
-          ) : msgsLoading && messages.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center mt-10">Loading messages…</p>
-          ) : messages.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center mt-10">No messages yet. Say hello!</p>
-          ) : (
-            messages.map((msg, i) => {
-              const prev = i > 0 ? messages[i - 1] : null
-              const showDate =
-                !prev || new Date(msg.createdAt).toDateString() !== new Date(prev.createdAt).toDateString()
-              const next = i < messages.length - 1 ? messages[i + 1] : null
-              const isLastInGroup = !next || next.isMine !== msg.isMine
-              const showName = !msg.isMine && (!prev || prev.isMine !== msg.isMine)
 
-              return (
-                <div key={msg.id} className={isLastInGroup ? 'mb-2' : 'mb-0.5'}>
-                  {showDate && (
-                    <div className="flex justify-center my-3">
-                      <span className="text-[11px] text-[#54656f] font-medium px-3 py-1 rounded-lg bg-white/90 shadow-sm border border-black/5">
-                        {dateSep(msg.createdAt)}
-                      </span>
-                    </div>
-                  )}
-                  <MsgBubble
-                    msg={msg}
-                    showSenderName={showName}
-                    showJobLink={false}
-                    myId={myId}
-                    isHighlighted={highlightedId === msg.id}
-                    onReply={handleReply}
-                    onToggleReaction={handleToggleReaction}
-                    onJumpTo={jumpToMessage}
-                    onDelete={handleDelete}
-                  />
+            {newThreadOpen && (
+              <div className="px-3 py-2 border-b border-black/5 space-y-2 bg-[#f7f8fa]">
+                <input
+                  value={newThreadTitle}
+                  onChange={(e) => setNewThreadTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      void createThread()
+                    }
+                  }}
+                  placeholder="Thread name"
+                  className="w-full rounded-lg border px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  className="w-full h-8"
+                  disabled={!newThreadTitle.trim() || creatingThread}
+                  onClick={() => void createThread()}
+                >
+                  Create thread
+                </Button>
+              </div>
+            )}
+
+            <div className="flex-1 overflow-y-auto">
+              {threads.length === 0 ? (
+                <p className="px-3 py-6 text-xs text-muted-foreground text-center">No threads yet</p>
+              ) : (
+                threads.map((t) => {
+                  const active = t.id === conversationId
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => void switchThread(t.id)}
+                      className={`w-full text-left px-3 py-3 border-b border-black/5 transition-colors ${
+                        active ? 'bg-[#d9fdd3]' : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className={`text-sm truncate ${active ? 'font-semibold text-[#075e54]' : 'font-medium text-[#111b21]'}`}>
+                        {threadLabel(t)}
+                      </div>
+                      <div className="text-[11px] text-[#667781] mt-0.5">
+                        {t.lastMessageAt
+                          ? new Date(t.lastMessageAt).toLocaleString([], {
+                              month: 'short',
+                              day: 'numeric',
+                              hour: 'numeric',
+                              minute: '2-digit',
+                            })
+                          : 'No messages'}
+                      </div>
+                    </button>
+                  )
+                })
+              )}
+            </div>
+          </aside>
+
+          {/* Right: chat */}
+          <section className="flex-1 min-w-0 flex flex-col">
+            <div className="px-4 py-2.5 bg-[#f0f2f5] border-b border-black/5 shrink-0 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-[#111b21] truncate">
+                    {activeThread ? threadLabel(activeThread) : 'Select a thread'}
+                  </div>
+                  <div className="text-[11px] text-[#667781] truncate">
+                    {recipientsLocked && selectedRecipients.length > 0
+                      ? `Sending only to: ${selectedSummary}`
+                      : 'Pick recipients below — selection stays until you change it'}
+                  </div>
                 </div>
-              )
-            })
-          )}
-          <div ref={bottomRef} />
-        </div>
+              </div>
 
-        <Composer
-          isSms={false}
-          disabled={!conversationId || selectedRecipientIds.length === 0}
-          onSend={handleSend}
-          replyPreview={
-            replyTarget
-              ? {
-                  senderName: replyTarget.isMine ? 'You' : replyTarget.senderName || 'Unknown',
-                  textPreview: replyPreviewText(replyTarget),
-                }
-              : null
-          }
-          onClearReply={() => setReplyTarget(null)}
-        />
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setPickerOpen((v) => !v)}
+                  className="w-full flex items-center gap-2 rounded-xl border bg-white px-3 py-2 text-left text-sm hover:bg-gray-50 transition-colors"
+                >
+                  <span className="text-xs font-semibold text-[#008069] uppercase tracking-wide">To</span>
+                  <span className="flex-1 truncate font-medium text-[#111b21]">{selectedSummary}</span>
+                  <svg
+                    className={`w-4 h-4 text-[#667781] transition-transform ${pickerOpen ? 'rotate-180' : ''}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+
+                {selectedRecipients.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {selectedRecipients.map((r) => (
+                      <span
+                        key={r.id}
+                        className="inline-flex items-center gap-1 rounded-full bg-[#d9fdd3] text-[#075e54] px-2.5 py-1 text-[11px] font-medium"
+                      >
+                        {recipientLabel(r)}
+                        <button
+                          type="button"
+                          className="opacity-70 hover:opacity-100"
+                          onClick={() => toggleRecipient(r.id)}
+                          aria-label={`Remove ${recipientLabel(r)}`}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {pickerOpen && (
+                  <div className="absolute z-30 left-0 right-0 mt-1 rounded-xl border bg-white shadow-lg max-h-56 overflow-y-auto">
+                    <div className="sticky top-0 flex items-center gap-2 px-3 py-2 bg-white border-b text-xs">
+                      <button type="button" className="text-[#008069] hover:underline" onClick={selectAllRecipients}>
+                        Select all
+                      </button>
+                      <span className="text-muted-foreground">·</span>
+                      <button type="button" className="text-[#008069] hover:underline" onClick={clearRecipients}>
+                        Clear
+                      </button>
+                    </div>
+                    {recipients.length === 0 ? (
+                      <p className="px-3 py-4 text-sm text-muted-foreground">No recipients available</p>
+                    ) : (
+                      recipients
+                        .filter((r) => r.id !== myId)
+                        .map((r) => {
+                          const checked = selectedRecipientIds.includes(r.id)
+                          return (
+                            <label
+                              key={r.id}
+                              className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 cursor-pointer text-sm"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleRecipient(r.id)}
+                                className="rounded border-gray-300"
+                              />
+                              <span className="flex-1 min-w-0">
+                                <span className="font-medium block truncate">{recipientLabel(r)}</span>
+                                <span className="text-[11px] text-muted-foreground">
+                                  {r.isAssignee ? 'Assignee' : r.role}
+                                </span>
+                              </span>
+                            </label>
+                          )
+                        })
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div
+              className="flex-1 min-h-0 overflow-y-auto bg-[#efeae2] px-4 py-3 space-y-1"
+              style={{
+                backgroundImage: 'radial-gradient(rgba(0,0,0,0.03) 1px, transparent 1px)',
+                backgroundSize: '18px 18px',
+              }}
+            >
+              {loading && !conversationId ? (
+                <p className="text-sm text-muted-foreground text-center mt-10">Opening chat…</p>
+              ) : error ? (
+                <div className="text-center mt-10 space-y-3">
+                  <p className="text-sm text-destructive">{error}</p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => {
+                      setError(null)
+                      setLoading(true)
+                      void ensureThread()
+                        .then((data) => applyEnsurePayload(data, myId))
+                        .catch((e: any) => setError(e?.message || 'Failed to open job chat'))
+                        .finally(() => setLoading(false))
+                    }}
+                  >
+                    Try again
+                  </Button>
+                </div>
+              ) : msgsLoading && messages.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center mt-10">Loading messages…</p>
+              ) : messages.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center mt-10">No messages yet. Say hello!</p>
+              ) : (
+                messages.map((msg, i) => {
+                  const prev = i > 0 ? messages[i - 1] : null
+                  const showDate =
+                    !prev || new Date(msg.createdAt).toDateString() !== new Date(prev.createdAt).toDateString()
+                  const next = i < messages.length - 1 ? messages[i + 1] : null
+                  const isLastInGroup = !next || next.isMine !== msg.isMine
+                  const showName = !msg.isMine && (!prev || prev.isMine !== msg.isMine)
+
+                  return (
+                    <div key={msg.id} className={isLastInGroup ? 'mb-2' : 'mb-0.5'}>
+                      {showDate && (
+                        <div className="flex justify-center my-3">
+                          <span className="text-[11px] text-[#54656f] font-medium px-3 py-1 rounded-lg bg-white/90 shadow-sm border border-black/5">
+                            {dateSep(msg.createdAt)}
+                          </span>
+                        </div>
+                      )}
+                      <MsgBubble
+                        msg={msg}
+                        showSenderName={showName}
+                        showJobLink={false}
+                        myId={myId}
+                        isHighlighted={highlightedId === msg.id}
+                        onReply={handleReply}
+                        onToggleReaction={handleToggleReaction}
+                        onJumpTo={jumpToMessage}
+                        onDelete={handleDelete}
+                      />
+                    </div>
+                  )
+                })
+              )}
+              <div ref={bottomRef} />
+            </div>
+
+            <Composer
+              isSms={false}
+              disabled={!conversationId || selectedRecipientIds.length === 0}
+              onSend={handleSend}
+              replyPreview={
+                replyTarget
+                  ? {
+                      senderName: replyTarget.isMine ? 'You' : replyTarget.senderName || 'Unknown',
+                      textPreview: replyPreviewText(replyTarget),
+                    }
+                  : null
+              }
+              onClearReply={() => setReplyTarget(null)}
+            />
+          </section>
+        </div>
       </DialogContent>
     </Dialog>
   )

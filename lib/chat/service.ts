@@ -696,6 +696,11 @@ export async function sendMessageToConversation(
       ? Array.from(new Set(input.notifyUserIds.filter((id) => id && id !== sender.id)))
       : null
 
+  // Job threads must always target an explicit recipient list — never blast everyone.
+  if (conversation.type === ChatConversationType.JOB_THREAD && (!notifyFilter || notifyFilter.length === 0)) {
+    throw new Error('Select at least one recipient for this job chat message')
+  }
+
   // Ensure explicitly selected recipients are conversation members (job chat picker).
   if (notifyFilter && notifyFilter.length > 0) {
     await prisma.chatConversationMember.createMany({
@@ -714,7 +719,11 @@ export async function sendMessageToConversation(
       conversationId,
       userId: {
         not: sender.id,
-        ...(notifyFilter ? { in: notifyFilter } : {}),
+        ...(notifyFilter
+          ? { in: notifyFilter }
+          : conversation.type === ChatConversationType.JOB_THREAD
+            ? { in: [] }
+            : {}),
       },
       OR: [{ mutedUntil: null }, { mutedUntil: { lt: new Date() } }],
     },
