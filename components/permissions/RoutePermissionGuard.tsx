@@ -46,7 +46,9 @@ export function RoutePermissionGuard({ children }: RoutePermissionGuardProps) {
     setChecked(true)
   }, [loading, pathname, permissions, error])
 
-  if (loading || !checked) {
+  // Only block the first check. Refreshing permissions must not unmount the page
+  // (that aborts/races client data fetches and surfaces false "Failed to load" errors).
+  if (!checked || (loading && !allowed && !error)) {
     return (
       <div className="flex h-64 items-center justify-center">
         <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent" />

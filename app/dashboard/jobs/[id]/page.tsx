@@ -212,14 +212,20 @@ export default function JobDetailPage() {
   const [unreadMessages, setUnreadMessages] = useState(0)
   const [unreadNotes, setUnreadNotes] = useState(0)
   const documentsRequestIdRef = useRef(0)
+  const documentsAbortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
+    documentsAbortRef.current?.abort()
     documentsRequestIdRef.current += 1
     setDocuments([])
     setDocumentsError(null)
     fetchJob()
     fetchDocuments()
     fetchUnread()
+
+    return () => {
+      documentsAbortRef.current?.abort()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only re-fetch when jobId changes
   }, [jobId])
 
@@ -244,7 +250,11 @@ export default function JobDetailPage() {
   }, [job])
 
   const fetchDocuments = async () => {
+    documentsAbortRef.current?.abort()
+    const abort = new AbortController()
+    documentsAbortRef.current = abort
     const requestId = ++documentsRequestIdRef.current
+
     setDocumentsLoading(true)
     setDocumentsError(null)
     try {
@@ -254,8 +264,10 @@ export default function JobDetailPage() {
         return
       }
 
-      const response = await authFetch(`/api/jobs/${jobId}/documents`)
-      if (requestId !== documentsRequestIdRef.current) return
+      const response = await authFetch(`/api/jobs/${jobId}/documents`, {
+        signal: abort.signal,
+      })
+      if (abort.signal.aborted || requestId !== documentsRequestIdRef.current) return
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}))
@@ -268,15 +280,17 @@ export default function JobDetailPage() {
       }
 
       const data = await response.json()
-      if (requestId !== documentsRequestIdRef.current) return
+      if (abort.signal.aborted || requestId !== documentsRequestIdRef.current) return
       setDocuments(Array.isArray(data.documents) ? data.documents : [])
       setDocumentsError(null)
     } catch (error) {
+      if (abort.signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) return
       if (requestId !== documentsRequestIdRef.current) return
       console.error('Failed to fetch job documents:', error)
-      setDocumentsError('Failed to load documents')
+      const message = error instanceof Error && error.message ? error.message : 'Failed to load documents'
+      setDocumentsError(message === 'Failed to fetch' ? 'Failed to load documents' : message)
     } finally {
-      if (requestId === documentsRequestIdRef.current) {
+      if (!abort.signal.aborted && requestId === documentsRequestIdRef.current) {
         setDocumentsLoading(false)
       }
     }

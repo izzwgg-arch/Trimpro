@@ -105,12 +105,22 @@ export function usePermissions(): PermissionState {
       return
     }
 
+    let tokenRotated = false
     if (cache && cache.token !== token) {
-      clearPermissionsCache()
+      // Token rotated (refresh) — keep existing permissions visible while we reload
+      // against the new token, instead of flashing a full-page loading state.
+      cache = {
+        token,
+        permissions: cache.permissions,
+        error: null,
+        promise: null,
+      }
+      tokenRotated = true
     }
 
     if (
       !force &&
+      !tokenRotated &&
       cache &&
       cache.token === token &&
       cache.permissions.length > 0 &&
@@ -120,8 +130,16 @@ export function usePermissions(): PermissionState {
       return
     }
 
-    setState((prev) => ({ ...prev, loading: true, error: null }))
-    notify({ loading: true, error: null })
+    // Keep existing permissions visible while refreshing so route guards don't
+    // unmount the page and cancel in-flight customer/job document requests.
+    const keepShowingExisting = (cache?.permissions?.length ?? 0) > 0
+    if (!keepShowingExisting) {
+      setState((prev) => ({ ...prev, loading: true, error: null }))
+      notify({ loading: true, error: null })
+    } else {
+      setState((prev) => ({ ...prev, error: null }))
+      notify({ error: null })
+    }
 
     try {
       const permissions = await loadPermissions(token, force)
@@ -130,8 +148,12 @@ export function usePermissions(): PermissionState {
     } catch (error) {
       console.error('Error fetching permissions:', error)
       const message = error instanceof Error ? error.message : 'Error fetching permissions'
-      setState({ permissions: [], loading: false, error: message })
-      notify({ permissions: [], loading: false, error: message })
+      setState((prev) => ({
+        permissions: prev.permissions.length > 0 ? prev.permissions : [],
+        loading: false,
+        error: message,
+      }))
+      notify({ loading: false, error: message })
     }
   }, [])
 

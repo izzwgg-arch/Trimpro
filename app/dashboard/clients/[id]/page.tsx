@@ -308,6 +308,7 @@ export default function ClientDetailPage() {
   const [addingNote, setAddingNote] = useState(false)
   const { permissions: userPermissions, loading: permissionsLoading } = usePermissions()
   const documentsRequestIdRef = useRef(0)
+  const documentsAbortRef = useRef<AbortController | null>(null)
 
   // Defensive: Validate params before using
   const clientId = params?.id as string | undefined
@@ -315,7 +316,11 @@ export default function ClientDetailPage() {
   const fetchDocuments = async () => {
     if (!clientId) return
 
+    documentsAbortRef.current?.abort()
+    const abort = new AbortController()
+    documentsAbortRef.current = abort
     const requestId = ++documentsRequestIdRef.current
+
     setDocumentsLoading(true)
     setDocumentsError(null)
     try {
@@ -325,8 +330,10 @@ export default function ClientDetailPage() {
         return
       }
 
-      const response = await authFetch(`/api/clients/${clientId}/documents`)
-      if (requestId !== documentsRequestIdRef.current) return
+      const response = await authFetch(`/api/clients/${clientId}/documents`, {
+        signal: abort.signal,
+      })
+      if (abort.signal.aborted || requestId !== documentsRequestIdRef.current) return
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}))
@@ -339,15 +346,17 @@ export default function ClientDetailPage() {
       }
 
       const data = await response.json()
-      if (requestId !== documentsRequestIdRef.current) return
+      if (abort.signal.aborted || requestId !== documentsRequestIdRef.current) return
       setDocuments(Array.isArray(data.documents) ? data.documents : [])
       setDocumentsError(null)
     } catch (err) {
+      if (abort.signal.aborted || (err instanceof DOMException && err.name === 'AbortError')) return
       if (requestId !== documentsRequestIdRef.current) return
       console.error('Failed to load client documents:', err)
-      setDocumentsError('Failed to load documents')
+      const message = err instanceof Error && err.message ? err.message : 'Failed to load documents'
+      setDocumentsError(message === 'Failed to fetch' ? 'Failed to load documents' : message)
     } finally {
-      if (requestId === documentsRequestIdRef.current) {
+      if (!abort.signal.aborted && requestId === documentsRequestIdRef.current) {
         setDocumentsLoading(false)
       }
     }
@@ -361,13 +370,17 @@ export default function ClientDetailPage() {
       return
     }
 
-    // Drop in-flight responses from a previous client when navigating between customers.
+    documentsAbortRef.current?.abort()
     documentsRequestIdRef.current += 1
     setDocuments([])
     setDocumentsError(null)
     setSelectedInvoiceIds([])
     fetchClient()
     fetchDocuments()
+
+    return () => {
+      documentsAbortRef.current?.abort()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only re-fetch when clientId changes
   }, [clientId])
 
