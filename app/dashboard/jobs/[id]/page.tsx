@@ -2,7 +2,7 @@
 import { navigateWithReturn } from '@/lib/navigation/nav-stack'
 import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -211,11 +211,16 @@ export default function JobDetailPage() {
   const [chatOpen, setChatOpen] = useState(false)
   const [unreadMessages, setUnreadMessages] = useState(0)
   const [unreadNotes, setUnreadNotes] = useState(0)
+  const documentsRequestIdRef = useRef(0)
 
   useEffect(() => {
+    documentsRequestIdRef.current += 1
+    setDocuments([])
+    setDocumentsError(null)
     fetchJob()
     fetchDocuments()
     fetchUnread()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only re-fetch when jobId changes
   }, [jobId])
 
   useEffect(() => {
@@ -239,6 +244,7 @@ export default function JobDetailPage() {
   }, [job])
 
   const fetchDocuments = async () => {
+    const requestId = ++documentsRequestIdRef.current
     setDocumentsLoading(true)
     setDocumentsError(null)
     try {
@@ -249,6 +255,7 @@ export default function JobDetailPage() {
       }
 
       const response = await authFetch(`/api/jobs/${jobId}/documents`)
+      if (requestId !== documentsRequestIdRef.current) return
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}))
@@ -261,12 +268,17 @@ export default function JobDetailPage() {
       }
 
       const data = await response.json()
+      if (requestId !== documentsRequestIdRef.current) return
       setDocuments(Array.isArray(data.documents) ? data.documents : [])
+      setDocumentsError(null)
     } catch (error) {
+      if (requestId !== documentsRequestIdRef.current) return
       console.error('Failed to fetch job documents:', error)
       setDocumentsError('Failed to load documents')
     } finally {
-      setDocumentsLoading(false)
+      if (requestId === documentsRequestIdRef.current) {
+        setDocumentsLoading(false)
+      }
     }
   }
 

@@ -2,7 +2,7 @@
 import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 import { navigateWithReturn } from '@/lib/navigation/nav-stack'
 
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -307,6 +307,7 @@ export default function ClientDetailPage() {
   const [noteText, setNoteText] = useState('')
   const [addingNote, setAddingNote] = useState(false)
   const { permissions: userPermissions, loading: permissionsLoading } = usePermissions()
+  const documentsRequestIdRef = useRef(0)
 
   // Defensive: Validate params before using
   const clientId = params?.id as string | undefined
@@ -314,6 +315,7 @@ export default function ClientDetailPage() {
   const fetchDocuments = async () => {
     if (!clientId) return
 
+    const requestId = ++documentsRequestIdRef.current
     setDocumentsLoading(true)
     setDocumentsError(null)
     try {
@@ -324,6 +326,7 @@ export default function ClientDetailPage() {
       }
 
       const response = await authFetch(`/api/clients/${clientId}/documents`)
+      if (requestId !== documentsRequestIdRef.current) return
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}))
@@ -336,12 +339,17 @@ export default function ClientDetailPage() {
       }
 
       const data = await response.json()
+      if (requestId !== documentsRequestIdRef.current) return
       setDocuments(Array.isArray(data.documents) ? data.documents : [])
+      setDocumentsError(null)
     } catch (err) {
+      if (requestId !== documentsRequestIdRef.current) return
       console.error('Failed to load client documents:', err)
       setDocumentsError('Failed to load documents')
     } finally {
-      setDocumentsLoading(false)
+      if (requestId === documentsRequestIdRef.current) {
+        setDocumentsLoading(false)
+      }
     }
   }
 
@@ -353,9 +361,15 @@ export default function ClientDetailPage() {
       return
     }
 
+    // Drop in-flight responses from a previous client when navigating between customers.
+    documentsRequestIdRef.current += 1
+    setDocuments([])
+    setDocumentsError(null)
+    setSelectedInvoiceIds([])
     fetchClient()
     fetchDocuments()
-  }, [clientId, router])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only re-fetch when clientId changes
+  }, [clientId])
 
   const fetchClient = async () => {
     if (!clientId) return
@@ -367,11 +381,7 @@ export default function ClientDetailPage() {
         return
       }
 
-      const response = await fetch(`/api/clients/${clientId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
+      const response = await authFetch(`/api/clients/${clientId}`)
 
       if (response.status === 401) {
         router.push('/auth/login')
