@@ -17,6 +17,7 @@ import { buildCreateContextQuery } from '@/src/lib/create-context'
 import { UnifiedDocumentsSection } from '@/components/documents/unified-documents-section'
 import { EditableNotesList } from '@/components/notes/editable-notes-list'
 import type { UnifiedDocumentRow } from '@/lib/documents/unified-documents'
+import { authFetch } from '@/lib/auth/client'
 import { JobTypeBadge } from '@/components/jobs/JobTypeSelect'
 import { JobStatusSelect } from '@/components/jobs/JobStatusSelect'
 import { JobBillingStatusBadge } from '@/components/jobs/JobBillingStatusBadge'
@@ -247,9 +248,7 @@ export default function JobDetailPage() {
         return
       }
 
-      const response = await fetch(`/api/jobs/${jobId}/documents`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      const response = await authFetch(`/api/jobs/${jobId}/documents`)
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}))

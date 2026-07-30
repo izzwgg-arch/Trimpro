@@ -13,6 +13,7 @@ import { Phone, Mail, MapPin, Building2, Calendar, FileText, DollarSign, Briefca
 import Link from 'next/link'
 import { AddressMapSection } from './map-section'
 import { usePermissions, hasPermission } from '@/hooks/usePermissions'
+import { authFetch } from '@/lib/auth/client'
 import { UnifiedDocumentsSection } from '@/components/documents/unified-documents-section'
 import { EditableNotesList } from '@/components/notes/editable-notes-list'
 import type { UnifiedDocumentRow } from '@/lib/documents/unified-documents'
@@ -322,9 +323,7 @@ export default function ClientDetailPage() {
         return
       }
 
-      const response = await fetch(`/api/clients/${clientId}/documents`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      const response = await authFetch(`/api/clients/${clientId}/documents`)
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}))

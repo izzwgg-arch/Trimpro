@@ -124,6 +124,15 @@ const jobSelect = {
   client: { select: { id: true, name: true } },
 } as const
 
+async function settledList<T>(label: string, promise: Promise<T[]>): Promise<T[]> {
+  try {
+    return await promise
+  } catch (error) {
+    console.error(`Documents query failed (${label}):`, error)
+    return []
+  }
+}
+
 export async function fetchClientDocuments(tenantId: string, clientId: string) {
   const client = await prisma.client.findFirst({
     where: { id: clientId, tenantId },
@@ -136,47 +145,65 @@ export async function fetchClientDocuments(tenantId: string, clientId: string) {
   const clientIds = [clientId, ...descendantIds]
 
   const [estimates, invoices, payments, purchaseOrders, requests, jobs] = await Promise.all([
-    prisma.estimate.findMany({
-      where: { tenantId, clientId: { in: clientIds } },
-      orderBy: { createdAt: 'desc' },
-      select: estimateSelect,
-    }),
-    prisma.invoice.findMany({
-      where: { tenantId, clientId: { in: clientIds } },
-      orderBy: { createdAt: 'desc' },
-      select: invoiceSelect,
-    }),
-    prisma.payment.findMany({
-      where: {
-        invoice: { tenantId, clientId: { in: clientIds } },
-      },
-      orderBy: [{ processedAt: 'desc' }, { createdAt: 'desc' }],
-      include: {
-        invoice: {
-          select: {
-            id: true,
-            invoiceNumber: true,
-            clientId: true,
-            client: { select: { id: true, name: true } },
+    settledList(
+      'estimates',
+      prisma.estimate.findMany({
+        where: { tenantId, clientId: { in: clientIds } },
+        orderBy: { createdAt: 'desc' },
+        select: estimateSelect,
+      })
+    ),
+    settledList(
+      'invoices',
+      prisma.invoice.findMany({
+        where: { tenantId, clientId: { in: clientIds } },
+        orderBy: { createdAt: 'desc' },
+        select: invoiceSelect,
+      })
+    ),
+    settledList(
+      'payments',
+      prisma.payment.findMany({
+        where: {
+          invoice: { tenantId, clientId: { in: clientIds } },
+        },
+        orderBy: [{ processedAt: 'desc' }, { createdAt: 'desc' }],
+        include: {
+          invoice: {
+            select: {
+              id: true,
+              invoiceNumber: true,
+              clientId: true,
+              client: { select: { id: true, name: true } },
+            },
           },
         },
-      },
-    }),
-    prisma.purchaseOrder.findMany({
-      where: { tenantId, clientId: { in: clientIds } },
-      orderBy: { createdAt: 'desc' },
-      select: purchaseOrderSelect,
-    }),
-    prisma.lead.findMany({
-      where: { tenantId, convertedToClientId: { in: clientIds } },
-      orderBy: { createdAt: 'desc' },
-      select: requestSelect,
-    }),
-    prisma.job.findMany({
-      where: { tenantId, clientId: { in: clientIds } },
-      orderBy: { createdAt: 'desc' },
-      select: jobSelect,
-    }),
+      })
+    ),
+    settledList(
+      'purchaseOrders',
+      prisma.purchaseOrder.findMany({
+        where: { tenantId, clientId: { in: clientIds } },
+        orderBy: { createdAt: 'desc' },
+        select: purchaseOrderSelect,
+      })
+    ),
+    settledList(
+      'requests',
+      prisma.lead.findMany({
+        where: { tenantId, convertedToClientId: { in: clientIds } },
+        orderBy: { createdAt: 'desc' },
+        select: requestSelect,
+      })
+    ),
+    settledList(
+      'jobs',
+      prisma.job.findMany({
+        where: { tenantId, clientId: { in: clientIds } },
+        orderBy: { createdAt: 'desc' },
+        select: jobSelect,
+      })
+    ),
   ])
 
   return buildDocumentRows({
@@ -199,56 +226,68 @@ export async function fetchJobDocuments(tenantId: string, jobId: string) {
   if (!job) return null
 
   const [estimates, invoices, payments, purchaseOrders] = await Promise.all([
-    prisma.estimate.findMany({
-      where: { tenantId, jobId },
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        estimateNumber: true,
-        title: true,
-        status: true,
-        total: true,
-        createdAt: true,
-      },
-    }),
-    prisma.invoice.findMany({
-      where: { tenantId, jobId },
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        invoiceNumber: true,
-        title: true,
-        status: true,
-        total: true,
-        balance: true,
-        dueDate: true,
-        createdAt: true,
-      },
-    }),
-    prisma.payment.findMany({
-      where: {
-        invoice: { tenantId, jobId },
-      },
-      orderBy: [{ processedAt: 'desc' }, { createdAt: 'desc' }],
-      include: {
-        invoice: {
-          select: { id: true, invoiceNumber: true },
+    settledList(
+      'job-estimates',
+      prisma.estimate.findMany({
+        where: { tenantId, jobId },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          estimateNumber: true,
+          title: true,
+          status: true,
+          total: true,
+          createdAt: true,
         },
-      },
-    }),
-    prisma.purchaseOrder.findMany({
-      where: { tenantId, jobId },
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        poNumber: true,
-        vendor: true,
-        status: true,
-        total: true,
-        orderDate: true,
-        createdAt: true,
-      },
-    }),
+      })
+    ),
+    settledList(
+      'job-invoices',
+      prisma.invoice.findMany({
+        where: { tenantId, jobId },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          invoiceNumber: true,
+          title: true,
+          status: true,
+          total: true,
+          balance: true,
+          dueDate: true,
+          createdAt: true,
+        },
+      })
+    ),
+    settledList(
+      'job-payments',
+      prisma.payment.findMany({
+        where: {
+          invoice: { tenantId, jobId },
+        },
+        orderBy: [{ processedAt: 'desc' }, { createdAt: 'desc' }],
+        include: {
+          invoice: {
+            select: { id: true, invoiceNumber: true },
+          },
+        },
+      })
+    ),
+    settledList(
+      'job-purchaseOrders',
+      prisma.purchaseOrder.findMany({
+        where: { tenantId, jobId },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          poNumber: true,
+          vendor: true,
+          status: true,
+          total: true,
+          orderDate: true,
+          createdAt: true,
+        },
+      })
+    ),
   ])
 
   return buildDocumentRows({ estimates, invoices, payments, purchaseOrders })

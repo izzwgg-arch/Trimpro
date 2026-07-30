@@ -575,7 +575,14 @@ export function UnifiedDocumentsSection({
         {isInitialLoad ? (
           <p className="py-8 text-center text-sm text-gray-500">Loading documents...</p>
         ) : error ? (
-          <p className="py-4 text-sm text-red-600">{error}</p>
+          <div className="flex flex-col items-start gap-3 py-4">
+            <p className="text-sm text-red-600">{error}</p>
+            {onDocumentsRefresh ? (
+              <Button type="button" variant="outline" size="sm" onClick={() => void onDocumentsRefresh()}>
+                Retry
+              </Button>
+            ) : null}
+          </div>
         ) : filtered.length === 0 ? (
           <p className="py-8 text-center text-sm text-gray-500">No documents match your filters</p>
         ) : (

@@ -16,9 +16,10 @@ interface RoutePermissionGuardProps {
 export function RoutePermissionGuard({ children }: RoutePermissionGuardProps) {
   const pathname = usePathname()
   const router = useRouter()
-  const { permissions, loading, error } = usePermissions()
+  const { permissions, loading, error, reload } = usePermissions()
   const [checked, setChecked] = useState(false)
   const [allowed, setAllowed] = useState(true)
+  const [retrying, setRetrying] = useState(false)
 
   useEffect(() => {
     if (loading) return
@@ -30,8 +31,8 @@ export function RoutePermissionGuard({ children }: RoutePermissionGuardProps) {
       return
     }
 
-    // If permissions failed to load, don't falsely show Access Denied.
-    if (error || permissions.length === 0) {
+    // Permissions failed to load — keep page blocked but show retry, not "Access Denied".
+    if (error) {
       setAllowed(false)
       setChecked(true)
       return
@@ -54,7 +55,7 @@ export function RoutePermissionGuard({ children }: RoutePermissionGuardProps) {
   }
 
   if (!allowed) {
-    const permissionsFailed = Boolean(error) || permissions.length === 0
+    const permissionsFailed = Boolean(error)
     return (
       <div className="flex h-64 flex-col items-center justify-center gap-4 text-center">
         <ShieldAlert className="h-12 w-12 text-red-500" />
@@ -64,16 +65,28 @@ export function RoutePermissionGuard({ children }: RoutePermissionGuardProps) {
           </h2>
           <p className="mt-1 text-sm text-gray-600">
             {permissionsFailed
-              ? 'Please refresh the page and try again.'
+              ? 'Please retry. If this keeps happening, log out and back in.'
               : 'You do not have permission to view this page.'}
           </p>
         </div>
         <button
           type="button"
-          onClick={() => (permissionsFailed ? window.location.reload() : router.push('/dashboard'))}
-          className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
+          disabled={retrying}
+          onClick={async () => {
+            if (permissionsFailed) {
+              setRetrying(true)
+              try {
+                await reload()
+              } finally {
+                setRetrying(false)
+              }
+              return
+            }
+            router.push('/dashboard')
+          }}
+          className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-60"
         >
-          {permissionsFailed ? 'Refresh' : 'Go to Dashboard'}
+          {permissionsFailed ? (retrying ? 'Retrying…' : 'Retry') : 'Go to Dashboard'}
         </button>
       </div>
     )

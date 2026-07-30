@@ -26,10 +26,19 @@ export interface UserWithRoles extends User {
 /**
  * Get all permissions for a user (from all their roles)
  */
+const permissionsMemo = new Map<string, { expiresAt: number; permissions: string[] }>()
+const PERMISSIONS_MEMO_TTL_MS = 15_000
+
 export async function getUserPermissions(
   userId: string,
   tenantId: string
 ): Promise<string[]> {
+  const memoKey = `${tenantId}:${userId}`
+  const cached = permissionsMemo.get(memoKey)
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.permissions
+  }
+
   const user = await prisma.user.findFirst({
     where: { id: userId, tenantId },
     include: {
@@ -102,7 +111,9 @@ export async function getUserPermissions(
     }
   }
 
-  return Array.from(permissions)
+  const result = Array.from(permissions)
+  permissionsMemo.set(memoKey, { permissions: result, expiresAt: Date.now() + PERMISSIONS_MEMO_TTL_MS })
+  return result
 }
 
 /**

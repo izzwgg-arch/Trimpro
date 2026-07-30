@@ -65,3 +65,25 @@ export async function refreshAccessToken(): Promise<boolean> {
   return refreshInFlight
 }
 
+function buildAuthHeaders(init?: HeadersInit): Headers {
+  const headers = new Headers(init || {})
+  const token = localStorage.getItem('accessToken')
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`)
+  }
+  return headers
+}
+
+/**
+ * Authenticated fetch for dashboard API calls.
+ * On 401, refreshes the access token once and retries the request.
+ */
+export async function authFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  const first = await fetch(input, { ...init, headers: buildAuthHeaders(init.headers) })
+  if (first.status !== 401) return first
+
+  const refreshed = await refreshAccessToken()
+  if (!refreshed) return first
+
+  return fetch(input, { ...init, headers: buildAuthHeaders(init.headers) })
+}
