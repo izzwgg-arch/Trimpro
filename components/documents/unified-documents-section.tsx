@@ -572,7 +572,7 @@ export function UnifiedDocumentsSection({
           </div>
         </div>
 
-        {error ? (
+        {error && documents.length === 0 ? (
           <div className="mb-3 flex flex-col items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2">
             <p className="text-sm text-red-700">{error}</p>
             {onDocumentsRefresh ? (
@@ -585,9 +585,9 @@ export function UnifiedDocumentsSection({
 
         {isInitialLoad ? (
           <p className="py-8 text-center text-sm text-gray-500">Loading documents...</p>
-        ) : filtered.length === 0 && !error ? (
+        ) : filtered.length === 0 ? (
           <p className="py-8 text-center text-sm text-gray-500">No documents match your filters</p>
-        ) : filtered.length === 0 ? null : (
+        ) : (
           <div className={`overflow-x-auto overflow-y-auto max-h-[min(32rem,65vh)] rounded-lg border ${isRefreshing ? 'opacity-70' : ''}`}>
             <table className="min-w-full text-sm">
               <thead className="sticky top-0 z-10 bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500 shadow-[0_1px_0_0_rgb(229_231_235)]">

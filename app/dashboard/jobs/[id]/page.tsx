@@ -212,20 +212,14 @@ export default function JobDetailPage() {
   const [unreadMessages, setUnreadMessages] = useState(0)
   const [unreadNotes, setUnreadNotes] = useState(0)
   const documentsRequestIdRef = useRef(0)
-  const documentsAbortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
-    documentsAbortRef.current?.abort()
     documentsRequestIdRef.current += 1
     setDocuments([])
     setDocumentsError(null)
     fetchJob()
     fetchDocuments()
     fetchUnread()
-
-    return () => {
-      documentsAbortRef.current?.abort()
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only re-fetch when jobId changes
   }, [jobId])
 
@@ -249,14 +243,11 @@ export default function JobDetailPage() {
     }
   }, [job])
 
-  const fetchDocuments = async () => {
-    documentsAbortRef.current?.abort()
-    const abort = new AbortController()
-    documentsAbortRef.current = abort
+  const fetchDocuments = async (retryCount = 0) => {
     const requestId = ++documentsRequestIdRef.current
-
     setDocumentsLoading(true)
-    setDocumentsError(null)
+    if (retryCount === 0) setDocumentsError(null)
+
     try {
       const token = localStorage.getItem('accessToken')
       if (!token) {
@@ -264,33 +255,39 @@ export default function JobDetailPage() {
         return
       }
 
-      const response = await authFetch(`/api/jobs/${jobId}/documents`, {
-        signal: abort.signal,
-      })
-      if (abort.signal.aborted || requestId !== documentsRequestIdRef.current) return
+      const response = await authFetch(`/api/jobs/${jobId}/documents`)
+      if (requestId !== documentsRequestIdRef.current) return
 
       const data = await readResponseJson<{ documents?: UnifiedDocumentRow[]; error?: string }>(response)
-      if (abort.signal.aborted || requestId !== documentsRequestIdRef.current) return
+      if (requestId !== documentsRequestIdRef.current) return
 
       if (!response.ok) {
         if (response.status === 401) {
           router.push('/auth/login')
           return
         }
-        setDocumentsError(data.error || `Failed to load documents (${response.status})`)
-        return
+        throw new Error(data.error || `Failed to load documents (${response.status})`)
       }
 
       setDocuments(Array.isArray(data.documents) ? data.documents : [])
       setDocumentsError(null)
     } catch (error) {
-      if (abort.signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) return
       if (requestId !== documentsRequestIdRef.current) return
-      console.error('Failed to fetch job documents:', error)
+
       const message = error instanceof Error && error.message ? error.message : 'Failed to load documents'
+      const isHtmlOrInvalid =
+        /web page instead of data|Invalid server response|Unexpected token/i.test(message)
+
+      if (retryCount < 1 && isHtmlOrInvalid) {
+        await new Promise((resolve) => setTimeout(resolve, 400))
+        if (requestId !== documentsRequestIdRef.current) return
+        return fetchDocuments(retryCount + 1)
+      }
+
+      console.error('Failed to fetch job documents:', error)
       setDocumentsError(message === 'Failed to fetch' ? 'Failed to load documents' : message)
     } finally {
-      if (!abort.signal.aborted && requestId === documentsRequestIdRef.current) {
+      if (requestId === documentsRequestIdRef.current) {
         setDocumentsLoading(false)
       }
     }

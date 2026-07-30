@@ -19,9 +19,32 @@ import { EditableNotesList } from '@/components/notes/editable-notes-list'
 import type { UnifiedDocumentRow } from '@/lib/documents/unified-documents'
 
 function buildDocumentsFromClient(clientData: {
-  invoices?: ClientDetail['invoices']
-  jobs?: ClientDetail['jobs']
-  estimates?: ClientDetail['estimates']
+  invoices?: Array<{
+    id: string
+    invoiceNumber: string
+    title?: string | null
+    total: string | number
+    balance: string | number
+    status: string
+    dueDate?: string | null
+    createdAt?: string | null
+  }>
+  jobs?: Array<{
+    id: string
+    jobNumber: string
+    title: string
+    status: string
+    scheduledStart?: string | null
+    createdAt?: string | null
+  }>
+  estimates?: Array<{
+    id: string
+    estimateNumber: string
+    title?: string | null
+    status: string
+    total: string | number | null
+    createdAt: string
+  }>
 }): UnifiedDocumentRow[] {
   const rows: UnifiedDocumentRow[] = []
 
@@ -37,7 +60,7 @@ function buildDocumentsFromClient(clientData: {
       amount: total,
       balance,
       isPaid: invoice.status === 'PAID' || invoice.status === 'CANCELLED' || invoice.status === 'REFUNDED' || balance <= 0,
-      date: invoice.dueDate || new Date(0).toISOString(),
+      date: invoice.dueDate || invoice.createdAt || new Date().toISOString(),
       href: `/dashboard/invoices/${invoice.id}`,
       meta: balance > 0 ? `Balance ${balance.toFixed(2)}` : null,
     })
@@ -68,7 +91,7 @@ function buildDocumentsFromClient(clientData: {
       amount: 0,
       balance: null,
       isPaid: null,
-      date: job.scheduledStart || new Date(0).toISOString(),
+      date: job.scheduledStart || job.createdAt || new Date().toISOString(),
       href: `/dashboard/jobs/${job.id}`,
       meta: String(job.status || '').replace(/_/g, ' '),
     })
@@ -368,21 +391,17 @@ export default function ClientDetailPage() {
   const [addingNote, setAddingNote] = useState(false)
   const { permissions: userPermissions, loading: permissionsLoading } = usePermissions()
   const documentsRequestIdRef = useRef(0)
-  const documentsAbortRef = useRef<AbortController | null>(null)
 
   // Defensive: Validate params before using
   const clientId = params?.id as string | undefined
 
-  const fetchDocuments = async () => {
+  const fetchDocuments = async (retryCount = 0) => {
     if (!clientId) return
 
-    documentsAbortRef.current?.abort()
-    const abort = new AbortController()
-    documentsAbortRef.current = abort
     const requestId = ++documentsRequestIdRef.current
-
     setDocumentsLoading(true)
-    setDocumentsError(null)
+    if (retryCount === 0) setDocumentsError(null)
+
     try {
       const token = localStorage.getItem('accessToken')
       if (!token) {
@@ -390,33 +409,40 @@ export default function ClientDetailPage() {
         return
       }
 
-      const response = await authFetch(`/api/clients/${clientId}/documents`, {
-        signal: abort.signal,
-      })
-      if (abort.signal.aborted || requestId !== documentsRequestIdRef.current) return
+      const response = await authFetch(`/api/clients/${clientId}/documents`)
+      if (requestId !== documentsRequestIdRef.current) return
 
       const data = await readResponseJson<{ documents?: UnifiedDocumentRow[]; error?: string }>(response)
-      if (abort.signal.aborted || requestId !== documentsRequestIdRef.current) return
+      if (requestId !== documentsRequestIdRef.current) return
 
       if (!response.ok) {
         if (response.status === 401) {
           router.push('/auth/login')
           return
         }
-        setDocumentsError(data.error || `Failed to load documents (${response.status})`)
-        return
+        throw new Error(data.error || `Failed to load documents (${response.status})`)
       }
 
       setDocuments(Array.isArray(data.documents) ? data.documents : [])
       setDocumentsError(null)
     } catch (err) {
-      if (abort.signal.aborted || (err instanceof DOMException && err.name === 'AbortError')) return
       if (requestId !== documentsRequestIdRef.current) return
-      console.error('Failed to load client documents:', err)
+
       const message = err instanceof Error && err.message ? err.message : 'Failed to load documents'
+      const isHtmlOrInvalid =
+        /web page instead of data|Invalid server response|Unexpected token/i.test(message)
+
+      // One automatic retry — covers aborted/racy first attempts during page mount.
+      if (retryCount < 1 && isHtmlOrInvalid) {
+        await new Promise((resolve) => setTimeout(resolve, 400))
+        if (requestId !== documentsRequestIdRef.current) return
+        return fetchDocuments(retryCount + 1)
+      }
+
+      console.error('Failed to load client documents:', err)
       setDocumentsError(message === 'Failed to fetch' ? 'Failed to load documents' : message)
     } finally {
-      if (!abort.signal.aborted && requestId === documentsRequestIdRef.current) {
+      if (requestId === documentsRequestIdRef.current) {
         setDocumentsLoading(false)
       }
     }
@@ -430,17 +456,12 @@ export default function ClientDetailPage() {
       return
     }
 
-    documentsAbortRef.current?.abort()
     documentsRequestIdRef.current += 1
     setDocuments([])
     setDocumentsError(null)
     setSelectedInvoiceIds([])
     fetchClient()
     fetchDocuments()
-
-    return () => {
-      documentsAbortRef.current?.abort()
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only re-fetch when clientId changes
   }, [clientId])
 
@@ -520,7 +541,12 @@ export default function ClientDetailPage() {
       setClient(normalizedClient)
       // If the dedicated documents request failed/raced, still show invoices/jobs/estimates
       // already returned with the client payload.
-      setDocuments((prev) => (prev.length > 0 ? prev : buildDocumentsFromClient(normalizedClient)))
+      setDocuments((prev) => {
+        if (prev.length > 0) return prev
+        const fallback = buildDocumentsFromClient(normalizedClient)
+        if (fallback.length > 0) setDocumentsError(null)
+        return fallback
+      })
       setError(null)
       setLoading(false)
     } catch (error) {
