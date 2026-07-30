@@ -955,6 +955,7 @@ export default function EditInvoicePage() {
         },
         body: JSON.stringify({
           clientId: formData.clientId || null,
+          jobId: formData.jobId || null,
           invoiceNumber,
           title: formData.title,
           taxRate: taxRate,

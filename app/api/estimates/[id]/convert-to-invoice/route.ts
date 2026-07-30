@@ -14,6 +14,7 @@ import {
 import { toCents, fromCents, reconcileProgressLines } from '@/lib/documents/progress-billing'
 import { allocateNextInvoiceNumber } from '@/lib/qbo/doc-numbers'
 import { ensureJobFromInvoice } from '@/lib/jobs/ensure-job-from-invoice'
+import { syncJobCostFromLinkedDocuments } from '@/lib/jobs/sync-job-cost'
 import { createNotificationsForUsers } from '@/lib/notifications'
 
 type BillingMode = 'FULL' | 'PERCENTAGE' | 'MANUAL'
@@ -428,8 +429,10 @@ export async function POST(
     }
 
     // Create the job immediately upon estimate→invoice conversion (not on payment).
+    let jobIdForCost: string | null = estimate.jobId || null
     try {
       const { job, created } = await ensureJobFromInvoice(result.id)
+      if (job?.id) jobIdForCost = job.id
 
       if (created && job) {
         // Notify staff that a new job has been created.
@@ -464,6 +467,14 @@ export async function POST(
     } catch (jobErr) {
       // Job creation failure must not roll back the invoice — log and continue.
       console.error('Failed to auto-create job from estimate conversion:', jobErr)
+    }
+
+    if (jobIdForCost) {
+      try {
+        await syncJobCostFromLinkedDocuments(jobIdForCost)
+      } catch (syncErr) {
+        console.error('Failed to sync job cost after estimate convert-to-invoice:', syncErr)
+      }
     }
 
     return NextResponse.json({ invoice: result }, { status: 201 })

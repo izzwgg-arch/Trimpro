@@ -12,6 +12,7 @@ import {
   mapEstimateDocNumberErrorToResponse,
   normalizeEstimateNumber,
 } from '@/lib/qbo/doc-numbers'
+import { syncJobCostFromLinkedDocuments } from '@/lib/jobs/sync-job-cost'
 
 export async function GET(
   request: NextRequest,
@@ -481,6 +482,21 @@ export async function PUT(
       await enqueueQboSync(user.tenantId, 'estimate', estimateRecord.id, { processImmediately: false })
     } catch (error) {
       console.error('QuickBooks estimate sync trigger error (estimate update):', error)
+    }
+
+    const jobIdForCost = estimateRecord.jobId || existing.jobId || null
+    const nextStatus = String(estimateRecord.status || '')
+    const prevStatus = String(existing.status || '')
+    const costRelevant = ['ACCEPTED', 'CONVERTED']
+    if (
+      jobIdForCost &&
+      (costRelevant.includes(nextStatus) || costRelevant.includes(prevStatus))
+    ) {
+      try {
+        await syncJobCostFromLinkedDocuments(jobIdForCost)
+      } catch (syncErr) {
+        console.error('Failed to sync job cost after estimate update:', syncErr)
+      }
     }
 
     return NextResponse.json({ estimate: estimateRecord })

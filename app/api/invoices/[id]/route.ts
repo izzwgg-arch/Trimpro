@@ -11,6 +11,7 @@ import {
   assertInvoiceNumberAvailableInQuickBooks,
   normalizeInvoiceNumber,
 } from '@/lib/qbo/doc-numbers'
+import { syncJobCostFromLinkedDocuments } from '@/lib/jobs/sync-job-cost'
 
 export async function GET(
   request: NextRequest,
@@ -215,6 +216,7 @@ export async function PUT(
     const body = await request.json()
     const {
       clientId,
+      jobId,
       invoiceNumber,
       title,
       lineItems,
@@ -278,6 +280,30 @@ export async function PUT(
         return NextResponse.json({ error: 'Client not found' }, { status: 404 })
       }
       resolvedClientId = nextClientId
+    }
+
+    let resolvedJobId: string | null | undefined = undefined
+    if (jobId !== undefined) {
+      if (jobId === null || jobId === '') {
+        resolvedJobId = null
+      } else {
+        const job = await prisma.job.findFirst({
+          where: { id: String(jobId), tenantId: user.tenantId },
+          select: { id: true, clientId: true },
+        })
+        if (!job) {
+          return NextResponse.json({ error: 'Job not found' }, { status: 404 })
+        }
+        const effectiveClientId =
+          resolvedClientId !== undefined ? resolvedClientId : existing.clientId
+        if (job.clientId !== effectiveClientId) {
+          return NextResponse.json(
+            { error: 'Job must belong to the same client as the invoice' },
+            { status: 400 }
+          )
+        }
+        resolvedJobId = job.id
+      }
     }
 
     // Recalculate totals if line items changed
@@ -433,9 +459,11 @@ export async function PUT(
           title: title !== undefined ? title : existing.title,
           clientId: resolvedClientId !== undefined ? resolvedClientId : undefined,
           jobId:
-            resolvedClientId !== undefined && resolvedClientId !== existing.clientId
-              ? null
-              : undefined,
+            resolvedJobId !== undefined
+              ? resolvedJobId
+              : resolvedClientId !== undefined && resolvedClientId !== existing.clientId
+                ? null
+                : undefined,
         subtotal: subtotal,
         taxRate: taxRateNum,
         taxAmount: tax,
@@ -509,6 +537,19 @@ export async function PUT(
       console.error('QuickBooks invoice sync trigger error (invoice update):', error)
     }
 
+    const previousJobId = existing.jobId
+    const nextJobId = invoiceRecord.jobId || null
+    try {
+      if (previousJobId && previousJobId !== nextJobId) {
+        await syncJobCostFromLinkedDocuments(previousJobId)
+      }
+      if (nextJobId) {
+        await syncJobCostFromLinkedDocuments(nextJobId)
+      }
+    } catch (syncErr) {
+      console.error('Failed to sync job cost after invoice update:', syncErr)
+    }
+
     return NextResponse.json({ invoice: invoiceRecord })
   } catch (error) {
     console.error('Update invoice error:', error)
@@ -556,6 +597,8 @@ export async function DELETE(
       where: { invoiceId: params.id },
     })
 
+    const previousJobId = invoice.jobId
+
     // Actually delete the invoice
     await prisma.invoice.delete({
       where: { id: params.id },
@@ -571,6 +614,14 @@ export async function DELETE(
         entityId: invoice.id,
       },
     })
+
+    if (previousJobId) {
+      try {
+        await syncJobCostFromLinkedDocuments(previousJobId)
+      } catch (syncErr) {
+        console.error('Failed to sync job cost after invoice delete:', syncErr)
+      }
+    }
 
     return NextResponse.json({ message: 'Invoice deleted successfully' })
   } catch (error) {

@@ -8,6 +8,7 @@ import { createNotificationsForUsers } from '@/lib/notifications'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { getEstimateConversionSummary } from '@/lib/documents/conversion'
 import { allocateNextInvoiceNumber } from '@/lib/qbo/doc-numbers'
+import { syncJobCostFromLinkedDocuments } from '@/lib/jobs/sync-job-cost'
 
 export const runtime = 'nodejs'
 
@@ -405,6 +406,33 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
         await enqueueQboSync(tokenRow.tenantId, 'invoice', autoCreatedInvoice.id)
       } catch (error) {
         console.error('QuickBooks invoice sync trigger error (estimate approval):', error)
+      }
+    }
+
+    const jobIdForCost =
+      autoCreatedJob?.id ||
+      autoCreatedInvoice?.jobId ||
+      estimate.jobId ||
+      null
+    if (jobIdForCost && approvedIds.length > 0) {
+      try {
+        const current = await prisma.estimate.findUnique({
+          where: { id: estimate.id },
+          select: { status: true },
+        })
+        if (
+          current &&
+          current.status !== 'CONVERTED' &&
+          current.status !== 'ACCEPTED'
+        ) {
+          await prisma.estimate.update({
+            where: { id: estimate.id },
+            data: { status: 'ACCEPTED' },
+          })
+        }
+        await syncJobCostFromLinkedDocuments(jobIdForCost)
+      } catch (syncErr) {
+        console.error('Failed to sync job cost after public estimate approval:', syncErr)
       }
     }
 

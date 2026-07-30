@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { getEstimateConversionSummary } from '@/lib/documents/conversion'
 import { copyRequestAttachmentsToJob } from '@/lib/jobs/copy-request-attachments-to-job'
+import { syncJobCostFromLinkedDocuments } from '@/lib/jobs/sync-job-cost'
 import { parseJobType } from '@/lib/jobs/types'
 
 function normalizePhone(value: string | null | undefined) {
@@ -105,6 +106,7 @@ export async function ensureJobFromInvoice(
       leadId: invoice.estimate?.leadId,
       jobId: invoice.job.id,
     })
+    await syncJobCostFromLinkedDocuments(invoice.job.id)
     return { job: invoice.job, created: false, skippedReason: 'already_linked' }
   }
 
@@ -120,6 +122,7 @@ export async function ensureJobFromInvoice(
       leadId: estimate.leadId,
       jobId: estimate.job.id,
     })
+    await syncJobCostFromLinkedDocuments(estimate.job.id)
     return { job: estimate.job, created: false, skippedReason: 'already_linked' }
   }
 
@@ -276,6 +279,7 @@ export async function ensureJobFromInvoice(
 
         return createdJob
       })
+      await syncJobCostFromLinkedDocuments(createdJob.id)
       return { job: createdJob, created: true }
     } catch (err: any) {
       if (err?.code === 'P2002' && err?.meta?.target?.includes?.('jobNumber')) {

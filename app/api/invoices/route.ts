@@ -19,6 +19,7 @@ import {
   normalizeInvoiceNumber,
 } from '@/lib/qbo/doc-numbers'
 import { ensureJobFromInvoice } from '@/lib/jobs/ensure-job-from-invoice'
+import { syncJobCostFromLinkedDocuments } from '@/lib/jobs/sync-job-cost'
 import { resolveJobTypeForWrite } from '@/lib/jobs/job-type-scope'
 import { invoiceJobSiteAddressSearchClauses } from '@/lib/search/job-site-address'
 import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
@@ -640,6 +641,7 @@ export async function POST(request: NextRequest) {
 
     // When the invoice is linked to an estimate, create the job immediately.
     // ensureJobFromInvoice is idempotent — it is safe to call even if a job already exists.
+    let linkedJobId: string | null = jobId || invoice.jobId || null
     if (estimateId) {
       try {
         let jobTypeForCreate: string | undefined
@@ -656,12 +658,21 @@ export async function POST(request: NextRequest) {
             jobTypeForCreate = resolved.jobType
           }
         }
-        await ensureJobFromInvoice(invoice.id, {
+        const ensured = await ensureJobFromInvoice(invoice.id, {
           jobType: jobTypeForCreate,
         })
+        if (ensured.job?.id) linkedJobId = ensured.job.id
       } catch (jobErr) {
         // Job creation failure must not fail the invoice — log and continue.
         console.error('Failed to auto-create job from invoice creation:', jobErr)
+      }
+    }
+
+    if (linkedJobId) {
+      try {
+        await syncJobCostFromLinkedDocuments(linkedJobId)
+      } catch (syncErr) {
+        console.error('Failed to sync job cost after invoice create:', syncErr)
       }
     }
 

@@ -7,7 +7,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils'
-import { Briefcase, Calendar, DollarSign, Users, MapPin, FileText, CheckSquare, AlertCircle, Phone, MessageSquare, Mail, Edit, Plus, Building2, Trash2, Copy, Clock } from 'lucide-react'
+import { Briefcase, Calendar, DollarSign, Users, MapPin, FileText, CheckSquare, AlertCircle, Phone, MessageSquare, Mail, Edit, Plus, Building2, Trash2, Copy, Clock, Link2 } from 'lucide-react'
 import { JobThreadDialog } from '@/components/messages/JobThreadDialog'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
@@ -21,6 +21,8 @@ import { authFetch, readResponseJson } from '@/lib/auth/client'
 import { JobTypeBadge } from '@/components/jobs/JobTypeSelect'
 import { JobStatusSelect } from '@/components/jobs/JobStatusSelect'
 import { JobBillingStatusBadge } from '@/components/jobs/JobBillingStatusBadge'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 const JobSiteMap = dynamic(() => import('@/components/maps/JobSiteMap').then(mod => ({ default: mod.JobSiteMap })), {
   ssr: false,
@@ -211,6 +213,13 @@ export default function JobDetailPage() {
   const [chatOpen, setChatOpen] = useState(false)
   const [unreadMessages, setUnreadMessages] = useState(0)
   const [unreadNotes, setUnreadNotes] = useState(0)
+  const [linkInvoiceOpen, setLinkInvoiceOpen] = useState(false)
+  const [unattachedInvoices, setUnattachedInvoices] = useState<
+    Array<{ id: string; invoiceNumber: string; title: string; total: string; status: string }>
+  >([])
+  const [loadingUnattachedInvoices, setLoadingUnattachedInvoices] = useState(false)
+  const [selectedLinkInvoiceId, setSelectedLinkInvoiceId] = useState('')
+  const [linkingInvoice, setLinkingInvoice] = useState(false)
   const documentsRequestIdRef = useRef(0)
 
   useEffect(() => {
@@ -699,6 +708,85 @@ export default function JobDetailPage() {
     }
   }
 
+  const openLinkInvoiceDialog = async () => {
+    if (!job?.client?.id) return
+    setLinkInvoiceOpen(true)
+    setSelectedLinkInvoiceId('')
+    setLoadingUnattachedInvoices(true)
+    try {
+      const response = await authFetch(
+        `/api/invoices?clientId=${encodeURIComponent(job.client.id)}&limit=100&status=all`
+      )
+      if (response.status === 401) {
+        router.push('/auth/login')
+        return
+      }
+      const payload = await readResponseJson<{
+        invoices?: Array<{
+          id: string
+          invoiceNumber: string
+          title: string
+          total: string | number
+          status: string
+          job?: { id: string } | null
+          jobId?: string | null
+        }>
+      }>(response)
+      const rows = Array.isArray(payload?.invoices) ? payload.invoices : []
+      setUnattachedInvoices(
+        rows
+          .filter((inv) => !inv.job?.id && !inv.jobId)
+          .filter((inv) => inv.status !== 'CANCELLED' && inv.status !== 'REFUNDED')
+          .map((inv) => ({
+            id: inv.id,
+            invoiceNumber: inv.invoiceNumber,
+            title: inv.title,
+            total: String(inv.total ?? '0'),
+            status: inv.status,
+          }))
+      )
+    } catch (err) {
+      console.error('Failed to load unattached invoices:', err)
+      setUnattachedInvoices([])
+      alert('Failed to load saved invoices')
+    } finally {
+      setLoadingUnattachedInvoices(false)
+    }
+  }
+
+  const linkInvoiceToJob = async () => {
+    if (!selectedLinkInvoiceId) {
+      alert('Select an invoice to attach')
+      return
+    }
+    setLinkingInvoice(true)
+    try {
+      const response = await authFetch(`/api/jobs/${jobId}/link-invoice`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoiceId: selectedLinkInvoiceId }),
+      })
+      if (response.status === 401) {
+        router.push('/auth/login')
+        return
+      }
+      const payload = await readResponseJson<{ error?: string }>(response)
+      if (!response.ok) {
+        alert(payload?.error || 'Failed to attach invoice')
+        return
+      }
+      setLinkInvoiceOpen(false)
+      setSelectedLinkInvoiceId('')
+      await fetchJob()
+      await fetchDocuments()
+    } catch (err) {
+      console.error('Failed to link invoice:', err)
+      alert('Failed to attach invoice')
+    } finally {
+      setLinkingInvoice(false)
+    }
+  }
+
   const updateJobNote = async (noteId: string, content: string) => {
     const token = localStorage.getItem('accessToken')
     if (!token) {
@@ -961,6 +1049,15 @@ export default function JobDetailPage() {
             >
               <DollarSign className="mr-1.5 h-3.5 w-3.5" />
               New Invoice
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs px-2"
+              onClick={() => void openLinkInvoiceDialog()}
+            >
+              <Link2 className="mr-1.5 h-3.5 w-3.5" />
+              Link Invoice
             </Button>
             <Button
               variant="outline"
@@ -1509,6 +1606,46 @@ export default function JobDetailPage() {
         jobId={jobId}
         jobNumber={job.jobNumber}
       />
+
+      <Dialog open={linkInvoiceOpen} onOpenChange={setLinkInvoiceOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Link saved invoice</DialogTitle>
+            <DialogDescription>
+              Attach an existing invoice for {job.client.name} that is not already on a job. Job cost updates automatically.
+            </DialogDescription>
+          </DialogHeader>
+          {loadingUnattachedInvoices ? (
+            <p className="text-sm text-gray-500">Loading invoices…</p>
+          ) : unattachedInvoices.length === 0 ? (
+            <p className="text-sm text-gray-500">No unattached invoices found for this client.</p>
+          ) : (
+            <Select value={selectedLinkInvoiceId || undefined} onValueChange={setSelectedLinkInvoiceId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select an invoice" />
+              </SelectTrigger>
+              <SelectContent>
+                {unattachedInvoices.map((inv) => (
+                  <SelectItem key={inv.id} value={inv.id}>
+                    {inv.invoiceNumber} — {inv.title} ({formatCurrency(parseFloat(inv.total) || 0)})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLinkInvoiceOpen(false)} disabled={linkingInvoice}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void linkInvoiceToJob()}
+              disabled={linkingInvoice || loadingUnattachedInvoices || !selectedLinkInvoiceId}
+            >
+              {linkingInvoice ? 'Attaching…' : 'Attach to job'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

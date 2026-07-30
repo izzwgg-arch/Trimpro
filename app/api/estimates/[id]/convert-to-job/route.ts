@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { getEstimateConversionSummary } from '@/lib/documents/conversion'
 import { copyRequestAttachmentsToJob } from '@/lib/jobs/copy-request-attachments-to-job'
+import { syncJobCostFromLinkedDocuments } from '@/lib/jobs/sync-job-cost'
 
 function normalizePhone(value: string | null | undefined) {
   return (value || '').replace(/\D/g, '')
@@ -65,6 +66,13 @@ export async function POST(
         leadId: estimate.leadId,
         jobId: estimate.job.id,
       })
+      if (estimate.status !== 'CONVERTED' && estimate.status !== 'ACCEPTED') {
+        await prisma.estimate.update({
+          where: { id: estimate.id },
+          data: { status: 'CONVERTED' },
+        })
+      }
+      await syncJobCostFromLinkedDocuments(estimate.job.id)
       return NextResponse.json({ job: estimate.job }, { status: 200 })
     }
 
@@ -208,6 +216,12 @@ export async function POST(
       } catch (error) {
         console.error('QuickBooks client sync trigger error (estimate convert-to-job):', error)
       }
+    }
+
+    try {
+      await syncJobCostFromLinkedDocuments(job.id)
+    } catch (syncErr) {
+      console.error('Failed to sync job cost after estimate convert-to-job:', syncErr)
     }
 
     return NextResponse.json({ job }, { status: 201 })
