@@ -15,7 +15,9 @@ async function refreshWithToken(refreshToken: string): Promise<boolean> {
   })
 
   if (!response.ok) return false
-  const data = await response.json().catch(() => null)
+  const data = await readResponseJson<{ accessToken?: string; refreshToken?: string }>(response).catch(
+    () => null
+  )
   if (!data?.accessToken || !data?.refreshToken) return false
   localStorage.setItem('accessToken', data.accessToken)
   localStorage.setItem('refreshToken', data.refreshToken)
@@ -75,6 +77,26 @@ function buildAuthHeaders(init?: HeadersInit): Headers {
 }
 
 /**
+ * Read a fetch Response as JSON, with a clear error when the server returns HTML
+ * (login page, Next error page, proxy page, etc.) instead of JSON.
+ */
+export async function readResponseJson<T = unknown>(response: Response): Promise<T> {
+  const text = await response.text()
+  const trimmed = text.trim()
+  if (!trimmed) return {} as T
+
+  if (trimmed.startsWith('<!') || trimmed.startsWith('<html') || trimmed.startsWith('<HTML')) {
+    throw new Error(`Server returned a web page instead of data (${response.status})`)
+  }
+
+  try {
+    return JSON.parse(trimmed) as T
+  } catch {
+    throw new Error(`Invalid server response (${response.status})`)
+  }
+}
+
+/**
  * Authenticated fetch for dashboard API calls.
  * On 401, refreshes the access token once and retries the request.
  */
@@ -82,8 +104,16 @@ export async function authFetch(input: RequestInfo | URL, init: RequestInit = {}
   const first = await fetch(input, { ...init, headers: buildAuthHeaders(init.headers) })
   if (first.status !== 401) return first
 
+  if (init.signal?.aborted) {
+    throw new DOMException('Aborted', 'AbortError')
+  }
+
   const refreshed = await refreshAccessToken()
   if (!refreshed) return first
+
+  if (init.signal?.aborted) {
+    throw new DOMException('Aborted', 'AbortError')
+  }
 
   return fetch(input, { ...init, headers: buildAuthHeaders(init.headers) })
 }

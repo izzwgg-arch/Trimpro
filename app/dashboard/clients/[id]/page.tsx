@@ -13,10 +13,70 @@ import { Phone, Mail, MapPin, Building2, Calendar, FileText, DollarSign, Briefca
 import Link from 'next/link'
 import { AddressMapSection } from './map-section'
 import { usePermissions, hasPermission } from '@/hooks/usePermissions'
-import { authFetch } from '@/lib/auth/client'
+import { authFetch, readResponseJson } from '@/lib/auth/client'
 import { UnifiedDocumentsSection } from '@/components/documents/unified-documents-section'
 import { EditableNotesList } from '@/components/notes/editable-notes-list'
 import type { UnifiedDocumentRow } from '@/lib/documents/unified-documents'
+
+function buildDocumentsFromClient(clientData: {
+  invoices?: ClientDetail['invoices']
+  jobs?: ClientDetail['jobs']
+  estimates?: ClientDetail['estimates']
+}): UnifiedDocumentRow[] {
+  const rows: UnifiedDocumentRow[] = []
+
+  for (const invoice of clientData.invoices || []) {
+    const balance = Number(invoice.balance)
+    const total = Number(invoice.total)
+    rows.push({
+      id: invoice.id,
+      kind: 'invoice',
+      number: invoice.invoiceNumber,
+      title: invoice.title || null,
+      status: invoice.status,
+      amount: total,
+      balance,
+      isPaid: invoice.status === 'PAID' || invoice.status === 'CANCELLED' || invoice.status === 'REFUNDED' || balance <= 0,
+      date: invoice.dueDate || new Date(0).toISOString(),
+      href: `/dashboard/invoices/${invoice.id}`,
+      meta: balance > 0 ? `Balance ${balance.toFixed(2)}` : null,
+    })
+  }
+
+  for (const estimate of clientData.estimates || []) {
+    rows.push({
+      id: estimate.id,
+      kind: 'estimate',
+      number: estimate.estimateNumber,
+      title: estimate.title || null,
+      status: estimate.status,
+      amount: Number(estimate.total || 0),
+      balance: null,
+      isPaid: null,
+      date: estimate.createdAt,
+      href: `/dashboard/estimates/${estimate.id}`,
+    })
+  }
+
+  for (const job of clientData.jobs || []) {
+    rows.push({
+      id: job.id,
+      kind: 'job',
+      number: job.jobNumber,
+      title: job.title,
+      status: job.status,
+      amount: 0,
+      balance: null,
+      isPaid: null,
+      date: job.scheduledStart || new Date(0).toISOString(),
+      href: `/dashboard/jobs/${job.id}`,
+      meta: String(job.status || '').replace(/_/g, ' '),
+    })
+  }
+
+  rows.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+  return rows
+}
 
 interface ClientDetail {
   id: string
@@ -335,8 +395,10 @@ export default function ClientDetailPage() {
       })
       if (abort.signal.aborted || requestId !== documentsRequestIdRef.current) return
 
+      const data = await readResponseJson<{ documents?: UnifiedDocumentRow[]; error?: string }>(response)
+      if (abort.signal.aborted || requestId !== documentsRequestIdRef.current) return
+
       if (!response.ok) {
-        const data = await response.json().catch(() => ({}))
         if (response.status === 401) {
           router.push('/auth/login')
           return
@@ -345,8 +407,6 @@ export default function ClientDetailPage() {
         return
       }
 
-      const data = await response.json()
-      if (abort.signal.aborted || requestId !== documentsRequestIdRef.current) return
       setDocuments(Array.isArray(data.documents) ? data.documents : [])
       setDocumentsError(null)
     } catch (err) {
@@ -408,14 +468,15 @@ export default function ClientDetailPage() {
       }
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Failed to load client' }))
+        const errorData = await readResponseJson<{ error?: string }>(response).catch(() => ({
+          error: 'Failed to load client',
+        }))
         setError(errorData.error || 'Failed to load client')
         setLoading(false)
         return
       }
 
-      const data = await response.json()
-      console.log('Client API response:', data) // Debug log
+      const data = await readResponseJson<{ client?: ClientDetail } & ClientDetail>(response)
       // API returns client wrapped in { client: ... }
       const clientData = data.client || data
       if (!clientData || !clientData.id) {
@@ -424,7 +485,6 @@ export default function ClientDetailPage() {
         setLoading(false)
         return
       }
-      console.log('Client data extracted:', clientData.id) // Debug log
 
       // Normalize client data - ensure all arrays exist
       const normalizedClient = {
@@ -458,6 +518,9 @@ export default function ClientDetailPage() {
         },
       }
       setClient(normalizedClient)
+      // If the dedicated documents request failed/raced, still show invoices/jobs/estimates
+      // already returned with the client payload.
+      setDocuments((prev) => (prev.length > 0 ? prev : buildDocumentsFromClient(normalizedClient)))
       setError(null)
       setLoading(false)
     } catch (error) {

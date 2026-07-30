@@ -17,7 +17,7 @@ import { buildCreateContextQuery } from '@/src/lib/create-context'
 import { UnifiedDocumentsSection } from '@/components/documents/unified-documents-section'
 import { EditableNotesList } from '@/components/notes/editable-notes-list'
 import type { UnifiedDocumentRow } from '@/lib/documents/unified-documents'
-import { authFetch } from '@/lib/auth/client'
+import { authFetch, readResponseJson } from '@/lib/auth/client'
 import { JobTypeBadge } from '@/components/jobs/JobTypeSelect'
 import { JobStatusSelect } from '@/components/jobs/JobStatusSelect'
 import { JobBillingStatusBadge } from '@/components/jobs/JobBillingStatusBadge'
@@ -269,8 +269,10 @@ export default function JobDetailPage() {
       })
       if (abort.signal.aborted || requestId !== documentsRequestIdRef.current) return
 
+      const data = await readResponseJson<{ documents?: UnifiedDocumentRow[]; error?: string }>(response)
+      if (abort.signal.aborted || requestId !== documentsRequestIdRef.current) return
+
       if (!response.ok) {
-        const data = await response.json().catch(() => ({}))
         if (response.status === 401) {
           router.push('/auth/login')
           return
@@ -279,8 +281,6 @@ export default function JobDetailPage() {
         return
       }
 
-      const data = await response.json()
-      if (abort.signal.aborted || requestId !== documentsRequestIdRef.current) return
       setDocuments(Array.isArray(data.documents) ? data.documents : [])
       setDocumentsError(null)
     } catch (error) {
