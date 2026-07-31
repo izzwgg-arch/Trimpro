@@ -21,6 +21,11 @@ import {
   addItemToDocumentBundle,
   removeDocumentLineItem,
 } from '@/lib/bundles/document-line-item-actions'
+import {
+  DocumentLineItemsColumnHeader,
+  DOCUMENT_LINE_WIDTH_DEFAULTS,
+} from '@/components/documents/document-line-items-column-header'
+
 interface Job {
   id: string
   jobNumber: string
@@ -70,6 +75,7 @@ export default function EditInvoicePage() {
   const [pickerBundles, setPickerBundles] = useState<FastPickerItem[]>([])
   const [lineItems, setLineItems] = useState<LineItem[]>([])
   const [optionalItems, setOptionalItems] = useState<LineItem[]>([])
+  const [lineColWidths, setLineColWidths] = useState<Record<string, number>>(DOCUMENT_LINE_WIDTH_DEFAULTS)
   const [isNotesVisibleToClient, setIsNotesVisibleToClient] = useState(true)
   const [invoiceNumber, setInvoiceNumber] = useState('')
   
@@ -1203,6 +1209,10 @@ export default function EditInvoicePage() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-2">
+                <DocumentLineItemsColumnHeader
+                  entity="invoice-edit-line-items"
+                  onWidthsChange={setLineColWidths}
+                />
                 <div className="space-y-2">
                   {lineItems.map((item, index) => {
                     const isGroupHeader = item.isGroupHeader
@@ -1345,7 +1355,7 @@ export default function EditInvoicePage() {
                           </div>
                         )}
 
-                        <div className="line-item-field-wide flex-1 space-y-1">
+                        <div className="line-item-field-wide flex-1 space-y-1" style={{ minWidth: lineColWidths.name || 200 }}>
                           {isGroupHeader ? (
                             <div className="flex items-center gap-2">
                               <Input
@@ -1444,8 +1454,8 @@ export default function EditInvoicePage() {
                                 value={item.notes || ''}
                                 onChange={(e) => updateLineItem(index, 'notes', e.target.value)}
                                 placeholder="Description (optional)"
-                                rows={1}
-                                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
+                                rows={2}
+                                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y whitespace-pre-wrap"
                                 data-col="notes"
                               />
                             </>
@@ -1454,7 +1464,7 @@ export default function EditInvoicePage() {
 
                         {!isGroupHeader && (
                           <>
-                            <div className="w-20">
+                            <div style={{ width: lineColWidths.qty || 80 }} className="shrink-0">
                               <Input
                                 type="number"
                                 step="0.01"
@@ -1466,7 +1476,7 @@ export default function EditInvoicePage() {
                               />
                             </div>
 
-                            <div className="line-item-field-numeric relative">
+                            <div className="line-item-field-numeric relative shrink-0" style={{ width: lineColWidths.price || 112 }}>
                               <div className="flex items-center gap-1 mb-1">
                                 <Label className="text-xs text-gray-500">Price</Label>
                                 <Button
@@ -1495,7 +1505,7 @@ export default function EditInvoicePage() {
                               />
                             </div>
 
-                            <div className="line-item-field-numeric relative">
+                            <div className="line-item-field-numeric relative shrink-0" style={{ width: lineColWidths.cost || 112 }}>
                               <div className="flex items-center gap-1 mb-1">
                                 <Label className="text-xs text-gray-500">Cost</Label>
                                 <Button

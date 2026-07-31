@@ -1304,8 +1304,8 @@ export default function InvoiceDetailPage() {
                           items.forEach((item) => {
                             rows.push(
                               <tr key={item.id} className="border-b bg-gray-50/50">
-                                <td className="py-3 px-4 pl-8">{item.description}</td>
-                                <td className="py-3 px-4">{item.notes || '-'}</td>
+                                <td className="py-3 px-4 pl-8 whitespace-pre-wrap break-words">{item.description}</td>
+                                <td className="py-3 px-4 whitespace-pre-wrap break-words">{item.notes || '-'}</td>
                                 <td className="py-3 px-4 text-right">{item.quantity}</td>
                                 <td className="py-3 px-4 text-right">{formatCurrency(parseFloat(item.unitPrice))}</td>
                                 <td className="py-3 px-4 text-right">
@@ -1351,8 +1351,8 @@ export default function InvoiceDetailPage() {
                         }
                         rows.push(
                           <tr key={item.id} className="border-b">
-                            <td className="py-3 px-4">{item.description}</td>
-                            <td className="py-3 px-4">{item.notes || '-'}</td>
+                            <td className="py-3 px-4 whitespace-pre-wrap break-words">{item.description}</td>
+                            <td className="py-3 px-4 whitespace-pre-wrap break-words">{item.notes || '-'}</td>
                             <td className="py-3 px-4 text-right">{item.quantity}</td>
                             <td className="py-3 px-4 text-right">{formatCurrency(parseFloat(item.unitPrice))}</td>
                             <td className="py-3 px-4 text-right font-semibold">
@@ -1367,14 +1367,14 @@ export default function InvoiceDetailPage() {
                         const isVisibleToClient = item.isVisibleToClient ?? true
                         rows.push(
                           <tr key={`opt-${item.id}`} className={`border-b ${!isVisibleToClient ? 'bg-gray-50' : ''}`}>
-                            <td className="py-3 px-4">
+                            <td className="py-3 px-4 whitespace-pre-wrap break-words">
                               {item.description}
                               <span className="ml-1 text-xs rounded bg-blue-50 border border-blue-200 px-1.5 py-0.5 text-blue-700">add-on</span>
                               {!isVisibleToClient && (
                                 <span className="ml-2 text-xs text-gray-500">(Hidden from client)</span>
                               )}
                             </td>
-                            <td className="py-3 px-4">{item.notes || '-'}</td>
+                            <td className="py-3 px-4 whitespace-pre-wrap break-words">{item.notes || '-'}</td>
                             <td className="py-3 px-4 text-right">{item.quantity}</td>
                             <td className="py-3 px-4 text-right">{formatCurrency(parseFloat(item.unitPrice || '0'))}</td>
                             <td className="py-3 px-4 text-right font-semibold">{formatCurrency(parseFloat(item.total || '0'))}</td>

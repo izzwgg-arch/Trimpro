@@ -908,7 +908,7 @@ export default function EstimateDetailPage() {
                                 key={item.id}
                                 className={`border-b bg-gray-50/50 ${!isVisibleToClient ? 'opacity-70' : ''}`}
                               >
-                                <td className="py-3 px-4 pl-8">
+                                <td className="py-3 px-4 pl-8 whitespace-pre-wrap break-words">
                                   {item.description}
                                   {item.isApproved && (
                                     <span className="ml-1 text-xs rounded bg-green-100 border border-green-200 px-1.5 py-0.5 text-green-700">add-on</span>
@@ -917,7 +917,7 @@ export default function EstimateDetailPage() {
                                     <span className="ml-2 text-xs text-gray-500">(Hidden from client)</span>
                                   )}
                                 </td>
-                                <td className="py-3 px-4">{item.notes || '-'}</td>
+                                <td className="py-3 px-4 whitespace-pre-wrap break-words">{item.notes || '-'}</td>
                                 <td className="py-3 px-4 text-right">{item.quantity}</td>
                                 <td className="py-3 px-4 text-right">{formatCurrency(unitPrice)}</td>
                                 <td className="py-3 px-4 text-right">{formatCurrency(unitCost)}</td>
@@ -970,7 +970,7 @@ export default function EstimateDetailPage() {
                         const isVisibleToClient = item.isVisibleToClient ?? true
                         rows.push(
                           <tr key={item.id} className={`border-b ${!isVisibleToClient ? 'bg-gray-50' : ''}`}>
-                            <td className="py-3 px-4">
+                            <td className="py-3 px-4 whitespace-pre-wrap break-words">
                               {item.description}
                               {item.isApproved && (
                                 <span className="ml-1 text-xs rounded bg-green-100 border border-green-200 px-1.5 py-0.5 text-green-700">add-on</span>
@@ -979,7 +979,7 @@ export default function EstimateDetailPage() {
                                 <span className="ml-2 text-xs text-gray-500">(Hidden from client)</span>
                               )}
                             </td>
-                            <td className="py-3 px-4">{item.notes || '-'}</td>
+                            <td className="py-3 px-4 whitespace-pre-wrap break-words">{item.notes || '-'}</td>
                             <td className="py-3 px-4 text-right">{item.quantity}</td>
                             <td className="py-3 px-4 text-right">{formatCurrency(unitPrice)}</td>
                             <td className="py-3 px-4 text-right">{formatCurrency(unitCost)}</td>
@@ -1029,13 +1029,13 @@ export default function EstimateDetailPage() {
                         const isVisibleToClient = item.isVisibleToClient ?? true
                         return (
                           <tr key={item.id} className={`border-b ${!isVisibleToClient ? 'bg-gray-50' : ''}`}>
-                            <td className="py-3 px-4">
+                            <td className="py-3 px-4 whitespace-pre-wrap break-words">
                               {item.description}
                               {!isVisibleToClient && (
                                 <span className="ml-2 text-xs text-gray-500">(Hidden from client)</span>
                               )}
                             </td>
-                            <td className="py-3 px-4">{item.notes || '-'}</td>
+                            <td className="py-3 px-4 whitespace-pre-wrap break-words">{item.notes || '-'}</td>
                             <td className="py-3 px-4 text-right">{item.quantity}</td>
                             <td className="py-3 px-4 text-right">{formatCurrency(unitPrice)}</td>
                             <td className="py-3 px-4 text-right">{formatCurrency(unitCost)}</td>

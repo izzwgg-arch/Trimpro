@@ -527,7 +527,7 @@ export default function PublicPaymentPage() {
                             className="mt-0.5"
                           />
                           <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium text-slate-900">{li.description}</div>
+                            <div className="text-sm font-medium text-slate-900 whitespace-pre-wrap break-words">{li.description}</div>
                             <div className="mt-0.5 text-xs text-slate-500">
                               Qty {li.quantity} x {toCurrency(li.unitPrice)}
                             </div>
@@ -957,14 +957,14 @@ export default function PublicPaymentPage() {
               {invoice.lineItems.map((li) => (
                 <div key={li.id} className={`rounded-xl px-3 py-2.5 ${li.isSubtotal ? 'bg-slate-100' : 'bg-slate-50'}`}>
                   <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm font-medium text-slate-900 leading-snug">{li.isSubtotal ? 'Subtotal' : li.description}</p>
+                    <p className="text-sm font-medium text-slate-900 leading-snug whitespace-pre-wrap break-words">{li.isSubtotal ? 'Subtotal' : li.description}</p>
                     <p className="shrink-0 text-sm font-bold text-slate-900">{toCurrency(li.total)}</p>
                   </div>
                   {!li.isSubtotal && (
                     <p className="mt-0.5 text-xs text-slate-500">Qty {li.quantity} x {toCurrency(li.unitPrice)}</p>
                   )}
                   {!li.isSubtotal && li.notes && (
-                    <p className="mt-1 text-xs text-slate-500 italic">{li.notes}</p>
+                    <p className="mt-1 text-xs text-slate-500 italic whitespace-pre-wrap break-words">{li.notes}</p>
                   )}
                 </div>
               ))}
@@ -989,9 +989,9 @@ export default function PublicPaymentPage() {
                       ) : (
                         <tr key={li.id} className="border-b last:border-b-0">
                           <td className="px-3 py-2">
-                            <div>{li.description}</div>
+                            <div className="whitespace-pre-wrap break-words">{li.description}</div>
                             {li.notes && (
-                              <div className="text-xs text-slate-500 italic mt-0.5">{li.notes}</div>
+                              <div className="text-xs text-slate-500 italic mt-0.5 whitespace-pre-wrap break-words">{li.notes}</div>
                             )}
                           </td>
                           <td className="px-3 py-2 text-right">{li.quantity}</td>

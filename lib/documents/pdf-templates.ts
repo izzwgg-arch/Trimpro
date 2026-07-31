@@ -125,7 +125,8 @@ const SHARED_DOC_CSS = (accentColor: string, accentTextColor: string) => `
     border-radius: 10px;
     overflow: hidden;
   }
-  th, td { padding: 10px 12px; border-bottom: 1px solid #e5e7eb; }
+  th, td { padding: 10px 12px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  td { white-space: pre-wrap; word-break: break-word; }
   th {
     text-align: left;
     font-size: 11px;
@@ -245,8 +246,8 @@ export function buildInvoicePdfHtml(
         <td class="text-right">$${Number(item.calculatedSubtotalTotal).toFixed(2)}</td>
       </tr>`
     }
-    const nameCell = item.showDescriptionToCustomer !== false ? escapeHtml(item.description) : ''
-    const notesCell = item.showNotesToCustomer !== false ? escapeHtml(item.notes || '') : ''
+    const nameCell = item.showDescriptionToCustomer !== false ? escapeHtmlMultiline(item.description) : ''
+    const notesCell = item.showNotesToCustomer !== false ? escapeHtmlMultiline(item.notes || '') : ''
     const costCell = item.showCostToCustomer === true ? `$${Number(item.unitCost || 0).toFixed(2)}` : ''
     const priceCell = item.showPriceToCustomer !== false ? `$${Number(item.unitPrice).toFixed(2)}` : ''
     return `<tr>
@@ -435,8 +436,8 @@ export function buildEstimatePdfHtml(
         <td class="text-right">$${Number(item.calculatedSubtotalTotal).toFixed(2)}</td>
       </tr>`
     }
-    const nameCell = item.showDescriptionToCustomer !== false ? escapeHtml(item.description) : ''
-    const notesCell = item.showNotesToCustomer !== false ? escapeHtml(item.notes || '') : ''
+    const nameCell = item.showDescriptionToCustomer !== false ? escapeHtmlMultiline(item.description) : ''
+    const notesCell = item.showNotesToCustomer !== false ? escapeHtmlMultiline(item.notes || '') : ''
     const costCell = item.showCostToCustomer === true ? `$${Number(item.unitCost || 0).toFixed(2)}` : ''
     const priceCell = item.showPriceToCustomer !== false ? `$${Number(item.unitPrice).toFixed(2)}` : ''
     return `<tr>
@@ -685,9 +686,9 @@ export function buildPurchaseOrderPdfHtml(
                   (item: AnyRecord) => `
                     <tr>
                       <td>
-                        ${escapeHtml(item.description)}
-                        ${item.details?.trim() ? `<div class="line-details"><strong>Description:</strong> ${escapeHtml(item.details.trim())}</div>` : ''}
-                        ${item.notes?.trim() ? `<div class="line-notes"><strong>Special notes:</strong> ${escapeHtml(item.notes.trim())}</div>` : ''}
+                        ${escapeHtmlMultiline(item.description)}
+                        ${item.details?.trim() ? `<div class="line-details"><strong>Description:</strong> ${escapeHtmlMultiline(item.details.trim())}</div>` : ''}
+                        ${item.notes?.trim() ? `<div class="line-notes"><strong>Special notes:</strong> ${escapeHtmlMultiline(item.notes.trim())}</div>` : ''}
                       </td>
                       <td class="text-right">${Number(item.quantity).toFixed(2)}</td>
                       <td class="text-right">$${Number(item.unitPrice).toFixed(2)}</td>

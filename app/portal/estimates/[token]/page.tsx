@@ -154,7 +154,7 @@ export default function EstimateViewPage() {
               return (
                 <div key={item.id} className="py-3">
                   <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm font-medium text-slate-900 leading-snug">{item.description}</p>
+                    <p className="text-sm font-medium text-slate-900 leading-snug whitespace-pre-wrap break-words">{item.description}</p>
                     <p className="shrink-0 text-sm font-bold text-slate-900">{toCurrency(item.total)}</p>
                   </div>
                   {item.showPriceToCustomer && (
@@ -163,7 +163,7 @@ export default function EstimateViewPage() {
                     </p>
                   )}
                   {item.notes && (
-                    <p className="mt-1 text-xs text-slate-400 italic">{item.notes}</p>
+                    <p className="mt-1 text-xs text-slate-400 italic whitespace-pre-wrap break-words">{item.notes}</p>
                   )}
                 </div>
               )
@@ -191,8 +191,8 @@ export default function EstimateViewPage() {
                   ) : (
                     <tr key={item.id}>
                       <td className="px-4 py-3">
-                        <div className="font-medium text-slate-900">{item.description}</div>
-                        {item.notes && <div className="text-xs text-slate-400 italic mt-0.5">{item.notes}</div>}
+                        <div className="font-medium text-slate-900 whitespace-pre-wrap break-words">{item.description}</div>
+                        {item.notes && <div className="text-xs text-slate-400 italic mt-0.5 whitespace-pre-wrap break-words">{item.notes}</div>}
                       </td>
                       <td className="px-4 py-3 text-right text-slate-600">{item.quantity}</td>
                       <td className="px-4 py-3 text-right text-slate-600">
@@ -228,7 +228,7 @@ export default function EstimateViewPage() {
               {optionalItems.map((item) => (
                 <div key={item.id} className="py-3">
                   <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm font-medium text-slate-900">{item.description}</p>
+                    <p className="text-sm font-medium text-slate-900 whitespace-pre-wrap break-words">{item.description}</p>
                     <p className="shrink-0 text-sm font-bold text-slate-900">{toCurrency(item.total)}</p>
                   </div>
                   {item.showPriceToCustomer && (
@@ -236,7 +236,7 @@ export default function EstimateViewPage() {
                       Qty {item.quantity} × {toCurrency(item.unitPrice)}
                     </p>
                   )}
-                  {item.notes && <p className="mt-1 text-xs text-slate-400 italic">{item.notes}</p>}
+                  {item.notes && <p className="mt-1 text-xs text-slate-400 italic whitespace-pre-wrap break-words">{item.notes}</p>}
                 </div>
               ))}
             </div>
@@ -254,8 +254,8 @@ export default function EstimateViewPage() {
                   {optionalItems.map((item) => (
                     <tr key={item.id}>
                       <td className="px-4 py-3">
-                        <div className="font-medium text-slate-900">{item.description}</div>
-                        {item.notes && <div className="text-xs text-slate-400 italic mt-0.5">{item.notes}</div>}
+                        <div className="font-medium text-slate-900 whitespace-pre-wrap break-words">{item.description}</div>
+                        {item.notes && <div className="text-xs text-slate-400 italic mt-0.5 whitespace-pre-wrap break-words">{item.notes}</div>}
                       </td>
                       <td className="px-4 py-3 text-right text-slate-600">{item.quantity}</td>
                       <td className="px-4 py-3 text-right text-slate-600">

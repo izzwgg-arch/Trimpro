@@ -523,7 +523,7 @@ export default function PurchaseOrderDetailPage() {
                         <td className="py-2 px-3">
                           <div>
                             <span className="text-xs font-medium text-gray-500">Item</span>
-                            <div>{item.description}</div>
+                            <div className="whitespace-pre-wrap break-words">{item.description}</div>
                           </div>
                           <div className="text-sm mt-1 whitespace-pre-wrap">
                             <span className="text-xs font-medium text-gray-500">Description</span>

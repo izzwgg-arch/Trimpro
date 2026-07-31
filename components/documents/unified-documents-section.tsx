@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { DollarSign, FileText, Search, ChevronDown, ChevronRight, Download, Mail, X } from 'lucide-react'
+import { DollarSign, FileText, Search, ChevronDown, ChevronRight, Download, Mail, X, ArrowDown, ArrowUp } from 'lucide-react'
 import { Label } from '@/components/ui/label'
 import { ContactRecipientPicker } from '@/components/email/contact-recipient-picker'
 import type { UnifiedDocumentKind, UnifiedDocumentRow } from '@/lib/documents/unified-documents'
@@ -24,6 +24,7 @@ import {
   formatJobStatus,
   jobStatusColors,
 } from '@/lib/jobs/statuses'
+import { ColumnResizeHandle, useResizableColumns } from '@/hooks/useResizableColumns'
 
 type TypeFilter = 'all' | UnifiedDocumentKind
 type InvoiceFilter = 'all' | 'paid' | 'unpaid'
@@ -244,6 +245,30 @@ export function UnifiedDocumentsSection({
   const [requestFilter, setRequestFilter] = useState<RequestFilter>(storedPrefs?.requestFilter ?? 'all')
   const [jobFilter, setJobFilter] = useState<JobFilter>(storedPrefs?.jobFilter ?? 'all')
   const [sort, setSort] = useState<SortOption>(storedPrefs?.sort ?? 'date-desc')
+  const { widths: colWidths, onResizeStart } = useResizableColumns(
+    preferencesKey ? `docs-${preferencesKey}` : 'unified-documents',
+    { type: 96, number: 140, title: 220, date: 120, amount: 110, status: 120, actions: 140 }
+  )
+  const toggleColumnSort = (column: 'date' | 'amount' | 'status') => {
+    if (column === 'date') {
+      setSort((prev) => (prev === 'date-desc' ? 'date-asc' : 'date-desc'))
+      return
+    }
+    if (column === 'amount') {
+      setSort((prev) => (prev === 'amount-desc' ? 'amount-asc' : 'amount-desc'))
+      return
+    }
+    setSort((prev) => (prev === 'status-asc' ? 'status-desc' : 'status-asc'))
+  }
+  const sortIcon = (column: 'date' | 'amount' | 'status') => {
+    const active =
+      (column === 'date' && (sort === 'date-asc' || sort === 'date-desc')) ||
+      (column === 'amount' && (sort === 'amount-asc' || sort === 'amount-desc')) ||
+      (column === 'status' && (sort === 'status-asc' || sort === 'status-desc'))
+    if (!active) return null
+    const desc = sort.endsWith('desc')
+    return desc ? <ArrowDown className="inline h-3 w-3 ml-0.5" /> : <ArrowUp className="inline h-3 w-3 ml-0.5" />
+  }
   const [downloadingReceiptId, setDownloadingReceiptId] = useState<string | null>(null)
   const [showReceiptEmailDialog, setShowReceiptEmailDialog] = useState(false)
   const [receiptEmailPayment, setReceiptEmailPayment] = useState<UnifiedDocumentRow | null>(null)
@@ -589,17 +614,46 @@ export function UnifiedDocumentsSection({
           <p className="py-8 text-center text-sm text-gray-500">No documents match your filters</p>
         ) : (
           <div className={`overflow-x-auto overflow-y-auto max-h-[min(32rem,65vh)] rounded-lg border ${isRefreshing ? 'opacity-70' : ''}`}>
-            <table className="min-w-full text-sm">
+            <table className="min-w-full table-fixed text-sm">
               <thead className="sticky top-0 z-10 bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500 shadow-[0_1px_0_0_rgb(229_231_235)]">
                 <tr>
                   {enableInvoiceSelection && <th className="px-3 py-2 w-8" />}
-                  <th className="px-3 py-2">Type</th>
-                  <th className="px-3 py-2">Number</th>
-                  <th className="px-3 py-2">Title</th>
-                  <th className="px-3 py-2">Date</th>
-                  <th className="px-3 py-2 text-right">Amount</th>
-                  <th className="px-3 py-2">Status</th>
-                  {showReceiptActions && <th className="px-3 py-2">Actions</th>}
+                  <th className="relative px-3 py-2" style={{ width: colWidths.type, minWidth: 64 }}>
+                    Type
+                    <ColumnResizeHandle onResizeStart={(x) => onResizeStart('type', x)} />
+                  </th>
+                  <th className="relative px-3 py-2" style={{ width: colWidths.number, minWidth: 80 }}>
+                    Number
+                    <ColumnResizeHandle onResizeStart={(x) => onResizeStart('number', x)} />
+                  </th>
+                  <th className="relative px-3 py-2" style={{ width: colWidths.title, minWidth: 100 }}>
+                    Title
+                    <ColumnResizeHandle onResizeStart={(x) => onResizeStart('title', x)} />
+                  </th>
+                  <th className="relative px-3 py-2" style={{ width: colWidths.date, minWidth: 80 }}>
+                    <button type="button" className="inline-flex items-center" onClick={() => toggleColumnSort('date')}>
+                      Date{sortIcon('date')}
+                    </button>
+                    <ColumnResizeHandle onResizeStart={(x) => onResizeStart('date', x)} />
+                  </th>
+                  <th className="relative px-3 py-2 text-right" style={{ width: colWidths.amount, minWidth: 80 }}>
+                    <button type="button" className="inline-flex items-center ml-auto" onClick={() => toggleColumnSort('amount')}>
+                      Amount{sortIcon('amount')}
+                    </button>
+                    <ColumnResizeHandle onResizeStart={(x) => onResizeStart('amount', x)} />
+                  </th>
+                  <th className="relative px-3 py-2" style={{ width: colWidths.status, minWidth: 80 }}>
+                    <button type="button" className="inline-flex items-center" onClick={() => toggleColumnSort('status')}>
+                      Status{sortIcon('status')}
+                    </button>
+                    <ColumnResizeHandle onResizeStart={(x) => onResizeStart('status', x)} />
+                  </th>
+                  {showReceiptActions && (
+                    <th className="relative px-3 py-2" style={{ width: colWidths.actions, minWidth: 80 }}>
+                      Actions
+                      <ColumnResizeHandle onResizeStart={(x) => onResizeStart('actions', x)} />
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody>
