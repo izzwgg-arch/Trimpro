@@ -10,6 +10,7 @@ import {
   mergeApprovedOptionalItemsForSubtotals,
 } from '@/lib/documents/subtotals'
 import type { PdfBranding } from '@/lib/branding/pdf'
+import { prepareEstimateForPdfView } from '@/lib/estimates/estimate-pdf-view'
 
 type AnyRecord = Record<string, any>
 
@@ -372,12 +373,15 @@ export function buildInvoicePdfHtml(
 
 export interface EstimatePdfBuildOptions {
   shouldPrint?: boolean
+  /** customer (default) = bundled Line # view; company = detailed line items */
+  view?: 'customer' | 'company'
 }
 
 /**
  * Build the authoritative Estimate PDF HTML. Expects a Prisma estimate that
- * includes: client, lineItems, optionalItems. `approvedOptionalItemIds`
- * controls which optional items have been approved (merged into the main table).
+ * includes: client, lineItems (with group when using customer view), optionalItems.
+ * `approvedOptionalItemIds` controls which optional items have been approved
+ * (merged into the main table).
  */
 export function buildEstimatePdfHtml(
   estimate: AnyRecord,
@@ -385,12 +389,13 @@ export function buildEstimatePdfHtml(
   approvedOptionalItemIds: Set<string> = new Set(),
   options: EstimatePdfBuildOptions = {}
 ): string {
-  const { shouldPrint = false } = options
+  const { shouldPrint = false, view = 'customer' } = options
+  const preparedEstimate = prepareEstimateForPdfView(estimate, view)
   const accentColor = brand.accentColor
   const accentTextColor = brand.accentTextColor
 
-  const lineItems = Array.isArray(estimate.lineItems) ? estimate.lineItems : []
-  const optionalItems = Array.isArray(estimate.optionalItems) ? estimate.optionalItems : []
+  const lineItems = Array.isArray(preparedEstimate.lineItems) ? preparedEstimate.lineItems : []
+  const optionalItems = Array.isArray(preparedEstimate.optionalItems) ? preparedEstimate.optionalItems : []
 
   const visibleRegularItems = lineItems.filter((item: AnyRecord) => item.isVisibleToClient !== false)
   const allVisibleOptionalItems = optionalItems.filter((item: AnyRecord) => item.isVisibleToClient !== false)
@@ -459,17 +464,17 @@ export function buildEstimatePdfHtml(
     <th class="text-right">Total</th>
   </tr>`
 
-  const discount = Number(estimate.discount || 0)
-  const taxRate = Number(estimate.taxRate || 0)
+  const discount = Number(preparedEstimate.discount || 0)
+  const taxRate = Number(preparedEstimate.taxRate || 0)
   const subtotalAfterDiscount = subtotal - discount
   const tax = subtotalAfterDiscount * taxRate
   const total = subtotalAfterDiscount + tax
 
-  const showNotes = estimate.isNotesVisibleToClient !== false && Boolean(estimate.notes)
+  const showNotes = preparedEstimate.isNotesVisibleToClient !== false && Boolean(preparedEstimate.notes)
   const generatedAt = new Date().toLocaleString()
-  const clientName = estimate.client?.companyName || estimate.client?.name || 'N/A'
-  const validUntil = estimate.validUntil ? new Date(estimate.validUntil).toLocaleDateString() : 'N/A'
-  const estimateDate = new Date(estimate.createdAt).toLocaleDateString()
+  const clientName = preparedEstimate.client?.companyName || preparedEstimate.client?.name || 'N/A'
+  const validUntil = preparedEstimate.validUntil ? new Date(preparedEstimate.validUntil).toLocaleDateString() : 'N/A'
+  const estimateDate = new Date(preparedEstimate.createdAt).toLocaleDateString()
 
   return `
     <!DOCTYPE html>

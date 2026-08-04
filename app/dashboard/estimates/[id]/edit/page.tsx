@@ -9,7 +9,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Save, Plus, Trash2, Eye, EyeOff, Copy } from 'lucide-react'
+import { Save, Plus, Trash2, Eye, EyeOff, Copy, Building2, User } from 'lucide-react'
 import { LineItemDragHandle } from '@/components/documents/line-item-drag-handle'
 import Link from 'next/link'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
@@ -25,6 +25,16 @@ import {
   DocumentLineItemsColumnHeader,
   DOCUMENT_LINE_WIDTH_DEFAULTS,
 } from '@/components/documents/document-line-items-column-header'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { CustomerEstimatePanel } from '@/components/estimates/customer-estimate-panel'
+import {
+  type CustomerLine,
+  buildCustomerLinesFromGroups,
+  companyLineFingerprint,
+  flatLineItemsToCompanyLines,
+  mergeCustomerIntoGroups,
+  syncCustomerLines,
+} from '@/lib/estimates/company-customer-sync'
 
 interface LineItem {
   id?: string
@@ -69,6 +79,9 @@ export default function EditEstimatePage() {
   const [pickerBundles, setPickerBundles] = useState<FastPickerItem[]>([])
   const [lineItems, setLineItems] = useState<LineItem[]>([])
   const [optionalItems, setOptionalItems] = useState<LineItem[]>([])
+  const [customerLines, setCustomerLines] = useState<CustomerLine[]>([])
+  const [estimateLineView, setEstimateLineView] = useState<'company' | 'customer'>('company')
+  const companyFingerprintsRef = useRef<Record<string, string>>({})
   const [lineColWidths, setLineColWidths] = useState<Record<string, number>>(DOCUMENT_LINE_WIDTH_DEFAULTS)
   const [isNotesVisibleToClient, setIsNotesVisibleToClient] = useState(true)
   const [estimateNumber, setEstimateNumber] = useState('')
@@ -96,6 +109,23 @@ export default function EditEstimatePage() {
     fetchPickerData()
     fetchEstimate()
   }, [estimateId])
+
+  // Keep customer bundles in sync with company groups (sticky until that group is edited).
+  useEffect(() => {
+    const companyLines = flatLineItemsToCompanyLines(lineItems)
+    const editedIds: string[] = []
+    for (const line of companyLines) {
+      const nextFp = companyLineFingerprint(line)
+      const prevFp = companyFingerprintsRef.current[line.id]
+      if (prevFp !== undefined && prevFp !== nextFp) {
+        editedIds.push(line.id)
+      }
+    }
+    companyFingerprintsRef.current = Object.fromEntries(
+      companyLines.map((line) => [line.id, companyLineFingerprint(line)])
+    )
+    setCustomerLines((prev) => syncCustomerLines(companyLines, prev, editedIds))
+  }, [lineItems])
 
   const fetchClients = async () => {
     try {
@@ -255,6 +285,24 @@ export default function EditEstimatePage() {
         })
       }
 
+      const groupMeta: Record<
+        string,
+        { customerDescription?: string | null; customerTotal?: string | null; customerEdited?: boolean | null }
+      > = {}
+      est.lineItems?.forEach((li: any) => {
+        if (li.group?.id && !groupMeta[li.group.id]) {
+          groupMeta[li.group.id] = {
+            customerDescription: li.group.customerDescription,
+            customerTotal: li.group.customerTotal,
+            customerEdited: li.group.customerEdited,
+          }
+        }
+      })
+      const companyLines = flatLineItemsToCompanyLines(mappedItems)
+      companyFingerprintsRef.current = Object.fromEntries(
+        companyLines.map((line) => [line.id, companyLineFingerprint(line)])
+      )
+      setCustomerLines(buildCustomerLinesFromGroups(companyLines, groupMeta))
       setLineItems(mappedItems)
 
       // Optional items (can be empty)
@@ -940,6 +988,14 @@ export default function EditEstimatePage() {
         }
       })
 
+      const groupsPayload = mergeCustomerIntoGroups(
+        Array.from(groups.entries()).map(([groupId, group]) => ({
+          groupId,
+          ...group,
+        })),
+        customerLines
+      )
+
       const response = await fetch(`/api/estimates/${estimateId}`, {
         method: 'PUT',
         headers: {
@@ -961,10 +1017,7 @@ export default function EditEstimatePage() {
           terms: formData.terms || null,
           lineItems: apiLineItems,
           optionalItems: apiOptionalItems,
-          groups: Array.from(groups.entries()).map(([groupId, group]) => ({
-            groupId,
-            ...group,
-          })),
+          groups: groupsPayload,
         }),
       })
 
@@ -1131,12 +1184,32 @@ export default function EditEstimatePage() {
 
             <Card>
               <CardHeader>
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <CardTitle>Line Items</CardTitle>
-                    <CardDescription>Click in Item field to search and add items</CardDescription>
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <CardTitle>Line Items</CardTitle>
+                      <CardDescription>
+                        Switch between company (detailed / QB) and customer (bundled) estimates
+                      </CardDescription>
+                    </div>
+                    <Tabs
+                      value={estimateLineView}
+                      onValueChange={(v) => setEstimateLineView(v as 'company' | 'customer')}
+                    >
+                      <TabsList>
+                        <TabsTrigger value="company" className="gap-1.5">
+                          <Building2 className="h-4 w-4" />
+                          Company
+                        </TabsTrigger>
+                        <TabsTrigger value="customer" className="gap-1.5">
+                          <User className="h-4 w-4" />
+                          Customer
+                        </TabsTrigger>
+                      </TabsList>
+                    </Tabs>
                   </div>
-                  <div className="flex flex-wrap items-center gap-1.5 text-xs shrink-0">
+                  {estimateLineView === 'company' && (
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs">
                     <span className="text-gray-500 font-medium self-center">Show to customer:</span>
                     {(['showDescriptionToCustomer', 'showNotesToCustomer', 'showPriceToCustomer', 'showCostToCustomer', 'showTaxToCustomer'] as VisibilityField[]).map((field) => {
                       const labels: Record<VisibilityField, string> = { showDescriptionToCustomer: 'Name', showNotesToCustomer: 'Description', showPriceToCustomer: 'Price', showCostToCustomer: 'Cost', showTaxToCustomer: 'Tax' }
@@ -1171,9 +1244,17 @@ export default function EditEstimatePage() {
                       </>
                     )}
                   </div>
+                  )}
                 </div>
               </CardHeader>
               <CardContent className="space-y-2">
+                {estimateLineView === 'customer' ? (
+                  <CustomerEstimatePanel
+                    customerLines={customerLines}
+                    onChange={setCustomerLines}
+                  />
+                ) : (
+                <>
                 <DocumentLineItemsColumnHeader
                   entity="estimate-edit-line-items"
                   onWidthsChange={setLineColWidths}
@@ -1620,6 +1701,8 @@ export default function EditEstimatePage() {
                     Add Subtotal Row
                   </Button>
                 </div>
+                </>
+                )}
               </CardContent>
             </Card>
 

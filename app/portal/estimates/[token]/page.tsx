@@ -36,6 +36,7 @@ export default function EstimateViewPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [estimate, setEstimate] = useState<EstimateData | null>(null)
+  const [viewMode, setViewMode] = useState<'customer' | 'company'>('customer')
   const [items, setItems] = useState<EstimateItem[]>([])
   const [optionalItems, setOptionalItems] = useState<EstimateItem[]>([])
 
@@ -47,6 +48,7 @@ export default function EstimateViewPage() {
         const data = await res.json().catch(() => ({}))
         if (!res.ok) { setError(data?.error || 'Unable to load estimate.'); return }
         setEstimate(data.estimate)
+        setViewMode(data.viewMode === 'company' ? 'company' : 'customer')
         setItems(data.items || [])
         setOptionalItems(data.optionalItems || [])
       } catch {
@@ -57,6 +59,8 @@ export default function EstimateViewPage() {
     }
     load()
   }, [token])
+
+  const isCustomerView = viewMode === 'customer'
 
   const grandTotal = useMemo(() => {
     const allItems = [...items, ...optionalItems]
@@ -157,7 +161,7 @@ export default function EstimateViewPage() {
                     <p className="text-sm font-medium text-slate-900 leading-snug whitespace-pre-wrap break-words">{item.description}</p>
                     <p className="shrink-0 text-sm font-bold text-slate-900">{toCurrency(item.total)}</p>
                   </div>
-                  {item.showPriceToCustomer && (
+                  {item.showPriceToCustomer && !isCustomerView && (
                     <p className="mt-0.5 text-xs text-slate-500">
                       Qty {item.quantity} × {toCurrency(item.unitPrice)}
                     </p>
@@ -175,9 +179,15 @@ export default function EstimateViewPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-slate-50">
-                  <th className="px-4 py-3 text-left font-medium text-slate-500">Description</th>
-                  <th className="px-4 py-3 text-right font-medium text-slate-500">Qty</th>
-                  <th className="px-4 py-3 text-right font-medium text-slate-500">Unit</th>
+                  <th className="px-4 py-3 text-left font-medium text-slate-500">
+                    {isCustomerView ? 'Line' : 'Description'}
+                  </th>
+                  {!isCustomerView && (
+                    <>
+                      <th className="px-4 py-3 text-right font-medium text-slate-500">Qty</th>
+                      <th className="px-4 py-3 text-right font-medium text-slate-500">Unit</th>
+                    </>
+                  )}
                   <th className="px-4 py-3 text-right font-medium text-slate-500">Total</th>
                 </tr>
               </thead>
@@ -185,20 +195,37 @@ export default function EstimateViewPage() {
                 {items.map((item) =>
                   item.isSubtotal ? (
                     <tr key={item.id} className="bg-slate-50 font-semibold">
-                      <td colSpan={3} className="px-4 py-3 text-right text-slate-700">Subtotal</td>
+                      <td
+                        colSpan={isCustomerView ? 1 : 3}
+                        className="px-4 py-3 text-right text-slate-700"
+                      >
+                        Subtotal
+                      </td>
                       <td className="px-4 py-3 text-right text-slate-900">{toCurrency(item.total)}</td>
                     </tr>
                   ) : (
                     <tr key={item.id}>
                       <td className="px-4 py-3">
-                        <div className="font-medium text-slate-900 whitespace-pre-wrap break-words">{item.description}</div>
-                        {item.notes && <div className="text-xs text-slate-400 italic mt-0.5 whitespace-pre-wrap break-words">{item.notes}</div>}
+                        <div className="font-medium text-slate-900 whitespace-pre-wrap break-words">
+                          {item.description}
+                        </div>
+                        {item.notes && (
+                          <div className="text-xs text-slate-400 italic mt-0.5 whitespace-pre-wrap break-words">
+                            {item.notes}
+                          </div>
+                        )}
                       </td>
-                      <td className="px-4 py-3 text-right text-slate-600">{item.quantity}</td>
-                      <td className="px-4 py-3 text-right text-slate-600">
-                        {item.showPriceToCustomer ? toCurrency(item.unitPrice) : '—'}
+                      {!isCustomerView && (
+                        <>
+                          <td className="px-4 py-3 text-right text-slate-600">{item.quantity}</td>
+                          <td className="px-4 py-3 text-right text-slate-600">
+                            {item.showPriceToCustomer ? toCurrency(item.unitPrice) : '—'}
+                          </td>
+                        </>
+                      )}
+                      <td className="px-4 py-3 text-right font-semibold text-slate-900">
+                        {toCurrency(item.total)}
                       </td>
-                      <td className="px-4 py-3 text-right font-semibold text-slate-900">{toCurrency(item.total)}</td>
                     </tr>
                   )
                 )}

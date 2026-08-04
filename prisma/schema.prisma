@@ -1414,6 +1414,10 @@ model DocumentLineGroup {
   sourceBundleId        String? // FK to BundleDefinition (nullable for manual groups)
   sourceBundleName      String?
   sourceBundleUpdatedAt DateTime?
+  // Customer estimate bundle override (sticks until company line items for this group are edited)
+  customerDescription   String?   @db.Text
+  customerTotal         Decimal?  @db.Decimal(12, 2)
+  customerEdited        Boolean   @default(false)
 
   // Relationships
   tenant                 Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)

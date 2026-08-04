@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { rateLimitOrThrow } from '@/lib/security/rate-limit'
 import { hashApprovalToken } from '@/lib/estimate-approval'
-import { calculateOrderedSubtotalRows, mergeApprovedOptionalItemsForSubtotals } from '@/lib/documents/subtotals'
+import { buildCustomerFacingApprovalItems } from '@/lib/estimates/customer-approval-view'
 
 export const runtime = 'nodejs'
 
@@ -43,7 +43,10 @@ export async function GET(request: NextRequest, ctx: { params: { token: string }
       where: { id: tokenRow.estimateId, tenantId: tokenRow.tenantId },
       include: {
         client: { select: { id: true, name: true, companyName: true } },
-        lineItems: { orderBy: { sortOrder: 'asc' } },
+        lineItems: {
+          orderBy: { sortOrder: 'asc' },
+          include: { group: true },
+        },
         optionalItems: { orderBy: { sortOrder: 'asc' } },
       },
     })
@@ -68,13 +71,6 @@ export async function GET(request: NextRequest, ctx: { params: { token: string }
         .filter((a) => a.status === 'APPROVED')
         .map((a) => [a.estimateLineItemId, a])
     )
-    const visibleRegularItems = estimate.lineItems.filter((li) => li.isVisibleToClient !== false)
-    const allVisibleOptionalItems = (estimate.optionalItems || []).filter((li) => li.isVisibleToClient !== false)
-    const approvedOptionalItems = allVisibleOptionalItems.filter((li) => approvedMap.has(li.id))
-    const pendingOptionalItems = allVisibleOptionalItems.filter((li) => !approvedMap.has(li.id))
-    const visibleLineItems = calculateOrderedSubtotalRows(
-      mergeApprovedOptionalItemsForSubtotals(visibleRegularItems as any[], approvedOptionalItems as any[])
-    )
 
     const sources = await prisma.invoiceLineItemSource.findMany({
       where: {
@@ -90,6 +86,79 @@ export async function GET(request: NextRequest, ctx: { params: { token: string }
       }
     }
 
+    const { viewMode, items: customerFacingItems } = buildCustomerFacingApprovalItems(
+      estimate.lineItems as any[]
+    )
+
+    const allVisibleOptionalItems = (estimate.optionalItems || []).filter(
+      (li) => li.isVisibleToClient !== false
+    )
+    const pendingOptionalItems = allVisibleOptionalItems.filter((li) => !approvedMap.has(li.id))
+    const approvedOptionalItems = allVisibleOptionalItems.filter((li) => approvedMap.has(li.id))
+
+    const decorate = (
+      row: {
+        id: string
+        description: string
+        notes: string
+        quantity: string
+        unitPrice: string
+        unitCost: string | null
+        total: string
+        showPriceToCustomer: boolean
+        sourceLineItemIds: string[]
+        isCustomerBundle: boolean
+        isSubtotal: boolean
+      },
+      isOptional: boolean
+    ) => {
+      const sources = row.sourceLineItemIds.length ? row.sourceLineItemIds : [row.id]
+      const approvalsForRow = sources.map((id) => approvedMap.get(id) || null)
+      const approved = sources.length > 0 && approvalsForRow.every((a) => Boolean(a))
+      const firstApproval = approvalsForRow.find(Boolean) || null
+      const invoiced = sources.length > 0 && sources.every((id) => invoicedMap.has(id))
+      const firstInvoiced = sources.map((id) => invoicedMap.get(id)).find(Boolean) || null
+      return {
+        id: row.id,
+        description: row.description,
+        notes: row.notes,
+        quantity: row.quantity,
+        unitPrice: row.unitPrice,
+        unitCost: row.unitCost,
+        total: row.total,
+        showPriceToCustomer: row.showPriceToCustomer,
+        sourceLineItemIds: row.sourceLineItemIds,
+        isCustomerBundle: row.isCustomerBundle,
+        isOptional,
+        isSubtotal: row.isSubtotal,
+        approved,
+        approvedAt: firstApproval?.approvedAt || null,
+        approvedByName: firstApproval?.approvedByName || null,
+        invoiced,
+        invoicedAt: firstInvoiced?.createdAt || null,
+      }
+    }
+
+    const optionalRow = (li: (typeof allVisibleOptionalItems)[0]) => ({
+      id: li.id,
+      description: li.showDescriptionToCustomer !== false ? li.description : '',
+      notes: li.showNotesToCustomer !== false ? li.notes || '' : '',
+      quantity: String(li.quantity),
+      unitPrice: li.showPriceToCustomer !== false ? String(li.unitPrice) : '0',
+      unitCost: li.showCostToCustomer === true ? (li.unitCost ? String(li.unitCost) : null) : null,
+      total: String(li.total),
+      showPriceToCustomer: li.showPriceToCustomer !== false,
+      sourceLineItemIds: [li.id],
+      isCustomerBundle: false,
+      isSubtotal: false,
+    })
+
+    // Approved optional add-ons appear in the main Items list (same as before).
+    const mainItems = [
+      ...customerFacingItems.map((row) => decorate(row, false)),
+      ...approvedOptionalItems.map((li) => decorate(optionalRow(li), true)),
+    ]
+
     return NextResponse.json({
       estimate: {
         id: estimate.id,
@@ -100,47 +169,9 @@ export async function GET(request: NextRequest, ctx: { params: { token: string }
         client: estimate.client ? { name: estimate.client.companyName || estimate.client.name } : null,
         expiresAt: tokenRow.expiresAt,
       },
-      items: visibleLineItems.map((li) => {
-        const approved = approvedMap.get(li.id) || null
-        const invoiced = invoicedMap.get(li.id) || null
-        return {
-          id: li.id,
-          description: li.showDescriptionToCustomer !== false ? li.description : '',
-          notes: li.showNotesToCustomer !== false ? (li.notes || '') : '',
-          quantity: String(li.quantity),
-          unitPrice: li.showPriceToCustomer !== false ? String(li.unitPrice) : '0',
-          unitCost: li.showCostToCustomer === true ? (li.unitCost ? String(li.unitCost) : null) : null,
-          total: String(li.isSubtotal ? li.calculatedSubtotalTotal : li.total),
-          showPriceToCustomer: li.showPriceToCustomer !== false,
-          isOptional: false,
-          isSubtotal: (li as any).isSubtotal === true,
-          approved: Boolean(approved),
-          approvedAt: approved?.approvedAt || null,
-          approvedByName: approved?.approvedByName || null,
-          invoiced: Boolean(invoiced),
-          invoicedAt: invoiced?.createdAt || null,
-        }
-      }),
-      optionalItems: pendingOptionalItems.map((li) => {
-        const approved = approvedMap.get(li.id) || null
-        const invoiced = invoicedMap.get(li.id) || null
-        return {
-          id: li.id,
-          description: li.showDescriptionToCustomer !== false ? li.description : '',
-          notes: li.showNotesToCustomer !== false ? (li.notes || '') : '',
-          quantity: String(li.quantity),
-          unitPrice: li.showPriceToCustomer !== false ? String(li.unitPrice) : '0',
-          unitCost: li.showCostToCustomer === true ? (li.unitCost ? String(li.unitCost) : null) : null,
-          total: String(li.total),
-          showPriceToCustomer: li.showPriceToCustomer !== false,
-          isOptional: true,
-          approved: Boolean(approved),
-          approvedAt: approved?.approvedAt || null,
-          approvedByName: approved?.approvedByName || null,
-          invoiced: Boolean(invoiced),
-          invoicedAt: invoiced?.createdAt || null,
-        }
-      }),
+      viewMode,
+      items: mainItems,
+      optionalItems: pendingOptionalItems.map((li) => decorate(optionalRow(li), true)),
     })
   } catch (err: any) {
     if (err instanceof NextResponse) return err
@@ -149,4 +180,3 @@ export async function GET(request: NextRequest, ctx: { params: { token: string }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
-

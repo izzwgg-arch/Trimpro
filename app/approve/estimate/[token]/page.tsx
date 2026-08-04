@@ -16,6 +16,7 @@ type ApprovalItem = {
   unitPrice: string
   total: string
   isOptional: boolean
+  isCustomerBundle?: boolean
   isSubtotal?: boolean
   approved: boolean
   approvedAt: string | null
@@ -32,6 +33,7 @@ export default function PublicEstimateApprovalPage() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [estimate, setEstimate] = useState<any>(null)
+  const [viewMode, setViewMode] = useState<'customer' | 'company'>('customer')
   const [items, setItems] = useState<ApprovalItem[]>([])
   const [optionalItems, setOptionalItems] = useState<ApprovalItem[]>([])
 
@@ -41,10 +43,18 @@ export default function PublicEstimateApprovalPage() {
   const [busy, setBusy] = useState(false)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
 
-  // Items that can still be selected (not yet approved, not subtotal rows)
-  const selectableRegularIds = useMemo(() => items.filter((i) => !i.approved && !i.isSubtotal).map((i) => i.id), [items])
-  const selectableOptionalIds = useMemo(() => optionalItems.filter((i) => !i.approved && !i.isSubtotal).map((i) => i.id), [optionalItems])
-  const allSelectableIds = useMemo(() => [...selectableRegularIds, ...selectableOptionalIds], [selectableRegularIds, selectableOptionalIds])
+  const selectableRegularIds = useMemo(
+    () => items.filter((i) => !i.approved && !i.isSubtotal).map((i) => i.id),
+    [items]
+  )
+  const selectableOptionalIds = useMemo(
+    () => optionalItems.filter((i) => !i.approved && !i.isSubtotal).map((i) => i.id),
+    [optionalItems]
+  )
+  const allSelectableIds = useMemo(
+    () => [...selectableRegularIds, ...selectableOptionalIds],
+    [selectableRegularIds, selectableOptionalIds]
+  )
 
   const selectedTotal = useMemo(() => {
     const allItems = [...items, ...optionalItems]
@@ -58,9 +68,13 @@ export default function PublicEstimateApprovalPage() {
     return sum
   }, [items, optionalItems, selectedIds])
 
-  // Approved optional items show in the "Items" section
-  const approvedOptionalAsItems = useMemo(() => optionalItems.filter((i) => i.approved), [optionalItems])
-  const pendingOptionalItems = useMemo(() => optionalItems.filter((i) => !i.approved), [optionalItems])
+  const pendingOptionalItems = useMemo(
+    () => optionalItems.filter((i) => !i.approved),
+    [optionalItems]
+  )
+
+  const isCustomerView = viewMode === 'customer'
+  const pdfUrl = `/api/public/estimates/by-token/${encodeURIComponent(token)}/pdf`
 
   const refresh = async () => {
     setLoading(true)
@@ -69,7 +83,9 @@ export default function PublicEstimateApprovalPage() {
     setSuccessMsg(null)
 
     try {
-      const res = await fetch(`/api/public/estimate-approval/${encodeURIComponent(token)}`, { cache: 'no-store' })
+      const res = await fetch(`/api/public/estimate-approval/${encodeURIComponent(token)}`, {
+        cache: 'no-store',
+      })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         setLoadError(data?.error || 'Unable to load estimate approval.')
@@ -80,19 +96,17 @@ export default function PublicEstimateApprovalPage() {
       }
 
       setEstimate(data.estimate)
+      setViewMode(data.viewMode === 'company' ? 'company' : 'customer')
       setItems(data.items || [])
       setOptionalItems(data.optionalItems || [])
 
-      // Default: select all selectable (non-approved, non-subtotal) items on first load
       setSelectedIds((prev) => {
         const allItems = [...(data.items || []), ...(data.optionalItems || [])]
         const selectable = allItems.filter((i: any) => !i.approved && !i.isSubtotal)
         const allowed = new Set(selectable.map((i: any) => i.id))
-        // If nothing was previously selected (initial load), select all
         if (prev.size === 0) {
           return new Set(selectable.map((i: any) => i.id))
         }
-        // On refresh: keep existing selections, only prune removed items
         const next = new Set<string>()
         for (const id of prev) {
           if (allowed.has(id)) next.add(id)
@@ -137,16 +151,29 @@ export default function PublicEstimateApprovalPage() {
       }
       if (parts.length) return parts.join(' \u2022 ')
     }
-    try { return JSON.stringify(err) } catch { return fallback }
+    try {
+      return JSON.stringify(err)
+    } catch {
+      return fallback
+    }
   }
 
   const approve = async (approveAll: boolean) => {
     setBusy(true)
     setSuccessMsg(null)
     try {
-      if (!signerName.trim()) { setActionError('Signer name is required.'); return }
-      if (!eSign) { setActionError('Please confirm you approve this estimate.'); return }
-      if (!approveAll && selectedIds.size === 0) { setActionError('Select at least one item to approve.'); return }
+      if (!signerName.trim()) {
+        setActionError('Signer name is required.')
+        return
+      }
+      if (!eSign) {
+        setActionError('Please confirm you approve this estimate.')
+        return
+      }
+      if (!approveAll && selectedIds.size === 0) {
+        setActionError('Select at least one item to approve.')
+        return
+      }
 
       setActionError(null)
       const res = await fetch(`/api/public/estimate-approval/${encodeURIComponent(token)}/approve`, {
@@ -160,9 +187,11 @@ export default function PublicEstimateApprovalPage() {
         }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) { setActionError(describeApiError(data, 'Approval failed.')); return }
+      if (!res.ok) {
+        setActionError(describeApiError(data, 'Approval failed.'))
+        return
+      }
 
-      // Approval should always take the customer to the generated invoice/payment page.
       if (data.paymentUrl) {
         setSuccessMsg(`Approved ${data.approvedCount || 0} item(s). Redirecting to invoice...`)
         setTimeout(() => {
@@ -187,11 +216,15 @@ export default function PublicEstimateApprovalPage() {
     return (
       <div className="p-6 max-w-3xl mx-auto">
         <Card>
-          <CardHeader><CardTitle>Estimate Approval</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Estimate Approval</CardTitle>
+          </CardHeader>
           <CardContent>
             <div className="text-red-600">{loadError}</div>
             <div className="mt-3">
-              <Button type="button" variant="outline" onClick={refresh}>Try Again</Button>
+              <Button type="button" variant="outline" onClick={refresh}>
+                Try Again
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -199,13 +232,17 @@ export default function PublicEstimateApprovalPage() {
     )
   }
 
-  const renderItemRow = (it: ApprovalItem, showOptionalBadge = false) => {
+  const renderItemRow = (it: ApprovalItem) => {
     if (it.isSubtotal) {
       return (
         <tr key={it.id} className="border-t bg-slate-50">
           <td className="p-3"></td>
-          <td colSpan={4} className="p-3 text-right text-sm font-semibold text-slate-700">Subtotal</td>
-          <td className="p-3 text-right font-bold text-slate-800">{formatCurrency(Number(it.total || 0))}</td>
+          <td colSpan={isCustomerView ? 2 : 4} className="p-3 text-right text-sm font-semibold text-slate-700">
+            Subtotal
+          </td>
+          <td className="p-3 text-right font-bold text-slate-800">
+            {formatCurrency(Number(it.total || 0))}
+          </td>
           <td className="p-3"></td>
         </tr>
       )
@@ -223,15 +260,19 @@ export default function PublicEstimateApprovalPage() {
         </td>
         <td className="p-3 font-medium">
           {it.description}
-          {showOptionalBadge && (
+          {it.isOptional && (
             <span className="ml-2 text-xs rounded bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-amber-700">
               Add-on
             </span>
           )}
         </td>
-        <td className="p-3 text-gray-600">{it.notes || '-'}</td>
-        <td className="p-3 text-right">{Number(it.quantity || 0).toFixed(2)}</td>
-        <td className="p-3 text-right">{formatCurrency(Number(it.unitPrice || 0))}</td>
+        <td className="p-3 text-gray-600 whitespace-pre-wrap">{it.notes || '—'}</td>
+        {!isCustomerView && (
+          <>
+            <td className="p-3 text-right">{Number(it.quantity || 0).toFixed(2)}</td>
+            <td className="p-3 text-right">{formatCurrency(Number(it.unitPrice || 0))}</td>
+          </>
+        )}
         <td className="p-3 text-right font-semibold">{formatCurrency(Number(it.total || 0))}</td>
         <td className="p-3">
           {it.invoiced ? (
@@ -256,9 +297,16 @@ export default function PublicEstimateApprovalPage() {
     <div className="p-6 space-y-6 max-w-5xl mx-auto">
       <Card>
         <CardHeader>
-          <CardTitle>
-            Approve Estimate {estimate?.estimateNumber ? `\u2022 ${estimate.estimateNumber}` : ''}
-          </CardTitle>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <CardTitle>
+              Approve Estimate {estimate?.estimateNumber ? `\u2022 ${estimate.estimateNumber}` : ''}
+            </CardTitle>
+            <Button type="button" variant="outline" asChild>
+              <a href={pdfUrl} target="_blank" rel="noopener noreferrer">
+                Download PDF
+              </a>
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-gray-700">
           <div>{estimate?.title || ''}</div>
@@ -273,14 +321,26 @@ export default function PublicEstimateApprovalPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           {actionError && (
-            <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-900">{actionError}</div>
+            <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+              {actionError}
+            </div>
           )}
 
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" onClick={selectAll} disabled={busy || allSelectableIds.length === 0}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={selectAll}
+              disabled={busy || allSelectableIds.length === 0}
+            >
               Select All
             </Button>
-            <Button type="button" variant="outline" onClick={clearAll} disabled={busy || selectedIds.size === 0}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={clearAll}
+              disabled={busy || selectedIds.size === 0}
+            >
               Clear
             </Button>
             <div className="ml-auto text-sm text-gray-600">
@@ -288,33 +348,39 @@ export default function PublicEstimateApprovalPage() {
             </div>
           </div>
 
-          {/* Regular items + approved optional items (shown as regular once approved) */}
           <div className="overflow-x-auto border rounded-md">
             <table className="min-w-full text-sm">
               <thead className="bg-gray-50">
                 <tr className="text-left">
                   <th className="p-3 w-10"> </th>
-                  <th className="p-3">Item</th>
+                  <th className="p-3">{isCustomerView ? 'Line' : 'Item'}</th>
                   <th className="p-3">Description</th>
-                  <th className="p-3 text-right">Qty</th>
-                  <th className="p-3 text-right">Unit</th>
+                  {!isCustomerView && (
+                    <>
+                      <th className="p-3 text-right">Qty</th>
+                      <th className="p-3 text-right">Unit</th>
+                    </>
+                  )}
                   <th className="p-3 text-right">Total</th>
                   <th className="p-3">Status</th>
                 </tr>
               </thead>
               <tbody>
-                {items.map((it) => renderItemRow(it, false))}
-                {approvedOptionalAsItems.map((it) => renderItemRow(it, true))}
-                {items.length === 0 && approvedOptionalAsItems.length === 0 && (
+                {items.map((it) => renderItemRow(it))}
+                {items.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="p-4 text-center text-gray-400 text-sm">No items</td>
+                    <td
+                      colSpan={isCustomerView ? 5 : 7}
+                      className="p-4 text-center text-gray-400 text-sm"
+                    >
+                      No items
+                    </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
 
-          {/* Optional items section — only shown if there are unapproved optional items */}
           {pendingOptionalItems.length > 0 && (
             <div className="mt-4">
               <div className="flex items-center gap-2 mb-2">
@@ -346,10 +412,16 @@ export default function PublicEstimateApprovalPage() {
                             />
                           </td>
                           <td className="p-3 font-medium">{it.description}</td>
-                          <td className="p-3 text-gray-600">{it.notes || '-'}</td>
+                          <td className="p-3 text-gray-600 whitespace-pre-wrap">
+                            {it.notes || '—'}
+                          </td>
                           <td className="p-3 text-right">{Number(it.quantity || 0).toFixed(2)}</td>
-                          <td className="p-3 text-right">{formatCurrency(Number(it.unitPrice || 0))}</td>
-                          <td className="p-3 text-right font-semibold">{formatCurrency(Number(it.total || 0))}</td>
+                          <td className="p-3 text-right">
+                            {formatCurrency(Number(it.unitPrice || 0))}
+                          </td>
+                          <td className="p-3 text-right font-semibold">
+                            {formatCurrency(Number(it.total || 0))}
+                          </td>
                         </tr>
                       )
                     })}
@@ -362,7 +434,11 @@ export default function PublicEstimateApprovalPage() {
           <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-2">
               <label className="text-sm font-medium">Signer Name</label>
-              <Input value={signerName} onChange={(e) => setSignerName(e.target.value)} placeholder="Your name" />
+              <Input
+                value={signerName}
+                onChange={(e) => setSignerName(e.target.value)}
+                placeholder="Your name"
+              />
             </div>
             <div className="flex items-end gap-2">
               <Checkbox checked={eSign} onCheckedChange={(v) => setESign(Boolean(v))} />
@@ -373,10 +449,19 @@ export default function PublicEstimateApprovalPage() {
           {successMsg && <div className="text-green-700 text-sm">{successMsg}</div>}
 
           <div className="flex flex-wrap gap-2">
-            <Button type="button" onClick={() => approve(true)} disabled={busy || allSelectableIds.length === 0}>
+            <Button
+              type="button"
+              onClick={() => approve(true)}
+              disabled={busy || allSelectableIds.length === 0}
+            >
               Approve All
             </Button>
-            <Button type="button" variant="outline" onClick={() => approve(false)} disabled={busy || selectedIds.size === 0}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => approve(false)}
+              disabled={busy || selectedIds.size === 0}
+            >
               Approve Selected Items
             </Button>
           </div>

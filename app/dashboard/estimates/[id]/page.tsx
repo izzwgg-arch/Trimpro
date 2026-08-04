@@ -17,9 +17,15 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { DocumentAttachments } from '@/components/common/document-attachments'
 import { EstimateMaterialList } from '@/components/estimates/estimate-material-list'
+import { CustomerEstimatePanel } from '@/components/estimates/customer-estimate-panel'
 import { ContactRecipientPicker } from '@/components/email/contact-recipient-picker'
 import { buildCreateContextQuery } from '@/src/lib/create-context'
 import { calculateOrderedSubtotalRows, mergeApprovedOptionalItemsForSubtotals } from '@/lib/documents/subtotals'
+import {
+  buildCustomerLinesFromGroups,
+  flatLineItemsToCompanyLines,
+} from '@/lib/estimates/company-customer-sync'
+import type { EstimatePdfView } from '@/lib/estimates/estimate-pdf-view'
 
 interface EstimateDetail {
   id: string
@@ -157,6 +163,10 @@ export default function EstimateDetailPage() {
   const [customEmails, setCustomEmails] = useState('')
   const [sendSubject, setSendSubject] = useState('')
   const [sendMessage, setSendMessage] = useState('')
+  const [sendPdfView, setSendPdfView] = useState<EstimatePdfView>('customer')
+  const [pdfActionModal, setPdfActionModal] = useState<'download' | 'print' | null>(null)
+  const [pdfActionView, setPdfActionView] = useState<EstimatePdfView>('customer')
+  const [pdfActionBusy, setPdfActionBusy] = useState(false)
 
   const [approvalInfo, setApprovalInfo] = useState<{
     approveUrl: string
@@ -167,7 +177,7 @@ export default function EstimateDetailPage() {
   const [loadingApprovals, setLoadingApprovals] = useState(false)
   const [regeneratingApprovalLink, setRegeneratingApprovalLink] = useState(false)
   const [reimportingLines, setReimportingLines] = useState(false)
-  const [activeTab, setActiveTab] = useState<'overview' | 'material-list'>('overview')
+  const [activeTab, setActiveTab] = useState<'company' | 'customer' | 'material-list'>('company')
 
   useEffect(() => {
     fetchEstimate()
@@ -278,7 +288,7 @@ export default function EstimateDetailPage() {
     }
   }
 
-  const fetchPdfHtml = async (print = false) => {
+  const fetchPdfHtml = async (print = false, view: EstimatePdfView = 'customer') => {
     const token = localStorage.getItem('accessToken')
     if (!token) {
       router.push('/auth/login')
@@ -287,6 +297,7 @@ export default function EstimateDetailPage() {
 
     const qs = new URLSearchParams()
     qs.set('format', 'html')
+    qs.set('view', view)
     if (print) qs.set('print', '1')
     const response = await fetch(`/api/estimates/${estimateId}/pdf?${qs.toString()}`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -303,14 +314,19 @@ export default function EstimateDetailPage() {
     return response.text()
   }
 
-  const fetchPdfBlob = async (): Promise<{ blob: Blob; filename: string }> => {
+  const fetchPdfBlob = async (
+    view: EstimatePdfView = 'customer'
+  ): Promise<{ blob: Blob; filename: string }> => {
     const token = localStorage.getItem('accessToken')
     if (!token) {
       router.push('/auth/login')
       throw new Error('Not authenticated')
     }
 
-    const response = await fetch(`/api/estimates/${estimateId}/pdf?download=1`, {
+    const qs = new URLSearchParams()
+    qs.set('download', '1')
+    qs.set('view', view)
+    const response = await fetch(`/api/estimates/${estimateId}/pdf?${qs.toString()}`, {
       cache: 'no-store',
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -330,7 +346,8 @@ export default function EstimateDetailPage() {
 
     const blob = await response.blob()
     const fallbackExt = contentType.includes('pdf') ? 'pdf' : 'html'
-    const fallbackFilename = `Estimate-${estimate?.estimateNumber || estimateId}.${fallbackExt}`
+    const viewSuffix = view === 'company' ? '-company' : '-customer'
+    const fallbackFilename = `Estimate-${estimate?.estimateNumber || estimateId}${viewSuffix}.${fallbackExt}`
 
     return {
       blob,
@@ -338,38 +355,51 @@ export default function EstimateDetailPage() {
     }
   }
 
-  const handleDownloadPDF = async () => {
+  const openPdfActionModal = (action: 'download' | 'print') => {
+    setPdfActionView('customer')
+    setPdfActionModal(action)
+  }
+
+  const confirmPdfAction = async () => {
+    if (!pdfActionModal || pdfActionBusy) return
+    setPdfActionBusy(true)
     try {
-      const { blob, filename } = await fetchPdfBlob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = filename
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      if (pdfActionModal === 'download') {
+        const { blob, filename } = await fetchPdfBlob(pdfActionView)
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+      } else {
+        const html = await fetchPdfHtml(true, pdfActionView)
+        const printWindow = window.open('', '_blank')
+        if (!printWindow) {
+          alert('Popup blocked. Please allow popups to print.')
+          return
+        }
+        printWindow.document.open()
+        printWindow.document.write(html)
+        printWindow.document.close()
+      }
+      setPdfActionModal(null)
     } catch (error) {
-      console.error('Download estimate PDF error:', error)
-      alert('Failed to download estimate PDF')
+      console.error(`${pdfActionModal} estimate PDF error:`, error)
+      alert(pdfActionModal === 'download' ? 'Failed to download estimate PDF' : 'Failed to print estimate')
+    } finally {
+      setPdfActionBusy(false)
     }
   }
 
+  const handleDownloadPDF = async () => {
+    openPdfActionModal('download')
+  }
+
   const handlePrint = async () => {
-    try {
-      const html = await fetchPdfHtml(true)
-      const printWindow = window.open('', '_blank')
-      if (!printWindow) {
-        alert('Popup blocked. Please allow popups to print.')
-        return
-      }
-      printWindow.document.open()
-      printWindow.document.write(html)
-      printWindow.document.close()
-    } catch (error) {
-      console.error('Print estimate PDF error:', error)
-      alert('Failed to print estimate')
-    }
+    openPdfActionModal('print')
   }
 
   const handleDuplicate = async () => {
@@ -509,6 +539,7 @@ export default function EstimateDetailPage() {
     setCustomEmails('')
     setSendSubject(`Estimate ${estimate.estimateNumber}`)
     setSendMessage(`Please review estimate ${estimate.estimateNumber}.`)
+    setSendPdfView('customer')
     setShowSendModal(true)
     return
   }
@@ -540,6 +571,7 @@ export default function EstimateDetailPage() {
           emails,
           subject: sendSubject || `Estimate ${estimate.estimateNumber}`,
           message: sendMessage || `Please review estimate ${estimate.estimateNumber}.`,
+          view: sendPdfView,
         }),
       })
 
@@ -599,6 +631,56 @@ export default function EstimateDetailPage() {
     ...item,
     total: (item.isSubtotal ? item.calculatedSubtotalTotal : item.total).toString(),
   }))
+
+  const customerLines = (() => {
+    const flat = (estimate.lineItems || []).map((li: any) => ({
+      id: li.id,
+      description: li.description,
+      quantity: li.quantity,
+      unitPrice: li.unitPrice,
+      unitCost: li.unitCost || '',
+      notes: li.notes || '',
+      taxable: li.taxable !== false,
+      taxRate: li.taxRate || '',
+      groupId: li.groupId || undefined,
+      groupName: li.group?.name || undefined,
+      isGroupHeader: false,
+      isSubtotal: li.isSubtotal || false,
+    }))
+
+    const withHeaders: any[] = []
+    const seen = new Set<string>()
+    for (const item of flat) {
+      if (item.groupId && item.groupName && !seen.has(item.groupId)) {
+        withHeaders.push({
+          id: `header-${item.groupId}`,
+          description: item.groupName,
+          quantity: '1',
+          unitPrice: '0',
+          groupId: item.groupId,
+          groupName: item.groupName,
+          isGroupHeader: true,
+          taxable: true,
+        })
+        seen.add(item.groupId)
+      }
+      withHeaders.push(item)
+    }
+
+    const company = flatLineItemsToCompanyLines(withHeaders)
+    const meta: Record<string, { customerDescription?: string | null; customerTotal?: string | null; customerEdited?: boolean | null }> = {}
+    for (const li of estimate.lineItems || []) {
+      if (li.group?.id && !meta[li.group.id]) {
+        meta[li.group.id] = {
+          customerDescription: (li.group as any).customerDescription,
+          customerTotal: (li.group as any).customerTotal,
+          customerEdited: (li.group as any).customerEdited,
+        }
+      }
+    }
+    return buildCustomerLinesFromGroups(company, meta)
+  })()
+
   const approvedOptionalSubtotal = approvedOptionalItems.reduce((sum: number, item: any) => sum + parseFloat(item.total || '0'), 0)
   const displaySubtotal = parseFloat(estimate.subtotal || '0') + approvedOptionalSubtotal
   const displayDiscount = parseFloat(estimate.discount || '0')
@@ -699,7 +781,8 @@ export default function EstimateDetailPage() {
       <div className="border-b">
         <nav className="flex space-x-8">
           {[
-            { id: 'overview' as const, label: 'Overview' },
+            { id: 'company' as const, label: 'Company' },
+            { id: 'customer' as const, label: 'Customer' },
             { id: 'material-list' as const, label: 'Material List' },
           ].map((tab) => (
             <button
@@ -727,6 +810,42 @@ export default function EstimateDetailPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>PDF to send</Label>
+              <div className="space-y-2 rounded-md border p-3">
+                <label className="flex cursor-pointer items-start gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="send-pdf-view"
+                    className="mt-1"
+                    checked={sendPdfView === 'customer'}
+                    onChange={() => setSendPdfView('customer')}
+                  />
+                  <span>
+                    <span className="font-medium">Customer estimate</span>
+                    <span className="block text-xs text-muted-foreground">
+                      Bundled Line # view (default)
+                    </span>
+                  </span>
+                </label>
+                <label className="flex cursor-pointer items-start gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="send-pdf-view"
+                    className="mt-1"
+                    checked={sendPdfView === 'company'}
+                    onChange={() => setSendPdfView('company')}
+                  />
+                  <span>
+                    <span className="font-medium">Company estimate</span>
+                    <span className="block text-xs text-muted-foreground">
+                      Detailed line items (internal / QB style)
+                    </span>
+                  </span>
+                </label>
+              </div>
+            </div>
+
             <div className="space-y-2">
               <Label>Recipients</Label>
               <ContactRecipientPicker
@@ -773,19 +892,106 @@ export default function EstimateDetailPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={pdfActionModal != null}
+        onOpenChange={(open) => {
+          if (!open && !pdfActionBusy) setPdfActionModal(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {pdfActionModal === 'print' ? 'Print estimate' : 'Download PDF'}
+            </DialogTitle>
+            <DialogDescription>
+              Choose which estimate PDF to {pdfActionModal === 'print' ? 'print' : 'download'}.
+              Customer is the default.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 rounded-md border p-3">
+            <label className="flex cursor-pointer items-start gap-2 text-sm">
+              <input
+                type="radio"
+                name="pdf-action-view"
+                className="mt-1"
+                checked={pdfActionView === 'customer'}
+                onChange={() => setPdfActionView('customer')}
+              />
+              <span>
+                <span className="font-medium">Customer estimate</span>
+                <span className="block text-xs text-muted-foreground">
+                  Bundled Line # view (default)
+                </span>
+              </span>
+            </label>
+            <label className="flex cursor-pointer items-start gap-2 text-sm">
+              <input
+                type="radio"
+                name="pdf-action-view"
+                className="mt-1"
+                checked={pdfActionView === 'company'}
+                onChange={() => setPdfActionView('company')}
+              />
+              <span>
+                <span className="font-medium">Company estimate</span>
+                <span className="block text-xs text-muted-foreground">
+                  Detailed line items (internal / QB style)
+                </span>
+              </span>
+            </label>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setPdfActionModal(null)}
+              disabled={pdfActionBusy}
+            >
+              Cancel
+            </Button>
+            <Button onClick={confirmPdfAction} disabled={pdfActionBusy}>
+              {pdfActionBusy
+                ? pdfActionModal === 'print'
+                  ? 'Preparing…'
+                  : 'Downloading…'
+                : pdfActionModal === 'print'
+                  ? 'Print'
+                  : 'Download'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div className="grid gap-6 md:grid-cols-3">
         {activeTab === 'material-list' ? (
           <div className="md:col-span-3">
             <EstimateMaterialList estimateId={estimateId} />
           </div>
         ) : null}
-        {activeTab === 'overview' ? (
+        {activeTab === 'customer' ? (
+          <div className="md:col-span-3">
+            <Card>
+              <CardHeader>
+                <CardTitle>Customer estimate</CardTitle>
+                <CardDescription>
+                  Bundled Line # view derived from company groups. Edit from the Edit page Customer tab.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <CustomerEstimatePanel customerLines={customerLines} readOnly />
+              </CardContent>
+            </Card>
+          </div>
+        ) : null}
+        {activeTab === 'company' ? (
         <>
         <div className="md:col-span-2 space-y-6">
           {/* Line Items */}
           <Card>
             <CardHeader>
-              <CardTitle>Line Items</CardTitle>
+              <CardTitle>Company estimate</CardTitle>
+              <CardDescription>
+                Detailed items that sync to QuickBooks. Switch to the Customer tab for bundled view.
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <ResponsiveTableContainer>
@@ -824,7 +1030,7 @@ export default function EstimateDetailPage() {
                       for (const [groupId, items] of groupedItems.entries()) {
                         const group = items[0].group!
                         const groupTotal = items.reduce((sum, item) => sum + parseFloat(item.total), 0)
-                        const isExpanded = expandedGroups.has(groupId)
+                        const isExpanded = true
 
                         rows.push(
                           <tr key={`group-${groupId}`} className="border-b bg-gray-50">

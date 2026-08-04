@@ -12,6 +12,7 @@ import { buildEstimateApprovalEmail } from '@/lib/email/templates/estimate-appro
 import { getPdfBranding } from '@/lib/branding/pdf'
 import { renderEstimateEmailPdfAttachment } from '@/lib/documents/email-pdf-attachments'
 import { loadEmailEntityAttachments } from '@/lib/documents/email-entity-attachments'
+import { parseEstimatePdfView } from '@/lib/estimates/estimate-pdf-view'
 
 export const runtime = 'nodejs'
 
@@ -54,7 +55,8 @@ export async function POST(
 
   try {
     const body = await request.json()
-    const { email, emails, subject, message } = body
+    const { email, emails, subject, message, view: viewRaw } = body
+    const pdfView = parseEstimatePdfView(viewRaw)
 
     // Get estimate
     const estimate = await prisma.estimate.findFirst({
@@ -73,6 +75,7 @@ export async function POST(
         },
         lineItems: {
           orderBy: { sortOrder: 'asc' },
+          include: { group: true },
         },
         optionalItems: {
           orderBy: { sortOrder: 'asc' },
@@ -168,7 +171,12 @@ export async function POST(
     })
     const approvedOptionalItemIds = new Set(itemApprovals.map((approval) => approval.estimateLineItemId))
     const pdfBranding = await getPdfBranding(user.tenantId)
-    const pdfAttachment = await renderEstimateEmailPdfAttachment(estimate, pdfBranding, approvedOptionalItemIds)
+    const pdfAttachment = await renderEstimateEmailPdfAttachment(
+      estimate,
+      pdfBranding,
+      approvedOptionalItemIds,
+      pdfView
+    )
     const uploadedAttachments = await loadEmailEntityAttachments({
       tenantId: user.tenantId,
       entityType: 'estimate',

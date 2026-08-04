@@ -271,6 +271,12 @@ export async function POST(request: NextRequest) {
             name: group.name || 'Bundle',
             sourceBundleId: group.sourceBundleId || null,
             sourceBundleName: group.name || null,
+            customerDescription: group.customerDescription || null,
+            customerTotal:
+              group.customerTotal != null && group.customerTotal !== ''
+                ? parseFloat(String(group.customerTotal))
+                : null,
+            customerEdited: Boolean(group.customerEdited),
           },
         })
         groupMap.set(group.groupId, dbGroup.id)

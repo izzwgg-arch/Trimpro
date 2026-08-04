@@ -4,6 +4,7 @@ import crypto from 'crypto'
 import { prisma } from '@/lib/prisma'
 import { rateLimitOrThrow } from '@/lib/security/rate-limit'
 import { hashApprovalToken } from '@/lib/estimate-approval'
+import { expandApprovalSelectionToLineItemIds } from '@/lib/estimates/customer-approval-view'
 import { createNotificationsForUsers } from '@/lib/notifications'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { getEstimateConversionSummary } from '@/lib/documents/conversion'
@@ -78,7 +79,10 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
     const estimate = await prisma.estimate.findFirst({
       where: { id: tokenRow.estimateId, tenantId: tokenRow.tenantId },
       include: {
-        lineItems: { orderBy: { sortOrder: 'asc' } },
+        lineItems: {
+          orderBy: { sortOrder: 'asc' },
+          include: { group: true },
+        },
         optionalItems: { orderBy: { sortOrder: 'asc' } },
         client: { select: { name: true, companyName: true } },
       },
@@ -98,8 +102,17 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
     const allVisibleIds = [...visibleLineItemIds, ...visibleOptionalItemIds]
 
     const approveAll = Boolean(parsedBody.data.approveAll)
-    const selected = approveAll ? allVisibleIds : parsedBody.data.selectedLineItemIds || []
-    const normalizedSelected = Array.from(new Set(selected.map((s) => String(s).trim()).filter(Boolean)))
+    // Customer UI may send Line # / group ids; expand those to underlying company line items.
+    const selectedRaw = approveAll
+      ? allVisibleIds
+      : expandApprovalSelectionToLineItemIds(
+          parsedBody.data.selectedLineItemIds || [],
+          estimate.lineItems as any[],
+          (estimate.optionalItems || []) as any[]
+        )
+    const normalizedSelected = Array.from(
+      new Set(selectedRaw.map((s) => String(s).trim()).filter(Boolean))
+    )
 
     if (normalizedSelected.length === 0) {
       return NextResponse.json({ error: 'Select at least one item to approve.' }, { status: 400 })

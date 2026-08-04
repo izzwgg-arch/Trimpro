@@ -45,11 +45,15 @@ export async function renderInvoiceEmailPdfAttachment(
 export async function renderEstimateEmailPdfAttachment(
   estimate: AnyRecord,
   brand: PdfBranding,
-  approvedOptionalItemIds: Set<string> = new Set()
+  approvedOptionalItemIds: Set<string> = new Set(),
+  view: 'customer' | 'company' = 'customer'
 ): Promise<PdfEmailAttachment> {
+  const viewSuffix = view === 'company' ? '-company' : '-customer'
   return {
-    filename: `Estimate-${safeFilenamePart(estimate.estimateNumber, 'estimate')}.pdf`,
-    content: await renderPdfFromHtml(buildEstimatePdfHtml(estimate, brand, approvedOptionalItemIds)),
+    filename: `Estimate-${safeFilenamePart(estimate.estimateNumber, 'estimate')}${viewSuffix}.pdf`,
+    content: await renderPdfFromHtml(
+      buildEstimatePdfHtml(estimate, brand, approvedOptionalItemIds, { view })
+    ),
     contentType: 'application/pdf',
   }
 }
