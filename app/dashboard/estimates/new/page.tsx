@@ -9,7 +9,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Save, Plus, Trash2, Eye, EyeOff } from 'lucide-react'
+import { Save, Plus, Trash2, Eye, EyeOff, Building2, User } from 'lucide-react'
 import { LineItemDragHandle } from '@/components/documents/line-item-drag-handle'
 import Link from 'next/link'
 import { ResponsivePage } from '@/components/layout/ResponsivePage'
@@ -28,6 +28,16 @@ import {
   addItemToDocumentBundle,
   removeDocumentLineItem,
 } from '@/lib/bundles/document-line-item-actions'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { CustomerEstimatePanel } from '@/components/estimates/customer-estimate-panel'
+import {
+  type CustomerLine,
+  companyLineFingerprint,
+  flatLineItemsToCompanyLines,
+  mergeCustomerIntoGroups,
+  syncCustomerLines,
+} from '@/lib/estimates/company-customer-sync'
+
 interface LineItem {
   id?: string
   description: string
@@ -90,6 +100,9 @@ export default function NewEstimatePage() {
     },
   ])
   const [optionalItems, setOptionalItems] = useState<LineItem[]>([])
+  const [customerLines, setCustomerLines] = useState<CustomerLine[]>([])
+  const [estimateLineView, setEstimateLineView] = useState<'company' | 'customer'>('company')
+  const companyFingerprintsRef = useRef<Record<string, string>>({})
   const [focusedLineIndex, setFocusedLineIndex] = useState<number | null>(null)
   const [isNotesVisibleToClient, setIsNotesVisibleToClient] = useState(true)
   
@@ -121,6 +134,25 @@ export default function NewEstimatePage() {
     fetchClients()
     fetchPickerData()
   }, [])
+
+  // Keep customer bundles in sync with company Line # groups (sticky until that group is edited).
+  useEffect(() => {
+    const companyLines = flatLineItemsToCompanyLines(lineItems)
+    const editedIds: string[] = []
+    for (const line of companyLines) {
+      const nextFp = companyLineFingerprint(line)
+      const prevFp = companyFingerprintsRef.current[line.id]
+      if (prevFp !== undefined && prevFp !== nextFp) {
+        editedIds.push(line.id)
+      }
+      companyFingerprintsRef.current[line.id] = nextFp
+    }
+    const liveIds = new Set(companyLines.map((l) => l.id))
+    for (const id of Object.keys(companyFingerprintsRef.current)) {
+      if (!liveIds.has(id)) delete companyFingerprintsRef.current[id]
+    }
+    setCustomerLines((prev) => syncCustomerLines(companyLines, prev, editedIds))
+  }, [lineItems])
 
   const loadNextEstimateNumberPreview = useCallback(async () => {
     setNextEstimatePreviewLoading(true)
@@ -1015,6 +1047,14 @@ export default function NewEstimatePage() {
         }
       })
 
+      const groupsPayload = mergeCustomerIntoGroups(
+        Array.from(groups.entries()).map(([groupId, group]) => ({
+          groupId,
+          ...group,
+        })),
+        customerLines
+      )
+
       const response = await fetch('/api/estimates', {
         method: 'POST',
         headers: {
@@ -1039,10 +1079,7 @@ export default function NewEstimatePage() {
           terms: formData.terms || null,
           lineItems: apiLineItems,
           optionalItems: apiOptionalItems,
-          groups: Array.from(groups.entries()).map(([groupId, group]) => ({
-            groupId,
-            ...group,
-          })),
+          groups: groupsPayload,
         }),
       })
 
@@ -1207,12 +1244,32 @@ export default function NewEstimatePage() {
 
             <Card>
               <CardHeader>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <CardTitle>Line Items</CardTitle>
-                    <CardDescription>Click in Item field to search and add items</CardDescription>
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <CardTitle>Line Items</CardTitle>
+                      <CardDescription>
+                        Switch between company (detailed / QB) and customer (bundled) estimates
+                      </CardDescription>
+                    </div>
+                    <Tabs
+                      value={estimateLineView}
+                      onValueChange={(v) => setEstimateLineView(v as 'company' | 'customer')}
+                    >
+                      <TabsList>
+                        <TabsTrigger value="company" className="gap-1.5">
+                          <Building2 className="h-4 w-4" />
+                          Company
+                        </TabsTrigger>
+                        <TabsTrigger value="customer" className="gap-1.5">
+                          <User className="h-4 w-4" />
+                          Customer
+                        </TabsTrigger>
+                      </TabsList>
+                    </Tabs>
                   </div>
-                  <div className="flex flex-wrap items-center gap-1.5 text-xs shrink-0">
+                  {estimateLineView === 'company' && (
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs">
                     <span className="text-gray-500 font-medium self-center">Show to customer:</span>
                     {(['showDescriptionToCustomer', 'showNotesToCustomer', 'showPriceToCustomer', 'showCostToCustomer', 'showTaxToCustomer'] as VisibilityField[]).map((field) => {
                       const labels: Record<VisibilityField, string> = { showDescriptionToCustomer: 'Name', showNotesToCustomer: 'Description', showPriceToCustomer: 'Price', showCostToCustomer: 'Cost', showTaxToCustomer: 'Tax' }
@@ -1247,9 +1304,17 @@ export default function NewEstimatePage() {
                       </>
                     )}
                   </div>
+                  )}
                 </div>
               </CardHeader>
               <CardContent className="space-y-2">
+                {estimateLineView === 'customer' ? (
+                  <CustomerEstimatePanel
+                    customerLines={customerLines}
+                    onChange={setCustomerLines}
+                  />
+                ) : (
+                <>
                 <div className="space-y-2">
                   {lineItems.map((item, index) => {
                     const isGroupHeader = item.isGroupHeader
@@ -1704,6 +1769,8 @@ export default function NewEstimatePage() {
                     Add Subtotal Row
                   </Button>
                 </div>
+                </>
+                )}
               </CardContent>
             </Card>
 
