@@ -66,6 +66,54 @@ interface LineItem {
   isSubtotal?: boolean
 }
 
+function createManualGroupId() {
+  return `group-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function createBlankGroupedLineItem(groupId: string, groupName: string): LineItem {
+  return {
+    description: '',
+    quantity: '1',
+    unitPrice: '0',
+    taxable: true,
+    isVisibleToClient: true,
+    showDescriptionToCustomer: false,
+    showCostToCustomer: false,
+    showPriceToCustomer: true,
+    showTaxToCustomer: true,
+    showNotesToCustomer: true,
+    groupId,
+    groupName,
+  }
+}
+
+function createManualLineBundle(lineNumber: number): LineItem[] {
+  const groupId = createManualGroupId()
+  const groupName = ''
+  const header: LineItem = {
+    description: '',
+    quantity: '1',
+    unitPrice: '0',
+    taxable: true,
+    isVisibleToClient: true,
+    showDescriptionToCustomer: true,
+    showCostToCustomer: false,
+    showPriceToCustomer: true,
+    showTaxToCustomer: true,
+    showNotesToCustomer: false,
+    groupId,
+    groupName,
+    isGroupHeader: true,
+  }
+  // lineNumber reserved for display; name starts blank for the user to fill in
+  void lineNumber
+  return [header, createBlankGroupedLineItem(groupId, groupName)]
+}
+
+function createInitialEstimateLineItems(): LineItem[] {
+  return createManualLineBundle(1)
+}
+
 export default function NewEstimatePage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -86,19 +134,7 @@ export default function NewEstimatePage() {
   const [clients, setClients] = useState<PickerClient[]>([])
   const [pickerItems, setPickerItems] = useState<FastPickerItem[]>([])
   const [pickerBundles, setPickerBundles] = useState<FastPickerItem[]>([])
-  const [lineItems, setLineItems] = useState<LineItem[]>([
-    {
-      description: '',
-      quantity: '1',
-      unitPrice: '0',
-      taxable: true,
-      showDescriptionToCustomer: false,
-      showCostToCustomer: false,
-      showPriceToCustomer: true,
-      showTaxToCustomer: true,
-      showNotesToCustomer: true,
-    },
-  ])
+  const [lineItems, setLineItems] = useState<LineItem[]>(() => createInitialEstimateLineItems())
   const [optionalItems, setOptionalItems] = useState<LineItem[]>([])
   const [customerLines, setCustomerLines] = useState<CustomerLine[]>([])
   const [estimateLineView, setEstimateLineView] = useState<'company' | 'customer'>('company')
@@ -324,20 +360,29 @@ export default function NewEstimatePage() {
   }
 
   const addLineItem = () => {
-    setLineItems((prev) => [
-      ...prev,
-      {
-        description: '',
-        quantity: '1',
-        unitPrice: '0',
-        taxable: true,
-        showDescriptionToCustomer: false,
-        showCostToCustomer: false,
-        showPriceToCustomer: true,
-        showTaxToCustomer: true,
-        showNotesToCustomer: true,
-      },
-    ])
+    setLineItems((prev) => {
+      const lastHeader = [...prev].reverse().find((item) => item.isGroupHeader && item.groupId)
+      if (lastHeader?.groupId) {
+        const result = addItemToDocumentBundle(prev, lastHeader.groupId, () =>
+          createBlankGroupedLineItem(lastHeader.groupId!, lastHeader.groupName || '')
+        )
+        focusLinePickerAt(result.focusIndex)
+        return result.items
+      }
+      const bundle = createManualLineBundle(1)
+      focusLinePickerAt(1)
+      return [...prev, ...bundle]
+    })
+  }
+
+  const addLineBundle = () => {
+    setLineItems((prev) => {
+      const nextNumber = prev.filter((item) => item.isGroupHeader).length + 1
+      const bundle = createManualLineBundle(nextNumber)
+      const focusIndex = prev.length + 1
+      focusLinePickerAt(focusIndex)
+      return [...prev, ...bundle]
+    })
   }
 
   const createBlankLineItem = (): LineItem => ({
@@ -430,6 +475,12 @@ export default function NewEstimatePage() {
       if (!row.isSubtotal && row.groupId) {
         blank.groupId = row.groupId
         blank.groupName = row.groupName
+      } else {
+        const lastHeader = [...prev].reverse().find((item) => item.isGroupHeader && item.groupId)
+        if (lastHeader?.groupId) {
+          blank.groupId = lastHeader.groupId
+          blank.groupName = lastHeader.groupName
+        }
       }
       next.splice(index + 1, 0, blank)
       return next
@@ -494,7 +545,22 @@ export default function NewEstimatePage() {
   const updateLineItem = (index: number, field: keyof LineItem, value: any) => {
     setLineItems((prev) => {
       const updated = [...prev]
-      updated[index] = { ...updated[index], [field]: value }
+      const current = updated[index]
+      if (!current) return prev
+
+      // Renaming a Line # / bundle header keeps groupName in sync on all rows in that group.
+      if (current.isGroupHeader && current.groupId && (field === 'description' || field === 'groupName')) {
+        const nextName = String(value || '')
+        return updated.map((item) => {
+          if (item.groupId !== current.groupId) return item
+          if (item.isGroupHeader) {
+            return { ...item, description: nextName, groupName: nextName }
+          }
+          return { ...item, groupName: nextName }
+        })
+      }
+
+      updated[index] = { ...current, [field]: value }
       return updated
     })
   }
@@ -610,34 +676,29 @@ export default function NewEstimatePage() {
   }
 
   const handleNextLine = (currentIndex: number) => {
-    // Auto-advance to next line's description field
     const nextIndex = currentIndex + 1
     setLineItems((prev) => {
       if (nextIndex < prev.length) return prev
-      return [
-        ...prev,
-        {
-          description: '',
-          quantity: '1',
-          unitPrice: '0',
-          taxable: true,
-          showDescriptionToCustomer: false,
-          showCostToCustomer: false,
-          showPriceToCustomer: true,
-          showTaxToCustomer: true,
-          showNotesToCustomer: true,
-        },
-      ]
+      const current = prev[currentIndex]
+      const blank = createBlankLineItem()
+      if (current?.groupId && !current.isSubtotal) {
+        blank.groupId = current.groupId
+        blank.groupName = current.groupName
+      } else {
+        const lastHeader = [...prev].reverse().find((item) => item.isGroupHeader && item.groupId)
+        if (lastHeader?.groupId) {
+          blank.groupId = lastHeader.groupId
+          blank.groupName = lastHeader.groupName
+        }
+      }
+      return [...prev, blank]
     })
-    // Focus the next line's picker input
     setTimeout(() => {
       const nextInput = pickerInputRefs.current[nextIndex]
       if (nextInput) {
         nextInput.focus()
-        // Trigger focus event to open dropdown
         nextInput.dispatchEvent(new Event('focus', { bubbles: true }))
       } else {
-        // Fallback: try to find via querySelector
         const nextContainer = lineItemRefs.current[nextIndex]
         const fallbackInput = nextContainer?.querySelector<HTMLInputElement>('[data-picker-input="true"]')
         if (fallbackInput) {
@@ -1034,12 +1095,22 @@ export default function NewEstimatePage() {
           sourceBundleId: item.sourceBundleId || null,
         }))
 
-      // Create groups for bundles
+      // Create groups for bundles / Line # rows
       const groups = new Map<string, { name: string; sourceBundleId?: string }>()
-      ;[...lineItems, ...optionalItems].forEach(item => {
-        if (item.groupId && item.groupName && !groups.has(item.groupId)) {
+      let groupOrdinal = 0
+      ;[...lineItems, ...optionalItems].forEach((item) => {
+        if (item.groupId && item.isGroupHeader && !groups.has(item.groupId)) {
+          groupOrdinal += 1
+          const named = (item.groupName || item.description || '').trim()
           groups.set(item.groupId, {
-            name: item.groupName,
+            name: named || `Line #${groupOrdinal}`,
+            sourceBundleId: item.sourceBundleId,
+          })
+        } else if (item.groupId && item.groupName && !groups.has(item.groupId)) {
+          groupOrdinal += 1
+          const named = item.groupName.trim()
+          groups.set(item.groupId, {
+            name: named || `Line #${groupOrdinal}`,
             sourceBundleId: item.sourceBundleId,
           })
         }
@@ -1458,13 +1529,18 @@ export default function NewEstimatePage() {
                         {/* Item Name with FastPicker */}
                         <div className="line-item-field-wide flex-1 space-y-1">
                           {isGroupHeader ? (
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="rounded bg-purple-700 px-2 py-0.5 text-xs font-semibold text-white shrink-0">
+                                Line #
+                                {lineItems
+                                  .slice(0, index + 1)
+                                  .filter((li) => li.isGroupHeader).length}
+                              </span>
                               <Input
                                 value={item.description}
                                 onChange={(e) => updateLineItem(index, 'description', e.target.value)}
-                                placeholder="Bundle name"
-                                className="flex-1 font-semibold"
-                                readOnly
+                                placeholder="Name this bundle / Line #"
+                                className="flex-1 min-w-[180px] font-semibold"
                               />
                               <span className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded">
                                 Bundle
@@ -1473,9 +1549,9 @@ export default function NewEstimatePage() {
                                 type="button"
                                 variant="outline"
                                 size="sm"
-                                title="Add item to this bundle (this estimate only)"
+                                title="Add item to this bundle"
                                 onClick={() => item.groupId && addItemToBundle(item.groupId)}
-                                className="h-7 text-xs shrink-0"
+                                className="h-8 text-xs shrink-0"
                               >
                                 <Plus className="h-3 w-3 mr-1" />
                                 Add item
@@ -1740,6 +1816,10 @@ export default function NewEstimatePage() {
                   <Button type="button" variant="outline" onClick={addLineItem}>
                     <Plus className="mr-2 h-4 w-4" />
                     Add Line Item
+                  </Button>
+                  <Button type="button" variant="outline" onClick={addLineBundle}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Line #
                   </Button>
                   <Button
                     type="button"
