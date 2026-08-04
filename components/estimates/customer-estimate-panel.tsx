@@ -38,8 +38,8 @@ export function CustomerEstimatePanel({
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        One row per company Line # / bundle. Descriptions are stacked from company item
-        descriptions. Edits stick until that company line is changed.
+        One row per company Line # / bundle. Descriptions stack from each company item&apos;s
+        Description field (not Name). Edits stick until that company line is changed.
       </p>
 
       {customerLines.map((line) => (
@@ -72,17 +72,17 @@ export function CustomerEstimatePanel({
           </div>
 
           {readOnly ? (
-            <pre className="whitespace-pre-wrap px-3 py-3 font-mono text-sm">
+            <div className="whitespace-pre-wrap px-3 py-3 text-[15px] leading-relaxed text-slate-800 font-sans">
               {line.description || '—'}
-            </pre>
+            </div>
           ) : (
             <div className="grid gap-3 p-3 sm:grid-cols-[1fr_160px]">
               <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                  Description (each company item on its own row)
+                  Description (from company Description fields)
                 </label>
                 <Textarea
-                  className="min-h-[110px] font-mono text-sm"
+                  className="min-h-[110px] text-[15px] leading-relaxed font-sans"
                   value={line.description}
                   onChange={(e) => edit(line.id, { description: e.target.value })}
                 />

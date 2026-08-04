@@ -80,15 +80,10 @@ export function companyLineTotal(line: CompanyLine): number {
 
 /**
  * Text that feeds the customer line description.
- * Prefer the Description column (notes); fall back to Name.
- * If both exist and differ, keep both so customer text is never blank after a company edit.
+ * Only the company Description column (notes) — never the Name column.
  */
 export function itemCustomerFacingText(item: CompanyItem): string {
-  const notes = (item.notes || '').trim()
-  const name = (item.description || '').trim()
-  if (notes && name && notes !== name) return `${name}: ${notes}`
-  if (notes) return notes
-  return name
+  return (item.notes || '').trim()
 }
 
 /** Stack each non-empty item description on its own row. */
