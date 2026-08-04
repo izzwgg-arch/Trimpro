@@ -114,16 +114,16 @@ export default function EditEstimatePage() {
   useEffect(() => {
     const companyLines = flatLineItemsToCompanyLines(lineItems)
     const editedIds: string[] = []
+    const nextFingerprints: Record<string, string> = {}
     for (const line of companyLines) {
       const nextFp = companyLineFingerprint(line)
       const prevFp = companyFingerprintsRef.current[line.id]
       if (prevFp !== undefined && prevFp !== nextFp) {
         editedIds.push(line.id)
       }
+      nextFingerprints[line.id] = nextFp
     }
-    companyFingerprintsRef.current = Object.fromEntries(
-      companyLines.map((line) => [line.id, companyLineFingerprint(line)])
-    )
+    companyFingerprintsRef.current = nextFingerprints
     setCustomerLines((prev) => syncCustomerLines(companyLines, prev, editedIds))
   }, [lineItems])
 

@@ -81,11 +81,14 @@ export function companyLineTotal(line: CompanyLine): number {
 /**
  * Text that feeds the customer line description.
  * Prefer the Description column (notes); fall back to Name.
+ * If both exist and differ, keep both so customer text is never blank after a company edit.
  */
 export function itemCustomerFacingText(item: CompanyItem): string {
   const notes = (item.notes || '').trim()
+  const name = (item.description || '').trim()
+  if (notes && name && notes !== name) return `${name}: ${notes}`
   if (notes) return notes
-  return (item.description || '').trim()
+  return name
 }
 
 /** Stack each non-empty item description on its own row. */
@@ -107,6 +110,7 @@ export function buildCustomerLineFromCompany(line: CompanyLine): CustomerLine {
 /**
  * Rebuild customer lines from company lines.
  * Lines marked customerEdited are preserved unless their company line id is in `editedCompanyLineIds`.
+ * Empty sticky descriptions never block a company refill (recovers from accidental empty edits).
  */
 export function syncCustomerLines(
   companyLines: CompanyLine[],
@@ -122,8 +126,14 @@ export function syncCustomerLines(
   return companyLines.map((companyLine) => {
     const prev = prevById.get(companyLine.id)
     const forceResync = forceIds.has(companyLine.id)
+    const rebuilt = buildCustomerLineFromCompany(companyLine)
 
     if (prev?.customerEdited && !forceResync) {
+      const stickyDescription = (prev.description || '').trim()
+      // Accidental sticky empty (focus/blur) was blocking company → customer text.
+      if (!stickyDescription && (rebuilt.description || '').trim()) {
+        return rebuilt
+      }
       return {
         ...prev,
         lineNumber: companyLine.lineNumber,
@@ -131,7 +141,7 @@ export function syncCustomerLines(
       }
     }
 
-    return buildCustomerLineFromCompany(companyLine)
+    return rebuilt
   })
 }
 
@@ -140,9 +150,16 @@ export function applyCustomerEdit(
   lineId: string,
   patch: Partial<Pick<CustomerLine, 'description' | 'total' | 'title'>>
 ): CustomerLine[] {
-  return lines.map((line) =>
-    line.id === lineId ? { ...line, ...patch, customerEdited: true } : line
-  )
+  return lines.map((line) => {
+    if (line.id !== lineId) return line
+    const next = { ...line, ...patch }
+    const changed =
+      (patch.description !== undefined && patch.description !== line.description) ||
+      (patch.total !== undefined && Number(patch.total) !== Number(line.total)) ||
+      (patch.title !== undefined && patch.title !== line.title)
+    if (!changed) return line
+    return { ...next, customerEdited: true }
+  })
 }
 
 export function formatMoney(amount: number): string {
@@ -438,12 +455,29 @@ export function mergeCustomerIntoGroups(
   const byId = new Map(customerLines.map((l) => [l.id, l]))
   return groups.map((group) => {
     const customer = byId.get(group.groupId)
-    if (!customer) return group
+    if (!customer) {
+      return {
+        ...group,
+        customerDescription: null,
+        customerTotal: null,
+        customerEdited: false,
+      }
+    }
+    // Only persist sticky overrides when the customer row was manually edited.
+    // Synced (non-edited) rows stay null so company remains the source of truth.
+    if (!customer.customerEdited) {
+      return {
+        ...group,
+        customerDescription: null,
+        customerTotal: null,
+        customerEdited: false,
+      }
+    }
     return {
       ...group,
       customerDescription: customer.description,
       customerTotal: customer.total,
-      customerEdited: customer.customerEdited,
+      customerEdited: true,
     }
   })
 }
