@@ -70,6 +70,49 @@ interface LineItem {
   isSubtotal?: boolean
 }
 
+function createManualGroupId() {
+  return `group-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function createBlankGroupedLineItem(groupId: string, groupName: string): LineItem {
+  return {
+    description: '',
+    quantity: '1',
+    unitPrice: '0',
+    taxable: true,
+    isVisibleToClient: true,
+    showDescriptionToCustomer: false,
+    showCostToCustomer: false,
+    showPriceToCustomer: true,
+    showTaxToCustomer: true,
+    showNotesToCustomer: true,
+    groupId,
+    groupName,
+  }
+}
+
+function createManualLineBundle(lineNumber: number): LineItem[] {
+  const groupId = createManualGroupId()
+  const groupName = ''
+  const header: LineItem = {
+    description: '',
+    quantity: '1',
+    unitPrice: '0',
+    taxable: true,
+    isVisibleToClient: true,
+    showDescriptionToCustomer: true,
+    showCostToCustomer: false,
+    showPriceToCustomer: true,
+    showTaxToCustomer: true,
+    showNotesToCustomer: false,
+    groupId,
+    groupName,
+    isGroupHeader: true,
+  }
+  void lineNumber
+  return [header, createBlankGroupedLineItem(groupId, groupName)]
+}
+
 export default function EditInvoicePage() {
   const router = useRouter()
   const params = useParams()
@@ -362,21 +405,29 @@ export default function EditInvoicePage() {
   }
 
   const addLineItem = () => {
-    setLineItems((prev) => [
-      ...prev,
-      {
-        description: '',
-        quantity: '1',
-        unitPrice: '0',
-        taxable: true,
-        isVisibleToClient: true,
-        showDescriptionToCustomer: false,
-        showCostToCustomer: false,
-        showPriceToCustomer: true,
-        showTaxToCustomer: true,
-        showNotesToCustomer: true,
-      },
-    ])
+    setLineItems((prev) => {
+      const lastHeader = [...prev].reverse().find((item) => item.isGroupHeader && item.groupId)
+      if (lastHeader?.groupId) {
+        const result = addItemToDocumentBundle(prev, lastHeader.groupId, () =>
+          createBlankGroupedLineItem(lastHeader.groupId!, lastHeader.groupName || '')
+        )
+        focusLinePickerAt(result.focusIndex)
+        return result.items
+      }
+      const bundle = createManualLineBundle(1)
+      focusLinePickerAt(prev.length + 1)
+      return [...prev, ...bundle]
+    })
+  }
+
+  const addLineBundle = () => {
+    setLineItems((prev) => {
+      const nextNumber = prev.filter((item) => item.isGroupHeader).length + 1
+      const bundle = createManualLineBundle(nextNumber)
+      const focusIndex = prev.length + 1
+      focusLinePickerAt(focusIndex)
+      return [...prev, ...bundle]
+    })
   }
 
   const addOptionalItem = () => {
@@ -435,7 +486,10 @@ export default function EditInvoicePage() {
 
   const addItemToBundle = (groupId: string) => {
     setLineItems((prev) => {
-      const result = addItemToDocumentBundle(prev, groupId, createBlankLineItem)
+      const header = prev.find((item) => item.isGroupHeader && item.groupId === groupId)
+      const result = addItemToDocumentBundle(prev, groupId, () =>
+        createBlankGroupedLineItem(groupId, header?.groupName || '')
+      )
       focusLinePickerAt(result.focusIndex)
       return result.items
     })
@@ -552,7 +606,22 @@ export default function EditInvoicePage() {
   const updateLineItem = (index: number, field: keyof LineItem, value: any) => {
     setLineItems((prev) => {
       const updated = [...prev]
-      updated[index] = { ...updated[index], [field]: value }
+      const current = updated[index]
+      if (!current) return prev
+
+      // Renaming a Line # / bundle header keeps groupName in sync on all rows in that group.
+      if (current.isGroupHeader && current.groupId && (field === 'description' || field === 'groupName')) {
+        const nextName = String(value || '')
+        return updated.map((item) => {
+          if (item.groupId !== current.groupId) return item
+          if (item.isGroupHeader) {
+            return { ...item, description: nextName, groupName: nextName }
+          }
+          return { ...item, groupName: nextName }
+        })
+      }
+
+      updated[index] = { ...current, [field]: value }
       return updated
     })
   }
@@ -1427,13 +1496,18 @@ export default function EditInvoicePage() {
 
                         <div className="line-item-field-wide flex-1 space-y-1" style={{ minWidth: lineColWidths.name || 200 }}>
                           {isGroupHeader ? (
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="rounded bg-purple-700 px-2 py-0.5 text-xs font-semibold text-white shrink-0">
+                                Line #
+                                {lineItems
+                                  .slice(0, index + 1)
+                                  .filter((li) => li.isGroupHeader).length}
+                              </span>
                               <Input
                                 value={item.description}
                                 onChange={(e) => updateLineItem(index, 'description', e.target.value)}
-                                placeholder="Bundle name"
-                                className="flex-1 font-semibold"
-                                readOnly
+                                placeholder="Name this bundle / Line #"
+                                className="flex-1 min-w-[180px] font-semibold"
                               />
                               <span className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded">
                                 Bundle
@@ -1442,9 +1516,9 @@ export default function EditInvoicePage() {
                                 type="button"
                                 variant="outline"
                                 size="sm"
-                                title="Add item to this bundle (this invoice only)"
+                                title="Add item to this bundle"
                                 onClick={() => item.groupId && addItemToBundle(item.groupId)}
-                                className="h-7 text-xs shrink-0"
+                                className="h-8 text-xs shrink-0"
                               >
                                 <Plus className="h-3 w-3 mr-1" />
                                 Add item
@@ -1701,6 +1775,10 @@ export default function EditInvoicePage() {
                   <Button type="button" variant="outline" onClick={addLineItem}>
                     <Plus className="mr-2 h-4 w-4" />
                     Add Line Item
+                  </Button>
+                  <Button type="button" variant="outline" onClick={addLineBundle}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Line #
                   </Button>
                   <Button
                     type="button"
