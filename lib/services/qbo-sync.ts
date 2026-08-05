@@ -247,6 +247,11 @@ async function validateEstimateQboReferences(params: {
   for (const ref of params.refs) {
     const endpoint = endpointByField[ref.field]
     if (!endpoint || !ref.value) continue
+    // QBO special sales-tax codes TAX/NON are string Ids. GET /taxcode/NON fails with
+    // "Id should be a valid number", but they are valid TaxCodeRef values on lines.
+    if (ref.field === 'TaxCodeRef' && !/^\d+$/.test(String(ref.value))) {
+      continue
+    }
     try {
       const response = await quickBooksService.makeAPIRequest(
         params.accessToken,
