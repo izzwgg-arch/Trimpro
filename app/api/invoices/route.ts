@@ -627,6 +627,14 @@ export async function POST(request: NextRequest) {
       console.error('QuickBooks invoice sync trigger error:', error)
     }
 
+    if (estimateId) {
+      try {
+        await enqueueQboSync(user.tenantId, 'estimate', estimateId, { processImmediately: false })
+      } catch (error) {
+        console.error('QuickBooks estimate sync trigger error (invoice create convert):', error)
+      }
+    }
+
     // Best-effort: automatically generate the QuickBooks ACH hosted payment link after sync.
     // This must never block the invoice create response.
     try {

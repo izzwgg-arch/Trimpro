@@ -1216,7 +1216,27 @@ function extractAllQboLines(qboLines: any): any[] {
 }
 
 /** Build the QBO Line array from TrimPro line items. Subtotal rows become SubTotalLineDetail. */
-function buildQboLines(lineItems: any[], itemIdByName: Map<string, string>, fallbackItemId: string): any[] {
+function resolveQboLineTaxCode(li: any, documentDefault: 'TAX' | 'NON'): 'TAX' | 'NON' {
+  if (li?.taxable === false) return 'NON'
+  return documentDefault
+}
+
+/** When TrimPro document tax is zero, force NON so QBO does not auto-add sales tax. */
+function defaultQboTaxCodeForDocument(doc: { taxRate?: any; taxAmount?: any } | null | undefined): 'TAX' | 'NON' {
+  const rate = Number(doc?.taxRate ?? 0)
+  const amount = Number(doc?.taxAmount ?? 0)
+  if (!Number.isFinite(rate) || rate === 0) {
+    if (!Number.isFinite(amount) || amount === 0) return 'NON'
+  }
+  return 'TAX'
+}
+
+function buildQboLines(
+  lineItems: any[],
+  itemIdByName: Map<string, string>,
+  fallbackItemId: string,
+  documentTaxCode: 'TAX' | 'NON' = 'TAX'
+): any[] {
   return calculateOrderedSubtotalRows(lineItems as any[]).map((li: any) => {
     if (li.isSubtotal) {
       return {
@@ -1237,6 +1257,7 @@ function buildQboLines(lineItems: any[], itemIdByName: Map<string, string>, fall
         ItemRef: { value: itemId, name: itemName },
         Qty: toNumber(li.quantity),
         UnitPrice: toNumber(li.unitPrice),
+        TaxCodeRef: { value: resolveQboLineTaxCode(li, documentTaxCode) },
       },
     }
   })
@@ -1248,6 +1269,7 @@ function buildQboLinesWithIds(params: {
   existingQboLines: any[]
   itemIdByName: Map<string, string>
   fallbackItemId: string
+  documentTaxCode?: 'TAX' | 'NON'
 }): any[] {
   const local = Array.isArray(params.localLineItems) ? params.localLineItems : []
   const existingSales = Array.isArray(params.existingQboLines)
@@ -1256,6 +1278,7 @@ function buildQboLinesWithIds(params: {
   const existingSubtotals = Array.isArray(params.existingQboLines)
     ? params.existingQboLines.filter((l) => l?.DetailType === 'SubTotalLineDetail')
     : []
+  const documentTaxCode = params.documentTaxCode || 'TAX'
 
   let salesIdx = 0
   let subtotalIdx = 0
@@ -1283,6 +1306,7 @@ function buildQboLinesWithIds(params: {
         ItemRef: { value: itemId, name: itemName },
         Qty: toNumber(li?.quantity),
         UnitPrice: toNumber(li?.unitPrice),
+        TaxCodeRef: { value: resolveQboLineTaxCode(li, documentTaxCode) },
       },
     }
     if (existingLine?.Id) out.Id = String(existingLine.Id)
@@ -2391,6 +2415,7 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
     })
 
     attemptedDocNumber = estimate.estimateNumber
+    const documentTaxCode = defaultQboTaxCodeForDocument(estimate)
     const payload: any = {
       DocNumber: estimate.estimateNumber,
       CustomerRef: { value: customerQboId },
@@ -2399,7 +2424,11 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
       PrivateNote: estimate.notes || undefined,
       // QBO accepts only: Pending | Accepted | Closed | Rejected
       TxnStatus: mapTrimProEstimateStatusToQboTxnStatus(estimate.status),
-      Line: buildQboLines(lineItems, itemIdByName, serviceItemId),
+      Line: buildQboLines(lineItems, itemIdByName, serviceItemId, documentTaxCode),
+    }
+    if (documentTaxCode === 'NON') {
+      // Clear auto sales tax so QBO TotalAmt matches TrimPro when tax is 0.
+      payload.TxnTaxDetail = { TotalTax: 0 }
     }
     qboReferenceSnapshot = buildEstimateQboReferenceSnapshot({
       estimateId: estimate.id,
@@ -2469,6 +2498,7 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
             existingQboLines,
             itemIdByName,
             fallbackItemId: serviceItemId,
+            documentTaxCode,
           }),
         }
 
@@ -2693,13 +2723,17 @@ export async function syncInvoiceToQuickBooks(tenantId: string, invoiceId: strin
     })
 
     attemptedDocNumber = invoice.invoiceNumber
+    const documentTaxCode = defaultQboTaxCodeForDocument(invoice)
     const payload: any = {
       DocNumber: invoice.invoiceNumber,
       CustomerRef: { value: customerQboId },
       TxnDate: qboDate(invoice.invoiceDate),
       DueDate: qboDate(invoice.dueDate || invoice.invoiceDate),
       PrivateNote: invoice.notes || undefined,
-      Line: buildQboLines(lineItems, itemIdByName, serviceItemId),
+      Line: buildQboLines(lineItems, itemIdByName, serviceItemId, documentTaxCode),
+    }
+    if (documentTaxCode === 'NON') {
+      payload.TxnTaxDetail = { TotalTax: 0 }
     }
 
     // Link to Estimate when present so QBO treats this like a conversion.
@@ -2769,6 +2803,7 @@ export async function syncInvoiceToQuickBooks(tenantId: string, invoiceId: strin
           existingQboLines,
           itemIdByName,
           fallbackItemId: serviceItemId,
+          documentTaxCode,
         }),
       }
 
