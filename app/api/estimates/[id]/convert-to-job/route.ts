@@ -71,6 +71,11 @@ export async function POST(
           where: { id: estimate.id },
           data: { status: 'CONVERTED' },
         })
+        try {
+          await enqueueQboSync(user.tenantId, 'estimate', estimate.id, { processImmediately: false })
+        } catch (error) {
+          console.error('QuickBooks estimate sync trigger error (estimate convert-to-job):', error)
+        }
       }
       await syncJobCostFromLinkedDocuments(estimate.job.id)
       return NextResponse.json({ job: estimate.job }, { status: 200 })
@@ -216,6 +221,12 @@ export async function POST(
       } catch (error) {
         console.error('QuickBooks client sync trigger error (estimate convert-to-job):', error)
       }
+    }
+
+    try {
+      await enqueueQboSync(user.tenantId, 'estimate', estimate.id, { processImmediately: false })
+    } catch (error) {
+      console.error('QuickBooks estimate sync trigger error (estimate convert-to-job):', error)
     }
 
     try {

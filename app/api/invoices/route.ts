@@ -398,6 +398,12 @@ export async function POST(request: NextRequest) {
               name: group.name || 'Bundle',
               sourceBundleId: group.sourceBundleId || null,
               sourceBundleName: group.name || null,
+              customerDescription: group.customerDescription ?? null,
+              customerTotal:
+                group.customerTotal !== undefined && group.customerTotal !== null && group.customerTotal !== ''
+                  ? Number(group.customerTotal)
+                  : null,
+              customerEdited: Boolean(group.customerEdited),
             },
           })
           groupMap.set(group.groupId, dbGroup.id)

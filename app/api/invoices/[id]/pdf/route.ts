@@ -4,6 +4,7 @@ import { requireWebOrMobilePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { renderPdfFromHtml } from '@/lib/pdf/render-html-to-pdf'
 import { getPdfBranding } from '@/lib/branding/pdf'
+import { parseInvoicePdfView } from '@/lib/invoices/invoice-pdf-view'
 import { buildInvoicePdfHtml } from '@/lib/documents/pdf-templates'
 
 export const runtime = 'nodejs'
@@ -28,6 +29,7 @@ export async function GET(
     const shouldDownload = request.nextUrl.searchParams.get('download') === '1'
     const format = request.nextUrl.searchParams.get('format') || 'pdf'
     const wantsHtml = format === 'html'
+    const view = parseInvoicePdfView(request.nextUrl.searchParams.get('view'))
     const brand = await getPdfBranding(user.tenantId)
 
     const invoice = await prisma.invoice.findFirst({
@@ -46,6 +48,7 @@ export async function GET(
         },
         lineItems: {
           orderBy: { sortOrder: 'asc' },
+          include: { group: true },
         },
         optionalItems: {
           orderBy: { sortOrder: 'asc' },
@@ -73,14 +76,15 @@ export async function GET(
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
     }
 
-    const html = buildInvoicePdfHtml(invoice, brand, { shouldPrint })
+    const viewSuffix = view === 'company' ? '-company' : '-customer'
+    const html = buildInvoicePdfHtml(invoice, brand, { shouldPrint, view })
 
     if (wantsHtml) {
       return new NextResponse(html, {
         headers: {
           'Content-Type': 'text/html; charset=utf-8',
           'Cache-Control': 'no-store',
-          'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="Invoice-${invoice.invoiceNumber}.html"`,
+          'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="Invoice-${invoice.invoiceNumber}${viewSuffix}.html"`,
         },
       })
     }
@@ -91,7 +95,7 @@ export async function GET(
         headers: {
           'Content-Type': 'application/pdf',
           'Cache-Control': 'no-store',
-          'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="Invoice-${invoice.invoiceNumber}.pdf"`,
+          'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="Invoice-${invoice.invoiceNumber}${viewSuffix}.pdf"`,
         },
       })
     } catch (e) {
@@ -100,7 +104,7 @@ export async function GET(
         headers: {
           'Content-Type': 'text/html; charset=utf-8',
           'Cache-Control': 'no-store',
-          'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="Invoice-${invoice.invoiceNumber}.html"`,
+          'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="Invoice-${invoice.invoiceNumber}${viewSuffix}.html"`,
         },
       })
     }

@@ -2,18 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { renderPdfFromHtml } from '@/lib/pdf/render-html-to-pdf'
 import { getPdfBranding } from '@/lib/branding/pdf'
-import { calculateOrderedSubtotalRows } from '@/lib/documents/subtotals'
+import { buildInvoicePdfHtml } from '@/lib/documents/pdf-templates'
+import { parseInvoicePdfView } from '@/lib/invoices/invoice-pdf-view'
 
 export const runtime = 'nodejs'
-
-function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
 
 export async function GET(
   request: NextRequest,
@@ -23,6 +15,8 @@ export async function GET(
     const format = request.nextUrl.searchParams.get('format') || 'pdf'
     const wantsHtml = format === 'html'
     const shouldDownload = request.nextUrl.searchParams.get('download') === '1'
+    const shouldPrint = request.nextUrl.searchParams.get('print') === '1'
+    const view = parseInvoicePdfView(request.nextUrl.searchParams.get('view'))
     const token = request.nextUrl.searchParams.get('token') || ''
     if (!token) {
       return NextResponse.json({ error: 'Missing token' }, { status: 401 })
@@ -34,12 +28,36 @@ export async function GET(
         paymentToken: token,
       },
       include: {
-        client: true,
+        client: {
+          include: {
+            contacts: {
+              where: { isPrimary: true },
+              take: 1,
+            },
+          },
+        },
         lineItems: {
           orderBy: { sortOrder: 'asc' },
+          include: { group: true },
         },
         optionalItems: {
           orderBy: { sortOrder: 'asc' },
+        },
+        job: {
+          select: {
+            id: true,
+            jobNumber: true,
+            title: true,
+            addresses: {
+              where: { type: 'job_site' },
+              take: 1,
+            },
+          },
+        },
+        estimate: {
+          select: {
+            jobSiteAddress: true,
+          },
         },
       },
     })
@@ -49,221 +67,15 @@ export async function GET(
     }
 
     const brand = await getPdfBranding(invoice.tenantId)
-    const logoUrl = brand.logoUrl
-    const accentColor = brand.accentColor
-    const accentTextColor = brand.accentTextColor
-    const visibleRegularItems = calculateOrderedSubtotalRows(invoice.lineItems.filter((li) => li.isVisibleToClient !== false) as any[])
-    const visibleOptionalItems = invoice.optionalItems.filter((li) => li.isVisibleToClient !== false)
-    // All items on an invoice are being billed — merge optional items into the main table
-    const visibleLineItems = [...visibleRegularItems, ...visibleOptionalItems]
-    const optItemsSubtotal = visibleOptionalItems.reduce(
-      (sum, item) => sum + Number(item.quantity) * Number(item.unitPrice),
-      0
-    )
-
-    // Determine column visibility based on per-item flags
-    const showPriceCol = visibleLineItems.some((li) => li.showPriceToCustomer !== false) ||
-      visibleOptionalItems.some((li) => li.showPriceToCustomer !== false)
-    const showCostCol = visibleLineItems.some((li) => li.showCostToCustomer === true) ||
-      visibleOptionalItems.some((li) => li.showCostToCustomer === true)
-    const showNotesCol = visibleLineItems.some((li) => li.showNotesToCustomer !== false) ||
-      visibleOptionalItems.some((li) => li.showNotesToCustomer !== false)
-    const showTaxRow = visibleLineItems.some((li) => li.showTaxToCustomer !== false) ||
-      visibleOptionalItems.some((li) => li.showTaxToCustomer !== false) ||
-      (visibleLineItems.length === 0 && visibleOptionalItems.length === 0)
-
-    function buildRow(li: (typeof visibleLineItems)[0]) {
-      if (li.isSubtotal) {
-        const colSpan = 1 + (showNotesCol ? 1 : 0) + 1 + (showCostCol ? 1 : 0) + (showPriceCol ? 1 : 0)
-        return `
-        <tr style="background:#f8fafc;font-weight:700;">
-          <td colspan="${colSpan}" style="text-align:right">Subtotal</td>
-          <td style="text-align:right">$${Number(li.calculatedSubtotalTotal).toFixed(2)}</td>
-        </tr>
-      `
-      }
-      const descCell = li.showDescriptionToCustomer !== false ? escapeHtml(li.description) : ''
-      return `
-        <tr>
-          <td>${descCell}</td>
-          ${showNotesCol ? `<td>${escapeHtml(li.showNotesToCustomer === false ? '' : (li.notes || ''))}</td>` : ''}
-          <td style="text-align:right">${Number(li.quantity).toFixed(2)}</td>
-          ${showCostCol ? `<td style="text-align:right">${li.showCostToCustomer === true ? '$' + Number((li as any).unitCost || 0).toFixed(2) : ''}</td>` : ''}
-          ${showPriceCol ? `<td style="text-align:right">${li.showPriceToCustomer !== false ? '$' + Number(li.unitPrice).toFixed(2) : ''}</td>` : ''}
-          <td style="text-align:right">$${Number(li.total).toFixed(2)}</td>
-        </tr>
-      `
-    }
-
-    const rows = visibleLineItems.map(buildRow).join('')
-
-    function tableHeader() {
-      return `
-        <tr>
-          <th>Item</th>
-          ${showNotesCol ? '<th>Description</th>' : ''}
-          <th style="text-align:right">Qty</th>
-          ${showCostCol ? '<th style="text-align:right">Cost</th>' : ''}
-          ${showPriceCol ? '<th style="text-align:right">Unit</th>' : ''}
-          <th style="text-align:right">Total</th>
-        </tr>
-      `
-    }
-
-    const html = `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>Invoice ${invoice.invoiceNumber}</title>
-    <style>
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        padding: 30px;
-        font-family: Inter, Helvetica, Arial, sans-serif;
-        color: #111827;
-        background: #f8fafc;
-      }
-      .page {
-        max-width: 980px;
-        margin: 0 auto;
-        background: #fff;
-        border: 1px solid #e5e7eb;
-        border-radius: 14px;
-        padding: 28px;
-      }
-      .header {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 20px;
-        align-items: start;
-        margin-bottom: 24px;
-      }
-      .brand { display: flex; align-items: center; gap: 12px; }
-      .logo-image {
-        height: 56px;
-        width: auto;
-        max-width: 300px;
-        object-fit: contain;
-        display: block;
-      }
-      .logo-fallback {
-        height: 56px;
-        min-width: 160px;
-        border-radius: 10px;
-        background: ${accentColor};
-        color: ${accentTextColor};
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 28px;
-        font-weight: 700;
-        letter-spacing: 0.02em;
-        padding: 0 18px;
-      }
-      .doc-title {
-        margin: 12px 0 0;
-        font-size: 30px;
-        font-weight: 700;
-        letter-spacing: -0.02em;
-      }
-      .muted { color: #6b7280; font-size: 12px; }
-      .meta {
-        text-align: right;
-        font-size: 13px;
-        color: #374151;
-        line-height: 1.7;
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 10px;
-        border: 1px solid #e5e7eb;
-        border-radius: 10px;
-        overflow: hidden;
-      }
-      th, td {
-        border-bottom: 1px solid #e5e7eb;
-        padding: 10px 12px;
-        font-size: 14px;
-      }
-      th {
-        text-align: left;
-        background: #f8fafc;
-        color: #6b7280;
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-      }
-      tbody tr:nth-child(even) { background: #f9fafb; }
-      .summary {
-        margin-top: 16px;
-        max-width: 320px;
-        margin-left: auto;
-        background: #f3f4f6;
-        border: 1px solid #e5e7eb;
-        border-radius: 10px;
-        padding: 14px;
-      }
-      .summary-row { display: flex; justify-content: space-between; padding: 4px 0; }
-      .total {
-        font-weight: 700;
-        border-top: 1px solid #cbd5e1;
-        margin-top: 8px;
-        padding-top: 8px;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="page">
-      <div class="header">
-        <div>
-          <div class="brand">
-            ${
-              logoUrl
-                ? `<img class="logo-image" src="${escapeHtml(logoUrl)}" alt="Trim Pro Logo" />`
-                : `<div class="logo-fallback">trimpro</div>`
-            }
-          </div>
-          <h1 class="doc-title">Invoice</h1>
-          <div class="muted">Generated on ${new Date().toLocaleString()}</div>
-        </div>
-        <div class="meta">
-          <div style="font-weight:700;font-size:14px;margin-bottom:4px;">${escapeHtml(brand.businessName)}</div>
-          ${brand.businessPhone ? `<div>${escapeHtml(brand.businessPhone)}</div>` : ''}
-          ${brand.businessEmail ? `<div>${escapeHtml(brand.businessEmail)}</div>` : ''}
-          ${brand.businessAddress ? `<div>${escapeHtml(brand.businessAddress)}</div>` : ''}
-          <div style="margin-top:8px;"><strong>No.</strong> ${escapeHtml(invoice.invoiceNumber)}</div>
-          <div><strong>Date:</strong> ${escapeHtml(invoice.invoiceDate.toISOString().slice(0, 10))}</div>
-          <div><strong>Status:</strong> ${escapeHtml(invoice.status)}</div>
-        </div>
-      </div>
-
-      <div style="margin-bottom:14px;">
-        <div><strong>${escapeHtml(invoice.client.name)}</strong></div>
-        ${invoice.client.email ? `<div class="muted">${escapeHtml(invoice.client.email)}</div>` : ''}
-      </div>
-
-      <table>
-        <thead>${tableHeader()}</thead>
-        <tbody>${rows}</tbody>
-      </table>
-
-      <div class="summary">
-        <div class="summary-row"><span>Subtotal</span><span>$${(Number(invoice.subtotal) + optItemsSubtotal).toFixed(2)}</span></div>
-        ${showTaxRow ? `<div class="summary-row"><span>Tax</span><span>$${Number(invoice.taxAmount).toFixed(2)}</span></div>` : ''}
-        <div class="summary-row total"><span>Total</span><span>$${(Number(invoice.total) + optItemsSubtotal).toFixed(2)}</span></div>
-      </div>
-    </div>
-  </body>
-</html>`
+    const viewSuffix = view === 'company' ? '-company' : '-customer'
+    const html = buildInvoicePdfHtml(invoice, brand, { shouldPrint, view })
 
     if (wantsHtml) {
       return new NextResponse(html, {
-        status: 200,
         headers: {
           'Content-Type': 'text/html; charset=utf-8',
           'Cache-Control': 'no-store',
+          'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="Invoice-${invoice.invoiceNumber}${viewSuffix}.html"`,
         },
       })
     }
@@ -271,27 +83,24 @@ export async function GET(
     try {
       const pdf = await renderPdfFromHtml(html)
       return new NextResponse(pdf, {
-        status: 200,
         headers: {
           'Content-Type': 'application/pdf',
           'Cache-Control': 'no-store',
-          'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="Invoice-${invoice.invoiceNumber}.pdf"`,
+          'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="Invoice-${invoice.invoiceNumber}${viewSuffix}.pdf"`,
         },
       })
     } catch (e) {
-      console.error('Public PDF render failed; falling back to HTML:', e)
+      console.error('Public invoice PDF render failed; falling back to HTML:', e)
       return new NextResponse(html, {
-        status: 200,
         headers: {
           'Content-Type': 'text/html; charset=utf-8',
           'Cache-Control': 'no-store',
-          'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="Invoice-${invoice.invoiceNumber}.html"`,
+          'Content-Disposition': `${shouldDownload ? 'attachment' : 'inline'}; filename="Invoice-${invoice.invoiceNumber}${viewSuffix}.html"`,
         },
       })
     }
   } catch (error) {
-    console.error('Public invoice pdf error:', error)
+    console.error('Public invoice PDF error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
-

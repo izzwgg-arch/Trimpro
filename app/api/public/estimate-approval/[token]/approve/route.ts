@@ -422,6 +422,15 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
       }
     }
 
+    // Sync estimate status to QB (Accepted/Closed) after public approval.
+    if (approvedIds.length > 0) {
+      try {
+        await enqueueQboSync(tokenRow.tenantId, 'estimate', estimate.id, { processImmediately: false })
+      } catch (error) {
+        console.error('QuickBooks estimate sync trigger error (estimate approval):', error)
+      }
+    }
+
     const jobIdForCost =
       autoCreatedJob?.id ||
       autoCreatedInvoice?.jobId ||

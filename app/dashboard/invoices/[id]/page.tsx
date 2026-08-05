@@ -23,6 +23,12 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ContactRecipientPicker } from '@/components/email/contact-recipient-picker'
+import { CustomerEstimatePanel } from '@/components/estimates/customer-estimate-panel'
+import {
+  buildCustomerLinesFromGroups,
+  flatLineItemsToCompanyLines,
+} from '@/lib/estimates/company-customer-sync'
+import type { InvoicePdfView } from '@/lib/invoices/invoice-pdf-view'
 
 interface InvoiceDetail {
   id: string
@@ -83,6 +89,9 @@ interface InvoiceDetail {
       name: string
       sourceBundleId: string | null
       sourceBundleName: string | null
+      customerDescription?: string | null
+      customerTotal?: string | null
+      customerEdited?: boolean | null
     } | null
     sourceItemId: string | null
     sourceItem: {
@@ -144,6 +153,10 @@ export default function InvoiceDetailPage() {
   const [customEmails, setCustomEmails] = useState('')
   const [sendSubject, setSendSubject] = useState('')
   const [sendMessage, setSendMessage] = useState('')
+  const [activeTab, setActiveTab] = useState<'company' | 'customer'>('company')
+  const [pdfActionModal, setPdfActionModal] = useState<'download' | 'print' | 'view' | null>(null)
+  const [pdfActionView, setPdfActionView] = useState<InvoicePdfView>('customer')
+  const [pdfActionBusy, setPdfActionBusy] = useState(false)
 
   // Add Payment modal state
   const [showAddPayment, setShowAddPayment] = useState(false)
@@ -406,7 +419,7 @@ export default function InvoiceDetailPage() {
     }
   }
 
-  const fetchPdfHtml = async (print = false) => {
+  const fetchPdfHtml = async (print = false, view: InvoicePdfView = 'customer') => {
     const token = localStorage.getItem('accessToken')
     if (!token) {
       router.push('/auth/login')
@@ -415,6 +428,7 @@ export default function InvoiceDetailPage() {
 
     const qs = new URLSearchParams()
     qs.set('format', 'html')
+    qs.set('view', view)
     if (print) qs.set('print', '1')
     const response = await fetch(`/api/invoices/${invoiceId}/pdf?${qs.toString()}`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -431,14 +445,14 @@ export default function InvoiceDetailPage() {
     return response.text()
   }
 
-  const fetchPdfBlob = async (): Promise<{ blob: Blob; filename: string }> => {
+  const fetchPdfBlob = async (view: InvoicePdfView = 'customer'): Promise<{ blob: Blob; filename: string }> => {
     const token = localStorage.getItem('accessToken')
     if (!token) {
       router.push('/auth/login')
       throw new Error('Not authenticated')
     }
 
-    const response = await fetch(`/api/invoices/${invoiceId}/pdf?download=1`, {
+    const response = await fetch(`/api/invoices/${invoiceId}/pdf?download=1&view=${view}`, {
       cache: 'no-store',
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -458,7 +472,7 @@ export default function InvoiceDetailPage() {
 
     const blob = await response.blob()
     const fallbackExt = contentType.includes('pdf') ? 'pdf' : 'html'
-    const fallbackFilename = `Invoice-${invoice?.invoiceNumber || invoiceId}.${fallbackExt}`
+    const fallbackFilename = `Invoice-${invoice?.invoiceNumber || invoiceId}-${view}.${fallbackExt}`
 
     return {
       blob,
@@ -466,54 +480,60 @@ export default function InvoiceDetailPage() {
     }
   }
 
-  const handleDownloadPDF = async () => {
+  const openPdfActionModal = (mode: 'download' | 'print' | 'view') => {
+    setPdfActionView('customer')
+    setPdfActionModal(mode)
+  }
+
+  const confirmPdfAction = async () => {
+    if (!pdfActionModal) return
+    setPdfActionBusy(true)
     try {
-      const { blob, filename } = await fetchPdfBlob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = filename
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      if (pdfActionModal === 'download') {
+        const { blob, filename } = await fetchPdfBlob(pdfActionView)
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+      } else {
+        const html = await fetchPdfHtml(pdfActionModal === 'print', pdfActionView)
+        const w = window.open('', '_blank')
+        if (!w) {
+          alert('Please allow popups to view/print the PDF')
+          return
+        }
+        w.document.write(html)
+        w.document.close()
+      }
+      setPdfActionModal(null)
     } catch (error) {
-      console.error('Download invoice PDF error:', error)
-      alert('Failed to download invoice PDF')
+      console.error(`${pdfActionModal} invoice PDF error:`, error)
+      alert(
+        pdfActionModal === 'download'
+          ? 'Failed to download invoice PDF'
+          : pdfActionModal === 'print'
+            ? 'Failed to print invoice'
+            : 'Failed to view invoice PDF'
+      )
+    } finally {
+      setPdfActionBusy(false)
     }
   }
 
-  const handleViewPDF = async () => {
-    try {
-      const { blob } = await fetchPdfBlob()
-      const url = URL.createObjectURL(blob)
-      const win = window.open(url, '_blank', 'noopener,noreferrer')
-      // Revoke the blob URL after the tab has had time to load it.
-      setTimeout(() => URL.revokeObjectURL(url), 60_000)
-      if (!win) {
-        alert('Popup blocked — please allow popups to open the PDF preview.')
-      }
-    } catch (error) {
-      console.error('View invoice PDF error:', error)
-      alert('Failed to open PDF preview')
-    }
+  const handleDownloadPDF = async () => {
+    openPdfActionModal('download')
   }
 
   const handlePrint = async () => {
-    try {
-      const html = await fetchPdfHtml(true)
-      const printWindow = window.open('', '_blank')
-      if (!printWindow) {
-        alert('Popup blocked. Please allow popups to print.')
-        return
-      }
-      printWindow.document.open()
-      printWindow.document.write(html)
-      printWindow.document.close()
-    } catch (error) {
-      console.error('Print invoice PDF error:', error)
-      alert('Failed to print invoice')
-    }
+    openPdfActionModal('print')
+  }
+
+  const handleViewPDF = async () => {
+    openPdfActionModal('view')
   }
 
   const handleDuplicate = async () => {
@@ -869,6 +889,54 @@ export default function InvoiceDetailPage() {
     ? optionalItems.reduce((sum: number, item: any) => sum + parseFloat(item.total || '0'), 0)
     : 0
 
+  const customerLines = (() => {
+    const flat = (invoice.lineItems || []).map((li) => ({
+      id: li.id,
+      description: li.description,
+      quantity: String(li.quantity ?? '1'),
+      unitPrice: String(li.unitPrice ?? '0'),
+      notes: li.notes || '',
+      taxable: true,
+      groupId: li.groupId || undefined,
+      groupName: li.group?.name || undefined,
+      isGroupHeader: false,
+      isSubtotal: Boolean(li.isSubtotal),
+    }))
+    const withHeaders: any[] = []
+    const seen = new Set<string>()
+    for (const item of flat) {
+      if (item.groupId && item.groupName && !seen.has(item.groupId)) {
+        withHeaders.push({
+          id: `header-${item.groupId}`,
+          description: item.groupName,
+          quantity: '1',
+          unitPrice: '0',
+          groupId: item.groupId,
+          groupName: item.groupName,
+          isGroupHeader: true,
+          taxable: true,
+        })
+        seen.add(item.groupId)
+      }
+      withHeaders.push(item)
+    }
+    const company = flatLineItemsToCompanyLines(withHeaders)
+    const meta: Record<
+      string,
+      { customerDescription?: string | null; customerTotal?: string | null; customerEdited?: boolean | null }
+    > = {}
+    for (const li of invoice.lineItems || []) {
+      if (li.group?.id && !meta[li.group.id]) {
+        meta[li.group.id] = {
+          customerDescription: li.group.customerDescription,
+          customerTotal: li.group.customerTotal,
+          customerEdited: li.group.customerEdited,
+        }
+      }
+    }
+    return buildCustomerLinesFromGroups(company, meta)
+  })()
+
   return (
     <ResponsivePage>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -940,6 +1008,106 @@ export default function InvoiceDetailPage() {
           </Button>
         </MobileActionBar>
       </div>
+
+      <div className="border-b">
+        <nav className="flex space-x-8">
+          {[
+            { id: 'company' as const, label: 'Company' },
+            { id: 'customer' as const, label: 'Customer' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`border-b-2 px-1 py-4 text-sm font-medium ${
+                activeTab === tab.id
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      <Dialog
+        open={pdfActionModal != null}
+        onOpenChange={(open) => {
+          if (!open && !pdfActionBusy) setPdfActionModal(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {pdfActionModal === 'print'
+                ? 'Print invoice'
+                : pdfActionModal === 'view'
+                  ? 'View PDF'
+                  : 'Download PDF'}
+            </DialogTitle>
+            <DialogDescription>
+              Choose which invoice PDF to{' '}
+              {pdfActionModal === 'print' ? 'print' : pdfActionModal === 'view' ? 'view' : 'download'}.
+              Customer is the default.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 rounded-md border p-3">
+            <label className="flex cursor-pointer items-start gap-2 text-sm">
+              <input
+                type="radio"
+                name="invoice-pdf-action-view"
+                className="mt-1"
+                checked={pdfActionView === 'customer'}
+                onChange={() => setPdfActionView('customer')}
+              />
+              <span>
+                <span className="font-medium">Customer invoice</span>
+                <span className="block text-xs text-muted-foreground">
+                  Bundled Line # view (default)
+                </span>
+              </span>
+            </label>
+            <label className="flex cursor-pointer items-start gap-2 text-sm">
+              <input
+                type="radio"
+                name="invoice-pdf-action-view"
+                className="mt-1"
+                checked={pdfActionView === 'company'}
+                onChange={() => setPdfActionView('company')}
+              />
+              <span>
+                <span className="font-medium">Company invoice</span>
+                <span className="block text-xs text-muted-foreground">
+                  Detailed line items (QuickBooks)
+                </span>
+              </span>
+            </label>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setPdfActionModal(null)}
+              disabled={pdfActionBusy}
+            >
+              Cancel
+            </Button>
+            <Button onClick={confirmPdfAction} disabled={pdfActionBusy}>
+              {pdfActionBusy
+                ? pdfActionModal === 'print'
+                  ? 'Preparing…'
+                  : pdfActionModal === 'view'
+                    ? 'Opening…'
+                    : 'Downloading…'
+                : pdfActionModal === 'print'
+                  ? 'Print'
+                  : pdfActionModal === 'view'
+                    ? 'View'
+                    : 'Download'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Add Payment Modal */}
       <Dialog open={showAddPayment} onOpenChange={setShowAddPayment}>
@@ -1190,10 +1358,29 @@ export default function InvoiceDetailPage() {
 
       <div className="grid gap-6 md:grid-cols-3">
         <div className="md:col-span-2 space-y-6">
+          {activeTab === 'customer' ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Customer invoice</CardTitle>
+                <CardDescription>
+                  Bundled Line # view. Download, email, and payment links use this by default.
+                  Edit from the Edit page Customer tab.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <CustomerEstimatePanel customerLines={customerLines} readOnly />
+              </CardContent>
+            </Card>
+          ) : null}
+
           {/* Line Items */}
+          {activeTab === 'company' ? (
           <Card>
             <CardHeader>
-              <CardTitle>Line Items</CardTitle>
+              <CardTitle>Company invoice</CardTitle>
+              <CardDescription>
+                Detailed items that sync to QuickBooks. Switch to the Customer tab for bundled view.
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <ResponsiveTableContainer>
@@ -1389,6 +1576,7 @@ export default function InvoiceDetailPage() {
               </ResponsiveTableContainer>
             </CardContent>
           </Card>
+          ) : null}
 
           {/* Payments */}
           {invoice.payments && invoice.payments.length > 0 && (

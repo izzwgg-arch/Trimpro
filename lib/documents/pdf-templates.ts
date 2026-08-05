@@ -11,6 +11,7 @@ import {
 } from '@/lib/documents/subtotals'
 import type { PdfBranding } from '@/lib/branding/pdf'
 import { prepareEstimateForPdfView } from '@/lib/estimates/estimate-pdf-view'
+import { prepareInvoiceForPdfView } from '@/lib/invoices/invoice-pdf-view'
 
 type AnyRecord = Record<string, any>
 
@@ -196,24 +197,27 @@ function logoBlock(brand: PdfBranding, alt: string) {
 
 export interface InvoicePdfBuildOptions {
   shouldPrint?: boolean
+  /** customer (default) = bundled Line # view; company = detailed line items */
+  view?: 'customer' | 'company'
 }
 
 /**
  * Build the authoritative Invoice PDF HTML. Expects a Prisma invoice that
- * includes: client (+primary contacts), lineItems, optionalItems, job
- * (+job_site addresses), estimate (jobSiteAddress).
+ * includes: client (+primary contacts), lineItems (with group when using customer view),
+ * optionalItems, job (+job_site addresses), estimate (jobSiteAddress).
  */
 export function buildInvoicePdfHtml(
   invoice: AnyRecord,
   brand: PdfBranding,
   options: InvoicePdfBuildOptions = {}
 ): string {
-  const { shouldPrint = false } = options
+  const { shouldPrint = false, view = 'customer' } = options
+  const preparedInvoice = prepareInvoiceForPdfView(invoice, view)
   const accentColor = brand.accentColor
   const accentTextColor = brand.accentTextColor
 
-  const lineItems = Array.isArray(invoice.lineItems) ? invoice.lineItems : []
-  const optionalItems = Array.isArray(invoice.optionalItems) ? invoice.optionalItems : []
+  const lineItems = Array.isArray(preparedInvoice.lineItems) ? preparedInvoice.lineItems : []
+  const optionalItems = Array.isArray(preparedInvoice.optionalItems) ? preparedInvoice.optionalItems : []
 
   const visibleRegularItems = calculateOrderedSubtotalRows(
     lineItems.filter((item: AnyRecord) => item.isVisibleToClient !== false) as any[]
@@ -270,33 +274,33 @@ export function buildInvoicePdfHtml(
     <th class="text-right">Total</th>
   </tr>`
 
-  const discount = Number(invoice.discount || 0)
-  const tax = Number(invoice.taxAmount || 0)
+  const discount = Number(preparedInvoice.discount || 0)
+  const tax = Number(preparedInvoice.taxAmount || 0)
   const optItemsSubtotal = visibleOptionalItems.reduce(
     (sum: number, item: AnyRecord) => sum + Number(item.quantity) * Number(item.unitPrice),
     0
   )
-  const total = Number(invoice.total || 0) + optItemsSubtotal
-  const balance = Number(invoice.balance || 0) + optItemsSubtotal
-  const paid = Number(invoice.paidAmount || 0)
-  const showNotes = invoice.isNotesVisibleToClient !== false && Boolean(invoice.notes)
+  const total = Number(preparedInvoice.total || 0) + optItemsSubtotal
+  const balance = Number(preparedInvoice.balance || 0) + optItemsSubtotal
+  const paid = Number(preparedInvoice.paidAmount || 0)
+  const showNotes = preparedInvoice.isNotesVisibleToClient !== false && Boolean(preparedInvoice.notes)
   const generatedAt = new Date().toLocaleString()
-  const invoiceDate = invoice.invoiceDate
-    ? new Date(invoice.invoiceDate).toLocaleDateString()
+  const invoiceDate = preparedInvoice.invoiceDate
+    ? new Date(preparedInvoice.invoiceDate).toLocaleDateString()
     : new Date().toLocaleDateString()
-  const dueDate = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : 'N/A'
-  const clientName = invoice.client?.companyName || invoice.client?.name || 'N/A'
-  const primaryContact = invoice.client?.contacts?.[0] || null
+  const dueDate = preparedInvoice.dueDate ? new Date(preparedInvoice.dueDate).toLocaleDateString() : 'N/A'
+  const clientName = preparedInvoice.client?.companyName || preparedInvoice.client?.name || 'N/A'
+  const primaryContact = preparedInvoice.client?.contacts?.[0] || null
   const jobSiteAddress =
-    formatAddress(invoice.job?.addresses?.[0]) ||
-    (invoice.estimate?.jobSiteAddress ? String(invoice.estimate.jobSiteAddress) : null)
+    formatAddress(preparedInvoice.job?.addresses?.[0]) ||
+    (preparedInvoice.estimate?.jobSiteAddress ? String(preparedInvoice.estimate.jobSiteAddress) : null)
 
   return `
     <!DOCTYPE html>
     <html>
       <head>
         <meta charset="utf-8">
-        <title>Invoice ${escapeHtml(invoice.invoiceNumber)}</title>
+        <title>Invoice ${escapeHtml(preparedInvoice.invoiceNumber)}</title>
         <style>${SHARED_DOC_CSS(accentColor, accentTextColor)}</style>
         ${shouldPrint ? '<script>window.addEventListener("load", () => window.print());</script>' : ''}
       </head>
@@ -315,10 +319,10 @@ export function buildInvoicePdfHtml(
               ${brand.businessPhone ? `<div>${escapeHtml(brand.businessPhone)}</div>` : ''}
               ${brand.businessEmail ? `<div>${escapeHtml(brand.businessEmail)}</div>` : ''}
               ${brand.businessAddress ? `<div>${escapeHtml(brand.businessAddress)}</div>` : ''}
-              <div style="margin-top:8px;"><strong>No.</strong> ${escapeHtml(invoice.invoiceNumber)}</div>
+              <div style="margin-top:8px;"><strong>No.</strong> ${escapeHtml(preparedInvoice.invoiceNumber)}</div>
               <div><strong>Invoice Date:</strong> ${escapeHtml(invoiceDate)}</div>
               <div><strong>Due Date:</strong> ${escapeHtml(dueDate)}</div>
-              <div><strong>Status:</strong> ${escapeHtml(invoice.status)}</div>
+              <div><strong>Status:</strong> ${escapeHtml(preparedInvoice.status)}</div>
             </div>
           </div>
 
@@ -326,7 +330,7 @@ export function buildInvoicePdfHtml(
             <div class="panel">
               <h3>Billed To</h3>
               <div>${escapeHtml(clientName)}</div>
-              ${invoice.client?.email ? `<div class="muted">${escapeHtml(invoice.client.email)}</div>` : ''}
+              ${preparedInvoice.client?.email ? `<div class="muted">${escapeHtml(preparedInvoice.client.email)}</div>` : ''}
               ${primaryContact?.email ? `<div class="muted">${escapeHtml(primaryContact.email)}</div>` : ''}
               ${primaryContact?.phone ? `<div class="muted">${escapeHtml(primaryContact.phone)}</div>` : ''}
               ${jobSiteAddress ? `<div class="muted" style="margin-top:10px;font-weight:600;">Job Site Address</div><div class="address-block">${escapeHtmlMultiline(jobSiteAddress)}</div>` : ''}
@@ -334,10 +338,10 @@ export function buildInvoicePdfHtml(
             <div class="panel">
               <h3>Document Details</h3>
               <div class="muted">Reference</div>
-              <div>${escapeHtml(invoice.title || invoice.invoiceNumber)}</div>
+              <div>${escapeHtml(preparedInvoice.title || preparedInvoice.invoiceNumber)}</div>
               ${
-                invoice.job
-                  ? `<div class="muted" style="margin-top:8px;">Job</div><div>${escapeHtml(invoice.job.jobNumber)} - ${escapeHtml(invoice.job.title)}</div>`
+                preparedInvoice.job
+                  ? `<div class="muted" style="margin-top:8px;">Job</div><div>${escapeHtml(preparedInvoice.job.jobNumber)} - ${escapeHtml(preparedInvoice.job.title)}</div>`
                   : ''
               }
             </div>
@@ -361,7 +365,7 @@ export function buildInvoicePdfHtml(
             <div class="summary-row total"><span>Balance Due</span><span>$${balance.toFixed(2)}</span></div>
           </div>
 
-          ${showNotes ? `<div class="notes">${escapeHtml(invoice.notes)}</div>` : ''}
+          ${showNotes ? `<div class="notes">${escapeHtml(preparedInvoice.notes)}</div>` : ''}
 
           ${brand.footerText ? `<div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:12px;color:#6b7280;text-align:center;">${escapeHtml(brand.footerText)}</div>` : ''}
 

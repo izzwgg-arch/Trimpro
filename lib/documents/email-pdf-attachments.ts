@@ -29,11 +29,13 @@ function safeFilenamePart(value: unknown, fallback: string) {
  */
 export async function renderInvoiceEmailPdfAttachment(
   invoice: AnyRecord,
-  brand: PdfBranding
+  brand: PdfBranding,
+  view: 'customer' | 'company' = 'customer'
 ): Promise<PdfEmailAttachment> {
+  const viewSuffix = view === 'company' ? '-company' : '-customer'
   return {
-    filename: `Invoice-${safeFilenamePart(invoice.invoiceNumber, 'invoice')}.pdf`,
-    content: await renderPdfFromHtml(buildInvoicePdfHtml(invoice, brand)),
+    filename: `Invoice-${safeFilenamePart(invoice.invoiceNumber, 'invoice')}${viewSuffix}.pdf`,
+    content: await renderPdfFromHtml(buildInvoicePdfHtml(invoice, brand, { view })),
     contentType: 'application/pdf',
   }
 }

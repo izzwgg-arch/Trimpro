@@ -428,6 +428,13 @@ export async function POST(
       console.error('QuickBooks invoice sync trigger error (estimate convert):', error)
     }
 
+    // Push estimate status Closed (CONVERTED) and keep invoice LinkedTxn to this estimate.
+    try {
+      await enqueueQboSync(user.tenantId, 'estimate', estimate.id, { processImmediately: false })
+    } catch (error) {
+      console.error('QuickBooks estimate sync trigger error (estimate convert):', error)
+    }
+
     // Create the job immediately upon estimate→invoice conversion (not on payment).
     let jobIdForCost: string | null = estimate.jobId || null
     try {

@@ -25,6 +25,15 @@ import {
   DocumentLineItemsColumnHeader,
   DOCUMENT_LINE_WIDTH_DEFAULTS,
 } from '@/components/documents/document-line-items-column-header'
+import { CustomerEstimatePanel } from '@/components/estimates/customer-estimate-panel'
+import {
+  type CustomerLine,
+  buildCustomerLinesFromGroups,
+  companyLineFingerprint,
+  flatLineItemsToCompanyLines,
+  mergeCustomerIntoGroups,
+  syncCustomerLines,
+} from '@/lib/estimates/company-customer-sync'
 
 interface Job {
   id: string
@@ -75,6 +84,9 @@ export default function EditInvoicePage() {
   const [pickerBundles, setPickerBundles] = useState<FastPickerItem[]>([])
   const [lineItems, setLineItems] = useState<LineItem[]>([])
   const [optionalItems, setOptionalItems] = useState<LineItem[]>([])
+  const [customerLines, setCustomerLines] = useState<CustomerLine[]>([])
+  const [invoiceLineView, setInvoiceLineView] = useState<'company' | 'customer'>('company')
+  const companyFingerprintsRef = useRef<Record<string, string>>({})
   const [lineColWidths, setLineColWidths] = useState<Record<string, number>>(DOCUMENT_LINE_WIDTH_DEFAULTS)
   const [isNotesVisibleToClient, setIsNotesVisibleToClient] = useState(true)
   const [invoiceNumber, setInvoiceNumber] = useState('')
@@ -103,6 +115,23 @@ export default function EditInvoicePage() {
     fetchPickerData()
     fetchInvoice()
   }, [invoiceId])
+
+  // Keep customer bundles in sync with company groups (sticky until that group is edited).
+  useEffect(() => {
+    const companyLines = flatLineItemsToCompanyLines(lineItems)
+    const editedIds: string[] = []
+    const nextFingerprints: Record<string, string> = {}
+    for (const line of companyLines) {
+      const nextFp = companyLineFingerprint(line)
+      const prevFp = companyFingerprintsRef.current[line.id]
+      if (prevFp !== undefined && prevFp !== nextFp) {
+        editedIds.push(line.id)
+      }
+      nextFingerprints[line.id] = nextFp
+    }
+    companyFingerprintsRef.current = nextFingerprints
+    setCustomerLines((prev) => syncCustomerLines(companyLines, prev, editedIds))
+  }, [lineItems])
 
   const fetchClients = async () => {
     try {
@@ -263,6 +292,24 @@ export default function EditInvoicePage() {
         })
       }
 
+      const groupMeta: Record<
+        string,
+        { customerDescription?: string | null; customerTotal?: string | null; customerEdited?: boolean | null }
+      > = {}
+      inv.lineItems?.forEach((li: any) => {
+        if (li.group?.id && !groupMeta[li.group.id]) {
+          groupMeta[li.group.id] = {
+            customerDescription: li.group.customerDescription,
+            customerTotal: li.group.customerTotal,
+            customerEdited: li.group.customerEdited,
+          }
+        }
+      })
+      const companyLines = flatLineItemsToCompanyLines(mappedItems)
+      companyFingerprintsRef.current = Object.fromEntries(
+        companyLines.map((line) => [line.id, companyLineFingerprint(line)])
+      )
+      setCustomerLines(buildCustomerLinesFromGroups(companyLines, groupMeta))
       setLineItems(mappedItems)
 
       // Optional items (can be empty)
@@ -953,6 +1000,14 @@ export default function EditInvoicePage() {
         }
       })
 
+      const groupsPayload = mergeCustomerIntoGroups(
+        Array.from(groups.entries()).map(([groupId, group]) => ({
+          groupId,
+          ...group,
+        })),
+        customerLines
+      )
+
       const response = await fetch(`/api/invoices/${invoiceId}`, {
         method: 'PUT',
         headers: {
@@ -975,10 +1030,7 @@ export default function EditInvoicePage() {
           memo: formData.memo || null,
           lineItems: apiLineItems,
           optionalItems: apiOptionalItems,
-          groups: Array.from(groups.entries()).map(([groupId, group]) => ({
-            groupId,
-            ...group,
-          })),
+          groups: groupsPayload,
         }),
       })
 
@@ -1166,12 +1218,33 @@ export default function EditInvoicePage() {
 
             <Card>
               <CardHeader>
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <CardTitle>Line Items</CardTitle>
-                    <CardDescription>Click in Item field to search and add items</CardDescription>
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <CardTitle>Line Items</CardTitle>
+                      <CardDescription>
+                        Company = detailed / QuickBooks. Customer = bundled Line # (default for PDF/email).
+                      </CardDescription>
+                    </div>
+                    <div className="flex rounded-md border overflow-hidden text-sm shrink-0">
+                      <button
+                        type="button"
+                        className={`px-3 py-1.5 ${invoiceLineView === 'company' ? 'bg-primary text-primary-foreground' : 'bg-white text-gray-600'}`}
+                        onClick={() => setInvoiceLineView('company')}
+                      >
+                        Company
+                      </button>
+                      <button
+                        type="button"
+                        className={`px-3 py-1.5 border-l ${invoiceLineView === 'customer' ? 'bg-primary text-primary-foreground' : 'bg-white text-gray-600'}`}
+                        onClick={() => setInvoiceLineView('customer')}
+                      >
+                        Customer
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-1.5 text-xs shrink-0">
+                  {invoiceLineView === 'company' && (
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs">
                     <span className="text-gray-500 font-medium self-center">Show to customer:</span>
                     {(['showDescriptionToCustomer', 'showNotesToCustomer', 'showPriceToCustomer', 'showCostToCustomer', 'showTaxToCustomer'] as VisibilityField[]).map((field) => {
                       const labels: Record<VisibilityField, string> = { showDescriptionToCustomer: 'Name', showNotesToCustomer: 'Description', showPriceToCustomer: 'Price', showCostToCustomer: 'Cost', showTaxToCustomer: 'Tax' }
@@ -1206,9 +1279,17 @@ export default function EditInvoicePage() {
                       </>
                     )}
                   </div>
+                  )}
                 </div>
               </CardHeader>
               <CardContent className="space-y-2">
+                {invoiceLineView === 'customer' ? (
+                  <CustomerEstimatePanel
+                    customerLines={customerLines}
+                    onChange={setCustomerLines}
+                  />
+                ) : (
+                <>
                 <DocumentLineItemsColumnHeader
                   entity="invoice-edit-line-items"
                   onWidthsChange={setLineColWidths}
@@ -1655,6 +1736,8 @@ export default function EditInvoicePage() {
                     Add Subtotal Row
                   </Button>
                 </div>
+                </>
+                )}
               </CardContent>
             </Card>
 

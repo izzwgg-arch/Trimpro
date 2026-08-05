@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { reconcileSingleInvoiceAchPayment, shouldAttemptPublicInvoiceReconcile } from '@/lib/qbo/reconcile-ach'
 import { calculateOrderedSubtotalRows } from '@/lib/documents/subtotals'
+import { prepareInvoiceForPdfView } from '@/lib/invoices/invoice-pdf-view'
 
 export async function GET(
   request: NextRequest,
@@ -22,6 +23,7 @@ export async function GET(
         client: true,
         lineItems: {
           orderBy: { sortOrder: 'asc' },
+          include: { group: true },
         },
       },
     })
@@ -46,6 +48,7 @@ export async function GET(
         client: true,
         lineItems: {
           orderBy: { sortOrder: 'asc' },
+          include: { group: true },
         },
       },
     })
@@ -98,19 +101,24 @@ export async function GET(
           name: freshInvoice.client.name,
           companyName: freshInvoice.client.companyName,
         },
-        lineItems: calculateOrderedSubtotalRows(freshInvoice.lineItems.filter((li) => li.isVisibleToClient !== false) as any[])
-          .map((li: any) => ({
+        lineItems: (() => {
+          const prepared = prepareInvoiceForPdfView(freshInvoice, 'customer')
+          const rows = Array.isArray(prepared.lineItems) ? prepared.lineItems : []
+          return calculateOrderedSubtotalRows(
+            rows.filter((li: any) => li.isVisibleToClient !== false) as any[]
+          ).map((li: any) => ({
             id: li.id,
             description: li.showDescriptionToCustomer !== false ? li.description : '',
             notes: li.showNotesToCustomer !== false ? (li.notes || '') : '',
-            quantity: li.quantity.toString(),
-            unitPrice: li.showPriceToCustomer !== false ? li.unitPrice.toString() : '0',
-            unitCost: li.showCostToCustomer === true ? li.unitCost?.toString() || '0' : null,
-            total: (li.isSubtotal ? li.calculatedSubtotalTotal : li.total).toString(),
+            quantity: String(li.quantity ?? '1'),
+            unitPrice: li.showPriceToCustomer !== false ? String(li.unitPrice ?? '0') : '0',
+            unitCost: li.showCostToCustomer === true ? String(li.unitCost ?? '0') : null,
+            total: String(li.isSubtotal ? li.calculatedSubtotalTotal : li.total ?? 0),
             isSubtotal: li.isSubtotal === true,
             showPriceToCustomer: li.showPriceToCustomer !== false,
             showCostToCustomer: li.showCostToCustomer === true,
-          })),
+          }))
+        })(),
         outstanding: {
           count: outstandingCount,
           total: Number((outstandingAgg as any)?._sum?.balance ?? 0),

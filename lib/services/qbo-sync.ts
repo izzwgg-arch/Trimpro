@@ -620,7 +620,9 @@ function flattenEmbeddedDescriptionOnlyLines(qboLines: any[]): any[] {
   return out
 }
 
-function inferEstimateStatusFromQuickBooks(qboEstimate: any): 'DRAFT' | 'SENT' | 'VIEWED' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED' {
+function inferEstimateStatusFromQuickBooks(
+  qboEstimate: any
+): 'DRAFT' | 'SENT' | 'VIEWED' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED' | 'CONVERTED' {
   const txnStatus = String(qboEstimate?.TxnStatus || '').trim().toLowerCase()
   const emailStatus = String(qboEstimate?.EmailStatus || '').trim().toLowerCase()
   const expirationDateRaw = qboEstimate?.ExpirationDate ? String(qboEstimate.ExpirationDate) : null
@@ -628,10 +630,34 @@ function inferEstimateStatusFromQuickBooks(qboEstimate: any): 'DRAFT' | 'SENT' |
 
   if (txnStatus.includes('accepted') || qboEstimate?.AcceptedDate || qboEstimate?.AcceptedBy) return 'ACCEPTED'
   if (txnStatus.includes('reject')) return 'REJECTED'
+  if (txnStatus.includes('closed')) return 'CONVERTED'
   if (expirationDate && !Number.isNaN(expirationDate.getTime()) && expirationDate.getTime() < Date.now()) return 'EXPIRED'
   if (txnStatus.includes('view')) return 'VIEWED'
   if (txnStatus.includes('sent') || txnStatus.includes('pending') || emailStatus === 'emailsent') return 'SENT'
   return 'DRAFT'
+}
+
+/**
+ * QuickBooks Online only accepts these Estimate TxnStatus values:
+ * Pending | Accepted | Closed | Rejected
+ */
+function mapTrimProEstimateStatusToQboTxnStatus(
+  status: string | null | undefined
+): 'Pending' | 'Accepted' | 'Closed' | 'Rejected' {
+  switch (String(status || '').toUpperCase()) {
+    case 'ACCEPTED':
+      return 'Accepted'
+    case 'REJECTED':
+      return 'Rejected'
+    case 'CONVERTED':
+    case 'EXPIRED':
+      return 'Closed'
+    case 'DRAFT':
+    case 'SENT':
+    case 'VIEWED':
+    default:
+      return 'Pending'
+  }
 }
 
 function buildImportedEstimateLineRows(qboEstimate: any) {
@@ -2371,6 +2397,8 @@ export async function syncEstimateToQuickBooks(tenantId: string, estimateId: str
       TxnDate: qboDate(estimate.createdAt),
       ExpirationDate: qboDate(estimate.validUntil || estimate.createdAt),
       PrivateNote: estimate.notes || undefined,
+      // QBO accepts only: Pending | Accepted | Closed | Rejected
+      TxnStatus: mapTrimProEstimateStatusToQboTxnStatus(estimate.status),
       Line: buildQboLines(lineItems, itemIdByName, serviceItemId),
     }
     qboReferenceSnapshot = buildEstimateQboReferenceSnapshot({

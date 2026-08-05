@@ -162,6 +162,17 @@ export default function NewInvoicePage() {
     billingMode: 'FULL' | 'PERCENTAGE' | 'MANUAL' | null
     percentage: number | null
   }>({ billingMode: null, percentage: null })
+  /** Customer bundle overrides copied from estimate groups (keyed by group id). */
+  const groupCustomerMetaRef = useRef<
+    Record<
+      string,
+      {
+        customerDescription?: string | null
+        customerTotal?: number | null
+        customerEdited?: boolean
+      }
+    >
+  >({})
 
   // Initial load: clients + picker items (does NOT include clientId so it doesn't re-run when client is set)
   useEffect(() => {
@@ -244,6 +255,7 @@ export default function NewInvoicePage() {
   const loadFromEstimate = async () => {
     if (!estimateIdParam) return
     estimateConvertMetaRef.current = { billingMode: null, percentage: null }
+    groupCustomerMetaRef.current = {}
 
     try {
       const token = localStorage.getItem('accessToken')
@@ -326,17 +338,49 @@ export default function NewInvoicePage() {
             ? (est.lineItems || []).filter((li: any) => selectedLineItemIdSet.has(String(li.id)))
             : (est.lineItems || [])
 
-        const groupsMap = new Map<string, { name: string; sourceBundleId?: string }>()
+        const groupsMap = new Map<
+          string,
+          {
+            name: string
+            sourceBundleId?: string
+            customerDescription?: string | null
+            customerTotal?: number | null
+            customerEdited?: boolean
+          }
+        >()
         const mappedItems: LineItem[] = []
 
         sourceLines.forEach((li: any) => {
           if (li.group && !groupsMap.has(li.group.id)) {
+            const edited = Boolean(li.group.customerEdited)
+            let customerTotal: number | null = null
+            if (edited && li.group.customerTotal != null && li.group.customerTotal !== '') {
+              const raw = Number(li.group.customerTotal)
+              if (Number.isFinite(raw)) {
+                // Scale sticky customer totals with progress billing, same as company unit prices.
+                customerTotal = Math.round(raw * scaleDefault * 100) / 100
+              }
+            }
             groupsMap.set(li.group.id, {
               name: li.group.name,
               sourceBundleId: li.group.sourceBundleId || undefined,
+              customerDescription: li.group.customerDescription ?? null,
+              customerTotal,
+              customerEdited: edited,
             })
           }
         })
+
+        groupCustomerMetaRef.current = Object.fromEntries(
+          Array.from(groupsMap.entries()).map(([id, g]) => [
+            id,
+            {
+              customerDescription: g.customerDescription ?? null,
+              customerTotal: g.customerTotal ?? null,
+              customerEdited: Boolean(g.customerEdited),
+            },
+          ])
+        )
 
         const processedGroups = new Set<string>()
 
@@ -1358,10 +1402,16 @@ export default function NewInvoicePage() {
           memo: formData.memo || null,
           lineItems: apiLineItems,
           optionalItems: apiOptionalItems,
-          groups: Array.from(groups.entries()).map(([groupId, group]) => ({
-            groupId,
-            ...group,
-          })),
+          groups: Array.from(groups.entries()).map(([groupId, group]) => {
+            const meta = groupCustomerMetaRef.current[groupId] || {}
+            return {
+              groupId,
+              ...group,
+              customerDescription: meta.customerDescription ?? null,
+              customerTotal: meta.customerTotal ?? null,
+              customerEdited: Boolean(meta.customerEdited),
+            }
+          }),
           ...(formData.estimateId && estimateConvertMetaRef.current.billingMode
             ? {
                 progressBillingMode: estimateConvertMetaRef.current.billingMode,

@@ -13,6 +13,7 @@ import { getPdfBranding } from '@/lib/branding/pdf'
 import { renderEstimateEmailPdfAttachment } from '@/lib/documents/email-pdf-attachments'
 import { loadEmailEntityAttachments } from '@/lib/documents/email-entity-attachments'
 import { parseEstimatePdfView } from '@/lib/estimates/estimate-pdf-view'
+import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 
 export const runtime = 'nodejs'
 
@@ -224,6 +225,12 @@ Approve estimate: ${approveUrl}`.trim()
         sentAt: new Date(),
       },
     })
+
+    try {
+      await enqueueQboSync(user.tenantId, 'estimate', estimate.id, { processImmediately: false })
+    } catch (error) {
+      console.error('QuickBooks estimate sync trigger error (estimate send):', error)
+    }
 
     // Advance linked request status from ESTIMATE_CREATED → ESTIMATE_SENT (idempotent: skip if already sent or further along)
     const ADVANCE_FROM_STATUSES = ['NEW', 'CONTACTED', 'QUALIFIED', 'ESTIMATE_CREATED'] as const

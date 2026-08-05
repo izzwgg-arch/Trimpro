@@ -64,6 +64,11 @@ export async function GET(
         },
         lineItems: {
           orderBy: { sortOrder: 'asc' },
+          include: {
+            group: true,
+            vendor: { select: { name: true } },
+            sourceItem: { select: { id: true, name: true, kind: true } },
+          },
         },
         optionalItems: {
           orderBy: { sortOrder: 'asc' },
@@ -159,6 +164,9 @@ export async function GET(
           name: item.group.name,
           sourceBundleId: item.group.sourceBundleId,
           sourceBundleName: item.group.sourceBundleName,
+          customerDescription: item.group.customerDescription ?? null,
+          customerTotal: item.group.customerTotal != null ? item.group.customerTotal.toString() : null,
+          customerEdited: Boolean(item.group.customerEdited),
         } : null,
         sourceItemId: item.sourceItemId || null,
         sourceBundleId: item.sourceBundleId || null,
@@ -346,6 +354,12 @@ export async function PUT(
               name: group.name || 'Bundle',
               sourceBundleId: group.sourceBundleId || null,
               sourceBundleName: group.name || null,
+              customerDescription: group.customerDescription ?? null,
+              customerTotal:
+                group.customerTotal !== undefined && group.customerTotal !== null && group.customerTotal !== ''
+                  ? Number(group.customerTotal)
+                  : null,
+              customerEdited: Boolean(group.customerEdited),
             },
           })
           groupMap.set(group.groupId, dbGroup.id)

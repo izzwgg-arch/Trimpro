@@ -62,6 +62,7 @@ export async function POST(
         },
         lineItems: {
           orderBy: { sortOrder: 'asc' },
+          include: { group: true },
         },
         optionalItems: {
           orderBy: { sortOrder: 'asc' },
@@ -123,7 +124,7 @@ export async function POST(
     }
 
     // Public, tokenized links so recipients do not need dashboard auth.
-    const pdfUrl = `${appUrl}/api/public/invoices/${invoice.id}/pdf?token=${encodeURIComponent(token)}&sent=${sentEpoch}`
+    const pdfUrl = `${appUrl}/api/public/invoices/${invoice.id}/pdf?token=${encodeURIComponent(token)}&view=customer&sent=${sentEpoch}`
     const paymentLink =
       invoice.balance.toNumber() > 0
         ? `${appUrl}/portal/pay/${invoice.id}?token=${encodeURIComponent(token)}&sent=${sentEpoch}`
@@ -169,7 +170,7 @@ export async function POST(
     })
 
     const pdfBranding = await getPdfBranding(user.tenantId)
-    const pdfAttachment = await renderInvoiceEmailPdfAttachment(invoice, pdfBranding)
+    const pdfAttachment = await renderInvoiceEmailPdfAttachment(invoice, pdfBranding, 'customer')
     const uploadedAttachments = await loadEmailEntityAttachments({
       tenantId: user.tenantId,
       entityType: 'invoice',
