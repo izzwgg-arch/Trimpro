@@ -159,10 +159,14 @@ export default function NewInvoicePage() {
   const [selectedItemIndices, setSelectedItemIndices] = useState<Set<number>>(new Set())
   const [pickerItems, setPickerItems] = useState<FastPickerItem[]>([])
   const [pickerBundles, setPickerBundles] = useState<FastPickerItem[]>([])
-  const [lineItems, setLineItems] = useState<LineItem[]>(() => createInitialInvoiceLineItems())
+  // Convert-from-estimate starts empty until load finishes (avoids mixing a blank Line #1 with estimate bundles).
+  const [lineItems, setLineItems] = useState<LineItem[]>(() =>
+    estimateIdParam ? [] : createInitialInvoiceLineItems()
+  )
   const [optionalItems, setOptionalItems] = useState<LineItem[]>([])
   const [customerLines, setCustomerLines] = useState<CustomerLine[]>([])
   const [invoiceLineView, setInvoiceLineView] = useState<'company' | 'customer'>('company')
+  const [estimateConvertLoading, setEstimateConvertLoading] = useState(() => Boolean(estimateIdParam))
   const companyFingerprintsRef = useRef<Record<string, string>>({})
   const [isNotesVisibleToClient, setIsNotesVisibleToClient] = useState(true)
   
@@ -215,7 +219,8 @@ export default function NewInvoicePage() {
     fetchPickerData()
     if (estimateIdParam && estimateLoadedRef.current !== estimateIdParam) {
       estimateLoadedRef.current = estimateIdParam
-      loadFromEstimate()
+      setEstimateConvertLoading(true)
+      loadFromEstimate().finally(() => setEstimateConvertLoading(false))
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [estimateIdParam, billingModeParam, percentageParam, selectedLineItemIdsParam])
@@ -403,7 +408,9 @@ export default function NewInvoicePage() {
         const mappedItems: LineItem[] = []
 
         sourceLines.forEach((li: any) => {
-          if (li.group && !groupsMap.has(li.group.id)) {
+          const groupId = li.group?.id || li.groupId
+          if (!groupId || groupsMap.has(groupId)) return
+          if (li.group) {
             const edited = Boolean(li.group.customerEdited)
             let customerTotal: number | null = null
             if (edited && li.group.customerTotal != null && li.group.customerTotal !== '') {
@@ -413,12 +420,20 @@ export default function NewInvoicePage() {
                 customerTotal = Math.round(raw * scaleDefault * 100) / 100
               }
             }
-            groupsMap.set(li.group.id, {
+            groupsMap.set(groupId, {
               name: li.group.name,
               sourceBundleId: li.group.sourceBundleId || undefined,
               customerDescription: li.group.customerDescription ?? null,
               customerTotal,
               customerEdited: edited,
+            })
+          } else {
+            groupsMap.set(groupId, {
+              name: li.groupName || '',
+              sourceBundleId: li.sourceBundleId || undefined,
+              customerDescription: null,
+              customerTotal: null,
+              customerEdited: false,
             })
           }
         })
@@ -476,11 +491,20 @@ export default function NewInvoicePage() {
         sourceLines.forEach((li: any) => {
           if (isScaledEstimateConversion && li.isSubtotal) return
 
-          const group = li.group
-          if (group && !processedGroups.has(group.id)) {
+          // Prefer nested group; fall back to groupId so Line # bundles still reconstruct if relation is missing.
+          const groupId = li.group?.id || li.groupId || undefined
+          const groupName =
+            li.group?.name ||
+            (groupId ? groupsMap.get(groupId)?.name : undefined) ||
+            ''
+          const groupSourceBundleId =
+            li.group?.sourceBundleId ||
+            (groupId ? groupsMap.get(groupId)?.sourceBundleId : undefined)
+
+          if (groupId && !processedGroups.has(groupId)) {
             mappedItems.push({
-              id: `header-${group.id}`,
-              description: group.name,
+              id: `header-${groupId}`,
+              description: groupName,
               quantity: '1',
               unitPrice: '0',
               taxable: true,
@@ -490,12 +514,12 @@ export default function NewInvoicePage() {
               showPriceToCustomer: true,
               showTaxToCustomer: true,
               showNotesToCustomer: false,
-              groupId: group.id,
-              groupName: group.name,
+              groupId,
+              groupName,
               isGroupHeader: true,
-              sourceBundleId: group.sourceBundleId || undefined,
+              sourceBundleId: groupSourceBundleId || undefined,
             })
-            processedGroups.add(group.id)
+            processedGroups.add(groupId)
           }
 
           if (li.isSubtotal) {
@@ -516,7 +540,8 @@ export default function NewInvoicePage() {
               showPriceToCustomer: li.showPriceToCustomer ?? true,
               showTaxToCustomer: li.showTaxToCustomer ?? true,
               showNotesToCustomer: li.showNotesToCustomer ?? false,
-              groupId: li.groupId || undefined,
+              groupId,
+              groupName: groupId ? groupName : undefined,
               sourceItemId: li.sourceItemId || undefined,
               sourceBundleId: li.sourceBundleId || undefined,
               isSubtotal: true,
@@ -551,7 +576,8 @@ export default function NewInvoicePage() {
               showPriceToCustomer: li.showPriceToCustomer ?? true,
               showTaxToCustomer: li.showTaxToCustomer ?? true,
               showNotesToCustomer: li.showNotesToCustomer ?? true,
-              groupId: li.groupId || undefined,
+              groupId,
+              groupName: groupId ? groupName : undefined,
               sourceItemId: li.sourceItemId || undefined,
               sourceBundleId: li.sourceBundleId || undefined,
               estimateLineItemId: li.id,
@@ -577,7 +603,8 @@ export default function NewInvoicePage() {
               showPriceToCustomer: li.showPriceToCustomer ?? true,
               showTaxToCustomer: li.showTaxToCustomer ?? true,
               showNotesToCustomer: li.showNotesToCustomer ?? true,
-              groupId: li.groupId || undefined,
+              groupId,
+              groupName: groupId ? groupName : undefined,
               sourceItemId: li.sourceItemId || undefined,
               sourceBundleId: li.sourceBundleId || undefined,
             })
@@ -1347,6 +1374,10 @@ export default function NewInvoicePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (estimateIdParam && estimateConvertLoading) {
+      alert('Still loading estimate lines. Please wait a moment and try again.')
+      return
+    }
     if (!formData.clientId) {
       alert('Please select a client')
       return
@@ -2716,9 +2747,9 @@ export default function NewInvoicePage() {
             </Card>
 
             <MobileActionBar className="max-lg:mx-0 max-lg:flex-col">
-              <Button type="submit" disabled={loading} className="w-full sm:w-auto">
+              <Button type="submit" disabled={loading || estimateConvertLoading} className="w-full sm:w-auto">
                 <Save className="mr-2 h-4 w-4" />
-                {loading ? 'Creating...' : 'Create Invoice'}
+                {estimateConvertLoading ? 'Loading estimate...' : loading ? 'Creating...' : 'Create Invoice'}
               </Button>
               <Button type="button" variant="outline" onClick={() => router.back()} className="w-full sm:w-auto">
                 Cancel

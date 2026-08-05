@@ -298,10 +298,24 @@ export const createInvoiceSchema = z.object({
   invoiceDate: dateOrDateTime.optional().nullable(),
   dueDate: dateOrDateTime.optional().nullable(),
   notes: z.string().max(5000).optional().nullable(),
+  isNotesVisibleToClient: z.boolean().optional(),
   terms: z.string().max(1000).optional().nullable(),
   memo: z.string().max(1000).optional().nullable(),
   progressBillingMode: z.enum(['FULL', 'PERCENTAGE', 'MANUAL']).optional().nullable(),
   progressBillingPercent: z.union([z.string(), z.number()]).optional().nullable(),
+  // Line # / bundle groups (client temp ids remapped to DocumentLineGroup rows on create)
+  groups: z
+    .array(
+      z.object({
+        groupId: z.string().min(1),
+        name: z.string(),
+        sourceBundleId: z.string().optional().nullable(),
+        customerDescription: z.string().optional().nullable(),
+        customerTotal: z.union([z.string(), z.number()]).optional().nullable(),
+        customerEdited: z.boolean().optional(),
+      })
+    )
+    .optional(),
 })
 
 /**
