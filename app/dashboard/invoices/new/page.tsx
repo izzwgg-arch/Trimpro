@@ -9,7 +9,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Save, Plus, Trash2, Eye, EyeOff } from 'lucide-react'
+import { Save, Plus, Trash2, Eye, EyeOff, Building2, User } from 'lucide-react'
 import { LineItemDragHandle } from '@/components/documents/line-item-drag-handle'
 import Link from 'next/link'
 import { ResponsivePage } from '@/components/layout/ResponsivePage'
@@ -27,6 +27,16 @@ import { usePermissions } from '@/hooks/usePermissions'
 import { postCreateRedirectPath } from '@/hooks/useDocumentListAccess'
 import { reconcileEstimateConversionLineItems, toCents } from '@/lib/documents/progress-billing'
 import { JobTypeCreateField } from '@/components/jobs/JobTypeCreateField'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { CustomerEstimatePanel } from '@/components/estimates/customer-estimate-panel'
+import {
+  type CustomerLine,
+  buildCustomerLinesFromGroups,
+  companyLineFingerprint,
+  flatLineItemsToCompanyLines,
+  mergeCustomerIntoGroups,
+  syncCustomerLines,
+} from '@/lib/estimates/company-customer-sync'
 
 interface Job {
   id: string
@@ -129,6 +139,9 @@ export default function NewInvoicePage() {
       showNotesToCustomer: true,
     },
   ])
+  const [customerLines, setCustomerLines] = useState<CustomerLine[]>([])
+  const [invoiceLineView, setInvoiceLineView] = useState<'company' | 'customer'>('company')
+  const companyFingerprintsRef = useRef<Record<string, string>>({})
   const [isNotesVisibleToClient, setIsNotesVisibleToClient] = useState(true)
   
   const [formData, setFormData] = useState({
@@ -192,6 +205,23 @@ export default function NewInvoicePage() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formData.clientId])
+
+  // Keep customer bundles in sync with company groups (sticky until that group is edited).
+  useEffect(() => {
+    const companyLines = flatLineItemsToCompanyLines(lineItems)
+    const editedIds: string[] = []
+    const nextFingerprints: Record<string, string> = {}
+    for (const line of companyLines) {
+      const nextFp = companyLineFingerprint(line)
+      const prevFp = companyFingerprintsRef.current[line.id]
+      if (prevFp !== undefined && prevFp !== nextFp) {
+        editedIds.push(line.id)
+      }
+      nextFingerprints[line.id] = nextFp
+    }
+    companyFingerprintsRef.current = nextFingerprints
+    setCustomerLines((prev) => syncCustomerLines(companyLines, prev, editedIds))
+  }, [lineItems])
 
   const fetchClients = async () => {
     try {
@@ -546,6 +576,13 @@ export default function NewInvoicePage() {
         }
 
         if (mappedItems.length > 0) {
+          const companyLines = flatLineItemsToCompanyLines(mappedItems)
+          companyFingerprintsRef.current = Object.fromEntries(
+            companyLines.map((line) => [line.id, companyLineFingerprint(line)])
+          )
+          setCustomerLines(
+            buildCustomerLinesFromGroups(companyLines, groupCustomerMetaRef.current)
+          )
           setLineItems(mappedItems)
         }
 
@@ -1365,6 +1402,14 @@ export default function NewInvoicePage() {
         }
       })
 
+      const groupsPayload = mergeCustomerIntoGroups(
+        Array.from(groups.entries()).map(([groupId, group]) => ({
+          groupId,
+          ...group,
+        })),
+        customerLines
+      )
+
       // Defensive: if this is a conversion from an estimate, require at least 1 real line item.
       const realItems = apiLineItems.filter((item: any) => !item.isSubtotal)
       if (formData.estimateId && realItems.length === 0) {
@@ -1402,16 +1447,7 @@ export default function NewInvoicePage() {
           memo: formData.memo || null,
           lineItems: apiLineItems,
           optionalItems: apiOptionalItems,
-          groups: Array.from(groups.entries()).map(([groupId, group]) => {
-            const meta = groupCustomerMetaRef.current[groupId] || {}
-            return {
-              groupId,
-              ...group,
-              customerDescription: meta.customerDescription ?? null,
-              customerTotal: meta.customerTotal ?? null,
-              customerEdited: Boolean(meta.customerEdited),
-            }
-          }),
+          groups: groupsPayload,
           ...(formData.estimateId && estimateConvertMetaRef.current.billingMode
             ? {
                 progressBillingMode: estimateConvertMetaRef.current.billingMode,
@@ -1584,12 +1620,32 @@ export default function NewInvoicePage() {
 
             <Card>
               <CardHeader>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <CardTitle>Line Items</CardTitle>
-                    <CardDescription>Click in Item field to search and add items</CardDescription>
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <CardTitle>Line Items</CardTitle>
+                      <CardDescription>
+                        Switch between company (detailed / QB) and customer (bundled) invoices
+                      </CardDescription>
+                    </div>
+                    <Tabs
+                      value={invoiceLineView}
+                      onValueChange={(v) => setInvoiceLineView(v as 'company' | 'customer')}
+                    >
+                      <TabsList>
+                        <TabsTrigger value="company" className="gap-1.5">
+                          <Building2 className="h-4 w-4" />
+                          Company
+                        </TabsTrigger>
+                        <TabsTrigger value="customer" className="gap-1.5">
+                          <User className="h-4 w-4" />
+                          Customer
+                        </TabsTrigger>
+                      </TabsList>
+                    </Tabs>
                   </div>
-                  <div className="flex flex-wrap items-center gap-1.5 text-xs shrink-0">
+                  {invoiceLineView === 'company' && (
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs">
                     <span className="text-gray-500 font-medium self-center">Show to customer:</span>
                     {(['showDescriptionToCustomer', 'showNotesToCustomer', 'showPriceToCustomer', 'showCostToCustomer', 'showTaxToCustomer'] as VisibilityField[]).map((field) => {
                       const labels: Record<VisibilityField, string> = { showDescriptionToCustomer: 'Name', showNotesToCustomer: 'Description', showPriceToCustomer: 'Price', showCostToCustomer: 'Cost', showTaxToCustomer: 'Tax' }
@@ -1624,9 +1680,18 @@ export default function NewInvoicePage() {
                       </>
                     )}
                   </div>
+                  )}
                 </div>
               </CardHeader>
               <CardContent className="space-y-2">
+                {invoiceLineView === 'customer' ? (
+                  <CustomerEstimatePanel
+                    customerLines={customerLines}
+                    onChange={setCustomerLines}
+                    entityLabel="invoice"
+                  />
+                ) : (
+                <>
                 <div className="space-y-2">
                   {lineItems.map((item, index) => {
                     const isGroupHeader = item.isGroupHeader
@@ -2133,6 +2198,8 @@ export default function NewInvoicePage() {
                     Add Subtotal Row
                   </Button>
                 </div>
+                </>
+                )}
               </CardContent>
             </Card>
 
