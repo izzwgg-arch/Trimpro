@@ -18,6 +18,7 @@ import {
   expandBundleComponentsToLineItems,
   bundleExpandedLineToPurchaseOrderLine,
 } from '@/lib/bundles/expand-line-items'
+import { formatAddressParts } from '@/lib/address/parse'
 interface Vendor {
   id: string
   name: string
@@ -32,6 +33,12 @@ interface Job {
   title: string
   status?: string | null
   client?: { id?: string; name?: string | null; companyName?: string | null } | null
+  addresses?: Array<{
+    street?: string | null
+    city?: string | null
+    state?: string | null
+    zipCode?: string | null
+  }> | null
 }
 
 interface LineItem {
@@ -79,6 +86,8 @@ export default function NewPurchaseOrderPage() {
     expectedDate: '',
     orderDate: new Date().toISOString().split('T')[0],
     notes: '',
+    internalNotes: '',
+    deliveryAddress: '',
     tax: '0',
     shipping: '0',
   })
@@ -160,6 +169,34 @@ export default function NewPurchaseOrderPage() {
       console.error('Error fetching items for picker:', error)
     }
   }
+
+  const jobSiteAddressFor = (job?: Job | null) =>
+    formatAddressParts(job?.addresses?.[0] || null) || ''
+
+  const handleJobSelect = (jobId: string) => {
+    if (!jobId) {
+      setFormData((prev) => ({ ...prev, jobId: '' }))
+      return
+    }
+    const job = jobs.find((j) => j.id === jobId) || null
+    const site = jobSiteAddressFor(job)
+    setFormData((prev) => ({
+      ...prev,
+      jobId,
+      // Default delivery address from the selected job site; user can still edit.
+      deliveryAddress: site || prev.deliveryAddress,
+    }))
+  }
+
+  // Prefill delivery address when jobs load and a job is already selected (e.g. ?jobId=).
+  useEffect(() => {
+    if (!formData.jobId || formData.deliveryAddress.trim()) return
+    const job = jobs.find((j) => j.id === formData.jobId)
+    const site = jobSiteAddressFor(job)
+    if (site) {
+      setFormData((prev) => (prev.deliveryAddress.trim() ? prev : { ...prev, deliveryAddress: site }))
+    }
+  }, [jobs, formData.jobId, formData.deliveryAddress])
 
   const addLineItem = () => {
     setLineItems((prev) => [
@@ -404,6 +441,8 @@ export default function NewPurchaseOrderPage() {
           expectedDate: formData.expectedDate || null,
           orderDate: formData.orderDate || new Date().toISOString().split('T')[0],
           notes: formData.notes || null,
+          internalNotes: formData.internalNotes || null,
+          deliveryAddress: formData.deliveryAddress || null,
           tax,
           shipping,
           total,
@@ -498,12 +537,26 @@ export default function NewPurchaseOrderPage() {
                   <SearchableJobSelect
                     jobs={jobs}
                     value={formData.jobId || ''}
-                    onSelect={(jobId) => setFormData({ ...formData, jobId })}
+                    onSelect={handleJobSelect}
                     onSearch={fetchJobs}
                     placeholder="Search jobs by number, title, or client..."
                     allowNone
                     noneLabel="No job"
                   />
+                </div>
+                <div>
+                  <Label htmlFor="deliveryAddress">Delivery Address</Label>
+                  <textarea
+                    id="deliveryAddress"
+                    value={formData.deliveryAddress}
+                    onChange={(e) => setFormData({ ...formData, deliveryAddress: e.target.value })}
+                    placeholder="Defaults from job site address — editable"
+                    rows={3}
+                    className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-y"
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Shown to the vendor on the PO / PDF.
+                  </p>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -546,15 +599,29 @@ export default function NewPurchaseOrderPage() {
                   </Select>
                 </div>
                 <div>
-                  <Label htmlFor="notes">Notes</Label>
+                  <Label htmlFor="notes">Notes to Vendor</Label>
                   <textarea
                     id="notes"
                     value={formData.notes}
                     onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    placeholder="Purchase order notes"
-                    rows={4}
+                    placeholder="Visible to vendor on PO / email / PDF"
+                    rows={3}
                     className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-y"
                   />
+                </div>
+                <div>
+                  <Label htmlFor="internalNotes">Internal Notes</Label>
+                  <textarea
+                    id="internalNotes"
+                    value={formData.internalNotes}
+                    onChange={(e) => setFormData({ ...formData, internalNotes: e.target.value })}
+                    placeholder="Staff only — not visible to vendor"
+                    rows={3}
+                    className="flex w-full rounded-md border border-amber-200 bg-amber-50/40 px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-y"
+                  />
+                  <p className="mt-1 text-xs text-amber-800">
+                    Never included on vendor PDF or email.
+                  </p>
                 </div>
               </CardContent>
             </Card>

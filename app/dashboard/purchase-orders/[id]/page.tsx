@@ -31,6 +31,8 @@ interface PurchaseOrderDetail {
   expectedDate: string | null
   receivedDate: string | null
   notes?: string | null
+  internalNotes?: string | null
+  deliveryAddress?: string | null
   jobSiteAddress?: string | null
   job: {
     id: string
@@ -555,10 +557,22 @@ export default function PurchaseOrderDetailPage() {
           {po.notes?.trim() && (
             <Card>
               <CardHeader>
-                <CardTitle>Notes</CardTitle>
+                <CardTitle>Notes to Vendor</CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="whitespace-pre-wrap text-sm text-gray-700">{po.notes}</p>
+              </CardContent>
+            </Card>
+          )}
+
+          {po.internalNotes?.trim() && (
+            <Card className="border-amber-200">
+              <CardHeader>
+                <CardTitle className="text-amber-900">Internal Notes</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="mb-1 text-xs text-amber-800">Staff only — not visible to vendor</p>
+                <p className="whitespace-pre-wrap text-sm text-gray-700">{po.internalNotes}</p>
               </CardContent>
             </Card>
           )}
@@ -672,13 +686,15 @@ export default function PurchaseOrderDetailPage() {
             </Card>
           )}
 
-          {po.jobSiteAddress && (
+          {(po.deliveryAddress?.trim() || po.jobSiteAddress?.trim()) && (
             <Card>
               <CardHeader>
-                <CardTitle>Job Site Address</CardTitle>
+                <CardTitle>Delivery Address</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-gray-700 whitespace-pre-line">{po.jobSiteAddress}</p>
+                <p className="text-sm text-gray-700 whitespace-pre-line">
+                  {po.deliveryAddress?.trim() || po.jobSiteAddress}
+                </p>
               </CardContent>
             </Card>
           )}

@@ -49,6 +49,9 @@ export async function POST(
         total: source.total,
         orderDate: new Date(),
         expectedDate: source.expectedDate,
+        notes: source.notes,
+        internalNotes: (source as any).internalNotes ?? null,
+        deliveryAddress: (source as any).deliveryAddress ?? null,
       },
     })
 

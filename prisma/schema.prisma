@@ -1190,8 +1190,10 @@ model PurchaseOrder {
   expectedDate DateTime?
   receivedDate DateTime?
 
-  // Notes
-  notes String? @db.Text
+  // Notes / delivery
+  notes            String? @db.Text // Vendor-facing notes (PDF / email)
+  internalNotes    String? @db.Text // Staff-only; never shown to vendor
+  deliveryAddress  String? @db.Text // Editable; defaults from job site address
 
   // Relationships
   tenant      Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)

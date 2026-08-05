@@ -611,6 +611,9 @@ export function buildPurchaseOrderPdfHtml(
     ? new Date(purchaseOrder.expectedDate).toLocaleDateString()
     : 'N/A'
   const jobSiteAddress = formatAddress(purchaseOrder.job?.addresses?.[0] || null)
+  const deliveryAddress =
+    String(purchaseOrder.deliveryAddress || '').trim() || jobSiteAddress || ''
+  const vendorNotes = String(purchaseOrder.notes || '').trim()
 
   return `
     <!DOCTYPE html>
@@ -669,9 +672,11 @@ export function buildPurchaseOrderPdfHtml(
                     <div><strong>${escapeHtml(purchaseOrder.job.jobNumber)}</strong></div>
                     <div>${escapeHtml(purchaseOrder.job.title)}</div>
                     <div class="muted">Client: ${escapeHtml(purchaseOrder.job.client?.name || '')}</div>
-                    ${jobSiteAddress ? `<div class="muted" style="margin-top:10px;font-weight:600;">Job Site Address</div><div class="address-block">${escapeHtmlMultiline(jobSiteAddress)}</div>` : ''}
+                    ${deliveryAddress ? `<div class="muted" style="margin-top:10px;font-weight:600;">Delivery Address</div><div class="address-block">${escapeHtmlMultiline(deliveryAddress)}</div>` : ''}
                   `
-                  : '<div class="muted">No linked job</div>'
+                  : deliveryAddress
+                    ? `<div class="muted" style="font-weight:600;">Delivery Address</div><div class="address-block">${escapeHtmlMultiline(deliveryAddress)}</div>`
+                    : '<div class="muted">No linked job</div>'
               }
             </div>
           </div>
@@ -705,10 +710,10 @@ export function buildPurchaseOrderPdfHtml(
             </tbody>
           </table>
 
-          ${purchaseOrder.notes?.trim() ? `
+          ${vendorNotes ? `
             <div class="panel" style="margin-top:18px;">
               <h3>Notes</h3>
-              <div style="white-space:pre-wrap;">${escapeHtml(purchaseOrder.notes.trim())}</div>
+              <div style="white-space:pre-wrap;">${escapeHtml(vendorNotes)}</div>
             </div>
           ` : ''}
 

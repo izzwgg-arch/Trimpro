@@ -141,6 +141,8 @@ export async function PUT(
       expectedDate,
       orderDate,
       notes,
+      internalNotes,
+      deliveryAddress,
       lineItems,
       groups, // Array of { groupId, name, sourceBundleId }
       tax,
@@ -222,6 +224,14 @@ export async function PUT(
         orderDate: orderDate !== undefined ? (orderDate ? new Date(orderDate) : null) : existing.orderDate,
         expectedDate: expectedDate !== undefined ? (expectedDate ? new Date(expectedDate) : null) : existing.expectedDate,
         notes: notes !== undefined ? (notes ? String(notes) : null) : existing.notes,
+        internalNotes:
+          internalNotes !== undefined
+            ? (internalNotes ? String(internalNotes) : null)
+            : (existing as any).internalNotes,
+        deliveryAddress:
+          deliveryAddress !== undefined
+            ? (deliveryAddress ? String(deliveryAddress) : null)
+            : (existing as any).deliveryAddress,
         total,
       },
       include: {
