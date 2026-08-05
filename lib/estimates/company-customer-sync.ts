@@ -442,6 +442,62 @@ export function customerLinesToGroupPayload(customerLines: CustomerLine[]) {
   }))
 }
 
+/**
+ * Build the groups payload from editor line items.
+ * Includes Line # / bundles even when the title (groupName) is blank — previously
+ * empty names were skipped, so invoice/estimate creates dropped all group links
+ * and the customer view saved empty.
+ */
+export function collectGroupsFromEditorLines(
+  lineItems: Array<{
+    groupId?: string
+    groupName?: string
+    description?: string
+    isGroupHeader?: boolean
+    sourceBundleId?: string | null
+  }>,
+  optionalItems: Array<{
+    groupId?: string
+    groupName?: string
+    description?: string
+    isGroupHeader?: boolean
+    sourceBundleId?: string | null
+  }> = []
+): Array<{ groupId: string; name: string; sourceBundleId?: string | null }> {
+  const groups = new Map<string, { name: string; sourceBundleId?: string | null }>()
+  let groupOrdinal = 0
+
+  const consider = (item: {
+    groupId?: string
+    groupName?: string
+    description?: string
+    isGroupHeader?: boolean
+    sourceBundleId?: string | null
+  }) => {
+    if (!item.groupId || groups.has(item.groupId)) return
+    groupOrdinal += 1
+    const named = String(item.groupName || (item.isGroupHeader ? item.description : '') || '').trim()
+    groups.set(item.groupId, {
+      name: named || `Line #${groupOrdinal}`,
+      sourceBundleId: item.sourceBundleId || null,
+    })
+  }
+
+  // Pass 1: headers first (best titles)
+  for (const item of [...lineItems, ...optionalItems]) {
+    if (item.isGroupHeader) consider(item)
+  }
+  // Pass 2: any remaining grouped items
+  for (const item of [...lineItems, ...optionalItems]) {
+    if (!item.isGroupHeader) consider(item)
+  }
+
+  return Array.from(groups.entries()).map(([groupId, group]) => ({
+    groupId,
+    ...group,
+  }))
+}
+
 /** Merge customer overrides onto groups built for the estimates API. */
 export function mergeCustomerIntoGroups(
   groups: Array<{ groupId: string; name: string; sourceBundleId?: string | null }>,

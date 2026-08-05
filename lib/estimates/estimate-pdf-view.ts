@@ -36,8 +36,8 @@ export function prepareEstimateForPdfView(
 
   for (const item of lineItems) {
     const groupId = item.groupId || item.group?.id
-    const groupName = item.group?.name || item.groupName
-    if (groupId && groupName && !seenGroups.has(groupId)) {
+    const groupName = item.group?.name || item.groupName || ''
+    if (groupId && !seenGroups.has(groupId)) {
       withHeaders.push({
         id: `header-${groupId}`,
         description: groupName,

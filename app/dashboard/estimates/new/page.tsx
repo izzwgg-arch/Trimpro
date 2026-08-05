@@ -33,6 +33,7 @@ import { CustomerEstimatePanel } from '@/components/estimates/customer-estimate-
 import {
   type CustomerLine,
   companyLineFingerprint,
+  collectGroupsFromEditorLines,
   flatLineItemsToCompanyLines,
   mergeCustomerIntoGroups,
   syncCustomerLines,
@@ -1095,32 +1096,8 @@ export default function NewEstimatePage() {
           sourceBundleId: item.sourceBundleId || null,
         }))
 
-      // Create groups for bundles / Line # rows
-      const groups = new Map<string, { name: string; sourceBundleId?: string }>()
-      let groupOrdinal = 0
-      ;[...lineItems, ...optionalItems].forEach((item) => {
-        if (item.groupId && item.isGroupHeader && !groups.has(item.groupId)) {
-          groupOrdinal += 1
-          const named = (item.groupName || item.description || '').trim()
-          groups.set(item.groupId, {
-            name: named || `Line #${groupOrdinal}`,
-            sourceBundleId: item.sourceBundleId,
-          })
-        } else if (item.groupId && item.groupName && !groups.has(item.groupId)) {
-          groupOrdinal += 1
-          const named = item.groupName.trim()
-          groups.set(item.groupId, {
-            name: named || `Line #${groupOrdinal}`,
-            sourceBundleId: item.sourceBundleId,
-          })
-        }
-      })
-
       const groupsPayload = mergeCustomerIntoGroups(
-        Array.from(groups.entries()).map(([groupId, group]) => ({
-          groupId,
-          ...group,
-        })),
+        collectGroupsFromEditorLines(lineItems, optionalItems),
         customerLines
       )
 

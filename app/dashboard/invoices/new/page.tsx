@@ -33,6 +33,7 @@ import {
   type CustomerLine,
   buildCustomerLinesFromGroups,
   companyLineFingerprint,
+  collectGroupsFromEditorLines,
   flatLineItemsToCompanyLines,
   mergeCustomerIntoGroups,
   syncCustomerLines,
@@ -1392,21 +1393,8 @@ export default function NewInvoicePage() {
           sourceBundleId: item.sourceBundleId || null,
         }))
 
-      const groups = new Map<string, { name: string; sourceBundleId?: string }>()
-      ;[...lineItems, ...optionalItems].forEach(item => {
-        if (item.groupId && item.groupName && !groups.has(item.groupId)) {
-          groups.set(item.groupId, {
-            name: item.groupName,
-            sourceBundleId: item.sourceBundleId,
-          })
-        }
-      })
-
       const groupsPayload = mergeCustomerIntoGroups(
-        Array.from(groups.entries()).map(([groupId, group]) => ({
-          groupId,
-          ...group,
-        })),
+        collectGroupsFromEditorLines(lineItems, optionalItems),
         customerLines
       )
 

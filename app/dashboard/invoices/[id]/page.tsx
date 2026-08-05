@@ -905,14 +905,14 @@ export default function InvoiceDetailPage() {
     const withHeaders: any[] = []
     const seen = new Set<string>()
     for (const item of flat) {
-      if (item.groupId && item.groupName && !seen.has(item.groupId)) {
+      if (item.groupId && !seen.has(item.groupId)) {
         withHeaders.push({
           id: `header-${item.groupId}`,
-          description: item.groupName,
+          description: item.groupName || '',
           quantity: '1',
           unitPrice: '0',
           groupId: item.groupId,
-          groupName: item.groupName,
+          groupName: item.groupName || '',
           isGroupHeader: true,
           taxable: true,
         })
