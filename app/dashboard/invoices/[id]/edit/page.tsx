@@ -9,7 +9,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Save, Plus, Trash2, Eye, EyeOff, Copy } from 'lucide-react'
+import { Save, Plus, Trash2, Eye, EyeOff, Copy, Building2, User } from 'lucide-react'
 import { LineItemDragHandle } from '@/components/documents/line-item-drag-handle'
 import Link from 'next/link'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
@@ -26,6 +26,7 @@ import {
   DOCUMENT_LINE_WIDTH_DEFAULTS,
 } from '@/components/documents/document-line-items-column-header'
 import { CustomerEstimatePanel } from '@/components/estimates/customer-estimate-panel'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   type CustomerLine,
   buildCustomerLinesFromGroups,
@@ -1223,25 +1224,24 @@ export default function EditInvoicePage() {
                     <div>
                       <CardTitle>Line Items</CardTitle>
                       <CardDescription>
-                        Company = detailed / QuickBooks. Customer = bundled Line # (default for PDF/email).
+                        Switch between company (detailed / QB) and customer (bundled) invoices
                       </CardDescription>
                     </div>
-                    <div className="flex rounded-md border overflow-hidden text-sm shrink-0">
-                      <button
-                        type="button"
-                        className={`px-3 py-1.5 ${invoiceLineView === 'company' ? 'bg-primary text-primary-foreground' : 'bg-white text-gray-600'}`}
-                        onClick={() => setInvoiceLineView('company')}
-                      >
-                        Company
-                      </button>
-                      <button
-                        type="button"
-                        className={`px-3 py-1.5 border-l ${invoiceLineView === 'customer' ? 'bg-primary text-primary-foreground' : 'bg-white text-gray-600'}`}
-                        onClick={() => setInvoiceLineView('customer')}
-                      >
-                        Customer
-                      </button>
-                    </div>
+                    <Tabs
+                      value={invoiceLineView}
+                      onValueChange={(v) => setInvoiceLineView(v as 'company' | 'customer')}
+                    >
+                      <TabsList>
+                        <TabsTrigger value="company" className="gap-1.5">
+                          <Building2 className="h-4 w-4" />
+                          Company
+                        </TabsTrigger>
+                        <TabsTrigger value="customer" className="gap-1.5">
+                          <User className="h-4 w-4" />
+                          Customer
+                        </TabsTrigger>
+                      </TabsList>
+                    </Tabs>
                   </div>
                   {invoiceLineView === 'company' && (
                   <div className="flex flex-wrap items-center gap-1.5 text-xs">
@@ -1287,6 +1287,7 @@ export default function EditInvoicePage() {
                   <CustomerEstimatePanel
                     customerLines={customerLines}
                     onChange={setCustomerLines}
+                    entityLabel="invoice"
                   />
                 ) : (
                 <>
@@ -1548,6 +1549,7 @@ export default function EditInvoicePage() {
                             <div style={{ width: lineColWidths.qty || 80 }} className="shrink-0">
                               <Input
                                 type="number"
+                                calculator
                                 step="0.01"
                                 placeholder="Qty"
                                 value={item.quantity}
@@ -1577,6 +1579,7 @@ export default function EditInvoicePage() {
                               </div>
                               <Input
                                 type="number"
+                                calculator
                                 step="0.01"
                                 placeholder="0.00"
                                 value={item.unitPrice}
@@ -1606,6 +1609,7 @@ export default function EditInvoicePage() {
                               </div>
                               <Input
                                 type="number"
+                                calculator
                                 step="0.01"
                                 min="0"
                                 placeholder="0.00"
@@ -1644,6 +1648,7 @@ export default function EditInvoicePage() {
                                 />
                                 <Input
                                   type="number"
+                                calculator
                                   step="0.01"
                                   min="0"
                                   max="100"
@@ -1907,6 +1912,7 @@ export default function EditInvoicePage() {
                               <div className="w-20">
                                 <Input
                                   type="number"
+                                calculator
                                   step="0.01"
                                   placeholder="Qty"
                                   value={item.quantity}
@@ -1935,6 +1941,7 @@ export default function EditInvoicePage() {
                                 </div>
                                 <Input
                                   type="number"
+                                calculator
                                   step="0.01"
                                   placeholder="0.00"
                                   value={item.unitPrice}
@@ -1963,6 +1970,7 @@ export default function EditInvoicePage() {
                                 </div>
                                 <Input
                                   type="number"
+                                calculator
                                   step="0.01"
                                   min="0"
                                   placeholder="0.00"
@@ -1999,6 +2007,7 @@ export default function EditInvoicePage() {
                                   />
                                   <Input
                                     type="number"
+                                calculator
                                     step="0.01"
                                     min="0"
                                     max="100"

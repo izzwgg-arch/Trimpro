@@ -1645,6 +1645,7 @@ export default function NewEstimatePage() {
                             <Label className="text-xs text-gray-500 mb-1 block">Quantity</Label>
                             <Input
                               type="number"
+                                calculator
                               step="0.01"
                               placeholder="1"
                               value={item.quantity}
@@ -1677,6 +1678,7 @@ export default function NewEstimatePage() {
                             </div>
                             <Input
                               type="number"
+                                calculator
                               step="0.01"
                               placeholder="0.00"
                               value={item.unitPrice}
@@ -1709,6 +1711,7 @@ export default function NewEstimatePage() {
                             </div>
                             <Input
                               type="number"
+                                calculator
                               step="0.01"
                               min="0"
                               placeholder="0.00"
@@ -1750,6 +1753,7 @@ export default function NewEstimatePage() {
                               />
                               <Input
                                 type="number"
+                                calculator
                                 step="0.01"
                                 min="0"
                                 max="100"
@@ -2060,6 +2064,7 @@ export default function NewEstimatePage() {
                             <Label className="text-xs text-gray-500 mb-1 block">Quantity</Label>
                             <Input
                               type="number"
+                                calculator
                               step="0.01"
                               placeholder="1"
                               value={item.quantity}
@@ -2091,6 +2096,7 @@ export default function NewEstimatePage() {
                             </div>
                             <Input
                               type="number"
+                                calculator
                               step="0.01"
                               placeholder="0.00"
                               value={item.unitPrice}
@@ -2122,6 +2128,7 @@ export default function NewEstimatePage() {
                             </div>
                             <Input
                               type="number"
+                                calculator
                               step="0.01"
                               min="0"
                               placeholder="0.00"
@@ -2163,6 +2170,7 @@ export default function NewEstimatePage() {
                               />
                               <Input
                                 type="number"
+                                calculator
                                 step="0.01"
                                 min="0"
                                 max="100"

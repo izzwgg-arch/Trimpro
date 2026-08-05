@@ -1368,7 +1368,7 @@ export default function InvoiceDetailPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <CustomerEstimatePanel customerLines={customerLines} readOnly />
+                <CustomerEstimatePanel customerLines={customerLines} readOnly entityLabel="invoice" />
               </CardContent>
             </Card>
           ) : null}

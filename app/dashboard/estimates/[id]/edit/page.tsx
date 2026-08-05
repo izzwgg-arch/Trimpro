@@ -1513,6 +1513,7 @@ export default function EditEstimatePage() {
                             <div style={{ width: lineColWidths.qty || 80 }} className="shrink-0">
                               <Input
                                 type="number"
+                                calculator
                                 step="0.01"
                                 placeholder="Qty"
                                 value={item.quantity}
@@ -1542,6 +1543,7 @@ export default function EditEstimatePage() {
                               </div>
                               <Input
                                 type="number"
+                                calculator
                                 step="0.01"
                                 placeholder="0.00"
                                 value={item.unitPrice}
@@ -1571,6 +1573,7 @@ export default function EditEstimatePage() {
                               </div>
                               <Input
                                 type="number"
+                                calculator
                                 step="0.01"
                                 min="0"
                                 placeholder="0.00"
@@ -1609,6 +1612,7 @@ export default function EditEstimatePage() {
                                 />
                                 <Input
                                   type="number"
+                                calculator
                                   step="0.01"
                                   min="0"
                                   max="100"
@@ -1872,6 +1876,7 @@ export default function EditEstimatePage() {
                               <div className="w-20">
                                 <Input
                                   type="number"
+                                calculator
                                   step="0.01"
                                   placeholder="Qty"
                                   value={item.quantity}
@@ -1899,6 +1904,7 @@ export default function EditEstimatePage() {
                                 </div>
                                 <Input
                                   type="number"
+                                calculator
                                   step="0.01"
                                   placeholder="0.00"
                                   value={item.unitPrice}
@@ -1926,6 +1932,7 @@ export default function EditEstimatePage() {
                                 </div>
                                 <Input
                                   type="number"
+                                calculator
                                   step="0.01"
                                   min="0"
                                   placeholder="0.00"
@@ -1962,6 +1969,7 @@ export default function EditEstimatePage() {
                                   />
                                   <Input
                                     type="number"
+                                calculator
                                     step="0.01"
                                     min="0"
                                     max="100"

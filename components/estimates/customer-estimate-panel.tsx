@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -12,11 +13,28 @@ export function CustomerEstimatePanel({
   customerLines,
   onChange,
   readOnly = false,
+  entityLabel = 'estimate',
 }: {
   customerLines: CustomerLine[]
   onChange?: (next: CustomerLine[]) => void
   readOnly?: boolean
+  /** Used in empty-state copy ("estimate" | "invoice") */
+  entityLabel?: string
 }) {
+  const [draftTotals, setDraftTotals] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    setDraftTotals((prev) => {
+      const next: Record<string, string> = {}
+      for (const line of customerLines) {
+        if (prev[line.id] != null && /[+\-*/()]/.test(prev[line.id])) {
+          next[line.id] = prev[line.id]
+        }
+      }
+      return next
+    })
+  }, [customerLines])
+
   const edit = (
     lineId: string,
     patch: Partial<Pick<CustomerLine, 'description' | 'total' | 'title'>>
@@ -28,7 +46,7 @@ export function CustomerEstimatePanel({
   if (customerLines.length === 0) {
     return (
       <p className="rounded border border-dashed p-6 text-center text-sm text-muted-foreground">
-        No customer bundles yet. Add items under a Line # / bundle on the company estimate.
+        No customer bundles yet. Add items under a Line # / bundle on the company {entityLabel}.
       </p>
     )
   }
@@ -93,11 +111,22 @@ export function CustomerEstimatePanel({
                 </label>
                 <Input
                   type="number"
+                  calculator
                   step={0.01}
-                  value={line.total}
-                  onChange={(e) =>
-                    edit(line.id, { total: Number(e.target.value) || 0 })
-                  }
+                  value={draftTotals[line.id] ?? String(line.total)}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    if (/[+\-*/()]/.test(v) && !/^-?\d*\.?\d*$/.test(v.trim())) {
+                      setDraftTotals((prev) => ({ ...prev, [line.id]: v }))
+                      return
+                    }
+                    setDraftTotals((prev) => {
+                      const next = { ...prev }
+                      delete next[line.id]
+                      return next
+                    })
+                    edit(line.id, { total: Number(v) || 0 })
+                  }}
                 />
                 <p className="mt-2 text-lg font-semibold">{formatMoney(line.total)}</p>
               </div>
@@ -107,7 +136,7 @@ export function CustomerEstimatePanel({
       ))}
 
       <div className="flex justify-end border-t pt-3 text-base font-semibold">
-        Customer estimate total: {formatMoney(total)}
+        Customer {entityLabel} total: {formatMoney(total)}
       </div>
     </div>
   )
