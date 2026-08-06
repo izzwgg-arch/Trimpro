@@ -7,6 +7,7 @@ import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { sendEmailWithAttachments } from '@/lib/integrations/providers/email'
 import { isValidEmail } from '@/lib/email'
 import { getEmailBranding } from '@/lib/email/branding'
+import { getPdfBranding } from '@/lib/branding/pdf'
 import { buildPurchaseOrderEmail } from '@/lib/email/templates/purchase-order'
 import { renderPurchaseOrderEmailPdfAttachment } from '@/lib/documents/email-pdf-attachments'
 import { loadEmailEntityAttachments } from '@/lib/documents/email-entity-attachments'
@@ -106,10 +107,12 @@ export async function POST(
     }
 
     const emailBranding = await getEmailBranding(user.tenantId)
+    const pdfBrand = await getPdfBranding(user.tenantId)
     const logoUrl = emailBranding?.emailLogoUrl || emailBranding?.webLogoUrl || ''
     const companyName =
       (emailBranding as { businessName?: string; companyName?: string } | null)?.businessName ||
       (emailBranding as { companyName?: string } | null)?.companyName ||
+      pdfBrand.businessName ||
       'Trim Pro'
 
     const senderUser = await prisma.user.findFirst({
@@ -123,8 +126,8 @@ export async function POST(
     const senderEmail = senderUser?.email || user.email || undefined
 
     const pdfAttachment = await renderPurchaseOrderEmailPdfAttachment(purchaseOrder, {
-      logoUrl: process.env.PDF_LOGO_URL || process.env.NEXT_PUBLIC_PDF_LOGO_URL || logoUrl || null,
-      businessName: companyName,
+      logoUrl: pdfBrand.logoUrl,
+      businessName: pdfBrand.businessName,
     })
     const uploadedAttachments = await loadEmailEntityAttachments({
       tenantId: user.tenantId,
