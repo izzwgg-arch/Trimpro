@@ -3269,6 +3269,8 @@ export async function syncPurchaseOrderToQuickBooks(tenantId: string, purchaseOr
               Qty: toNumber(li.quantity),
               UnitPrice: toNumber(li.unitCost ?? li.unitPrice),
               BillableStatus: 'NotBillable',
+              // Required for many Service/existing items that lack a purchase expense account
+              AccountRef: { value: expenseAccountId },
             },
           })
         } else {
@@ -3362,6 +3364,7 @@ export async function syncPurchaseOrderToQuickBooks(tenantId: string, purchaseOr
       entityId: purchaseOrderId,
       error: error?.message || 'QuickBooks purchase order sync failed',
     })
+    throw error
   }
 }
 

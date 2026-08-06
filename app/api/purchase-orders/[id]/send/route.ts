@@ -6,6 +6,7 @@ import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { sendEmailWithAttachments } from '@/lib/integrations/providers/email'
 import { isValidEmail } from '@/lib/email'
+import { parseEmailList } from '@/lib/email/recipients'
 import { getEmailBranding } from '@/lib/email/branding'
 import { getPdfBranding } from '@/lib/branding/pdf'
 import { buildPurchaseOrderEmail } from '@/lib/email/templates/purchase-order'
@@ -27,7 +28,7 @@ export async function POST(
 
   try {
     const body = await request.json()
-    const { email, subject, message } = body
+    const { email, emails, subject, message } = body
 
     // Get purchase order
     const purchaseOrder = await prisma.purchaseOrder.findFirst({
@@ -68,17 +69,27 @@ export async function POST(
       return NextResponse.json({ error: 'Purchase order not found' }, { status: 404 })
     }
 
-    // Determine recipient email
-    const recipientEmail = String(email || purchaseOrder.vendorRef?.email || '').trim()
+    const uniqueRecipientEmails = parseEmailList([
+      ...parseEmailList(emails),
+      ...parseEmailList(email),
+    ])
+    const recipients =
+      uniqueRecipientEmails.length > 0
+        ? uniqueRecipientEmails
+        : parseEmailList(purchaseOrder.vendorRef?.email)
 
-    if (!recipientEmail) {
+    if (recipients.length === 0) {
       return NextResponse.json(
         { error: 'No email address found for vendor. Please provide an email address.' },
         { status: 400 }
       )
     }
-    if (!isValidEmail(recipientEmail)) {
-      return NextResponse.json({ error: 'Invalid vendor email address' }, { status: 400 })
+    const invalidRecipients = recipients.filter((addr) => !isValidEmail(addr))
+    if (invalidRecipients.length) {
+      return NextResponse.json(
+        { error: `Invalid recipient email(s): ${invalidRecipients.join(', ')}` },
+        { status: 400 }
+      )
     }
 
     const total = Number(purchaseOrder.total).toFixed(2)
@@ -108,7 +119,6 @@ export async function POST(
 
     const emailBranding = await getEmailBranding(user.tenantId)
     const pdfBrand = await getPdfBranding(user.tenantId)
-    const logoUrl = emailBranding?.emailLogoUrl || emailBranding?.webLogoUrl || ''
     const companyName =
       (emailBranding as { businessName?: string; companyName?: string } | null)?.businessName ||
       (emailBranding as { companyName?: string } | null)?.companyName ||
@@ -165,7 +175,7 @@ The complete version has been provided as an attachment to this email.
 
     const sendResult = await sendEmailWithAttachments({
       secrets: emailSecrets,
-      to: recipientEmail,
+      to: recipients,
       subject: subject || `Purchase Order ${purchaseOrder.poNumber} from ${companyName}`,
       html,
       text,
@@ -192,7 +202,7 @@ The complete version has been provided as an attachment to this email.
         tenantId: user.tenantId,
         userId: user.id,
         type: 'OTHER',
-        description: `Purchase order ${purchaseOrder.poNumber} sent to ${recipientEmail}`,
+        description: `Purchase order ${purchaseOrder.poNumber} sent to ${recipients.join(', ')}`,
         purchaseOrderId: purchaseOrder.id,
       },
     })
@@ -205,6 +215,7 @@ The complete version has been provided as an attachment to this email.
 
     return NextResponse.json({
       message: 'Purchase order sent successfully',
+      recipients,
       purchaseOrder: {
         ...purchaseOrder,
         status: purchaseOrder.status === 'APPROVED' || purchaseOrder.status === 'DRAFT' ? 'ORDERED' : purchaseOrder.status,

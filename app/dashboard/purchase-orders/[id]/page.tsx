@@ -4,6 +4,9 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { ShoppingCart, Calendar, Building2, FileText, CheckCircle, XCircle, Send, Download, Edit, Package, AlertCircle, Trash2, Mail, Phone, Printer, Copy } from 'lucide-react'
 import Link from 'next/link'
@@ -98,6 +101,11 @@ export default function PurchaseOrderDetailPage() {
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState(false)
   const [duplicating, setDuplicating] = useState(false)
+  const [showSendModal, setShowSendModal] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [sendEmails, setSendEmails] = useState('')
+  const [sendSubject, setSendSubject] = useState('')
+  const [sendMessage, setSendMessage] = useState('')
 
   useEffect(() => {
     fetchPurchaseOrder()
@@ -155,12 +163,26 @@ export default function PurchaseOrderDetailPage() {
     }
   }
 
-  const handleSend = async () => {
-    const recipientEmail =
-      po?.vendorRef?.email ||
-      window.prompt('Enter the vendor email address:', '')?.trim()
-    if (!recipientEmail) return
+  const handleSend = () => {
+    if (!po) return
+    setSendEmails(po.vendorRef?.email || '')
+    setSendSubject(`Purchase Order ${po.poNumber}`)
+    setSendMessage('Please find our purchase order attached to this email. Thank You!')
+    setShowSendModal(true)
+  }
 
+  const submitSendPurchaseOrder = async () => {
+    if (!po || sending) return
+    const emails = sendEmails
+      .split(/[,\s;]+/g)
+      .map((v) => v.trim())
+      .filter(Boolean)
+    if (emails.length === 0) {
+      alert('Please enter at least one email address')
+      return
+    }
+
+    setSending(true)
     try {
       const token = localStorage.getItem('accessToken')
       const response = await fetch(`/api/purchase-orders/${params.id}/send`, {
@@ -170,20 +192,25 @@ export default function PurchaseOrderDetailPage() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          email: recipientEmail,
+          emails,
+          subject: sendSubject || `Purchase Order ${po.poNumber}`,
+          message: sendMessage,
         }),
       })
 
+      const data = await response.json().catch(() => ({}))
       if (response.ok) {
         alert('Purchase order sent successfully')
+        setShowSendModal(false)
         fetchPurchaseOrder()
       } else {
-        const error = await response.json()
-        alert(error.error || 'Failed to send purchase order')
+        alert(data.error || 'Failed to send purchase order')
       }
     } catch (error) {
       console.error('Error sending purchase order:', error)
       alert('Failed to send purchase order')
+    } finally {
+      setSending(false)
     }
   }
 
@@ -399,6 +426,46 @@ export default function PurchaseOrderDetailPage() {
 
   return (
     <div className="space-y-6">
+      <Dialog open={showSendModal} onOpenChange={setShowSendModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Send Purchase Order</DialogTitle>
+            <DialogDescription>
+              Edit recipients, subject, and message before sending. Use commas to send to multiple emails.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Recipient email(s)</Label>
+              <Input
+                value={sendEmails}
+                onChange={(e) => setSendEmails(e.target.value)}
+                placeholder="vendor@email.com, other@email.com"
+              />
+              <p className="text-xs text-muted-foreground">
+                Separate multiple emails with commas.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>Subject</Label>
+              <Input value={sendSubject} onChange={(e) => setSendSubject(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Message</Label>
+              <Input value={sendMessage} onChange={(e) => setSendMessage(e.target.value)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSendModal(false)} disabled={sending}>
+              Cancel
+            </Button>
+            <Button onClick={submitSendPurchaseOrder} disabled={sending || !sendEmails.trim()}>
+              {sending ? 'Sending...' : 'Send'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
