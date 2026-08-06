@@ -3224,20 +3224,30 @@ export async function syncPurchaseOrderToQuickBooks(tenantId: string, purchaseOr
           session!.realmId,
           `select * from Item where Name='${escapeQboQueryLiteral(name)}' maxresults 1`
         )
-        let itemId = found?.QueryResponse?.Item?.[0]?.Id
-          ? String(found.QueryResponse.Item[0].Id)
-          : null
-        if (!itemId) {
+        const existing = found?.QueryResponse?.Item?.[0]
+        // Only reuse items that already have a purchase/expense account.
+        // Service (and similar) sales items without ExpenseAccountRef cause
+        // QBO "Select an account for this transaction" on Purchase Orders.
+        if (existing?.Id && existing?.ExpenseAccountRef?.value) {
+          const itemId = String(existing.Id)
+          purchaseItemCache.set(cacheKey, itemId)
+          return itemId
+        }
+
+        if (!existing?.Id) {
           const created = await quickBooksService.createItem(session!.accessToken, session!.realmId, {
             Name: name,
             Type: 'NonInventory',
             ExpenseAccountRef: { value: expenseAccountId },
             Active: true,
           })
-          itemId = String(created?.Item?.Id || '') || null
+          const itemId = String(created?.Item?.Id || '') || null
+          if (itemId) purchaseItemCache.set(cacheKey, itemId)
+          return itemId
         }
-        if (itemId) purchaseItemCache.set(cacheKey, itemId)
-        return itemId
+
+        // Existing item is not purchase-capable — fall back to account-based line.
+        return null
       } catch (error) {
         console.warn(
           JSON.stringify({
@@ -3258,7 +3268,11 @@ export async function syncPurchaseOrderToQuickBooks(tenantId: string, purchaseOr
         const itemId = await ensurePurchaseItem(itemName)
         const details = String(li.details || '').trim()
         const notes = String(li.notes || '').trim()
-        const lineDescription = [details, notes].filter(Boolean).join(' — ') || li.description
+        const qty = toNumber(li.quantity)
+        const unit = toNumber(li.unitCost ?? li.unitPrice)
+        const lineDescription =
+          [details, notes].filter(Boolean).join(' — ') ||
+          `${li.description || itemName} (Qty ${qty} @ $${unit.toFixed(2)})`
         if (itemId) {
           lines.push({
             DetailType: 'ItemBasedExpenseLineDetail',
@@ -3266,11 +3280,9 @@ export async function syncPurchaseOrderToQuickBooks(tenantId: string, purchaseOr
             Amount: toNumber(li.total),
             ItemBasedExpenseLineDetail: {
               ItemRef: { value: itemId, name: itemName },
-              Qty: toNumber(li.quantity),
-              UnitPrice: toNumber(li.unitCost ?? li.unitPrice),
+              Qty: qty,
+              UnitPrice: unit,
               BillableStatus: 'NotBillable',
-              // Required for many Service/existing items that lack a purchase expense account
-              AccountRef: { value: expenseAccountId },
             },
           })
         } else {
