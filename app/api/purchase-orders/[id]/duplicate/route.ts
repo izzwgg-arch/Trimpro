@@ -99,6 +99,11 @@ export async function POST(
           taxRate: item.taxRate,
           sourceItemId: item.sourceItemId,
           sourceBundleId: item.sourceBundleId,
+          isVisibleToClient: (item as any).isVisibleToClient !== false,
+          showDescriptionToCustomer: (item as any).showDescriptionToCustomer !== false,
+          showDetailsToCustomer: (item as any).showDetailsToCustomer !== false,
+          showNotesToCustomer: (item as any).showNotesToCustomer !== false,
+          showPriceToCustomer: (item as any).showPriceToCustomer !== false,
         })),
       })
     }

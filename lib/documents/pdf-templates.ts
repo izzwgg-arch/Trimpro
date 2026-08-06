@@ -603,7 +603,8 @@ export function buildPurchaseOrderPdfHtml(
 ): string {
   const { shouldPrint = false } = options
   const lineItems = Array.isArray(purchaseOrder.lineItems) ? purchaseOrder.lineItems : []
-  const subtotal = lineItems.reduce((sum: number, item: AnyRecord) => {
+  const visibleLineItems = lineItems.filter((item: AnyRecord) => item.isVisibleToClient !== false)
+  const subtotal = visibleLineItems.reduce((sum: number, item: AnyRecord) => {
     return sum + Number(item.quantity) * Number(item.unitPrice)
   }, 0)
   const total = Number(purchaseOrder.total || 0)
@@ -618,15 +619,32 @@ export function buildPurchaseOrderPdfHtml(
   const deliveryAddress =
     String(purchaseOrder.deliveryAddress || '').trim() || jobSiteAddress || ''
   const vendorNotes = String(purchaseOrder.notes || '').trim()
-  const jobBlock = purchaseOrder.job
-    ? `
-        <div style="margin-bottom:8px;">
-          <div><strong>${escapeHtml(purchaseOrder.job.jobNumber)}</strong></div>
-          <div>${escapeHtml(purchaseOrder.job.title)}</div>
-          <div class="muted">Client: ${escapeHtml(purchaseOrder.job.client?.name || '')}</div>
-        </div>
-      `
-    : ''
+
+  const showItemCol = visibleLineItems.some((li: AnyRecord) => li.showDescriptionToCustomer !== false)
+  const showDetailsCol = visibleLineItems.some((li: AnyRecord) => li.showDetailsToCustomer !== false)
+  const showNotesCol = visibleLineItems.some((li: AnyRecord) => li.showNotesToCustomer !== false)
+  const showPriceCol = visibleLineItems.some((li: AnyRecord) => li.showPriceToCustomer !== false)
+
+  const buildPoRow = (item: AnyRecord) => {
+    const itemCell =
+      item.showDescriptionToCustomer !== false ? escapeHtmlMultiline(item.description) : ''
+    const detailsCell =
+      item.showDetailsToCustomer !== false ? escapeHtmlMultiline(item.details || '') : ''
+    const notesCell =
+      item.showNotesToCustomer !== false ? escapeHtmlMultiline(item.notes || '') : ''
+    const priceCell =
+      item.showPriceToCustomer !== false ? `$${Number(item.unitPrice).toFixed(2)}` : ''
+    const totalCell =
+      item.showPriceToCustomer !== false ? `$${Number(item.total).toFixed(2)}` : ''
+    return `<tr>
+      ${showItemCol ? `<td>${itemCell}</td>` : ''}
+      ${showDetailsCol ? `<td>${detailsCell}</td>` : ''}
+      ${showNotesCol ? `<td>${notesCell}</td>` : ''}
+      <td class="text-right">${Number(item.quantity).toFixed(2)}</td>
+      ${showPriceCol ? `<td class="text-right">${priceCell}</td>` : ''}
+      ${showPriceCol ? `<td class="text-right">${totalCell}</td>` : ''}
+    </tr>`
+  }
 
   return `
     <!DOCTYPE html>
@@ -637,16 +655,17 @@ export function buildPurchaseOrderPdfHtml(
         <style>${SHARED_DOC_CSS('#12344d', '#f5e7b8')}
           .po-info-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-columns: 1fr 1fr;
             gap: 16px;
-            margin-bottom: 22px;
+            margin-bottom: 16px;
             align-items: stretch;
           }
           .po-info-grid .panel {
             min-height: 100%;
           }
-          .line-details { color: #334155; font-size: 12px; margin-top: 4px; white-space: pre-wrap; }
-          .line-notes { color: #64748b; font-size: 12px; margin-top: 4px; white-space: pre-wrap; }
+          .po-notes-panel {
+            margin-bottom: 22px;
+          }
           .footer {
             margin-top: 22px;
             padding-top: 12px;
@@ -655,7 +674,7 @@ export function buildPurchaseOrderPdfHtml(
             color: #6b7280;
           }
           @media print {
-            .po-info-grid { grid-template-columns: 1fr 1fr 1fr; }
+            .po-info-grid { grid-template-columns: 1fr 1fr; }
           }
         </style>
         ${shouldPrint ? '<script>window.addEventListener("load", () => window.print());</script>' : ''}
@@ -684,57 +703,43 @@ export function buildPurchaseOrderPdfHtml(
 
           <div class="po-info-grid">
             <div class="panel">
-              <h3>Delivery Address</h3>
-              ${jobBlock}
-              ${
-                deliveryAddress
-                  ? `<div class="address-block">${escapeHtmlMultiline(deliveryAddress)}</div>`
-                  : '<div class="muted">No delivery address</div>'
-              }
-            </div>
-            <div class="panel">
-              <h3>Notes</h3>
-              ${
-                vendorNotes
-                  ? `<div style="white-space:pre-wrap;">${escapeHtml(vendorNotes)}</div>`
-                  : '<div class="muted">—</div>'
-              }
-            </div>
-            <div class="panel">
               <h3>Vendor</h3>
               <div><strong>${escapeHtml(purchaseOrder.vendorRef?.name || purchaseOrder.vendor || 'N/A')}</strong></div>
               ${purchaseOrder.vendorRef?.contactPerson ? `<div class="muted">Contact: ${escapeHtml(purchaseOrder.vendorRef.contactPerson)}</div>` : ''}
               ${purchaseOrder.vendorRef?.email ? `<div class="muted">${escapeHtml(purchaseOrder.vendorRef.email)}</div>` : ''}
               ${purchaseOrder.vendorRef?.phone ? `<div class="muted">${escapeHtml(purchaseOrder.vendorRef.phone)}</div>` : ''}
             </div>
+            <div class="panel">
+              <h3>Delivery Address</h3>
+              ${
+                deliveryAddress
+                  ? `<div class="address-block">${escapeHtmlMultiline(deliveryAddress)}</div>`
+                  : '<div class="muted">No delivery address</div>'
+              }
+            </div>
+          </div>
+          <div class="panel po-notes-panel">
+            <h3>Notes</h3>
+            ${
+              vendorNotes
+                ? `<div style="white-space:pre-wrap;">${escapeHtml(vendorNotes)}</div>`
+                : '<div class="muted">—</div>'
+            }
           </div>
 
           <table>
             <thead>
               <tr>
-                <th>Item</th>
+                ${showItemCol ? '<th>Item</th>' : ''}
+                ${showDetailsCol ? '<th>Description</th>' : ''}
+                ${showNotesCol ? '<th>Special notes</th>' : ''}
                 <th class="text-right">Quantity</th>
-                <th class="text-right">Unit Price</th>
-                <th class="text-right">Total</th>
+                ${showPriceCol ? '<th class="text-right">Unit Price</th>' : ''}
+                ${showPriceCol ? '<th class="text-right">Total</th>' : ''}
               </tr>
             </thead>
             <tbody>
-              ${lineItems
-                .map(
-                  (item: AnyRecord) => `
-                    <tr>
-                      <td>
-                        ${escapeHtmlMultiline(item.description)}
-                        ${item.details?.trim() ? `<div class="line-details"><strong>Description:</strong> ${escapeHtmlMultiline(item.details.trim())}</div>` : ''}
-                        ${item.notes?.trim() ? `<div class="line-notes"><strong>Special notes:</strong> ${escapeHtmlMultiline(item.notes.trim())}</div>` : ''}
-                      </td>
-                      <td class="text-right">${Number(item.quantity).toFixed(2)}</td>
-                      <td class="text-right">$${Number(item.unitPrice).toFixed(2)}</td>
-                      <td class="text-right">$${Number(item.total).toFixed(2)}</td>
-                    </tr>
-                  `
-                )
-                .join('')}
+              ${visibleLineItems.map((item: AnyRecord) => buildPoRow(item)).join('')}
             </tbody>
           </table>
 

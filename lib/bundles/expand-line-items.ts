@@ -238,6 +238,11 @@ export function bundleExpandedLineToPurchaseOrderLine(
     groupId: line.groupId,
     sourceItemId: line.sourceItemId,
     sourceBundleId: line.sourceBundleId ?? overrides?.sourceBundleId ?? null,
+    isVisibleToClient: true,
+    showDescriptionToCustomer: true,
+    showDetailsToCustomer: true,
+    showNotesToCustomer: true,
+    showPriceToCustomer: true,
   }
 }
 

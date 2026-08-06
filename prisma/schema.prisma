@@ -1231,6 +1231,12 @@ model PurchaseOrderLineItem {
   vendorId       String? // Vendor for this specific line item
   taxable        Boolean  @default(false)
   taxRate        Decimal? @db.Decimal(5, 4)
+  // Vendor-facing visibility (PDF / email attachment) — same pattern as estimate customer toggles
+  isVisibleToClient         Boolean @default(true)
+  showDescriptionToCustomer Boolean @default(true) // Item name
+  showDetailsToCustomer     Boolean @default(true) // Description (details)
+  showNotesToCustomer       Boolean @default(true) // Special notes
+  showPriceToCustomer       Boolean @default(true) // Unit price / cost on PDF
 
   purchaseOrder PurchaseOrder      @relation(fields: [poId], references: [id], onDelete: Cascade)
   group         DocumentLineGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)

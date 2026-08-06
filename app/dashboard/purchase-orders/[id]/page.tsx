@@ -51,6 +51,11 @@ interface PurchaseOrderDetail {
     quantity: number
     unitPrice: number
     total: number
+    isVisibleToClient?: boolean
+    showDescriptionToCustomer?: boolean
+    showDetailsToCustomer?: boolean
+    showNotesToCustomer?: boolean
+    showPriceToCustomer?: boolean
   }>
   activities: Array<{
     id: string
@@ -454,25 +459,61 @@ export default function PurchaseOrderDetailPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Delivery Address</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {po.job && (
-              <div>
-                <Link href={`/dashboard/jobs/${po.job.id}`} className="font-medium text-primary hover:underline">
-                  {po.job.jobNumber} - {po.job.title}
-                </Link>
-                <p className="text-sm text-gray-600 mt-1">Client: {po.job.client.name}</p>
-              </div>
-            )}
-            <p className="text-sm text-gray-700 whitespace-pre-line">
-              {po.deliveryAddress?.trim() || po.jobSiteAddress?.trim() || '—'}
-            </p>
-          </CardContent>
-        </Card>
+      <div className="space-y-4">
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center text-base">
+                <Building2 className="mr-2 h-4 w-4" />
+                Vendor
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {po.vendorRef ? (
+                <div className="space-y-1">
+                  <div>
+                    <strong>{po.vendorRef.name}</strong>
+                    {po.vendorRef.contactPerson && (
+                      <p className="text-sm text-gray-600">Contact: {po.vendorRef.contactPerson}</p>
+                    )}
+                  </div>
+                  {po.vendorRef.email && (
+                    <p className="text-sm text-gray-600">
+                      <Mail className="inline mr-1 h-4 w-4" />
+                      {po.vendorRef.email}
+                    </p>
+                  )}
+                  {po.vendorRef.phone && (
+                    <p className="text-sm text-gray-600">
+                      <Phone className="inline mr-1 h-4 w-4" />
+                      {po.vendorRef.phone}
+                    </p>
+                  )}
+                  {(po.vendorRef.address || po.vendorRef.city) && (
+                    <p className="text-sm text-gray-600">
+                      {[po.vendorRef.address, po.vendorRef.city, po.vendorRef.state, po.vendorRef.zipCode]
+                        .filter(Boolean)
+                        .join(', ')}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-600">{po.vendor || '—'}</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Delivery Address</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-gray-700 whitespace-pre-line">
+                {po.deliveryAddress?.trim() || po.jobSiteAddress?.trim() || '—'}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
 
         <Card>
           <CardHeader className="pb-2">
@@ -482,48 +523,6 @@ export default function PurchaseOrderDetailPage() {
             <p className="whitespace-pre-wrap text-sm text-gray-700">
               {po.notes?.trim() || '—'}
             </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center text-base">
-              <Building2 className="mr-2 h-4 w-4" />
-              Vendor
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {po.vendorRef ? (
-              <div className="space-y-1">
-                <div>
-                  <strong>{po.vendorRef.name}</strong>
-                  {po.vendorRef.contactPerson && (
-                    <p className="text-sm text-gray-600">Contact: {po.vendorRef.contactPerson}</p>
-                  )}
-                </div>
-                {po.vendorRef.email && (
-                  <p className="text-sm text-gray-600">
-                    <Mail className="inline mr-1 h-4 w-4" />
-                    {po.vendorRef.email}
-                  </p>
-                )}
-                {po.vendorRef.phone && (
-                  <p className="text-sm text-gray-600">
-                    <Phone className="inline mr-1 h-4 w-4" />
-                    {po.vendorRef.phone}
-                  </p>
-                )}
-                {(po.vendorRef.address || po.vendorRef.city) && (
-                  <p className="text-sm text-gray-600">
-                    {[po.vendorRef.address, po.vendorRef.city, po.vendorRef.state, po.vendorRef.zipCode]
-                      .filter(Boolean)
-                      .join(', ')}
-                  </p>
-                )}
-              </div>
-            ) : (
-              <p className="text-gray-600">{po.vendor}</p>
-            )}
           </CardContent>
         </Card>
       </div>
@@ -541,44 +540,65 @@ export default function PurchaseOrderDetailPage() {
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
-                <table className="w-full">
+                <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b">
                       <th className="text-left py-2 px-3">Item</th>
-                      <th className="text-right py-2 px-3">Quantity</th>
+                      <th className="text-left py-2 px-3">Description</th>
+                      <th className="text-left py-2 px-3">Special notes</th>
+                      <th className="text-right py-2 px-3">Qty</th>
                       <th className="text-right py-2 px-3">Unit Price</th>
                       <th className="text-right py-2 px-3">Total</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {po.lineItems.map((item) => (
-                      <tr key={item.id} className="border-b">
-                        <td className="py-2 px-3">
-                          <div>
-                            <span className="text-xs font-medium text-gray-500">Item</span>
-                            <div className="whitespace-pre-wrap break-words">{item.description}</div>
-                          </div>
-                          <div className="text-sm mt-1 whitespace-pre-wrap">
-                            <span className="text-xs font-medium text-gray-500">Description</span>
-                            <div className="text-gray-700">{item.details?.trim() || '—'}</div>
-                          </div>
-                          {item.notes?.trim() ? (
-                            <div className="text-sm mt-1 whitespace-pre-wrap">
-                              <span className="text-xs font-medium text-gray-500">Special notes</span>
-                              <div className="text-gray-500">{item.notes}</div>
-                            </div>
-                          ) : (
-                            <div className="text-sm mt-1">
-                              <span className="text-xs font-medium text-gray-500">Special notes</span>
-                              <div className="text-gray-500">—</div>
-                            </div>
-                          )}
-                        </td>
-                        <td className="text-right py-2 px-3">{item.quantity}</td>
-                        <td className="text-right py-2 px-3">{formatCurrency(item.unitPrice)}</td>
-                        <td className="text-right py-2 px-3 font-medium">{formatCurrency(item.total)}</td>
-                      </tr>
-                    ))}
+                    {po.lineItems.map((item) => {
+                      const hiddenFromVendor = item.isVisibleToClient === false
+                      return (
+                        <tr
+                          key={item.id}
+                          className={`border-b ${hiddenFromVendor ? 'opacity-50 bg-gray-50' : ''}`}
+                          title={hiddenFromVendor ? 'Hidden from vendor PDF' : undefined}
+                        >
+                          <td className="py-2 px-3 whitespace-pre-wrap break-words align-top">
+                            {item.showDescriptionToCustomer === false ? (
+                              <span className="text-gray-400 italic">Hidden</span>
+                            ) : (
+                              item.description
+                            )}
+                          </td>
+                          <td className="py-2 px-3 whitespace-pre-wrap break-words align-top text-gray-700">
+                            {item.showDetailsToCustomer === false ? (
+                              <span className="text-gray-400 italic">Hidden</span>
+                            ) : (
+                              item.details?.trim() || '—'
+                            )}
+                          </td>
+                          <td className="py-2 px-3 whitespace-pre-wrap break-words align-top text-gray-500">
+                            {item.showNotesToCustomer === false ? (
+                              <span className="text-gray-400 italic">Hidden</span>
+                            ) : (
+                              item.notes?.trim() || '—'
+                            )}
+                          </td>
+                          <td className="text-right py-2 px-3 align-top">{item.quantity}</td>
+                          <td className="text-right py-2 px-3 align-top">
+                            {item.showPriceToCustomer === false ? (
+                              <span className="text-gray-400 italic">Hidden</span>
+                            ) : (
+                              formatCurrency(item.unitPrice)
+                            )}
+                          </td>
+                          <td className="text-right py-2 px-3 font-medium align-top">
+                            {item.showPriceToCustomer === false ? (
+                              <span className="text-gray-400 italic">Hidden</span>
+                            ) : (
+                              formatCurrency(item.total)
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>

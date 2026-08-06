@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SearchableJobSelect } from '@/components/ui/searchable-job-select'
-import { Save, Plus, Trash2 } from 'lucide-react'
+import { Save, Plus, Trash2, Eye, EyeOff } from 'lucide-react'
 import Link from 'next/link'
 import { LineItemDragHandle } from '@/components/documents/line-item-drag-handle'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
@@ -58,6 +58,20 @@ interface LineItem {
   sourceItemId?: string | null
   sourceBundleId?: string | null
   tag?: string
+  // Vendor-facing visibility (PDF) — same pattern as estimates
+  isVisibleToClient?: boolean
+  showDescriptionToCustomer?: boolean
+  showDetailsToCustomer?: boolean
+  showNotesToCustomer?: boolean
+  showPriceToCustomer?: boolean
+}
+
+const defaultPoVisibility = {
+  isVisibleToClient: true,
+  showDescriptionToCustomer: true,
+  showDetailsToCustomer: true,
+  showNotesToCustomer: true,
+  showPriceToCustomer: true,
 }
 
 export default function NewPurchaseOrderPage() {
@@ -75,6 +89,7 @@ export default function NewPurchaseOrderPage() {
       description: '',
       quantity: '1',
       unitCost: '0',
+      ...defaultPoVisibility,
     },
   ])
   
@@ -205,6 +220,7 @@ export default function NewPurchaseOrderPage() {
         description: '',
         quantity: '1',
         unitCost: '0',
+        ...defaultPoVisibility,
       },
     ])
   }
@@ -226,6 +242,46 @@ export default function NewPurchaseOrderPage() {
       updated[index] = { ...updated[index], [field]: value }
       return updated
     })
+  }
+
+  const toggleVisibility = (
+    index: number,
+    field: 'description' | 'details' | 'notes' | 'price'
+  ) => {
+    const fieldMap = {
+      description: 'showDescriptionToCustomer',
+      details: 'showDetailsToCustomer',
+      notes: 'showNotesToCustomer',
+      price: 'showPriceToCustomer',
+    } as const
+    setLineItems((prev) => {
+      const updated = [...prev]
+      const key = fieldMap[field]
+      updated[index] = {
+        ...updated[index],
+        [key]: updated[index][key] === false ? true : false,
+      }
+      return updated
+    })
+  }
+
+  const toggleLineRowVisibility = (index: number) => {
+    setLineItems((prev) => {
+      const updated = [...prev]
+      updated[index] = {
+        ...updated[index],
+        isVisibleToClient: updated[index].isVisibleToClient === false ? true : false,
+      }
+      return updated
+    })
+  }
+
+  const setGroupLineItemsVisibility = (groupId: string, isVisibleToClient: boolean) => {
+    setLineItems((prev) =>
+      prev.map((item) =>
+        item.groupId === groupId && !item.isGroupHeader ? { ...item, isVisibleToClient } : item
+      )
+    )
   }
 
   const reorderLineItems = (fromIndex: number, toIndex: number) => {
@@ -361,6 +417,7 @@ export default function NewPurchaseOrderPage() {
           description: '',
           quantity: '1',
           unitCost: '0',
+          ...defaultPoVisibility,
         },
       ]
     })
@@ -415,6 +472,11 @@ export default function NewPurchaseOrderPage() {
           groupId: item.groupId || null,
           sourceItemId: item.sourceItemId || null,
           sourceBundleId: item.sourceBundleId || null,
+          isVisibleToClient: item.isVisibleToClient !== false,
+          showDescriptionToCustomer: item.showDescriptionToCustomer !== false,
+          showDetailsToCustomer: item.showDetailsToCustomer !== false,
+          showNotesToCustomer: item.showNotesToCustomer !== false,
+          showPriceToCustomer: item.showPriceToCustomer !== false,
         }))
 
       const groups = new Map<string, { name: string; sourceBundleId?: string }>()
@@ -661,10 +723,30 @@ export default function NewPurchaseOrderPage() {
                             : isInGroup
                             ? 'bg-purple-25 border-purple-100 ml-4'
                             : 'border-gray-300'
-                        }`}
+                        } ${!isGroupHeader && item.isVisibleToClient === false ? 'opacity-50 bg-gray-50' : ''}`}
                       >
                         <div className="flex flex-col gap-1 items-center shrink-0 self-center">
                           <LineItemDragHandle transferKey="text/line-index" index={index} />
+                          {!isGroupHeader && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => toggleLineRowVisibility(index)}
+                              title={
+                                item.isVisibleToClient !== false
+                                  ? 'Hide entire line from vendor PDF'
+                                  : 'Show line on vendor PDF'
+                              }
+                              className="p-1 h-6"
+                            >
+                              {item.isVisibleToClient !== false ? (
+                                <Eye className="h-3 w-3 text-gray-600" />
+                              ) : (
+                                <EyeOff className="h-3 w-3 text-gray-400" />
+                              )}
+                            </Button>
+                          )}
                         </div>
                         {isGroupHeader ? (
                           <div className="flex flex-1 min-w-0 items-center gap-2">
@@ -678,11 +760,61 @@ export default function NewPurchaseOrderPage() {
                             <span className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded">
                               Bundle
                             </span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() =>
+                                setGroupLineItemsVisibility(
+                                  item.groupId || '',
+                                  lineItems.some(
+                                    (li) =>
+                                      li.groupId === item.groupId &&
+                                      !li.isGroupHeader &&
+                                      li.isVisibleToClient === false
+                                  )
+                                )
+                              }
+                              title="Show or hide this whole bundle on the vendor PDF"
+                              className="p-1 h-7"
+                            >
+                              {lineItems.some(
+                                (li) =>
+                                  li.groupId === item.groupId &&
+                                  !li.isGroupHeader &&
+                                  li.isVisibleToClient === false
+                              ) ? (
+                                <EyeOff className="h-4 w-4 text-gray-400" />
+                              ) : (
+                                <Eye className="h-4 w-4 text-gray-600" />
+                              )}
+                            </Button>
                           </div>
                         ) : (
                           <>
                             <div className="min-w-[160px] flex-[1.2]">
-                              <Label className="text-xs text-gray-500 mb-1 block">Item</Label>
+                              <div className="flex items-center gap-1 mb-1">
+                                <Label className="text-xs text-gray-500">Item</Label>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  tabIndex={-1}
+                                  onClick={() => toggleVisibility(index, 'description')}
+                                  title={
+                                    item.showDescriptionToCustomer !== false
+                                      ? 'Hide item from vendor PDF'
+                                      : 'Show item on vendor PDF'
+                                  }
+                                  className="p-0.5 h-5 w-5"
+                                >
+                                  {item.showDescriptionToCustomer !== false ? (
+                                    <Eye className="h-3 w-3 text-gray-600" />
+                                  ) : (
+                                    <EyeOff className="h-3 w-3 text-gray-400" />
+                                  )}
+                                </Button>
+                              </div>
                               <FastPicker
                                 value={item.description}
                                 onChange={(value) => updateLineItem(index, 'description', value)}
@@ -699,7 +831,28 @@ export default function NewPurchaseOrderPage() {
                               />
                             </div>
                             <div className="min-w-[140px] flex-1">
-                              <Label className="text-xs text-gray-500 mb-1 block">Description</Label>
+                              <div className="flex items-center gap-1 mb-1">
+                                <Label className="text-xs text-gray-500">Description</Label>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  tabIndex={-1}
+                                  onClick={() => toggleVisibility(index, 'details')}
+                                  title={
+                                    item.showDetailsToCustomer !== false
+                                      ? 'Hide description from vendor PDF'
+                                      : 'Show description on vendor PDF'
+                                  }
+                                  className="p-0.5 h-5 w-5"
+                                >
+                                  {item.showDetailsToCustomer !== false ? (
+                                    <Eye className="h-3 w-3 text-gray-600" />
+                                  ) : (
+                                    <EyeOff className="h-3 w-3 text-gray-400" />
+                                  )}
+                                </Button>
+                              </div>
                               <Input
                                 value={item.details || ''}
                                 onChange={(e) => updateLineItem(index, 'details', e.target.value)}
@@ -707,7 +860,28 @@ export default function NewPurchaseOrderPage() {
                               />
                             </div>
                             <div className="min-w-[120px] flex-1">
-                              <Label className="text-xs text-gray-500 mb-1 block">Special notes</Label>
+                              <div className="flex items-center gap-1 mb-1">
+                                <Label className="text-xs text-gray-500">Special notes</Label>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  tabIndex={-1}
+                                  onClick={() => toggleVisibility(index, 'notes')}
+                                  title={
+                                    item.showNotesToCustomer !== false
+                                      ? 'Hide special notes from vendor PDF'
+                                      : 'Show special notes on vendor PDF'
+                                  }
+                                  className="p-0.5 h-5 w-5"
+                                >
+                                  {item.showNotesToCustomer !== false ? (
+                                    <Eye className="h-3 w-3 text-gray-600" />
+                                  ) : (
+                                    <EyeOff className="h-3 w-3 text-gray-400" />
+                                  )}
+                                </Button>
+                              </div>
                               <Input
                                 value={item.notes || ''}
                                 onChange={(e) => updateLineItem(index, 'notes', e.target.value)}
@@ -736,7 +910,28 @@ export default function NewPurchaseOrderPage() {
                               />
                             </div>
                             <div className="w-28 shrink-0">
-                              <Label className="text-xs text-gray-500 mb-1 block">Vendor Cost *</Label>
+                              <div className="flex items-center gap-1 mb-1">
+                                <Label className="text-xs text-gray-500">Vendor Cost *</Label>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  tabIndex={-1}
+                                  onClick={() => toggleVisibility(index, 'price')}
+                                  title={
+                                    item.showPriceToCustomer !== false
+                                      ? 'Hide price from vendor PDF'
+                                      : 'Show price on vendor PDF'
+                                  }
+                                  className="p-0.5 h-5 w-5"
+                                >
+                                  {item.showPriceToCustomer !== false ? (
+                                    <Eye className="h-3 w-3 text-gray-600" />
+                                  ) : (
+                                    <EyeOff className="h-3 w-3 text-gray-400" />
+                                  )}
+                                </Button>
+                              </div>
                               <Input
                                 type="number"
                                 step="0.01"

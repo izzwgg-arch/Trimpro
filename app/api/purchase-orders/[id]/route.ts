@@ -348,6 +348,11 @@ export async function PUT(
             notes: item.notes || null,
             sourceItemId: item.sourceItemId || null,
             sourceBundleId: item.sourceBundleId || null,
+            isVisibleToClient: item.isVisibleToClient !== false,
+            showDescriptionToCustomer: item.showDescriptionToCustomer !== false,
+            showDetailsToCustomer: item.showDetailsToCustomer !== false,
+            showNotesToCustomer: item.showNotesToCustomer !== false,
+            showPriceToCustomer: item.showPriceToCustomer !== false,
           },
         })
       }

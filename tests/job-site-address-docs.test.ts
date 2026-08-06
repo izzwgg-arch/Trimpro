@@ -39,7 +39,7 @@ test('invoice PDF includes Job Site Address label and multiline content', () => 
   assert.ok(html.includes('123 Main St<br/>Springfield, IL 62701'))
 })
 
-test('purchase order PDF includes Job Site Address label and multiline content', () => {
+test('purchase order PDF includes Delivery Address and multiline content', () => {
   const html = buildPurchaseOrderPdfHtml(
     {
       poNumber: 'PO-100',
@@ -64,8 +64,11 @@ test('purchase order PDF includes Job Site Address label and multiline content',
     { logoUrl: null, businessName: 'Trim Pro' }
   )
 
-  assert.ok(html.includes('Job Site Address'))
+  assert.ok(html.includes('Delivery Address'))
   assert.ok(html.includes('45 Oak Ave<br/>Suite 200, Denver, CO 80202'))
+  // Vendor-facing PO shows address only — not job name/number
+  assert.equal(html.includes('JOB-1'), false)
+  assert.equal(html.includes('Cabinet Install'), false)
 })
 
 test('documents omit Job Site Address section when missing', () => {
