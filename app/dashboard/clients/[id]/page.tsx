@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { formatCurrency, formatDate, formatPhoneNumber } from '@/lib/utils'
-import { Phone, Mail, MapPin, Building2, Calendar, FileText, DollarSign, Briefcase, MessageSquare, AlertCircle, CheckSquare, UserPlus, Edit, Plus, Trash2, Download, Printer, X, ChevronDown, ChevronRight } from 'lucide-react'
+import { Phone, Mail, MapPin, Building2, Calendar, FileText, DollarSign, Briefcase, MessageSquare, AlertCircle, CheckSquare, UserPlus, Edit, Plus, Trash2, Download, Printer, X, ChevronDown, ChevronRight, ShoppingCart } from 'lucide-react'
 import Link from 'next/link'
 import { AddressMapSection } from './map-section'
 import { usePermissions, hasPermission } from '@/hooks/usePermissions'
@@ -995,6 +995,10 @@ export default function ClientDetailPage() {
             <Button variant="outline" onClick={() => navigateWithReturn(router, `/dashboard/estimates/new?clientId=${clientId}`)}>
               <FileText className="mr-2 h-4 w-4" />
               New Estimate
+            </Button>
+            <Button variant="outline" onClick={() => navigateWithReturn(router, `/dashboard/purchase-orders/new`)}>
+              <ShoppingCart className="mr-2 h-4 w-4" />
+              New PO
             </Button>
             {canCreateRequest && (
               <Button variant="outline" onClick={() => navigateWithReturn(router, `/dashboard/requests/new?clientId=${clientId}`)}>

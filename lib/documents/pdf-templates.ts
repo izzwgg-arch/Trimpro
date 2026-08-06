@@ -618,6 +618,15 @@ export function buildPurchaseOrderPdfHtml(
   const deliveryAddress =
     String(purchaseOrder.deliveryAddress || '').trim() || jobSiteAddress || ''
   const vendorNotes = String(purchaseOrder.notes || '').trim()
+  const jobBlock = purchaseOrder.job
+    ? `
+        <div style="margin-bottom:8px;">
+          <div><strong>${escapeHtml(purchaseOrder.job.jobNumber)}</strong></div>
+          <div>${escapeHtml(purchaseOrder.job.title)}</div>
+          <div class="muted">Client: ${escapeHtml(purchaseOrder.job.client?.name || '')}</div>
+        </div>
+      `
+    : ''
 
   return `
     <!DOCTYPE html>
@@ -626,6 +635,16 @@ export function buildPurchaseOrderPdfHtml(
         <meta charset="utf-8">
         <title>Purchase Order ${escapeHtml(purchaseOrder.poNumber)}</title>
         <style>${SHARED_DOC_CSS('#12344d', '#f5e7b8')}
+          .po-info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 22px;
+            align-items: stretch;
+          }
+          .po-info-grid .panel {
+            min-height: 100%;
+          }
           .line-details { color: #334155; font-size: 12px; margin-top: 4px; white-space: pre-wrap; }
           .line-notes { color: #64748b; font-size: 12px; margin-top: 4px; white-space: pre-wrap; }
           .footer {
@@ -634,6 +653,9 @@ export function buildPurchaseOrderPdfHtml(
             border-top: 1px solid #e5e7eb;
             font-size: 12px;
             color: #6b7280;
+          }
+          @media print {
+            .po-info-grid { grid-template-columns: 1fr 1fr 1fr; }
           }
         </style>
         ${shouldPrint ? '<script>window.addEventListener("load", () => window.print());</script>' : ''}
@@ -660,28 +682,30 @@ export function buildPurchaseOrderPdfHtml(
             </div>
           </div>
 
-          <div class="grid">
+          <div class="po-info-grid">
+            <div class="panel">
+              <h3>Delivery Address</h3>
+              ${jobBlock}
+              ${
+                deliveryAddress
+                  ? `<div class="address-block">${escapeHtmlMultiline(deliveryAddress)}</div>`
+                  : '<div class="muted">No delivery address</div>'
+              }
+            </div>
+            <div class="panel">
+              <h3>Notes</h3>
+              ${
+                vendorNotes
+                  ? `<div style="white-space:pre-wrap;">${escapeHtml(vendorNotes)}</div>`
+                  : '<div class="muted">—</div>'
+              }
+            </div>
             <div class="panel">
               <h3>Vendor</h3>
               <div><strong>${escapeHtml(purchaseOrder.vendorRef?.name || purchaseOrder.vendor || 'N/A')}</strong></div>
               ${purchaseOrder.vendorRef?.contactPerson ? `<div class="muted">Contact: ${escapeHtml(purchaseOrder.vendorRef.contactPerson)}</div>` : ''}
               ${purchaseOrder.vendorRef?.email ? `<div class="muted">${escapeHtml(purchaseOrder.vendorRef.email)}</div>` : ''}
               ${purchaseOrder.vendorRef?.phone ? `<div class="muted">${escapeHtml(purchaseOrder.vendorRef.phone)}</div>` : ''}
-            </div>
-            <div class="panel">
-              <h3>Job</h3>
-              ${
-                purchaseOrder.job
-                  ? `
-                    <div><strong>${escapeHtml(purchaseOrder.job.jobNumber)}</strong></div>
-                    <div>${escapeHtml(purchaseOrder.job.title)}</div>
-                    <div class="muted">Client: ${escapeHtml(purchaseOrder.job.client?.name || '')}</div>
-                    ${deliveryAddress ? `<div class="muted" style="margin-top:10px;font-weight:600;">Delivery Address</div><div class="address-block">${escapeHtmlMultiline(deliveryAddress)}</div>` : ''}
-                  `
-                  : deliveryAddress
-                    ? `<div class="muted" style="font-weight:600;">Delivery Address</div><div class="address-block">${escapeHtmlMultiline(deliveryAddress)}</div>`
-                    : '<div class="muted">No linked job</div>'
-              }
             </div>
           </div>
 
@@ -713,13 +737,6 @@ export function buildPurchaseOrderPdfHtml(
                 .join('')}
             </tbody>
           </table>
-
-          ${vendorNotes ? `
-            <div class="panel" style="margin-top:18px;">
-              <h3>Notes</h3>
-              <div style="white-space:pre-wrap;">${escapeHtml(vendorNotes)}</div>
-            </div>
-          ` : ''}
 
           <div class="summary">
             <h4>Summary</h4>

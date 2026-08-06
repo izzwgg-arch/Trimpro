@@ -655,7 +655,7 @@ export default function NewPurchaseOrderPage() {
                           if (!Number.isFinite(from)) return
                           reorderLineItems(from, index)
                         }}
-                        className={`flex gap-2 ${isGroupHeader ? 'items-center' : 'items-start'} p-2 rounded border ${
+                        className={`flex flex-wrap items-start gap-2 p-2 rounded border ${
                           isGroupHeader
                             ? 'bg-purple-50 border-purple-200'
                             : isInGroup
@@ -663,71 +663,59 @@ export default function NewPurchaseOrderPage() {
                             : 'border-gray-300'
                         }`}
                       >
-                        <div
-                          className={`flex flex-col gap-1 items-center shrink-0 ${isGroupHeader ? 'self-center' : 'self-start pt-1'}`}
-                        >
+                        <div className="flex flex-col gap-1 items-center shrink-0 self-center">
                           <LineItemDragHandle transferKey="text/line-index" index={index} />
                         </div>
-                        <div className="flex-1 min-w-0 flex flex-col gap-1">
-                          {isGroupHeader ? (
-                            <div className="flex items-center gap-2">
-                              <Input
+                        {isGroupHeader ? (
+                          <div className="flex flex-1 min-w-0 items-center gap-2">
+                            <Input
+                              value={item.description}
+                              onChange={(e) => updateLineItem(index, 'description', e.target.value)}
+                              placeholder="Bundle name"
+                              className="flex-1 font-semibold"
+                              readOnly
+                            />
+                            <span className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded">
+                              Bundle
+                            </span>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="min-w-[160px] flex-[1.2]">
+                              <Label className="text-xs text-gray-500 mb-1 block">Item</Label>
+                              <FastPicker
                                 value={item.description}
-                                onChange={(e) => updateLineItem(index, 'description', e.target.value)}
-                                placeholder="Bundle name"
-                                className="flex-1 font-semibold"
-                                readOnly
+                                onChange={(value) => updateLineItem(index, 'description', value)}
+                                onSelect={(selectedItem) => handleItemSelect(selectedItem, index)}
+                                onNextLine={() => handleNextLine(index)}
+                                items={pickerItems}
+                                bundles={pickerBundles}
+                                placeholder="Type to search items..."
+                                className="w-full"
+                                showTagColumn
+                                inputRef={(el) => {
+                                  pickerInputRefs.current[index] = el
+                                }}
                               />
-                              <span className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded">
-                                Bundle
-                              </span>
                             </div>
-                          ) : (
-                            <>
-                              <div>
-                                <Label className="text-xs text-gray-500 mb-1 block">Item</Label>
-                                <FastPicker
-                                  value={item.description}
-                                  onChange={(value) => updateLineItem(index, 'description', value)}
-                                  onSelect={(selectedItem) => handleItemSelect(selectedItem, index)}
-                                  onNextLine={() => handleNextLine(index)}
-                                  items={pickerItems}
-                                  bundles={pickerBundles}
-                                  placeholder="Type to search items..."
-                                  className="w-full"
-                                  showTagColumn
-                                  inputRef={(el) => {
-                                    pickerInputRefs.current[index] = el
-                                  }}
-                                />
-                              </div>
-                              <div>
-                                <Label className="text-xs text-gray-500 mb-1 block">Description</Label>
-                                <textarea
-                                  value={item.details || ''}
-                                  onChange={(e) => updateLineItem(index, 'details', e.target.value)}
-                                  placeholder="Description"
-                                  rows={2}
-                                  className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
-                                />
-                              </div>
-                              <div>
-                                <Label className="text-xs text-gray-500 mb-1 block">Special notes</Label>
-                                <textarea
-                                  value={item.notes || ''}
-                                  onChange={(e) => updateLineItem(index, 'notes', e.target.value)}
-                                  placeholder="Special notes"
-                                  rows={2}
-                                  className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
-                                />
-                              </div>
-                            </>
-                          )}
-                        </div>
-
-                        {!isGroupHeader && (
-                          <div className="flex gap-2 items-end shrink-0">
-                            <div className="w-20">
+                            <div className="min-w-[140px] flex-1">
+                              <Label className="text-xs text-gray-500 mb-1 block">Description</Label>
+                              <Input
+                                value={item.details || ''}
+                                onChange={(e) => updateLineItem(index, 'details', e.target.value)}
+                                placeholder="Description"
+                              />
+                            </div>
+                            <div className="min-w-[120px] flex-1">
+                              <Label className="text-xs text-gray-500 mb-1 block">Special notes</Label>
+                              <Input
+                                value={item.notes || ''}
+                                onChange={(e) => updateLineItem(index, 'notes', e.target.value)}
+                                placeholder="Special notes"
+                              />
+                            </div>
+                            <div className="w-20 shrink-0">
+                              <Label className="text-xs text-gray-500 mb-1 block">Qty</Label>
                               <Input
                                 type="number"
                                 step="0.01"
@@ -738,8 +726,7 @@ export default function NewPurchaseOrderPage() {
                                 required
                               />
                             </div>
-
-                            <div className="w-36">
+                            <div className="w-28 shrink-0">
                               <Label className="text-xs text-gray-500 mb-1 block">Tag</Label>
                               <Input
                                 value={item.tag || ''}
@@ -748,8 +735,7 @@ export default function NewPurchaseOrderPage() {
                                 onChange={(e) => updateLineItem(index, 'tag', e.target.value)}
                               />
                             </div>
-
-                            <div className="w-32">
+                            <div className="w-28 shrink-0">
                               <Label className="text-xs text-gray-500 mb-1 block">Vendor Cost *</Label>
                               <Input
                                 type="number"
@@ -762,9 +748,8 @@ export default function NewPurchaseOrderPage() {
                                 className="font-semibold"
                               />
                             </div>
-
                             {item.unitPrice && parseFloat(item.unitPrice) > 0 && (
-                              <div className="w-28">
+                              <div className="w-24 shrink-0">
                                 <Label className="text-xs text-gray-400 mb-1 block">Sale Price</Label>
                                 <Input
                                   type="number"
@@ -778,7 +763,7 @@ export default function NewPurchaseOrderPage() {
                                 />
                               </div>
                             )}
-                          </div>
+                          </>
                         )}
 
                         {lineItems.length > 1 && !isGroupHeader && (
@@ -786,6 +771,7 @@ export default function NewPurchaseOrderPage() {
                             type="button"
                             variant="ghost"
                             size="sm"
+                            className="shrink-0 self-center"
                             onClick={() => {
                               if (item.groupId) {
                                 setLineItems(lineItems.filter((li, i) => li.groupId !== item.groupId || i === index))

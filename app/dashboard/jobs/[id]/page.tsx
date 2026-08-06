@@ -7,7 +7,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils'
-import { Briefcase, Calendar, DollarSign, Users, MapPin, FileText, CheckSquare, AlertCircle, Phone, MessageSquare, Mail, Edit, Plus, Building2, Trash2, Copy, Clock, Link2 } from 'lucide-react'
+import { Briefcase, Calendar, DollarSign, Users, MapPin, FileText, CheckSquare, AlertCircle, Phone, MessageSquare, Mail, Edit, Plus, Building2, Trash2, Copy, Clock, Link2, ShoppingCart } from 'lucide-react'
 import { JobThreadDialog } from '@/components/messages/JobThreadDialog'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
@@ -1049,6 +1049,15 @@ export default function JobDetailPage() {
             >
               <DollarSign className="mr-1.5 h-3.5 w-3.5" />
               New Invoice
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs px-2"
+              onClick={() => navigateWithReturn(router, `/dashboard/purchase-orders/new?jobId=${jobId}`)}
+            >
+              <ShoppingCart className="mr-1.5 h-3.5 w-3.5" />
+              New PO
             </Button>
             <Button
               variant="outline"

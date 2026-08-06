@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { ShoppingCart, Calendar, DollarSign, Building2, FileText, CheckCircle, XCircle, Send, Download, Edit, Package, AlertCircle, Trash2, Mail, Phone, Briefcase, Printer, Copy } from 'lucide-react'
+import { ShoppingCart, Calendar, Building2, FileText, CheckCircle, XCircle, Send, Download, Edit, Package, AlertCircle, Trash2, Mail, Phone, Printer, Copy } from 'lucide-react'
 import Link from 'next/link'
 import { DocumentAttachments } from '@/components/common/document-attachments'
 
@@ -454,52 +454,83 @@ export default function PurchaseOrderDetailPage() {
         </div>
       </div>
 
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Delivery Address</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {po.job && (
+              <div>
+                <Link href={`/dashboard/jobs/${po.job.id}`} className="font-medium text-primary hover:underline">
+                  {po.job.jobNumber} - {po.job.title}
+                </Link>
+                <p className="text-sm text-gray-600 mt-1">Client: {po.job.client.name}</p>
+              </div>
+            )}
+            <p className="text-sm text-gray-700 whitespace-pre-line">
+              {po.deliveryAddress?.trim() || po.jobSiteAddress?.trim() || '—'}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Notes to Vendor</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="whitespace-pre-wrap text-sm text-gray-700">
+              {po.notes?.trim() || '—'}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center text-base">
+              <Building2 className="mr-2 h-4 w-4" />
+              Vendor
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {po.vendorRef ? (
+              <div className="space-y-1">
+                <div>
+                  <strong>{po.vendorRef.name}</strong>
+                  {po.vendorRef.contactPerson && (
+                    <p className="text-sm text-gray-600">Contact: {po.vendorRef.contactPerson}</p>
+                  )}
+                </div>
+                {po.vendorRef.email && (
+                  <p className="text-sm text-gray-600">
+                    <Mail className="inline mr-1 h-4 w-4" />
+                    {po.vendorRef.email}
+                  </p>
+                )}
+                {po.vendorRef.phone && (
+                  <p className="text-sm text-gray-600">
+                    <Phone className="inline mr-1 h-4 w-4" />
+                    {po.vendorRef.phone}
+                  </p>
+                )}
+                {(po.vendorRef.address || po.vendorRef.city) && (
+                  <p className="text-sm text-gray-600">
+                    {[po.vendorRef.address, po.vendorRef.city, po.vendorRef.state, po.vendorRef.zipCode]
+                      .filter(Boolean)
+                      .join(', ')}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="text-gray-600">{po.vendor}</p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
       <div className="grid gap-6 md:grid-cols-3">
         {/* Main Content */}
         <div className="md:col-span-2 space-y-6">
-          {/* Vendor Information */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Building2 className="mr-2 h-5 w-5" />
-                Vendor Information
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {po.vendorRef ? (
-                <div className="space-y-2">
-                  <div>
-                    <strong>{po.vendorRef.name}</strong>
-                    {po.vendorRef.contactPerson && (
-                      <p className="text-sm text-gray-600">Contact: {po.vendorRef.contactPerson}</p>
-                    )}
-                  </div>
-                  {po.vendorRef.email && (
-                    <p className="text-sm text-gray-600">
-                      <Mail className="inline mr-1 h-4 w-4" />
-                      {po.vendorRef.email}
-                    </p>
-                  )}
-                  {po.vendorRef.phone && (
-                    <p className="text-sm text-gray-600">
-                      <Phone className="inline mr-1 h-4 w-4" />
-                      {po.vendorRef.phone}
-                    </p>
-                  )}
-                  {(po.vendorRef.address || po.vendorRef.city) && (
-                    <p className="text-sm text-gray-600">
-                      {[po.vendorRef.address, po.vendorRef.city, po.vendorRef.state, po.vendorRef.zipCode]
-                        .filter(Boolean)
-                        .join(', ')}
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <p className="text-gray-600">{po.vendor}</p>
-              )}
-            </CardContent>
-          </Card>
-
           {/* Line Items */}
           <Card>
             <CardHeader>
@@ -553,17 +584,6 @@ export default function PurchaseOrderDetailPage() {
               </div>
             </CardContent>
           </Card>
-
-          {po.notes?.trim() && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Notes to Vendor</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="whitespace-pre-wrap text-sm text-gray-700">{po.notes}</p>
-              </CardContent>
-            </Card>
-          )}
 
           {po.internalNotes?.trim() && (
             <Card className="border-amber-200">
@@ -667,37 +687,6 @@ export default function PurchaseOrderDetailPage() {
               )}
             </CardContent>
           </Card>
-
-          {/* Linked Job */}
-          {po.job && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Briefcase className="mr-2 h-5 w-5" />
-                  Linked Job
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Link href={`/dashboard/jobs/${po.job.id}`} className="text-primary hover:underline">
-                  {po.job.jobNumber} - {po.job.title}
-                </Link>
-                <p className="text-sm text-gray-600 mt-1">Client: {po.job.client.name}</p>
-              </CardContent>
-            </Card>
-          )}
-
-          {(po.deliveryAddress?.trim() || po.jobSiteAddress?.trim()) && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Delivery Address</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-gray-700 whitespace-pre-line">
-                  {po.deliveryAddress?.trim() || po.jobSiteAddress}
-                </p>
-              </CardContent>
-            </Card>
-          )}
         </div>
       </div>
     </div>

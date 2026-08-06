@@ -6,19 +6,12 @@ import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { sendEmailWithAttachments } from '@/lib/integrations/providers/email'
 import { isValidEmail } from '@/lib/email'
+import { getEmailBranding } from '@/lib/email/branding'
+import { buildPurchaseOrderEmail } from '@/lib/email/templates/purchase-order'
 import { renderPurchaseOrderEmailPdfAttachment } from '@/lib/documents/email-pdf-attachments'
 import { loadEmailEntityAttachments } from '@/lib/documents/email-entity-attachments'
 
 export const runtime = 'nodejs'
-
-function escapeHtml(value: unknown) {
-  return String(value || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
 
 export async function POST(
   request: NextRequest,
@@ -87,11 +80,22 @@ export async function POST(
       return NextResponse.json({ error: 'Invalid vendor email address' }, { status: 400 })
     }
 
-    // Calculate totals
-    const subtotal = purchaseOrder.lineItems.reduce((sum, item) => {
-      return sum + (Number(item.quantity) * Number(item.unitPrice))
-    }, 0)
-    const total = Number(purchaseOrder.total)
+    const total = Number(purchaseOrder.total).toFixed(2)
+    const vendorCompany =
+      purchaseOrder.vendorRef?.name || purchaseOrder.vendor || 'Vendor'
+    const vendorName =
+      purchaseOrder.vendorRef?.contactPerson || vendorCompany
+    const orderDate = purchaseOrder.orderDate
+      ? new Date(purchaseOrder.orderDate).toLocaleDateString('en-US', {
+          month: '2-digit',
+          day: '2-digit',
+          year: 'numeric',
+        })
+      : new Date().toLocaleDateString('en-US', {
+          month: '2-digit',
+          day: '2-digit',
+          year: 'numeric',
+        })
 
     const emailSecrets = await getIntegrationSecrets(user.tenantId, 'email')
     if (!emailSecrets) {
@@ -101,96 +105,65 @@ export async function POST(
       )
     }
 
+    const emailBranding = await getEmailBranding(user.tenantId)
+    const logoUrl = emailBranding?.emailLogoUrl || emailBranding?.webLogoUrl || ''
+    const companyName =
+      (emailBranding as { businessName?: string; companyName?: string } | null)?.businessName ||
+      (emailBranding as { companyName?: string } | null)?.companyName ||
+      'Trim Pro'
+
+    const senderUser = await prisma.user.findFirst({
+      where: { id: user.id, tenantId: user.tenantId },
+      select: { firstName: true, lastName: true, email: true, phone: true },
+    })
+    const senderName = senderUser
+      ? `${senderUser.firstName} ${senderUser.lastName}`.trim()
+      : 'Purchasing'
+    const senderPhone = senderUser?.phone || undefined
+    const senderEmail = senderUser?.email || user.email || undefined
+
     const pdfAttachment = await renderPurchaseOrderEmailPdfAttachment(purchaseOrder, {
-      logoUrl: process.env.PDF_LOGO_URL || process.env.NEXT_PUBLIC_PDF_LOGO_URL || null,
-      businessName: 'Trim Pro',
+      logoUrl: process.env.PDF_LOGO_URL || process.env.NEXT_PUBLIC_PDF_LOGO_URL || logoUrl || null,
+      businessName: companyName,
     })
     const uploadedAttachments = await loadEmailEntityAttachments({
       tenantId: user.tenantId,
       entityType: 'purchase_order',
       entityId: purchaseOrder.id,
     })
-    const documentNotes = purchaseOrder.notes?.trim() || ''
-    const html = `
-          <html>
-            <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-              <h2>Purchase Order ${purchaseOrder.poNumber}</h2>
-              ${message ? `<p>${escapeHtml(message)}</p>` : ''}
-              <p>Dear ${escapeHtml(purchaseOrder.vendorRef?.contactPerson || purchaseOrder.vendorRef?.name || 'Vendor')},</p>
-              <p>Please find attached purchase order ${purchaseOrder.poNumber}.</p>
-              ${documentNotes ? `<h3>Notes:</h3><p style="white-space:pre-wrap;">${escapeHtml(documentNotes)}</p>` : ''}
-              <h3>Order Summary:</h3>
-              <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
-                <thead>
-                  <tr style="background-color: #f4f4f4;">
-                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Item</th>
-                    <th style="padding: 10px; text-align: right; border: 1px solid #ddd;">Quantity</th>
-                    <th style="padding: 10px; text-align: right; border: 1px solid #ddd;">Unit Price</th>
-                    <th style="padding: 10px; text-align: right; border: 1px solid #ddd;">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${purchaseOrder.lineItems.map((item) => `
-                    <tr>
-                      <td style="padding: 10px; border: 1px solid #ddd;">
-                        ${escapeHtml(item.description)}
-                        ${item.details?.trim() ? `<div style="font-size:12px;color:#334155;margin-top:4px;"><strong>Description:</strong> ${escapeHtml(item.details.trim())}</div>` : ''}
-                        ${item.notes?.trim() ? `<div style="font-size:12px;color:#64748b;margin-top:4px;"><strong>Special notes:</strong> ${escapeHtml(item.notes.trim())}</div>` : ''}
-                      </td>
-                      <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">${item.quantity}</td>
-                      <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">$${Number(item.unitPrice).toFixed(2)}</td>
-                      <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">$${Number(item.total).toFixed(2)}</td>
-                    </tr>
-                  `).join('')}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colspan="3" style="padding: 10px; text-align: right; border: 1px solid #ddd; font-weight: bold;">Subtotal:</td>
-                    <td style="padding: 10px; text-align: right; border: 1px solid #ddd; font-weight: bold;">$${subtotal.toFixed(2)}</td>
-                  </tr>
-                  <tr>
-                    <td colspan="3" style="padding: 10px; text-align: right; border: 1px solid #ddd; font-weight: bold;">Total:</td>
-                    <td style="padding: 10px; text-align: right; border: 1px solid #ddd; font-weight: bold;">$${total.toFixed(2)}</td>
-                  </tr>
-                </tfoot>
-              </table>
-              ${purchaseOrder.expectedDate ? `<p><strong>Expected Delivery Date:</strong> ${new Date(purchaseOrder.expectedDate).toLocaleDateString()}</p>` : ''}
-              <p>Thank you for your business.</p>
-            </body>
-          </html>
-        `
+    const html = buildPurchaseOrderEmail({
+      poNumber: purchaseOrder.poNumber,
+      vendorName,
+      total: `$${total}`,
+      orderDate,
+      message: message ? String(message) : undefined,
+      senderName,
+      senderRole: 'Purchasing',
+      senderPhone,
+      senderEmail,
+    })
     const text = `
-          Purchase Order ${purchaseOrder.poNumber}
-          
-          ${message || ''}
-          
-          Dear ${purchaseOrder.vendorRef?.contactPerson || purchaseOrder.vendorRef?.name || 'Vendor'},
-          
-          Please find attached purchase order ${purchaseOrder.poNumber}.
+Dear ${vendorName},
 
-          ${documentNotes ? `Notes:\n${documentNotes}\n` : ''}
-          
-          Order Summary:
-          ${purchaseOrder.lineItems.map((item) => {
-            const detailLines = [
-              item.details?.trim() ? `  Description: ${item.details.trim()}` : '',
-              item.notes?.trim() ? `  Special notes: ${item.notes.trim()}` : '',
-            ].filter(Boolean)
-            const desc = [item.description, ...detailLines].join('\n')
-            return `${desc} - Qty: ${item.quantity} @ $${Number(item.unitPrice).toFixed(2)} = $${Number(item.total).toFixed(2)}`
-          }).join('\n')}
-          
-          Subtotal: $${subtotal.toFixed(2)}
-          Total: $${total.toFixed(2)}
-          ${purchaseOrder.expectedDate ? `Expected Delivery: ${new Date(purchaseOrder.expectedDate).toLocaleDateString()}` : ''}
-          
-          Thank you for your business.
-        `
+${message?.trim() || 'Please find our purchase order attached to this email. Thank You!'}
+
+${senderName} / Purchasing
+${senderPhone ? `P - ${senderPhone}` : ''}
+${senderEmail ? `E - ${senderEmail}` : ''}
+
+----------------------- Purchase Order Summary -----------------------
+Purchase Order #: ${purchaseOrder.poNumber}
+Purchase Order Date: ${orderDate}
+Total: $${total}
+
+The complete version has been provided as an attachment to this email.
+----------------------------------------------------------
+`.trim()
 
     const sendResult = await sendEmailWithAttachments({
       secrets: emailSecrets,
       to: recipientEmail,
-      subject: subject || `Purchase Order ${purchaseOrder.poNumber} from Trim Pro`,
+      subject: subject || `Purchase Order ${purchaseOrder.poNumber} from ${companyName}`,
       html,
       text,
       attachments: [pdfAttachment, ...uploadedAttachments],
