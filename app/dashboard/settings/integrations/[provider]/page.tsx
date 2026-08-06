@@ -964,6 +964,11 @@ export default function IntegrationProviderPage() {
                       Import Estimate by ID
                     </Button>
                   </Link>
+                  <Link href="/dashboard/settings/integrations/quickbooks/import-credit-memo">
+                    <Button variant="outline">
+                      Import Credit Memo by ID
+                    </Button>
+                  </Link>
                   <Button onClick={handleSyncQboBalances} disabled={syncingBalances} variant="outline">
                     {syncingBalances ? 'Syncing...' : 'Sync QB Balances'}
                   </Button>
