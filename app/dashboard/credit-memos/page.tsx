@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { Plus, Search } from 'lucide-react'
+import { Plus, Search, Download } from 'lucide-react'
 import Link from 'next/link'
 
 interface CreditMemoRow {
@@ -38,6 +38,7 @@ export default function CreditMemosPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
+  const [qboImporting, setQboImporting] = useState(false)
 
   const fetchRows = async () => {
     try {
@@ -67,19 +68,78 @@ export default function CreditMemosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status])
 
+  const handleImportFromQuickBooks = async () => {
+    if (
+      !confirm(
+        'Import open credit memos from QuickBooks?\n\n' +
+          '• Creates local credit memos for QB credits with remaining balance\n' +
+          '• Updates already-imported credit memos\n' +
+          '• Customers must already be mapped in TrimPro'
+      )
+    ) {
+      return
+    }
+    setQboImporting(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const res = await fetch('/api/credit-memos/import-quickbooks', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        alert(data.error || 'QuickBooks credit memo import failed.')
+        return
+      }
+      alert(
+        [
+          `QuickBooks credit memos: ${data.fetchedFromQuickBooks || 0} fetched.`,
+          `Created ${data.created || 0}, updated ${data.updated || 0}.`,
+          data.skippedMissingClient
+            ? `Skipped ${data.skippedMissingClient} (no client mapping).`
+            : null,
+          data.skippedZeroBalance
+            ? `Skipped ${data.skippedZeroBalance} fully applied.`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(' ')
+      )
+      if (Array.isArray(data.errors) && data.errors.length) {
+        console.warn('Credit memo import errors:', data.errors)
+      }
+      await fetchRows()
+    } catch (e) {
+      console.error(e)
+      alert('QuickBooks credit memo import failed.')
+    } finally {
+      setQboImporting(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Credit Memos</h1>
           <p className="mt-1 text-gray-600">Issue and apply customer credits</p>
         </div>
-        <Link href="/dashboard/credit-memos/new">
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            New Credit Memo
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => void handleImportFromQuickBooks()}
+            disabled={qboImporting}
+          >
+            <Download className="mr-2 h-4 w-4" />
+            {qboImporting ? 'Importing…' : 'Import from QuickBooks'}
           </Button>
-        </Link>
+          <Link href="/dashboard/credit-memos/new">
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              New Credit Memo
+            </Button>
+          </Link>
+        </div>
       </div>
 
       <Card>
