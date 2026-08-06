@@ -30,6 +30,7 @@ model Tenant {
   jobs                   Job[]
   estimates              Estimate[]
   invoices               Invoice[]
+  creditMemos            CreditMemo[]
   purchaseOrders         PurchaseOrder[]
   vendors                Vendor[]
   vendorContacts         VendorContact[]
@@ -236,6 +237,7 @@ model Client {
   leads          Lead[]
   estimates      Estimate[]
   invoices       Invoice[]
+  creditMemos    CreditMemo[]
   purchaseOrders PurchaseOrder[]
   tasks          Task[]
   issues         Issue[]
@@ -447,6 +449,7 @@ model Job {
   addresses      Address[]
   estimates      Estimate[]
   invoices       Invoice[]
+  creditMemos    CreditMemo[]
   purchaseOrders PurchaseOrder[]
   assignments    JobAssignment[]
   tasks          Task[]
@@ -845,6 +848,8 @@ model Invoice {
   activities          Activity[]
   paymentIntents      InvoicePaymentIntent[]
   lineItemSources     InvoiceLineItemSource[]
+  creditMemoApplications CreditMemoApplication[]
+  sourceCreditMemos   CreditMemo[] @relation("CreditMemoSourceInvoice")
 
   // QuickBooks
   qboSyncId String?   @unique
@@ -935,6 +940,100 @@ model InvoiceOptionalLineItem {
 }
 
 // ============================================
+// CREDIT MEMOS
+// ============================================
+
+enum CreditMemoStatus {
+  DRAFT
+  SENT
+  PARTIALLY_APPLIED
+  APPLIED
+  VOID
+}
+
+model CreditMemo {
+  id               String          @id @default(cuid())
+  tenantId         String
+  clientId         String
+  jobId            String?
+  sourceInvoiceId  String?
+  creditMemoNumber String          @unique
+  title            String          @default("Credit Memo")
+  status           CreditMemoStatus @default(DRAFT)
+
+  subtotal         Decimal @db.Decimal(10, 2)
+  taxRate          Decimal? @default(0) @db.Decimal(5, 4)
+  taxAmount        Decimal? @default(0) @db.Decimal(10, 2)
+  total            Decimal @db.Decimal(10, 2)
+  appliedAmount    Decimal @default(0) @db.Decimal(10, 2)
+  remainingCredit  Decimal @db.Decimal(10, 2)
+
+  creditMemoDate   DateTime @default(now())
+  sentAt           DateTime?
+  voidedAt         DateTime?
+
+  notes            String? @db.Text
+  memo             String? @db.Text
+
+  qboSyncId        String? @unique
+  qboSyncAt        DateTime?
+
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client           Client   @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  job              Job?     @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  sourceInvoice    Invoice? @relation("CreditMemoSourceInvoice", fields: [sourceInvoiceId], references: [id], onDelete: SetNull)
+  lineItems        CreditMemoLineItem[]
+  applications     CreditMemoApplication[]
+  activities       Activity[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, clientId])
+  @@index([tenantId, status])
+  @@index([sourceInvoiceId])
+  @@index([creditMemoNumber])
+  @@map("credit_memos")
+}
+
+model CreditMemoLineItem {
+  id          String  @id @default(cuid())
+  creditMemoId String
+  description String
+  quantity    Decimal @db.Decimal(10, 2)
+  unitPrice   Decimal @db.Decimal(10, 2)
+  total       Decimal @db.Decimal(10, 2)
+  sortOrder   Int     @default(0)
+  notes       String? @db.Text
+  taxable     Boolean @default(true)
+
+  creditMemo CreditMemo @relation(fields: [creditMemoId], references: [id], onDelete: Cascade)
+
+  @@index([creditMemoId])
+  @@map("credit_memo_line_items")
+}
+
+model CreditMemoApplication {
+  id           String   @id @default(cuid())
+  creditMemoId String
+  invoiceId    String
+  paymentId    String?
+  amount       Decimal  @db.Decimal(10, 2)
+  notes        String?  @db.Text
+  createdAt    DateTime @default(now())
+
+  creditMemo CreditMemo @relation(fields: [creditMemoId], references: [id], onDelete: Cascade)
+  invoice    Invoice    @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  payment    Payment?   @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@index([creditMemoId])
+  @@index([invoiceId])
+  @@index([paymentId])
+  @@map("credit_memo_applications")
+}
+
+// ============================================
 // PAYMENTS (SOLA API)
 // ============================================
 
@@ -954,6 +1053,7 @@ enum PaymentMethod {
   CHECK
   CASH
   OTHER
+  CREDIT
 }
 
 enum PaymentRefundStatus {
@@ -1007,6 +1107,7 @@ model Payment {
   invoice    Invoice    @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
   activities Activity[]
   refunds    PaymentRefund[]
+  creditMemoApplications CreditMemoApplication[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2264,6 +2365,8 @@ model Activity {
   estimate        Estimate?      @relation(fields: [estimateId], references: [id], onDelete: Cascade)
   purchaseOrderId String?
   purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  creditMemoId    String?
+  creditMemo      CreditMemo?    @relation(fields: [creditMemoId], references: [id], onDelete: Cascade)
   paymentId       String?
   payment         Payment?       @relation(fields: [paymentId], references: [id], onDelete: Cascade)
   taskId          String?

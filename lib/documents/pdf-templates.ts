@@ -758,3 +758,108 @@ export function buildPurchaseOrderPdfHtml(
     </html>
   `
 }
+
+export function buildCreditMemoPdfHtml(
+  creditMemo: AnyRecord,
+  brand: PdfBranding,
+  options: { shouldPrint?: boolean } = {}
+): string {
+  const { shouldPrint = false } = options
+  const accentColor = brand.accentColor
+  const accentTextColor = brand.accentTextColor
+  const lineItems = Array.isArray(creditMemo.lineItems) ? creditMemo.lineItems : []
+  const subtotal = lineItems.reduce(
+    (sum: number, item: AnyRecord) => sum + Number(item.quantity) * Number(item.unitPrice),
+    0
+  )
+  const tax = Number(creditMemo.taxAmount || 0)
+  const total = Number(creditMemo.total || subtotal + tax)
+  const applied = Number(creditMemo.appliedAmount || 0)
+  const remaining = Number(creditMemo.remainingCredit || Math.max(0, total - applied))
+  const generatedAt = new Date().toLocaleString()
+  const memoDate = creditMemo.creditMemoDate
+    ? new Date(creditMemo.creditMemoDate).toLocaleDateString()
+    : new Date().toLocaleDateString()
+  const clientName = creditMemo.client?.companyName || creditMemo.client?.name || 'N/A'
+
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Credit Memo ${escapeHtml(creditMemo.creditMemoNumber)}</title>
+        <style>${SHARED_DOC_CSS(accentColor, accentTextColor)}</style>
+        ${shouldPrint ? '<script>window.addEventListener("load", () => window.print());</script>' : ''}
+      </head>
+      <body>
+        <div class="page">
+          <div class="header">
+            <div>
+              <div class="brand">${logoBlock(brand, 'Trim Pro Logo')}</div>
+              <h1 class="doc-title">Credit Memo</h1>
+              <div class="muted">Generated on ${generatedAt}</div>
+            </div>
+            <div class="meta">
+              ${brand.businessName ? `<div style="font-weight:700;font-size:14px;margin-bottom:4px;">${escapeHtml(brand.businessName)}</div>` : ''}
+              <div><strong>No.</strong> ${escapeHtml(creditMemo.creditMemoNumber)}</div>
+              <div><strong>Date:</strong> ${escapeHtml(memoDate)}</div>
+              <div><strong>Status:</strong> ${escapeHtml(creditMemo.status || '')}</div>
+            </div>
+          </div>
+
+          <div class="grid">
+            <div class="panel">
+              <h3>Bill To</h3>
+              <div><strong>${escapeHtml(clientName)}</strong></div>
+              ${creditMemo.client?.email ? `<div class="muted">${escapeHtml(creditMemo.client.email)}</div>` : ''}
+              ${creditMemo.client?.phone ? `<div class="muted">${escapeHtml(creditMemo.client.phone)}</div>` : ''}
+            </div>
+            <div class="panel">
+              <h3>Details</h3>
+              ${creditMemo.sourceInvoice?.invoiceNumber ? `<div><strong>Related Invoice:</strong> ${escapeHtml(creditMemo.sourceInvoice.invoiceNumber)}</div>` : ''}
+              ${creditMemo.job ? `<div><strong>Job:</strong> ${escapeHtml(creditMemo.job.jobNumber)} — ${escapeHtml(creditMemo.job.title || '')}</div>` : ''}
+              ${creditMemo.notes ? `<div style="margin-top:8px;white-space:pre-wrap;">${escapeHtml(creditMemo.notes)}</div>` : '<div class="muted">—</div>'}
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th class="text-right">Qty</th>
+                <th class="text-right">Unit Price</th>
+                <th class="text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${lineItems
+                .map(
+                  (item: AnyRecord) => `<tr>
+                <td>${escapeHtmlMultiline(item.description)}${item.notes ? `<div class="muted" style="font-size:12px;margin-top:4px;">${escapeHtmlMultiline(item.notes)}</div>` : ''}</td>
+                <td class="text-right">${Number(item.quantity).toFixed(2)}</td>
+                <td class="text-right">$${Number(item.unitPrice).toFixed(2)}</td>
+                <td class="text-right">$${Number(item.total).toFixed(2)}</td>
+              </tr>`
+                )
+                .join('')}
+            </tbody>
+          </table>
+
+          <div class="summary">
+            <h4>Summary</h4>
+            <div class="summary-row"><span>Subtotal</span><span>$${subtotal.toFixed(2)}</span></div>
+            ${tax ? `<div class="summary-row"><span>Tax</span><span>$${tax.toFixed(2)}</span></div>` : ''}
+            <div class="summary-row total"><span>Credit Total</span><span>$${total.toFixed(2)}</span></div>
+            <div class="summary-row"><span>Applied</span><span>$${applied.toFixed(2)}</span></div>
+            <div class="summary-row"><span>Remaining</span><span>$${remaining.toFixed(2)}</span></div>
+          </div>
+
+          <div class="footer">
+            <p>This is an official credit memo from Trim Pro.</p>
+            <p>Generated on ${generatedAt}</p>
+          </div>
+        </div>
+      </body>
+    </html>
+  `
+}

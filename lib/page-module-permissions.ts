@@ -67,6 +67,7 @@ const ROUTE_MODULE_ID: Array<{ prefix: string; moduleId: string }> = [
   { prefix: '/dashboard/schedule', moduleId: 'schedule' },
   { prefix: '/dashboard/estimates', moduleId: 'estimates' },
   { prefix: '/dashboard/invoices', moduleId: 'invoices' },
+  { prefix: '/dashboard/credit-memos', moduleId: 'invoices' },
   { prefix: '/dashboard/purchase-orders', moduleId: 'purchase-orders' },
   { prefix: '/dashboard/tasks', moduleId: 'tasks' },
   { prefix: '/dashboard/issues', moduleId: 'issues' },
@@ -86,6 +87,7 @@ const ROUTE_MODULE_ID: Array<{ prefix: string; moduleId: string }> = [
 const CREATE_ROUTE_RULES: Array<{ prefix: string; createPermission: string; moduleId: string }> = [
   { prefix: '/dashboard/estimates/new', createPermission: 'estimates.create', moduleId: 'estimates' },
   { prefix: '/dashboard/invoices/new', createPermission: 'invoices.create', moduleId: 'invoices' },
+  { prefix: '/dashboard/credit-memos/new', createPermission: 'invoices.create', moduleId: 'invoices' },
   { prefix: '/dashboard/clients/new', createPermission: 'clients.create', moduleId: 'clients' },
   { prefix: '/dashboard/jobs/new', createPermission: 'jobs.create', moduleId: 'jobs' },
   { prefix: '/dashboard/tasks/new', createPermission: 'tasks.create', moduleId: 'tasks' },
@@ -121,6 +123,7 @@ export const SIDEBAR_PAGE_MODULE_IDS: Record<string, string> = {
   Schedule: 'schedule',
   Estimates: 'estimates',
   Invoices: 'invoices',
+  'Credit Memos': 'invoices',
   'Purchase Orders': 'purchase-orders',
   Items: 'settings',
   Vendors: 'purchase-orders',

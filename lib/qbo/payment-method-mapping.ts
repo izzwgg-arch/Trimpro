@@ -72,6 +72,9 @@ export function resolveOutboundQboPaymentMethodNames(payment: PaymentMethodMappi
   if (method === 'CASH' || provider === 'cash') {
     return uniqueNames(['Cash'])
   }
+  if (method === 'CREDIT' || provider === 'credit_memo') {
+    return uniqueNames(['Credits', 'Credit Memo', 'Credit'])
+  }
   if (method === 'BANK_TRANSFER' || provider === 'bank_transfer') {
     return uniqueNames(['Bank Transfer', 'EFT', 'Wire', 'Transfer'])
   }

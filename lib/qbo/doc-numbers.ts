@@ -80,6 +80,16 @@ export function normalizePurchaseOrderNumber(value: unknown): string | null {
   return raw
 }
 
+export function normalizeCreditMemoNumber(value: unknown): string | null {
+  if (value === null || value === undefined) return null
+  const raw = String(value).trim()
+  if (!raw) return null
+  if (/^\d+$/.test(raw)) return `CM-${raw.padStart(6, '0')}`
+  const match = raw.match(/^CM-(\d+)$/i)
+  if (match) return `CM-${match[1].padStart(6, '0')}`
+  return raw
+}
+
 export async function allocateNextPurchaseOrderNumber(params: {
   tenantId: string
   db?: any
@@ -237,7 +247,7 @@ export async function assertEstimateNumberAvailableForCreate(
 
 async function qboDocNumberExists(
   tenantId: string,
-  entityType: 'Estimate' | 'Invoice',
+  entityType: 'Estimate' | 'Invoice' | 'CreditMemo',
   docNumber: string
 ): Promise<boolean> {
   const session = await getQboSessionForTenant(tenantId)
@@ -261,12 +271,25 @@ async function qboInvoiceDocNumberExists(tenantId: string, invoiceNumber: string
   return qboDocNumberExists(tenantId, 'Invoice', invoiceNumber)
 }
 
+async function qboCreditMemoDocNumberExists(tenantId: string, creditMemoNumber: string): Promise<boolean> {
+  return qboDocNumberExists(tenantId, 'CreditMemo', creditMemoNumber)
+}
+
 export async function assertInvoiceNumberAvailableInQuickBooks(
   tenantId: string,
   invoiceNumber: string
 ) {
   if (await qboInvoiceDocNumberExists(tenantId, invoiceNumber)) {
     throw new Error(`Invoice number ${invoiceNumber} already exists in QuickBooks. Use a different number.`)
+  }
+}
+
+export async function assertCreditMemoNumberAvailableInQuickBooks(
+  tenantId: string,
+  creditMemoNumber: string
+) {
+  if (await qboCreditMemoDocNumberExists(tenantId, creditMemoNumber)) {
+    throw new Error(`Credit memo number ${creditMemoNumber} already exists in QuickBooks. Use a different number.`)
   }
 }
 
@@ -298,4 +321,37 @@ export async function allocateNextInvoiceNumber(params: {
   }
 
   throw new Error('Unable to allocate an unused invoice number in TrimPro and QuickBooks.')
+}
+
+export async function allocateNextCreditMemoNumber(params: {
+  tenantId: string
+  db?: any
+  maxAttempts?: number
+}) {
+  const db = params.db || prisma
+  const maxAttempts = params.maxAttempts ?? 300
+  const latest = await db.creditMemo.findFirst({
+    where: {
+      tenantId: params.tenantId,
+      creditMemoNumber: { startsWith: 'CM-' },
+    },
+    orderBy: { creditMemoNumber: 'desc' },
+    select: { creditMemoNumber: true },
+  })
+  const latestNumMatch = latest?.creditMemoNumber?.match(/^CM-(\d+)/)
+  const latestNum = latestNumMatch ? parseInt(latestNumMatch[1], 10) : 0
+  const baseNum = Number.isFinite(latestNum) ? latestNum : 0
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const candidate = `CM-${String(baseNum + attempt).padStart(6, '0')}`
+    const localCollision = await db.creditMemo.findFirst({
+      where: { creditMemoNumber: candidate },
+      select: { id: true },
+    })
+    if (localCollision) continue
+    if (await qboCreditMemoDocNumberExists(params.tenantId, candidate)) continue
+    return candidate
+  }
+
+  throw new Error('Unable to allocate an unused credit memo number in TrimPro and QuickBooks.')
 }

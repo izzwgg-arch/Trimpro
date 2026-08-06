@@ -27,6 +27,7 @@ import {
   syncPaymentToQuickBooks,
   syncVendorToQuickBooks,
   syncPurchaseOrderToQuickBooks,
+  syncCreditMemoToQuickBooks,
   syncLeadToQuickBooksProject,
 } from '@/lib/services/qbo-sync'
 
@@ -37,6 +38,7 @@ export type QboEntityType =
   | 'payment'
   | 'vendor'
   | 'purchase_order'
+  | 'credit_memo'
   | 'job'
   | 'lead'
 
@@ -236,6 +238,9 @@ async function dispatchSync(
       break
     case 'purchase_order':
       await syncPurchaseOrderToQuickBooks(tenantId, entityId)
+      break
+    case 'credit_memo':
+      await syncCreditMemoToQuickBooks(tenantId, entityId)
       break
     case 'job':
       // Job → QBO project/subcustomer sync is disabled.

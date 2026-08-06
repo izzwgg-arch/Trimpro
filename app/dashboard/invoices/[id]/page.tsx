@@ -180,6 +180,14 @@ export default function InvoiceDetailPage() {
   const [editPaymentSaving, setEditPaymentSaving] = useState(false)
   const [editPaymentError, setEditPaymentError] = useState('')
   const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null)
+  const [showApplyCreditModal, setShowApplyCreditModal] = useState(false)
+  const [availableCredits, setAvailableCredits] = useState<
+    Array<{ id: string; creditMemoNumber: string; remainingCredit: number }>
+  >([])
+  const [creditsLoading, setCreditsLoading] = useState(false)
+  const [applyCreditId, setApplyCreditId] = useState('')
+  const [applyCreditAmount, setApplyCreditAmount] = useState('')
+  const [applyCreditBusy, setApplyCreditBusy] = useState(false)
 
   // QuickBooks ACH (hosted) UI state
   const [qboAchLoading, setQboAchLoading] = useState<boolean>(false)
@@ -197,6 +205,19 @@ export default function InvoiceDetailPage() {
     fetchQboAchStatus()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [invoice?.id])
+
+  useEffect(() => {
+    if (!invoice?.client?.id) {
+      setAvailableCredits([])
+      return
+    }
+    if (parseFloat(invoice.balance || '0') <= 0) {
+      setAvailableCredits([])
+      return
+    }
+    void prefetchAvailableCredits()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoice?.id, invoice?.client?.id, invoice?.balance])
 
   const fetchInvoice = async () => {
     try {
@@ -535,6 +556,138 @@ export default function InvoiceDetailPage() {
   const handleViewPDF = async () => {
     openPdfActionModal('view')
   }
+
+  const prefetchAvailableCredits = async () => {
+    if (!invoice?.client?.id) return
+    setCreditsLoading(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const res = await fetch(
+        `/api/credit-memos?clientId=${invoice.client.id}&limit=100`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      if (!res.ok) {
+        setAvailableCredits([])
+        return
+      }
+      const data = await res.json()
+      const credits = (data.creditMemos || [])
+        .filter((cm: any) => Number(cm.remainingCredit || 0) > 0 && cm.status !== 'VOID')
+        .map((cm: any) => ({
+          id: cm.id,
+          creditMemoNumber: cm.creditMemoNumber,
+          remainingCredit: Number(cm.remainingCredit || 0),
+        }))
+        .sort((a: { remainingCredit: number }, b: { remainingCredit: number }) => b.remainingCredit - a.remainingCredit)
+      setAvailableCredits(credits)
+    } catch (e) {
+      console.error(e)
+      setAvailableCredits([])
+    } finally {
+      setCreditsLoading(false)
+    }
+  }
+
+  const selectCreditForApply = (creditId: string) => {
+    if (!invoice) return
+    const cm = availableCredits.find((c) => c.id === creditId)
+    setApplyCreditId(creditId)
+    if (cm) {
+      setApplyCreditAmount(
+        String(Math.min(cm.remainingCredit, parseFloat(invoice.balance || '0')))
+      )
+    }
+  }
+
+  const openApplyCreditModal = async (preferredCreditId?: string) => {
+    if (!invoice?.client?.id) return
+    let list = availableCredits
+    if (!list.length) {
+      try {
+        const token = localStorage.getItem('accessToken')
+        const res = await fetch(
+          `/api/credit-memos?clientId=${invoice.client.id}&limit=100`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        )
+        if (!res.ok) {
+          alert('Failed to load credit memos')
+          return
+        }
+        const data = await res.json()
+        list = (data.creditMemos || [])
+          .filter((cm: any) => Number(cm.remainingCredit || 0) > 0 && cm.status !== 'VOID')
+          .map((cm: any) => ({
+            id: cm.id,
+            creditMemoNumber: cm.creditMemoNumber,
+            remainingCredit: Number(cm.remainingCredit || 0),
+          }))
+          .sort(
+            (a: { remainingCredit: number }, b: { remainingCredit: number }) =>
+              b.remainingCredit - a.remainingCredit
+          )
+        setAvailableCredits(list)
+      } catch (e) {
+        console.error(e)
+        alert('Failed to load credit memos')
+        return
+      }
+    }
+    const first = list.find((c) => c.id === preferredCreditId) || list[0]
+    setApplyCreditId(first?.id || '')
+    setApplyCreditAmount(
+      first
+        ? String(Math.min(first.remainingCredit, parseFloat(invoice.balance || '0')))
+        : ''
+    )
+    setShowApplyCreditModal(true)
+  }
+
+  const submitApplyCredit = async (opts?: { creditId?: string; amount?: number | null }) => {
+    const creditId = opts?.creditId || applyCreditId
+    if (!creditId || applyCreditBusy || !invoice) return
+    const amount =
+      opts?.amount != null
+        ? opts.amount
+        : applyCreditAmount
+          ? Number(applyCreditAmount)
+          : null
+    setApplyCreditBusy(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const res = await fetch(`/api/credit-memos/${creditId}/apply`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          invoiceId,
+          amount,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        alert(data.error || 'Failed to apply credit')
+        return
+      }
+      setShowApplyCreditModal(false)
+      await fetchInvoice()
+      await prefetchAvailableCredits()
+    } catch (e) {
+      console.error(e)
+      alert('Failed to apply credit')
+    } finally {
+      setApplyCreditBusy(false)
+    }
+  }
+
+  const totalAvailableCredit = availableCredits.reduce((sum, c) => sum + c.remainingCredit, 0)
+  const invoiceBalanceNum = invoice ? parseFloat(invoice.balance || '0') : 0
+  const quickApplyCredit = availableCredits[0]
+  const quickApplyAmount =
+    quickApplyCredit && invoiceBalanceNum > 0
+      ? Math.min(quickApplyCredit.remainingCredit, invoiceBalanceNum)
+      : 0
 
   const handleDuplicate = async () => {
     setDuplicating(true)
@@ -975,6 +1128,27 @@ export default function InvoiceDetailPage() {
             <Copy className="mr-2 h-4 w-4" />
             {duplicating ? 'Duplicating...' : 'Duplicate'}
           </Button>
+          <Button
+            variant="outline"
+            onClick={() => router.push(`/dashboard/credit-memos/new?invoiceId=${invoiceId}`)}
+          >
+            <FileText className="mr-2 h-4 w-4" />
+            Create Credit Memo
+          </Button>
+          {parseFloat(invoice.balance) > 0 && (
+            <Button
+              variant={totalAvailableCredit > 0 ? 'default' : 'outline'}
+              onClick={() => openApplyCreditModal()}
+              disabled={creditsLoading}
+            >
+              <CheckCircle className="mr-2 h-4 w-4" />
+              {totalAvailableCredit > 0
+                ? `Apply Credit (${formatCurrency(Math.min(totalAvailableCredit, parseFloat(invoice.balance)))})`
+                : creditsLoading
+                  ? 'Checking credits...'
+                  : 'Apply Credit'}
+            </Button>
+          )}
           <Button variant="outline" onClick={() => router.push(`/dashboard/invoices/${invoiceId}/edit`)}>
             <Edit className="mr-2 h-4 w-4" />
             Edit
@@ -1296,6 +1470,114 @@ export default function InvoiceDetailPage() {
             </Button>
             <Button onClick={handleEditPaymentSubmit} disabled={editPaymentSaving}>
               {editPaymentSaving ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showApplyCreditModal} onOpenChange={setShowApplyCreditModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Apply Credit Memo</DialogTitle>
+            <DialogDescription>
+              Invoice balance: {invoice ? formatCurrency(parseFloat(invoice.balance)) : '—'}.
+              {totalAvailableCredit > 0
+                ? ` Available credit: ${formatCurrency(totalAvailableCredit)}.`
+                : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label>Credit memo</Label>
+              {availableCredits.length ? (
+                <div className="max-h-56 space-y-2 overflow-y-auto">
+                  {availableCredits.map((cm) => {
+                    const selected = applyCreditId === cm.id
+                    const applyAmt = invoice
+                      ? Math.min(cm.remainingCredit, parseFloat(invoice.balance || '0'))
+                      : cm.remainingCredit
+                    return (
+                      <button
+                        key={cm.id}
+                        type="button"
+                        onClick={() => selectCreditForApply(cm.id)}
+                        className={`w-full rounded-lg border px-3 py-2.5 text-left text-sm transition-colors ${
+                          selected
+                            ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium">{cm.creditMemoNumber}</span>
+                          <span className="text-green-700 font-semibold">
+                            {formatCurrency(cm.remainingCredit)} left
+                          </span>
+                        </div>
+                        <div className="mt-0.5 text-xs text-muted-foreground">
+                          Can apply {formatCurrency(applyAmt)} to this invoice
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  No open credit memos for this client.{' '}
+                  <Link
+                    href={`/dashboard/credit-memos/new?invoiceId=${invoiceId}`}
+                    className="text-primary hover:underline"
+                  >
+                    Create one
+                  </Link>
+                  .
+                </p>
+              )}
+            </div>
+            <div>
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <Label>Amount</Label>
+                {applyCreditId && invoice && (
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-primary hover:underline"
+                    onClick={() => {
+                      const cm = availableCredits.find((c) => c.id === applyCreditId)
+                      if (!cm) return
+                      setApplyCreditAmount(
+                        String(Math.min(cm.remainingCredit, parseFloat(invoice.balance || '0')))
+                      )
+                    }}
+                  >
+                    Use max
+                  </button>
+                )}
+              </div>
+              <Input
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={applyCreditAmount}
+                onChange={(e) => setApplyCreditAmount(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowApplyCreditModal(false)}
+              disabled={applyCreditBusy}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => submitApplyCredit()}
+              disabled={applyCreditBusy || !applyCreditId}
+            >
+              {applyCreditBusy
+                ? 'Applying...'
+                : applyCreditAmount
+                  ? `Apply ${formatCurrency(Number(applyCreditAmount) || 0)}`
+                  : 'Apply Credit'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1711,6 +1993,67 @@ export default function InvoiceDetailPage() {
                 <span>Balance:</span>
                 <span>{formatCurrency(parseFloat(invoice.balance))}</span>
               </div>
+              {parseFloat(invoice.balance) > 0 && (creditsLoading || totalAvailableCredit > 0) && (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2 text-sm">
+                    <span className="font-medium text-emerald-900">Available credit</span>
+                    <span className="font-semibold text-emerald-800">
+                      {creditsLoading && !totalAvailableCredit
+                        ? '…'
+                        : formatCurrency(totalAvailableCredit)}
+                    </span>
+                  </div>
+                  {availableCredits.length === 1 && quickApplyAmount > 0 ? (
+                    <Button
+                      className="w-full"
+                      size="sm"
+                      disabled={applyCreditBusy}
+                      onClick={() =>
+                        submitApplyCredit({
+                          creditId: quickApplyCredit.id,
+                          amount: quickApplyAmount,
+                        })
+                      }
+                    >
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                      {applyCreditBusy
+                        ? 'Applying...'
+                        : `Apply ${formatCurrency(quickApplyAmount)} from ${quickApplyCredit.creditMemoNumber}`}
+                    </Button>
+                  ) : availableCredits.length > 1 ? (
+                    <div className="space-y-1.5">
+                      {availableCredits.slice(0, 3).map((cm) => {
+                        const amt = Math.min(cm.remainingCredit, parseFloat(invoice.balance))
+                        return (
+                          <Button
+                            key={cm.id}
+                            className="w-full justify-between"
+                            size="sm"
+                            variant="outline"
+                            disabled={applyCreditBusy}
+                            onClick={() =>
+                              submitApplyCredit({ creditId: cm.id, amount: amt })
+                            }
+                          >
+                            <span>{cm.creditMemoNumber}</span>
+                            <span>Apply {formatCurrency(amt)}</span>
+                          </Button>
+                        )
+                      })}
+                      {availableCredits.length > 3 && (
+                        <Button
+                          className="w-full"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => openApplyCreditModal()}
+                        >
+                          Choose another…
+                        </Button>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              )}
               {invoice.estimateId && (
                 <Button className="w-full" variant="outline" onClick={handleBillRestLink} disabled={creatingPaymentLink}>
                   <CreditCard className="mr-2 h-4 w-4" />

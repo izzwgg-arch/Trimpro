@@ -49,6 +49,7 @@ type SyncType =
   | 'item'
   | 'vendor'
   | 'purchase_order'
+  | 'credit_memo'
 
 function toNumber(value: any): number {
   const n = Number(value)
@@ -2950,6 +2951,29 @@ async function createGroupedQboPayment(params: {
       Amount: toNumber(pay.amount),
       LinkedTxn: [{ TxnId: invoiceQboId, TxnType: 'Invoice' }],
     })
+
+    // Credit memo applications: also link the QBO CreditMemo so the credit is consumed.
+    if (String((pay as any).method || '') === 'CREDIT' || String((pay as any).provider || '') === 'credit_memo') {
+      const application = await prisma.creditMemoApplication.findFirst({
+        where: { paymentId: pay.id },
+        include: { creditMemo: { select: { id: true, qboSyncId: true } } },
+      })
+      if (application?.creditMemo) {
+        let cmQboId = application.creditMemo.qboSyncId
+        if (!cmQboId) {
+          await syncCreditMemoToQuickBooks(tenantId, application.creditMemo.id)
+          const refreshedCm = await prisma.creditMemo.findUnique({
+            where: { id: application.creditMemo.id },
+            select: { qboSyncId: true },
+          })
+          cmQboId = refreshedCm?.qboSyncId || null
+        }
+        if (cmQboId) {
+          const last = lines[lines.length - 1] as any
+          last.LinkedTxn.push({ TxnId: cmQboId, TxnType: 'CreditMemo' })
+        }
+      }
+    }
   }
 
   if (!customerQboId) throw new Error('Unable to resolve customer in QuickBooks for payment')
@@ -3375,6 +3399,151 @@ export async function syncPurchaseOrderToQuickBooks(tenantId: string, purchaseOr
       status: 'error',
       entityId: purchaseOrderId,
       error: error?.message || 'QuickBooks purchase order sync failed',
+    })
+    throw error
+  }
+}
+
+export async function syncCreditMemoToQuickBooks(tenantId: string, creditMemoId: string) {
+  const session = await getQboSession(tenantId)
+  if (!session) return
+
+  try {
+    const creditMemo = await prisma.creditMemo.findFirst({
+      where: { id: creditMemoId, tenantId },
+      include: {
+        client: true,
+        lineItems: { orderBy: { sortOrder: 'asc' } },
+      },
+    })
+    if (!creditMemo || creditMemo.status === 'VOID') return
+
+    const customerQboId = await ensureClientCustomer({
+      tenantId,
+      clientId: creditMemo.clientId,
+      accessToken: session.accessToken,
+      realmId: session.realmId,
+      integrationId: session.integrationId,
+      createIfMissing: true,
+    })
+    if (!customerQboId) throw new Error('Unable to resolve QuickBooks customer for credit memo')
+
+    const serviceItemId = await ensureDefaultServiceItem({
+      accessToken: session.accessToken,
+      realmId: session.realmId,
+      tenantId,
+      incomeAccountId: session.incomeAccountId,
+      serviceItemId: session.serviceItemId,
+    })
+
+    const lines = creditMemo.lineItems.length
+      ? creditMemo.lineItems.map((li) => ({
+          DetailType: 'SalesItemLineDetail',
+          Description: li.notes || li.description,
+          Amount: toNumber(li.total),
+          SalesItemLineDetail: {
+            ItemRef: { value: serviceItemId },
+            Qty: toNumber(li.quantity),
+            UnitPrice: toNumber(li.unitPrice),
+            TaxCodeRef: { value: 'NON' },
+          },
+        }))
+      : [
+          {
+            DetailType: 'SalesItemLineDetail',
+            Description: creditMemo.title || 'Credit Memo',
+            Amount: toNumber(creditMemo.total),
+            SalesItemLineDetail: {
+              ItemRef: { value: serviceItemId },
+              Qty: 1,
+              UnitPrice: toNumber(creditMemo.total),
+              TaxCodeRef: { value: 'NON' },
+            },
+          },
+        ]
+
+    const payload: any = {
+      DocNumber: creditMemo.creditMemoNumber,
+      CustomerRef: { value: customerQboId },
+      TxnDate: qboDate(creditMemo.creditMemoDate || creditMemo.createdAt),
+      PrivateNote: creditMemo.notes || `Trim Pro Credit Memo ${creditMemo.creditMemoNumber}`,
+      Line: lines,
+      TxnTaxDetail: { TotalTax: 0 },
+    }
+
+    const ctx = {
+      tenantId,
+      entityType: 'credit_memo',
+      entityId: creditMemo.id,
+      triggerSource: 'credit_memo_sync',
+    }
+
+    const mappedId =
+      creditMemo.qboSyncId ||
+      (await getMappedQboId(session.integrationId, 'credit_memo', creditMemo.id))
+
+    if (mappedId) {
+      const current = await quickBooksService.makeAPIRequest(
+        session.accessToken,
+        session.realmId,
+        `/creditmemo/${mappedId}`,
+        'GET',
+        undefined,
+        ctx
+      )
+      const syncToken = current?.CreditMemo?.SyncToken || '0'
+      const updated = await quickBooksService.makeAPIRequest(
+        session.accessToken,
+        session.realmId,
+        '/creditmemo?operation=update',
+        'POST',
+        { ...payload, Id: mappedId, SyncToken: syncToken, sparse: true },
+        ctx
+      )
+      const qboId = String(updated?.CreditMemo?.Id || mappedId)
+      await prisma.creditMemo.update({
+        where: { id: creditMemo.id },
+        data: { qboSyncId: qboId, qboSyncAt: new Date() },
+      })
+      await logSync({
+        integrationId: session.integrationId,
+        type: 'credit_memo',
+        action: 'update',
+        status: 'success',
+        entityId: creditMemo.id,
+        qboId,
+      })
+      return
+    }
+
+    const created = await quickBooksService.createCreditMemo(
+      session.accessToken,
+      session.realmId,
+      payload,
+      ctx
+    )
+    const qboId = String(created?.CreditMemo?.Id || '')
+    if (!qboId) throw new Error('QuickBooks did not return credit memo id')
+    await prisma.creditMemo.update({
+      where: { id: creditMemo.id },
+      data: { qboSyncId: qboId, qboSyncAt: new Date() },
+    })
+    await logSync({
+      integrationId: session.integrationId,
+      type: 'credit_memo',
+      action: 'create',
+      status: 'success',
+      entityId: creditMemo.id,
+      qboId,
+    })
+  } catch (error: any) {
+    await logSync({
+      integrationId: session.integrationId,
+      type: 'credit_memo',
+      action: 'create',
+      status: 'error',
+      entityId: creditMemoId,
+      error: error?.message || 'QuickBooks credit memo sync failed',
     })
     throw error
   }

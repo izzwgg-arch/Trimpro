@@ -4,6 +4,7 @@ import {
   buildInvoicePdfHtml,
   buildEstimatePdfHtml,
   buildPurchaseOrderPdfHtml,
+  buildCreditMemoPdfHtml,
   type PurchaseOrderPdfBranding,
 } from '@/lib/documents/pdf-templates'
 
@@ -67,6 +68,17 @@ export async function renderPurchaseOrderEmailPdfAttachment(
   return {
     filename: `PO-${safeFilenamePart(purchaseOrder.poNumber, 'purchase-order')}.pdf`,
     content: await renderPdfFromHtml(buildPurchaseOrderPdfHtml(purchaseOrder, branding)),
+    contentType: 'application/pdf',
+  }
+}
+
+export async function renderCreditMemoEmailPdfAttachment(
+  creditMemo: AnyRecord,
+  brand: PdfBranding
+): Promise<PdfEmailAttachment> {
+  return {
+    filename: `CreditMemo-${safeFilenamePart(creditMemo.creditMemoNumber, 'credit-memo')}.pdf`,
+    content: await renderPdfFromHtml(buildCreditMemoPdfHtml(creditMemo, brand)),
     contentType: 'application/pdf',
   }
 }

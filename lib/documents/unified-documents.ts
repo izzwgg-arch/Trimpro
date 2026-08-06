@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 export type UnifiedDocumentKind =
   | 'estimate'
   | 'invoice'
+  | 'credit_memo'
   | 'payment'
   | 'purchase_order'
   | 'request'
@@ -100,6 +101,21 @@ const purchaseOrderSelect = {
   client: { select: { id: true, name: true } },
 } as const
 
+const creditMemoSelect = {
+  id: true,
+  clientId: true,
+  jobId: true,
+  creditMemoNumber: true,
+  title: true,
+  status: true,
+  total: true,
+  remainingCredit: true,
+  creditMemoDate: true,
+  createdAt: true,
+  client: { select: { id: true, name: true } },
+  job: { select: { id: true, jobNumber: true, title: true } },
+} as const
+
 const requestSelect = {
   id: true,
   convertedToClientId: true,
@@ -144,71 +160,81 @@ export async function fetchClientDocuments(tenantId: string, clientId: string) {
   const descendantIds = await getDescendantClientIds(tenantId, [clientId])
   const clientIds = [clientId, ...descendantIds]
 
-  const [estimates, invoices, payments, purchaseOrders, requests, jobs] = await Promise.all([
-    settledList(
-      'estimates',
-      prisma.estimate.findMany({
-        where: { tenantId, clientId: { in: clientIds } },
-        orderBy: { createdAt: 'desc' },
-        select: estimateSelect,
-      })
-    ),
-    settledList(
-      'invoices',
-      prisma.invoice.findMany({
-        where: { tenantId, clientId: { in: clientIds } },
-        orderBy: { createdAt: 'desc' },
-        select: invoiceSelect,
-      })
-    ),
-    settledList(
-      'payments',
-      prisma.payment.findMany({
-        where: {
-          invoice: { tenantId, clientId: { in: clientIds } },
-        },
-        orderBy: [{ processedAt: 'desc' }, { createdAt: 'desc' }],
-        include: {
-          invoice: {
-            select: {
-              id: true,
-              invoiceNumber: true,
-              clientId: true,
-              client: { select: { id: true, name: true } },
+  const [estimates, invoices, creditMemos, payments, purchaseOrders, requests, jobs] =
+    await Promise.all([
+      settledList(
+        'estimates',
+        prisma.estimate.findMany({
+          where: { tenantId, clientId: { in: clientIds } },
+          orderBy: { createdAt: 'desc' },
+          select: estimateSelect,
+        })
+      ),
+      settledList(
+        'invoices',
+        prisma.invoice.findMany({
+          where: { tenantId, clientId: { in: clientIds } },
+          orderBy: { createdAt: 'desc' },
+          select: invoiceSelect,
+        })
+      ),
+      settledList(
+        'creditMemos',
+        prisma.creditMemo.findMany({
+          where: { tenantId, clientId: { in: clientIds } },
+          orderBy: { createdAt: 'desc' },
+          select: creditMemoSelect,
+        })
+      ),
+      settledList(
+        'payments',
+        prisma.payment.findMany({
+          where: {
+            invoice: { tenantId, clientId: { in: clientIds } },
+          },
+          orderBy: [{ processedAt: 'desc' }, { createdAt: 'desc' }],
+          include: {
+            invoice: {
+              select: {
+                id: true,
+                invoiceNumber: true,
+                clientId: true,
+                client: { select: { id: true, name: true } },
+              },
             },
           },
-        },
-      })
-    ),
-    settledList(
-      'purchaseOrders',
-      prisma.purchaseOrder.findMany({
-        where: { tenantId, clientId: { in: clientIds } },
-        orderBy: { createdAt: 'desc' },
-        select: purchaseOrderSelect,
-      })
-    ),
-    settledList(
-      'requests',
-      prisma.lead.findMany({
-        where: { tenantId, convertedToClientId: { in: clientIds } },
-        orderBy: { createdAt: 'desc' },
-        select: requestSelect,
-      })
-    ),
-    settledList(
-      'jobs',
-      prisma.job.findMany({
-        where: { tenantId, clientId: { in: clientIds } },
-        orderBy: { createdAt: 'desc' },
-        select: jobSelect,
-      })
-    ),
-  ])
+        })
+      ),
+      settledList(
+        'purchaseOrders',
+        prisma.purchaseOrder.findMany({
+          where: { tenantId, clientId: { in: clientIds } },
+          orderBy: { createdAt: 'desc' },
+          select: purchaseOrderSelect,
+        })
+      ),
+      settledList(
+        'requests',
+        prisma.lead.findMany({
+          where: { tenantId, convertedToClientId: { in: clientIds } },
+          orderBy: { createdAt: 'desc' },
+          select: requestSelect,
+        })
+      ),
+      settledList(
+        'jobs',
+        prisma.job.findMany({
+          where: { tenantId, clientId: { in: clientIds } },
+          orderBy: { createdAt: 'desc' },
+          select: jobSelect,
+        })
+      ),
+    ])
 
   return buildDocumentRows({
     estimates,
     invoices,
+    creditMemos,
     payments,
     purchaseOrders,
     requests,
@@ -225,7 +251,7 @@ export async function fetchJobDocuments(tenantId: string, jobId: string) {
 
   if (!job) return null
 
-  const [estimates, invoices, payments, purchaseOrders] = await Promise.all([
+  const [estimates, invoices, creditMemos, payments, purchaseOrders] = await Promise.all([
     settledList(
       'job-estimates',
       prisma.estimate.findMany({
@@ -254,6 +280,23 @@ export async function fetchJobDocuments(tenantId: string, jobId: string) {
           total: true,
           balance: true,
           dueDate: true,
+          createdAt: true,
+        },
+      })
+    ),
+    settledList(
+      'job-creditMemos',
+      prisma.creditMemo.findMany({
+        where: { tenantId, jobId },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          creditMemoNumber: true,
+          title: true,
+          status: true,
+          total: true,
+          remainingCredit: true,
+          creditMemoDate: true,
           createdAt: true,
         },
       })
@@ -290,7 +333,7 @@ export async function fetchJobDocuments(tenantId: string, jobId: string) {
     ),
   ])
 
-  return buildDocumentRows({ estimates, invoices, payments, purchaseOrders })
+  return buildDocumentRows({ estimates, invoices, creditMemos, payments, purchaseOrders })
 }
 
 function subClientLabel(rootClientId: string | undefined, clientId: string | null | undefined, clientName: string | null | undefined) {
@@ -301,6 +344,7 @@ function subClientLabel(rootClientId: string | undefined, clientId: string | nul
 function buildDocumentRows({
   estimates,
   invoices,
+  creditMemos = [],
   payments,
   purchaseOrders = [],
   requests = [],
@@ -328,6 +372,19 @@ function buildDocumentRows({
     dueDate: Date | null
     createdAt: Date
     client?: { id: string; name: string } | null
+  }>
+  creditMemos?: Array<{
+    id: string
+    clientId?: string | null
+    creditMemoNumber: string
+    title: string
+    status: string
+    total: { toString(): string } | number
+    remainingCredit: { toString(): string } | number
+    creditMemoDate: Date | null
+    createdAt: Date
+    client?: { id: string; name: string } | null
+    job?: { id: string; jobNumber: string; title: string | null } | null
   }>
   payments: Array<{
     id: string
@@ -417,6 +474,28 @@ function buildDocumentRows({
       meta: balance > 0 ? `Balance ${balance.toFixed(2)}` : null,
       clientId: invoice.clientId || invoice.client?.id || null,
       clientName: subClientLabel(rootClientId, invoice.clientId, invoice.client?.name),
+    })
+  }
+
+  for (const creditMemo of creditMemos) {
+    const remaining = Number(creditMemo.remainingCredit)
+    const jobMeta = creditMemo.job
+      ? `${creditMemo.job.jobNumber}${creditMemo.job.title ? ` — ${creditMemo.job.title}` : ''}`
+      : null
+    rows.push({
+      id: creditMemo.id,
+      kind: 'credit_memo',
+      number: creditMemo.creditMemoNumber,
+      title: creditMemo.title,
+      status: creditMemo.status,
+      amount: Number(creditMemo.total),
+      balance: remaining,
+      isPaid: remaining <= 0,
+      date: (creditMemo.creditMemoDate || creditMemo.createdAt).toISOString(),
+      href: `/dashboard/credit-memos/${creditMemo.id}`,
+      meta: remaining > 0 ? `Remaining ${remaining.toFixed(2)}` : jobMeta,
+      clientId: creditMemo.clientId || creditMemo.client?.id || null,
+      clientName: subClientLabel(rootClientId, creditMemo.clientId, creditMemo.client?.name),
     })
   }
 

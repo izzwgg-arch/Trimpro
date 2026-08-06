@@ -24,6 +24,8 @@ export const ROUTE_PERMISSION_RULES: RoutePermissionRule[] = [
   { prefix: '/dashboard/estimates/new', permission: ['estimates.create', 'estimates.access', 'estimates.view'] },
   { prefix: '/dashboard/estimates', permission: ['estimates.access', 'estimates.view', 'estimates.create', 'estimates.edit', 'estimates.send'] },
   { prefix: '/dashboard/invoices/new', permission: ['invoices.create', 'invoices.access', 'invoices.view'] },
+  { prefix: '/dashboard/credit-memos/new', permission: ['invoices.create', 'invoices.access', 'invoices.view'] },
+  { prefix: '/dashboard/credit-memos', permission: ['invoices.access', 'invoices.view', 'invoices.create', 'invoices.edit', 'invoices.send'] },
   { prefix: '/dashboard/invoices', permission: ['invoices.access', 'invoices.view', 'invoices.create', 'invoices.edit', 'invoices.send'] },
   { prefix: '/dashboard/purchase-orders', permission: ['purchase_orders.access', 'purchase_orders.view', 'purchase_orders.create'] },
   { prefix: '/dashboard/items', permission: ['settings.access', 'settings.view'] },
@@ -52,6 +54,7 @@ const DOCUMENT_DETAIL_VIEW_RULES: Array<{
 }> = [
   { base: '/dashboard/estimates/', viewPermission: 'estimates.view', exemptSegments: ['new'] },
   { base: '/dashboard/invoices/', viewPermission: 'invoices.view', exemptSegments: ['new'] },
+  { base: '/dashboard/credit-memos/', viewPermission: 'invoices.view', exemptSegments: ['new'] },
   { base: '/dashboard/clients/', viewPermission: 'clients.view', exemptSegments: ['new'] },
   { base: '/dashboard/jobs/', viewPermission: 'jobs.view', exemptSegments: ['new'] },
   { base: '/dashboard/tasks/', viewPermission: 'tasks.view', exemptSegments: ['new'] },

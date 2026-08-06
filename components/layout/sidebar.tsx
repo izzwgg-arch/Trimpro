@@ -35,6 +35,7 @@ import {
   X,
   History,
   ScrollText,
+  Receipt,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 
@@ -46,6 +47,7 @@ const navigation = [
   { name: 'Schedule', href: '/dashboard/schedule', icon: Calendar, permission: 'schedule.view' },
   { name: 'Estimates', href: '/dashboard/estimates', icon: FileText, permission: 'estimates.view' },
   { name: 'Invoices', href: '/dashboard/invoices', icon: DollarSign, permission: 'invoices.view' },
+  { name: 'Credit Memos', href: '/dashboard/credit-memos', icon: Receipt, permission: 'invoices.view' },
   { name: 'Purchase Orders', href: '/dashboard/purchase-orders', icon: ShoppingCart, permission: 'purchase_orders.view' },
   { name: 'Items', href: '/dashboard/items', icon: Package, permission: 'settings.view' },
   { name: 'Vendors', href: '/dashboard/vendors', icon: Building2, permission: 'purchase_orders.view' },

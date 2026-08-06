@@ -41,6 +41,7 @@ export type ApplyInvoicePaymentMethod =
   | 'CHECK'
   | 'CASH'
   | 'OTHER'
+  | 'CREDIT'
 
 export interface ApplyInvoicePaymentInput {
   invoiceId: string

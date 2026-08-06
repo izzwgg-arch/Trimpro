@@ -122,8 +122,9 @@ function compareDocuments(a: UnifiedDocumentRow, b: UnifiedDocumentRow, sort: So
     request: 1,
     estimate: 2,
     invoice: 3,
-    payment: 4,
-    purchase_order: 5,
+    credit_memo: 4,
+    payment: 5,
+    purchase_order: 6,
   }
   const kindDiff = kindOrder[a.kind] - kindOrder[b.kind]
   if (kindDiff !== 0) return kindDiff
@@ -157,6 +158,7 @@ function matchesJobFilter(status: string, filter: JobFilter) {
 const kindLabels: Record<UnifiedDocumentKind, string> = {
   estimate: 'Estimate',
   invoice: 'Invoice',
+  credit_memo: 'Credit Memo',
   payment: 'Payment',
   purchase_order: 'Purchase Order',
   request: 'Request',
@@ -166,6 +168,7 @@ const kindLabels: Record<UnifiedDocumentKind, string> = {
 const kindBadgeClass: Record<UnifiedDocumentKind, string> = {
   estimate: 'bg-indigo-100 text-indigo-800',
   invoice: 'bg-slate-100 text-slate-800',
+  credit_memo: 'bg-teal-100 text-teal-900',
   payment: 'bg-emerald-100 text-emerald-800',
   purchase_order: 'bg-amber-100 text-amber-900',
   request: 'bg-violet-100 text-violet-800',
@@ -186,6 +189,13 @@ function statusClass(kind: UnifiedDocumentKind, status: string) {
     if (status === 'PAID') return 'bg-green-100 text-green-800'
     if (status === 'OVERDUE') return 'bg-red-100 text-red-800'
     if (status === 'PARTIAL') return 'bg-amber-100 text-amber-800'
+    return 'bg-gray-100 text-gray-800'
+  }
+  if (kind === 'credit_memo') {
+    if (status === 'APPLIED') return 'bg-green-100 text-green-800'
+    if (status === 'PARTIALLY_APPLIED') return 'bg-amber-100 text-amber-800'
+    if (status === 'SENT') return 'bg-blue-100 text-blue-800'
+    if (status === 'VOID') return 'bg-red-100 text-red-800'
     return 'bg-gray-100 text-gray-800'
   }
   if (kind === 'purchase_order') {
@@ -226,7 +236,7 @@ export function UnifiedDocumentsSection({
   documents,
   loading = false,
   error = null,
-  description = 'Estimates, invoices, payments, purchase orders, requests, and jobs',
+  description = 'Estimates, invoices, credit memos, payments, purchase orders, requests, and jobs',
   enableInvoiceSelection = false,
   selectedInvoiceIds = [],
   onToggleInvoice,
@@ -521,6 +531,7 @@ export function UnifiedDocumentsSection({
                 <SelectItem value="request">Requests</SelectItem>
                 <SelectItem value="estimate">Estimates</SelectItem>
                 <SelectItem value="invoice">Invoices</SelectItem>
+                <SelectItem value="credit_memo">Credit Memos</SelectItem>
                 <SelectItem value="payment">Payments</SelectItem>
                 <SelectItem value="purchase_order">Purchase Orders</SelectItem>
               </SelectContent>

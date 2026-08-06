@@ -471,6 +471,15 @@ export class QuickBooksService {
     return this.makeAPIRequest(accessToken, realmId, '/invoice', 'POST', invoiceData, context)
   }
 
+  async createCreditMemo(
+    accessToken: string,
+    realmId: string,
+    creditMemoData: any,
+    context?: QuickBooksRequestContext
+  ): Promise<any> {
+    return this.makeAPIRequest(accessToken, realmId, '/creditmemo', 'POST', creditMemoData, context)
+  }
+
   async createPayment(
     accessToken: string,
     realmId: string,
