@@ -96,17 +96,22 @@ function main() {
   }
 
   const env = { ...process.env, CI: '1' }
+  // Windows + shell:true concatenates args; quote message so spaces stay one flag value.
+  const quotedMessage = `"${String(message).replace(/"/g, '\\"')}"`
   const args = [
     'eas-cli',
     'update',
     '--channel',
     channel,
     '--message',
-    message,
+    quotedMessage,
     '--clear-cache',
   ]
-  // Avoid shell:true on Windows — it splits --message values that contain spaces.
-  const result = spawnSync('npx', args, { stdio: 'inherit', env, shell: false })
+  const result = spawnSync('npx', args, { stdio: 'inherit', env, shell: true })
+  if (result.error) {
+    console.error(result.error)
+    process.exit(1)
+  }
   if (result.status !== 0) {
     process.exit(result.status || 1)
   }
