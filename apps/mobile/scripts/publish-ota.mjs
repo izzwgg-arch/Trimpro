@@ -22,7 +22,8 @@ function run(command, args, opts = {}) {
 
 function parseJson(relativeFile) {
   const absolute = path.resolve(process.cwd(), relativeFile)
-  return JSON.parse(readFileSync(absolute, 'utf8'))
+  const raw = readFileSync(absolute, 'utf8').replace(/^\uFEFF/, '')
+  return JSON.parse(raw)
 }
 
 function getCommitHash() {
