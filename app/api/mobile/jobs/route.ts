@@ -4,12 +4,16 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requireMobilePermission, hasMobilePermission } from '@/lib/authorization'
 import { getPaginationParams, createPaginationResponse } from '@/lib/pagination'
 import { getJobBillingStatus } from '@/lib/jobs/billing-status'
+import { jobRecordJobSiteAddressSearchClauses } from '@/lib/search/job-site-address'
+import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
 
 /**
  * Mobile API: Get jobs
  * Query:
  * - filter=assigned (default): only jobs assigned to the current user
  * - filter=all: all org jobs (requires mobile.jobs.view_all)
+ * - search: optional job number / title / client / address search
+ * - sort=recent: order by updatedAt desc (share / attach pickers)
  * Optimized for mobile with minimal payload
  */
 export async function GET(request: NextRequest) {
@@ -23,6 +27,8 @@ export async function GET(request: NextRequest) {
   const user = getAuthUser(request)
   const { searchParams } = new URL(request.url)
   const status = searchParams.get('status')
+  const search = searchParams.get('search') || ''
+  const sortRaw = (searchParams.get('sort') || '').toLowerCase()
   const filterRaw = (searchParams.get('filter') || 'assigned').toLowerCase()
   const filter = filterRaw === 'all' ? 'all' : 'assigned'
   const { skip, take, limit, offset } = getPaginationParams(searchParams)
@@ -53,6 +59,17 @@ export async function GET(request: NextRequest) {
     if (status) {
       where.status = status
     }
+
+    applySmartSearch(
+      where,
+      buildSmartSearchAnd(search, (term) => [
+        { jobNumber: ilike(term) },
+        { title: ilike(term) },
+        { description: ilike(term) },
+        ...clientIdentityClauses(term),
+        ...jobRecordJobSiteAddressSearchClauses(term),
+      ])
+    )
 
     const jobs = await prisma.job.findMany({
       where,
@@ -88,9 +105,12 @@ export async function GET(request: NextRequest) {
           },
         },
       },
-      orderBy: {
-        scheduledStart: 'asc',
-      },
+      orderBy:
+        sortRaw === 'recent'
+          ? [{ updatedAt: 'desc' }, { createdAt: 'desc' }]
+          : {
+              scheduledStart: 'asc',
+            },
       take,
       skip,
     })

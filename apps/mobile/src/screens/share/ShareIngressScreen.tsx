@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
@@ -115,10 +115,17 @@ export function ShareIngressScreen({ route, navigation }: Props) {
   const [sharedFile, setSharedFile] = useState<LocalAttachmentFile | null>(() => buildFileFromRouteParams(route.params))
   const [targetType, setTargetType] = useState<ShareTargetType>('job')
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search.trim()), 300)
+    return () => clearTimeout(timer)
+  }, [search])
+
 
   useEffect(() => {
     const fromParams = buildFileFromRouteParams(route.params)
@@ -143,31 +150,31 @@ export function ShareIngressScreen({ route, navigation }: Props) {
     if (targetType === 'message' && !allowMessaging) setTargetType('job')
   }, [allowRequests, allowMessaging, targetType])
 
+  const jobsFilter = canViewAllJobs() ? 'all' : 'assigned'
   const jobsQuery = useQuery({
-    queryKey: ['share-ingress-jobs', canViewAllJobs()],
-    queryFn: () =>
-      apiRequest<JobsListResponse>(`/api/mobile/jobs?limit=100&filter=${canViewAllJobs() ? 'all' : 'assigned'}`),
+    queryKey: ['share-ingress-jobs', jobsFilter, debouncedSearch],
+    queryFn: () => {
+      const params = new URLSearchParams({
+        limit: '100',
+        filter: jobsFilter,
+        sort: 'recent',
+      })
+      if (debouncedSearch) params.set('search', debouncedSearch)
+      return apiRequest<JobsListResponse>(`/api/mobile/jobs?${params.toString()}`)
+    },
     enabled: targetType === 'job' || targetType === 'message',
   })
 
   const requestsQuery = useQuery({
-    queryKey: ['share-ingress-requests', search],
-    queryFn: () => apiRequest<RequestsListResponse>(`/api/leads?search=${encodeURIComponent(search)}&limit=20`),
+    queryKey: ['share-ingress-requests', debouncedSearch],
+    queryFn: () =>
+      apiRequest<RequestsListResponse>(
+        `/api/leads?search=${encodeURIComponent(debouncedSearch)}&limit=20`
+      ),
     enabled: targetType === 'request' && allowRequests,
   })
 
-  const filteredJobs = useMemo(() => {
-    const rows = jobsQuery.data?.jobs || []
-    const term = search.trim().toLowerCase()
-    if (!term) return rows
-    return rows.filter(
-      (job) =>
-        job.jobNumber?.toLowerCase().includes(term) ||
-        job.title?.toLowerCase().includes(term) ||
-        job.client?.name?.toLowerCase().includes(term)
-    )
-  }, [jobsQuery.data?.jobs, search])
-
+  const filteredJobs = jobsQuery.data?.jobs || []
   const requests = requestsQuery.data?.leads || []
 
   const onPickTestFile = async () => {
@@ -324,7 +331,11 @@ export function ShareIngressScreen({ route, navigation }: Props) {
 
               <TextInput
                 value={search}
-                onChangeText={setSearch}
+                onChangeText={(value) => {
+                  setSearch(value)
+                  setSelectedJobId(null)
+                  setSelectedRequestId(null)
+                }}
                 placeholder={
                   targetType === 'request'
                     ? 'Search requests by name...'
@@ -333,6 +344,9 @@ export function ShareIngressScreen({ route, navigation }: Props) {
                 placeholderTextColor={colors.muted}
                 style={styles.searchInput}
               />
+              {(targetType === 'job' || targetType === 'message') && !canViewAllJobs() ? (
+                <Text style={styles.scopeHint}>Showing jobs assigned to you. Search finds matching assigned jobs.</Text>
+              ) : null}
             </Card>
 
             {(targetType === 'job' || targetType === 'message') && jobsQuery.isLoading ? (
@@ -476,6 +490,11 @@ const styles = StyleSheet.create({
   segmentButtonActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   segmentText: { ...typography.caption, color: colors.textSecondary, fontWeight: '600' },
   segmentTextActive: { color: colors.surface },
+  scopeHint: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
+  },
   searchInput: {
     borderWidth: 1,
     borderColor: colors.divider,
