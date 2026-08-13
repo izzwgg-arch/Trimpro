@@ -6,6 +6,7 @@ import { colors, spacing, typography } from '../theme/tokens'
 import { PressableCard } from './Card'
 import { StatusBadge } from './StatusBadge'
 import { BillingStatusBadge } from './BillingStatusBadge'
+import { getNextAction, getProductionStageLabel } from '../lib/productionLine'
 
 export function JobCard({
   job,
@@ -13,32 +14,37 @@ export function JobCard({
   hasUnreadMessages,
   hasNewMedia,
   hasOpenIssue,
+  showNextAction = false,
 }: {
   job: Job
   onPress: () => void
   hasUnreadMessages?: boolean
   hasNewMedia?: boolean
   hasOpenIssue?: boolean
+  showNextAction?: boolean
 }) {
-  const scheduleText = job.createdAt
-    ? `Created ${new Date(job.createdAt).toLocaleDateString([], {
+  const scheduleText = job.scheduledStart
+    ? new Date(job.scheduledStart).toLocaleString([], {
         month: 'short',
         day: 'numeric',
         year: 'numeric',
-      })}`
-    : job.scheduledStart
-      ? new Date(job.scheduledStart).toLocaleString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : job.createdAt
+      ? `Created ${new Date(job.createdAt).toLocaleDateString([], {
           month: 'short',
           day: 'numeric',
           year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-        })
+        })}`
       : 'No date'
 
   const address = job.address?.street
     ? `${job.address.street}, ${job.address.city || ''} ${job.address.state || ''}`.trim()
     : 'No job site address'
+
+  const nextAction = showNextAction ? getNextAction(job) : null
+  const stageLabel = showNextAction ? getProductionStageLabel(job.status) : null
 
   return (
     <PressableCard onPress={onPress}>
@@ -57,6 +63,21 @@ export function JobCard({
         </View>
       </View>
 
+      {stageLabel ? (
+        <Text style={styles.stage} numberOfLines={1}>
+          Line: {stageLabel}
+        </Text>
+      ) : null}
+
+      {nextAction ? (
+        <View style={styles.nextActionRow}>
+          <Ionicons name="arrow-forward-circle-outline" size={16} color={colors.brandPrimary} />
+          <Text style={styles.nextAction} numberOfLines={2}>
+            {nextAction}
+          </Text>
+        </View>
+      ) : null}
+
       <Text style={styles.meta} numberOfLines={1}>
         {scheduleText}
       </Text>
@@ -64,31 +85,25 @@ export function JobCard({
         <Pressable
           onPress={(e) => {
             e.stopPropagation()
-            const fullAddress = `${job.address.street}, ${job.address.city || ''} ${job.address.state || ''} ${job.address.zipCode || ''}`.trim()
+            const fullAddress = `${job.address?.street || ''}, ${job.address?.city || ''} ${job.address?.state || ''} ${job.address?.zipCode || ''}`.trim()
             const encodedAddress = encodeURIComponent(fullAddress)
-            
-            // Try Google Maps app first
+
             const androidGoogleMapsUrl = `comgooglemaps://?q=${encodedAddress}`
             const iosGoogleMapsUrl = `googlemaps://?q=${encodedAddress}`
-            // Fallback to native maps
             const appleMapsUrl = `maps://?q=${encodedAddress}`
-            // Final fallback to web Google Maps
             const webMapsUrl = `https://maps.google.com/?q=${encodedAddress}`
-            
+
             const googleMapsUrl = Platform.OS === 'android' ? androidGoogleMapsUrl : iosGoogleMapsUrl
-            
-            // Try Google Maps app first
+
             Linking.canOpenURL(googleMapsUrl)
               .then((supported) => {
                 if (supported) {
                   return Linking.openURL(googleMapsUrl)
                 }
-                // Fallback to native maps (iOS Maps or Android Maps)
                 return Linking.canOpenURL(appleMapsUrl).then((nativeSupported) => {
                   if (nativeSupported) {
                     return Linking.openURL(appleMapsUrl)
                   }
-                  // Final fallback to web
                   return Linking.openURL(webMapsUrl)
                 })
               })
@@ -152,6 +167,28 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 2,
   },
+  stage: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginBottom: 4,
+    fontWeight: '600',
+  },
+  nextActionRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    marginBottom: spacing.sm,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    backgroundColor: 'rgba(46,74,89,0.08)',
+  },
+  nextAction: {
+    ...typography.caption,
+    color: colors.brandPrimary,
+    fontWeight: '600',
+    flex: 1,
+  },
   meta: {
     ...typography.caption,
     color: colors.textSecondary,
@@ -174,4 +211,3 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
 })
-

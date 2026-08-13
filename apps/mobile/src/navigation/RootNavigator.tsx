@@ -149,7 +149,7 @@ function JobsStackNavigator() {
   return (
     <JobsStack.Navigator screenOptions={stackOptions}>
       <JobsStack.Screen name="DashboardHome" component={DashboardScreen} options={mainHeaderOptions('Dashboard')} />
-      <JobsStack.Screen name="JobsList" component={JobsScreen} options={mainHeaderOptions('My Jobs')} />
+      <JobsStack.Screen name="JobsList" component={JobsScreen} options={mainHeaderOptions('Production Line')} />
       <JobsStack.Screen name="JobDetail" component={JobDetailScreen} options={detailsHeaderOptions('Job Details')} />
       <JobsStack.Screen name="AllJobsList" component={AllJobsScreen} options={mainHeaderOptions('All Jobs')} />
       <JobsStack.Screen name="AdminJobDetail" component={AdminJobDetailScreen} options={detailsHeaderOptions('Job Details')} />

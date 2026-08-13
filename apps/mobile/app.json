@@ -3,7 +3,7 @@
     "name": "TrimPro Field",
     "slug": "trimpro-field",
     "scheme": ["trimprofield", "trimpro"],
-    "version": "1.0.8",
+    "version": "1.0.9",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -35,7 +35,7 @@
     },
     "android": {
       "package": "com.trimpro.field",
-      "versionCode": 24,
+      "versionCode": 25,
       "softwareKeyboardLayoutMode": "pan",
       "googleServicesFile": "./google-services.json",
       "notification": {
