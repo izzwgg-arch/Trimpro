@@ -225,6 +225,25 @@ export default function NewPurchaseOrderPage() {
     ])
   }
 
+  const insertLineItemAfter = (index: number) => {
+    setLineItems((prev) => {
+      const row = prev[index]
+      const next = [...prev]
+      const blank: LineItem = {
+        description: '',
+        quantity: '1',
+        unitCost: '0',
+        ...defaultPoVisibility,
+      }
+      if (row.groupId) {
+        blank.groupId = row.groupId
+        blank.groupName = row.groupName
+      }
+      next.splice(index + 1, 0, blank)
+      return next
+    })
+  }
+
   const removeLineItem = (index: number) => {
     setLineItems((prev) => {
       if (prev.length <= 1) return prev
@@ -959,6 +978,19 @@ export default function NewPurchaseOrderPage() {
                               </div>
                             )}
                           </>
+                        )}
+
+                        {!isGroupHeader && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            title="Insert line below"
+                            className="shrink-0 self-center text-green-600 hover:text-green-800"
+                            onClick={() => insertLineItemAfter(index)}
+                          >
+                            <Plus className="h-4 w-4" />
+                          </Button>
                         )}
 
                         {lineItems.length > 1 && !isGroupHeader && (
