@@ -1332,6 +1332,7 @@ model PurchaseOrderLineItem {
   vendorId       String? // Vendor for this specific line item
   taxable        Boolean  @default(false)
   taxRate        Decimal? @db.Decimal(5, 4)
+  isNote         Boolean  @default(false) // Free-text note row between line items — no qty/price
   // Vendor-facing visibility (PDF / email attachment) — same pattern as estimate customer toggles
   isVisibleToClient         Boolean @default(true)
   showDescriptionToCustomer Boolean @default(true) // Item name

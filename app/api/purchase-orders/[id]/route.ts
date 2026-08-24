@@ -326,8 +326,9 @@ export async function PUT(
       // Create new line items
       for (let i = 0; i < lineItems.length; i++) {
         const item = lineItems[i]
-        const qty = parseFloat(item.quantity || 0)
-        const price = parseFloat(item.unitPrice || 0) // PO uses unitPrice for cost
+        const isNote = item.isNote === true
+        const qty = isNote ? 0 : parseFloat(item.quantity || 0)
+        const price = isNote ? 0 : parseFloat(item.unitPrice || 0) // PO uses unitPrice for cost
         const itemTotal = qty * price
 
         // Get groupId from map if item has a groupId
@@ -339,15 +340,16 @@ export async function PUT(
             groupId: dbGroupId,
             description: item.description || '',
             details: item.details || null,
-            quantity: qty || 1,
+            quantity: isNote ? 0 : qty || 1,
             unitPrice: price || 0,
-            unitCost: item.unitCost ? parseFloat(item.unitCost) : null,
+            unitCost: isNote ? null : item.unitCost ? parseFloat(item.unitCost) : null,
             total: itemTotal,
             sortOrder: i,
-            vendorId: item.vendorId || null,
+            vendorId: isNote ? null : item.vendorId || null,
             notes: item.notes || null,
             sourceItemId: item.sourceItemId || null,
             sourceBundleId: item.sourceBundleId || null,
+            isNote,
             isVisibleToClient: item.isVisibleToClient !== false,
             showDescriptionToCustomer: item.showDescriptionToCustomer !== false,
             showDetailsToCustomer: item.showDetailsToCustomer !== false,

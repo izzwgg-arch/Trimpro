@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SearchableJobSelect } from '@/components/ui/searchable-job-select'
-import { Save, Plus, Trash2, Eye, EyeOff } from 'lucide-react'
+import { Save, Plus, Trash2, Eye, EyeOff, MessageSquare } from 'lucide-react'
 import Link from 'next/link'
 import { LineItemDragHandle } from '@/components/documents/line-item-drag-handle'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
@@ -58,6 +58,8 @@ interface LineItem {
   sourceItemId?: string | null
   sourceBundleId?: string | null
   tag?: string
+  // Free-text note row between line items — no qty/price
+  isNote?: boolean
   // Vendor-facing visibility (PDF) — same pattern as estimates
   isVisibleToClient?: boolean
   showDescriptionToCustomer?: boolean
@@ -225,6 +227,19 @@ export default function NewPurchaseOrderPage() {
     ])
   }
 
+  const addNoteItem = () => {
+    setLineItems((prev) => [
+      ...prev,
+      {
+        description: '',
+        quantity: '0',
+        unitCost: '0',
+        isNote: true,
+        ...defaultPoVisibility,
+      },
+    ])
+  }
+
   const insertLineItemAfter = (index: number) => {
     setLineItems((prev) => {
       const row = prev[index]
@@ -238,6 +253,21 @@ export default function NewPurchaseOrderPage() {
       if (row.groupId) {
         blank.groupId = row.groupId
         blank.groupName = row.groupName
+      }
+      next.splice(index + 1, 0, blank)
+      return next
+    })
+  }
+
+  const insertNoteAfter = (index: number) => {
+    setLineItems((prev) => {
+      const next = [...prev]
+      const blank: LineItem = {
+        description: '',
+        quantity: '0',
+        unitCost: '0',
+        isNote: true,
+        ...defaultPoVisibility,
       }
       next.splice(index + 1, 0, blank)
       return next
@@ -468,10 +498,10 @@ export default function NewPurchaseOrderPage() {
       const token = localStorage.getItem('accessToken')
       
       const subtotal = lineItems.reduce((sum, item) => {
-        if (item.isGroupHeader) return sum
+        if (item.isGroupHeader || item.isNote) return sum
         return sum + parseFloat(item.quantity || '0') * parseFloat(item.unitCost || '0')
       }, 0)
-      
+
       const tax = parseFloat(formData.tax || '0')
       const shipping = parseFloat(formData.shipping || '0')
       const total = subtotal + tax + shipping
@@ -480,10 +510,10 @@ export default function NewPurchaseOrderPage() {
         .filter(item => !item.isGroupHeader)
         .map((item, index) => ({
           description: item.description,
-          quantity: parseFloat(item.quantity || '1'),
-          unitPrice: parseFloat(item.unitCost || '0'), // PO uses unitPrice field for cost
-          unitCost: parseFloat(item.unitCost || '0'),
-          total: parseFloat(item.quantity || '1') * parseFloat(item.unitCost || '0'),
+          quantity: item.isNote ? 0 : parseFloat(item.quantity || '1'),
+          unitPrice: item.isNote ? 0 : parseFloat(item.unitCost || '0'), // PO uses unitPrice field for cost
+          unitCost: item.isNote ? 0 : parseFloat(item.unitCost || '0'),
+          total: item.isNote ? 0 : parseFloat(item.quantity || '1') * parseFloat(item.unitCost || '0'),
           sortOrder: index,
           vendorId: item.vendorId || null,
           details: item.details || null,
@@ -491,6 +521,7 @@ export default function NewPurchaseOrderPage() {
           groupId: item.groupId || null,
           sourceItemId: item.sourceItemId || null,
           sourceBundleId: item.sourceBundleId || null,
+          isNote: item.isNote === true,
           isVisibleToClient: item.isVisibleToClient !== false,
           showDescriptionToCustomer: item.showDescriptionToCustomer !== false,
           showDetailsToCustomer: item.showDetailsToCustomer !== false,
@@ -557,7 +588,7 @@ export default function NewPurchaseOrderPage() {
   }
 
   const subtotal = lineItems.reduce((sum, item) => {
-    if (item.isGroupHeader) return sum
+    if (item.isGroupHeader || item.isNote) return sum
     return sum + parseFloat(item.quantity || '0') * parseFloat(item.unitCost || '0')
   }, 0)
   
@@ -739,6 +770,8 @@ export default function NewPurchaseOrderPage() {
                         className={`flex flex-wrap items-start gap-2 p-2 rounded border ${
                           isGroupHeader
                             ? 'bg-purple-50 border-purple-200'
+                            : item.isNote
+                            ? 'bg-amber-50 border-amber-200'
                             : isInGroup
                             ? 'bg-purple-25 border-purple-100 ml-4'
                             : 'border-gray-300'
@@ -808,6 +841,17 @@ export default function NewPurchaseOrderPage() {
                                 <Eye className="h-4 w-4 text-gray-600" />
                               )}
                             </Button>
+                          </div>
+                        ) : item.isNote ? (
+                          <div className="flex-1 min-w-0">
+                            <Label className="text-xs text-amber-600 font-medium mb-1 block">Note</Label>
+                            <textarea
+                              value={item.description}
+                              onChange={(e) => updateLineItem(index, 'description', e.target.value)}
+                              placeholder="Write a note for this section (not a priced item)..."
+                              rows={2}
+                              className="w-full rounded border border-amber-200 bg-white px-3 py-2 text-sm italic text-gray-700 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                            />
                           </div>
                         ) : (
                           <>
@@ -993,6 +1037,19 @@ export default function NewPurchaseOrderPage() {
                           </Button>
                         )}
 
+                        {!isGroupHeader && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            title="Insert note below"
+                            className="shrink-0 self-center text-amber-600 hover:text-amber-800"
+                            onClick={() => insertNoteAfter(index)}
+                          >
+                            <MessageSquare className="h-4 w-4" />
+                          </Button>
+                        )}
+
                         {lineItems.length > 1 && !isGroupHeader && (
                           <Button
                             type="button"
@@ -1014,10 +1071,16 @@ export default function NewPurchaseOrderPage() {
                     )
                   })}
                 </div>
-                <Button type="button" variant="outline" onClick={addLineItem}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Line Item
-                </Button>
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" onClick={addLineItem}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Line Item
+                  </Button>
+                  <Button type="button" variant="outline" onClick={addNoteItem} className="text-amber-700 border-amber-300 hover:bg-amber-50">
+                    <MessageSquare className="mr-2 h-4 w-4" />
+                    Add Note
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           </div>

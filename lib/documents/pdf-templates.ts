@@ -605,6 +605,7 @@ export function buildPurchaseOrderPdfHtml(
   const lineItems = Array.isArray(purchaseOrder.lineItems) ? purchaseOrder.lineItems : []
   const visibleLineItems = lineItems.filter((item: AnyRecord) => item.isVisibleToClient !== false)
   const subtotal = visibleLineItems.reduce((sum: number, item: AnyRecord) => {
+    if (item.isNote) return sum
     return sum + Number(item.quantity) * Number(item.unitPrice)
   }, 0)
   const total = Number(purchaseOrder.total || 0)
@@ -625,7 +626,19 @@ export function buildPurchaseOrderPdfHtml(
   const showNotesCol = visibleLineItems.some((li: AnyRecord) => li.showNotesToCustomer !== false)
   const showPriceCol = visibleLineItems.some((li: AnyRecord) => li.showPriceToCustomer !== false)
 
+  const poColCount =
+    (showItemCol ? 1 : 0) +
+    (showDetailsCol ? 1 : 0) +
+    (showNotesCol ? 1 : 0) +
+    1 /* quantity */ +
+    (showPriceCol ? 2 : 0)
+
   const buildPoRow = (item: AnyRecord) => {
+    if (item.isNote) {
+      return `<tr>
+        <td colspan="${poColCount}" style="font-style:italic;color:#4b5563;background:#f9fafb;">${escapeHtmlMultiline(item.description || '')}</td>
+      </tr>`
+    }
     const itemCell =
       item.showDescriptionToCustomer !== false ? escapeHtmlMultiline(item.description) : ''
     const detailsCell =
