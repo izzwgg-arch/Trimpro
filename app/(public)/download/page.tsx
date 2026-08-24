@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 }
 
 const APK_PATH = '/downloads/trimpro-field.apk'
-const APP_VERSION = '1.0.17'
+const APP_VERSION = '1.0.18'
 
 export default function DownloadAppPage() {
   return (

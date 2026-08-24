@@ -4,6 +4,7 @@ import { AppState, TextInput, View } from 'react-native'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import * as Notifications from 'expo-notifications'
 import * as SplashScreen from 'expo-splash-screen'
+import { KeyboardProvider } from 'react-native-keyboard-controller'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { BrandingProvider } from './branding/BrandingContext'
@@ -251,11 +252,13 @@ export default function AppRoot() {
   return (
     <QueryClientProvider client={queryClient}>
       <SafeAreaProvider>
-        <BrandingProvider>
-          <AuthProvider>
-            <SyncAndPushBootstrap />
-          </AuthProvider>
-        </BrandingProvider>
+        <KeyboardProvider statusBarTranslucent navigationBarTranslucent preserveEdgeToEdge>
+          <BrandingProvider>
+            <AuthProvider>
+              <SyncAndPushBootstrap />
+            </AuthProvider>
+          </BrandingProvider>
+        </KeyboardProvider>
       </SafeAreaProvider>
     </QueryClientProvider>
   )
