@@ -3,11 +3,32 @@ import { getAccessToken, getOrCreateDeviceId, getRefreshToken, saveTokens } from
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
+const DEFAULT_FETCH_TIMEOUT_MS = 15_000
+
 let unauthorizedHandler: (() => void) | null = null
 let refreshInFlight: Promise<boolean> | null = null
 
 export function setUnauthorizedHandler(handler: (() => void) | null) {
   unauthorizedHandler = handler
+}
+
+async function fetchWithTimeout(
+  input: string,
+  init: RequestInit | undefined,
+  timeoutMs = DEFAULT_FETCH_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(input, { ...init, signal: controller.signal })
+  } catch (error: any) {
+    if (error?.name === 'AbortError') {
+      throw new Error(`Request timed out after ${timeoutMs}ms`)
+    }
+    throw error
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 async function refreshAccessTokenSilently(): Promise<boolean> {
@@ -23,7 +44,7 @@ async function refreshAccessTokenSilently(): Promise<boolean> {
     try {
       console.info('[auth] refresh attempt started')
       const deviceId = await getOrCreateDeviceId()
-      const response = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/api/auth/refresh`, {
         method: 'POST',
         headers: {
           Accept: 'application/json',
@@ -88,7 +109,7 @@ export async function apiRequest<T>(
     headers['Content-Type'] = 'application/json'
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetchWithTimeout(`${API_BASE_URL}${path}`, {
     method,
     headers,
     body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),

@@ -1,7 +1,5 @@
 import React, { useEffect } from 'react'
 import { NavigationContainer, DefaultTheme, LinkingOptions, createNavigationContainerRef } from '@react-navigation/native'
-import { useShareIntentContext } from 'expo-share-intent'
-import { buildShareAwareLinking } from '../share/shareIntentLinking'
 import { createDrawerNavigator, DrawerContentComponentProps, DrawerContentScrollView } from '@react-navigation/drawer'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
@@ -128,28 +126,18 @@ const baseLinking: LinkingOptions<RootDrawerParamList> = {
   },
 }
 
-const linking = buildShareAwareLinking(baseLinking)
-
-function ShareIntentNavigator() {
-  const { hasShareIntent } = useShareIntentContext()
-  const { token } = useAuth()
-
-  useEffect(() => {
-    if (!token || !hasShareIntent || !navigationRef.isReady()) return
-    navigationRef.navigate('MainTabs', {
-      screen: 'JobsTab',
-      params: { screen: 'ShareIngress' },
-    } as never)
-  }, [hasShareIntent, token])
-
-  return null
-}
+// Do NOT wrap with ShareIntent getInitialURL — that native call can hang forever
+// on cold start and leave NavigationContainer blank (looks like a frozen splash).
+const linking = baseLinking
 
 function JobsStackNavigator() {
   return (
-    <JobsStack.Navigator screenOptions={stackOptions}>
-      <JobsStack.Screen name="DashboardHome" component={DashboardScreen} options={mainHeaderOptions('Dashboard')} />
+    <JobsStack.Navigator
+      initialRouteName="JobsList"
+      screenOptions={stackOptions}
+    >
       <JobsStack.Screen name="JobsList" component={JobsScreen} options={mainHeaderOptions('Production Line')} />
+      <JobsStack.Screen name="DashboardHome" component={DashboardScreen} options={mainHeaderOptions('Dashboard')} />
       <JobsStack.Screen name="JobDetail" component={JobDetailScreen} options={detailsHeaderOptions('Job Details')} />
       <JobsStack.Screen name="AllJobsList" component={AllJobsScreen} options={mainHeaderOptions('All Jobs')} />
       <JobsStack.Screen name="AdminJobDetail" component={AdminJobDetailScreen} options={detailsHeaderOptions('Job Details')} />
@@ -179,7 +167,7 @@ function JobsStackNavigator() {
       <JobsStack.Screen name="RequestCreate" component={CreateRequestScreen} options={detailsHeaderOptions('Create Request')} />
       <JobsStack.Screen name="RequestDetail" component={RequestDetailScreen} options={detailsHeaderOptions('Request')} />
       <JobsStack.Screen name="CallsHome" component={CallsScreen} options={mainHeaderOptions('Calls')} />
-      <JobsStack.Screen name="OutboxHome" component={OutboxScreen} options={mainHeaderOptions('Outbox')} />
+      <JobsStack.Screen name="OutboxHome" component={OutboxScreen} options={detailsHeaderOptions('Outbox')} />
       <JobsStack.Screen name="ProfileHome" component={ProfileScreen} options={mainHeaderOptions('Profile')} />
       <JobsStack.Screen
         name="ShareIngress"
@@ -505,7 +493,6 @@ export function RootNavigator() {
         },
       }}
     >
-      <ShareIntentNavigator />
       {!token ? (
         <AuthStack.Navigator screenOptions={{ headerShown: false }}>
           <AuthStack.Screen name="Login" component={LoginScreen} />

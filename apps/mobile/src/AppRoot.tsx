@@ -4,7 +4,6 @@ import { AppState, TextInput, View } from 'react-native'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import * as Notifications from 'expo-notifications'
 import * as SplashScreen from 'expo-splash-screen'
-import { KeyboardProvider } from 'react-native-keyboard-controller'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { BrandingProvider } from './branding/BrandingContext'
@@ -16,17 +15,21 @@ import { apiRequest } from './api/client'
 import { NotificationPopup } from './components/NotificationPopup'
 import { openFromNotificationPayload } from './notifications/openFromNotification'
 
-// Keep splash screen visible until we explicitly hide it
-SplashScreen.preventAutoHideAsync()
+// Never call preventAutoHideAsync — if JS stalls before hide, the native splash
+// stays forever. Hide as soon as this module loads, then again after mount.
+void SplashScreen.hideAsync().catch(() => null)
 
-// Configure notification behavior
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-})
+try {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+    }),
+  })
+} catch {
+  // Non-fatal on devices where notifications module is unavailable.
+}
 
 const queryClient = new QueryClient()
 
@@ -241,47 +244,18 @@ function SyncAndPushBootstrap() {
 }
 
 export default function AppRoot() {
-  const [appIsReady, setAppIsReady] = useState(false)
-
   useEffect(() => {
-    async function prepare() {
-      try {
-        // Do NOT call checkForUpdateAsync + reloadAsync here.
-        // That immediately replaces the native APK's embedded JS with whatever is newest on EAS Update.
-        // A stale or restore OTA can override a good APK and make the app look like an old build.
-        // OTA delivery is handled by app.json updates.checkAutomatically: ON_LOAD instead.
-        await new Promise((resolve) => setTimeout(resolve, 2500)) // 2.5 second minimum display
-        setAppIsReady(true)
-      } catch (e) {
-        console.warn('Error preparing app:', e)
-        setAppIsReady(true)
-      }
-    }
-
-    void prepare()
+    void SplashScreen.hideAsync().catch(() => null)
   }, [])
-
-  useEffect(() => {
-    if (appIsReady) {
-      // Hide splash screen after minimum delay
-      void SplashScreen.hideAsync()
-    }
-  }, [appIsReady])
-
-  if (!appIsReady) {
-    return null
-  }
 
   return (
     <QueryClientProvider client={queryClient}>
       <SafeAreaProvider>
-        <KeyboardProvider statusBarTranslucent navigationBarTranslucent preserveEdgeToEdge>
-          <BrandingProvider>
-            <AuthProvider>
-              <SyncAndPushBootstrap />
-            </AuthProvider>
-          </BrandingProvider>
-        </KeyboardProvider>
+        <BrandingProvider>
+          <AuthProvider>
+            <SyncAndPushBootstrap />
+          </AuthProvider>
+        </BrandingProvider>
       </SafeAreaProvider>
     </QueryClientProvider>
   )

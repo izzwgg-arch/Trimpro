@@ -1,5 +1,4 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { ActivityIndicator, View } from 'react-native'
 import { apiRequest, setUnauthorizedHandler } from '../api/client'
 import { clearAuth, getAccessToken, getOrCreateDeviceId, getRefreshToken, getStoredUser, saveAuth } from './secure-storage'
 import { AuthUser } from '../types/models'
@@ -19,10 +18,29 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
+/** Don't block the login screen forever if SecureStore/network hangs. */
+const SESSION_RESTORE_TIMEOUT_MS = 4_000
+
 interface LoginResponse {
   accessToken: string
   refreshToken: string
   user: AuthUser
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error) => {
+        clearTimeout(timer)
+        reject(error)
+      }
+    )
+  })
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -82,19 +100,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let mounted = true
+    // Absolute failsafe: never keep the splash/spinner longer than this,
+    // even if SecureStore or clearAuth hangs after a timed-out restore.
+    const hardFailsafe = setTimeout(() => {
+      if (!mounted) return
+      // Keep this Error message — release builds strip console.* strings.
+      void new Error('AUTH_HARD_FAILSAFE_1_0_14')
+      setUser(null)
+      setToken(null)
+      setMobilePermissions([])
+      setPermissions([])
+      setIsLoading(false)
+    }, SESSION_RESTORE_TIMEOUT_MS + 2_000)
+
     ;(async () => {
       try {
-        const [storedUser, refreshToken] = await Promise.all([getStoredUser(), getRefreshToken()])
+        const [storedUser, refreshToken] = await withTimeout(
+          Promise.all([getStoredUser(), getRefreshToken()]),
+          SESSION_RESTORE_TIMEOUT_MS,
+          'auth storage read'
+        )
         if (!mounted) return
 
         if (storedUser && refreshToken) {
           // Trigger a protected request to force token refresh when access token expired.
-          const meResponse = await apiRequest<{
-            user: AuthUser
-            mobilePermissions: string[]
-            permissions: string[]
-          }>('/api/me')
-          const latestAccessToken = await getAccessToken()
+          // Cap wait so a hung network never traps the user on the splash spinner.
+          const meResponse = await withTimeout(
+            apiRequest<{
+              user: AuthUser
+              mobilePermissions: string[]
+              permissions: string[]
+            }>('/api/me'),
+            SESSION_RESTORE_TIMEOUT_MS,
+            'session restore /api/me'
+          )
+          const latestAccessToken = await getAccessToken().catch(() => null)
+          if (!mounted) return
           if (latestAccessToken) {
             setToken(latestAccessToken)
           }
@@ -102,17 +143,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setMobilePermissions(meResponse.mobilePermissions || [])
           setPermissions(meResponse.permissions || [])
         } else {
-          await clearAuth()
+          // Don't await — SecureStore delete can hang on some devices.
+          void clearAuth().catch(() => null)
         }
       } catch (error) {
         console.warn('[auth] session restore failed, clearing local auth state', error)
-        await clearAuth()
+        setUser(null)
+        setToken(null)
+        setMobilePermissions([])
+        setPermissions([])
+        void clearAuth().catch(() => null)
       } finally {
+        clearTimeout(hardFailsafe)
         if (mounted) setIsLoading(false)
       }
     })()
     return () => {
       mounted = false
+      clearTimeout(hardFailsafe)
     }
   }, [])
 
@@ -157,14 +205,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [isLoading, signIn, signOut, token, user, mobilePermissions, permissions, refreshPermissions]
   )
 
-  if (isLoading) {
-    return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator />
-      </View>
-    )
-  }
-
+  // Never block the tree on auth bootstrap. While restoring, token is null so
+  // RootNavigator shows Login; a successful restore swaps to the main app.
+  // Blocking here caused infinite splash when SecureStore/network hung.
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
