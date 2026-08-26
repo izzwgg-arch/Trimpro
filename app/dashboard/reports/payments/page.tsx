@@ -9,7 +9,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { usePermissions, hasPermission, hasAnyPermission } from '@/hooks/usePermissions'
+import { usePermissions, hasPermission } from '@/hooks/usePermissions'
+import { formatCurrency } from '@/lib/utils'
 
 type PaymentRow = {
   id: string
@@ -30,6 +31,13 @@ type PaymentRow = {
   refundedAt: string | null
 }
 
+type PaymentsSummary = {
+  totalAmount: number
+  totalRefunded: number
+  succeededCount: number
+  failedCount: number
+}
+
 type PageResponse = {
   payments: PaymentRow[]
   pagination: {
@@ -38,6 +46,7 @@ type PageResponse = {
     total: number
     totalPages: number
   }
+  summary: PaymentsSummary
 }
 
 type RefundModalState = {
@@ -51,7 +60,6 @@ type RefundModalState = {
 
 export default function PaymentHistoryPage() {
   const { permissions } = usePermissions()
-  const canViewReports = hasAnyPermission(permissions, ['reports.view', 'reports.access'])
   const canRefund =
     hasPermission(permissions, 'payments.refund') ||
     hasPermission(permissions, 'payments.manage')
@@ -59,6 +67,7 @@ export default function PaymentHistoryPage() {
   const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null)
 
   const [rows, setRows] = useState<PaymentRow[]>([])
+  const [summary, setSummary] = useState<PaymentsSummary>({ totalAmount: 0, totalRefunded: 0, succeededCount: 0, failedCount: 0 })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [page, setPage] = useState(1)
@@ -112,6 +121,7 @@ export default function PaymentHistoryPage() {
       }
       setRows(data.payments || [])
       setTotalPages(data.pagination?.totalPages || 1)
+      setSummary(data.summary || { totalAmount: 0, totalRefunded: 0, succeededCount: 0, failedCount: 0 })
     } catch (err: any) {
       setError(err?.message || 'Failed to load payment history')
     } finally {
@@ -249,14 +259,12 @@ export default function PaymentHistoryPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          {canViewReports && (
-            <Link href="/dashboard/reports">
-              <Button variant="outline" size="sm">
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Back to Reports
-              </Button>
-            </Link>
-          )}
+          <Link href="/dashboard/reports">
+            <Button variant="outline" size="sm">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Reports
+            </Button>
+          </Link>
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Payment History</h1>
             <p className="text-gray-600 mt-1">SOLA + QuickBooks ACH payment events and refunds</p>
@@ -343,6 +351,35 @@ export default function PaymentHistoryPage() {
         </CardContent>
       </Card>
 
+      {!loading && !error && (
+        <div className="grid gap-4 sm:grid-cols-4">
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-xs text-gray-500">Total Amount</div>
+              <div className="text-xl font-bold">{formatCurrency(summary.totalAmount)}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-xs text-gray-500">Total Refunded</div>
+              <div className="text-xl font-bold text-blue-700">{formatCurrency(summary.totalRefunded)}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-xs text-gray-500">Succeeded</div>
+              <div className="text-xl font-bold text-green-700">{summary.succeededCount}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-xs text-gray-500">Failed</div>
+              <div className="text-xl font-bold text-red-600">{summary.failedCount}</div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Payments</CardTitle>
@@ -357,14 +394,14 @@ export default function PaymentHistoryPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm border-collapse">
                 <thead>
-                  <tr className="border-b bg-gray-50 text-left">
+                  <tr className="border-b text-left text-gray-500">
                     <th className="p-2">Internal Payment ID</th>
                     <th className="p-2">Provider</th>
                     <th className="p-2">Provider Payment ID</th>
                     <th className="p-2">Provider Invoice ID</th>
                     <th className="p-2">Customer Name</th>
                     <th className="p-2">Invoice Number</th>
-                    <th className="p-2">Amount</th>
+                    <th className="p-2 text-right">Amount</th>
                     <th className="p-2">Payment Method</th>
                     <th className="p-2">Status</th>
                     <th className="p-2">Refund Status</th>
@@ -376,6 +413,7 @@ export default function PaymentHistoryPage() {
                 <tbody>
                   {rows.map((row) => {
                     const fullyRefunded = row.refundStatus === 'FULLY_REFUNDED'
+                    const isCardPayment = row.paymentMethod === 'CARD'
                     return (
                       <tr key={row.id} className="border-b">
                         <td className="p-2 font-mono text-xs">{row.id}</td>
@@ -384,7 +422,7 @@ export default function PaymentHistoryPage() {
                         <td className="p-2 font-mono text-xs">{row.providerInvoiceId || '-'}</td>
                         <td className="p-2">{row.customerName}</td>
                         <td className="p-2">{row.invoiceNumber}</td>
-                        <td className="p-2">{row.currency} {Number(row.amount || 0).toFixed(2)}</td>
+                        <td className="p-2 text-right">{row.currency} {Number(row.amount || 0).toFixed(2)}</td>
                         <td className="p-2">{row.paymentMethod}</td>
                         <td className="p-2">{displayStatus(row.status)}</td>
                         <td className="p-2">
@@ -395,7 +433,7 @@ export default function PaymentHistoryPage() {
                         <td className="p-2">{row.refundedAt ? new Date(row.refundedAt).toLocaleString() : '-'}</td>
                         <td className="p-2">
                           <div className="flex flex-wrap gap-2">
-                            {canRefund ? (
+                            {canRefund && isCardPayment ? (
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -425,6 +463,17 @@ export default function PaymentHistoryPage() {
                     )
                   })}
                 </tbody>
+                {rows.length > 0 && (
+                  <tfoot>
+                    <tr className="border-t-2 font-semibold">
+                      <td className="p-2" colSpan={6}>Total (this page)</td>
+                      <td className="p-2 text-right">
+                        {formatCurrency(rows.reduce((s, r) => s + Number(r.amount || 0), 0))}
+                      </td>
+                      <td className="p-2" colSpan={5}></td>
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </div>
           )}

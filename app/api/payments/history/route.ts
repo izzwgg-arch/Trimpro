@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const [items, total] = await Promise.all([
+    const [items, total, aggregate, succeededCount, failedCount] = await Promise.all([
       prisma.payment.findMany({
         where,
         include: {
@@ -106,6 +106,10 @@ export async function GET(request: NextRequest) {
         take: limit,
       }),
       prisma.payment.count({ where }),
+      // Sums across the full filtered set, not just the current page.
+      prisma.payment.aggregate({ where, _sum: { amount: true, refundedAmount: true } }),
+      prisma.payment.count({ where: { ...where, status: 'COMPLETED' } }),
+      prisma.payment.count({ where: { ...where, status: 'FAILED' } }),
     ])
 
     const rows = items.map((p) => {
@@ -161,6 +165,12 @@ export async function GET(request: NextRequest) {
         limit,
         total,
         totalPages: Math.max(1, Math.ceil(total / limit)),
+      },
+      summary: {
+        totalAmount: Number(aggregate._sum.amount || 0),
+        totalRefunded: Number(aggregate._sum.refundedAmount || 0),
+        succeededCount,
+        failedCount,
       },
     })
   } catch (error) {

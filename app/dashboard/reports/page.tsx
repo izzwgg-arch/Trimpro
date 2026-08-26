@@ -2,8 +2,7 @@
 
 import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Users, TrendingUp, Briefcase, Truck, Clock } from 'lucide-react'
+import { Users, TrendingUp, Briefcase, Truck, Clock, CreditCard } from 'lucide-react'
 import { usePermissions, hasPermission } from '@/hooks/usePermissions'
 
 const FINANCIAL_REPORTS = [
@@ -12,37 +11,49 @@ const FINANCIAL_REPORTS = [
     name: 'Revenue by Month',
     description: 'Invoiced vs. collected revenue, compared to the prior period',
     icon: TrendingUp,
+    permission: 'reports.view',
   },
   {
     href: '/dashboard/reports/aging',
     name: 'Invoices Aging',
     description: 'Outstanding balances by how overdue they are',
     icon: Clock,
+    permission: 'reports.view',
   },
   {
     href: '/dashboard/reports/customer-statement',
     name: 'Customer Statement',
     description: 'Invoices, payments applied, and running balance for a customer',
     icon: Users,
+    permission: 'reports.view',
   },
   {
     href: '/dashboard/reports/job-profitability',
     name: 'Job Profitability',
     description: 'Revenue vs. labor and material cost per job',
     icon: Briefcase,
+    permission: 'reports.view',
   },
   {
     href: '/dashboard/reports/vendor-spend',
     name: 'Vendor Spend',
     description: 'Purchase order spend by vendor',
     icon: Truck,
+    permission: 'reports.view',
   },
-]
+  {
+    href: '/dashboard/reports/payments',
+    name: 'Payment History',
+    description: 'SOLA + QuickBooks ACH payment events and refunds',
+    icon: CreditCard,
+    permission: 'payments.view',
+  },
+] as const
 
 export default function ReportsPage() {
   const { permissions, loading: permissionsLoading } = usePermissions()
-  const canViewReports = hasPermission(permissions, 'reports.view')
-  const canViewPayments = hasPermission(permissions, 'payments.view')
+
+  const visibleReports = FINANCIAL_REPORTS.filter((report) => hasPermission(permissions, report.permission))
 
   if (permissionsLoading) {
     return (
@@ -57,27 +68,18 @@ export default function ReportsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Reports</h1>
-          <p className="text-gray-600 mt-1">Generate and manage reports</p>
-        </div>
-        {canViewPayments && (
-          <Link href="/dashboard/reports/payments">
-            <Button variant="outline">Payment History</Button>
-          </Link>
-        )}
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900">Reports</h1>
+        <p className="text-gray-600 mt-1">Generate and manage reports</p>
       </div>
 
-      {!canViewReports && canViewPayments && (
+      {visibleReports.length === 0 ? (
         <Card>
           <CardContent className="py-8 text-center text-sm text-gray-600">
-            You have access to Payment History only. Use the button above to open payments.
+            You don't have access to any reports yet.
           </CardContent>
         </Card>
-      )}
-
-      {canViewReports && (
+      ) : (
         <Card>
           <CardHeader>
             <CardTitle>Financial Reports</CardTitle>
@@ -85,7 +87,7 @@ export default function ReportsPage() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {FINANCIAL_REPORTS.map((report) => (
+              {visibleReports.map((report) => (
                 <Link key={report.href} href={report.href}>
                   <Card className="h-full hover:border-blue-500 hover:shadow-sm transition-all cursor-pointer">
                     <CardHeader>

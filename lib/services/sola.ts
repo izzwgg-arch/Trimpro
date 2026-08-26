@@ -113,7 +113,24 @@ export class SolaService {
       throw new Error(error.message || `SOLA API error: ${response.statusText}`)
     }
 
-    return response.json()
+    const json = await response.json()
+
+    // Cardknox-style gateways return HTTP 200 even for a declined/errored
+    // transaction — the real outcome is in the body (Result: "A" = approved,
+    // anything else = failed), not the HTTP status. A refund we don't
+    // catch here gets recorded as "completed" locally while no money
+    // actually moves at the processor — this happened in production on
+    // 2026-04-23 (refund cmobl9ib400ax3t2vvbk77n5q, Result "E", missing
+    // X-Recurring-Api-Version header) so this check is not theoretical.
+    if (json && typeof json === 'object') {
+      const result = (json as any).Result ?? (json as any).xResult
+      const gatewayError = (json as any).Error ?? (json as any).xError
+      if ((result && result !== 'A') || gatewayError) {
+        throw new Error(gatewayError || `SOLA gateway declined the request (Result: ${result})`)
+      }
+    }
+
+    return json
   }
 
   async createPaymentLink(request: SolaPaymentLinkRequest): Promise<SolaPaymentLinkResponse> {

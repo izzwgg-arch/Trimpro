@@ -196,6 +196,13 @@ export default function RevenueReportPage() {
                       </tr>
                     ))}
                   </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 font-semibold">
+                      <td className="py-2 px-4">Total</td>
+                      <td className="py-2 px-4 text-right">{formatCurrency(data.summary.totalInvoiced)}</td>
+                      <td className="py-2 px-4 text-right">{formatCurrency(data.summary.totalCollected)}</td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             </CardContent>

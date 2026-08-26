@@ -266,6 +266,16 @@ export default function CustomerStatementReportPage() {
                       ))
                     )}
                   </tbody>
+                  {data.ledger.length > 0 && (
+                    <tfoot>
+                      <tr className="border-t-2 font-semibold">
+                        <td className="py-2 pr-3" colSpan={4}>Total</td>
+                        <td className="py-2 pr-3 text-right">${data.summary.totalInvoiced.toFixed(2)}</td>
+                        <td className="py-2 pr-3 text-right">${(data.summary.totalPaid + data.summary.totalCredited).toFixed(2)}</td>
+                        <td className="py-2 pr-3 text-right">${data.summary.balance.toFixed(2)}</td>
+                      </tr>
+                    </tfoot>
+                  )}
                 </table>
               </div>
             </CardContent>

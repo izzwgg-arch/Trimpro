@@ -227,6 +227,28 @@ export default function JobProfitabilityReportPage() {
                       ))
                     )}
                   </tbody>
+                  {data.rows.length > 0 && (
+                    <tfoot>
+                      <tr className="border-t-2 font-semibold">
+                        <td className="py-2 pr-3" colSpan={3}>Total</td>
+                        <td className="py-2 pr-3 text-right">{formatCurrency(data.totals.revenue)}</td>
+                        <td className="py-2 pr-3 text-right">{formatCurrency(data.totals.laborCost)}</td>
+                        <td className="py-2 pr-3 text-right">{formatCurrency(data.totals.materialCost)}</td>
+                        <td className="py-2 pr-3 text-right text-gray-500">
+                          {formatCurrency(data.rows.reduce((s, r) => s + r.poSpend, 0))}
+                        </td>
+                        <td className="py-2 pr-3 text-right text-gray-500">
+                          {data.rows.reduce((s, r) => s + r.hoursLogged, 0).toFixed(1)}
+                        </td>
+                        <td className={`py-2 pr-3 text-right ${data.totals.profit < 0 ? 'text-red-600' : ''}`}>
+                          {formatCurrency(data.totals.profit)}
+                        </td>
+                        <td className="py-2 pr-3 text-right">
+                          {data.totals.revenue > 0 ? `${((data.totals.profit / data.totals.revenue) * 100).toFixed(1)}%` : '—'}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  )}
                 </table>
               </div>
             </CardContent>
