@@ -215,8 +215,11 @@ export default function MessagesPage() {
   }, [])
 
   // ── Load messages for selected thread ──────────────────────────────────────
-  const loadMessages = useCallback(async (thread: UnifiedThread) => {
-    setMsgsLoading(true)
+  // `silent` skips the loading placeholder — used for background polling/SSE
+  // refreshes so the list doesn't flicker to "Loading messages…" and back
+  // every few seconds; only the initial load of a thread shows it.
+  const loadMessages = useCallback(async (thread: UnifiedThread, opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setMsgsLoading(true)
     try {
       if (thread.kind === 'team') {
         const res = await fetchAuth(`/api/messages/conversations/${thread.id}/messages?limit=80`)
@@ -309,7 +312,7 @@ export default function MessagesPage() {
     const src = new EventSource(`/api/messages/stream?token=${encodeURIComponent(token)}&since=${encodeURIComponent(new Date().toISOString())}`)
     src.addEventListener('new_message', async (e) => {
       const p = JSON.parse((e as MessageEvent).data)
-      if (p.conversationId === selectedId) await loadMessages(selectedThread)
+      if (p.conversationId === selectedId) await loadMessages(selectedThread, { silent: true })
       loadThreads()
     })
     return () => src.close()
@@ -320,7 +323,7 @@ export default function MessagesPage() {
     if (pollRef.current) clearInterval(pollRef.current)
     if (!selectedThread || selectedThread.kind !== 'sms') return
     pollRef.current = setInterval(() => {
-      loadMessages(selectedThread)
+      loadMessages(selectedThread, { silent: true })
       loadThreads()
     }, 5000)
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
@@ -395,7 +398,7 @@ export default function MessagesPage() {
       const data = await res.json()
       if (!res.ok) { alert(data.error || 'Failed to send'); return }
     }
-    await loadMessages(selectedThread)
+    await loadMessages(selectedThread, { silent: true })
     await loadThreads()
   }, [selectedThread, fetchAuth, loadMessages, loadThreads, replyTarget])
 
