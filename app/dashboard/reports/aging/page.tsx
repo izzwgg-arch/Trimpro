@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { downloadReportExport } from '@/lib/reports/download-export'
+import { ReportFilterBar } from '@/components/reports/ReportFilterBar'
 
 const BUCKETS = ['current', '1-30', '31-60', '61-90', '90+'] as const
 type Bucket = (typeof BUCKETS)[number]
@@ -35,18 +36,28 @@ type AgingResponse = {
 
 export default function AgingReportPage() {
   const [asOf, setAsOf] = useState('')
+  const [clientId, setClientId] = useState('')
+  const [jobSiteAddress, setJobSiteAddress] = useState('')
+  const [hideSubClients, setHideSubClients] = useState(true)
   const [data, setData] = useState<AgingResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const buildQuery = () => {
+    const params = new URLSearchParams()
+    if (asOf) params.set('asOf', asOf)
+    if (clientId) params.set('clientId', clientId)
+    if (jobSiteAddress) params.set('jobSiteAddress', jobSiteAddress)
+    params.set('hideSubClients', String(hideSubClients))
+    return params
+  }
+
   useEffect(() => {
     setLoading(true)
     setError(null)
     const token = localStorage.getItem('accessToken')
-    const params = new URLSearchParams()
-    if (asOf) params.set('asOf', asOf)
-    fetch(`/api/reports/aging?${params.toString()}`, {
+    fetch(`/api/reports/aging?${buildQuery().toString()}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then(async (res) => {
@@ -56,13 +67,14 @@ export default function AgingReportPage() {
       .then(setData)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
-  }, [asOf])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [asOf, clientId, jobSiteAddress, hideSubClients])
 
   const handleExport = async (format: 'csv' | 'pdf') => {
     setExporting(true)
     try {
-      const params = new URLSearchParams({ format })
-      if (asOf) params.set('asOf', asOf)
+      const params = buildQuery()
+      params.set('format', format)
       await downloadReportExport(`/api/reports/aging?${params.toString()}`, `aging-report.${format}`)
     } catch {
       alert(`Failed to export ${format.toUpperCase()}`)
@@ -87,11 +99,9 @@ export default function AgingReportPage() {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <div className="flex items-end gap-4">
-            <div>
-              <Label>As of date</Label>
-              <Input type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} className="w-44" />
-            </div>
+          <div>
+            <Label>As of date</Label>
+            <Input type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} className="w-44" />
           </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" disabled={exporting} onClick={() => handleExport('csv')}>
@@ -102,6 +112,16 @@ export default function AgingReportPage() {
             </Button>
           </div>
         </CardHeader>
+        <CardContent>
+          <ReportFilterBar
+            clientId={clientId}
+            onClientChange={setClientId}
+            jobSiteAddress={jobSiteAddress}
+            onJobSiteAddressChange={setJobSiteAddress}
+            hideSubClients={hideSubClients}
+            onHideSubClientsChange={setHideSubClients}
+          />
+        </CardContent>
       </Card>
 
       {error && <div className="text-sm text-red-600">{error}</div>}

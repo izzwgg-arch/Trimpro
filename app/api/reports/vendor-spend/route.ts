@@ -6,6 +6,7 @@ import { renderPdfFromHtml } from '@/lib/pdf/render-html-to-pdf'
 import { getPdfBranding } from '@/lib/branding/pdf'
 import { buildVendorSpendPdfHtml } from '@/lib/documents/pdf-templates'
 import { csvResponse } from '@/lib/reports/csv'
+import { jobSiteAddressWhere, resolveClientFilterIds } from '@/lib/reports/client-filters'
 
 // Draft/pending/cancelled POs aren't committed spend yet.
 const SPEND_STATUSES = ['APPROVED', 'ORDERED', 'RECEIVED'] as const
@@ -23,16 +24,30 @@ export async function GET(request: NextRequest) {
   const endDateRaw = String(searchParams.get('endDate') || '').trim()
   const startDate = startDateRaw ? new Date(startDateRaw) : null
   const endDate = endDateRaw ? new Date(endDateRaw + 'T23:59:59.999') : null
+  const clientId = String(searchParams.get('clientId') || '').trim() || null
+  const jobSiteTerm = String(searchParams.get('jobSiteAddress') || '').trim()
+  const hideSubClients = String(searchParams.get('hideSubClients') || 'true') !== 'false'
 
   try {
+    const effectiveClientIds = await resolveClientFilterIds(user.tenantId, clientId, hideSubClients)
+    const siteWhere = jobSiteAddressWhere(jobSiteTerm)
+
+    // PO creation never sets PurchaseOrder.clientId directly — client is normally
+    // only known via the linked job — so match either in case clientId is ever set.
+    const where: Record<string, any> = {
+      tenantId: user.tenantId,
+      status: { in: [...SPEND_STATUSES] },
+      ...(startDate || endDate ? { orderDate: { gte: startDate || undefined, lte: endDate || undefined } } : {}),
+    }
+    if (effectiveClientIds) {
+      where.OR = [{ clientId: { in: effectiveClientIds } }, { job: { clientId: { in: effectiveClientIds } } }]
+    }
+    if (siteWhere) {
+      where.job = { ...(where.job || {}), addresses: { some: siteWhere } }
+    }
+
     const orders = await prisma.purchaseOrder.findMany({
-      where: {
-        tenantId: user.tenantId,
-        status: { in: [...SPEND_STATUSES] },
-        ...(startDate || endDate
-          ? { orderDate: { gte: startDate || undefined, lte: endDate || undefined } }
-          : {}),
-      },
+      where,
       select: {
         id: true,
         poNumber: true,

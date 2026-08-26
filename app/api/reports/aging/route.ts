@@ -6,6 +6,7 @@ import { renderPdfFromHtml } from '@/lib/pdf/render-html-to-pdf'
 import { getPdfBranding } from '@/lib/branding/pdf'
 import { buildAgingReportPdfHtml } from '@/lib/documents/pdf-templates'
 import { csvResponse } from '@/lib/reports/csv'
+import { getClientHierarchyMap, jobSiteAddressWhere, resolveClientFilterIds, rollupTarget } from '@/lib/reports/client-filters'
 
 const BUCKETS = ['current', '1-30', '31-60', '61-90', '90+'] as const
 type Bucket = (typeof BUCKETS)[number]
@@ -29,16 +30,25 @@ export async function GET(request: NextRequest) {
   const format = String(searchParams.get('format') || 'json').toLowerCase()
   const asOfRaw = String(searchParams.get('asOf') || '').trim()
   const asOf = asOfRaw ? new Date(asOfRaw) : new Date()
+  const clientId = String(searchParams.get('clientId') || '').trim() || null
+  const jobSiteTerm = String(searchParams.get('jobSiteAddress') || '').trim()
+  const hideSubClients = String(searchParams.get('hideSubClients') || 'true') !== 'false'
 
   try {
+    const effectiveClientIds = await resolveClientFilterIds(user.tenantId, clientId, hideSubClients)
+    const siteWhere = jobSiteAddressWhere(jobSiteTerm)
+
     const invoices = await prisma.invoice.findMany({
       where: {
         tenantId: user.tenantId,
         status: { notIn: ['DRAFT', 'CANCELLED'] },
         balance: { gt: 0 },
+        ...(effectiveClientIds ? { clientId: { in: effectiveClientIds } } : {}),
+        ...(siteWhere ? { job: { addresses: { some: siteWhere } } } : {}),
       },
       include: {
         client: { select: { id: true, name: true, companyName: true } },
+        job: { select: { addresses: { where: { type: 'job_site' }, take: 1 } } },
       },
       orderBy: { dueDate: 'asc' },
     })
@@ -48,6 +58,7 @@ export async function GET(request: NextRequest) {
       invoiceNumber: string
       clientId: string
       clientName: string
+      jobSiteAddress: string | null
       invoiceDate: Date
       dueDate: Date | null
       balance: number
@@ -58,11 +69,13 @@ export async function GET(request: NextRequest) {
     const rows: Row[] = invoices.map((inv) => {
       const dueDate = inv.dueDate || inv.invoiceDate
       const daysOverdue = Math.floor((asOf.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24))
+      const addr = inv.job?.addresses?.[0]
       return {
         invoiceId: inv.id,
         invoiceNumber: inv.invoiceNumber,
         clientId: inv.clientId,
         clientName: inv.client.companyName || inv.client.name,
+        jobSiteAddress: addr ? [addr.street, addr.city, addr.state].filter(Boolean).join(', ') : null,
         invoiceDate: inv.invoiceDate,
         dueDate: inv.dueDate,
         balance: Number(inv.balance),
@@ -75,21 +88,23 @@ export async function GET(request: NextRequest) {
     for (const r of rows) bucketTotals[r.bucket] += r.balance
     const grandTotal = rows.reduce((sum, r) => sum + r.balance, 0)
 
-    // Group by client for a rolled-up view
+    // Group by client (rolling sub-customers into their parent when hideSubClients is on)
+    const hierarchy = await getClientHierarchyMap(user.tenantId)
     const byClientMap = new Map<
       string,
       { clientId: string; clientName: string; buckets: Record<Bucket, number>; total: number }
     >()
     for (const r of rows) {
-      if (!byClientMap.has(r.clientId)) {
-        byClientMap.set(r.clientId, {
-          clientId: r.clientId,
-          clientName: r.clientName,
+      const target = rollupTarget(r.clientId, hierarchy, hideSubClients)
+      if (!byClientMap.has(target.id)) {
+        byClientMap.set(target.id, {
+          clientId: target.id,
+          clientName: target.name,
           buckets: { current: 0, '1-30': 0, '31-60': 0, '61-90': 0, '90+': 0 },
           total: 0,
         })
       }
-      const entry = byClientMap.get(r.clientId)!
+      const entry = byClientMap.get(target.id)!
       entry.buckets[r.bucket] += r.balance
       entry.total += r.balance
     }
@@ -97,10 +112,11 @@ export async function GET(request: NextRequest) {
 
     if (format === 'csv') {
       const csvRows: Array<Array<string | number>> = [
-        ['Customer', 'Invoice #', 'Invoice Date', 'Due Date', 'Days Overdue', 'Bucket', 'Balance'],
+        ['Customer', 'Invoice #', 'Job Site', 'Invoice Date', 'Due Date', 'Days Overdue', 'Bucket', 'Balance'],
         ...rows.map((r) => [
           r.clientName,
           r.invoiceNumber,
+          r.jobSiteAddress || '',
           r.invoiceDate.toISOString().split('T')[0],
           r.dueDate ? r.dueDate.toISOString().split('T')[0] : '',
           r.daysOverdue,

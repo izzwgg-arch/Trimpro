@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
+import { Checkbox } from '@/components/ui/checkbox'
 import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
 import { downloadReportExport } from '@/lib/reports/download-export'
 
@@ -46,6 +47,8 @@ export default function CustomerStatementReportPage() {
   const [clientId, setClientId] = useState(searchParams.get('clientId') || '')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+  const [jobSiteAddress, setJobSiteAddress] = useState('')
+  const [hideSubClients, setHideSubClients] = useState(true)
   const [data, setData] = useState<StatementResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -61,6 +64,8 @@ export default function CustomerStatementReportPage() {
     const params = new URLSearchParams({ clientId })
     if (startDate) params.set('startDate', startDate)
     if (endDate) params.set('endDate', endDate)
+    if (jobSiteAddress) params.set('jobSiteAddress', jobSiteAddress)
+    params.set('hideSubClients', String(hideSubClients))
     return params
   }
 
@@ -83,7 +88,7 @@ export default function CustomerStatementReportPage() {
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clientId, startDate, endDate])
+  }, [clientId, startDate, endDate, jobSiteAddress, hideSubClients])
 
   const handleExport = async (format: 'csv' | 'pdf') => {
     if (!clientId || !data) return
@@ -140,7 +145,7 @@ export default function CustomerStatementReportPage() {
         <CardHeader>
           <CardTitle>Filters</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-3">
+        <CardContent className="grid gap-4 sm:grid-cols-4">
           <div>
             <Label>Customer *</Label>
             <SearchableClientSelect clients={clients} value={clientId} onSelect={setClientId} placeholder="Select a customer..." />
@@ -152,6 +157,24 @@ export default function CustomerStatementReportPage() {
           <div>
             <Label>End Date</Label>
             <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+          </div>
+          <div>
+            <Label>Job Site Address</Label>
+            <Input
+              value={jobSiteAddress}
+              onChange={(e) => setJobSiteAddress(e.target.value)}
+              placeholder="Street, city, state, or zip"
+            />
+          </div>
+          <div className="flex items-center gap-2 pt-6 sm:col-span-4">
+            <Checkbox
+              id="hideSubClients"
+              checked={hideSubClients}
+              onCheckedChange={(v) => setHideSubClients(v === true)}
+            />
+            <Label htmlFor="hideSubClients" className="!mb-0 cursor-pointer font-normal">
+              Include this customer's sub-customers, consolidated into one statement
+            </Label>
           </div>
         </CardContent>
       </Card>

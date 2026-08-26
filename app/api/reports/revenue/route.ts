@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
@@ -6,6 +7,7 @@ import { renderPdfFromHtml } from '@/lib/pdf/render-html-to-pdf'
 import { getPdfBranding } from '@/lib/branding/pdf'
 import { buildRevenueReportPdfHtml } from '@/lib/documents/pdf-templates'
 import { csvResponse } from '@/lib/reports/csv'
+import { jobSiteAddressWhere, resolveClientFilterIds } from '@/lib/reports/client-filters'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -18,6 +20,9 @@ export async function GET(request: NextRequest) {
   const format = String(searchParams.get('format') || 'json').toLowerCase()
   const startDateRaw = String(searchParams.get('startDate') || '').trim()
   const endDateRaw = String(searchParams.get('endDate') || '').trim()
+  const clientId = String(searchParams.get('clientId') || '').trim() || null
+  const jobSiteTerm = String(searchParams.get('jobSiteAddress') || '').trim()
+  const hideSubClients = String(searchParams.get('hideSubClients') || 'true') !== 'false'
 
   const endDate = endDateRaw ? new Date(endDateRaw + 'T23:59:59.999') : new Date()
   const startDate = startDateRaw
@@ -25,14 +30,29 @@ export async function GET(request: NextRequest) {
     : new Date(endDate.getFullYear(), endDate.getMonth() - 11, 1) // default: trailing 12 months
 
   try {
+    const effectiveClientIds = await resolveClientFilterIds(user.tenantId, clientId, hideSubClients)
+    const clientSqlFilter = effectiveClientIds
+      ? Prisma.sql`AND i."clientId" IN (${Prisma.join(effectiveClientIds)})`
+      : Prisma.empty
+    const jobSiteSqlFilter = jobSiteTerm
+      ? Prisma.sql`AND EXISTS (
+          SELECT 1 FROM addresses addr
+          WHERE addr."jobId" = i."jobId" AND addr.type = 'job_site'
+            AND (addr.street ILIKE ${`%${jobSiteTerm}%`} OR addr.city ILIKE ${`%${jobSiteTerm}%`}
+                 OR addr.state ILIKE ${`%${jobSiteTerm}%`} OR addr."zipCode" ILIKE ${`%${jobSiteTerm}%`})
+        )`
+      : Prisma.empty
+
     const invoiced = await prisma.$queryRaw<Array<{ month: string; revenue: string }>>`
-      SELECT TO_CHAR("invoiceDate", 'YYYY-MM') as month, COALESCE(SUM(total), 0)::text as revenue
-      FROM invoices
-      WHERE "tenantId" = ${user.tenantId}
-        AND status NOT IN ('DRAFT', 'CANCELLED')
-        AND "invoiceDate" >= ${startDate}
-        AND "invoiceDate" <= ${endDate}
-      GROUP BY TO_CHAR("invoiceDate", 'YYYY-MM')
+      SELECT TO_CHAR(i."invoiceDate", 'YYYY-MM') as month, COALESCE(SUM(i.total), 0)::text as revenue
+      FROM invoices i
+      WHERE i."tenantId" = ${user.tenantId}
+        AND i.status NOT IN ('DRAFT', 'CANCELLED')
+        AND i."invoiceDate" >= ${startDate}
+        AND i."invoiceDate" <= ${endDate}
+        ${clientSqlFilter}
+        ${jobSiteSqlFilter}
+      GROUP BY TO_CHAR(i."invoiceDate", 'YYYY-MM')
       ORDER BY month ASC
     `
 
@@ -44,6 +64,8 @@ export async function GET(request: NextRequest) {
         AND p.status = 'COMPLETED'
         AND p."processedAt" >= ${startDate}
         AND p."processedAt" <= ${endDate}
+        ${clientSqlFilter}
+        ${jobSiteSqlFilter}
       GROUP BY TO_CHAR(p."processedAt", 'YYYY-MM')
       ORDER BY month ASC
     `
@@ -73,11 +95,14 @@ export async function GET(request: NextRequest) {
     const periodMs = endDate.getTime() - startDate.getTime()
     const prevEnd = new Date(startDate.getTime() - 1)
     const prevStart = new Date(prevEnd.getTime() - periodMs)
+    const siteWhere = jobSiteAddressWhere(jobSiteTerm)
     const prevInvoicedResult = await prisma.invoice.aggregate({
       where: {
         tenantId: user.tenantId,
         status: { notIn: ['DRAFT', 'CANCELLED'] },
         invoiceDate: { gte: prevStart, lte: prevEnd },
+        ...(effectiveClientIds ? { clientId: { in: effectiveClientIds } } : {}),
+        ...(siteWhere ? { job: { addresses: { some: siteWhere } } } : {}),
       },
       _sum: { total: true },
     })

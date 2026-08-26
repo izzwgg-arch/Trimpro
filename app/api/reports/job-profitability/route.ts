@@ -6,6 +6,7 @@ import { renderPdfFromHtml } from '@/lib/pdf/render-html-to-pdf'
 import { getPdfBranding } from '@/lib/branding/pdf'
 import { buildJobProfitabilityPdfHtml } from '@/lib/documents/pdf-templates'
 import { csvResponse } from '@/lib/reports/csv'
+import { getClientHierarchyMap, jobSiteAddressWhere, resolveClientFilterIds, rollupTarget } from '@/lib/reports/client-filters'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -20,8 +21,15 @@ export async function GET(request: NextRequest) {
   const endDateRaw = String(searchParams.get('endDate') || '').trim()
   const startDate = startDateRaw ? new Date(startDateRaw) : null
   const endDate = endDateRaw ? new Date(endDateRaw + 'T23:59:59.999') : null
+  const clientId = String(searchParams.get('clientId') || '').trim() || null
+  const jobSiteTerm = String(searchParams.get('jobSiteAddress') || '').trim()
+  const hideSubClients = String(searchParams.get('hideSubClients') || 'true') !== 'false'
 
   try {
+    const effectiveClientIds = await resolveClientFilterIds(user.tenantId, clientId, hideSubClients)
+    const siteWhere = jobSiteAddressWhere(jobSiteTerm)
+    const hierarchy = await getClientHierarchyMap(user.tenantId)
+
     const jobs = await prisma.job.findMany({
       where: {
         tenantId: user.tenantId,
@@ -29,6 +37,8 @@ export async function GET(request: NextRequest) {
         ...(startDate || endDate
           ? { createdAt: { gte: startDate || undefined, lte: endDate || undefined } }
           : {}),
+        ...(effectiveClientIds ? { clientId: { in: effectiveClientIds } } : {}),
+        ...(siteWhere ? { addresses: { some: siteWhere } } : {}),
       },
       select: {
         id: true,
@@ -39,6 +49,7 @@ export async function GET(request: NextRequest) {
         estimateAmount: true,
         laborCost: true,
         materialCost: true,
+        clientId: true,
         client: { select: { name: true, companyName: true } },
         invoices: { where: { status: { not: 'DRAFT' } }, select: { total: true } },
         purchaseOrders: {
@@ -64,13 +75,14 @@ export async function GET(request: NextRequest) {
       const profit = revenue - totalCost
       const marginPercent = revenue > 0 ? (profit / revenue) * 100 : null
       const hasCostData = job.laborCost != null || job.materialCost != null
+      const target = rollupTarget(job.clientId, hierarchy, hideSubClients)
 
       return {
         jobId: job.id,
         jobNumber: job.jobNumber,
         title: job.title,
         status: job.status,
-        clientName: job.client.companyName || job.client.name,
+        clientName: target.name || job.client.companyName || job.client.name,
         revenue,
         laborCost,
         materialCost,

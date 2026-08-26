@@ -6,6 +6,7 @@ import { renderPdfFromHtml } from '@/lib/pdf/render-html-to-pdf'
 import { getPdfBranding } from '@/lib/branding/pdf'
 import { buildCustomerStatementPdfHtml } from '@/lib/documents/pdf-templates'
 import { csvResponse } from '@/lib/reports/csv'
+import { jobSiteAddressWhere, resolveClientFilterIds } from '@/lib/reports/client-filters'
 
 type TransactionRow = {
   date: Date
@@ -30,6 +31,8 @@ export async function GET(request: NextRequest) {
   const endDateRaw = String(searchParams.get('endDate') || '').trim()
   const startDate = startDateRaw ? new Date(startDateRaw) : null
   const endDate = endDateRaw ? new Date(endDateRaw + 'T23:59:59.999') : null
+  const jobSiteTerm = String(searchParams.get('jobSiteAddress') || '').trim()
+  const hideSubClients = String(searchParams.get('hideSubClients') || 'true') !== 'false'
 
   if (!clientId) {
     return NextResponse.json({ error: 'clientId is required' }, { status: 400 })
@@ -46,6 +49,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Client not found' }, { status: 404 })
     }
 
+    // When rolling up, include this client's sub-customers' invoices in one
+    // consolidated statement (each line labeled with which entity it belongs to).
+    const effectiveClientIds = await resolveClientFilterIds(user.tenantId, clientId, hideSubClients)
+    const siteWhere = jobSiteAddressWhere(jobSiteTerm)
+
     const dateFilter =
       startDate || endDate
         ? { gte: startDate || undefined, lte: endDate || undefined }
@@ -54,11 +62,13 @@ export async function GET(request: NextRequest) {
     const invoices = await prisma.invoice.findMany({
       where: {
         tenantId: user.tenantId,
-        clientId,
+        clientId: { in: effectiveClientIds || [clientId] },
         status: { not: 'DRAFT' },
         ...(dateFilter ? { invoiceDate: dateFilter } : {}),
+        ...(siteWhere ? { job: { addresses: { some: siteWhere } } } : {}),
       },
       include: {
+        client: { select: { id: true, name: true, companyName: true } },
         payments: {
           where: { status: 'COMPLETED' },
           orderBy: { createdAt: 'asc' },
@@ -73,10 +83,12 @@ export async function GET(request: NextRequest) {
 
     const transactions: TransactionRow[] = []
     for (const inv of invoices) {
+      // Only label sub-customer transactions when this is a consolidated (rolled-up) view.
+      const subLabel = inv.clientId !== clientId ? `${inv.client.companyName || inv.client.name} — ` : ''
       transactions.push({
         date: inv.invoiceDate,
         type: 'INVOICE',
-        description: inv.title || 'Invoice',
+        description: `${subLabel}${inv.title || 'Invoice'}`,
         reference: inv.invoiceNumber,
         debit: Number(inv.total),
         credit: 0,
@@ -87,7 +99,7 @@ export async function GET(request: NextRequest) {
         transactions.push({
           date: p.processedAt || p.createdAt,
           type: 'PAYMENT',
-          description: `Payment (${p.method}${p.reference ? ` - ${p.reference}` : ''})`,
+          description: `${subLabel}Payment (${p.method}${p.reference ? ` - ${p.reference}` : ''})`,
           reference: inv.invoiceNumber,
           debit: 0,
           credit: netPaid,
@@ -97,7 +109,7 @@ export async function GET(request: NextRequest) {
         transactions.push({
           date: app.createdAt,
           type: 'CREDIT_MEMO',
-          description: `Credit memo applied (${app.creditMemo.creditMemoNumber})`,
+          description: `${subLabel}Credit memo applied (${app.creditMemo.creditMemoNumber})`,
           reference: inv.invoiceNumber,
           debit: 0,
           credit: Number(app.amount),

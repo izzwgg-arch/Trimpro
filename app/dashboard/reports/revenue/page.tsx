@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { formatCurrency } from '@/lib/utils'
 import { downloadReportExport } from '@/lib/reports/download-export'
+import { ReportFilterBar } from '@/components/reports/ReportFilterBar'
 
 type RevenueRow = { month: string; invoiced: number; collected: number }
 type RevenueResponse = {
@@ -20,6 +21,9 @@ type RevenueResponse = {
 export default function RevenueReportPage() {
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+  const [clientId, setClientId] = useState('')
+  const [jobSiteAddress, setJobSiteAddress] = useState('')
+  const [hideSubClients, setHideSubClients] = useState(true)
   const [data, setData] = useState<RevenueResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
@@ -29,6 +33,9 @@ export default function RevenueReportPage() {
     const params = new URLSearchParams()
     if (startDate) params.set('startDate', startDate)
     if (endDate) params.set('endDate', endDate)
+    if (clientId) params.set('clientId', clientId)
+    if (jobSiteAddress) params.set('jobSiteAddress', jobSiteAddress)
+    params.set('hideSubClients', String(hideSubClients))
     return params
   }
 
@@ -47,7 +54,7 @@ export default function RevenueReportPage() {
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startDate, endDate])
+  }, [startDate, endDate, clientId, jobSiteAddress, hideSubClients])
 
   const handleExport = async (format: 'csv' | 'pdf') => {
     setExporting(true)
@@ -100,6 +107,16 @@ export default function RevenueReportPage() {
             </Button>
           </div>
         </CardHeader>
+        <CardContent>
+          <ReportFilterBar
+            clientId={clientId}
+            onClientChange={setClientId}
+            jobSiteAddress={jobSiteAddress}
+            onJobSiteAddressChange={setJobSiteAddress}
+            hideSubClients={hideSubClients}
+            onHideSubClientsChange={setHideSubClients}
+          />
+        </CardContent>
       </Card>
 
       {error && <div className="text-sm text-red-600">{error}</div>}
