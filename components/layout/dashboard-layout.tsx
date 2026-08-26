@@ -10,9 +10,15 @@ import { GlobalSearch } from '@/components/search/GlobalSearch'
 import { RoutePermissionGuard } from '@/components/permissions/RoutePermissionGuard'
 import { DashboardNavCapture } from '@/components/navigation/DashboardNavCapture'
 
+// Pages with their own fixed-height, self-scrolling app UI (chat panes, etc.)
+// opt out of the standard padded content shell + footer, which otherwise
+// forces a second outer scrollbar around their internal one.
+const FULL_BLEED_PREFIXES = ['/dashboard/messages']
+
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
+  const isFullBleed = FULL_BLEED_PREFIXES.some((prefix) => pathname?.startsWith(prefix))
   const [loading, setLoading] = useState(true)
   const [isAdmin, setIsAdmin] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -78,27 +84,33 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto overflow-x-hidden bg-gray-100">
-        <div className="min-h-full flex flex-col bg-gray-100 p-4 sm:p-6">
-          <div className="flex-1">
+        {isFullBleed ? (
+          <main className="flex-1 min-h-0 overflow-hidden bg-gray-100">
             <RoutePermissionGuard>{children}</RoutePermissionGuard>
-          </div>
-          <footer className="mt-10 border-t border-gray-200 pt-4 text-xs text-muted-foreground flex flex-wrap items-center justify-between gap-3">
-            <div>© {new Date().getFullYear()} TrimPro</div>
-            <div className="flex items-center gap-4">
-              <Link href="/privacy" className="hover:underline">
-                Privacy Policy
-              </Link>
-              <Link href="/terms" className="hover:underline">
-                Terms
-              </Link>
-              <a className="hover:underline" href="mailto:support@trimprony.com">
-                support@trimprony.com
-              </a>
+          </main>
+        ) : (
+          <main className="flex-1 overflow-y-auto overflow-x-hidden bg-gray-100">
+            <div className="min-h-full flex flex-col bg-gray-100 p-4 sm:p-6">
+              <div className="flex-1">
+                <RoutePermissionGuard>{children}</RoutePermissionGuard>
+              </div>
+              <footer className="mt-10 border-t border-gray-200 pt-4 text-xs text-muted-foreground flex flex-wrap items-center justify-between gap-3">
+                <div>© {new Date().getFullYear()} TrimPro</div>
+                <div className="flex items-center gap-4">
+                  <Link href="/privacy" className="hover:underline">
+                    Privacy Policy
+                  </Link>
+                  <Link href="/terms" className="hover:underline">
+                    Terms
+                  </Link>
+                  <a className="hover:underline" href="mailto:support@trimprony.com">
+                    support@trimprony.com
+                  </a>
+                </div>
+              </footer>
             </div>
-          </footer>
-        </div>
-        </main>
+          </main>
+        )}
       </div>
     </div>
   )

@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { ChevronDown } from 'lucide-react'
 import { refreshAccessToken } from '@/lib/auth/client'
 import { smartMatch, scoreHaystack } from '@/lib/search/scoring'
 import {
@@ -145,6 +146,8 @@ export default function MessagesPage() {
   const [threadsLoading, setThreadsLoading] = useState(true)
   const [msgsLoading, setMsgsLoading] = useState(false)
   const [search, setSearch] = useState('')
+  const [channelFilter, setChannelFilter] = useState<'all' | 'sms' | 'dm' | 'job'>('all')
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false)
 
   // Reply / reaction state (internal team / DM / job threads)
   const [replyTarget, setReplyTarget] = useState<NormalizedMsg | null>(null)
@@ -349,8 +352,25 @@ export default function MessagesPage() {
     const nearBottom = threadChanged || !container || container.scrollHeight - container.scrollTop - container.clientHeight < 150
     if (nearBottom) {
       bottomRef.current?.scrollIntoView({ behavior: threadChanged ? 'auto' : 'smooth' })
+      setShowScrollToBottom(false)
+    } else {
+      setShowScrollToBottom(true)
     }
   }, [messages, selectedId])
+
+  // Track manual scroll position so the "jump to bottom" button only shows
+  // once the user has actually scrolled away from the latest message.
+  const handleMessagesScroll = useCallback(() => {
+    const container = scrollAreaRef.current
+    if (!container) return
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+    setShowScrollToBottom(distanceFromBottom > 150)
+  }, [])
+
+  const scrollToBottom = useCallback(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    setShowScrollToBottom(false)
+  }, [])
 
   // ── Send message ───────────────────────────────────────────────────────────
   const handleSend = useCallback(async (text: string, media: DraftMedia[], durationMs?: number) => {
@@ -453,13 +473,21 @@ export default function MessagesPage() {
   }
 
   // ── Filtered thread list ───────────────────────────────────────────────────
+  const channelFiltered = useMemo(() => {
+    if (channelFilter === 'all') return threads
+    if (channelFilter === 'sms') return threads.filter((t) => t.kind === 'sms')
+    if (channelFilter === 'job') return threads.filter((t) => t.convType === 'JOB_THREAD')
+    // 'dm' — internal team/DM threads that aren't job threads
+    return threads.filter((t) => t.kind === 'team' && t.convType !== 'JOB_THREAD')
+  }, [threads, channelFilter])
+
   const filteredThreads = useMemo(() => {
     const q = search.trim()
-    if (!q) return threads
-    return threads.filter((t) =>
+    if (!q) return channelFiltered
+    return channelFiltered.filter((t) =>
       smartMatch(q, [t.title, t.subtitle, t.phoneDisplay, t.phone, t.preview, t.jobNumber, t.jobTitle, t.threadTitle])
     )
-  }, [threads, search])
+  }, [channelFiltered, search])
 
   const sidebarGroups = useMemo(() => {
     const regular = filteredThreads.filter((thread) => thread.convType !== 'JOB_THREAD')
@@ -482,7 +510,7 @@ export default function MessagesPage() {
 
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="flex h-[calc(100vh-4rem)] bg-[#f0f2f5] overflow-hidden">
+    <div className="flex h-full bg-[#f0f2f5] overflow-hidden">
 
       {/* ── Sidebar ─────────────────────────────────────────────────────────── */}
       <aside className="w-[320px] flex-shrink-0 border-r border-gray-200 bg-white flex flex-col">
@@ -505,6 +533,26 @@ export default function MessagesPage() {
             placeholder="Search conversations…"
             className="w-full h-9 px-3 rounded-lg bg-white border border-gray-200 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/15"
           />
+          <div className="flex items-center gap-1.5 mt-2">
+            {([
+              { key: 'all', label: 'All' },
+              { key: 'sms', label: 'SMS' },
+              { key: 'dm', label: 'DM' },
+              { key: 'job', label: 'Job' },
+            ] as const).map((opt) => (
+              <button
+                key={opt.key}
+                onClick={() => setChannelFilter(opt.key)}
+                className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                  channelFilter === opt.key
+                    ? 'bg-[#00a884] text-white'
+                    : 'bg-white text-gray-500 border border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Thread list */}
@@ -650,7 +698,13 @@ export default function MessagesPage() {
             </header>
 
             {/* Messages */}
-            <div ref={scrollAreaRef} className="flex-1 overflow-y-auto px-5 py-5 flex flex-col gap-1" style={{ backgroundImage: 'radial-gradient(rgba(0,0,0,0.03) 1px, transparent 1px)', backgroundSize: '18px 18px' }}>
+            <div className="relative flex-1 min-h-0">
+            <div
+              ref={scrollAreaRef}
+              onScroll={handleMessagesScroll}
+              className="absolute inset-0 overflow-y-auto px-5 py-5 flex flex-col gap-1"
+              style={{ backgroundImage: 'radial-gradient(rgba(0,0,0,0.03) 1px, transparent 1px)', backgroundSize: '18px 18px' }}
+            >
               {msgsLoading ? (
                 <div className="flex-1 flex items-center justify-center">
                   <div className="text-sm text-gray-400">Loading messages…</div>
@@ -699,6 +753,16 @@ export default function MessagesPage() {
                 })
               )}
               <div ref={bottomRef} />
+            </div>
+            {showScrollToBottom && (
+              <button
+                onClick={scrollToBottom}
+                title="Scroll to latest"
+                className="absolute bottom-4 right-4 w-10 h-10 rounded-full bg-white shadow-lg border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                <ChevronDown className="h-5 w-5" />
+              </button>
+            )}
             </div>
 
             {/* Composer */}
