@@ -160,7 +160,10 @@ export default function MessagesPage() {
   const [creating, setCreating] = useState(false)
 
   const bottomRef = useRef<HTMLDivElement | null>(null)
+  const scrollAreaRef = useRef<HTMLDivElement | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const lastMessageKeyRef = useRef<string | null>(null)
+  const prevSelectedIdRef = useRef<string | null>(null)
 
   const selectedThread = useMemo(() => threads.find((t) => t.id === selectedId) ?? null, [threads, selectedId])
 
@@ -324,7 +327,27 @@ export default function MessagesPage() {
   }, [selectedId]) // eslint-disable-line
 
   // ── Scroll bottom ──────────────────────────────────────────────────────────
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
+  // Only auto-scroll when a message actually arrived/changed (polling/SSE
+  // otherwise re-sets the array every few seconds with identical content,
+  // which was yanking the view back to the bottom while reading history) and
+  // only if the user is already near the bottom, so scrolling up to read
+  // stays put through background refreshes.
+  useEffect(() => {
+    const last = messages[messages.length - 1]
+    const key = last ? last.id : null
+    const threadChanged = prevSelectedIdRef.current !== selectedId
+    const hasNewMessage = key !== null && key !== lastMessageKeyRef.current
+    prevSelectedIdRef.current = selectedId
+    lastMessageKeyRef.current = key
+
+    if (!threadChanged && !hasNewMessage) return
+
+    const container = scrollAreaRef.current
+    const nearBottom = threadChanged || !container || container.scrollHeight - container.scrollTop - container.clientHeight < 150
+    if (nearBottom) {
+      bottomRef.current?.scrollIntoView({ behavior: threadChanged ? 'auto' : 'smooth' })
+    }
+  }, [messages, selectedId])
 
   // ── Send message ───────────────────────────────────────────────────────────
   const handleSend = useCallback(async (text: string, media: DraftMedia[], durationMs?: number) => {
@@ -624,7 +647,7 @@ export default function MessagesPage() {
             </header>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-5 py-5 flex flex-col gap-1" style={{ backgroundImage: 'radial-gradient(rgba(0,0,0,0.03) 1px, transparent 1px)', backgroundSize: '18px 18px' }}>
+            <div ref={scrollAreaRef} className="flex-1 overflow-y-auto px-5 py-5 flex flex-col gap-1" style={{ backgroundImage: 'radial-gradient(rgba(0,0,0,0.03) 1px, transparent 1px)', backgroundSize: '18px 18px' }}>
               {msgsLoading ? (
                 <div className="flex-1 flex items-center justify-center">
                   <div className="text-sm text-gray-400">Loading messages…</div>
