@@ -33,7 +33,6 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
-  History,
   ScrollText,
   Receipt,
 } from 'lucide-react'
@@ -60,7 +59,6 @@ const navigation = [
   { name: 'Maps', href: '/dashboard/maps', icon: Map, permission: 'jobs.view' },
   { name: 'Analytics', href: '/dashboard/analytics', icon: BarChart3, permission: 'analytics.view' },
   { name: 'Reports', href: '/dashboard/reports', icon: FileBarChart, permission: 'reports.view' },
-  { name: 'Payment History', href: '/dashboard/reports/payments', icon: History, permission: 'payments.view' },
   { name: 'Dispatch', href: '/dashboard/dispatch', icon: Radio, permission: 'dispatch.view' },
   { name: 'Audit Logs', href: '/dashboard/audit-logs', icon: ScrollText, permission: 'audit_logs.access' },
   { name: 'Settings', href: '/dashboard/settings', icon: Settings, permission: 'settings.view' },
