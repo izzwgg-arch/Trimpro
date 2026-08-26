@@ -27,14 +27,14 @@ export async function GET(request: NextRequest) {
   try {
     // Leads created over time
     const dailyLeads = await prisma.$queryRaw<Array<{ date: Date; count: bigint }>>`
-      SELECT 
-        DATE(created_at) as date,
+      SELECT
+        DATE("createdAt") as date,
         COUNT(*)::int as count
       FROM leads
-      WHERE tenant_id = ${user.tenantId}
-        AND created_at >= ${startDate}
-        AND created_at <= ${endDate}
-      GROUP BY DATE(created_at)
+      WHERE "tenantId" = ${user.tenantId}
+        AND "createdAt" >= ${startDate}
+        AND "createdAt" <= ${endDate}
+      GROUP BY DATE("createdAt")
       ORDER BY date ASC
     `
 
@@ -88,7 +88,6 @@ export async function GET(request: NextRequest) {
         tenantId: user.tenantId,
         status: 'CONVERTED',
         convertedAt: { gte: startDate, lte: endDate },
-        createdAt: { not: null },
       },
       select: {
         createdAt: true,

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
+import { csvResponse } from '@/lib/reports/csv'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -11,9 +12,10 @@ export async function GET(request: NextRequest) {
 
   const user = getAuthUser(request)
   const { searchParams } = new URL(request.url)
+  const format = String(searchParams.get('format') || 'json').toLowerCase()
   const page = Math.max(1, Number(searchParams.get('page') || 1))
-  const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit') || 25)))
-  const skip = (page - 1) * limit
+  const limit = format === 'csv' ? 5000 : Math.min(100, Math.max(1, Number(searchParams.get('limit') || 25)))
+  const skip = format === 'csv' ? 0 : (page - 1) * limit
 
   const provider = String(searchParams.get('provider') || '').trim().toLowerCase()
   const status = String(searchParams.get('status') || '').trim().toUpperCase()
@@ -133,6 +135,24 @@ export async function GET(request: NextRequest) {
         latestRefund,
       }
     })
+
+    if (format === 'csv') {
+      const csvRows: Array<Array<string | number>> = [
+        ['Date', 'Customer', 'Invoice #', 'Provider', 'Method', 'Status', 'Amount', 'Refunded', 'Reference'],
+        ...rows.map((r) => [
+          r.createdAt.toISOString().split('T')[0],
+          r.customerName,
+          r.invoiceNumber,
+          r.provider,
+          r.paymentMethod,
+          r.status,
+          r.amount.toFixed(2),
+          r.refundedAmount.toFixed(2),
+          r.providerPaymentId,
+        ]),
+      ]
+      return csvResponse(csvRows, `payment-history-${new Date().toISOString().split('T')[0]}.csv`)
+    }
 
     return NextResponse.json({
       payments: rows,

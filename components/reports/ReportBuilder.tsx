@@ -14,15 +14,13 @@ interface ReportBuilderProps {
   onRun?: (report: any) => void
 }
 
+// Only datasets with real column definitions AND server-side support in
+// /api/reports/[id]/run (see COMMON_COLUMNS below + the dataset switch there).
 const AVAILABLE_DATASETS = [
   { value: 'jobs', label: 'Jobs' },
   { value: 'invoices', label: 'Invoices' },
   { value: 'leads', label: 'Requests' },
   { value: 'clients', label: 'Clients' },
-  { value: 'estimates', label: 'Estimates' },
-  { value: 'tasks', label: 'Tasks' },
-  { value: 'issues', label: 'Issues' },
-  { value: 'dispatch', label: 'Dispatch Events' },
 ]
 
 const COMMON_COLUMNS: Record<string, Array<{ value: string; label: string }>> = {

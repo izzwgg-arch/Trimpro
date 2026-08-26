@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
 
     // Jobs by category/service type
     const jobsByCategory = await prisma.job.groupBy({
-      by: ['category'],
+      by: ['jobType'],
       where: {
         tenantId: user.tenantId,
         createdAt: { gte: startDate, lte: endDate },
@@ -106,15 +106,15 @@ export async function GET(request: NextRequest) {
 
     // Time series data for charts (group by day)
     const dailyJobs = await prisma.$queryRaw<Array<{ date: Date; count: bigint; status: string }>>`
-      SELECT 
-        DATE(created_at) as date,
+      SELECT
+        DATE("createdAt") as date,
         status,
         COUNT(*)::int as count
       FROM jobs
-      WHERE tenant_id = ${user.tenantId}
-        AND created_at >= ${startDate}
-        AND created_at <= ${endDate}
-      GROUP BY DATE(created_at), status
+      WHERE "tenantId" = ${user.tenantId}
+        AND "createdAt" >= ${startDate}
+        AND "createdAt" <= ${endDate}
+      GROUP BY DATE("createdAt"), status
       ORDER BY date ASC
     `
 
@@ -126,7 +126,7 @@ export async function GET(request: NextRequest) {
           count: 1,
         })),
         jobsByCategory: jobsByCategory.map((j) => ({
-          category: j.category || 'Uncategorized',
+          category: j.jobType || 'Uncategorized',
           count: j._count,
         })),
         completionTimeDistribution: {

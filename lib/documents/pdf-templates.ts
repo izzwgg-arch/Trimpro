@@ -876,3 +876,463 @@ export function buildCreditMemoPdfHtml(
     </html>
   `
 }
+
+type StatementLedgerRow = {
+  date: Date
+  type: 'INVOICE' | 'PAYMENT' | 'CREDIT_MEMO'
+  description: string
+  reference: string
+  debit: number
+  credit: number
+  balance: number
+}
+
+type StatementSummary = {
+  totalInvoiced: number
+  totalPaid: number
+  totalCredited: number
+  balance: number
+  invoiceCount: number
+}
+
+export function buildCustomerStatementPdfHtml(
+  data: {
+    client: AnyRecord
+    ledger: StatementLedgerRow[]
+    summary: StatementSummary
+    startDate: Date | null
+    endDate: Date | null
+  },
+  brand: PdfBranding
+): string {
+  const { client, ledger, summary, startDate, endDate } = data
+  const generatedAt = new Date().toLocaleString()
+  const billingAddress = formatAddress(client.addresses?.[0] || null)
+  const periodLabel =
+    startDate || endDate
+      ? `${startDate ? startDate.toLocaleDateString() : 'Start'} — ${endDate ? endDate.toLocaleDateString() : 'Today'}`
+      : 'All time'
+
+  const rowLabel: Record<StatementLedgerRow['type'], string> = {
+    INVOICE: 'Invoice',
+    PAYMENT: 'Payment',
+    CREDIT_MEMO: 'Credit Memo',
+  }
+
+  const rows = ledger
+    .map(
+      (t) => `<tr>
+        <td>${escapeHtml(t.date.toLocaleDateString())}</td>
+        <td>${escapeHtml(rowLabel[t.type])}</td>
+        <td>${escapeHtml(t.reference)}</td>
+        <td>${escapeHtml(t.description)}</td>
+        <td class="text-right">${t.debit ? `$${t.debit.toFixed(2)}` : ''}</td>
+        <td class="text-right">${t.credit ? `$${t.credit.toFixed(2)}` : ''}</td>
+        <td class="text-right" style="font-weight:600;">$${t.balance.toFixed(2)}</td>
+      </tr>`
+    )
+    .join('')
+
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Statement - ${escapeHtml(client.name)}</title>
+        <style>${SHARED_DOC_CSS(brand.accentColor, brand.accentTextColor)}</style>
+      </head>
+      <body>
+        <div class="page">
+          <div class="header">
+            <div>
+              <div class="brand">${logoBlock(brand, 'Trim Pro Logo')}</div>
+              <h1 class="doc-title">Customer Statement</h1>
+              <div class="muted">Generated on ${generatedAt}</div>
+            </div>
+            <div class="meta">
+              <div style="font-weight:700;font-size:14px;margin-bottom:4px;">${escapeHtml(brand.businessName)}</div>
+              ${brand.businessPhone ? `<div>${escapeHtml(brand.businessPhone)}</div>` : ''}
+              ${brand.businessEmail ? `<div>${escapeHtml(brand.businessEmail)}</div>` : ''}
+              <div style="margin-top:8px;"><strong>Period:</strong> ${escapeHtml(periodLabel)}</div>
+            </div>
+          </div>
+
+          <div class="grid">
+            <div class="panel">
+              <h3>Customer</h3>
+              <div>${escapeHtml(client.companyName || client.name)}</div>
+              ${client.email ? `<div class="muted">${escapeHtml(client.email)}</div>` : ''}
+              ${client.phone ? `<div class="muted">${escapeHtml(client.phone)}</div>` : ''}
+              ${billingAddress ? `<div class="address-block" style="margin-top:8px;">${escapeHtmlMultiline(billingAddress)}</div>` : ''}
+            </div>
+            <div class="panel">
+              <h3>Account Summary</h3>
+              <div class="muted">Invoices in period</div>
+              <div>${summary.invoiceCount}</div>
+              <div class="muted" style="margin-top:8px;">Total Invoiced</div>
+              <div>$${summary.totalInvoiced.toFixed(2)}</div>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Reference</th>
+                <th>Description</th>
+                <th class="text-right">Debit</th>
+                <th class="text-right">Credit</th>
+                <th class="text-right">Balance</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${ledger.length === 0 ? `<tr><td colspan="7" class="muted">No transactions in this period</td></tr>` : rows}
+            </tbody>
+          </table>
+
+          <div class="summary">
+            <h4>Summary</h4>
+            <div class="summary-row"><span>Total Invoiced</span><span>$${summary.totalInvoiced.toFixed(2)}</span></div>
+            <div class="summary-row"><span>Total Paid</span><span>$${summary.totalPaid.toFixed(2)}</span></div>
+            <div class="summary-row"><span>Total Credited</span><span>$${summary.totalCredited.toFixed(2)}</span></div>
+            <div class="summary-row total"><span>Balance Due</span><span>$${summary.balance.toFixed(2)}</span></div>
+          </div>
+
+          ${brand.footerText ? `<div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:12px;color:#6b7280;text-align:center;">${escapeHtml(brand.footerText)}</div>` : ''}
+        </div>
+      </body>
+    </html>
+  `
+}
+
+const AGING_BUCKETS = ['current', '1-30', '31-60', '61-90', '90+'] as const
+type AgingBucket = (typeof AGING_BUCKETS)[number]
+const AGING_BUCKET_LABEL: Record<AgingBucket, string> = {
+  current: 'Current',
+  '1-30': '1-30 Days',
+  '31-60': '31-60 Days',
+  '61-90': '61-90 Days',
+  '90+': '90+ Days',
+}
+
+export function buildAgingReportPdfHtml(
+  data: {
+    byClient: Array<{ clientId: string; clientName: string; buckets: Record<AgingBucket, number>; total: number }>
+    bucketTotals: Record<AgingBucket, number>
+    grandTotal: number
+    asOf: Date
+  },
+  brand: PdfBranding
+): string {
+  const { byClient, bucketTotals, grandTotal, asOf } = data
+  const generatedAt = new Date().toLocaleString()
+
+  const rows = byClient
+    .map(
+      (c) => `<tr>
+        <td>${escapeHtml(c.clientName)}</td>
+        ${AGING_BUCKETS.map((b) => `<td class="text-right">${c.buckets[b] ? `$${c.buckets[b].toFixed(2)}` : ''}</td>`).join('')}
+        <td class="text-right" style="font-weight:600;">$${c.total.toFixed(2)}</td>
+      </tr>`
+    )
+    .join('')
+
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Accounts Receivable Aging</title>
+        <style>${SHARED_DOC_CSS(brand.accentColor, brand.accentTextColor)}</style>
+      </head>
+      <body>
+        <div class="page">
+          <div class="header">
+            <div>
+              <div class="brand">${logoBlock(brand, 'Trim Pro Logo')}</div>
+              <h1 class="doc-title">Accounts Receivable Aging</h1>
+              <div class="muted">Generated on ${generatedAt}</div>
+            </div>
+            <div class="meta">
+              <div style="font-weight:700;font-size:14px;margin-bottom:4px;">${escapeHtml(brand.businessName)}</div>
+              <div><strong>As of:</strong> ${escapeHtml(asOf.toLocaleDateString())}</div>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Customer</th>
+                ${AGING_BUCKETS.map((b) => `<th class="text-right">${AGING_BUCKET_LABEL[b]}</th>`).join('')}
+                <th class="text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${byClient.length === 0 ? `<tr><td colspan="${AGING_BUCKETS.length + 2}" class="muted">No outstanding balances</td></tr>` : rows}
+            </tbody>
+            <tfoot>
+              <tr style="font-weight:700;background:#f8fafc;">
+                <td>Total</td>
+                ${AGING_BUCKETS.map((b) => `<td class="text-right">$${bucketTotals[b].toFixed(2)}</td>`).join('')}
+                <td class="text-right">$${grandTotal.toFixed(2)}</td>
+              </tr>
+            </tfoot>
+          </table>
+
+          ${brand.footerText ? `<div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:12px;color:#6b7280;text-align:center;">${escapeHtml(brand.footerText)}</div>` : ''}
+        </div>
+      </body>
+    </html>
+  `
+}
+
+export function buildRevenueReportPdfHtml(
+  data: {
+    rows: Array<{ month: string; invoiced: number; collected: number }>
+    summary: { totalInvoiced: number; totalCollected: number; prevInvoiced: number; changePercent: number | null }
+    startDate: Date
+    endDate: Date
+  },
+  brand: PdfBranding
+): string {
+  const { rows, summary, startDate, endDate } = data
+  const generatedAt = new Date().toLocaleString()
+
+  const tableRows = rows
+    .map(
+      (r) => `<tr>
+        <td>${escapeHtml(r.month)}</td>
+        <td class="text-right">$${r.invoiced.toFixed(2)}</td>
+        <td class="text-right">$${r.collected.toFixed(2)}</td>
+      </tr>`
+    )
+    .join('')
+
+  const changeText =
+    summary.changePercent === null
+      ? 'N/A'
+      : `${summary.changePercent >= 0 ? '+' : ''}${summary.changePercent.toFixed(1)}% vs previous period`
+
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Revenue Report</title>
+        <style>${SHARED_DOC_CSS(brand.accentColor, brand.accentTextColor)}</style>
+      </head>
+      <body>
+        <div class="page">
+          <div class="header">
+            <div>
+              <div class="brand">${logoBlock(brand, 'Trim Pro Logo')}</div>
+              <h1 class="doc-title">Revenue by Month</h1>
+              <div class="muted">Generated on ${generatedAt}</div>
+            </div>
+            <div class="meta">
+              <div style="font-weight:700;font-size:14px;margin-bottom:4px;">${escapeHtml(brand.businessName)}</div>
+              <div><strong>Period:</strong> ${escapeHtml(startDate.toLocaleDateString())} — ${escapeHtml(endDate.toLocaleDateString())}</div>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Month</th>
+                <th class="text-right">Invoiced</th>
+                <th class="text-right">Collected</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.length === 0 ? `<tr><td colspan="3" class="muted">No revenue in this period</td></tr>` : tableRows}
+            </tbody>
+          </table>
+
+          <div class="summary">
+            <h4>Summary</h4>
+            <div class="summary-row"><span>Total Invoiced</span><span>$${summary.totalInvoiced.toFixed(2)}</span></div>
+            <div class="summary-row"><span>Total Collected</span><span>$${summary.totalCollected.toFixed(2)}</span></div>
+            <div class="summary-row total"><span>Change vs Prior Period</span><span>${escapeHtml(changeText)}</span></div>
+          </div>
+
+          ${brand.footerText ? `<div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:12px;color:#6b7280;text-align:center;">${escapeHtml(brand.footerText)}</div>` : ''}
+        </div>
+      </body>
+    </html>
+  `
+}
+
+type JobProfitabilityRow = {
+  jobId: string
+  jobNumber: string
+  title: string
+  status: string
+  clientName: string
+  revenue: number
+  laborCost: number
+  materialCost: number
+  totalCost: number
+  profit: number
+  marginPercent: number | null
+  poSpend: number
+  hoursLogged: number
+  hasCostData: boolean
+}
+
+export function buildJobProfitabilityPdfHtml(
+  data: {
+    rows: JobProfitabilityRow[]
+    totals: { revenue: number; laborCost: number; materialCost: number; profit: number }
+    startDate: Date | null
+    endDate: Date | null
+  },
+  brand: PdfBranding
+): string {
+  const { rows, totals, startDate, endDate } = data
+  const generatedAt = new Date().toLocaleString()
+  const periodLabel =
+    startDate || endDate
+      ? `${startDate ? startDate.toLocaleDateString() : 'Start'} — ${endDate ? endDate.toLocaleDateString() : 'Today'}`
+      : 'All time'
+
+  const tableRows = rows
+    .map(
+      (r) => `<tr>
+        <td>${escapeHtml(r.jobNumber)}</td>
+        <td>${escapeHtml(r.clientName)}</td>
+        <td class="text-right">$${r.revenue.toFixed(2)}</td>
+        <td class="text-right">$${r.totalCost.toFixed(2)}</td>
+        <td class="text-right" style="font-weight:600;color:${r.profit < 0 ? '#dc2626' : '#111827'};">$${r.profit.toFixed(2)}</td>
+        <td class="text-right">${r.marginPercent === null ? (r.hasCostData ? '' : '—') : `${r.marginPercent.toFixed(1)}%`}</td>
+      </tr>`
+    )
+    .join('')
+
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Job Profitability</title>
+        <style>${SHARED_DOC_CSS(brand.accentColor, brand.accentTextColor)}</style>
+      </head>
+      <body>
+        <div class="page">
+          <div class="header">
+            <div>
+              <div class="brand">${logoBlock(brand, 'Trim Pro Logo')}</div>
+              <h1 class="doc-title">Job Profitability</h1>
+              <div class="muted">Generated on ${generatedAt}</div>
+            </div>
+            <div class="meta">
+              <div style="font-weight:700;font-size:14px;margin-bottom:4px;">${escapeHtml(brand.businessName)}</div>
+              <div><strong>Period:</strong> ${escapeHtml(periodLabel)}</div>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Job #</th>
+                <th>Customer</th>
+                <th class="text-right">Revenue</th>
+                <th class="text-right">Cost</th>
+                <th class="text-right">Profit</th>
+                <th class="text-right">Margin</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.length === 0 ? `<tr><td colspan="6" class="muted">No jobs in this period</td></tr>` : tableRows}
+            </tbody>
+          </table>
+
+          <div class="summary">
+            <h4>Summary</h4>
+            <div class="summary-row"><span>Total Revenue</span><span>$${totals.revenue.toFixed(2)}</span></div>
+            <div class="summary-row"><span>Total Labor Cost</span><span>$${totals.laborCost.toFixed(2)}</span></div>
+            <div class="summary-row"><span>Total Material Cost</span><span>$${totals.materialCost.toFixed(2)}</span></div>
+            <div class="summary-row total"><span>Total Profit</span><span>$${totals.profit.toFixed(2)}</span></div>
+          </div>
+
+          ${brand.footerText ? `<div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:12px;color:#6b7280;text-align:center;">${escapeHtml(brand.footerText)}</div>` : ''}
+        </div>
+      </body>
+    </html>
+  `
+}
+
+export function buildVendorSpendPdfHtml(
+  data: {
+    byVendor: Array<{ vendorKey: string; vendorName: string; poCount: number; total: number }>
+    grandTotal: number
+    startDate: Date | null
+    endDate: Date | null
+  },
+  brand: PdfBranding
+): string {
+  const { byVendor, grandTotal, startDate, endDate } = data
+  const generatedAt = new Date().toLocaleString()
+  const periodLabel =
+    startDate || endDate
+      ? `${startDate ? startDate.toLocaleDateString() : 'Start'} — ${endDate ? endDate.toLocaleDateString() : 'Today'}`
+      : 'All time'
+
+  const rows = byVendor
+    .map(
+      (v) => `<tr>
+        <td>${escapeHtml(v.vendorName)}</td>
+        <td class="text-right">${v.poCount}</td>
+        <td class="text-right" style="font-weight:600;">$${v.total.toFixed(2)}</td>
+      </tr>`
+    )
+    .join('')
+
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Vendor Spend Report</title>
+        <style>${SHARED_DOC_CSS(brand.accentColor, brand.accentTextColor)}</style>
+      </head>
+      <body>
+        <div class="page">
+          <div class="header">
+            <div>
+              <div class="brand">${logoBlock(brand, 'Trim Pro Logo')}</div>
+              <h1 class="doc-title">Vendor Spend</h1>
+              <div class="muted">Generated on ${generatedAt}</div>
+            </div>
+            <div class="meta">
+              <div style="font-weight:700;font-size:14px;margin-bottom:4px;">${escapeHtml(brand.businessName)}</div>
+              <div><strong>Period:</strong> ${escapeHtml(periodLabel)}</div>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Vendor</th>
+                <th class="text-right">Purchase Orders</th>
+                <th class="text-right">Total Spend</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${byVendor.length === 0 ? `<tr><td colspan="3" class="muted">No purchase order spend in this period</td></tr>` : rows}
+            </tbody>
+            <tfoot>
+              <tr style="font-weight:700;background:#f8fafc;">
+                <td>Total</td>
+                <td class="text-right">${byVendor.reduce((s, v) => s + v.poCount, 0)}</td>
+                <td class="text-right">$${grandTotal.toFixed(2)}</td>
+              </tr>
+            </tfoot>
+          </table>
+
+          ${brand.footerText ? `<div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:12px;color:#6b7280;text-align:center;">${escapeHtml(brand.footerText)}</div>` : ''}
+        </div>
+      </body>
+    </html>
+  `
+}

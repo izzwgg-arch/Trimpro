@@ -1,14 +1,13 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { FileText, Plus, Download, Calendar, Filter, Settings, Eye, Printer } from 'lucide-react'
+import { FileText, Plus, Download, Eye, Printer, Users, TrendingUp, Briefcase, Truck, Clock } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { ReportBuilder } from '@/components/reports/ReportBuilder'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import Link from 'next/link'
 import { usePermissions, hasPermission } from '@/hooks/usePermissions'
 
 interface Report {
@@ -21,6 +20,39 @@ interface Report {
   createdBy: string
 }
 
+const FINANCIAL_REPORTS = [
+  {
+    href: '/dashboard/reports/revenue',
+    name: 'Revenue by Month',
+    description: 'Invoiced vs. collected revenue, compared to the prior period',
+    icon: TrendingUp,
+  },
+  {
+    href: '/dashboard/reports/aging',
+    name: 'Invoices Aging',
+    description: 'Outstanding balances by how overdue they are',
+    icon: Clock,
+  },
+  {
+    href: '/dashboard/reports/customer-statement',
+    name: 'Customer Statement',
+    description: 'Invoices, payments applied, and running balance for a customer',
+    icon: Users,
+  },
+  {
+    href: '/dashboard/reports/job-profitability',
+    name: 'Job Profitability',
+    description: 'Revenue vs. labor and material cost per job',
+    icon: Briefcase,
+  },
+  {
+    href: '/dashboard/reports/vendor-spend',
+    name: 'Vendor Spend',
+    description: 'Purchase order spend by vendor',
+    icon: Truck,
+  },
+]
+
 export default function ReportsPage() {
   const { permissions, loading: permissionsLoading } = usePermissions()
   const canViewReports = hasPermission(permissions, 'reports.view')
@@ -28,9 +60,7 @@ export default function ReportsPage() {
   const canViewPayments = hasPermission(permissions, 'payments.view')
   const [reports, setReports] = useState<Report[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'templates' | 'custom' | 'scheduled'>('templates')
   const [showBuilder, setShowBuilder] = useState(false)
-  const [configuringTemplate, setConfiguringTemplate] = useState<string | null>(null)
 
   useEffect(() => {
     if (permissionsLoading) return
@@ -65,15 +95,6 @@ export default function ReportsPage() {
       setLoading(false)
     }
   }
-
-  const templateReports = [
-    { id: 'jobs-by-date', name: 'Jobs by Date', description: 'List all jobs within a date range', type: 'JOBS', dataset: 'jobs' },
-    { id: 'revenue-by-month', name: 'Revenue by Month', description: 'Monthly revenue breakdown', type: 'REVENUE', dataset: 'invoices' },
-    { id: 'invoices-aging', name: 'Invoices Aging', description: 'Outstanding invoices by age', type: 'INVOICES', dataset: 'invoices' },
-    { id: 'leads-funnel', name: 'Requests Funnel', description: 'Request conversion funnel analysis', type: 'LEADS', dataset: 'leads' },
-    { id: 'tech-performance', name: 'Tech Performance', description: 'Technician performance metrics', type: 'PERFORMANCE', dataset: 'jobs' },
-    { id: 'dispatch-performance', name: 'Dispatch Performance', description: 'Dispatch efficiency metrics', type: 'DISPATCH', dataset: 'dispatch' },
-  ]
 
   const openPdfBlob = (blob: Blob, mode: 'view' | 'print' | 'download', filename: string) => {
     const pdfUrl = window.URL.createObjectURL(blob)
@@ -120,53 +141,6 @@ export default function ReportsPage() {
     return response.blob()
   }
 
-  const handleTemplateAction = async (
-    template: typeof templateReports[0],
-    mode: 'view' | 'print' | 'download'
-  ) => {
-    try {
-      const token = localStorage.getItem('accessToken')
-      if (!token) {
-        window.location.href = '/auth/login'
-        return
-      }
-
-      // First, create a temporary report for the template
-      const reportResponse = await fetch('/api/reports', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          name: template.name,
-          description: template.description,
-          type: 'PREBUILT',
-          template: template.id,
-          dataset: template.dataset,
-        }),
-      })
-
-      if (reportResponse.ok) {
-        const { report } = await reportResponse.json()
-
-        const blob = await runReportPdf(report.id)
-        openPdfBlob(blob, mode, `${template.id}-${new Date().toISOString().split('T')[0]}.pdf`)
-      } else {
-        const error = await reportResponse.json()
-        alert(error.error || 'Failed to create report')
-      }
-    } catch (error) {
-      console.error('Failed to run template report:', error)
-      alert('Failed to generate report PDF')
-    }
-  }
-
-  const handleConfigureTemplate = (templateId: string) => {
-    setConfiguringTemplate(templateId)
-    setShowBuilder(true)
-  }
-
   const handleCustomAction = async (report: Report, mode: 'view' | 'print' | 'download') => {
     try {
       const blob = await runReportPdf(report.id)
@@ -177,9 +151,30 @@ export default function ReportsPage() {
     }
   }
 
-  const handleEditReport = (report: Report) => {
-    // TODO: Open edit dialog with ReportBuilder pre-filled
-    alert('Edit functionality coming soon!')
+  // Builder's "Run" gives an unsaved config — save it (there's no run-without-saving
+  // endpoint) then immediately run and open the PDF. It'll also show up in the
+  // Custom Reports list below, same as clicking "Create Custom Report" would.
+  const handleBuilderRun = async (reportConfig: any) => {
+    const token = localStorage.getItem('accessToken')
+    try {
+      const createResponse = await fetch('/api/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(reportConfig),
+      })
+      if (!createResponse.ok) {
+        const error = await createResponse.json().catch(() => ({}))
+        alert(error.error || 'Failed to run report')
+        return
+      }
+      const { report } = await createResponse.json()
+      setReports((prev) => [report, ...prev])
+      const blob = await runReportPdf(report.id)
+      openPdfBlob(blob, 'view', `${reportConfig.name || 'report'}.pdf`)
+    } catch (error) {
+      console.error('Failed to run report from builder:', error)
+      alert('Failed to run report')
+    }
   }
 
   if (loading || permissionsLoading) {
@@ -203,37 +198,33 @@ export default function ReportsPage() {
         </div>
         <div className="flex items-center gap-2">
           {canViewPayments && (
-          <Link href="/dashboard/reports/payments">
-            <Button variant="outline">Payment History</Button>
-          </Link>
+            <Link href="/dashboard/reports/payments">
+              <Button variant="outline">Payment History</Button>
+            </Link>
           )}
           {canCreateReports && (
-          <Dialog open={showBuilder} onOpenChange={setShowBuilder}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="mr-2 h-4 w-4" />
-                Create Custom Report
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Report Builder</DialogTitle>
-                <DialogDescription>Create a custom report by selecting dataset, columns, filters, and sorting</DialogDescription>
-              </DialogHeader>
-              <ReportBuilder
-                onSave={(report) => {
-                  setReports([report, ...reports])
-                  setShowBuilder(false)
-                  fetchReports()
-                }}
-                onRun={(report) => {
-                  // Handle running the report
-                  console.log('Run report:', report)
-                  alert('Report execution coming soon!')
-                }}
-              />
-            </DialogContent>
-          </Dialog>
+            <Dialog open={showBuilder} onOpenChange={setShowBuilder}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create Custom Report
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Report Builder</DialogTitle>
+                  <DialogDescription>Create a custom report by selecting dataset, columns, filters, and sorting</DialogDescription>
+                </DialogHeader>
+                <ReportBuilder
+                  onSave={(report) => {
+                    setReports([report, ...reports])
+                    setShowBuilder(false)
+                    fetchReports()
+                  }}
+                  onRun={handleBuilderRun}
+                />
+              </DialogContent>
+            </Dialog>
           )}
         </div>
       </div>
@@ -247,78 +238,35 @@ export default function ReportsPage() {
       )}
 
       {canViewReports && (
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
-        <TabsList>
-          <TabsTrigger value="templates">Report Templates</TabsTrigger>
-          <TabsTrigger value="custom">Custom Reports</TabsTrigger>
-          <TabsTrigger value="scheduled">Scheduled Reports</TabsTrigger>
-        </TabsList>
-
-        {/* Report Templates */}
-        <TabsContent value="templates" className="space-y-4">
+        <>
           <Card>
             <CardHeader>
-              <CardTitle>Pre-built Report Templates</CardTitle>
-              <CardDescription>Quick access to common reports</CardDescription>
+              <CardTitle>Financial Reports</CardTitle>
+              <CardDescription>Ready-to-run reports with charts, totals, and PDF/CSV export</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {templateReports.map((template) => (
-                  <Card key={template.id} className="hover:border-blue-500 transition-colors cursor-pointer">
-                    <CardHeader>
-                      <CardTitle className="text-lg flex items-center gap-2">
-                        <FileText className="h-5 w-5" />
-                        {template.name}
-                      </CardTitle>
-                      <CardDescription>{template.description}</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="flex gap-2">
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          className="flex-1"
-                          onClick={() => handleConfigureTemplate(template.id)}
-                        >
-                          <Filter className="mr-2 h-4 w-4" />
-                          Configure
-                        </Button>
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => handleTemplateAction(template, 'view')}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => handleTemplateAction(template, 'download')}
-                        >
-                          <Download className="h-4 w-4" />
-                        </Button>
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => handleTemplateAction(template, 'print')}
-                        >
-                          <Printer className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
+                {FINANCIAL_REPORTS.map((report) => (
+                  <Link key={report.href} href={report.href}>
+                    <Card className="h-full hover:border-blue-500 hover:shadow-sm transition-all cursor-pointer">
+                      <CardHeader>
+                        <CardTitle className="text-lg flex items-center gap-2">
+                          <report.icon className="h-5 w-5 text-blue-600" />
+                          {report.name}
+                        </CardTitle>
+                        <CardDescription>{report.description}</CardDescription>
+                      </CardHeader>
+                    </Card>
+                  </Link>
                 ))}
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
 
-        {/* Custom Reports */}
-        <TabsContent value="custom" className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle>Custom Reports</CardTitle>
-              <CardDescription>Your saved custom report configurations</CardDescription>
+              <CardDescription>Build your own report from Jobs, Invoices, Requests, or Clients data</CardDescription>
             </CardHeader>
             <CardContent>
               {reports.length === 0 ? (
@@ -326,13 +274,12 @@ export default function ReportsPage() {
                   <FileText className="h-12 w-12 mx-auto text-gray-400 mb-4" />
                   <p className="text-gray-600">No custom reports yet</p>
                   <p className="text-sm text-gray-500 mt-2">Create your first custom report to get started</p>
-                  <Button 
-                    className="mt-4"
-                    onClick={() => setShowBuilder(true)}
-                  >
-                    <Plus className="mr-2 h-4 w-4" />
-                    Create Custom Report
-                  </Button>
+                  {canCreateReports && (
+                    <Button className="mt-4" onClick={() => setShowBuilder(true)}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Create Custom Report
+                    </Button>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -353,37 +300,17 @@ export default function ReportsPage() {
                           <p className="text-sm text-gray-600 mt-1">{report.description}</p>
                         )}
                         <p className="text-xs text-gray-500 mt-2">
-                          Created {formatDate(report.createdAt)}{' \u2022 '}Updated {formatDate(report.updatedAt)}
+                          Created {formatDate(report.createdAt)}{' • '}Updated {formatDate(report.updatedAt)}
                         </p>
                       </div>
                       <div className="flex gap-2">
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => handleEditReport(report)}
-                        >
-                          <Settings className="mr-2 h-4 w-4" />
-                          Edit
-                        </Button>
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => handleCustomAction(report, 'view')}
-                        >
+                        <Button variant="outline" size="sm" onClick={() => handleCustomAction(report, 'view')}>
                           <Eye className="h-4 w-4" />
                         </Button>
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => handleCustomAction(report, 'download')}
-                        >
+                        <Button variant="outline" size="sm" onClick={() => handleCustomAction(report, 'download')}>
                           <Download className="h-4 w-4" />
                         </Button>
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => handleCustomAction(report, 'print')}
-                        >
+                        <Button variant="outline" size="sm" onClick={() => handleCustomAction(report, 'print')}>
                           <Printer className="h-4 w-4" />
                         </Button>
                       </div>
@@ -393,25 +320,7 @@ export default function ReportsPage() {
               )}
             </CardContent>
           </Card>
-        </TabsContent>
-
-        {/* Scheduled Reports */}
-        <TabsContent value="scheduled" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Scheduled Reports</CardTitle>
-              <CardDescription>Reports that run automatically on a schedule</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center py-12">
-                <Calendar className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                <p className="text-gray-600">No scheduled reports</p>
-                <p className="text-sm text-gray-500 mt-2">Schedule reports to be emailed automatically</p>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+        </>
       )}
     </div>
   )

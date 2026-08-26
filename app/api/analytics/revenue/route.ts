@@ -27,30 +27,30 @@ export async function GET(request: NextRequest) {
   try {
     // Revenue over time (monthly)
     const monthlyRevenue = await prisma.$queryRaw<Array<{ month: string; revenue: number }>>`
-      SELECT 
-        TO_CHAR(created_at, 'YYYY-MM') as month,
+      SELECT
+        TO_CHAR("createdAt", 'YYYY-MM') as month,
         COALESCE(SUM(total), 0)::decimal as revenue
       FROM invoices
-      WHERE tenant_id = ${user.tenantId}
-        AND created_at >= ${startDate}
-        AND created_at <= ${endDate}
-      GROUP BY TO_CHAR(created_at, 'YYYY-MM')
+      WHERE "tenantId" = ${user.tenantId}
+        AND "createdAt" >= ${startDate}
+        AND "createdAt" <= ${endDate}
+      GROUP BY TO_CHAR("createdAt", 'YYYY-MM')
       ORDER BY month ASC
     `
 
     // Payments over time
     const monthlyPayments = await prisma.$queryRaw<Array<{ month: string; amount: number }>>`
-      SELECT 
-        TO_CHAR(processed_at, 'YYYY-MM') as month,
+      SELECT
+        TO_CHAR("processedAt", 'YYYY-MM') as month,
         COALESCE(SUM(amount), 0)::decimal as amount
       FROM payments
       WHERE status = 'COMPLETED'
-        AND invoice_id IN (
-          SELECT id FROM invoices WHERE tenant_id = ${user.tenantId}
+        AND "invoiceId" IN (
+          SELECT id FROM invoices WHERE "tenantId" = ${user.tenantId}
         )
-        AND processed_at >= ${startDate}
-        AND processed_at <= ${endDate}
-      GROUP BY TO_CHAR(processed_at, 'YYYY-MM')
+        AND "processedAt" >= ${startDate}
+        AND "processedAt" <= ${endDate}
+      GROUP BY TO_CHAR("processedAt", 'YYYY-MM')
       ORDER BY month ASC
     `
 

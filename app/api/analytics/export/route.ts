@@ -92,6 +92,34 @@ export async function GET(request: NextRequest) {
             `${inv.invoiceNumber},"${inv.client.name}",${inv.total},${inv.balance},${inv.status},${inv.dueDate?.toISOString().split('T')[0] || ''},${inv.createdAt.toISOString().split('T')[0]}`
         ),
       ].join('\n')
+    } else if (type === 'leads') {
+      const leads = await prisma.lead.findMany({
+        where: {
+          tenantId: user.tenantId,
+          createdAt: { gte: startDate, lte: endDate },
+        },
+        select: {
+          firstName: true,
+          lastName: true,
+          company: true,
+          source: true,
+          status: true,
+          value: true,
+          convertedAt: true,
+          createdAt: true,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      })
+
+      csvData = [
+        'Name,Company,Source,Status,Value,Created Date,Converted Date',
+        ...leads.map(
+          (lead) =>
+            `"${lead.firstName} ${lead.lastName}","${lead.company || ''}",${lead.source},${lead.status},${lead.value || 0},${lead.createdAt.toISOString().split('T')[0]},${lead.convertedAt?.toISOString().split('T')[0] || ''}`
+        ),
+      ].join('\n')
     } else {
       // Overview summary
       const [jobsCount, revenueSum, invoicesCount] = await Promise.all([

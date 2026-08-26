@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Search } from 'lucide-react'
+import { ArrowLeft, Download, Search } from 'lucide-react'
+import { downloadReportExport } from '@/lib/reports/download-export'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -121,6 +122,24 @@ export default function PaymentHistoryPage() {
   useEffect(() => {
     void fetchHistory()
   }, [fetchHistory])
+
+  const [exporting, setExporting] = useState(false)
+  const handleExport = async () => {
+    setExporting(true)
+    try {
+      const params = new URLSearchParams({ format: 'csv' })
+      if (search.trim()) params.set('q', search.trim())
+      if (providerFilter !== 'all') params.set('provider', providerFilter)
+      if (statusFilter !== 'all') params.set('status', statusFilter)
+      if (startDate) params.set('startDate', startDate)
+      if (endDate) params.set('endDate', endDate)
+      await downloadReportExport(`/api/payments/history?${params.toString()}`, 'payment-history.csv')
+    } catch {
+      alert('Failed to export CSV')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const openRefundModal = (payment: PaymentRow) => {
     setRefundModal({
@@ -243,6 +262,9 @@ export default function PaymentHistoryPage() {
             <p className="text-gray-600 mt-1">SOLA + QuickBooks ACH payment events and refunds</p>
           </div>
         </div>
+        <Button variant="outline" size="sm" disabled={exporting} onClick={handleExport}>
+          <Download className="mr-2 h-4 w-4" /> Export CSV
+        </Button>
       </div>
 
       <Card>
