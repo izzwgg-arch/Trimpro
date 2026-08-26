@@ -696,7 +696,6 @@ export default function RequestDetailPage() {
                   })}`
                 )
               }}
-            >
               disabled={!canConvertRequest || !canCreateEstimate}
             >
               <FileText className="mr-2 h-4 w-4" />
@@ -717,7 +716,6 @@ export default function RequestDetailPage() {
                   })}`
                 )
               }}
-            >
               disabled={!canConvertRequest || !canCreateJob}
             >
               <Plus className="mr-2 h-4 w-4" />
@@ -738,7 +736,6 @@ export default function RequestDetailPage() {
                   })}`
                 )
               }}
-            >
               disabled={!canCreateTask}
             >
               <CheckSquare className="mr-2 h-4 w-4" />
@@ -759,7 +756,6 @@ export default function RequestDetailPage() {
                   })}`
                 )
               }}
-            >
               disabled={!canCreateIssue}
             >
               <AlertCircle className="mr-2 h-4 w-4" />
