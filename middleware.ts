@@ -28,7 +28,9 @@ export function middleware(request: NextRequest) {
 
 export const config = {
   // Redirect only triggers for IP/localhost/:3000 hosts, but we match broadly so old invoice/portal links
-  // also get corrected to the canonical HTTPS domain.
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  // also get corrected to the canonical HTTPS domain. Excludes /api/ — this is only meant to fix stale
+  // customer-facing PAGE links from old emails; applying it to API routes breaks legitimate server-to-server
+  // calls over the internal loopback (the redirect strips the Authorization header on the cross-origin hop).
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/).*)'],
 }
 
