@@ -10,6 +10,8 @@ import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { getEstimateConversionSummary } from '@/lib/documents/conversion'
 import { allocateNextInvoiceNumber } from '@/lib/qbo/doc-numbers'
 import { syncJobCostFromLinkedDocuments } from '@/lib/jobs/sync-job-cost'
+import { toCents, fromCents, reconcileEstimateConversionLineItems } from '@/lib/documents/progress-billing'
+import { sendInvoiceEmailForInvoice } from '@/lib/invoices/send-invoice-email'
 
 export const runtime = 'nodejs'
 
@@ -230,9 +232,10 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
         console.error('Failed to auto-create job from approval:', jobErr)
       }
 
-      // Auto-create a FULL-amount invoice for the approved work. The deposit % is
-      // the requested initial payment — it is collected as a PARTIAL payment, so
-      // the invoice represents the whole job and stays PARTIAL until fully paid.
+      // Auto-create an invoice for the approved work, billed at the estimate's
+      // configured deposit/billing percentage — same "PERCENTAGE billing mode"
+      // convention as the staff-facing "convert estimate to invoice" flow
+      // (app/api/invoices/route.ts), so titles/fields stay consistent.
       const depositPct = (() => {
         const raw = Number((estimate as any).depositPercent)
         if (!Number.isFinite(raw) || raw <= 0 || raw > 100) return 50
@@ -262,18 +265,40 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
         try {
           autoCreatedInvoice = await prisma.$transaction(async (tx) => {
             const invoiceNumber = await allocateNextInvoiceNumber({ tenantId: tokenRow.tenantId, db: tx })
+            const taxRate = Number(estimate.taxRate || 0)
+            const isFullBilling = depositPct >= 99.995
 
-            // Build per-item line items at FULL price (the whole job).
-            const lineItemsData = allApprovedItems.map((li, idx) => {
-              const fullPrice = toNumber(li.unitPrice)
+            // Scale each approved line item down to the billing percentage.
+            const scale = depositPct / 100
+            const scaledDrafts = allApprovedItems.map((li) => {
+              const fullUnitPrice = toNumber(li.unitPrice)
               const qty = toNumber(li.quantity || 1)
-              const lineTotal = Math.round(fullPrice * qty * 100) / 100
+              const baseTotal = fullUnitPrice * qty
+              const scaledTotal = baseTotal * scale
+              const unitPrice = qty > 0 ? Number((scaledTotal / qty).toFixed(4)) : Number(scaledTotal.toFixed(4))
+              return { li, quantity: qty, unitPrice }
+            })
+
+            // Cap against whatever headroom is left on the estimate (defends
+            // against rounding drift and items already invoiced by other means
+            // between approval batches) — same guard the staff conversion flow uses.
+            const conversionBefore = await getEstimateConversionSummary(tx, estimate.id, estimate.total, tokenRow.tenantId)
+            const reconciled = reconcileEstimateConversionLineItems(scaledDrafts, {
+              taxRate,
+              estimateTotalCents: toCents(toNumber(estimate.total)),
+              existingInvoicedCents: toCents(conversionBefore.invoicedTotal),
+            })
+
+            const lineItemsData = reconciled.lineItems.map((draft, idx) => {
+              const li = draft.li
+              const unitPrice = Number(draft.unitPrice)
+              const total = fromCents(toCents(draft.quantity * unitPrice))
               return {
                 sourceId: li.id,
                 description: li.description,
-                quantity: qty,
-                unitPrice: fullPrice,
-                total: lineTotal,
+                quantity: draft.quantity,
+                unitPrice,
+                total,
                 sortOrder: idx,
                 isVisibleToClient: li.isVisibleToClient !== false,
                 showDescriptionToCustomer: li.showDescriptionToCustomer ?? true,
@@ -291,12 +316,11 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
               }
             })
 
-            const subtotal = lineItemsData.reduce((sum, li) => sum + li.total, 0)
-            const taxRate = Number(estimate.taxRate || 0)
-            const taxAmount = Math.round(subtotal * taxRate * 100) / 100
-            const total = Math.round((subtotal + taxAmount) * 100) / 100
-            const depositAmount = Math.round(total * depositPct) / 100
+            const subtotal = reconciled.subtotal
+            const taxAmount = reconciled.taxAmount
+            const total = reconciled.total
             const paymentToken = crypto.randomBytes(32).toString('hex')
+            const billingSuffix = isFullBilling ? 'Full Billing' : `${depositPct.toFixed(2)}% Billing`
 
             const inv = await tx.invoice.create({
               data: {
@@ -305,7 +329,7 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
                 jobId: autoCreatedJob?.id || estimate.jobId || null,
                 estimateId: estimate.id,
                 invoiceNumber,
-                title: estimate.title,
+                title: `${estimate.title} - ${billingSuffix}`,
                 status: 'SENT',
                 subtotal,
                 taxRate,
@@ -317,10 +341,9 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
                 invoiceDate: now,
                 qboAchEnabled: true,
                 paymentToken,
-                // Track the requested initial payment so the pay page / staff can
-                // see the expected deposit; the invoice total remains the full job.
+                progressBillingMode: isFullBilling ? 'FULL' : 'PERCENTAGE',
                 progressBillingPercent: depositPct,
-                notes: `Invoice from approved estimate ${estimate.estimateNumber}. Requested initial deposit: ${depositPct}% ($${depositAmount.toFixed(2)}). Remaining balance due upon completion.`,
+                notes: `Invoice from approved estimate ${estimate.estimateNumber} — ${depositPct.toFixed(2)}% billing.`,
               },
             })
 
@@ -371,6 +394,21 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
           })
         } catch (invoiceErr) {
           console.error('Failed to auto-create deposit invoice:', invoiceErr)
+        }
+
+        if (autoCreatedInvoice?.id) {
+          try {
+            const emailResult = await sendInvoiceEmailForInvoice({
+              tenantId: tokenRow.tenantId,
+              invoiceId: autoCreatedInvoice.id,
+              message: `Thank you for approving estimate ${estimate.estimateNumber}. Your invoice is attached.`,
+            })
+            if (!emailResult.ok) {
+              console.error('Failed to email auto-created invoice:', emailResult.error)
+            }
+          } catch (emailErr) {
+            console.error('Failed to email auto-created invoice:', emailErr)
+          }
         }
       } else {
         // No invoice was created, so do not mark the estimate as converted.

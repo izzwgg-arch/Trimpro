@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { rateLimitOrThrow } from '@/lib/security/rate-limit'
 import { hashApprovalToken } from '@/lib/estimate-approval'
 import { allocateNextInvoiceNumber, normalizeInvoiceNumber } from '@/lib/qbo/doc-numbers'
+import { getEstimateConversionSummary } from '@/lib/documents/conversion'
 
 export const runtime = 'nodejs'
 
@@ -223,6 +224,14 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
           response: { invoiceId: invoice.id },
           expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30),
         },
+      })
+
+      // Every path that creates an invoice from an estimate must keep the
+      // estimate's converted-% tracking up to date — see approve/route.ts.
+      const conversion = await getEstimateConversionSummary(tx, estimate.id, estimate.total, tokenRow.tenantId)
+      await tx.estimate.update({
+        where: { id: estimate.id },
+        data: { status: 'CONVERTED', convertedPercent: conversion.convertedPercent },
       })
 
       return invoice

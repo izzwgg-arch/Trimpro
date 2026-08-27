@@ -1,34 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { randomUUID } from 'crypto'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
-import { prisma } from '@/lib/prisma'
-import { getIntegrationSecrets } from '@/lib/integrations/status'
-import { sendEmailWithAttachments } from '@/lib/integrations/providers/email'
-import { getEmailBranding } from '@/lib/email/branding'
-import { parseEmailList } from '@/lib/email/recipients'
-import { buildInvoiceEmail } from '@/lib/email/templates/invoice'
-import { getPdfBranding } from '@/lib/branding/pdf'
-import { renderInvoiceEmailPdfAttachment } from '@/lib/documents/email-pdf-attachments'
-import { loadEmailEntityAttachments } from '@/lib/documents/email-entity-attachments'
+import { sendInvoiceEmailForInvoice } from '@/lib/invoices/send-invoice-email'
 
 export const runtime = 'nodejs'
-
-function formatEmailSentDate(value: Date | number | string) {
-  const date = value instanceof Date ? value : new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-
-  const datePart = new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  }).format(date)
-  const timePart = new Intl.DateTimeFormat('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(date)
-  return `${datePart} • ${timePart}`
-}
 
 export async function POST(
   request: NextRequest,
@@ -45,199 +20,20 @@ export async function POST(
     const body = await request.json()
     const { email, emails, subject, message } = body
 
-    // Get invoice
-    const invoice = await prisma.invoice.findFirst({
-      where: {
-        id: params.id,
-        tenantId: user.tenantId,
-      },
-      include: {
-        client: {
-          include: {
-            contacts: {
-              where: { isPrimary: true },
-              take: 1,
-            },
-          },
-        },
-        lineItems: {
-          orderBy: { sortOrder: 'asc' },
-          include: { group: true },
-        },
-        optionalItems: {
-          orderBy: { sortOrder: 'asc' },
-        },
-        job: {
-          select: {
-            id: true,
-            jobNumber: true,
-            title: true,
-            addresses: {
-              where: { type: 'job_site' },
-              take: 1,
-            },
-          },
-        },
-        estimate: {
-          select: {
-            jobSiteAddress: true,
-          },
-        },
-      },
-    })
-
-    if (!invoice) {
-      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
-    }
-
-    // Prefer explicit recipients from the contact picker / custom emails.
-    // Only fall back to client email when the caller did not pass any recipients
-    // (legacy/API callers). Never auto-append client contacts on top of a selection.
-    const explicitRecipients = parseEmailList([
-      ...parseEmailList(emails),
-      ...parseEmailList(email),
-    ])
-    const uniqueRecipientEmails =
-      explicitRecipients.length > 0
-        ? explicitRecipients
-        : parseEmailList([
-            ...parseEmailList(invoice.client?.email),
-            ...parseEmailList(invoice.client?.contacts?.[0]?.email),
-          ])
-
-    if (uniqueRecipientEmails.length === 0) {
-      return NextResponse.json({ error: 'No recipient email address provided' }, { status: 400 })
-    }
-
-    // Force public base URL in recipient emails to avoid internal/private links.
-    const appUrl = 'https://app.trimprony.com'
-
-    const token = invoice.paymentToken || randomUUID()
-    const sentEpoch = Date.now()
-    const sentIso = new Date(sentEpoch).toISOString()
-    const sentDisplay = formatEmailSentDate(sentEpoch)
-    if (!invoice.paymentToken) {
-      await prisma.invoice.update({
-        where: { id: invoice.id },
-        data: { paymentToken: token },
-      })
-    }
-
-    // Public, tokenized links so recipients do not need dashboard auth.
-    const pdfUrl = `${appUrl}/api/public/invoices/${invoice.id}/pdf?token=${encodeURIComponent(token)}&view=customer&sent=${sentEpoch}`
-    const paymentLink =
-      invoice.balance.toNumber() > 0
-        ? `${appUrl}/portal/pay/${invoice.id}?token=${encodeURIComponent(token)}&sent=${sentEpoch}`
-        : ''
-    const effectiveSubject = `${subject || `Invoice ${invoice.invoiceNumber}`} • ${sentDisplay || sentIso}`
-    console.log('Invoice email links:', {
-      invoiceId: invoice.id,
-      appUrl,
-      pdfUrl,
-      paymentLink,
-    })
-    
-    const emailSecrets = await getIntegrationSecrets(user.tenantId, 'email')
-    if (!emailSecrets) {
-      return NextResponse.json(
-        { error: 'Email integration is not configured. Please configure Email Provider first.' },
-        { status: 400 }
-      )
-    }
-
-    const total = Number(invoice.total || 0).toFixed(2)
-    const balance = Number(invoice.balance || 0).toFixed(2)
-    const dueDate = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : ''
-    const emailBranding = await getEmailBranding(user.tenantId)
-    const logoUrl = emailBranding?.emailLogoUrl || emailBranding?.webLogoUrl || ''
-
-    const html = buildInvoiceEmail({
-      invoiceNumber: invoice.invoiceNumber,
-      clientName: invoice.client?.companyName || invoice.client?.name || 'Customer',
-      title: invoice.title || undefined,
-      dueDate: dueDate || undefined,
-      total,
-      balance,
-      sentDisplay: sentDisplay || sentIso,
-      pdfUrl,
-      paymentLink: paymentLink || undefined,
-      message: message ? String(message) : undefined,
-      logoUrl: logoUrl || undefined,
-      companyName:
-        (emailBranding as { businessName?: string; companyName?: string } | null)?.businessName ||
-        (emailBranding as { companyName?: string } | null)?.companyName ||
-        'TrimPro',
-    })
-
-    const pdfBranding = await getPdfBranding(user.tenantId)
-    const pdfAttachment = await renderInvoiceEmailPdfAttachment(invoice, pdfBranding, 'customer')
-    const uploadedAttachments = await loadEmailEntityAttachments({
+    const result = await sendInvoiceEmailForInvoice({
       tenantId: user.tenantId,
-      entityType: 'invoice',
-      entityId: invoice.id,
+      invoiceId: params.id,
+      userId: user.id,
+      userEmail: user.email,
+      email,
+      emails,
+      subject,
+      message,
     })
-    const text = `Invoice ${invoice.invoiceNumber}
 
-${message ? String(message) : `Please review invoice ${invoice.invoiceNumber}.`}
-
-Total: $${total}
-Balance: $${balance}
-${dueDate ? `Due date: ${dueDate}\n` : ''}Download PDF: ${pdfUrl}
-${paymentLink ? `Pay Online: ${paymentLink}` : ''}`.trim()
-
-    const sendResult = await sendEmailWithAttachments({
-      secrets: emailSecrets,
-      to: uniqueRecipientEmails,
-      subject: effectiveSubject,
-      html,
-      text,
-      attachments: [pdfAttachment, ...uploadedAttachments],
-    })
-    if (!sendResult.success) {
-      console.error('Failed to send invoice email:', sendResult.error || sendResult.message)
-      return NextResponse.json(
-        { error: sendResult.error || sendResult.message || 'Failed to send invoice email' },
-        { status: 502 }
-      )
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: result.status })
     }
-
-    // Update invoice status
-    await prisma.invoice.update({
-      where: { id: params.id },
-      data: {
-        status: invoice.status === 'DRAFT' ? 'SENT' : invoice.status,
-        sentAt: new Date(),
-      },
-    })
-
-    // Create email record
-    await prisma.email.create({
-      data: {
-        tenantId: user.tenantId,
-        userId: user.id,
-        direction: 'OUTBOUND',
-        status: 'SENT',
-        subject: effectiveSubject,
-        body: message || `Please find attached invoice ${invoice.invoiceNumber}.`,
-        fromEmail: user.email,
-        toEmails: uniqueRecipientEmails,
-        invoiceId: invoice.id,
-        clientId: invoice.clientId,
-        sentAt: new Date(),
-      },
-    })
-
-    // Create activity
-    await prisma.activity.create({
-      data: {
-        tenantId: user.tenantId,
-        userId: user.id,
-        type: 'EMAIL_SENT',
-        description: `Invoice "${invoice.title}" sent to ${uniqueRecipientEmails.join(', ')}`,
-        invoiceId: invoice.id,
-        clientId: invoice.clientId,
-      },
-    })
 
     return NextResponse.json({ message: 'Invoice sent successfully' })
   } catch (error) {
