@@ -93,8 +93,10 @@ export async function GET(request: NextRequest) {
         debit: Number(inv.total),
         credit: 0,
       })
+      let localNetPaid = 0
       for (const p of inv.payments) {
         const netPaid = Number(p.amount) - Number(p.refundedAmount || 0)
+        localNetPaid += netPaid
         if (netPaid <= 0) continue
         transactions.push({
           date: p.processedAt || p.createdAt,
@@ -103,6 +105,22 @@ export async function GET(request: NextRequest) {
           reference: inv.invoiceNumber,
           debit: 0,
           credit: netPaid,
+        })
+      }
+      // invoice.paidAmount is kept accurate by both the local payment flow and
+      // the QuickBooks sync. If it's ahead of what we have local Payment rows
+      // for, the rest was paid through QuickBooks directly — reconcile the gap
+      // so the ledger's running balance matches the invoice's real balance,
+      // instead of only reflecting payments TrimPro happened to record.
+      const externalGap = Number(inv.paidAmount) - localNetPaid
+      if (externalGap > 0.01) {
+        transactions.push({
+          date: inv.paidAt || inv.updatedAt,
+          type: 'PAYMENT',
+          description: `${subLabel}Payment (recorded in QuickBooks)`,
+          reference: inv.invoiceNumber,
+          debit: 0,
+          credit: externalGap,
         })
       }
       for (const app of inv.creditMemoApplications) {

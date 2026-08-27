@@ -70,8 +70,38 @@ export async function GET(request: NextRequest) {
       ORDER BY month ASC
     `
 
+    // invoice.paidAmount is kept accurate by both the local payment flow and
+    // the QuickBooks sync, so it can be ahead of what local `payments` rows
+    // add up to (money collected through QuickBooks directly, without a
+    // matching TrimPro payment record). Fold that gap into "Collected" too,
+    // bucketed by paidAt, so this doesn't understate real collections.
+    const externalCollected = await prisma.$queryRaw<Array<{ month: string; amount: string }>>`
+      SELECT month, COALESCE(SUM(gap), 0)::text as amount
+      FROM (
+        SELECT
+          TO_CHAR(i."paidAt", 'YYYY-MM') as month,
+          i."paidAmount" - COALESCE((
+            SELECT SUM(p.amount - p."refundedAmount")
+            FROM payments p
+            WHERE p."invoiceId" = i.id AND p.status = 'COMPLETED'
+          ), 0) AS gap
+        FROM invoices i
+        WHERE i."tenantId" = ${user.tenantId}
+          AND i."paidAt" IS NOT NULL
+          AND i."paidAt" >= ${startDate}
+          AND i."paidAt" <= ${endDate}
+          ${clientSqlFilter}
+          ${jobSiteSqlFilter}
+      ) sub
+      WHERE gap > 0.01
+      GROUP BY month
+    `
+
     const invoicedMap = new Map(invoiced.map((r) => [r.month, Number(r.revenue)]))
     const collectedMap = new Map(collected.map((r) => [r.month, Number(r.amount)]))
+    for (const row of externalCollected) {
+      collectedMap.set(row.month, (collectedMap.get(row.month) || 0) + Number(row.amount))
+    }
 
     // Build a complete list of months in range so gaps show as $0, not missing.
     const months: string[] = []
