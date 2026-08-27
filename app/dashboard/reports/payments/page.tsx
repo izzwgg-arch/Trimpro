@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Download, Search } from 'lucide-react'
+import { ArrowLeft, Download, FileText, Search } from 'lucide-react'
 import { downloadReportExport } from '@/lib/reports/download-export'
+import { EmailReportButton } from '@/components/reports/EmailReportButton'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -134,18 +135,25 @@ export default function PaymentHistoryPage() {
   }, [fetchHistory])
 
   const [exporting, setExporting] = useState(false)
-  const handleExport = async () => {
+
+  const buildQuery = useCallback(() => {
+    const params = new URLSearchParams()
+    if (search.trim()) params.set('q', search.trim())
+    if (providerFilter !== 'all') params.set('provider', providerFilter)
+    if (statusFilter !== 'all') params.set('status', statusFilter)
+    if (startDate) params.set('startDate', startDate)
+    if (endDate) params.set('endDate', endDate)
+    return params
+  }, [search, providerFilter, statusFilter, startDate, endDate])
+
+  const handleExport = async (format: 'csv' | 'pdf') => {
     setExporting(true)
     try {
-      const params = new URLSearchParams({ format: 'csv' })
-      if (search.trim()) params.set('q', search.trim())
-      if (providerFilter !== 'all') params.set('provider', providerFilter)
-      if (statusFilter !== 'all') params.set('status', statusFilter)
-      if (startDate) params.set('startDate', startDate)
-      if (endDate) params.set('endDate', endDate)
-      await downloadReportExport(`/api/payments/history?${params.toString()}`, 'payment-history.csv')
+      const params = buildQuery()
+      params.set('format', format)
+      await downloadReportExport(`/api/payments/history?${params.toString()}`, `payment-history.${format}`)
     } catch {
-      alert('Failed to export CSV')
+      alert(`Failed to export ${format.toUpperCase()}`)
     } finally {
       setExporting(false)
     }
@@ -270,9 +278,15 @@ export default function PaymentHistoryPage() {
             <p className="text-gray-600 mt-1">SOLA + QuickBooks ACH payment events and refunds</p>
           </div>
         </div>
-        <Button variant="outline" size="sm" disabled={exporting} onClick={handleExport}>
-          <Download className="mr-2 h-4 w-4" /> Export CSV
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" disabled={exporting} onClick={() => handleExport('csv')}>
+            <Download className="mr-2 h-4 w-4" /> CSV
+          </Button>
+          <Button variant="outline" size="sm" disabled={exporting} onClick={() => handleExport('pdf')}>
+            <FileText className="mr-2 h-4 w-4" /> PDF
+          </Button>
+          <EmailReportButton report="payments" params={Object.fromEntries(buildQuery())} />
+        </div>
       </div>
 
       <Card>

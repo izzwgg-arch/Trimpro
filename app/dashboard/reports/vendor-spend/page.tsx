@@ -11,6 +11,8 @@ import { Label } from '@/components/ui/label'
 import { formatCurrency } from '@/lib/utils'
 import { downloadReportExport } from '@/lib/reports/download-export'
 import { ReportFilterBar } from '@/components/reports/ReportFilterBar'
+import { EmailReportButton } from '@/components/reports/EmailReportButton'
+import type { PickerClient } from '@/lib/clients/fetch-all-picker-clients'
 
 type VendorRow = { vendorKey: string; vendorName: string; poCount: number; total: number }
 type VendorSpendResponse = { byVendor: VendorRow[]; grandTotal: number }
@@ -23,6 +25,7 @@ export default function VendorSpendReportPage() {
   const [clientId, setClientId] = useState('')
   const [jobSiteAddress, setJobSiteAddress] = useState('')
   const [hideSubClients, setHideSubClients] = useState(true)
+  const [selectedClient, setSelectedClient] = useState<PickerClient | null>(null)
   const [data, setData] = useState<VendorSpendResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
@@ -103,6 +106,11 @@ export default function VendorSpendReportPage() {
             <Button variant="outline" size="sm" disabled={exporting} onClick={() => handleExport('pdf')}>
               <FileText className="h-4 w-4 mr-1" /> PDF
             </Button>
+            <EmailReportButton
+              report="vendor-spend"
+              params={Object.fromEntries(buildQuery())}
+              defaultRecipient={selectedClient?.email || ''}
+            />
           </div>
         </CardHeader>
         <CardContent>
@@ -113,6 +121,7 @@ export default function VendorSpendReportPage() {
             onJobSiteAddressChange={setJobSiteAddress}
             hideSubClients={hideSubClients}
             onHideSubClientsChange={setHideSubClients}
+            onClientResolved={setSelectedClient}
           />
         </CardContent>
       </Card>

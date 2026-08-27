@@ -16,6 +16,8 @@ interface ReportFilterBarProps {
   onJobSiteAddressChange: (value: string) => void
   hideSubClients: boolean
   onHideSubClientsChange: (value: boolean) => void
+  /** Fires with the full selected client (email included) whenever it resolves, or null when cleared. */
+  onClientResolved?: (client: PickerClient | null) => void
 }
 
 /** Shared customer / job-site / sub-customer rollup filters, reused across financial reports. */
@@ -26,6 +28,7 @@ export function ReportFilterBar({
   onJobSiteAddressChange,
   hideSubClients,
   onHideSubClientsChange,
+  onClientResolved,
 }: ReportFilterBarProps) {
   const [clients, setClients] = useState<PickerClient[]>([])
 
@@ -34,6 +37,12 @@ export function ReportFilterBar({
       .then(setClients)
       .catch(() => setClients([]))
   }, [])
+
+  useEffect(() => {
+    if (!onClientResolved) return
+    onClientResolved(clientId ? clients.find((c) => c.id === clientId) || null : null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientId, clients])
 
   return (
     <div className="grid gap-4 sm:grid-cols-3">

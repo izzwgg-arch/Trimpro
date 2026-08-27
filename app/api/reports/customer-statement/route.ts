@@ -15,6 +15,9 @@ type TransactionRow = {
   reference: string
   debit: number
   credit: number
+  /** Only set on INVOICE rows — lets the UI filter to just still-open invoices. */
+  invoiceBalance?: number
+  invoiceStatus?: string
 }
 
 export async function GET(request: NextRequest) {
@@ -92,6 +95,8 @@ export async function GET(request: NextRequest) {
         reference: inv.invoiceNumber,
         debit: Number(inv.total),
         credit: 0,
+        invoiceBalance: Number(inv.balance),
+        invoiceStatus: inv.status,
       })
       let localNetPaid = 0
       for (const p of inv.payments) {

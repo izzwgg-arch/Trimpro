@@ -1336,3 +1336,100 @@ export function buildVendorSpendPdfHtml(
     </html>
   `
 }
+
+type PaymentHistoryRow = {
+  createdAt: Date | string
+  customerName: string
+  invoiceNumber: string
+  provider: string
+  paymentMethod: string
+  status: string
+  amount: number
+  refundedAmount: number
+  providerPaymentId: string
+}
+
+export function buildPaymentHistoryPdfHtml(
+  data: {
+    rows: PaymentHistoryRow[]
+    summary: { totalAmount: number; totalRefunded: number; succeededCount: number; failedCount: number }
+    startDate: Date | null
+    endDate: Date | null
+  },
+  brand: PdfBranding
+): string {
+  const { rows, summary, startDate, endDate } = data
+  const generatedAt = new Date().toLocaleString()
+  const periodLabel =
+    startDate || endDate
+      ? `${startDate ? startDate.toLocaleDateString() : 'Start'} — ${endDate ? endDate.toLocaleDateString() : 'Today'}`
+      : 'All time'
+
+  const tableRows = rows
+    .map((r) => {
+      const date = r.createdAt instanceof Date ? r.createdAt : new Date(r.createdAt)
+      return `<tr>
+        <td>${escapeHtml(date.toLocaleDateString())}</td>
+        <td>${escapeHtml(r.customerName)}</td>
+        <td>${escapeHtml(r.invoiceNumber)}</td>
+        <td>${escapeHtml(r.paymentMethod)}</td>
+        <td>${escapeHtml(r.status)}</td>
+        <td class="text-right">$${r.amount.toFixed(2)}</td>
+        <td class="text-right">${r.refundedAmount ? `$${r.refundedAmount.toFixed(2)}` : ''}</td>
+      </tr>`
+    })
+    .join('')
+
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Payment History</title>
+        <style>${SHARED_DOC_CSS(brand.accentColor, brand.accentTextColor)}</style>
+      </head>
+      <body>
+        <div class="page">
+          <div class="header">
+            <div>
+              <div class="brand">${logoBlock(brand, 'Trim Pro Logo')}</div>
+              <h1 class="doc-title">Payment History</h1>
+              <div class="muted">Generated on ${generatedAt}</div>
+            </div>
+            <div class="meta">
+              <div style="font-weight:700;font-size:14px;margin-bottom:4px;">${escapeHtml(brand.businessName)}</div>
+              <div><strong>Period:</strong> ${escapeHtml(periodLabel)}</div>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Customer</th>
+                <th>Invoice #</th>
+                <th>Method</th>
+                <th>Status</th>
+                <th class="text-right">Amount</th>
+                <th class="text-right">Refunded</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.length === 0 ? `<tr><td colspan="7" class="muted">No payments in this period</td></tr>` : tableRows}
+            </tbody>
+          </table>
+
+          <div class="summary">
+            <h4>Summary</h4>
+            <div class="summary-row"><span>Total Amount</span><span>$${summary.totalAmount.toFixed(2)}</span></div>
+            <div class="summary-row"><span>Total Refunded</span><span>$${summary.totalRefunded.toFixed(2)}</span></div>
+            <div class="summary-row"><span>Succeeded</span><span>${summary.succeededCount}</span></div>
+            <div class="summary-row total"><span>Failed</span><span>${summary.failedCount}</span></div>
+          </div>
+
+          ${brand.footerText ? `<div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:12px;color:#6b7280;text-align:center;">${escapeHtml(brand.footerText)}</div>` : ''}
+        </div>
+      </body>
+    </html>
+  `
+}

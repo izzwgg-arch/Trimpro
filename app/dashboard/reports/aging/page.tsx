@@ -9,6 +9,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { downloadReportExport } from '@/lib/reports/download-export'
 import { ReportFilterBar } from '@/components/reports/ReportFilterBar'
+import { EmailReportButton } from '@/components/reports/EmailReportButton'
+import type { PickerClient } from '@/lib/clients/fetch-all-picker-clients'
 
 const BUCKETS = ['current', '1-30', '31-60', '61-90', '90+'] as const
 type Bucket = (typeof BUCKETS)[number]
@@ -39,6 +41,7 @@ export default function AgingReportPage() {
   const [clientId, setClientId] = useState('')
   const [jobSiteAddress, setJobSiteAddress] = useState('')
   const [hideSubClients, setHideSubClients] = useState(true)
+  const [selectedClient, setSelectedClient] = useState<PickerClient | null>(null)
   const [data, setData] = useState<AgingResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
@@ -110,6 +113,11 @@ export default function AgingReportPage() {
             <Button variant="outline" size="sm" disabled={exporting} onClick={() => handleExport('pdf')}>
               <FileText className="h-4 w-4 mr-1" /> PDF
             </Button>
+            <EmailReportButton
+              report="aging"
+              params={Object.fromEntries(buildQuery())}
+              defaultRecipient={selectedClient?.email || ''}
+            />
           </div>
         </CardHeader>
         <CardContent>
@@ -120,6 +128,7 @@ export default function AgingReportPage() {
             onJobSiteAddressChange={setJobSiteAddress}
             hideSubClients={hideSubClients}
             onHideSubClientsChange={setHideSubClients}
+            onClientResolved={setSelectedClient}
           />
         </CardContent>
       </Card>

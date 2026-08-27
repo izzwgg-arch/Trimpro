@@ -3,6 +3,9 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { csvResponse } from '@/lib/reports/csv'
+import { renderPdfFromHtml } from '@/lib/pdf/render-html-to-pdf'
+import { getPdfBranding } from '@/lib/branding/pdf'
+import { buildPaymentHistoryPdfHtml } from '@/lib/documents/pdf-templates'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -13,9 +16,10 @@ export async function GET(request: NextRequest) {
   const user = getAuthUser(request)
   const { searchParams } = new URL(request.url)
   const format = String(searchParams.get('format') || 'json').toLowerCase()
+  const isFullExport = format === 'csv' || format === 'pdf' || format === 'html'
   const page = Math.max(1, Number(searchParams.get('page') || 1))
-  const limit = format === 'csv' ? 5000 : Math.min(100, Math.max(1, Number(searchParams.get('limit') || 25)))
-  const skip = format === 'csv' ? 0 : (page - 1) * limit
+  const limit = isFullExport ? 5000 : Math.min(100, Math.max(1, Number(searchParams.get('limit') || 25)))
+  const skip = isFullExport ? 0 : (page - 1) * limit
 
   const provider = String(searchParams.get('provider') || '').trim().toLowerCase()
   const status = String(searchParams.get('status') || '').trim().toUpperCase()
@@ -156,6 +160,39 @@ export async function GET(request: NextRequest) {
         ]),
       ]
       return csvResponse(csvRows, `payment-history-${new Date().toISOString().split('T')[0]}.csv`)
+    }
+
+    if (format === 'pdf' || format === 'html') {
+      const brand = await getPdfBranding(user.tenantId)
+      const html = buildPaymentHistoryPdfHtml(
+        {
+          rows,
+          summary: {
+            totalAmount: Number(aggregate._sum.amount || 0),
+            totalRefunded: Number(aggregate._sum.refundedAmount || 0),
+            succeededCount,
+            failedCount,
+          },
+          startDate,
+          endDate,
+        },
+        brand
+      )
+      if (format === 'html') {
+        return new NextResponse(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
+      }
+      try {
+        const pdf = await renderPdfFromHtml(html)
+        return new NextResponse(pdf, {
+          headers: {
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': `attachment; filename="payment-history.pdf"`,
+          },
+        })
+      } catch (e) {
+        console.error('Payment history PDF render failed, falling back to HTML:', e)
+        return new NextResponse(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
+      }
     }
 
     return NextResponse.json({

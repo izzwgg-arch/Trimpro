@@ -12,6 +12,7 @@ import { SearchableClientSelect } from '@/components/ui/searchable-client-select
 import { Checkbox } from '@/components/ui/checkbox'
 import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
 import { downloadReportExport } from '@/lib/reports/download-export'
+import { EmailReportButton } from '@/components/reports/EmailReportButton'
 
 type LedgerRow = {
   date: string
@@ -21,7 +22,18 @@ type LedgerRow = {
   debit: number
   credit: number
   balance: number
+  invoiceBalance?: number
+  invoiceStatus?: string
 }
+
+type LedgerFilter = 'all' | 'invoices' | 'open' | 'payments' | 'credits'
+const LEDGER_FILTERS: Array<{ key: LedgerFilter; label: string }> = [
+  { key: 'all', label: 'All' },
+  { key: 'invoices', label: 'Invoices' },
+  { key: 'open', label: 'Open Invoices' },
+  { key: 'payments', label: 'Payments' },
+  { key: 'credits', label: 'Credit Memos' },
+]
 
 type StatementResponse = {
   client: { id: string; name: string; companyName: string | null }
@@ -53,6 +65,17 @@ export default function CustomerStatementReportPage() {
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [ledgerFilter, setLedgerFilter] = useState<LedgerFilter>('all')
+
+  const selectedClient = clients.find((c) => c.id === clientId) || null
+  const filteredLedger = (data?.ledger || []).filter((row) => {
+    if (ledgerFilter === 'all') return true
+    if (ledgerFilter === 'invoices') return row.type === 'INVOICE'
+    if (ledgerFilter === 'open') return row.type === 'INVOICE' && Number(row.invoiceBalance || 0) > 0.01
+    if (ledgerFilter === 'payments') return row.type === 'PAYMENT'
+    if (ledgerFilter === 'credits') return row.type === 'CREDIT_MEMO'
+    return true
+  })
 
   useEffect(() => {
     fetchAllPickerClients()
@@ -229,9 +252,29 @@ export default function CustomerStatementReportPage() {
                 <Button variant="outline" size="sm" disabled={exporting} onClick={() => handleExport('pdf')}>
                   <FileText className="h-4 w-4 mr-1" /> PDF
                 </Button>
+                <EmailReportButton
+                  report="customer-statement"
+                  params={Object.fromEntries(buildQuery())}
+                  defaultRecipient={selectedClient?.email || ''}
+                />
               </div>
             </CardHeader>
             <CardContent>
+              <div className="mb-3 flex flex-wrap gap-1.5">
+                {LEDGER_FILTERS.map((f) => (
+                  <button
+                    key={f.key}
+                    onClick={() => setLedgerFilter(f.key)}
+                    className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                      ledgerFilter === f.key
+                        ? 'bg-gray-900 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -246,14 +289,14 @@ export default function CustomerStatementReportPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.ledger.length === 0 ? (
+                    {filteredLedger.length === 0 ? (
                       <tr>
                         <td colSpan={7} className="py-6 text-center text-gray-400">
-                          No transactions in this period
+                          {data.ledger.length === 0 ? 'No transactions in this period' : 'No transactions match this filter'}
                         </td>
                       </tr>
                     ) : (
-                      data.ledger.map((row, i) => (
+                      filteredLedger.map((row, i) => (
                         <tr key={i} className="border-b last:border-0">
                           <td className="py-2 pr-3">{new Date(row.date).toLocaleDateString()}</td>
                           <td className="py-2 pr-3">{TYPE_LABEL[row.type]}</td>
@@ -266,13 +309,29 @@ export default function CustomerStatementReportPage() {
                       ))
                     )}
                   </tbody>
-                  {data.ledger.length > 0 && (
+                  {ledgerFilter === 'all' && data.ledger.length > 0 && (
                     <tfoot>
                       <tr className="border-t-2 font-semibold">
                         <td className="py-2 pr-3" colSpan={4}>Total</td>
                         <td className="py-2 pr-3 text-right">${data.summary.totalInvoiced.toFixed(2)}</td>
                         <td className="py-2 pr-3 text-right">${(data.summary.totalPaid + data.summary.totalCredited).toFixed(2)}</td>
                         <td className="py-2 pr-3 text-right">${data.summary.balance.toFixed(2)}</td>
+                      </tr>
+                    </tfoot>
+                  )}
+                  {ledgerFilter !== 'all' && filteredLedger.length > 0 && (
+                    <tfoot>
+                      <tr className="border-t-2 font-semibold">
+                        <td className="py-2 pr-3" colSpan={4}>
+                          {LEDGER_FILTERS.find((f) => f.key === ledgerFilter)?.label} total
+                        </td>
+                        <td className="py-2 pr-3 text-right">
+                          ${filteredLedger.reduce((sum, r) => sum + r.debit, 0).toFixed(2)}
+                        </td>
+                        <td className="py-2 pr-3 text-right">
+                          ${filteredLedger.reduce((sum, r) => sum + r.credit, 0).toFixed(2)}
+                        </td>
+                        <td className="py-2 pr-3 text-right text-gray-400">—</td>
                       </tr>
                     </tfoot>
                   )}
