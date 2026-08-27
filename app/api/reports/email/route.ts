@@ -59,7 +59,13 @@ export async function POST(request: NextRequest) {
     const search = new URLSearchParams(params || {})
     search.set('format', 'pdf')
     const authHeader = request.headers.get('authorization') || ''
-    const pdfRes = await fetch(`${request.nextUrl.origin}${meta.path}?${search.toString()}`, {
+    // Call the report route over the internal loopback, not the public HTTPS
+    // origin — fetching our own public domain from inside the server round-trips
+    // through the reverse proxy/TLS termination and can fail there (seen in
+    // production as an SSL "packet length too long" error). The app always
+    // listens on this port internally (see the `next start -p 3000` process).
+    const internalBase = process.env.INTERNAL_APP_URL || 'http://127.0.0.1:3000'
+    const pdfRes = await fetch(`${internalBase}${meta.path}?${search.toString()}`, {
       headers: { Authorization: authHeader },
     })
     if (!pdfRes.ok) {
