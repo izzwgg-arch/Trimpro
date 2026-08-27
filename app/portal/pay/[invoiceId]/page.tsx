@@ -287,6 +287,15 @@ export default function PublicPaymentPage() {
   const outstandingTotal = Number(invoice?.outstanding?.total || 0)
   const openInvoices = Array.isArray(invoice?.outstanding?.invoices) ? invoice!.outstanding!.invoices : []
   const previousInvoices = openInvoices.filter((i) => !i.isCurrent)
+  // Nothing left to pay: this invoice is settled and there's no other open
+  // balance for this client either. Swaps the pay UI for a paid confirmation.
+  const nothingToPay = isPaid && outstandingCount === 0
+
+  // A paid invoice has no payment action pulling focus, so open the line
+  // items straight away instead of leaving them behind a collapsed accordion.
+  useEffect(() => {
+    if (isPaid) setShowLineItems(true)
+  }, [isPaid])
   const parsedPerInvoiceAmounts = useMemo(() => {
     const out: Record<string, number> = {}
     for (const id of selectedInvoiceIds) {
@@ -437,17 +446,12 @@ export default function PublicPaymentPage() {
     )
   }
 
-  if (isPaid) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
-        <div className="rounded-2xl bg-white p-8 text-center shadow-sm max-w-sm w-full">
-          <div className="mb-3 text-4xl">OK</div>
-          <h1 className="text-xl font-bold text-slate-900">Payment Complete</h1>
-          <p className="mt-2 text-sm text-slate-500">This invoice has already been paid. Thank you!</p>
-        </div>
-      </div>
-    )
-  }
+  // When the current invoice is already paid, there's nothing left to collect
+  // on it specifically — but the customer clicked "View Invoice" wanting to
+  // actually see it (line items, total, a PDF), not a bare confirmation. So we
+  // fall through to the main render below rather than short-circuiting: the
+  // "paid" state below adjusts the hero/payment card, and if this client has
+  // OTHER open invoices, they can still pay those from the same page.
 
   // ── Main render ────────────────────────────────────────────────────────────
   return (
@@ -605,6 +609,11 @@ export default function PublicPaymentPage() {
             <span className="text-slate-300">-</span>
             <span>{new Date(invoice.invoiceDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
           </div>
+          {isPaid && (
+            <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+              Paid in full - Thank you!
+            </div>
+          )}
         </div>
 
         {/* ── Status messages ─────────────────────────────────────────── */}
@@ -675,7 +684,18 @@ export default function PublicPaymentPage() {
           </div>
         )}
 
-        {/* ── HERO: Balance Due ───────────────────────────────────────── */}
+        {/* ── HERO: Paid in Full / Balance Due ─────────────────────────── */}
+        {nothingToPay ? (
+          <div className="mb-4 rounded-2xl px-6 py-6 text-center bg-emerald-700">
+            <p className="text-xs font-semibold uppercase tracking-widest text-emerald-200">Total Paid</p>
+            <p className="mt-2 text-5xl font-extrabold tracking-tight text-white">
+              {toCurrency(invoice.total)}
+            </p>
+            <p className="mt-2 text-xs text-emerald-200">
+              Invoice {invoice.invoiceNumber} - fully paid, no balance due.
+            </p>
+          </div>
+        ) : (
         <div className="mb-4 rounded-2xl px-6 py-6 text-center" style={{ background: '#243f53' }}>
           <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#8cb4cf' }}>Balance Due</p>
           <p className="mt-2 text-5xl font-extrabold tracking-tight text-white">
@@ -690,8 +710,12 @@ export default function PublicPaymentPage() {
             </p>
           )}
         </div>
+        )}
 
-        {/* ── Approval checkbox ───────────────────────────────────────── */}
+        {/* ── Approval checkbox + payment actions ───────────────────────
+            Nothing to collect: skip straight to the invoice details below. */}
+        {!nothingToPay && (
+        <>
         <div
           className={`mb-4 flex cursor-pointer items-start gap-3 rounded-2xl border-2 p-4 transition-colors ${
             approved ? 'border-slate-200 bg-white' : 'border-slate-200 bg-white'
@@ -767,6 +791,8 @@ export default function PublicPaymentPage() {
             After payment completes, this page updates once the receipt is received.
           </p>
         </div>
+        </>
+        )}
 
         {/* ── Open invoices accordion ─────────────────────────────────── */}
         {invoice?.outstanding && outstandingCount > 0 && (
