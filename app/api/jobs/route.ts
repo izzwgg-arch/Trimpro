@@ -171,13 +171,17 @@ export async function GET(request: NextRequest) {
 
         if (scheduled === 'false') {
           where.scheduledStart = null
+        } else if (scheduled === 'true') {
+          where.scheduledStart = {
+            not: null,
+            ...(startDate ? { gte: new Date(startDate) } : {}),
+            ...(endDate ? { lte: new Date(endDate) } : {}),
+          }
         } else if (startDate || endDate) {
           where.createdAt = {
             ...(startDate ? { gte: new Date(startDate) } : {}),
             ...(endDate ? { lte: new Date(`${endDate}T23:59:59.999`) } : {}),
           }
-        } else if (scheduled === 'true') {
-          where.scheduledStart = { not: null }
         }
 
         if (crewId) {
@@ -297,13 +301,17 @@ export async function GET(request: NextRequest) {
 
     if (scheduled === 'false') {
       where.scheduledStart = null
+    } else if (scheduled === 'true') {
+      where.scheduledStart = {
+        not: null,
+        ...(startDate ? { gte: new Date(startDate) } : {}),
+        ...(endDate ? { lte: new Date(endDate) } : {}),
+      }
     } else if (startDate || endDate) {
       where.createdAt = {
         ...(startDate ? { gte: new Date(startDate) } : {}),
         ...(endDate ? { lte: new Date(`${endDate}T23:59:59.999`) } : {}),
       }
-    } else if (scheduled === 'true') {
-      where.scheduledStart = { not: null }
     }
 
     if (crewId) {
