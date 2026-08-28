@@ -20,6 +20,7 @@ import { refreshAccessToken } from '@/lib/auth/client'
 import { usePermissions } from '@/hooks/usePermissions'
 import { postCreateRedirectPath } from '@/hooks/useDocumentListAccess'
 import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
+import { computePercentOfAbovePrice } from '@/lib/documents/percent-of-above'
 import { fetchClientDefaultAddressString } from '@/lib/clients/client-picker-api'
 import { useCreateContextPrefill } from '@/src/hooks/useCreateContextPrefill'
 import { cnCustomerVisibilityBulkPill } from '@/lib/ui/customer-visibility-bulk-pill'
@@ -640,11 +641,15 @@ export default function NewEstimatePage() {
       }
     } else {
       // Single item
+      const computedUnitPrice =
+        item.pricingMode === 'PERCENT_OF_ABOVE'
+          ? computePercentOfAbovePrice(lineItems.slice(0, lineIndex), item.percentOfAboveRate || 0)
+          : item.defaultUnitPrice
       updated[lineIndex] = {
         ...updated[lineIndex],
         description: item.name,
         quantity: '1',
-        unitPrice: item.defaultUnitPrice.toString(),
+        unitPrice: computedUnitPrice.toString(),
         unitCost: item.defaultUnitCost?.toString() || '0',
         // Prefill "Description" from Item.description (QBO SalesDesc/PurchaseDesc).
         // Fallback to Item.notes only when it isn't the QBO import marker.

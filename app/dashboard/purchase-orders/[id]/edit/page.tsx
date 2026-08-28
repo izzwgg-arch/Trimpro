@@ -13,6 +13,7 @@ import { Save, Plus, Trash2, Copy, Eye, EyeOff, MessageSquare } from 'lucide-rea
 import Link from 'next/link'
 import { LineItemDragHandle } from '@/components/documents/line-item-drag-handle'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
+import { computePercentOfAbovePrice } from '@/lib/documents/percent-of-above'
 import {
   catalogNotesFromItem,
   expandBundleComponentsToLineItems,
@@ -547,12 +548,20 @@ export default function EditPurchaseOrderPage() {
         }
       }
     } else {
+      // POs charge off unitCost, not unitPrice — sum the preceding lines' cost total.
+      const computedCost =
+        item.pricingMode === 'PERCENT_OF_ABOVE'
+          ? computePercentOfAbovePrice(
+              lineItems.slice(0, lineIndex).map((li) => ({ quantity: li.quantity, unitPrice: li.unitCost, isNote: li.isNote, isGroupHeader: li.isGroupHeader })),
+              item.percentOfAboveRate || 0
+            )
+          : null
       updated[lineIndex] = {
         ...updated[lineIndex],
         description: item.name,
         quantity: '1',
-        unitCost: item.defaultUnitCost?.toString() || '0',
-        unitPrice: item.defaultUnitPrice.toString(),
+        unitCost: computedCost != null ? computedCost.toString() : item.defaultUnitCost?.toString() || '0',
+        unitPrice: computedCost != null ? computedCost.toString() : item.defaultUnitPrice.toString(),
         details: catalogNotesFromItem(item),
         notes: '',
         vendorId: item.vendorId || null,
@@ -563,7 +572,7 @@ export default function EditPurchaseOrderPage() {
     }
 
     setLineItems(updated)
-    
+
     // Return a promise that resolves after state update
     // Use requestAnimationFrame to ensure React has processed the state update
     return new Promise<void>((resolve) => {

@@ -13,6 +13,10 @@ export interface FastPickerItem {
   kind: 'SINGLE' | 'BUNDLE'
   defaultUnitPrice: number
   defaultUnitCost: number | null
+  // When PERCENT_OF_ABOVE, this item's price is computed from the lines
+  // already above it rather than using defaultUnitPrice — see percentOfAboveRate.
+  pricingMode?: 'FIXED' | 'PERCENT_OF_ABOVE'
+  percentOfAboveRate?: number | null
   unit: string
   vendorId: string | null
   vendorName: string | null
@@ -460,9 +464,13 @@ export function FastPicker({
                       {item.tag != null && item.tag !== '' ? item.tag : '—'}
                     </span>
                     <span className="text-sm text-gray-600 text-right">
-                      {!isBundle && item.defaultUnitPrice != null
-                        ? `$${Number(item.defaultUnitPrice).toFixed(2)}`
-                        : '—'}
+                      {isBundle
+                        ? '—'
+                        : item.pricingMode === 'PERCENT_OF_ABOVE'
+                          ? `${Number(item.percentOfAboveRate || 0)}% of above`
+                          : item.defaultUnitPrice != null
+                            ? `$${Number(item.defaultUnitPrice).toFixed(2)}`
+                            : '—'}
                     </span>
                   </div>
                 ) : (
@@ -477,8 +485,12 @@ export function FastPicker({
                       )}
                     </div>
                     <div className="text-sm text-gray-600 flex-shrink-0 ml-2">
-                      {!isBundle && item.defaultUnitPrice != null && (
-                        <span>${Number(item.defaultUnitPrice).toFixed(2)}</span>
+                      {!isBundle && item.pricingMode === 'PERCENT_OF_ABOVE' ? (
+                        <span>{Number(item.percentOfAboveRate || 0)}% of above</span>
+                      ) : (
+                        !isBundle && item.defaultUnitPrice != null && (
+                          <span>${Number(item.defaultUnitPrice).toFixed(2)}</span>
+                        )
                       )}
                     </div>
                   </div>

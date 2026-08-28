@@ -1395,6 +1395,11 @@ enum ItemKind {
   BUNDLE
 }
 
+enum ItemPricingMode {
+  FIXED
+  PERCENT_OF_ABOVE
+}
+
 model ItemCategory {
   id          String  @id @default(cuid())
   tenantId    String
@@ -1425,6 +1430,11 @@ model Item {
   unit             String   @default("ea")
   defaultUnitCost  Decimal? @db.Decimal(10, 2)
   defaultUnitPrice Decimal  @db.Decimal(10, 2)
+  // When pricingMode is PERCENT_OF_ABOVE, this item's price is computed at
+  // the moment it's added to a document, as percentOfAboveRate% of the total
+  // of the line items already listed above it (defaultUnitPrice is unused).
+  pricingMode        ItemPricingMode @default(FIXED)
+  percentOfAboveRate Decimal?        @db.Decimal(5, 2)
   taxable          Boolean  @default(true)
   taxRate          Decimal? @db.Decimal(5, 4)
   isActive         Boolean  @default(true)

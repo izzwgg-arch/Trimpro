@@ -137,10 +137,20 @@ export async function POST(request: NextRequest) {
       categoryId,
       tags,
       notes,
+      pricingMode,
+      percentOfAboveRate,
     } = body
 
     if (!name) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 })
+    }
+
+    const isPercentMode = pricingMode === 'PERCENT_OF_ABOVE'
+    if (isPercentMode) {
+      const rate = percentOfAboveRate !== undefined && percentOfAboveRate !== '' ? Number(percentOfAboveRate) : NaN
+      if (!Number.isFinite(rate) || rate <= 0) {
+        return NextResponse.json({ error: 'Enter a percentage greater than 0' }, { status: 400 })
+      }
     }
 
     // Check for duplicate SKU if provided
@@ -165,7 +175,15 @@ export async function POST(request: NextRequest) {
       description: description && description.trim() ? description.trim() : null,
       unit: unit || 'ea',
       defaultUnitCost: defaultUnitCost && defaultUnitCost !== '' ? parseFloat(String(defaultUnitCost)) : null,
-      defaultUnitPrice: defaultUnitPrice && defaultUnitPrice !== '' ? parseFloat(String(defaultUnitPrice)) : 0,
+      // In PERCENT_OF_ABOVE mode, price is computed when the item is added to a
+      // document, not stored here — defaultUnitPrice is unused in that mode.
+      defaultUnitPrice: isPercentMode
+        ? 0
+        : defaultUnitPrice && defaultUnitPrice !== ''
+          ? parseFloat(String(defaultUnitPrice))
+          : 0,
+      pricingMode: isPercentMode ? 'PERCENT_OF_ABOVE' : 'FIXED',
+      percentOfAboveRate: isPercentMode ? Number(percentOfAboveRate) : null,
       taxable: taxable !== undefined ? Boolean(taxable) : true,
       taxRate: taxRate && taxRate !== '' ? parseFloat(String(taxRate)) : null,
       isActive: isActive !== undefined ? Boolean(isActive) : true,

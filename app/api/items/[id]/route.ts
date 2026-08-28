@@ -95,7 +95,19 @@ export async function PUT(
       categoryId,
       tags,
       notes,
+      pricingMode,
+      percentOfAboveRate,
     } = body
+
+    const isPercentMode = pricingMode !== undefined
+      ? pricingMode === 'PERCENT_OF_ABOVE'
+      : undefined
+    if (isPercentMode) {
+      const rate = percentOfAboveRate !== undefined && percentOfAboveRate !== '' ? Number(percentOfAboveRate) : NaN
+      if (!Number.isFinite(rate) || rate <= 0) {
+        return NextResponse.json({ error: 'Enter a percentage greater than 0' }, { status: 400 })
+      }
+    }
 
     const existing = await prisma.item.findFirst({
       where: {
@@ -131,7 +143,15 @@ export async function PUT(
         description: description !== undefined ? (description || null) : existing.description,
         unit: unit !== undefined ? unit : existing.unit,
         defaultUnitCost: defaultUnitCost !== undefined ? (defaultUnitCost ? parseFloat(defaultUnitCost) : null) : existing.defaultUnitCost,
-        defaultUnitPrice: defaultUnitPrice !== undefined ? parseFloat(defaultUnitPrice) : existing.defaultUnitPrice,
+        defaultUnitPrice: isPercentMode === true
+          ? 0
+          : defaultUnitPrice !== undefined
+            ? parseFloat(defaultUnitPrice)
+            : existing.defaultUnitPrice,
+        pricingMode: pricingMode !== undefined ? (isPercentMode ? 'PERCENT_OF_ABOVE' : 'FIXED') : existing.pricingMode,
+        percentOfAboveRate: pricingMode !== undefined
+          ? (isPercentMode ? Number(percentOfAboveRate) : null)
+          : existing.percentOfAboveRate,
         taxable: taxable !== undefined ? taxable : existing.taxable,
         taxRate: taxRate !== undefined ? (taxRate ? parseFloat(taxRate) : null) : existing.taxRate,
         isActive: isActive !== undefined ? isActive : existing.isActive,

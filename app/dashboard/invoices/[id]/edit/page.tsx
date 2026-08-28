@@ -15,6 +15,7 @@ import Link from 'next/link'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
 import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
+import { computePercentOfAbovePrice } from '@/lib/documents/percent-of-above'
 import { cnCustomerVisibilityBulkPill } from '@/lib/ui/customer-visibility-bulk-pill'
 import { applyBundleSelectionToLines } from '@/lib/bundles/expand-line-items'
 import {
@@ -645,11 +646,11 @@ export default function EditInvoicePage() {
       try {
         const token = localStorage.getItem('accessToken')
         const bundleDefId = item.bundleId || item.id
-        
+
         const response = await fetch(`/api/items/bundles/${bundleDefId}`, {
           headers: { Authorization: `Bearer ${token}` },
         })
-        
+
         if (response.ok) {
           const bundleData = await response.json()
           const bundle = bundleData.bundle
@@ -707,11 +708,15 @@ export default function EditInvoicePage() {
         }
       }
     } else {
+      const computedUnitPrice =
+        item.pricingMode === 'PERCENT_OF_ABOVE'
+          ? computePercentOfAbovePrice(lineItems.slice(0, lineIndex), item.percentOfAboveRate || 0)
+          : item.defaultUnitPrice
       updated[lineIndex] = {
         ...updated[lineIndex],
         description: item.name,
         quantity: '1',
-        unitPrice: item.defaultUnitPrice.toString(),
+        unitPrice: computedUnitPrice.toString(),
         unitCost: item.defaultUnitCost?.toString() || '0',
         notes:
           (item.description && item.description.trim()) ||
@@ -729,7 +734,7 @@ export default function EditInvoicePage() {
     }
 
     setLineItems(updated)
-    
+
     // Return a promise that resolves after state update
     // Use requestAnimationFrame to ensure React has processed the state update
     return new Promise<void>((resolve) => {

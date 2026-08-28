@@ -121,6 +121,8 @@ export async function GET(request: NextRequest) {
         kind: 'SINGLE' as const,
         defaultUnitPrice: Number(item.defaultUnitPrice),
         defaultUnitCost: item.defaultUnitCost ? Number(item.defaultUnitCost) : null,
+        pricingMode: item.pricingMode,
+        percentOfAboveRate: item.percentOfAboveRate ? Number(item.percentOfAboveRate) : null,
         unit: item.unit,
         vendorId: item.vendorId,
         vendorName: item.vendor?.name || null,

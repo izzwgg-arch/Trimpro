@@ -38,6 +38,8 @@ export default function NewItemPage() {
     unit: 'ea',
     defaultUnitCost: '',
     defaultUnitPrice: '0',
+    pricingMode: 'FIXED' as 'FIXED' | 'PERCENT_OF_ABOVE',
+    percentOfAboveRate: '',
     taxable: true,
     taxRate: '',
     isActive: true,
@@ -150,6 +152,7 @@ export default function NewItemPage() {
             const p = parseFloat(formData.defaultUnitPrice)
             return Number.isFinite(p) ? p : 0
           })(),
+          percentOfAboveRate: formData.percentOfAboveRate ? parseFloat(formData.percentOfAboveRate) : null,
           taxRate: formData.taxRate ? parseFloat(formData.taxRate) : null,
           vendorId: formData.vendorId || null,
           categoryId: formData.categoryId || null,
@@ -398,31 +401,68 @@ export default function NewItemPage() {
                 </div>
 
                 <div>
-                  <Label htmlFor="defaultUnitPrice">Default Unit Price *</Label>
-                  <Input
-                    id="defaultUnitPrice"
-                    type="number"
-                    step="0.01"
-                    required
-                    value={formData.defaultUnitPrice}
-                    onChange={(e) => setFormData({ ...formData, defaultUnitPrice: e.target.value })}
-                    placeholder="0.00"
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    Use a negative amount for credit-style items (reduces totals on estimates and invoices).
-                  </p>
-                  {formData.defaultUnitCost && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="mt-2"
-                      onClick={calculatePriceFromCost}
-                    >
-                      Calculate from Cost (50% markup)
-                    </Button>
-                  )}
+                  <Label htmlFor="pricingMode">Price Type</Label>
+                  <Select
+                    value={formData.pricingMode}
+                    onValueChange={(value) => setFormData({ ...formData, pricingMode: value as 'FIXED' | 'PERCENT_OF_ABOVE' })}
+                  >
+                    <SelectTrigger id="pricingMode">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="FIXED">Fixed amount</SelectItem>
+                      <SelectItem value="PERCENT_OF_ABOVE">Calculate % of items above</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
+
+                {formData.pricingMode === 'PERCENT_OF_ABOVE' ? (
+                  <div>
+                    <Label htmlFor="percentOfAboveRate">Percentage *</Label>
+                    <Input
+                      id="percentOfAboveRate"
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      required
+                      value={formData.percentOfAboveRate}
+                      onChange={(e) => setFormData({ ...formData, percentOfAboveRate: e.target.value })}
+                      placeholder="e.g. 10"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">
+                      When added to an estimate, invoice, or purchase order, this item's price is
+                      calculated automatically as this percentage of the line items already listed
+                      above it — like a reusable "10% Overhead" line.
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <Label htmlFor="defaultUnitPrice">Default Unit Price *</Label>
+                    <Input
+                      id="defaultUnitPrice"
+                      type="number"
+                      step="0.01"
+                      required
+                      value={formData.defaultUnitPrice}
+                      onChange={(e) => setFormData({ ...formData, defaultUnitPrice: e.target.value })}
+                      placeholder="0.00"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">
+                      Use a negative amount for credit-style items (reduces totals on estimates and invoices).
+                    </p>
+                    {formData.defaultUnitCost && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="mt-2"
+                        onClick={calculatePriceFromCost}
+                      >
+                        Calculate from Cost (50% markup)
+                      </Button>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
 

@@ -15,6 +15,7 @@ import Link from 'next/link'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
 import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
+import { computePercentOfAbovePrice } from '@/lib/documents/percent-of-above'
 import { cnCustomerVisibilityBulkPill } from '@/lib/ui/customer-visibility-bulk-pill'
 import { applyBundleSelectionToLines } from '@/lib/bundles/expand-line-items'
 import {
@@ -687,11 +688,15 @@ export default function EditEstimatePage() {
       }
     } else {
       // Single item
+      const computedUnitPrice =
+        item.pricingMode === 'PERCENT_OF_ABOVE'
+          ? computePercentOfAbovePrice(lineItems.slice(0, lineIndex), item.percentOfAboveRate || 0)
+          : item.defaultUnitPrice
       updated[lineIndex] = {
         ...updated[lineIndex],
         description: item.name,
         quantity: '1',
-        unitPrice: item.defaultUnitPrice.toString(),
+        unitPrice: computedUnitPrice.toString(),
         unitCost: item.defaultUnitCost?.toString() || '0',
         notes:
           (item.description && item.description.trim()) ||
