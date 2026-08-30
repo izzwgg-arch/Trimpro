@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { formatDateTime } from '@/lib/utils'
+import { jobStatusColors } from '@/lib/jobs/statuses'
 import { Plus, Calendar as CalendarIcon, ChevronLeft, ChevronRight, GripVertical, Search, Users } from 'lucide-react'
 import {
   addDays,
@@ -1210,10 +1211,10 @@ function ScheduledJobCard({
       type="button"
       ref={setNodeRef}
       style={style}
-      className={`w-full rounded border px-2 py-1 text-left text-xs transition ${
+      className={`w-full rounded border border-transparent px-2 py-1 text-left text-xs transition ${
         isDraggable
-          ? 'cursor-grab border-blue-200 bg-blue-50 hover:bg-blue-100'
-          : 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-500'
+          ? `cursor-grab hover:opacity-90 ${jobStatusColors[job.status] || 'bg-blue-100 text-blue-900'}`
+          : 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-700'
       }`}
       onClick={() => onOpenJob(job.id)}
       {...listeners}
@@ -1311,8 +1312,8 @@ function MonthJobChip({
       style={style}
       className={`w-full truncate rounded px-1.5 py-1 text-left text-[11px] ${
         isDraggable
-          ? 'cursor-grab bg-blue-100 text-blue-900 hover:bg-blue-200'
-          : 'cursor-not-allowed bg-gray-100 text-gray-500'
+          ? `cursor-grab hover:opacity-90 ${jobStatusColors[job.status] || 'bg-blue-100 text-blue-900'}`
+          : 'cursor-not-allowed bg-gray-100 text-gray-700'
       }`}
       onClick={() => onOpenJob(job.id)}
       {...listeners}
