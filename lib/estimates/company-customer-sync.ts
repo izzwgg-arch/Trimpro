@@ -394,19 +394,22 @@ export function stripLineNumberPrefix(name: string): string {
   return name.replace(/^Line #\d+\s*[—–-]\s*/i, '').trim()
 }
 
-/** Stable fingerprint of company items in a group — used to detect company edits. */
+/**
+ * Stable fingerprint of a company line's CUSTOMER-FACING text — used to detect
+ * edits that should force-rebuild (and drop any sticky manual override of) the
+ * customer line's description.
+ *
+ * Deliberately narrow: only `item.notes` feeds `buildCustomerDescription()` (see
+ * `itemCustomerFacingText` above — the Name/`description` column never does).
+ * `title`/`lineNumber` always flow through in `syncCustomerLines` regardless of
+ * this fingerprint, and non-text fields (quantity, price, cost, tax) don't
+ * affect the customer text at all — including them here used to wipe a
+ * manually-edited customer description any time someone changed a quantity or
+ * price on the line, which had nothing to do with the text itself.
+ */
 export function companyLineFingerprint(line: CompanyLine): string {
   return JSON.stringify({
-    title: line.title,
-    items: line.items.map((item) => ({
-      description: item.description,
-      notes: item.notes,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      unitCost: item.unitCost,
-      taxable: item.taxable,
-      taxRate: item.taxRate,
-    })),
+    items: line.items.map((item) => item.notes),
   })
 }
 
