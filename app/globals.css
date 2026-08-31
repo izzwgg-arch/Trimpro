@@ -119,18 +119,26 @@
   }
 }
 
-/* Global blue-button override — uses brand CSS variables so branding changes take effect */
+/* Global blue-button override — uses brand CSS variables so branding changes take effect.
+   Scoped to the solid action-button shades (600/700) only — bg-blue-50/100/200 are used
+   app-wide as light badge/chip backgrounds and must not be swept into this override. */
 @layer components {
-  button[class*="bg-blue-"],
-  a[class*="bg-blue-"],
-  [role="button"][class*="bg-blue-"] {
+  button[class*="bg-blue-600"],
+  button[class*="bg-blue-700"],
+  a[class*="bg-blue-600"],
+  a[class*="bg-blue-700"],
+  [role="button"][class*="bg-blue-600"],
+  [role="button"][class*="bg-blue-700"] {
     background-color: var(--brand-button-color) !important;
     border-color: var(--brand-button-color) !important;
   }
 
-  button[class*="bg-blue-"]:hover,
-  a[class*="bg-blue-"]:hover,
-  [role="button"][class*="bg-blue-"]:hover {
+  button[class*="bg-blue-600"]:hover,
+  button[class*="bg-blue-700"]:hover,
+  a[class*="bg-blue-600"]:hover,
+  a[class*="bg-blue-700"]:hover,
+  [role="button"][class*="bg-blue-600"]:hover,
+  [role="button"][class*="bg-blue-700"]:hover {
     background-color: var(--brand-button-hover-color) !important;
     border-color: var(--brand-button-hover-color) !important;
   }
