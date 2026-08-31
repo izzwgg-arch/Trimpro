@@ -19,9 +19,23 @@ function toNumber(value: string | number | null | undefined): number {
   return Number.isFinite(n) ? n : 0
 }
 
-/** Sums the real (non-divider) line items — the "items above" a percent line. */
+/**
+ * Sums the real (non-divider) line items — the "items above" a percent line.
+ *
+ * A Subtotal row or a new bundle's group header acts as a reset point: only
+ * items after the LAST such boundary are summed, not the whole document. So
+ * a percent line placed after a Subtotal (or inside/after a newly-added
+ * bundle) only picks up what's accumulated since that boundary — matching
+ * how those markers already read visually as "start of a new section."
+ * A Note row is just an annotation, not a section boundary, so it's skipped
+ * but doesn't reset the running sum.
+ */
 export function sumPrecedingLineItems(lines: readonly PrecedingLine[]): number {
-  return lines.reduce((sum, li) => {
+  let boundary = -1
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].isSubtotal || lines[i].isGroupHeader) boundary = i
+  }
+  return lines.slice(boundary + 1).reduce((sum, li) => {
     if (li.isSubtotal || li.isNote || li.isGroupHeader) return sum
     return sum + toNumber(li.quantity) * toNumber(li.unitPrice)
   }, 0)
