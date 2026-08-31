@@ -1173,6 +1173,12 @@ export default function EditPurchaseOrderPage() {
                                 className="font-semibold"
                               />
                             </div>
+                            <div className="w-24 shrink-0">
+                              <Label className="text-xs text-gray-500 mb-1 block">Total</Label>
+                              <div className="flex h-10 items-center rounded-md border border-transparent px-3 text-sm font-semibold text-gray-900">
+                                ${((parseFloat(item.quantity || '0') || 0) * (parseFloat(item.unitCost || '0') || 0)).toFixed(2)}
+                              </div>
+                            </div>
                             {item.unitPrice && parseFloat(item.unitPrice) > 0 && (
                               <div className="w-24 shrink-0">
                                 <Label className="text-xs text-gray-400 mb-1 block">Sale Price</Label>
