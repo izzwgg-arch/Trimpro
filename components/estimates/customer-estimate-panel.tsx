@@ -57,7 +57,7 @@ export function CustomerEstimatePanel({
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
         One row per company Line # / bundle. Descriptions stack from each company item&apos;s
-        Description field (not Name). Edits stick until that company line is changed.
+        Description field (not Name). Edits here stick for good — company-side changes never overwrite them.
       </p>
 
       {customerLines.map((line) => (

@@ -33,7 +33,6 @@ import { CustomerEstimatePanel } from '@/components/estimates/customer-estimate-
 import {
   type CustomerLine,
   buildCustomerLinesFromGroups,
-  companyLineFingerprint,
   collectGroupsFromEditorLines,
   flatLineItemsToCompanyLines,
   mergeCustomerIntoGroups,
@@ -168,7 +167,6 @@ export default function NewInvoicePage() {
   const [customerLines, setCustomerLines] = useState<CustomerLine[]>([])
   const [invoiceLineView, setInvoiceLineView] = useState<'company' | 'customer'>('company')
   const [estimateConvertLoading, setEstimateConvertLoading] = useState(() => Boolean(estimateIdParam))
-  const companyFingerprintsRef = useRef<Record<string, string>>({})
   const [isNotesVisibleToClient, setIsNotesVisibleToClient] = useState(true)
   
   const [formData, setFormData] = useState({
@@ -234,21 +232,10 @@ export default function NewInvoicePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formData.clientId])
 
-  // Keep customer bundles in sync with company groups (sticky until that group is edited).
+  // Keep customer bundles in sync with company groups (manually-edited lines stay sticky for good).
   useEffect(() => {
     const companyLines = flatLineItemsToCompanyLines(lineItems)
-    const editedIds: string[] = []
-    const nextFingerprints: Record<string, string> = {}
-    for (const line of companyLines) {
-      const nextFp = companyLineFingerprint(line)
-      const prevFp = companyFingerprintsRef.current[line.id]
-      if (prevFp !== undefined && prevFp !== nextFp) {
-        editedIds.push(line.id)
-      }
-      nextFingerprints[line.id] = nextFp
-    }
-    companyFingerprintsRef.current = nextFingerprints
-    setCustomerLines((prev) => syncCustomerLines(companyLines, prev, editedIds))
+    setCustomerLines((prev) => syncCustomerLines(companyLines, prev))
   }, [lineItems])
 
   const fetchClients = async () => {
@@ -627,9 +614,6 @@ export default function NewInvoicePage() {
 
         if (mappedItems.length > 0) {
           const companyLines = flatLineItemsToCompanyLines(mappedItems)
-          companyFingerprintsRef.current = Object.fromEntries(
-            companyLines.map((line) => [line.id, companyLineFingerprint(line)])
-          )
           setCustomerLines(
             buildCustomerLinesFromGroups(companyLines, groupCustomerMetaRef.current)
           )

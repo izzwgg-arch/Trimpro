@@ -104,26 +104,25 @@ export function buildCustomerLineFromCompany(line: CompanyLine): CustomerLine {
 
 /**
  * Rebuild customer lines from company lines.
- * Lines marked customerEdited are preserved unless their company line id is in `editedCompanyLineIds`.
+ *
+ * Once a line is manually edited (customerEdited), it stays sticky for good —
+ * adding/removing items, editing amounts, or editing notes on that company
+ * line never auto-overwrites the customer's own text. The only way back to
+ * "synced from company" is deleting/recreating the group; there's no
+ * automatic re-sync trigger by design.
  * Empty sticky descriptions never block a company refill (recovers from accidental empty edits).
  */
 export function syncCustomerLines(
   companyLines: CompanyLine[],
-  previousCustomerLines: CustomerLine[],
-  editedCompanyLineIds: Set<string> | string[] = []
+  previousCustomerLines: CustomerLine[]
 ): CustomerLine[] {
-  const forceIds =
-    editedCompanyLineIds instanceof Set
-      ? editedCompanyLineIds
-      : new Set(editedCompanyLineIds)
   const prevById = new Map(previousCustomerLines.map((l) => [l.id, l]))
 
   return companyLines.map((companyLine) => {
     const prev = prevById.get(companyLine.id)
-    const forceResync = forceIds.has(companyLine.id)
     const rebuilt = buildCustomerLineFromCompany(companyLine)
 
-    if (prev?.customerEdited && !forceResync) {
+    if (prev?.customerEdited) {
       const stickyDescription = (prev.description || '').trim()
       // Accidental sticky empty (focus/blur) was blocking company → customer text.
       if (!stickyDescription && (rebuilt.description || '').trim()) {
@@ -394,24 +393,6 @@ export function stripLineNumberPrefix(name: string): string {
   return name.replace(/^Line #\d+\s*[—–-]\s*/i, '').trim()
 }
 
-/**
- * Stable fingerprint of a company line's CUSTOMER-FACING text — used to detect
- * edits that should force-rebuild (and drop any sticky manual override of) the
- * customer line's description.
- *
- * Deliberately narrow: only `item.notes` feeds `buildCustomerDescription()` (see
- * `itemCustomerFacingText` above — the Name/`description` column never does).
- * `title`/`lineNumber` always flow through in `syncCustomerLines` regardless of
- * this fingerprint, and non-text fields (quantity, price, cost, tax) don't
- * affect the customer text at all — including them here used to wipe a
- * manually-edited customer description any time someone changed a quantity or
- * price on the line, which had nothing to do with the text itself.
- */
-export function companyLineFingerprint(line: CompanyLine): string {
-  return JSON.stringify({
-    items: line.items.map((item) => item.notes),
-  })
-}
 
 export function buildCustomerLinesFromGroups(
   companyLines: CompanyLine[],

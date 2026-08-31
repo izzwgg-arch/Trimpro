@@ -33,7 +33,6 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CustomerEstimatePanel } from '@/components/estimates/customer-estimate-panel'
 import {
   type CustomerLine,
-  companyLineFingerprint,
   collectGroupsFromEditorLines,
   flatLineItemsToCompanyLines,
   mergeCustomerIntoGroups,
@@ -140,7 +139,6 @@ export default function NewEstimatePage() {
   const [optionalItems, setOptionalItems] = useState<LineItem[]>([])
   const [customerLines, setCustomerLines] = useState<CustomerLine[]>([])
   const [estimateLineView, setEstimateLineView] = useState<'company' | 'customer'>('company')
-  const companyFingerprintsRef = useRef<Record<string, string>>({})
   const [focusedLineIndex, setFocusedLineIndex] = useState<number | null>(null)
   const [isNotesVisibleToClient, setIsNotesVisibleToClient] = useState(true)
   
@@ -173,21 +171,10 @@ export default function NewEstimatePage() {
     fetchPickerData()
   }, [])
 
-  // Keep customer bundles in sync with company Line # groups (sticky until that group is edited).
+  // Keep customer bundles in sync with company Line # groups (manually-edited lines stay sticky for good).
   useEffect(() => {
     const companyLines = flatLineItemsToCompanyLines(lineItems)
-    const editedIds: string[] = []
-    const nextFingerprints: Record<string, string> = {}
-    for (const line of companyLines) {
-      const nextFp = companyLineFingerprint(line)
-      const prevFp = companyFingerprintsRef.current[line.id]
-      if (prevFp !== undefined && prevFp !== nextFp) {
-        editedIds.push(line.id)
-      }
-      nextFingerprints[line.id] = nextFp
-    }
-    companyFingerprintsRef.current = nextFingerprints
-    setCustomerLines((prev) => syncCustomerLines(companyLines, prev, editedIds))
+    setCustomerLines((prev) => syncCustomerLines(companyLines, prev))
   }, [lineItems])
 
   const loadNextEstimateNumberPreview = useCallback(async () => {
