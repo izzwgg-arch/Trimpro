@@ -1,6 +1,5 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -21,20 +20,6 @@ export function CustomerEstimatePanel({
   /** Used in empty-state copy ("estimate" | "invoice") */
   entityLabel?: string
 }) {
-  const [draftTotals, setDraftTotals] = useState<Record<string, string>>({})
-
-  useEffect(() => {
-    setDraftTotals((prev) => {
-      const next: Record<string, string> = {}
-      for (const line of customerLines) {
-        if (prev[line.id] != null && /[+\-*/()]/.test(prev[line.id])) {
-          next[line.id] = prev[line.id]
-        }
-      }
-      return next
-    })
-  }, [customerLines])
-
   const edit = (
     lineId: string,
     patch: Partial<Pick<CustomerLine, 'description' | 'total' | 'title'>>
@@ -57,7 +42,8 @@ export function CustomerEstimatePanel({
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
         One row per company Line # / bundle. Descriptions stack from each company item&apos;s
-        Description field (not Name). Edits here stick for good — company-side changes never overwrite them.
+        Description field (not Name). A manually-edited description sticks for good; the total always
+        tracks the current company amount.
       </p>
 
       {customerLines.map((line) => (
@@ -109,26 +95,10 @@ export function CustomerEstimatePanel({
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">
                   Line total
                 </label>
-                <Input
-                  type="number"
-                  calculator
-                  step={0.01}
-                  value={draftTotals[line.id] ?? String(line.total)}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    if (/[+\-*/()]/.test(v) && !/^-?\d*\.?\d*$/.test(v.trim())) {
-                      setDraftTotals((prev) => ({ ...prev, [line.id]: v }))
-                      return
-                    }
-                    setDraftTotals((prev) => {
-                      const next = { ...prev }
-                      delete next[line.id]
-                      return next
-                    })
-                    edit(line.id, { total: Number(v) || 0 })
-                  }}
-                />
                 <p className="mt-2 text-lg font-semibold">{formatMoney(line.total)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Always the current sum of this bundle's company items.
+                </p>
               </div>
             </div>
           )}

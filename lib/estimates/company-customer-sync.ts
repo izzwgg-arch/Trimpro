@@ -105,11 +105,16 @@ export function buildCustomerLineFromCompany(line: CompanyLine): CustomerLine {
 /**
  * Rebuild customer lines from company lines.
  *
- * Once a line is manually edited (customerEdited), it stays sticky for good —
- * adding/removing items, editing amounts, or editing notes on that company
- * line never auto-overwrites the customer's own text. The only way back to
- * "synced from company" is deleting/recreating the group; there's no
- * automatic re-sync trigger by design.
+ * Once a line's TEXT is manually edited (customerEdited), the description
+ * stays sticky for good — adding/removing items, editing amounts, or editing
+ * notes on that company line never auto-overwrites the customer's own text.
+ * The only way back to "synced from company" text is deleting/recreating the
+ * group; there's no automatic re-sync trigger for it by design.
+ *
+ * The TOTAL is a different story: it always tracks the real, current sum of
+ * the company line items, even on an otherwise-sticky line — a manually
+ * customized description shouldn't leave the customer looking at a stale
+ * dollar amount after a price/qty changes or an item is added.
  * Empty sticky descriptions never block a company refill (recovers from accidental empty edits).
  */
 export function syncCustomerLines(
@@ -132,6 +137,7 @@ export function syncCustomerLines(
         ...prev,
         lineNumber: companyLine.lineNumber,
         title: companyLine.title,
+        total: companyLineTotal(companyLine),
       }
     }
 
@@ -406,10 +412,10 @@ export function buildCustomerLinesFromGroups(
         lineNumber: line.lineNumber,
         title: line.title,
         description: meta.customerDescription || '',
-        total:
-          meta.customerTotal != null && meta.customerTotal !== ''
-            ? Number(meta.customerTotal) || 0
-            : companyLineTotal(line),
+        // Always the live company total, not whatever was persisted — a
+        // sticky description shouldn't leave the total stale after a
+        // price/qty change.
+        total: companyLineTotal(line),
         customerEdited: true,
       }
     }
