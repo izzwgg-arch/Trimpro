@@ -138,7 +138,10 @@ const SHARED_DOC_CSS = (accentColor: string, accentTextColor: string) => `
     background: #f8fafc;
   }
   tbody tr:nth-child(even) { background: #f9fafb; }
-  td.text-right, th.text-right { text-align: right; }
+  /* Numeric columns (qty/price/total) must never wrap — a long stacked
+     description in an adjacent cell can otherwise squeeze them narrow enough
+     that word-break above splits a dollar amount mid-number across lines. */
+  td.text-right, th.text-right { text-align: right; white-space: nowrap; }
   .summary {
     margin-top: 16px;
     margin-left: auto;
