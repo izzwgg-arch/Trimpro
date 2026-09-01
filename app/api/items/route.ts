@@ -255,6 +255,9 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  // Bulk-deleting catalog items is a settings-level mutation — match POST (create).
+  const permError = await requirePermission(request, 'settings.edit')
+  if (permError) return permError
 
   const user = getAuthUser(request)
 

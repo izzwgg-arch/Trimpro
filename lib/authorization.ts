@@ -84,11 +84,14 @@ export async function getUserPermissions(
   }
 
   // Fallback for tenants that still rely on enum role without user_roles links.
+  // user.role is an UPPERCASE enum (e.g. "ADMIN"/"MANAGER") but seeded roles are
+  // TitleCase (e.g. "Admin"/"Manager"), so match case-insensitively — otherwise
+  // this fallback never fires and such a user silently resolves to zero permissions.
   if (permissions.size === 0) {
     const fallbackRole = await prisma.role.findFirst({
       where: {
         tenantId,
-        name: user.role,
+        name: { equals: user.role, mode: 'insensitive' },
         isActive: true,
       },
       include: {
@@ -419,11 +422,12 @@ export async function getUserMobilePermissions(
   }
 
   // Fallback role lookup when user_roles assignments are missing.
+  // Case-insensitive: user.role is UPPERCASE enum, seeded role names are TitleCase.
   if (mobilePermissions.size === 0) {
     const fallbackRole = await prisma.role.findFirst({
       where: {
         tenantId,
-        name: user.role,
+        name: { equals: user.role, mode: 'insensitive' },
         isActive: true,
       },
       select: {

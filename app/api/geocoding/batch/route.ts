@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
 import { batchGeocodeAddresses } from '@/lib/geocoding'
+import { prisma } from '@/lib/prisma'
 
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -20,14 +21,31 @@ export async function POST(request: NextRequest) {
     }
 
     // Limit batch size for safety
-    const limitedIds = addressIds.slice(0, 100)
-    const successCount = await batchGeocodeAddresses(limitedIds, 200)
+    const limitedIds = addressIds.slice(0, 100).map((x: unknown) => String(x))
+
+    // Scope to this tenant — batchGeocodeAddresses looks up addresses by raw id
+    // with no tenant filter, so without this a caller could pass another
+    // tenant's address ids and trigger writes on them (cross-tenant IDOR).
+    // Address has no direct tenantId; it belongs to a tenant via its client or job.
+    const owned = await prisma.address.findMany({
+      where: {
+        id: { in: limitedIds },
+        OR: [
+          { client: { tenantId: user.tenantId } },
+          { job: { tenantId: user.tenantId } },
+        ],
+      },
+      select: { id: true },
+    })
+    const ownedIds = owned.map((a) => a.id)
+
+    const successCount = await batchGeocodeAddresses(ownedIds, 200)
 
     return NextResponse.json({
       success: true,
-      processed: limitedIds.length,
+      processed: ownedIds.length,
       successCount,
-      failed: limitedIds.length - successCount,
+      failed: ownedIds.length - successCount,
     })
   } catch (error) {
     console.error('Batch geocoding error:', error)

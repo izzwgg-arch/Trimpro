@@ -58,6 +58,11 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
+  // Was unguarded — any authenticated user could create conversation records and
+  // probe whether a client exists for an arbitrary phone number. GET already
+  // requires messages.view; a create is at least as sensitive.
+  const permError = await requirePermission(request, 'messages.view')
+  if (permError) return permError
   const user = getAuthUser(request)
 
   const body = await request.json()

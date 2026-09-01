@@ -41,6 +41,7 @@ export const ROUTE_PERMISSION_RULES: RoutePermissionRule[] = [
   { prefix: '/dashboard/reports/payments', permission: ['payments.access', 'payments.view'] },
   { prefix: '/dashboard/reports', permission: ['reports.access', 'reports.view'] },
   { prefix: '/dashboard/dispatch', permission: ['dispatch.access', 'dispatch.view'] },
+  { prefix: '/dashboard/audit-logs', permission: ['audit_logs.access', 'audit_logs.view'] },
   { prefix: '/dashboard/help/new', permission: 'settings.edit' },
   { prefix: '/dashboard/help', permission: ['dashboard.access', 'dashboard.view'] },
   { prefix: '/dashboard/notifications', permission: ['dashboard.access', 'dashboard.view'] },

@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/dialog'
 import { getPermissionsByCategory } from '@/lib/permissions-catalog'
 import { RolePermissionModulePicker } from '@/components/settings/RolePermissionModulePicker'
+import { usePermissions, hasPermission } from '@/hooks/usePermissions'
 
 interface Role {
   id: string
@@ -29,6 +30,10 @@ interface Role {
 }
 
 export default function RolesPage() {
+  const { permissions } = usePermissions()
+  const canCreate = hasPermission(permissions, 'roles.create')
+  const canEdit = hasPermission(permissions, 'roles.edit')
+  const canDelete = hasPermission(permissions, 'roles.delete')
   const [roles, setRoles] = useState<Role[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -222,12 +227,14 @@ export default function RolesPage() {
           <p className="mt-2 text-gray-600">Manage roles and their permissions</p>
         </div>
         <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
-          <DialogTrigger asChild>
-            <Button onClick={() => setFormData({ name: '', description: '', permissions: [], mobilePermissions: [] })}>
-              <Plus className="mr-2 h-4 w-4" />
-              Create Role
-            </Button>
-          </DialogTrigger>
+          {canCreate && (
+            <DialogTrigger asChild>
+              <Button onClick={() => setFormData({ name: '', description: '', permissions: [], mobilePermissions: [] })}>
+                <Plus className="mr-2 h-4 w-4" />
+                Create Role
+              </Button>
+            </DialogTrigger>
+          )}
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Create New Role</DialogTitle>
@@ -355,15 +362,17 @@ export default function RolesPage() {
                   </p>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => openEditModal(role)}
-                    title="Edit role permissions"
-                  >
-                    <Edit className="h-4 w-4" />
-                  </Button>
-                  {!role.isSystem && (
+                  {canEdit && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => openEditModal(role)}
+                      title="Edit role permissions"
+                    >
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                  )}
+                  {canDelete && !role.isSystem && (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -372,6 +381,9 @@ export default function RolesPage() {
                     >
                       <Trash2 className="h-4 w-4 text-red-600" />
                     </Button>
+                  )}
+                  {!canEdit && !canDelete && (
+                    <span className="text-xs text-gray-400">View only</span>
                   )}
                 </div>
               </div>
