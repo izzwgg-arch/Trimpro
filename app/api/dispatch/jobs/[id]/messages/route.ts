@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
-import { requirePermission } from '@/lib/authorization'
+import { requirePermission, requireAnyPermission } from '@/lib/authorization'
 import { createNotificationsForUsers, notifyDispatchJobActivity } from '@/lib/notifications'
 import { publishDispatchRealtime } from '@/lib/dispatch-realtime'
 
@@ -68,7 +68,9 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   const authError = await authenticateRequest(request)
   if (authError) return authError
 
-  const permError = await requirePermission(request, 'dispatch.view')
+  // Sending a dispatch message is a notify/send action — require the same
+  // permissions as the broadcast endpoint, not the read-only dispatch.view.
+  const permError = await requireAnyPermission(request, ['dispatch.notify', 'dispatch.assign'])
   if (permError) return permError
 
   const user = getAuthUser(request)
