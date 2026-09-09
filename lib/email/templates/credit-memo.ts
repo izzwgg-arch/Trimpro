@@ -65,7 +65,10 @@ export function buildCreditMemoEmail(opts: CreditMemoEmailOptions): string {
         subtitle: `Total credit $${escapeHtml(total)}`,
       }),
       buildEmailBodySection(bodyInner),
-      buildEmailFooterBlock({ companyName }),
     ].join(''),
+    footerHtml: buildEmailFooterBlock({
+      companyName,
+      lines: [`Credit memo ${escapeHtml(creditMemoNumber)} sent to ${escapeHtml(clientName)}.`],
+    }),
   })
 }
