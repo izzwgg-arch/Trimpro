@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
-import { requirePermission } from '@/lib/authorization'
+import { requireAnyPermission } from '@/lib/authorization'
 import { allocateNextEstimateNumber } from '@/lib/qbo/doc-numbers'
 
 /**
@@ -11,7 +11,12 @@ import { allocateNextEstimateNumber } from '@/lib/qbo/doc-numbers'
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
-  const permError = await requirePermission(request, 'estimates.view')
+  // Shown as a preview on the estimate-create page — accept create/edit, not just view.
+  const permError = await requireAnyPermission(request, [
+    'estimates.view',
+    'estimates.create',
+    'estimates.edit',
+  ])
   if (permError) return permError
 
   const user = getAuthUser(request)

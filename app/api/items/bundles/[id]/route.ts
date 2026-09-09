@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
-import { requirePermission } from '@/lib/authorization'
+import { requirePermission, requireAnyPermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 
 async function flattenBundle(
@@ -85,7 +85,19 @@ export async function GET(
 ) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
-  const permError = await requirePermission(request, 'settings.view')
+  // Bundle detail is catalog data used to expand a picked bundle on the
+  // estimate/invoice/PO create pages — mirror the item picker's permission set
+  // so a document-creator can expand bundles, not only settings viewers.
+  const permError = await requireAnyPermission(request, [
+    'settings.view',
+    'estimates.view',
+    'estimates.create',
+    'invoices.view',
+    'invoices.create',
+    'purchase_orders.view',
+    'purchase_orders.create',
+    'jobs.view',
+  ])
   if (permError) return permError
 
   const user = getAuthUser(request)

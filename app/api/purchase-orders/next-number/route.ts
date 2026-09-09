@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
-import { requirePermission } from '@/lib/authorization'
+import { requireAnyPermission } from '@/lib/authorization'
 import { allocateNextPurchaseOrderNumber } from '@/lib/qbo/doc-numbers'
 
 /**
@@ -10,7 +10,12 @@ import { allocateNextPurchaseOrderNumber } from '@/lib/qbo/doc-numbers'
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
-  const permError = await requirePermission(request, 'purchase_orders.view')
+  // Shown as a preview on the PO-create page — accept create/edit, not just view.
+  const permError = await requireAnyPermission(request, [
+    'purchase_orders.view',
+    'purchase_orders.create',
+    'purchase_orders.edit',
+  ])
   if (permError) return permError
 
   const user = getAuthUser(request)

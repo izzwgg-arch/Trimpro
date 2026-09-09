@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
-import { requirePermission } from '@/lib/authorization'
+import { requirePermission, requireAnyPermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { applySmartSearch, buildSmartSearchAnd, ilike } from '@/lib/search/prisma-filters'
@@ -8,7 +8,13 @@ import { applySmartSearch, buildSmartSearchAnd, ilike } from '@/lib/search/prism
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
-  const permError = await requirePermission(request, 'purchase_orders.view')
+  // Vendor is a required field when creating a PO, so anyone who can create or
+  // edit a PO must be able to read the vendor list — not just those with view.
+  const permError = await requireAnyPermission(request, [
+    'purchase_orders.view',
+    'purchase_orders.create',
+    'purchase_orders.edit',
+  ])
   if (permError) return permError
 
   const user = getAuthUser(request)
