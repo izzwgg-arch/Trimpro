@@ -26,6 +26,7 @@ import {
   FileText,
 } from 'lucide-react'
 import { EntityBackButton } from '@/components/navigation/EntityBackButton'
+import { ContactRecipientPicker } from '@/components/email/contact-recipient-picker'
 
 interface OpenInvoiceRow {
   id: string
@@ -91,7 +92,8 @@ export default function CreditMemoDetailPage() {
   const [loading, setLoading] = useState(true)
   const [showSendModal, setShowSendModal] = useState(false)
   const [sending, setSending] = useState(false)
-  const [sendEmails, setSendEmails] = useState('')
+  const [selectedRecipientEmails, setSelectedRecipientEmails] = useState<string[]>([])
+  const [customEmails, setCustomEmails] = useState('')
   const [sendSubject, setSendSubject] = useState('')
   const [sendMessage, setSendMessage] = useState('')
   const [showApplyModal, setShowApplyModal] = useState(false)
@@ -157,7 +159,8 @@ export default function CreditMemoDetailPage() {
 
   const openSend = () => {
     if (!cm) return
-    setSendEmails(cm.client?.email || '')
+    setSelectedRecipientEmails([])
+    setCustomEmails('')
     setSendSubject(`Credit Memo ${cm.creditMemoNumber}`)
     setSendMessage('Please find your credit memo attached.')
     setShowSendModal(true)
@@ -165,10 +168,11 @@ export default function CreditMemoDetailPage() {
 
   const submitSend = async () => {
     if (!cm || sending) return
-    const emails = sendEmails
+    const customEmailList = customEmails
       .split(/[,\s;]+/g)
       .map((v) => v.trim())
       .filter(Boolean)
+    const emails = Array.from(new Set([...selectedRecipientEmails, ...customEmailList]))
     if (!emails.length) {
       alert('Enter at least one email')
       return
@@ -420,12 +424,27 @@ export default function CreditMemoDetailPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Send Credit Memo</DialogTitle>
-            <DialogDescription>Edit recipients (comma-separated), subject, and message.</DialogDescription>
+            <DialogDescription>
+              Choose which contacts should receive this credit memo, or add a custom email below.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <div>
-              <Label>Emails</Label>
-              <Input value={sendEmails} onChange={(e) => setSendEmails(e.target.value)} />
+            <div className="space-y-2">
+              <Label>Recipients</Label>
+              <ContactRecipientPicker
+                clientId={cm.client?.id || null}
+                onSelectionChange={(emails) => setSelectedRecipientEmails(emails)}
+                manageContactsHref={cm.client ? `/dashboard/clients/${cm.client.id}/edit` : undefined}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Additional email(s) (optional)</Label>
+              <Input
+                value={customEmails}
+                onChange={(e) => setCustomEmails(e.target.value)}
+                placeholder="someone-else@email.com"
+              />
+              <p className="text-xs text-muted-foreground">You can enter multiple emails separated by commas.</p>
             </div>
             <div>
               <Label>Subject</Label>
@@ -440,7 +459,10 @@ export default function CreditMemoDetailPage() {
             <Button variant="outline" onClick={() => setShowSendModal(false)} disabled={sending}>
               Cancel
             </Button>
-            <Button onClick={submitSend} disabled={sending}>
+            <Button
+              onClick={submitSend}
+              disabled={sending || (selectedRecipientEmails.length === 0 && !customEmails.trim())}
+            >
               {sending ? 'Sending...' : 'Send'}
             </Button>
           </DialogFooter>
