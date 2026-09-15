@@ -350,7 +350,7 @@ export default function ProductionPage() {
               <LayoutGrid className="h-4 w-4" />
               Production Board
             </div>
-            <div className="flex gap-4 overflow-x-auto pb-2">
+            <div className="scrollbar-visible-x flex gap-4 overflow-x-auto pb-3">
               {columns.map((col) => (
                 <div key={col.id} className="flex w-72 flex-shrink-0 flex-col rounded-lg border bg-gray-50">
                   <div className="flex items-center justify-between rounded-t-lg border-b bg-white px-3 py-2">
