@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { TrimProLogo } from '@/components/branding/TrimProLogo'
 import { PermissionGuard } from '@/components/permissions/PermissionGuard'
@@ -87,10 +87,12 @@ interface UnreadNavNotification {
   title: string
   message: string | null
   linkType: string | null
+  linkUrl: string | null
   createdAt: string
 }
 
 function NewBadge({ items }: { items: UnreadNavNotification[] }) {
+  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [position, setPosition] = useState({ top: 0, left: 0 })
   const badgeRef = useRef<HTMLSpanElement>(null)
@@ -126,7 +128,25 @@ function NewBadge({ items }: { items: UnreadNavNotification[] }) {
             What&apos;s new
           </p>
           {items.slice(0, 5).map((n) => (
-            <div key={n.id} className="rounded px-1 py-1.5 hover:bg-gray-50">
+            <div
+              key={n.id}
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setOpen(false)
+                if (n.linkUrl) router.push(n.linkUrl)
+              }}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter' && e.key !== ' ') return
+                e.preventDefault()
+                e.stopPropagation()
+                setOpen(false)
+                if (n.linkUrl) router.push(n.linkUrl)
+              }}
+              className="cursor-pointer rounded px-1 py-1.5 hover:bg-gray-50"
+            >
               <p className="truncate text-xs font-medium text-gray-900">{n.title}</p>
               {n.message && <p className="line-clamp-2 text-[11px] text-gray-600">{n.message}</p>}
               <p className="mt-0.5 text-[10px] text-gray-400">
