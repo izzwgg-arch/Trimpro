@@ -118,15 +118,17 @@
     animation: fade-out 0.2s ease-in-out;
   }
 
-  /* Always-visible scrollbar for horizontally-scrolling containers (e.g. the
-     Production board) — some OS/browser settings auto-hide scrollbars until
-     actively scrolling, which hides the fact that there's more to scroll to. */
+  /* Always-visible scrollbar (horizontal or vertical) for scrolling
+     containers like the Production board and its columns — some OS/browser
+     settings auto-hide scrollbars until actively scrolling, which hides the
+     fact that there's more content to scroll to. */
   .scrollbar-visible-x {
     scrollbar-width: auto;
     scrollbar-color: #94a3b8 #e2e8f0;
   }
   .scrollbar-visible-x::-webkit-scrollbar {
     height: 12px;
+    width: 12px;
   }
   .scrollbar-visible-x::-webkit-scrollbar-track {
     background: #e2e8f0;
@@ -139,16 +141,6 @@
   }
   .scrollbar-visible-x::-webkit-scrollbar-thumb:hover {
     background-color: #64748b;
-  }
-
-  /* Pairs with .scrollbar-visible-x: hides the scrollbar on the real
-     scrolling element when a separate synced scrollbar (e.g. one pinned to
-     the bottom of the screen) is shown instead, to avoid showing two. */
-  .scrollbar-hidden {
-    scrollbar-width: none;
-  }
-  .scrollbar-hidden::-webkit-scrollbar {
-    display: none;
   }
 }
 
