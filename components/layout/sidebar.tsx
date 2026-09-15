@@ -96,13 +96,33 @@ function NewBadge({ items }: { items: UnreadNavNotification[] }) {
   const [open, setOpen] = useState(false)
   const [position, setPosition] = useState({ top: 0, left: 0 })
   const badgeRef = useRef<HTMLSpanElement>(null)
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (closeTimer.current) clearTimeout(closeTimer.current)
+    }
+  }, [])
 
   if (items.length === 0) return null
 
+  const cancelClose = () => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current)
+      closeTimer.current = null
+    }
+  }
+
+  const scheduleClose = () => {
+    cancelClose()
+    closeTimer.current = setTimeout(() => setOpen(false), 250)
+  }
+
   const show = () => {
+    cancelClose()
     const rect = badgeRef.current?.getBoundingClientRect()
     if (rect) {
-      setPosition({ top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - 300) })
+      setPosition({ top: rect.bottom, left: Math.min(rect.left, window.innerWidth - 300) })
     }
     setOpen(true)
   }
@@ -112,17 +132,17 @@ function NewBadge({ items }: { items: UnreadNavNotification[] }) {
       <span
         ref={badgeRef}
         onMouseEnter={show}
-        onMouseLeave={() => setOpen(false)}
+        onMouseLeave={scheduleClose}
         className="ml-2 inline-flex cursor-default rounded bg-red-500 px-1.5 py-0.5 text-[9px] font-bold uppercase leading-none text-white"
       >
         New
       </span>
       {open && (
         <div
-          className="fixed z-[100] w-72 rounded-md border border-gray-200 bg-white p-2 text-left normal-case shadow-lg"
+          className="fixed z-[100] w-72 rounded-md border border-gray-200 bg-white p-2 pt-3 text-left normal-case shadow-lg"
           style={{ top: position.top, left: position.left }}
-          onMouseEnter={() => setOpen(true)}
-          onMouseLeave={() => setOpen(false)}
+          onMouseEnter={cancelClose}
+          onMouseLeave={scheduleClose}
         >
           <p className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
             What&apos;s new
