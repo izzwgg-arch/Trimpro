@@ -9,7 +9,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Save, Plus, Trash2, Eye, EyeOff, Building2, User } from 'lucide-react'
+import { Save, Plus, Trash2, Eye, EyeOff, Building2, User, ChevronDown, ChevronRight } from 'lucide-react'
 import { LineItemDragHandle } from '@/components/documents/line-item-drag-handle'
 import Link from 'next/link'
 import { ResponsivePage } from '@/components/layout/ResponsivePage'
@@ -132,6 +132,7 @@ export default function NewEstimatePage() {
   const [nextEstimatePreviewError, setNextEstimatePreviewError] = useState(false)
   const [bulkModeActive, setBulkModeActive] = useState(false)
   const [selectedItemIndices, setSelectedItemIndices] = useState<Set<number>>(new Set())
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [clients, setClients] = useState<PickerClient[]>([])
   const [pickerItems, setPickerItems] = useState<FastPickerItem[]>([])
   const [pickerBundles, setPickerBundles] = useState<FastPickerItem[]>([])
@@ -1359,6 +1360,11 @@ export default function NewEstimatePage() {
                     const isInGroup = !!item.groupId && !isGroupHeader
                     const isSubtotalRow = item.isSubtotal
 
+                    // Hide child rows of a collapsed bundle (data stays intact — display only)
+                    if (isInGroup && item.groupId && collapsedGroups.has(item.groupId)) {
+                      return null
+                    }
+
                     // For subtotal rows: sum items since the previous subtotal
                     const prevSubtotalIdx = isSubtotalRow
                       ? (() => {
@@ -1499,6 +1505,32 @@ export default function NewEstimatePage() {
                         <div className="line-item-field-wide flex-1 space-y-1">
                           {isGroupHeader ? (
                             <div className="flex flex-wrap items-center gap-2">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                title={item.groupId && collapsedGroups.has(item.groupId) ? 'Expand bundle' : 'Collapse bundle'}
+                                onClick={() => {
+                                  if (!item.groupId) return
+                                  const groupId = item.groupId
+                                  setCollapsedGroups((prev) => {
+                                    const next = new Set(prev)
+                                    if (next.has(groupId)) {
+                                      next.delete(groupId)
+                                    } else {
+                                      next.add(groupId)
+                                    }
+                                    return next
+                                  })
+                                }}
+                                className="h-8 w-8 shrink-0 p-0"
+                              >
+                                {item.groupId && collapsedGroups.has(item.groupId) ? (
+                                  <ChevronRight className="h-4 w-4" />
+                                ) : (
+                                  <ChevronDown className="h-4 w-4" />
+                                )}
+                              </Button>
                               <span className="rounded bg-purple-700 px-2 py-0.5 text-xs font-semibold text-white shrink-0">
                                 Line #
                                 {lineItems
@@ -1861,6 +1893,10 @@ export default function NewEstimatePage() {
                     const isInGroup = !!item.groupId && !isGroupHeader
                     const isVisible = item.isVisibleToClient !== false
 
+                    if (isInGroup && item.groupId && collapsedGroups.has(item.groupId)) {
+                      return null
+                    }
+
                     return (
                       <div
                         key={index}
@@ -1924,6 +1960,32 @@ export default function NewEstimatePage() {
                         <div className="line-item-field-wide flex-1 space-y-1">
                           {isGroupHeader ? (
                             <div className="flex items-center gap-2">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                title={item.groupId && collapsedGroups.has(item.groupId) ? 'Expand bundle' : 'Collapse bundle'}
+                                onClick={() => {
+                                  if (!item.groupId) return
+                                  const groupId = item.groupId
+                                  setCollapsedGroups((prev) => {
+                                    const next = new Set(prev)
+                                    if (next.has(groupId)) {
+                                      next.delete(groupId)
+                                    } else {
+                                      next.add(groupId)
+                                    }
+                                    return next
+                                  })
+                                }}
+                                className="h-7 w-7 shrink-0 p-0"
+                              >
+                                {item.groupId && collapsedGroups.has(item.groupId) ? (
+                                  <ChevronRight className="h-4 w-4" />
+                                ) : (
+                                  <ChevronDown className="h-4 w-4" />
+                                )}
+                              </Button>
                               <Input
                                 value={item.description}
                                 onChange={(e) => updateOptionalItem(index, 'description', e.target.value)}
