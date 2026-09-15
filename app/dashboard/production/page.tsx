@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -103,6 +103,15 @@ export default function ProductionPage() {
   const [dueFilter, setDueFilter] = useState('all')
   const [archiveView, setArchiveView] = useState(false)
 
+  // Keeps a horizontal scrollbar pinned to the bottom of the screen (rather
+  // than only at the bottom of the board, which scrolls away with the page)
+  // in sync with the board's real scroll position.
+  const boardScrollRef = useRef<HTMLDivElement>(null)
+  const stickyScrollRef = useRef<HTMLDivElement>(null)
+  const isSyncingScrollRef = useRef(false)
+  const [boardScrollWidth, setBoardScrollWidth] = useState(0)
+  const [boardClientWidth, setBoardClientWidth] = useState(0)
+
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300)
     return () => clearTimeout(t)
@@ -197,6 +206,41 @@ export default function ProductionPage() {
       jobs: visibleJobs.filter((j) => j.production.board === col.id),
     }))
   }, [visibleJobs])
+
+  useEffect(() => {
+    const el = boardScrollRef.current
+    if (!el || archiveView) return
+    const measure = () => {
+      setBoardScrollWidth(el.scrollWidth)
+      setBoardClientWidth(el.clientWidth)
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [columns, archiveView])
+
+  const handleBoardScroll = () => {
+    if (isSyncingScrollRef.current) {
+      isSyncingScrollRef.current = false
+      return
+    }
+    if (!boardScrollRef.current || !stickyScrollRef.current) return
+    isSyncingScrollRef.current = true
+    stickyScrollRef.current.scrollLeft = boardScrollRef.current.scrollLeft
+  }
+
+  const handleStickyScroll = () => {
+    if (isSyncingScrollRef.current) {
+      isSyncingScrollRef.current = false
+      return
+    }
+    if (!boardScrollRef.current || !stickyScrollRef.current) return
+    isSyncingScrollRef.current = true
+    boardScrollRef.current.scrollLeft = stickyScrollRef.current.scrollLeft
+  }
+
+  const showStickyScrollbar = boardScrollWidth > boardClientWidth + 1
 
   if (!permissionsLoading && !canView) {
     return (
@@ -350,7 +394,11 @@ export default function ProductionPage() {
               <LayoutGrid className="h-4 w-4" />
               Production Board
             </div>
-            <div className="scrollbar-visible-x flex gap-4 overflow-x-auto pb-3">
+            <div
+              ref={boardScrollRef}
+              onScroll={handleBoardScroll}
+              className="scrollbar-hidden flex gap-4 overflow-x-auto pb-3"
+            >
               {columns.map((col) => (
                 <div key={col.id} className="flex w-72 flex-shrink-0 flex-col rounded-lg border bg-gray-50">
                   <div className="flex items-center justify-between rounded-t-lg border-b bg-white px-3 py-2">
@@ -376,6 +424,18 @@ export default function ProductionPage() {
               ))}
             </div>
           </div>
+
+          {showStickyScrollbar && (
+            <div className="sticky bottom-0 z-10 -mx-4 bg-gray-100 px-4 pb-2 pt-1 sm:-mx-6 sm:px-6">
+              <div
+                ref={stickyScrollRef}
+                onScroll={handleStickyScroll}
+                className="scrollbar-visible-x overflow-x-auto"
+              >
+                <div style={{ width: boardScrollWidth, height: 1 }} />
+              </div>
+            </div>
+          )}
         </>
       )}
     </ResponsivePage>

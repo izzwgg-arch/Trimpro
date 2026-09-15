@@ -140,6 +140,16 @@
   .scrollbar-visible-x::-webkit-scrollbar-thumb:hover {
     background-color: #64748b;
   }
+
+  /* Pairs with .scrollbar-visible-x: hides the scrollbar on the real
+     scrolling element when a separate synced scrollbar (e.g. one pinned to
+     the bottom of the screen) is shown instead, to avoid showing two. */
+  .scrollbar-hidden {
+    scrollbar-width: none;
+  }
+  .scrollbar-hidden::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 /* Global blue-button override — uses brand CSS variables so branding changes take effect.
