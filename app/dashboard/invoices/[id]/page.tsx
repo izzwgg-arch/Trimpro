@@ -959,7 +959,11 @@ export default function InvoiceDetailPage() {
     if (!invoice || sending) return
     setSelectedRecipientEmails([])
     setCustomEmails('')
-    setSendSubject(`Invoice ${invoice.invoiceNumber}`)
+    setSendSubject(
+      invoice.jobSiteAddress
+        ? `Invoice for ${invoice.jobSiteAddress}`
+        : `Invoice ${invoice.invoiceNumber}`
+    )
     setSendMessage(`Please review and pay invoice ${invoice.invoiceNumber}.`)
     setShowSendModal(true)
     return

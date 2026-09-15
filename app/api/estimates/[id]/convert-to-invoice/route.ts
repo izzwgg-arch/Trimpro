@@ -305,6 +305,7 @@ export async function POST(
               taxAmount: finalTaxAmount,
               discount,
               total: finalTotal,
+              originalTotalAtConversion: finalTotal,
               paidAmount: 0,
               balance: finalTotal,
               progressBillingMode: billingMode,

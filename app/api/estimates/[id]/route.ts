@@ -69,6 +69,7 @@ export async function GET(
           },
           select: {
             total: true,
+            originalTotalAtConversion: true,
           },
         },
         attachments: {
@@ -108,14 +109,15 @@ export async function GET(
         ? `${derived.street || jobSiteAddress}, ${derived.city}, ${derived.state} ${derived.zipCode}`.trim()
         : jobSiteAddress
 
-    const conversion = calculateEstimateConversionSummary(
-      estimate.total,
-      estimate.invoices.map((invoice) => invoice.total)
+    // Use each invoice's immutable at-conversion snapshot when available, so a
+    // discount applied to the invoice afterward doesn't shrink the estimate's
+    // tracked conversion percentage. Falls back to the live total for
+    // invoices created before this snapshot existed.
+    const invoicedAmounts = estimate.invoices.map(
+      (invoice) => invoice.originalTotalAtConversion ?? invoice.total
     )
-    const conversionProgress = getEstimateConversionProgress(
-      estimate.total,
-      estimate.invoices.map((invoice) => invoice.total),
-    )
+    const conversion = calculateEstimateConversionSummary(estimate.total, invoicedAmounts)
+    const conversionProgress = getEstimateConversionProgress(estimate.total, invoicedAmounts)
 
     const estimateResponse = {
       ...estimate,

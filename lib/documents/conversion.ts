@@ -68,12 +68,19 @@ export async function getEstimateConversionSummary(
       ...(excludeInvoiceId ? { id: { not: excludeInvoiceId } } : {}),
       status: { notIn: EXCLUDED_CONVERSION_INVOICE_STATUSES },
     },
-    select: { total: true },
+    select: { total: true, originalTotalAtConversion: true },
   })
 
+  // Use the immutable at-conversion snapshot when available, so a discount
+  // applied to the invoice afterward doesn't change the estimate's tracked
+  // conversion. Falls back to the live total for invoices created before
+  // this snapshot existed (or from a code path that hasn't set it).
   return calculateEstimateConversionSummary(
     estimateTotal,
-    invoices.map((invoice: { total: unknown }) => invoice.total)
+    invoices.map(
+      (invoice: { total: unknown; originalTotalAtConversion: unknown }) =>
+        invoice.originalTotalAtConversion ?? invoice.total
+    )
   )
 }
 

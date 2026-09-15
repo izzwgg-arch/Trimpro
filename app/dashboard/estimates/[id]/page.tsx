@@ -664,7 +664,11 @@ export default function EstimateDetailPage() {
     if (!estimate || sending) return
     setSelectedRecipientEmails([])
     setCustomEmails('')
-    setSendSubject(`Estimate ${estimate.estimateNumber}`)
+    setSendSubject(
+      estimate.jobSiteAddress
+        ? `Estimate for ${estimate.jobSiteAddress}`
+        : `Estimate ${estimate.estimateNumber}`
+    )
     setSendMessage(`Please review estimate ${estimate.estimateNumber}.`)
     setSendPdfView('customer')
     setShowSendModal(true)

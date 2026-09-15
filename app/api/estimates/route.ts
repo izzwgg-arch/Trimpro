@@ -101,6 +101,7 @@ export async function GET(request: NextRequest) {
             },
             select: {
               total: true,
+              originalTotalAtConversion: true,
             },
           },
         },
@@ -115,7 +116,7 @@ export async function GET(request: NextRequest) {
       estimates: estimates.map((estimate) => {
         const conversion = calculateEstimateConversionSummary(
           estimate.total,
-          estimate.invoices.map((invoice) => invoice.total)
+          estimate.invoices.map((invoice) => invoice.originalTotalAtConversion ?? invoice.total)
         )
         const { invoices, ...rest } = estimate
         return {

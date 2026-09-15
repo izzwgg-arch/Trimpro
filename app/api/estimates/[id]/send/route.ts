@@ -128,7 +128,10 @@ export async function POST(
     const approveUrl = approvalToken.url
     // View portal — works on every device without needing a PDF viewer.
     const viewUrl = `${appUrl}/portal/estimates/${approvalToken.rawToken}`
-    const effectiveSubject = `${subject || `Estimate ${estimate.estimateNumber}`} - ${sentDisplay || sentIso}`
+    const defaultSubject = estimate.jobSiteAddress
+      ? `Estimate for ${estimate.jobSiteAddress}`
+      : `Estimate ${estimate.estimateNumber}`
+    const effectiveSubject = `${subject || defaultSubject} - ${sentDisplay || sentIso}`
     
     const emailSecrets = await getIntegrationSecrets(user.tenantId, 'email')
     if (!emailSecrets) {

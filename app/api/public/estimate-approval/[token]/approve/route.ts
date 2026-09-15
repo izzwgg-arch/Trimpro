@@ -336,6 +336,7 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
                 taxAmount,
                 discount: 0,
                 total,
+                originalTotalAtConversion: total,
                 paidAmount: 0,
                 balance: total,
                 invoiceDate: now,

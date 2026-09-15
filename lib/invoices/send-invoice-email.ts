@@ -8,6 +8,7 @@ import { buildInvoiceEmail } from '@/lib/email/templates/invoice'
 import { getPdfBranding } from '@/lib/branding/pdf'
 import { renderInvoiceEmailPdfAttachment } from '@/lib/documents/email-pdf-attachments'
 import { loadEmailEntityAttachments } from '@/lib/documents/email-entity-attachments'
+import { formatAddressParts } from '@/lib/address/parse'
 
 function formatEmailSentDate(value: Date | number | string) {
   const date = value instanceof Date ? value : new Date(value)
@@ -106,7 +107,11 @@ export async function sendInvoiceEmailForInvoice(params: {
     invoice.balance.toNumber() > 0
       ? `${appUrl}/portal/pay/${invoice.id}?token=${encodeURIComponent(token)}&sent=${sentEpoch}`
       : ''
-  const effectiveSubject = `${subject || `Invoice ${invoice.invoiceNumber}`} • ${sentDisplay || sentIso}`
+  const jobSiteAddress =
+    formatAddressParts(invoice.job?.addresses?.[0]) ||
+    (invoice.estimate?.jobSiteAddress ? String(invoice.estimate.jobSiteAddress) : null)
+  const defaultSubject = jobSiteAddress ? `Invoice for ${jobSiteAddress}` : `Invoice ${invoice.invoiceNumber}`
+  const effectiveSubject = `${subject || defaultSubject} • ${sentDisplay || sentIso}`
 
   const emailSecrets = await getIntegrationSecrets(tenantId, 'email')
   if (!emailSecrets) {
