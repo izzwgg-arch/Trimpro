@@ -36,14 +36,18 @@ import {
   ScrollText,
   Receipt,
 } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { useRef, useState, useEffect } from 'react'
+import { formatDistanceToNow } from 'date-fns'
 
 // Maps a nav item to the Notification.linkType whose unread count should
 // show a "New" badge next to it. Only items an assignee needs to be alerted
 // about are included here.
 const NAV_ITEM_LINK_TYPES: Record<string, string> = {
   Jobs: 'job',
-  Requests: 'measuring_request',
+  Requests: 'request',
+  Issues: 'issue',
+  Tasks: 'task',
+  Messages: 'message',
 }
 
 const navigation = [
@@ -78,10 +82,71 @@ interface SidebarProps {
   onMobileClose?: () => void
 }
 
+interface UnreadNavNotification {
+  id: string
+  title: string
+  message: string | null
+  linkType: string | null
+  createdAt: string
+}
+
+function NewBadge({ items }: { items: UnreadNavNotification[] }) {
+  const [open, setOpen] = useState(false)
+  const [position, setPosition] = useState({ top: 0, left: 0 })
+  const badgeRef = useRef<HTMLSpanElement>(null)
+
+  if (items.length === 0) return null
+
+  const show = () => {
+    const rect = badgeRef.current?.getBoundingClientRect()
+    if (rect) {
+      setPosition({ top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - 300) })
+    }
+    setOpen(true)
+  }
+
+  return (
+    <>
+      <span
+        ref={badgeRef}
+        onMouseEnter={show}
+        onMouseLeave={() => setOpen(false)}
+        className="ml-2 inline-flex cursor-default rounded bg-red-500 px-1.5 py-0.5 text-[9px] font-bold uppercase leading-none text-white"
+      >
+        New
+      </span>
+      {open && (
+        <div
+          className="fixed z-[100] w-72 rounded-md border border-gray-200 bg-white p-2 text-left normal-case shadow-lg"
+          style={{ top: position.top, left: position.left }}
+          onMouseEnter={() => setOpen(true)}
+          onMouseLeave={() => setOpen(false)}
+        >
+          <p className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+            What&apos;s new
+          </p>
+          {items.slice(0, 5).map((n) => (
+            <div key={n.id} className="rounded px-1 py-1.5 hover:bg-gray-50">
+              <p className="truncate text-xs font-medium text-gray-900">{n.title}</p>
+              {n.message && <p className="line-clamp-2 text-[11px] text-gray-600">{n.message}</p>}
+              <p className="mt-0.5 text-[10px] text-gray-400">
+                {formatDistanceToNow(new Date(n.createdAt), { addSuffix: true })}
+              </p>
+            </div>
+          ))}
+          {items.length > 5 && (
+            <p className="px-1 pt-1 text-[10px] text-gray-400">+{items.length - 5} more</p>
+          )}
+        </div>
+      )}
+    </>
+  )
+}
+
 export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
-  const [unreadByLinkType, setUnreadByLinkType] = useState<Record<string, number>>({})
+  const [unreadNavNotifications, setUnreadNavNotifications] = useState<UnreadNavNotification[]>([])
 
   // Persist collapse state across sessions
   useEffect(() => {
@@ -89,33 +154,36 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
     if (saved === 'true') setCollapsed(true)
   }, [])
 
-  // Poll unread notification counts (by linkType) to drive the "New" nav badges.
-  // Badges clear only when the underlying notification is marked read/dismissed
-  // via the notification bell, not just by visiting the page.
+  // Poll unread notifications to drive the "New" nav badges and their hover
+  // preview. Badges clear only when the underlying notification is marked
+  // read/dismissed via the notification bell, not just by visiting the page.
   useEffect(() => {
     let cancelled = false
-    const fetchUnreadByLinkType = async () => {
+    const fetchUnreadNotifications = async () => {
       try {
         const token = localStorage.getItem('accessToken')
         if (!token) return
-        const res = await fetch('/api/notifications?limit=1', {
+        const res = await fetch('/api/notifications?status=UNREAD&limit=50', {
           headers: { Authorization: `Bearer ${token}` },
         })
         if (!res.ok) return
         const data = await res.json()
-        if (!cancelled) setUnreadByLinkType(data.unreadByLinkType || {})
+        if (!cancelled) setUnreadNavNotifications(data.notifications || [])
       } catch (error) {
-        console.error('Failed to fetch unread notification counts:', error)
+        console.error('Failed to fetch unread notifications:', error)
       }
     }
 
-    fetchUnreadByLinkType()
-    const interval = setInterval(fetchUnreadByLinkType, 30000)
+    fetchUnreadNotifications()
+    const interval = setInterval(fetchUnreadNotifications, 30000)
     return () => {
       cancelled = true
       clearInterval(interval)
     }
   }, [])
+
+  const unreadByNavItem = (itemName: string) =>
+    unreadNavNotifications.filter((n) => n.linkType === NAV_ITEM_LINK_TYPES[itemName])
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -213,11 +281,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
               {!collapsed && (
                 <span className="flex flex-1 items-center justify-between">
                   {item.name}
-                  {Boolean(unreadByLinkType[NAV_ITEM_LINK_TYPES[item.name]]) && (
-                    <span className="ml-2 rounded bg-red-500 px-1.5 py-0.5 text-[9px] font-bold uppercase leading-none text-white">
-                      New
-                    </span>
-                  )}
+                  <NewBadge items={unreadByNavItem(item.name)} />
                 </span>
               )}
             </Link>
@@ -327,11 +391,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
                     <item.icon className="mr-3 h-5 w-5 flex-shrink-0" />
                     <span className="flex flex-1 items-center justify-between">
                       {item.name}
-                      {Boolean(unreadByLinkType[NAV_ITEM_LINK_TYPES[item.name]]) && (
-                        <span className="ml-2 rounded bg-red-500 px-1.5 py-0.5 text-[9px] font-bold uppercase leading-none text-white">
-                          New
-                        </span>
-                      )}
+                      <NewBadge items={unreadByNavItem(item.name)} />
                     </span>
                   </Link>
                 )
