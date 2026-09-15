@@ -11,6 +11,7 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { ShoppingCart, Calendar, Building2, FileText, CheckCircle, XCircle, Send, Download, Edit, Package, AlertCircle, Trash2, Mail, Phone, Printer, Copy } from 'lucide-react'
 import Link from 'next/link'
 import { DocumentAttachments } from '@/components/common/document-attachments'
+import { ContactRecipientPicker, type RecipientOption } from '@/components/email/contact-recipient-picker'
 
 interface PurchaseOrderDetail {
   id: string
@@ -103,7 +104,8 @@ export default function PurchaseOrderDetailPage() {
   const [duplicating, setDuplicating] = useState(false)
   const [showSendModal, setShowSendModal] = useState(false)
   const [sending, setSending] = useState(false)
-  const [sendEmails, setSendEmails] = useState('')
+  const [selectedRecipientEmails, setSelectedRecipientEmails] = useState<string[]>([])
+  const [customEmails, setCustomEmails] = useState('')
   const [sendSubject, setSendSubject] = useState('')
   const [sendMessage, setSendMessage] = useState('')
 
@@ -163,9 +165,21 @@ export default function PurchaseOrderDetailPage() {
     }
   }
 
+  const vendorRecipientOptions: RecipientOption[] = po?.vendorRef?.email
+    ? [
+        {
+          id: `vendor:${po.vendorRef.id}`,
+          name: po.vendorRef.contactPerson || po.vendorRef.name,
+          email: po.vendorRef.email,
+          source: 'client',
+        },
+      ]
+    : []
+
   const handleSend = () => {
     if (!po) return
-    setSendEmails(po.vendorRef?.email || '')
+    setSelectedRecipientEmails([])
+    setCustomEmails('')
     setSendSubject(`Purchase Order ${po.poNumber}`)
     setSendMessage('Please find our purchase order attached to this email. Thank You!')
     setShowSendModal(true)
@@ -173,10 +187,11 @@ export default function PurchaseOrderDetailPage() {
 
   const submitSendPurchaseOrder = async () => {
     if (!po || sending) return
-    const emails = sendEmails
+    const customEmailList = customEmails
       .split(/[,\s;]+/g)
       .map((v) => v.trim())
       .filter(Boolean)
+    const emails = Array.from(new Set([...selectedRecipientEmails, ...customEmailList]))
     if (emails.length === 0) {
       alert('Please enter at least one email address')
       return
@@ -431,20 +446,26 @@ export default function PurchaseOrderDetailPage() {
           <DialogHeader>
             <DialogTitle>Send Purchase Order</DialogTitle>
             <DialogDescription>
-              Edit recipients, subject, and message before sending. Use commas to send to multiple emails.
+              Choose which vendor contacts should receive this purchase order, or add a custom email below.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>Recipient email(s)</Label>
-              <Input
-                value={sendEmails}
-                onChange={(e) => setSendEmails(e.target.value)}
-                placeholder="vendor@email.com, other@email.com"
+              <Label>Recipients</Label>
+              <ContactRecipientPicker
+                recipients={vendorRecipientOptions}
+                onSelectionChange={(emails) => setSelectedRecipientEmails(emails)}
+                manageContactsHref={po.vendorRef ? `/dashboard/vendors/${po.vendorRef.id}/edit` : undefined}
               />
-              <p className="text-xs text-muted-foreground">
-                Separate multiple emails with commas.
-              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>Additional email(s) (optional)</Label>
+              <Input
+                value={customEmails}
+                onChange={(e) => setCustomEmails(e.target.value)}
+                placeholder="someone-else@email.com"
+              />
+              <p className="text-xs text-muted-foreground">You can enter multiple emails separated by commas.</p>
             </div>
             <div className="space-y-2">
               <Label>Subject</Label>
@@ -459,7 +480,10 @@ export default function PurchaseOrderDetailPage() {
             <Button variant="outline" onClick={() => setShowSendModal(false)} disabled={sending}>
               Cancel
             </Button>
-            <Button onClick={submitSendPurchaseOrder} disabled={sending || !sendEmails.trim()}>
+            <Button
+              onClick={submitSendPurchaseOrder}
+              disabled={sending || (selectedRecipientEmails.length === 0 && !customEmails.trim())}
+            >
               {sending ? 'Sending...' : 'Send'}
             </Button>
           </DialogFooter>

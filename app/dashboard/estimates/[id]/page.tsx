@@ -19,6 +19,7 @@ import { DocumentAttachments } from '@/components/common/document-attachments'
 import { EstimateMaterialList } from '@/components/estimates/estimate-material-list'
 import { CustomerEstimatePanel } from '@/components/estimates/customer-estimate-panel'
 import { ContactRecipientPicker } from '@/components/email/contact-recipient-picker'
+import { ItemPicker } from '@/components/items/ItemPicker'
 import { buildCreateContextQuery } from '@/src/lib/create-context'
 import { calculateOrderedSubtotalRows, mergeApprovedOptionalItemsForSubtotals } from '@/lib/documents/subtotals'
 import {
@@ -129,7 +130,7 @@ export default function EstimateDetailPage() {
   const estimateId = params.id as string
   const [estimate, setEstimate] = useState<EstimateDetail | null>(null)
   const [loading, setLoading] = useState(true)
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [processingGroup, setProcessingGroup] = useState<string | null>(null)
   const [addingToGroup, setAddingToGroup] = useState<string | null>(null)
   const [showItemPicker, setShowItemPicker] = useState(false)
@@ -352,6 +353,132 @@ export default function EstimateDetailPage() {
     return {
       blob,
       filename: headerFilename || fallbackFilename,
+    }
+  }
+
+  const handleDeleteGroup = async (groupId: string) => {
+    if (!confirm('Are you sure you want to delete this bundle group and all its items?')) {
+      return
+    }
+
+    setProcessingGroup(groupId)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch(`/api/estimates/${estimateId}/groups/${groupId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        alert(error.error || 'Failed to delete group')
+        return
+      }
+
+      fetchEstimate()
+    } catch (error) {
+      console.error('Error deleting group:', error)
+      alert('Failed to delete group')
+    } finally {
+      setProcessingGroup(null)
+    }
+  }
+
+  const handleUngroup = async (groupId: string) => {
+    if (!confirm('Are you sure you want to ungroup these items? They will become regular line items.')) {
+      return
+    }
+
+    setProcessingGroup(groupId)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch(`/api/estimates/${estimateId}/groups/${groupId}/ungroup`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        alert(error.error || 'Failed to ungroup items')
+        return
+      }
+
+      fetchEstimate()
+    } catch (error) {
+      console.error('Error ungrouping:', error)
+      alert('Failed to ungroup items')
+    } finally {
+      setProcessingGroup(null)
+    }
+  }
+
+  const handleUpdateFromTemplate = async (groupId: string) => {
+    if (!confirm('This will replace all items in this bundle group with the current template. Local edits will be lost. Continue?')) {
+      return
+    }
+
+    setProcessingGroup(groupId)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch(`/api/estimates/${estimateId}/groups/${groupId}/update-from-template`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        alert(error.error || 'Failed to update from template')
+        return
+      }
+
+      fetchEstimate()
+    } catch (error) {
+      console.error('Error updating from template:', error)
+      alert('Failed to update from template')
+    } finally {
+      setProcessingGroup(null)
+    }
+  }
+
+  const handleAddItemToGroup = (groupId: string) => {
+    setItemPickerGroupId(groupId)
+    setShowItemPicker(true)
+  }
+
+  const handleItemSelectForGroup = async (item: any) => {
+    if (!itemPickerGroupId) return
+
+    setAddingToGroup(itemPickerGroupId)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch(`/api/estimates/${estimateId}/groups/${itemPickerGroupId}/items`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          description: item.name + (item.description ? ` - ${item.description}` : ''),
+          quantity: 1,
+          unitPrice: item.defaultUnitPrice,
+          sourceItemId: item.id,
+        }),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        alert(error.error || 'Failed to add item to group')
+        return
+      }
+
+      fetchEstimate()
+      setShowItemPicker(false)
+      setItemPickerGroupId(null)
+    } catch (error) {
+      console.error('Error adding item to group:', error)
+      alert('Failed to add item to group')
+    } finally {
+      setAddingToGroup(null)
     }
   }
 
@@ -1030,7 +1157,7 @@ export default function EstimateDetailPage() {
                       for (const [groupId, items] of groupedItems.entries()) {
                         const group = items[0].group!
                         const groupTotal = items.reduce((sum, item) => sum + parseFloat(item.total), 0)
-                        const isExpanded = true
+                        const isExpanded = !collapsedGroups.has(groupId)
 
                         rows.push(
                           <tr key={`group-${groupId}`} className="border-b bg-gray-50">
@@ -1039,13 +1166,13 @@ export default function EstimateDetailPage() {
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    const newExpanded = new Set(expandedGroups)
+                                    const next = new Set(collapsedGroups)
                                     if (isExpanded) {
-                                      newExpanded.delete(groupId)
+                                      next.add(groupId)
                                     } else {
-                                      newExpanded.add(groupId)
+                                      next.delete(groupId)
                                     }
-                                    setExpandedGroups(newExpanded)
+                                    setCollapsedGroups(next)
                                   }}
                                   className="flex items-center space-x-2 hover:text-primary"
                                 >

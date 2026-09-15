@@ -40,7 +40,22 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({ notifications, unreadCount })
+    const unreadByLinkTypeGroups = await prisma.notification.groupBy({
+      by: ['linkType'],
+      where: {
+        tenantId: user.tenantId,
+        userId: user.id,
+        status: 'UNREAD',
+        linkType: { not: null },
+      },
+      _count: { _all: true },
+    })
+    const unreadByLinkType: Record<string, number> = {}
+    for (const group of unreadByLinkTypeGroups) {
+      if (group.linkType) unreadByLinkType[group.linkType] = group._count._all
+    }
+
+    return NextResponse.json({ notifications, unreadCount, unreadByLinkType })
   } catch (error) {
     console.error('Get notifications error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

@@ -38,6 +38,14 @@ import {
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 
+// Maps a nav item to the Notification.linkType whose unread count should
+// show a "New" badge next to it. Only items an assignee needs to be alerted
+// about are included here.
+const NAV_ITEM_LINK_TYPES: Record<string, string> = {
+  Jobs: 'job',
+  Requests: 'measuring_request',
+}
+
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, permission: 'dashboard.view' },
   { name: 'Clients', href: '/dashboard/clients', icon: Users, permission: 'clients.view' },
@@ -73,11 +81,40 @@ interface SidebarProps {
 export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
+  const [unreadByLinkType, setUnreadByLinkType] = useState<Record<string, number>>({})
 
   // Persist collapse state across sessions
   useEffect(() => {
     const saved = localStorage.getItem('sidebar-collapsed')
     if (saved === 'true') setCollapsed(true)
+  }, [])
+
+  // Poll unread notification counts (by linkType) to drive the "New" nav badges.
+  // Badges clear only when the underlying notification is marked read/dismissed
+  // via the notification bell, not just by visiting the page.
+  useEffect(() => {
+    let cancelled = false
+    const fetchUnreadByLinkType = async () => {
+      try {
+        const token = localStorage.getItem('accessToken')
+        if (!token) return
+        const res = await fetch('/api/notifications?limit=1', {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (!res.ok) return
+        const data = await res.json()
+        if (!cancelled) setUnreadByLinkType(data.unreadByLinkType || {})
+      } catch (error) {
+        console.error('Failed to fetch unread notification counts:', error)
+      }
+    }
+
+    fetchUnreadByLinkType()
+    const interval = setInterval(fetchUnreadByLinkType, 30000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
   }, [])
 
   const toggleCollapsed = () => {
@@ -173,7 +210,16 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
               )}
             >
               <item.icon className={cn('h-5 w-5 flex-shrink-0', !collapsed && 'mr-3')} />
-              {!collapsed && item.name}
+              {!collapsed && (
+                <span className="flex flex-1 items-center justify-between">
+                  {item.name}
+                  {Boolean(unreadByLinkType[NAV_ITEM_LINK_TYPES[item.name]]) && (
+                    <span className="ml-2 rounded bg-red-500 px-1.5 py-0.5 text-[9px] font-bold uppercase leading-none text-white">
+                      New
+                    </span>
+                  )}
+                </span>
+              )}
             </Link>
           )
 
@@ -279,7 +325,14 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
                     )}
                   >
                     <item.icon className="mr-3 h-5 w-5 flex-shrink-0" />
-                    {item.name}
+                    <span className="flex flex-1 items-center justify-between">
+                      {item.name}
+                      {Boolean(unreadByLinkType[NAV_ITEM_LINK_TYPES[item.name]]) && (
+                        <span className="ml-2 rounded bg-red-500 px-1.5 py-0.5 text-[9px] font-bold uppercase leading-none text-white">
+                          New
+                        </span>
+                      )}
+                    </span>
                   </Link>
                 )
                 if (item.permission) {
