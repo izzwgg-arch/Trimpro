@@ -35,6 +35,7 @@ import {
   X,
   ScrollText,
   Receipt,
+  Factory,
 } from 'lucide-react'
 import { useRef, useState, useEffect } from 'react'
 import { formatDistanceToNow } from 'date-fns'
@@ -55,6 +56,7 @@ const navigation = [
   { name: 'Clients', href: '/dashboard/clients', icon: Users, permission: 'clients.view' },
   { name: 'Requests', href: '/dashboard/requests', icon: Users, permission: 'leads.view' },
   { name: 'Jobs', href: '/dashboard/jobs', icon: Briefcase, permission: 'jobs.view' },
+  { name: 'Production', href: '/dashboard/production', icon: Factory, permission: 'production.view' },
   { name: 'Schedule', href: '/dashboard/schedule', icon: Calendar, permission: 'schedule.view' },
   { name: 'Estimates', href: '/dashboard/estimates', icon: FileText, permission: 'estimates.view' },
   { name: 'Invoices', href: '/dashboard/invoices', icon: DollarSign, permission: 'invoices.view' },

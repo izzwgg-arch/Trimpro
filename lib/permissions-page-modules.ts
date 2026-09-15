@@ -52,6 +52,13 @@ export const PERMISSION_PAGE_MODULES: PermissionPageModule[] = [
     actionKeyPrefixes: ['jobs.'],
   },
   {
+    id: 'production',
+    label: 'Production',
+    pageAccessPermission: 'production.access',
+    viewPermission: 'production.view',
+    actionKeyPrefixes: ['production.'],
+  },
+  {
     id: 'schedule',
     label: 'Schedule',
     pageAccessPermission: 'schedule.access',

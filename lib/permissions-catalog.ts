@@ -232,6 +232,24 @@ export const PERMISSIONS: PermissionDefinition[] = [
   },
 
   // ============================================
+  // PRODUCTION
+  // ============================================
+  {
+    key: 'production.access',
+    label: 'Access Production Page',
+    description: 'Open the production page (sidebar link)',
+    category: 'Production',
+    module: 'production',
+  },
+  {
+    key: 'production.view',
+    label: 'View Production Board',
+    description: 'View the production board and job production status, derived from job status',
+    category: 'Production',
+    module: 'production',
+  },
+
+  // ============================================
   // SCHEDULE / CALENDAR
   // ============================================
   {
