@@ -4,6 +4,7 @@ import { getIntegrationSecrets } from '@/lib/integrations/status'
 import { encryptSecrets } from '@/lib/integrations/secrets'
 import { getPrimaryEmail } from '@/lib/email'
 import { calculateOrderedSubtotalRows } from '@/lib/documents/subtotals'
+import { normalizeQboSalesItemLineAmounts } from '@/lib/qbo/line-amounts'
 import {
   resolveOutboundQboPaymentMethodNames,
   resolveQboPaymentMethodId,
@@ -11,6 +12,19 @@ import {
 } from '@/lib/qbo/payment-method-mapping'
 import { buildQboPaymentRefNum } from '@/lib/qbo/payment-ref-num'
 import crypto from 'crypto'
+
+// QuickBooks caps a phone's FreeFormNumber at 30 chars and expects a single
+// number. TrimPro lets a client/vendor store several numbers comma-separated
+// (e.g. "(845) 999-5241, 9293406713, (845) 828-9466" = 42 chars), which QBO
+// rejects with a 2050 ValidationFault (Max:30) and fails the whole document
+// sync. Send just the first number, trimmed to 30 chars.
+function qboPhoneField(value: string | null | undefined): { FreeFormNumber: string } | undefined {
+  const raw = String(value ?? '').trim()
+  if (!raw) return undefined
+  const first = (raw.split(',')[0] || '').trim()
+  if (!first) return undefined
+  return { FreeFormNumber: first.slice(0, 30) }
+}
 
 const LOOKUP_CACHE_TTL_MS = 5 * 60 * 1000
 
@@ -1254,15 +1268,20 @@ function buildQboLines(
     const itemName = sanitizeQboItemName(li.description) || 'Trim Pro Service'
     const itemId = itemIdByName.get(itemName.toLowerCase()) || fallbackItemId
     const notes = String(li.notes || '').trim()
+    const { qty, unitPrice, amount } = normalizeQboSalesItemLineAmounts({
+      quantity: li.quantity,
+      unitPrice: li.unitPrice,
+      total: li.total,
+    })
     return {
       DetailType: 'SalesItemLineDetail',
       // Item name lives on ItemRef; Description carries special notes only.
       Description: notes || undefined,
-      Amount: toNumber(li.quantity) * toNumber(li.unitPrice),
+      Amount: amount,
       SalesItemLineDetail: {
         ItemRef: { value: itemId, name: itemName },
-        Qty: toNumber(li.quantity),
-        UnitPrice: toNumber(li.unitPrice),
+        Qty: qty,
+        UnitPrice: unitPrice,
         TaxCodeRef: { value: resolveQboLineTaxCode(li, documentTaxCode) },
       },
     }
@@ -1304,14 +1323,19 @@ function buildQboLinesWithIds(params: {
     const itemName = sanitizeQboItemName(li?.description) || 'Trim Pro Service'
     const itemId = params.itemIdByName.get(itemName.toLowerCase()) || params.fallbackItemId
     const notes = String(li?.notes || '').trim()
+    const { qty, unitPrice, amount } = normalizeQboSalesItemLineAmounts({
+      quantity: li?.quantity,
+      unitPrice: li?.unitPrice,
+      total: li?.total,
+    })
     const out: any = {
       DetailType: 'SalesItemLineDetail',
       Description: notes || undefined,
-      Amount: toNumber(li?.quantity) * toNumber(li?.unitPrice),
+      Amount: amount,
       SalesItemLineDetail: {
         ItemRef: { value: itemId, name: itemName },
-        Qty: toNumber(li?.quantity),
-        UnitPrice: toNumber(li?.unitPrice),
+        Qty: qty,
+        UnitPrice: unitPrice,
         TaxCodeRef: { value: resolveQboLineTaxCode(li, documentTaxCode) },
       },
     }
@@ -1739,7 +1763,7 @@ async function ensureClientCustomer(params: {
       CompanyName: client.companyName || client.name,
       // QBO supports a single email. TrimPro can store comma-separated emails.
       PrimaryEmailAddr: primaryEmail ? { Address: primaryEmail } : undefined,
-      PrimaryPhone: client.phone ? { FreeFormNumber: client.phone } : undefined,
+      PrimaryPhone: qboPhoneField(client.phone),
       BillAddr: billing
         ? {
             Line1: billing.street,
@@ -2141,7 +2165,7 @@ async function ensureClientCustomer(params: {
           Job: true,
         }
         if (primaryEmail) jobStyle.PrimaryEmailAddr = { Address: primaryEmail }
-        if (client.phone) jobStyle.PrimaryPhone = { FreeFormNumber: client.phone }
+        { const p = qboPhoneField(client.phone); if (p) jobStyle.PrimaryPhone = p }
         qboId = await createOrRelink(jobStyle)
       } catch {
         const isSubOnly: any = {
@@ -2150,7 +2174,7 @@ async function ensureClientCustomer(params: {
           Job: true,
         }
         if (primaryEmail) isSubOnly.PrimaryEmailAddr = { Address: primaryEmail }
-        if (client.phone) isSubOnly.PrimaryPhone = { FreeFormNumber: client.phone }
+        { const p = qboPhoneField(client.phone); if (p) isSubOnly.PrimaryPhone = p }
         qboId = await createOrRelink(isSubOnly)
       }
     }
@@ -2305,7 +2329,7 @@ export async function syncLeadToQuickBooksProject(tenantId: string, leadId: stri
           DisplayName: baseName,
           CompanyName: lead.company || baseName,
           PrimaryEmailAddr: lead.email ? { Address: lead.email } : undefined,
-          PrimaryPhone: lead.phone ? { FreeFormNumber: lead.phone } : undefined,
+          PrimaryPhone: qboPhoneField(lead.phone),
         })
         parentQboCustomerId = String(created?.Customer?.Id || '')
       }
@@ -3121,7 +3145,7 @@ export async function syncVendorToQuickBooks(tenantId: string, vendorId: string)
       DisplayName: vendor.name,
       CompanyName: vendor.name,
       PrimaryEmailAddr: vendor.email ? { Address: vendor.email } : undefined,
-      PrimaryPhone: vendor.phone ? { FreeFormNumber: vendor.phone } : undefined,
+      PrimaryPhone: qboPhoneField(vendor.phone),
       WebAddr: vendor.website ? { URI: vendor.website } : undefined,
       BillAddr: vendor.billingStreet
         ? {
@@ -3293,18 +3317,23 @@ export async function syncPurchaseOrderToQuickBooks(tenantId: string, purchaseOr
         const details = String(li.details || '').trim()
         const notes = String(li.notes || '').trim()
         const qty = toNumber(li.quantity)
-        const unit = toNumber(li.unitCost ?? li.unitPrice)
+        const unitRaw = toNumber(li.unitCost ?? li.unitPrice)
+        const { qty: qboQty, unitPrice: unit, amount } = normalizeQboSalesItemLineAmounts({
+          quantity: qty,
+          unitPrice: unitRaw,
+          total: li.total,
+        })
         const lineDescription =
           [details, notes].filter(Boolean).join(' — ') ||
-          `${li.description || itemName} (Qty ${qty} @ $${unit.toFixed(2)})`
+          `${li.description || itemName} (Qty ${qboQty} @ $${unit.toFixed(2)})`
         if (itemId) {
           lines.push({
             DetailType: 'ItemBasedExpenseLineDetail',
             Description: lineDescription,
-            Amount: toNumber(li.total),
+            Amount: amount,
             ItemBasedExpenseLineDetail: {
               ItemRef: { value: itemId, name: itemName },
-              Qty: qty,
+              Qty: qboQty,
               UnitPrice: unit,
               BillableStatus: 'NotBillable',
             },
@@ -3437,17 +3466,24 @@ export async function syncCreditMemoToQuickBooks(tenantId: string, creditMemoId:
     })
 
     const lines = creditMemo.lineItems.length
-      ? creditMemo.lineItems.map((li) => ({
-          DetailType: 'SalesItemLineDetail',
-          Description: li.notes || li.description,
-          Amount: toNumber(li.total),
-          SalesItemLineDetail: {
-            ItemRef: { value: serviceItemId },
-            Qty: toNumber(li.quantity),
-            UnitPrice: toNumber(li.unitPrice),
-            TaxCodeRef: { value: 'NON' },
-          },
-        }))
+      ? creditMemo.lineItems.map((li) => {
+          const { qty, unitPrice, amount } = normalizeQboSalesItemLineAmounts({
+            quantity: li.quantity,
+            unitPrice: li.unitPrice,
+            total: li.total,
+          })
+          return {
+            DetailType: 'SalesItemLineDetail',
+            Description: li.notes || li.description,
+            Amount: amount,
+            SalesItemLineDetail: {
+              ItemRef: { value: serviceItemId },
+              Qty: qty,
+              UnitPrice: unitPrice,
+              TaxCodeRef: { value: 'NON' },
+            },
+          }
+        })
       : [
           {
             DetailType: 'SalesItemLineDetail',
