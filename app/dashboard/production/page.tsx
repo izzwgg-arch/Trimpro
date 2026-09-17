@@ -416,6 +416,8 @@ function ProductionJobCard({ job, onOpen }: { job: ProductionJob; onOpen: () => 
         )}
       </div>
 
+      {job.title && <p className="mt-0.5 line-clamp-1 text-xs font-medium text-gray-800">{job.title}</p>}
+
       {address?.street && (
         <p className="mt-1 flex items-start gap-1 text-xs text-gray-600">
           <MapPin className="mt-0.5 h-3 w-3 shrink-0 text-gray-400" />
@@ -437,7 +439,12 @@ function ProductionJobCard({ job, onOpen }: { job: ProductionJob; onOpen: () => 
             <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">Overdue</span>
           )}
         </div>
-        <p className="mt-1.5 text-xs font-medium text-gray-800">{job.production.nextAction}</p>
+        <p className="mt-1 text-[11px] text-gray-500">
+          <span className="font-semibold text-gray-600">Stage:</span> {job.production.stage}
+        </p>
+        <p className="mt-1 text-xs font-medium text-gray-800">
+          <span className="font-semibold text-gray-600">Next:</span> {job.production.nextAction}
+        </p>
       </div>
 
       <div className="mt-2 flex items-center justify-between border-t pt-2 text-[11px] text-gray-500">

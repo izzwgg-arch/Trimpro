@@ -13,6 +13,7 @@ import { DashboardScreen } from '../screens/dashboard/DashboardScreen'
 import { JobsScreen } from '../screens/jobs/JobsScreen'
 import { JobDetailScreen } from '../screens/jobs/JobDetailScreen'
 import { AllJobsScreen } from '../screens/jobs/AllJobsScreen'
+import { ProductionScreen } from '../screens/jobs/ProductionScreen'
 import { AdminJobDetailScreen } from '../screens/jobs/AdminJobDetailScreen'
 import { CreateJobScreen } from '../screens/jobs/CreateJobScreen'
 import { EditJobScreen } from '../screens/jobs/EditJobScreen'
@@ -79,6 +80,7 @@ const baseLinking: LinkingOptions<RootDrawerParamList> = {
               JobsList: 'jobs',
               JobDetail: 'jobs/:jobId',
               AllJobsList: 'all-jobs',
+              Production: 'production',
               AdminJobDetail: 'all-jobs/:jobId',
               CreateJob: 'all-jobs/new',
               EditJob: 'all-jobs/:jobId/edit',
@@ -140,6 +142,7 @@ function JobsStackNavigator() {
       <JobsStack.Screen name="DashboardHome" component={DashboardScreen} options={mainHeaderOptions('Dashboard')} />
       <JobsStack.Screen name="JobDetail" component={JobDetailScreen} options={detailsHeaderOptions('Job Details')} />
       <JobsStack.Screen name="AllJobsList" component={AllJobsScreen} options={mainHeaderOptions('All Jobs')} />
+      <JobsStack.Screen name="Production" component={ProductionScreen} options={mainHeaderOptions('Production')} />
       <JobsStack.Screen name="AdminJobDetail" component={AdminJobDetailScreen} options={detailsHeaderOptions('Job Details')} />
       <JobsStack.Screen name="CreateJob" component={CreateJobScreen} options={detailsHeaderOptions('Create Job')} />
       <JobsStack.Screen name="EditJob" component={EditJobScreen} options={detailsHeaderOptions('Edit Job')} />
@@ -377,7 +380,7 @@ function MainTabsNavigator() {
 function DrawerContent(props: DrawerContentComponentProps) {
   const { user, signOut } = useAuth()
   const outboxCount = useOutboxCount()
-  const { canViewAllJobs, canViewRequests } = useMobilePermissions()
+  const { canViewAllJobs, canViewRequests, hasWebPermission } = useMobilePermissions()
   const unreadQuery = useQuery({
     queryKey: ['mobile-notifications-unread'],
     queryFn: () => apiRequest<{ unreadCount: number }>('/api/mobile/notifications?limit=1'),
@@ -401,6 +404,9 @@ function DrawerContent(props: DrawerContentComponentProps) {
     },
     ...(canViewAllJobs()
       ? [{ key: 'AllJobsList', label: 'All Jobs', icon: 'list-outline', target: { screen: 'JobsTab', params: { screen: 'AllJobsList' } } } as const]
+      : []),
+    ...(hasWebPermission('production.view')
+      ? [{ key: 'Production', label: 'Production', icon: 'construct-outline', target: { screen: 'JobsTab', params: { screen: 'Production' } } } as const]
       : []),
     ...(canViewRequests()
       ? [{ key: 'RequestsHome', label: 'Requests', icon: 'document-text-outline', target: { screen: 'JobsTab', params: { screen: 'RequestsHome' } } } as const]

@@ -4,6 +4,7 @@ export type JobsStackParamList = {
   DashboardHome: undefined
   JobsList: undefined
   AllJobsList: undefined
+  Production: undefined
   JobDetail: { jobId: string }
   AdminJobDetail: { jobId: string }
   CreateJob: undefined
