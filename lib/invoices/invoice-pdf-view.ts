@@ -86,10 +86,23 @@ export function prepareInvoiceForPdfView(
 
   const customerLines = buildCustomerLinesFromGroups(companyLines, meta)
 
+  // Aggregate the source estimate total per group so a collapsed bundle line can
+  // still show what % of the estimate it represents (progress billing).
+  const groupEstimateTotals = new Map<string, number>()
+  for (const item of lineItems) {
+    const gid = item.groupId || item.group?.id
+    if (gid && item.estimateLineTotal != null) {
+      const val = Number(item.estimateLineTotal)
+      if (isFinite(val)) groupEstimateTotals.set(gid, (groupEstimateTotals.get(gid) || 0) + val)
+    }
+  }
+
   const customerPdfItems = customerLines.map((line, index) => {
     const name = line.title?.trim()
       ? `Line #${line.lineNumber} — ${line.title.trim()}`
       : `Line #${line.lineNumber}`
+    const groupId = companyLines[index]?.id
+    const groupEstimateTotal = groupId ? groupEstimateTotals.get(groupId) : undefined
     return {
       id: line.id || `customer-line-${index}`,
       description: name,
@@ -98,6 +111,7 @@ export function prepareInvoiceForPdfView(
       unitPrice: line.total,
       unitCost: null,
       total: line.total,
+      estimateLineTotal: groupEstimateTotal ?? null,
       sortOrder: index,
       taxable: false,
       isVisibleToClient: true,

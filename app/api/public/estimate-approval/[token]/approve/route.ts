@@ -313,6 +313,7 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
                 unitCost: li.unitCost ?? null,
                 sourceItemId: li.sourceItemId || null,
                 sourceBundleId: li.sourceBundleId || null,
+                estimateLineTotal: toNumber(li.unitPrice) * toNumber(li.quantity || 1),
               }
             })
 
@@ -370,6 +371,7 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
                   unitCost: lid.unitCost,
                   sourceItemId: lid.sourceItemId,
                   sourceBundleId: lid.sourceBundleId,
+                  estimateLineTotal: lid.estimateLineTotal,
                 },
               })
             }

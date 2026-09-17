@@ -108,6 +108,7 @@ export async function POST(
           taxRate: item.taxRate,
           sourceItemId: item.sourceItemId,
           sourceBundleId: item.sourceBundleId,
+          estimateLineTotal: item.estimateLineTotal,
         })),
       })
     }

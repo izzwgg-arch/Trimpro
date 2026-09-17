@@ -118,6 +118,7 @@ export async function POST(
       taxRate: number | null
       sourceItemId: string | null
       sourceBundleId: string | null
+      estimateLineTotal: number | null
     }> = []
     let subtotalCents = 0
     let progressPercent = 0
@@ -188,6 +189,7 @@ export async function POST(
           taxRate: isSubtotal ? null : (line.taxRate ? Number(line.taxRate) : null),
           sourceItemId: line.sourceItemId || null,
           sourceBundleId: line.sourceBundleId || null,
+          estimateLineTotal: baseTotal,
         })
       }
 
@@ -235,6 +237,7 @@ export async function POST(
           taxRate: line.taxRate ? Number(line.taxRate) : null,
           sourceItemId: line.sourceItemId || null,
           sourceBundleId: line.sourceBundleId || null,
+          estimateLineTotal: isSubtotal ? null : Number(line.total),
         }
       })
     }

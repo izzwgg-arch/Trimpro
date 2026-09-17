@@ -443,6 +443,13 @@ export async function POST(request: NextRequest) {
             notes: item.notes || null,
             sourceItemId: item.sourceItemId || null,
             sourceBundleId: item.sourceBundleId || null,
+            estimateLineTotal: isSubtotalItem
+              ? null
+              : item.estimateLineTotal != null
+                ? (typeof item.estimateLineTotal === 'number'
+                    ? item.estimateLineTotal
+                    : parseFloat(item.estimateLineTotal))
+                : null,
           },
         })
       }

@@ -78,6 +78,8 @@ interface LineItem {
   /** Line total when mode is CUSTOM_AMT */
   progressAmount?: string
   baseUnitPrice?: string
+  /** Snapshot of the source estimate line's full total, for "% of estimate" display */
+  estimateLineTotal?: string
 }
 
 function createManualGroupId() {
@@ -573,6 +575,7 @@ export default function NewInvoicePage() {
               progressBillMode,
               progressCustom: String(customPct),
               baseUnitPrice: li.unitPrice.toString(),
+              estimateLineTotal: (baseUp * Number(li.quantity)).toString(),
             })
           } else {
             mappedItems.push({
@@ -596,6 +599,7 @@ export default function NewInvoicePage() {
               groupName: groupId ? groupName : undefined,
               sourceItemId: li.sourceItemId || undefined,
               sourceBundleId: li.sourceBundleId || undefined,
+              estimateLineTotal: (baseUp * Number(li.quantity)).toString(),
             })
           }
         })
@@ -1430,6 +1434,7 @@ export default function NewInvoicePage() {
           groupId: item.groupId || null,
           sourceItemId: item.sourceItemId || null,
           sourceBundleId: item.sourceBundleId || null,
+          estimateLineTotal: item.isSubtotal ? null : (item.estimateLineTotal ?? null),
         }))
 
       const apiOptionalItems = optionalItems

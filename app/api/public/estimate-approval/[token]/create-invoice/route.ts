@@ -203,6 +203,7 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
             notes: li.notes || null,
             sourceItemId: li.sourceItemId || null,
             sourceBundleId: li.sourceBundleId || null,
+            estimateLineTotal: itemTotal,
           } as any,
         })
       }

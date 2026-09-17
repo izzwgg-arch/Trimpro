@@ -258,13 +258,19 @@ export function buildInvoicePdfHtml(
     const notesCell = item.showNotesToCustomer !== false ? escapeHtmlMultiline(item.notes || '') : ''
     const costCell = item.showCostToCustomer === true ? `$${Number(item.unitCost || 0).toFixed(2)}` : ''
     const priceCell = item.showPriceToCustomer !== false ? `$${Number(item.unitPrice).toFixed(2)}` : ''
+    const estTot = item.estimateLineTotal != null ? Number(item.estimateLineTotal) : NaN
+    const lineTot = Number(item.total)
+    const pctLabel =
+      isFinite(estTot) && estTot !== 0 && isFinite(lineTot)
+        ? `${(() => { const p = (lineTot / estTot) * 100; return p % 1 === 0 ? p.toFixed(0) : p.toFixed(1) })()}% of est.`
+        : ''
     return `<tr>
       ${showNameCol ? `<td>${nameCell}</td>` : ''}
       ${showNotesCol ? `<td>${notesCell}</td>` : ''}
       <td class="text-right">${Number(item.quantity).toFixed(2)}</td>
       ${showCostCol ? `<td class="text-right">${costCell}</td>` : ''}
       ${showPriceCol ? `<td class="text-right">${priceCell}</td>` : ''}
-      <td class="text-right">$${Number(item.total).toFixed(2)}</td>
+      <td class="text-right">$${Number(item.total).toFixed(2)}${pctLabel ? `<div style="font-size:10px;color:#9ca3af;font-weight:400;">${pctLabel}</div>` : ''}</td>
     </tr>`
   }
 
@@ -452,13 +458,19 @@ export function buildEstimatePdfHtml(
     const notesCell = item.showNotesToCustomer !== false ? escapeHtmlMultiline(item.notes || '') : ''
     const costCell = item.showCostToCustomer === true ? `$${Number(item.unitCost || 0).toFixed(2)}` : ''
     const priceCell = item.showPriceToCustomer !== false ? `$${Number(item.unitPrice).toFixed(2)}` : ''
+    const estTot = item.estimateLineTotal != null ? Number(item.estimateLineTotal) : NaN
+    const lineTot = Number(item.total)
+    const pctLabel =
+      isFinite(estTot) && estTot !== 0 && isFinite(lineTot)
+        ? `${(() => { const p = (lineTot / estTot) * 100; return p % 1 === 0 ? p.toFixed(0) : p.toFixed(1) })()}% of est.`
+        : ''
     return `<tr>
       ${showNameCol ? `<td>${nameCell}</td>` : ''}
       ${showNotesCol ? `<td>${notesCell}</td>` : ''}
       <td class="text-right">${Number(item.quantity).toFixed(2)}</td>
       ${showCostCol ? `<td class="text-right">${costCell}</td>` : ''}
       ${showPriceCol ? `<td class="text-right">${priceCell}</td>` : ''}
-      <td class="text-right">$${Number(item.total).toFixed(2)}</td>
+      <td class="text-right">$${Number(item.total).toFixed(2)}${pctLabel ? `<div style="font-size:10px;color:#9ca3af;font-weight:400;">${pctLabel}</div>` : ''}</td>
     </tr>`
   }
 

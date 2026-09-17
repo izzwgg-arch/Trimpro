@@ -94,6 +94,7 @@ interface InvoiceDetail {
       customerEdited?: boolean | null
     } | null
     sourceItemId: string | null
+    estimateLineTotal?: string | null
     sourceItem: {
       id: string
       name: string
@@ -131,6 +132,20 @@ const statusColors: Record<string, string> = {
   PAID: 'bg-green-100 text-green-800',
   OVERDUE: 'bg-red-100 text-red-800',
   CANCELLED: 'bg-gray-100 text-gray-800',
+}
+
+/**
+ * Percentage this line's amount represents of the full source estimate line
+ * total (progress-billing insight). Returns null when there is no linked
+ * estimate line to compare against.
+ */
+function estimatePctOfLine(total?: string | null, estimateLineTotal?: string | null): string | null {
+  if (estimateLineTotal == null) return null
+  const e = parseFloat(estimateLineTotal)
+  const t = parseFloat(total || '0')
+  if (!isFinite(e) || e === 0 || !isFinite(t)) return null
+  const pct = (t / e) * 100
+  return `${pct % 1 === 0 ? pct.toFixed(0) : pct.toFixed(1)}% of est.`
 }
 
 export default function InvoiceDetailPage() {
@@ -1783,6 +1798,11 @@ export default function InvoiceDetailPage() {
                                 <td className="py-3 px-4 text-right">{formatCurrency(parseFloat(item.unitPrice))}</td>
                                 <td className="py-3 px-4 text-right">
                                   {formatCurrency(parseFloat(item.total))}
+                                  {estimatePctOfLine(item.total, item.estimateLineTotal) && (
+                                    <div className="text-xs font-normal text-gray-400">
+                                      {estimatePctOfLine(item.total, item.estimateLineTotal)}
+                                    </div>
+                                  )}
                                 </td>
                               </tr>
                             )
@@ -1830,6 +1850,11 @@ export default function InvoiceDetailPage() {
                             <td className="py-3 px-4 text-right">{formatCurrency(parseFloat(item.unitPrice))}</td>
                             <td className="py-3 px-4 text-right font-semibold">
                               {formatCurrency(parseFloat(item.total))}
+                              {estimatePctOfLine(item.total, item.estimateLineTotal) && (
+                                <div className="text-xs font-normal text-gray-400">
+                                  {estimatePctOfLine(item.total, item.estimateLineTotal)}
+                                </div>
+                              )}
                             </td>
                           </tr>
                         )

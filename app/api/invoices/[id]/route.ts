@@ -170,6 +170,7 @@ export async function GET(
         } : null,
         sourceItemId: item.sourceItemId || null,
         sourceBundleId: item.sourceBundleId || null,
+        estimateLineTotal: item.estimateLineTotal != null ? item.estimateLineTotal.toString() : null,
         sourceItem: item.sourceItem ? {
           id: item.sourceItem.id,
           name: item.sourceItem.name,
@@ -404,6 +405,13 @@ export async function PUT(
             notes: item.notes || null,
             sourceItemId: item.sourceItemId || null,
             sourceBundleId: item.sourceBundleId || null,
+            estimateLineTotal: isSubtotalItem
+              ? null
+              : item.estimateLineTotal != null
+                ? (typeof item.estimateLineTotal === 'number'
+                    ? item.estimateLineTotal
+                    : parseFloat(item.estimateLineTotal))
+                : null,
           },
         })
       }

@@ -69,6 +69,8 @@ interface LineItem {
   sourceItemId?: string
   sourceBundleId?: string
   isSubtotal?: boolean
+  /** Snapshot of the source estimate line's full total, for "% of estimate" display */
+  estimateLineTotal?: string
 }
 
 function createManualGroupId() {
@@ -306,6 +308,7 @@ export default function EditInvoicePage() {
           groupId: li.groupId || undefined,
           sourceItemId: li.sourceItemId || undefined,
           sourceBundleId: li.sourceBundleId || undefined,
+          estimateLineTotal: (li as any).estimateLineTotal ?? undefined,
           isVisibleToClient: li.isVisibleToClient !== false,
           isSubtotal: isSubtotalRow,
         })
@@ -1020,6 +1023,7 @@ export default function EditInvoicePage() {
           groupId: item.groupId || null,
           sourceItemId: item.sourceItemId || null,
           sourceBundleId: item.sourceBundleId || null,
+          estimateLineTotal: item.isSubtotal ? null : (item.estimateLineTotal ?? null),
         }))
 
       const apiOptionalItems = optionalItems
@@ -1714,6 +1718,17 @@ export default function EditInvoicePage() {
                               <div className="px-3 py-2 bg-gray-50 rounded border text-right font-medium">
                                 ${(parseFloat(item.quantity || '0') * parseFloat(item.unitPrice || '0')).toFixed(2)}
                               </div>
+                              {(() => {
+                                const est = item.estimateLineTotal ? parseFloat(item.estimateLineTotal) : NaN
+                                const tot = parseFloat(item.quantity || '0') * parseFloat(item.unitPrice || '0')
+                                if (!isFinite(est) || est === 0) return null
+                                const pct = (tot / est) * 100
+                                return (
+                                  <div className="text-[11px] text-gray-400 text-right mt-0.5">
+                                    {pct % 1 === 0 ? pct.toFixed(0) : pct.toFixed(1)}% of est.
+                                  </div>
+                                )
+                              })()}
                             </div>
                           </>
                         )}
