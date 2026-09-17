@@ -35,6 +35,42 @@ export function insertDocumentLineAfter<T extends DocumentLineItemLike>(
   return { items: next, focusIndex: index + 1 }
 }
 
+/**
+ * Advance to the next editable line (used when the picker fires "next line",
+ * e.g. Enter). When the current line belongs to a bundle group, the new line
+ * is inserted right after it INSIDE that same group, so items added under a
+ * bundle stay under the bundle instead of being appended to the end of the
+ * document. Outside a group it preserves the old behavior: reuse the existing
+ * next row if there is one, otherwise append a blank at the end (which joins
+ * the trailing bundle, if any, so a run of items keeps flowing into it).
+ */
+export function addNextDocumentLine<T extends DocumentLineItemLike>(
+  items: T[],
+  currentIndex: number,
+  createBlank: () => T
+): { items: T[]; focusIndex: number } {
+  const current = items[currentIndex]
+  if (current?.groupId && !current.isSubtotal && !current.isGroupHeader) {
+    const blank = createBlank()
+    blank.groupId = current.groupId
+    blank.groupName = current.groupName
+    const next = [...items]
+    next.splice(currentIndex + 1, 0, blank)
+    return { items: next, focusIndex: currentIndex + 1 }
+  }
+
+  const nextIndex = currentIndex + 1
+  if (nextIndex < items.length) return { items, focusIndex: nextIndex }
+
+  const blank = createBlank()
+  const lastHeader = [...items].reverse().find((it) => it.isGroupHeader && it.groupId)
+  if (lastHeader?.groupId) {
+    blank.groupId = lastHeader.groupId
+    blank.groupName = lastHeader.groupName
+  }
+  return { items: [...items, blank], focusIndex: nextIndex }
+}
+
 /** Append a new editable row at the end of a bundle on this document only. */
 export function addItemToDocumentBundle<T extends DocumentLineItemLike>(
   items: T[],

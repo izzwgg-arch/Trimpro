@@ -20,6 +20,7 @@ import { cnCustomerVisibilityBulkPill } from '@/lib/ui/customer-visibility-bulk-
 import { applyBundleSelectionToLines } from '@/lib/bundles/expand-line-items'
 import {
   addItemToDocumentBundle,
+  addNextDocumentLine,
   removeDocumentLineItem,
 } from '@/lib/bundles/document-line-item-actions'
 import {
@@ -712,23 +713,21 @@ export default function EditEstimatePage() {
   }
 
   const handleNextLine = (currentIndex: number) => {
-    const nextIndex = currentIndex + 1
+    let nextIndex = currentIndex + 1
     setLineItems((prev) => {
-      if (nextIndex < prev.length) return prev
-      return [
-        ...prev,
-        {
-          description: '',
-          quantity: '1',
-          unitPrice: '0',
-          taxable: true,
-          showDescriptionToCustomer: false,
-          showCostToCustomer: false,
-          showPriceToCustomer: true,
-          showTaxToCustomer: true,
-          showNotesToCustomer: true,
-        },
-      ]
+      const result = addNextDocumentLine(prev, currentIndex, (): LineItem => ({
+        description: '',
+        quantity: '1',
+        unitPrice: '0',
+        taxable: true,
+        showDescriptionToCustomer: false,
+        showCostToCustomer: false,
+        showPriceToCustomer: true,
+        showTaxToCustomer: true,
+        showNotesToCustomer: true,
+      }))
+      nextIndex = result.focusIndex
+      return result.items
     })
     setTimeout(() => {
       const nextInput = pickerInputRefs.current[nextIndex]
@@ -747,23 +746,21 @@ export default function EditEstimatePage() {
   }
 
   const handleNextOptionalLine = (currentIndex: number) => {
-    const nextIndex = currentIndex + 1
+    let nextIndex = currentIndex + 1
     setOptionalItems((prev) => {
-      if (nextIndex < prev.length) return prev
-      return [
-        ...prev,
-        {
-          description: '',
-          quantity: '1',
-          unitPrice: '0',
-          taxable: true,
-          showDescriptionToCustomer: false,
-          showCostToCustomer: false,
-          showPriceToCustomer: true,
-          showTaxToCustomer: true,
-          showNotesToCustomer: true,
-        },
-      ]
+      const result = addNextDocumentLine(prev, currentIndex, (): LineItem => ({
+        description: '',
+        quantity: '1',
+        unitPrice: '0',
+        taxable: true,
+        showDescriptionToCustomer: false,
+        showCostToCustomer: false,
+        showPriceToCustomer: true,
+        showTaxToCustomer: true,
+        showNotesToCustomer: true,
+      }))
+      nextIndex = result.focusIndex
+      return result.items
     })
     setTimeout(() => {
       const nextInput = optionalPickerInputRefs.current[nextIndex]
