@@ -404,6 +404,10 @@ export default function InvoicesPage() {
       setBulkPaymentReference('')
       setSelectedIds((prev) => prev.filter((id) => !items.some((item) => item.invoiceId === id)))
       await fetchInvoices()
+      // Show the combined receipt for a payment spread across multiple invoices.
+      if (data.paymentGroupId && items.length > 1) {
+        window.open(`/dashboard/payments/group/${data.paymentGroupId}`, '_blank')
+      }
     } catch (error) {
       console.error('Bulk payment error:', error)
       setBulkPaymentError('Failed to record payments. Please try again.')

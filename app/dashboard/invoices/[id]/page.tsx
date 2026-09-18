@@ -122,6 +122,7 @@ interface InvoiceDetail {
     reference: string | null
     provider: string | null
     notes: string | null
+    paymentGroupId: string | null
   }>
 }
 
@@ -1908,6 +1909,16 @@ export default function InvoiceDetailPage() {
                         </div>
                         {payment.reference && (
                           <div className="text-xs text-gray-500">Ref: {payment.reference}</div>
+                        )}
+                        {payment.paymentGroupId && (
+                          <a
+                            href={`/dashboard/payments/group/${payment.paymentGroupId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs font-medium text-blue-600 hover:underline"
+                          >
+                            Part of a grouped payment — view combined receipt
+                          </a>
                         )}
                       </div>
                       <div className="flex items-center gap-2">

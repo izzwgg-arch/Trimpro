@@ -760,6 +760,10 @@ export default function ClientDetailPage() {
       setSelectedInvoiceIds([])
       await fetchClient()
       await fetchDocuments()
+      // Show the combined receipt for a payment spread across multiple invoices.
+      if (data.paymentGroupId && items.length > 1) {
+        window.open(`/dashboard/payments/group/${data.paymentGroupId}`, '_blank')
+      }
     } catch (error) {
       console.error('Bulk client payment error:', error)
       setBulkPaymentError('Failed to apply payment.')

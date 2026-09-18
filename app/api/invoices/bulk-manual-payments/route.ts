@@ -231,6 +231,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       count: results.length,
+      paymentGroupId,
       totalApplied: results.reduce((sum, item) => sum + item.amount, 0),
       invoices: results.map((item) => ({
         id: item.invoiceId,

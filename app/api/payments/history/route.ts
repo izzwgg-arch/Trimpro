@@ -125,6 +125,7 @@ export async function GET(request: NextRequest) {
           : p.status
       return {
         id: p.id,
+        paymentGroupId: p.paymentGroupId || null,
         provider,
         providerPaymentId: p.providerPaymentId || p.solaTransactionId || p.reference || '',
         providerInvoiceId: p.providerInvoiceId || p.invoice?.invoiceNumber || '',

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Download, FileText, Search } from 'lucide-react'
 import { downloadReportExport } from '@/lib/reports/download-export'
@@ -15,6 +15,7 @@ import { formatCurrency } from '@/lib/utils'
 
 type PaymentRow = {
   id: string
+  paymentGroupId: string | null
   provider: string
   providerPaymentId: string
   providerInvoiceId: string
@@ -68,6 +69,7 @@ export default function PaymentHistoryPage() {
   const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null)
 
   const [rows, setRows] = useState<PaymentRow[]>([])
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [summary, setSummary] = useState<PaymentsSummary>({ totalAmount: 0, totalRefunded: 0, succeededCount: 0, failedCount: 0 })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -79,6 +81,86 @@ export default function PaymentHistoryPage() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+
+  // Collapse payments that belong to one grouped transaction (paymentGroupId)
+  // into a single expandable summary row.
+  const groupedRows = useMemo(() => {
+    const map = new Map<string, PaymentRow[]>()
+    const order: string[] = []
+    for (const r of rows) {
+      const key = r.paymentGroupId || `single:${r.id}`
+      if (!map.has(key)) {
+        map.set(key, [])
+        order.push(key)
+      }
+      map.get(key)!.push(r)
+    }
+    return order.map((key) => {
+      const members = map.get(key)!
+      return { key, groupId: members[0].paymentGroupId, members }
+    })
+  }, [rows])
+
+  const toggleGroup = (key: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  const renderPaymentRow = (row: PaymentRow, indent = false) => {
+    const fullyRefunded = row.refundStatus === 'FULLY_REFUNDED'
+    const isCardPayment = row.paymentMethod === 'CARD'
+    return (
+      <tr key={row.id} className={`border-b ${indent ? 'bg-gray-50/40' : ''}`}>
+        <td className={`p-2 font-mono text-xs ${indent ? 'pl-6' : ''}`}>{row.id}</td>
+        <td className="p-2">{row.provider}</td>
+        <td className="p-2 font-mono text-xs">{row.providerPaymentId || '-'}</td>
+        <td className="p-2 font-mono text-xs">{row.providerInvoiceId || '-'}</td>
+        <td className="p-2">{row.customerName}</td>
+        <td className="p-2">{row.invoiceNumber}</td>
+        <td className="p-2 text-right">{row.currency} {Number(row.amount || 0).toFixed(2)}</td>
+        <td className="p-2">{row.paymentMethod}</td>
+        <td className="p-2">{displayStatus(row.status)}</td>
+        <td className="p-2">
+          {row.refundStatus}
+          {row.refundedAmount > 0 ? ` ($${row.refundedAmount.toFixed(2)})` : ''}
+        </td>
+        <td className="p-2">{new Date(row.createdAt).toLocaleString()}</td>
+        <td className="p-2">{row.refundedAt ? new Date(row.refundedAt).toLocaleString() : '-'}</td>
+        <td className="p-2">
+          <div className="flex flex-wrap gap-2">
+            {canRefund && isCardPayment ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={fullyRefunded}
+                onClick={() => openRefundModal(row)}
+              >
+                Refund
+              </Button>
+            ) : null}
+            {canManagePayments ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-red-700 border-red-200 hover:bg-red-50"
+                disabled={deletingPaymentId === row.id || row.refundedAmount > 0}
+                onClick={() => void deletePayment(row)}
+              >
+                {deletingPaymentId === row.id ? 'Deleting...' : 'Delete'}
+              </Button>
+            ) : null}
+            {!canRefund && !canManagePayments ? (
+              <span className="text-xs text-gray-400">No access</span>
+            ) : null}
+          </div>
+        </td>
+      </tr>
+    )
+  }
 
   const [refundModal, setRefundModal] = useState<RefundModalState>({
     open: false,
@@ -425,55 +507,48 @@ export default function PaymentHistoryPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row) => {
-                    const fullyRefunded = row.refundStatus === 'FULLY_REFUNDED'
-                    const isCardPayment = row.paymentMethod === 'CARD'
+                  {groupedRows.map((g) => {
+                    if (g.members.length === 1) return renderPaymentRow(g.members[0])
+                    const isExpanded = expandedGroups.has(g.key)
+                    const first = g.members[0]
+                    const groupTotal = g.members.reduce((s, m) => s + Number(m.amount || 0), 0)
                     return (
-                      <tr key={row.id} className="border-b">
-                        <td className="p-2 font-mono text-xs">{row.id}</td>
-                        <td className="p-2">{row.provider}</td>
-                        <td className="p-2 font-mono text-xs">{row.providerPaymentId || '-'}</td>
-                        <td className="p-2 font-mono text-xs">{row.providerInvoiceId || '-'}</td>
-                        <td className="p-2">{row.customerName}</td>
-                        <td className="p-2">{row.invoiceNumber}</td>
-                        <td className="p-2 text-right">{row.currency} {Number(row.amount || 0).toFixed(2)}</td>
-                        <td className="p-2">{row.paymentMethod}</td>
-                        <td className="p-2">{displayStatus(row.status)}</td>
-                        <td className="p-2">
-                          {row.refundStatus}
-                          {row.refundedAmount > 0 ? ` ($${row.refundedAmount.toFixed(2)})` : ''}
-                        </td>
-                        <td className="p-2">{new Date(row.createdAt).toLocaleString()}</td>
-                        <td className="p-2">{row.refundedAt ? new Date(row.refundedAt).toLocaleString() : '-'}</td>
-                        <td className="p-2">
-                          <div className="flex flex-wrap gap-2">
-                            {canRefund && isCardPayment ? (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={fullyRefunded}
-                                onClick={() => openRefundModal(row)}
+                      <Fragment key={g.key}>
+                        <tr className="border-b bg-blue-50/60">
+                          <td className="p-2 text-xs font-semibold">
+                            <button
+                              type="button"
+                              onClick={() => toggleGroup(g.key)}
+                              className="inline-flex items-center gap-1 text-blue-800 hover:underline"
+                            >
+                              <span>{isExpanded ? '▾' : '▸'}</span>
+                              Grouped payment ({g.members.length})
+                            </button>
+                          </td>
+                          <td className="p-2">{first.provider}</td>
+                          <td className="p-2">-</td>
+                          <td className="p-2">-</td>
+                          <td className="p-2">{first.customerName}</td>
+                          <td className="p-2">{g.members.length} invoices</td>
+                          <td className="p-2 text-right font-semibold">{first.currency} {groupTotal.toFixed(2)}</td>
+                          <td className="p-2">{first.paymentMethod}</td>
+                          <td className="p-2">{displayStatus(first.status)}</td>
+                          <td className="p-2">-</td>
+                          <td className="p-2">{new Date(first.createdAt).toLocaleString()}</td>
+                          <td className="p-2">-</td>
+                          <td className="p-2">
+                            {g.groupId ? (
+                              <Link
+                                href={`/dashboard/payments/group/${g.groupId}`}
+                                className="text-blue-600 hover:underline text-sm font-medium"
                               >
-                                Refund
-                              </Button>
+                                View receipt
+                              </Link>
                             ) : null}
-                            {canManagePayments ? (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="text-red-700 border-red-200 hover:bg-red-50"
-                                disabled={deletingPaymentId === row.id || row.refundedAmount > 0}
-                                onClick={() => void deletePayment(row)}
-                              >
-                                {deletingPaymentId === row.id ? 'Deleting...' : 'Delete'}
-                              </Button>
-                            ) : null}
-                            {!canRefund && !canManagePayments ? (
-                              <span className="text-xs text-gray-400">No access</span>
-                            ) : null}
-                          </div>
-                        </td>
-                      </tr>
+                          </td>
+                        </tr>
+                        {isExpanded && g.members.map((m) => renderPaymentRow(m, true))}
+                      </Fragment>
                     )
                   })}
                 </tbody>
