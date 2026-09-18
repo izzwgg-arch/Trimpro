@@ -95,6 +95,7 @@ interface InvoiceDetail {
     } | null
     sourceItemId: string | null
     estimateLineTotal?: string | null
+    billedToDate?: string | null
     sourceItem: {
       id: string
       name: string
@@ -135,17 +136,17 @@ const statusColors: Record<string, string> = {
 }
 
 /**
- * Percentage this line's amount represents of the full source estimate line
- * total (progress-billing insight). Returns null when there is no linked
- * estimate line to compare against.
+ * Cumulative "% billed" of the source estimate line: how much has been billed
+ * across ALL of the estimate's invoices, over the full estimate line total.
+ * Returns null when there is no linked estimate line to compare against.
  */
-function estimatePctOfLine(total?: string | null, estimateLineTotal?: string | null): string | null {
-  if (estimateLineTotal == null) return null
+function billedPctLabel(billedToDate?: string | null, estimateLineTotal?: string | null): string | null {
+  if (estimateLineTotal == null || billedToDate == null) return null
   const e = parseFloat(estimateLineTotal)
-  const t = parseFloat(total || '0')
-  if (!isFinite(e) || e === 0 || !isFinite(t)) return null
-  const pct = (t / e) * 100
-  return `${pct % 1 === 0 ? pct.toFixed(0) : pct.toFixed(1)}% of est.`
+  const b = parseFloat(billedToDate)
+  if (!isFinite(e) || e === 0 || !isFinite(b)) return null
+  const pct = (b / e) * 100
+  return `${pct % 1 === 0 ? pct.toFixed(0) : pct.toFixed(1)}% billed`
 }
 
 export default function InvoiceDetailPage() {
@@ -1798,9 +1799,9 @@ export default function InvoiceDetailPage() {
                                 <td className="py-3 px-4 text-right">{formatCurrency(parseFloat(item.unitPrice))}</td>
                                 <td className="py-3 px-4 text-right">
                                   {formatCurrency(parseFloat(item.total))}
-                                  {estimatePctOfLine(item.total, item.estimateLineTotal) && (
+                                  {billedPctLabel(item.billedToDate, item.estimateLineTotal) && (
                                     <div className="text-xs font-normal text-gray-400">
-                                      {estimatePctOfLine(item.total, item.estimateLineTotal)}
+                                      {billedPctLabel(item.billedToDate, item.estimateLineTotal)}
                                     </div>
                                   )}
                                 </td>
@@ -1850,9 +1851,9 @@ export default function InvoiceDetailPage() {
                             <td className="py-3 px-4 text-right">{formatCurrency(parseFloat(item.unitPrice))}</td>
                             <td className="py-3 px-4 text-right font-semibold">
                               {formatCurrency(parseFloat(item.total))}
-                              {estimatePctOfLine(item.total, item.estimateLineTotal) && (
+                              {billedPctLabel(item.billedToDate, item.estimateLineTotal) && (
                                 <div className="text-xs font-normal text-gray-400">
-                                  {estimatePctOfLine(item.total, item.estimateLineTotal)}
+                                  {billedPctLabel(item.billedToDate, item.estimateLineTotal)}
                                 </div>
                               )}
                             </td>

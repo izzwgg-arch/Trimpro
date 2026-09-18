@@ -599,6 +599,7 @@ export default function NewInvoicePage() {
               groupName: groupId ? groupName : undefined,
               sourceItemId: li.sourceItemId || undefined,
               sourceBundleId: li.sourceBundleId || undefined,
+              estimateLineItemId: li.id,
               estimateLineTotal: (baseUp * Number(li.quantity)).toString(),
             })
           }
@@ -1435,6 +1436,7 @@ export default function NewInvoicePage() {
           sourceItemId: item.sourceItemId || null,
           sourceBundleId: item.sourceBundleId || null,
           estimateLineTotal: item.isSubtotal ? null : (item.estimateLineTotal ?? null),
+          sourceEstimateLineItemId: item.isSubtotal ? null : (item.estimateLineItemId ?? null),
         }))
 
       const apiOptionalItems = optionalItems

@@ -259,10 +259,10 @@ export function buildInvoicePdfHtml(
     const costCell = item.showCostToCustomer === true ? `$${Number(item.unitCost || 0).toFixed(2)}` : ''
     const priceCell = item.showPriceToCustomer !== false ? `$${Number(item.unitPrice).toFixed(2)}` : ''
     const estTot = item.estimateLineTotal != null ? Number(item.estimateLineTotal) : NaN
-    const lineTot = Number(item.total)
+    const billed = item.billedToDate != null ? Number(item.billedToDate) : NaN
     const pctLabel =
-      isFinite(estTot) && estTot !== 0 && isFinite(lineTot)
-        ? `${(() => { const p = (lineTot / estTot) * 100; return p % 1 === 0 ? p.toFixed(0) : p.toFixed(1) })()}% of est.`
+      isFinite(estTot) && estTot !== 0 && isFinite(billed)
+        ? `${(() => { const p = (billed / estTot) * 100; return p % 1 === 0 ? p.toFixed(0) : p.toFixed(1) })()}% billed`
         : ''
     return `<tr>
       ${showNameCol ? `<td>${nameCell}</td>` : ''}
@@ -459,10 +459,10 @@ export function buildEstimatePdfHtml(
     const costCell = item.showCostToCustomer === true ? `$${Number(item.unitCost || 0).toFixed(2)}` : ''
     const priceCell = item.showPriceToCustomer !== false ? `$${Number(item.unitPrice).toFixed(2)}` : ''
     const estTot = item.estimateLineTotal != null ? Number(item.estimateLineTotal) : NaN
-    const lineTot = Number(item.total)
+    const billed = item.billedToDate != null ? Number(item.billedToDate) : NaN
     const pctLabel =
-      isFinite(estTot) && estTot !== 0 && isFinite(lineTot)
-        ? `${(() => { const p = (lineTot / estTot) * 100; return p % 1 === 0 ? p.toFixed(0) : p.toFixed(1) })()}% of est.`
+      isFinite(estTot) && estTot !== 0 && isFinite(billed)
+        ? `${(() => { const p = (billed / estTot) * 100; return p % 1 === 0 ? p.toFixed(0) : p.toFixed(1) })()}% billed`
         : ''
     return `<tr>
       ${showNameCol ? `<td>${nameCell}</td>` : ''}

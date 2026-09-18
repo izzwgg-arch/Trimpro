@@ -899,7 +899,8 @@ model InvoiceLineItem {
   taxable                   Boolean  @default(true)
   taxRate                   Decimal? @db.Decimal(5, 4)
   isSubtotal                Boolean  @default(false) // True for subtotal rows (sums items since previous subtotal)
-  estimateLineTotal         Decimal? @db.Decimal(10, 2) // Snapshot of the source estimate line's full total at conversion, for progress-billing "% of estimate" display
+  estimateLineTotal         Decimal? @db.Decimal(10, 2) // Snapshot of the source estimate line's full total at conversion, denominator for "% billed" display
+  sourceEstimateLineItemId  String? // FK-ish link to the source EstimateLineItem, used to sum cumulative billed % across invoices
 
   invoice    Invoice            @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   group      DocumentLineGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
@@ -910,6 +911,7 @@ model InvoiceLineItem {
   @@index([groupId])
   @@index([sourceItemId])
   @@index([vendorId])
+  @@index([sourceEstimateLineItemId])
   @@map("invoice_line_items")
 }
 

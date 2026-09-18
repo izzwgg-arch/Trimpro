@@ -109,6 +109,7 @@ export async function POST(
           sourceItemId: item.sourceItemId,
           sourceBundleId: item.sourceBundleId,
           estimateLineTotal: item.estimateLineTotal,
+          sourceEstimateLineItemId: item.sourceEstimateLineItemId,
         })),
       })
     }

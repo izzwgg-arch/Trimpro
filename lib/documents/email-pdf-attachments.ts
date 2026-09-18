@@ -1,5 +1,6 @@
 import { renderPdfFromHtml } from '@/lib/pdf/render-html-to-pdf'
 import type { PdfBranding } from '@/lib/branding/pdf'
+import { getBilledToDateByEstimateLine } from '@/lib/invoices/billed-to-date'
 import {
   buildInvoicePdfHtml,
   buildEstimatePdfHtml,
@@ -34,9 +35,25 @@ export async function renderInvoiceEmailPdfAttachment(
   view: 'customer' | 'company' = 'customer'
 ): Promise<PdfEmailAttachment> {
   const viewSuffix = view === 'company' ? '-company' : '-customer'
+  // Attach cumulative billed-to-date per line so the emailed PDF matches the
+  // download route (which enriches the same way).
+  let invoiceForPdf = invoice
+  if (invoice?.estimateId && Array.isArray(invoice.lineItems)) {
+    const billedMap = await getBilledToDateByEstimateLine(invoice.estimateId)
+    invoiceForPdf = {
+      ...invoice,
+      lineItems: invoice.lineItems.map((li: AnyRecord) => ({
+        ...li,
+        billedToDate:
+          li.sourceEstimateLineItemId && billedMap.has(li.sourceEstimateLineItemId)
+            ? billedMap.get(li.sourceEstimateLineItemId)
+            : (li.billedToDate ?? null),
+      })),
+    }
+  }
   return {
     filename: `Invoice-${safeFilenamePart(invoice.invoiceNumber, 'invoice')}${viewSuffix}.pdf`,
-    content: await renderPdfFromHtml(buildInvoicePdfHtml(invoice, brand, { view })),
+    content: await renderPdfFromHtml(buildInvoicePdfHtml(invoiceForPdf, brand, { view })),
     contentType: 'application/pdf',
   }
 }

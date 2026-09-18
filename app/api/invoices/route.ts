@@ -450,6 +450,7 @@ export async function POST(request: NextRequest) {
                     ? item.estimateLineTotal
                     : parseFloat(item.estimateLineTotal))
                 : null,
+            sourceEstimateLineItemId: isSubtotalItem ? null : (item.sourceEstimateLineItemId || null),
           },
         })
       }

@@ -7,6 +7,7 @@ import { formatAddressParts, parseAddressParts } from '@/lib/address/parse'
 import { geocodeAddressPartsFromString } from '@/lib/geocoding'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { calculateOrderedSubtotalRows } from '@/lib/documents/subtotals'
+import { getBilledToDateByEstimateLine } from '@/lib/invoices/billed-to-date'
 import {
   assertInvoiceNumberAvailableInQuickBooks,
   normalizeInvoiceNumber,
@@ -124,6 +125,12 @@ export async function GET(
         ? `${derived.street || jobSiteAddressRaw}, ${derived.city}, ${derived.state} ${derived.zipCode}`.trim()
         : jobSiteAddressRaw
 
+    // Cumulative "% billed" per source estimate line, summed across all of this
+    // estimate's non-cancelled invoices.
+    const billedToDateMap = invoice.estimateId
+      ? await getBilledToDateByEstimateLine(invoice.estimateId)
+      : new Map<string, number>()
+
     const invoiceResponse = {
       ...invoice,
       jobSiteAddress,
@@ -171,6 +178,11 @@ export async function GET(
         sourceItemId: item.sourceItemId || null,
         sourceBundleId: item.sourceBundleId || null,
         estimateLineTotal: item.estimateLineTotal != null ? item.estimateLineTotal.toString() : null,
+        sourceEstimateLineItemId: item.sourceEstimateLineItemId || null,
+        billedToDate:
+          item.sourceEstimateLineItemId && billedToDateMap.has(item.sourceEstimateLineItemId)
+            ? billedToDateMap.get(item.sourceEstimateLineItemId)!.toString()
+            : null,
         sourceItem: item.sourceItem ? {
           id: item.sourceItem.id,
           name: item.sourceItem.name,
@@ -412,6 +424,7 @@ export async function PUT(
                     ? item.estimateLineTotal
                     : parseFloat(item.estimateLineTotal))
                 : null,
+            sourceEstimateLineItemId: isSubtotalItem ? null : (item.sourceEstimateLineItemId || null),
           },
         })
       }

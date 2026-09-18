@@ -69,8 +69,12 @@ interface LineItem {
   sourceItemId?: string
   sourceBundleId?: string
   isSubtotal?: boolean
-  /** Snapshot of the source estimate line's full total, for "% of estimate" display */
+  /** Snapshot of the source estimate line's full total, denominator for "% billed" */
   estimateLineTotal?: string
+  /** Cumulative amount billed for the source estimate line across all invoices */
+  billedToDate?: string
+  /** Link to the source EstimateLineItem, for cumulative billed aggregation */
+  sourceEstimateLineItemId?: string
 }
 
 function createManualGroupId() {
@@ -309,6 +313,8 @@ export default function EditInvoicePage() {
           sourceItemId: li.sourceItemId || undefined,
           sourceBundleId: li.sourceBundleId || undefined,
           estimateLineTotal: (li as any).estimateLineTotal ?? undefined,
+          billedToDate: (li as any).billedToDate ?? undefined,
+          sourceEstimateLineItemId: (li as any).sourceEstimateLineItemId ?? undefined,
           isVisibleToClient: li.isVisibleToClient !== false,
           isSubtotal: isSubtotalRow,
         })
@@ -1024,6 +1030,7 @@ export default function EditInvoicePage() {
           sourceItemId: item.sourceItemId || null,
           sourceBundleId: item.sourceBundleId || null,
           estimateLineTotal: item.isSubtotal ? null : (item.estimateLineTotal ?? null),
+          sourceEstimateLineItemId: item.isSubtotal ? null : (item.sourceEstimateLineItemId ?? null),
         }))
 
       const apiOptionalItems = optionalItems
@@ -1720,12 +1727,12 @@ export default function EditInvoicePage() {
                               </div>
                               {(() => {
                                 const est = item.estimateLineTotal ? parseFloat(item.estimateLineTotal) : NaN
-                                const tot = parseFloat(item.quantity || '0') * parseFloat(item.unitPrice || '0')
-                                if (!isFinite(est) || est === 0) return null
-                                const pct = (tot / est) * 100
+                                const billed = item.billedToDate != null ? parseFloat(item.billedToDate) : NaN
+                                if (!isFinite(est) || est === 0 || !isFinite(billed)) return null
+                                const pct = (billed / est) * 100
                                 return (
                                   <div className="text-[11px] text-gray-400 text-right mt-0.5">
-                                    {pct % 1 === 0 ? pct.toFixed(0) : pct.toFixed(1)}% of est.
+                                    {pct % 1 === 0 ? pct.toFixed(0) : pct.toFixed(1)}% billed
                                   </div>
                                 )
                               })()}

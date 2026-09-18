@@ -4,6 +4,7 @@ import { renderPdfFromHtml } from '@/lib/pdf/render-html-to-pdf'
 import { getPdfBranding } from '@/lib/branding/pdf'
 import { buildInvoicePdfHtml } from '@/lib/documents/pdf-templates'
 import { parseInvoicePdfView } from '@/lib/invoices/invoice-pdf-view'
+import { getBilledToDateByEstimateLine } from '@/lib/invoices/billed-to-date'
 
 export const runtime = 'nodejs'
 
@@ -66,9 +67,23 @@ export async function GET(
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
     }
 
+    const billedMap = invoice.estimateId
+      ? await getBilledToDateByEstimateLine(invoice.estimateId)
+      : new Map<string, number>()
+    const invoiceForPdf = {
+      ...invoice,
+      lineItems: invoice.lineItems.map((li: any) => ({
+        ...li,
+        billedToDate:
+          li.sourceEstimateLineItemId && billedMap.has(li.sourceEstimateLineItemId)
+            ? billedMap.get(li.sourceEstimateLineItemId)
+            : null,
+      })),
+    }
+
     const brand = await getPdfBranding(invoice.tenantId)
     const viewSuffix = view === 'company' ? '-company' : '-customer'
-    const html = buildInvoicePdfHtml(invoice, brand, { shouldPrint, view })
+    const html = buildInvoicePdfHtml(invoiceForPdf, brand, { shouldPrint, view })
 
     if (wantsHtml) {
       return new NextResponse(html, {

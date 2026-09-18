@@ -255,6 +255,7 @@ export const createInvoiceSchema = z.object({
           sourceItemId: z.string().optional().nullable(),
           sourceBundleId: z.string().optional().nullable(),
           estimateLineTotal: z.union([z.string(), z.number()]).optional().nullable(),
+          sourceEstimateLineItemId: z.string().optional().nullable(),
         })
         .passthrough()
     )

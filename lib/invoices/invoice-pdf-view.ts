@@ -86,14 +86,20 @@ export function prepareInvoiceForPdfView(
 
   const customerLines = buildCustomerLinesFromGroups(companyLines, meta)
 
-  // Aggregate the source estimate total per group so a collapsed bundle line can
-  // still show what % of the estimate it represents (progress billing).
+  // Aggregate the source estimate total and cumulative billed amount per group so
+  // a collapsed bundle line can still show what % of the estimate has been billed.
   const groupEstimateTotals = new Map<string, number>()
+  const groupBilledTotals = new Map<string, number>()
   for (const item of lineItems) {
     const gid = item.groupId || item.group?.id
-    if (gid && item.estimateLineTotal != null) {
+    if (!gid) continue
+    if (item.estimateLineTotal != null) {
       const val = Number(item.estimateLineTotal)
       if (isFinite(val)) groupEstimateTotals.set(gid, (groupEstimateTotals.get(gid) || 0) + val)
+    }
+    if (item.billedToDate != null) {
+      const bval = Number(item.billedToDate)
+      if (isFinite(bval)) groupBilledTotals.set(gid, (groupBilledTotals.get(gid) || 0) + bval)
     }
   }
 
@@ -103,6 +109,7 @@ export function prepareInvoiceForPdfView(
       : `Line #${line.lineNumber}`
     const groupId = companyLines[index]?.id
     const groupEstimateTotal = groupId ? groupEstimateTotals.get(groupId) : undefined
+    const groupBilledTotal = groupId ? groupBilledTotals.get(groupId) : undefined
     return {
       id: line.id || `customer-line-${index}`,
       description: name,
@@ -112,6 +119,7 @@ export function prepareInvoiceForPdfView(
       unitCost: null,
       total: line.total,
       estimateLineTotal: groupEstimateTotal ?? null,
+      billedToDate: groupBilledTotal ?? null,
       sortOrder: index,
       taxable: false,
       isVisibleToClient: true,
