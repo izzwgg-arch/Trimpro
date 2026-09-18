@@ -42,6 +42,7 @@ interface InvoiceDetail {
   total: string
   balance: string
   paidAmount: string
+  clientCreditBalance?: number
   invoiceDate: string
   dueDate: string | null
   sentAt: string | null
@@ -184,6 +185,7 @@ export default function InvoiceDetailPage() {
   const [addPaymentReference, setAddPaymentReference] = useState('')
   const [addPaymentSaving, setAddPaymentSaving] = useState(false)
   const [addPaymentError, setAddPaymentError] = useState('')
+  const [applyingCredit, setApplyingCredit] = useState(false)
 
   // Edit Payment modal state
   const [editPaymentId, setEditPaymentId] = useState<string | null>(null)
@@ -857,6 +859,38 @@ export default function InvoiceDetailPage() {
     }
   }
 
+  const handleApplyCredit = async () => {
+    if (!invoice) return
+    setAddPaymentError('')
+    const balance = parseFloat(invoice.balance)
+    const credit = Number(invoice.clientCreditBalance || 0)
+    const amount = Math.min(balance, credit)
+    if (amount <= 0) {
+      setAddPaymentError('No credit available to apply.')
+      return
+    }
+    setApplyingCredit(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const res = await fetch(`/api/invoices/${invoice.id}/apply-credit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ amount }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setAddPaymentError(data.error || 'Failed to apply credit.')
+        return
+      }
+      setShowAddPayment(false)
+      await fetchInvoice()
+    } catch {
+      setAddPaymentError('Failed to apply credit. Please try again.')
+    } finally {
+      setApplyingCredit(false)
+    }
+  }
+
   function openEditPayment(payment: {
     id: string
     amount: string
@@ -1314,6 +1348,25 @@ export default function InvoiceDetailPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            {invoice && Number(invoice.clientCreditBalance || 0) > 0 && parseFloat(invoice.balance) > 0 && (
+              <div className="flex items-center justify-between gap-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2">
+                <div className="text-sm text-emerald-800">
+                  Account credit available:{' '}
+                  <span className="font-semibold">${Number(invoice.clientCreditBalance).toFixed(2)}</span>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-emerald-300 text-emerald-800 hover:bg-emerald-100"
+                  disabled={applyingCredit}
+                  onClick={handleApplyCredit}
+                >
+                  {applyingCredit
+                    ? 'Applying...'
+                    : `Apply $${Math.min(parseFloat(invoice.balance), Number(invoice.clientCreditBalance)).toFixed(2)}`}
+                </Button>
+              </div>
+            )}
             <div className="space-y-1">
               <Label htmlFor="add-payment-amount">Amount</Label>
               <div className="relative">

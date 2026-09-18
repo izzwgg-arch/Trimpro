@@ -112,6 +112,7 @@ export default function InvoicesPage() {
   const [bulkPaymentOtherLabel, setBulkPaymentOtherLabel] = useState('')
   const [bulkPaymentDate, setBulkPaymentDate] = useState(() => new Date().toISOString().split('T')[0])
   const [bulkPaymentReference, setBulkPaymentReference] = useState('')
+  const [bulkTotalReceived, setBulkTotalReceived] = useState('')
   const [bulkPaymentSaving, setBulkPaymentSaving] = useState(false)
   const [bulkPaymentError, setBulkPaymentError] = useState('')
   const [viewMode, setViewMode] = useViewMode('invoices', 'grid')
@@ -136,6 +137,11 @@ export default function InvoicesPage() {
     const amount = parseFloat(bulkPaymentAmounts[invoice.id] || '0')
     return sum + (Number.isFinite(amount) ? amount : 0)
   }, 0)
+  const bulkReceivedParsed = parseFloat(bulkTotalReceived || '')
+  const bulkTotalReceivedValue = Number.isFinite(bulkReceivedParsed) ? bulkReceivedParsed : 0
+  const bulkCreditAmount = bulkTotalReceived.trim()
+    ? Math.max(0, Math.round((bulkTotalReceivedValue - bulkPaymentTotal) * 100) / 100)
+    : 0
 
   useEffect(() => {
     const statusParam = searchParams.get('status')
@@ -388,6 +394,7 @@ export default function InvoicesPage() {
           methodLabel: bulkPaymentMethod === 'OTHER' ? bulkPaymentOtherLabel.trim() : undefined,
           paidAt: bulkPaymentDate,
           reference: bulkPaymentReference.trim() || undefined,
+          creditAmount: bulkCreditAmount > 0 ? bulkCreditAmount : undefined,
           items,
         }),
       })
@@ -402,6 +409,7 @@ export default function InvoicesPage() {
       setBulkPaymentOtherLabel('')
       setBulkPaymentDate(new Date().toISOString().split('T')[0])
       setBulkPaymentReference('')
+      setBulkTotalReceived('')
       setSelectedIds((prev) => prev.filter((id) => !items.some((item) => item.invoiceId === id)))
       await fetchInvoices()
       // Show the combined receipt for a payment spread across multiple invoices.
@@ -692,9 +700,29 @@ export default function InvoicesPage() {
               </p>
             )}
             <div className="flex items-center justify-between rounded-md bg-gray-50 px-4 py-3">
-              <span className="text-sm text-gray-600">Total payment</span>
+              <span className="text-sm text-gray-600">Applied to invoices</span>
               <span className="text-lg font-semibold text-gray-900">{formatCurrency(bulkPaymentTotal)}</span>
             </div>
+            <div className="space-y-1">
+              <label className="text-sm text-gray-600">Total received (optional)</label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder={bulkPaymentTotal.toFixed(2)}
+                value={bulkTotalReceived}
+                onChange={(e) => setBulkTotalReceived(e.target.value)}
+              />
+              <p className="text-xs text-gray-500">
+                If the customer paid more than the invoices total, enter the full amount received. The extra is held as account credit.
+              </p>
+            </div>
+            {bulkCreditAmount > 0 && (
+              <div className="flex items-center justify-between rounded-md bg-emerald-50 px-4 py-3">
+                <span className="text-sm text-emerald-700">Held as customer credit</span>
+                <span className="text-lg font-semibold text-emerald-800">{formatCurrency(bulkCreditAmount)}</span>
+              </div>
+            )}
             {bulkPaymentError && <p className="text-sm text-red-600">{bulkPaymentError}</p>}
           </div>
           <DialogFooter>

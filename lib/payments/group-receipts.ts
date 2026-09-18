@@ -60,6 +60,7 @@ export type PaymentGroupReceiptContext = {
   reference: string | null
   paidAt: Date
   totalAmount: number
+  creditAmount: number
   receiptToken: string | null
   receiptUrl: string
   lines: PaymentGroupReceiptLine[]
@@ -115,7 +116,8 @@ type GroupPaymentRow = {
 function mapGroupToContext(
   groupId: string,
   payments: GroupPaymentRow[],
-  token: string | null
+  token: string | null,
+  creditAmount = 0
 ): PaymentGroupReceiptContext {
   const appUrl = appBaseUrl()
   const primary = payments[0]
@@ -146,10 +148,19 @@ function mapGroupToContext(
     reference: primary.reference,
     paidAt: primary.processedAt || primary.createdAt,
     totalAmount: lines.reduce((sum, l) => sum + l.amount, 0),
+    creditAmount: Number(creditAmount || 0),
     receiptToken: token,
     receiptUrl: token ? `${appUrl}/pay/receipt/group/${encodeURIComponent(token)}` : '',
     lines,
   }
+}
+
+async function sumGroupCredit(groupId: string): Promise<number> {
+  const agg = await prisma.customerCredit.aggregate({
+    where: { sourcePaymentGroupId: groupId },
+    _sum: { originalAmount: true },
+  })
+  return Number(agg._sum.originalAmount || 0)
 }
 
 /**
@@ -183,7 +194,7 @@ export async function loadPaymentGroupReceiptContext(
   if (payments.length === 0 || !payments[0].invoice) return null
 
   const token = await ensureGroupToken(payments)
-  return mapGroupToContext(groupId, payments, token)
+  return mapGroupToContext(groupId, payments, token, await sumGroupCredit(groupId))
 }
 
 export async function loadPaymentGroupReceiptContextByToken(
@@ -207,7 +218,7 @@ export async function loadPaymentGroupReceiptContextByToken(
 
   if (payments.length === 0 || !payments[0].invoice) return null
 
-  return mapGroupToContext(anchor.paymentGroupId, payments, token)
+  return mapGroupToContext(anchor.paymentGroupId, payments, token, await sumGroupCredit(anchor.paymentGroupId))
 }
 
 export function buildPaymentGroupReceiptHtml(
@@ -259,8 +270,8 @@ export function buildPaymentGroupReceiptHtml(
       <div class="header">
         ${logoBlock}
         <div style="font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#64748b;">Payment Receipt</div>
-        <div class="amount">${escapeHtml(formatMoney(ctx.totalAmount))}</div>
-        <div style="font-size:13px;color:#64748b;margin-top:6px;">Applied across ${ctx.lines.length} invoice${ctx.lines.length === 1 ? '' : 's'}</div>
+        <div class="amount">${escapeHtml(formatMoney(ctx.totalAmount + ctx.creditAmount))}</div>
+        <div style="font-size:13px;color:#64748b;margin-top:6px;">Applied across ${ctx.lines.length} invoice${ctx.lines.length === 1 ? '' : 's'}${ctx.creditAmount > 0 ? ` · ${escapeHtml(formatMoney(ctx.creditAmount))} credit` : ''}</div>
       </div>
       <div class="body">
         <table class="meta">
@@ -285,11 +296,17 @@ export function buildPaymentGroupReceiptHtml(
           <tbody>
             ${rows}
             <tr class="total">
-              <td class="first">Total Paid</td>
+              <td class="first">Applied to invoices</td>
               <td></td>
               <td style="text-align:right;">${escapeHtml(formatMoney(ctx.totalAmount))}</td>
               <td></td>
             </tr>
+            ${
+              ctx.creditAmount > 0
+                ? `<tr class="total"><td class="first" style="color:#047857;">Held as account credit</td><td></td><td style="text-align:right;color:#047857;">${escapeHtml(formatMoney(ctx.creditAmount))}</td><td></td></tr>
+            <tr class="total"><td class="first">Total received</td><td></td><td style="text-align:right;">${escapeHtml(formatMoney(ctx.totalAmount + ctx.creditAmount))}</td><td></td></tr>`
+                : ''
+            }
           </tbody>
         </table>
       </div>

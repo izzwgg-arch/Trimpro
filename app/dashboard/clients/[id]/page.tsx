@@ -374,6 +374,7 @@ export default function ClientDetailPage() {
   const [emailResult, setEmailResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([])
   const [showBulkPayment, setShowBulkPayment] = useState(false)
+  const [creditBalance, setCreditBalance] = useState(0)
   const [bulkPaymentAmounts, setBulkPaymentAmounts] = useState<Record<string, string>>({})
   const [subClientsOpen, setSubClientsOpen] = useState(true)
   const [subClientEstimatesOpen, setSubClientEstimatesOpen] = useState(false)
@@ -462,8 +463,21 @@ export default function ClientDetailPage() {
     setSelectedInvoiceIds([])
     fetchClient()
     fetchDocuments()
+    fetchCredit()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only re-fetch when clientId changes
   }, [clientId])
+
+  const fetchCredit = async () => {
+    if (!clientId) return
+    try {
+      const response = await authFetch(`/api/clients/${clientId}/credit`)
+      if (!response.ok) return
+      const data = await response.json().catch(() => ({}))
+      setCreditBalance(Number(data?.balance || 0))
+    } catch {
+      /* non-fatal */
+    }
+  }
 
   const fetchClient = async () => {
     if (!clientId) return
@@ -760,6 +774,7 @@ export default function ClientDetailPage() {
       setSelectedInvoiceIds([])
       await fetchClient()
       await fetchDocuments()
+      await fetchCredit()
       // Show the combined receipt for a payment spread across multiple invoices.
       if (data.paymentGroupId && items.length > 1) {
         window.open(`/dashboard/payments/group/${data.paymentGroupId}`, '_blank')
@@ -955,6 +970,11 @@ export default function ClientDetailPage() {
           <p className="text-sm font-semibold text-amber-700 mt-2">
             Open Balance: {formatCurrency(parseFloat(client.openInvoiceBalance || '0'))}
           </p>
+          {creditBalance > 0 && (
+            <p className="text-sm font-semibold text-emerald-700 mt-1">
+              Account Credit: {formatCurrency(creditBalance)}
+            </p>
+          )}
         </div>
         <div className="flex items-center space-x-2">
           {client.phone && (

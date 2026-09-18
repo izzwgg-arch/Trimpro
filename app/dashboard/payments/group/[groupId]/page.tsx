@@ -21,6 +21,7 @@ type GroupCtx = {
   reference: string | null
   paidAt: string
   totalAmount: number
+  creditAmount: number
   receiptToken: string | null
   receiptUrl: string
   lines: GroupLine[]
@@ -82,10 +83,15 @@ export default function PaymentGroupPage() {
       <div className="mt-3 rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="border-b border-gray-100 bg-gray-50 p-5">
           <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Payment</div>
-          <div className="mt-1 text-3xl font-extrabold text-gray-900">{money(group.totalAmount)}</div>
+          <div className="mt-1 text-3xl font-extrabold text-gray-900">{money(group.totalAmount + (group.creditAmount || 0))}</div>
           <div className="mt-1 text-sm text-gray-600">
             Applied across {group.lines.length} invoice{group.lines.length === 1 ? '' : 's'} · {group.clientName}
           </div>
+          {group.creditAmount > 0 && (
+            <div className="mt-1 text-sm font-medium text-emerald-700">
+              {money(group.totalAmount)} applied · {money(group.creditAmount)} held as account credit
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-4 p-5 text-sm sm:grid-cols-4">

@@ -48,7 +48,9 @@ export type PaymentMethodMappingInput = {
 export function shouldSkipOutboundQboPaymentSync(payment: PaymentMethodMappingInput): boolean {
   const method = String(payment.method || '').toUpperCase()
   const provider = String(payment.provider || '').toLowerCase()
-  return provider === 'quickbooks' || method === 'ACH'
+  // customer_credit = applying a stored credit; it sparse-updates the existing
+  // QBO payment that holds the credit rather than creating a new payment.
+  return provider === 'quickbooks' || method === 'ACH' || provider === 'customer_credit'
 }
 
 /** Candidate QBO PaymentMethod names to match for a TrimPro payment. */

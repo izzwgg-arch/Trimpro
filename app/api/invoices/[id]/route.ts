@@ -8,6 +8,7 @@ import { geocodeAddressPartsFromString } from '@/lib/geocoding'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { calculateOrderedSubtotalRows } from '@/lib/documents/subtotals'
 import { getBilledToDateByEstimateLine } from '@/lib/invoices/billed-to-date'
+import { getClientCreditBalance } from '@/lib/payments/customer-credit'
 import {
   assertInvoiceNumberAvailableInQuickBooks,
   normalizeInvoiceNumber,
@@ -131,8 +132,13 @@ export async function GET(
       ? await getBilledToDateByEstimateLine(invoice.estimateId)
       : new Map<string, number>()
 
+    const clientCreditBalance = invoice.clientId
+      ? await getClientCreditBalance(invoice.clientId, invoice.tenantId)
+      : 0
+
     const invoiceResponse = {
       ...invoice,
+      clientCreditBalance,
       jobSiteAddress,
       jobSiteCity: (parsed?.city || derived.city || '').trim() || null,
       jobSiteState: (parsed?.state || derived.state || '').trim() || null,

@@ -6,6 +6,7 @@ import { notifyInvoicePaid } from '@/lib/notifications'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { afterInvoicePayment } from '@/lib/payments/after-invoice-payment'
 import { applyInvoicePayment } from '@/lib/payments/apply-payment'
+import { createOverpaymentCredit } from '@/lib/payments/customer-credit'
 import crypto from 'crypto'
 
 const ALLOWED_METHODS = new Set(['CHECK', 'QUICK_PAY', 'OTHER'])
@@ -34,6 +35,9 @@ export async function POST(request: NextRequest) {
     const processedAt =
       paidAtRaw && !Number.isNaN(paidAtRaw.getTime()) ? paidAtRaw : new Date()
     const items: any[] = Array.isArray(body?.items) ? body.items : []
+    // Overpayment: any amount received beyond what the invoices owe is held as a
+    // customer account credit.
+    const creditAmount = Math.max(0, toNumber(body?.creditAmount))
 
     if (!ALLOWED_METHODS.has(method)) {
       return NextResponse.json(
@@ -70,6 +74,7 @@ export async function POST(request: NextRequest) {
       include: {
         client: {
           select: {
+            id: true,
             name: true,
           },
         },
@@ -128,6 +133,21 @@ export async function POST(request: NextRequest) {
         { error: `Payment amount for ${invalidItem.invoice.invoiceNumber} exceeds its remaining balance.` },
         { status: 400 }
       )
+    }
+
+    // Overpayment credit must belong to a single customer.
+    let creditClientId: string | null = null
+    if (creditAmount > 0) {
+      const clientIds = new Set(
+        preparedItems.map((i) => i.invoice?.client?.id).filter(Boolean) as string[]
+      )
+      if (clientIds.size !== 1) {
+        return NextResponse.json(
+          { error: 'Overpayment credit requires all invoices to belong to one customer.' },
+          { status: 400 }
+        )
+      }
+      creditClientId = [...clientIds][0]
     }
 
     const paymentNotes =
@@ -199,19 +219,36 @@ export async function POST(request: NextRequest) {
         })
       }
 
-      return created
+      let creditId: string | null = null
+      if (creditAmount > 0 && creditClientId) {
+        const credit = await createOverpaymentCredit(tx, {
+          tenantId: user.tenantId,
+          clientId: creditClientId,
+          amount: creditAmount,
+          sourcePaymentId: created[0]?.paymentId || null,
+          sourcePaymentGroupId: paymentGroupId,
+          reason: reference ? `Overpayment (ref ${reference})` : 'Customer overpayment',
+        })
+        creditId = credit?.id || null
+      }
+
+      return { created, creditId }
     })
 
+    const created = results.created
+
     // Sync the whole group once -> a single QuickBooks payment across invoices.
-    if (results.length > 0) {
+    // (createGroupedQboPayment folds any overpayment credit into the QBO
+    // payment's TotalAmt so QuickBooks shows it as an unapplied credit.)
+    if (created.length > 0) {
       try {
-        await enqueueQboSync(user.tenantId, 'payment', results[0].paymentId, { processImmediately: true })
+        await enqueueQboSync(user.tenantId, 'payment', created[0].paymentId, { processImmediately: true })
       } catch (error) {
         console.error('QuickBooks payment sync trigger error (bulk manual payment group):', error)
       }
     }
 
-    for (const result of results) {
+    for (const result of created) {
       await notifyInvoicePaid(
         user.tenantId,
         result.invoiceId,
@@ -230,10 +267,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      count: results.length,
+      count: created.length,
       paymentGroupId,
-      totalApplied: results.reduce((sum, item) => sum + item.amount, 0),
-      invoices: results.map((item) => ({
+      creditId: results.creditId,
+      creditAmount: results.creditId ? creditAmount : 0,
+      totalApplied: created.reduce((sum, item) => sum + item.amount, 0),
+      invoices: created.map((item) => ({
         id: item.invoiceId,
         invoiceNumber: item.invoiceNumber,
         status: item.nextStatus,

@@ -3003,7 +3003,23 @@ async function createGroupedQboPayment(params: {
   if (!customerQboId) throw new Error('Unable to resolve customer in QuickBooks for payment')
 
   const primary = payments[0]
-  const totalAmt = toNumber(payments.reduce((sum, p) => sum + toNumber(p.amount), 0))
+  const appliedAmt = toNumber(payments.reduce((sum, p) => sum + toNumber(p.amount), 0))
+
+  // Fold any overpayment credit created from this payment group into TotalAmt so
+  // QuickBooks records the leftover as an unapplied credit on this payment.
+  const groupId = (primary as any).paymentGroupId as string | null
+  let overpaymentCredit = 0
+  let creditIds: string[] = []
+  if (groupId) {
+    const credits = await prisma.customerCredit.findMany({
+      where: { sourcePaymentGroupId: groupId },
+      select: { id: true, originalAmount: true },
+    })
+    overpaymentCredit = toNumber(credits.reduce((s, c) => s + toNumber(c.originalAmount), 0))
+    creditIds = credits.map((c) => c.id)
+  }
+  const totalAmt = toNumber(appliedAmt + overpaymentCredit)
+
   const paymentNote =
     payments.length > 1
       ? `Payment applied across ${payments.length} invoices`
@@ -3057,6 +3073,15 @@ async function createGroupedQboPayment(params: {
   const qboId = String(created?.Payment?.Id || '')
   if (!qboId) throw new Error('QuickBooks did not return payment id')
 
+  // Remember the QBO payment that holds the unapplied credit, so applying the
+  // credit later can sparse-update this same payment.
+  if (creditIds.length > 0) {
+    await prisma.customerCredit.updateMany({
+      where: { id: { in: creditIds } },
+      data: { qboPaymentId: qboId },
+    })
+  }
+
   // Map EVERY payment in the group to the single created QBO payment.
   for (const pay of payments) {
     await logSync({
@@ -3068,6 +3093,89 @@ async function createGroupedQboPayment(params: {
       qboId,
     })
   }
+}
+
+/**
+ * Apply a stored customer credit to an invoice inside QuickBooks by sparse-
+ * updating the existing QBO payment that holds the unapplied credit: append a
+ * Line linking `amount` to the invoice. This consumes the payment's unapplied
+ * balance and shows it applied to the new invoice. Best-effort — logs and
+ * throws on failure so the caller can record a QBO error without rolling back
+ * the internal credit application.
+ */
+export async function applyCreditToQboPayment(params: {
+  tenantId: string
+  qboPaymentId: string
+  invoiceId: string
+  amount: number
+}) {
+  const { tenantId, qboPaymentId, invoiceId, amount } = params
+  const session = await getQboSession(tenantId)
+  if (!session) return { ok: false as const, reason: 'no_session' }
+
+  // Resolve the invoice's QBO id (sync it first if needed).
+  const invoice = await prisma.invoice.findUnique({
+    where: { id: invoiceId },
+    select: { id: true, qboSyncId: true },
+  })
+  let invoiceQboId = invoice?.qboSyncId || null
+  if (!invoiceQboId) {
+    await syncInvoiceToQuickBooks(tenantId, invoiceId)
+    const refreshed = await prisma.invoice.findUnique({ where: { id: invoiceId }, select: { qboSyncId: true } })
+    invoiceQboId = refreshed?.qboSyncId || null
+  }
+  if (!invoiceQboId) throw new Error('Unable to apply credit in QuickBooks: invoice has no QuickBooks id')
+
+  // Fetch the existing payment for its SyncToken and current lines.
+  const getRes = await quickBooksService.makeAPIRequest(
+    session.accessToken,
+    session.realmId,
+    `/payment/${qboPaymentId}`,
+    'GET',
+    undefined,
+    { tenantId, entityType: 'payment', entityId: invoiceId, triggerSource: 'credit_apply' }
+  )
+  const existing = getRes?.Payment
+  if (!existing?.Id) throw new Error('QuickBooks payment not found for credit application')
+
+  const existingLines = Array.isArray(existing.Line) ? existing.Line : []
+  const normalizedLines = existingLines.map((line: any) => ({
+    Amount: toNumber(line.Amount),
+    LinkedTxn: Array.isArray(line.LinkedTxn)
+      ? line.LinkedTxn.map((t: any) => ({ TxnId: String(t.TxnId), TxnType: String(t.TxnType) }))
+      : [],
+  }))
+  normalizedLines.push({
+    Amount: toNumber(amount),
+    LinkedTxn: [{ TxnId: invoiceQboId, TxnType: 'Invoice' }],
+  })
+
+  const payload: Record<string, unknown> = {
+    Id: String(existing.Id),
+    SyncToken: String(existing.SyncToken ?? '0'),
+    sparse: true,
+    Line: normalizedLines,
+  }
+
+  await quickBooksService.makeAPIRequest(
+    session.accessToken,
+    session.realmId,
+    '/payment',
+    'POST',
+    payload,
+    { tenantId, entityType: 'payment', entityId: invoiceId, triggerSource: 'credit_apply' }
+  )
+
+  await logSync({
+    integrationId: session.integrationId,
+    type: 'payment',
+    action: 'update',
+    status: 'success',
+    entityId: invoiceId,
+    qboId: String(existing.Id),
+  })
+
+  return { ok: true as const, qboPaymentId: String(existing.Id) }
 }
 
 export async function syncPaymentToQuickBooks(tenantId: string, paymentId: string) {

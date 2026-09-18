@@ -1042,6 +1042,52 @@ model CreditMemoApplication {
   @@map("credit_memo_applications")
 }
 
+// Customer credit balance created when a customer overpays (e.g. pays $3000
+// against $2900 of invoices). The remainder is held as credit and can be
+// applied to future invoices. Mirrors QuickBooks' unapplied-payment credit.
+model CustomerCredit {
+  id                   String   @id @default(cuid())
+  tenantId             String
+  clientId             String
+  originalAmount       Decimal  @db.Decimal(10, 2)
+  remainingAmount      Decimal  @db.Decimal(10, 2)
+  status               String   @default("ACTIVE") // ACTIVE | DEPLETED | VOID
+  reason               String?  @db.Text
+  // Provenance of the overpayment that created this credit
+  sourcePaymentId      String?
+  sourcePaymentGroupId String?
+  // The QuickBooks Payment that holds the unapplied credit (sparse-updated on apply)
+  qboPaymentId         String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  applications CustomerCreditApplication[]
+
+  @@index([tenantId])
+  @@index([clientId])
+  @@index([status])
+  @@index([sourcePaymentGroupId])
+  @@map("customer_credits")
+}
+
+model CustomerCreditApplication {
+  id        String   @id @default(cuid())
+  tenantId  String
+  creditId  String
+  invoiceId String
+  paymentId String? // the CREDIT-method Payment created when applying
+  amount    Decimal  @db.Decimal(10, 2)
+  createdAt DateTime @default(now())
+
+  credit CustomerCredit @relation(fields: [creditId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([creditId])
+  @@index([invoiceId])
+  @@index([paymentId])
+  @@map("customer_credit_applications")
+}
+
 // ============================================
 // PAYMENTS (SOLA API)
 // ============================================
