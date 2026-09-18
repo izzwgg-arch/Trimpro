@@ -39,11 +39,16 @@ export default function PaymentGroupPage() {
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
+  const [downloading, setDownloading] = useState(false)
+
   useEffect(() => {
     let active = true
     ;(async () => {
       try {
-        const res = await fetch(`/api/payments/group/${encodeURIComponent(groupId)}/receipt?format=json`)
+        const token = localStorage.getItem('accessToken')
+        const res = await fetch(`/api/payments/group/${encodeURIComponent(groupId)}/receipt?format=json`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        })
         if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error || 'Failed to load')
         const data = await res.json()
         if (active) setGroup(data.group)
@@ -58,7 +63,33 @@ export default function PaymentGroupPage() {
     }
   }, [groupId])
 
-  const pdfUrl = `/api/payments/group/${encodeURIComponent(groupId)}/receipt?format=pdf&download=1`
+  const downloadPdf = async () => {
+    setDownloading(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const res = await fetch(`/api/payments/group/${encodeURIComponent(groupId)}/receipt?format=pdf&download=1`, {
+        cache: 'no-store',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+      if (!res.ok) throw new Error('Failed to generate PDF')
+      const cd = res.headers.get('content-disposition') || ''
+      const match = /filename="?([^";]+)"?/i.exec(cd)
+      const filename = match?.[1]?.trim() || `receipt-${groupId.slice(-8)}.pdf`
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      alert('Failed to download the receipt PDF.')
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   const copyCustomerLink = async () => {
     if (!group?.receiptUrl) return
@@ -149,12 +180,14 @@ export default function PaymentGroupPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 border-t border-gray-100 p-5">
-          <a
-            href={pdfUrl}
-            className="inline-flex items-center justify-center rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800"
+          <button
+            type="button"
+            onClick={downloadPdf}
+            disabled={downloading}
+            className="inline-flex items-center justify-center rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-60"
           >
-            Download PDF
-          </a>
+            {downloading ? 'Preparing…' : 'Download PDF'}
+          </button>
           {group.receiptUrl && (
             <button
               type="button"
