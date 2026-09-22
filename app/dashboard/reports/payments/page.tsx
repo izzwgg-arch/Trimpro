@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { ArrowLeft, Download, FileText, Search } from 'lucide-react'
 import { downloadReportExport } from '@/lib/reports/download-export'
 import { EmailReportButton } from '@/components/reports/EmailReportButton'
@@ -68,6 +69,7 @@ export default function PaymentHistoryPage() {
   const canManagePayments = hasPermission(permissions, 'payments.manage')
   const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null)
 
+  const router = useRouter()
   const [rows, setRows] = useState<PaymentRow[]>([])
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [summary, setSummary] = useState<PaymentsSummary>({ totalAmount: 0, totalRefunded: 0, succeededCount: 0, failedCount: 0 })
@@ -114,7 +116,11 @@ export default function PaymentHistoryPage() {
     const fullyRefunded = row.refundStatus === 'FULLY_REFUNDED'
     const isCardPayment = row.paymentMethod === 'CARD'
     return (
-      <tr key={row.id} className={`border-b ${indent ? 'bg-gray-50/40' : ''}`}>
+      <tr
+        key={row.id}
+        className={`border-b cursor-pointer hover:bg-blue-50/40 ${indent ? 'bg-gray-50/40' : ''}`}
+        onClick={() => router.push(`/dashboard/payments/${row.id}`)}
+      >
         <td className={`p-2 font-mono text-xs ${indent ? 'pl-6' : ''}`}>{row.id}</td>
         <td className="p-2">{row.provider}</td>
         <td className="p-2 font-mono text-xs">{row.providerPaymentId || '-'}</td>
@@ -130,7 +136,7 @@ export default function PaymentHistoryPage() {
         </td>
         <td className="p-2">{new Date(row.createdAt).toLocaleString()}</td>
         <td className="p-2">{row.refundedAt ? new Date(row.refundedAt).toLocaleString() : '-'}</td>
-        <td className="p-2">
+        <td className="p-2" onClick={(e) => e.stopPropagation()}>
           <div className="flex flex-wrap gap-2">
             {canRefund && isCardPayment ? (
               <Button
@@ -514,11 +520,14 @@ export default function PaymentHistoryPage() {
                     const groupTotal = g.members.reduce((s, m) => s + Number(m.amount || 0), 0)
                     return (
                       <Fragment key={g.key}>
-                        <tr className="border-b bg-blue-50/60">
+                        <tr
+                          className="border-b bg-blue-50/60 cursor-pointer hover:bg-blue-100/60"
+                          onClick={() => router.push(`/dashboard/payments/${first.id}`)}
+                        >
                           <td className="p-2 text-xs font-semibold">
                             <button
                               type="button"
-                              onClick={() => toggleGroup(g.key)}
+                              onClick={(e) => { e.stopPropagation(); toggleGroup(g.key) }}
                               className="inline-flex items-center gap-1 text-blue-800 hover:underline"
                             >
                               <span>{isExpanded ? '▾' : '▸'}</span>
@@ -536,7 +545,7 @@ export default function PaymentHistoryPage() {
                           <td className="p-2">-</td>
                           <td className="p-2">{new Date(first.createdAt).toLocaleString()}</td>
                           <td className="p-2">-</td>
-                          <td className="p-2">
+                          <td className="p-2" onClick={(e) => e.stopPropagation()}>
                             {g.groupId ? (
                               <Link
                                 href={`/dashboard/payments/group/${g.groupId}`}

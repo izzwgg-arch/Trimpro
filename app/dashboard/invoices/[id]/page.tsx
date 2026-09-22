@@ -1953,7 +1953,12 @@ export default function InvoiceDetailPage() {
               <CardContent>
                 <div className="space-y-3">
                   {invoice.payments.map((payment) => (
-                    <div key={payment.id} className="group flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                    <div
+                      key={payment.id}
+                      className="group flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+                      onClick={() => router.push(`/dashboard/payments/${payment.id}`)}
+                      title="Open payment"
+                    >
                       <div>
                         <div className="font-semibold">{formatCurrency(parseFloat(payment.amount))}</div>
                         <div className="text-sm text-gray-600">
@@ -1968,6 +1973,7 @@ export default function InvoiceDetailPage() {
                             href={`/dashboard/payments/group/${payment.paymentGroupId}`}
                             target="_blank"
                             rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
                             className="text-xs font-medium text-blue-600 hover:underline"
                           >
                             Part of a grouped payment — view combined receipt
@@ -1978,15 +1984,9 @@ export default function InvoiceDetailPage() {
                         {payment.status === 'COMPLETED' && (
                           <CheckCircle className="h-5 w-5 text-green-600" />
                         )}
+                        <span className="text-xs text-gray-400 group-hover:text-gray-600">Open →</span>
                         <button
-                          onClick={() => openEditPayment(payment)}
-                          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-gray-200 text-gray-500 hover:text-gray-800"
-                          title="Edit payment"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDeletePayment(payment)}
+                          onClick={(e) => { e.stopPropagation(); handleDeletePayment(payment) }}
                           disabled={deletingPaymentId === payment.id}
                           className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-red-50 text-gray-500 hover:text-red-700 disabled:opacity-50"
                           title="Delete payment"

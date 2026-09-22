@@ -3178,6 +3178,79 @@ export async function applyCreditToQboPayment(params: {
   return { ok: true as const, qboPaymentId: String(existing.Id) }
 }
 
+/**
+ * Set a QBO payment's applied lines to EXACTLY the given invoice allocations
+ * (sparse update). TotalAmt is left untouched, so anything not covered by the
+ * lines shows in QuickBooks as unapplied credit. Used by the payment editor to
+ * apply/unapply across invoices. Throws on failure (caller decides fallout).
+ */
+export async function setQboPaymentLines(params: {
+  tenantId: string
+  qboPaymentId: string
+  lines: Array<{ invoiceId: string; amount: number }>
+}) {
+  const { tenantId, qboPaymentId, lines } = params
+  const session = await getQboSession(tenantId)
+  if (!session) return { ok: false as const, reason: 'no_session' }
+
+  const resolved: Array<{ qboId: string; amount: number }> = []
+  for (const l of lines) {
+    if (toNumber(l.amount) <= 0) continue
+    const inv = await prisma.invoice.findUnique({ where: { id: l.invoiceId }, select: { qboSyncId: true } })
+    let qid = inv?.qboSyncId || null
+    if (!qid) {
+      await syncInvoiceToQuickBooks(tenantId, l.invoiceId)
+      const r = await prisma.invoice.findUnique({ where: { id: l.invoiceId }, select: { qboSyncId: true } })
+      qid = r?.qboSyncId || null
+    }
+    if (!qid) throw new Error('Unable to update QuickBooks: an invoice has no QuickBooks id')
+    resolved.push({ qboId: qid, amount: toNumber(l.amount) })
+  }
+
+  const getRes = await quickBooksService.makeAPIRequest(
+    session.accessToken,
+    session.realmId,
+    `/payment/${qboPaymentId}`,
+    'GET',
+    undefined,
+    { tenantId, entityType: 'payment', entityId: qboPaymentId, triggerSource: 'payment_edit' }
+  )
+  const existing = getRes?.Payment
+  if (!existing?.Id) throw new Error('QuickBooks payment not found for edit')
+
+  const Line = resolved.map((r) => ({
+    Amount: r.amount,
+    LinkedTxn: [{ TxnId: r.qboId, TxnType: 'Invoice' }],
+  }))
+
+  const payload: Record<string, unknown> = {
+    Id: String(existing.Id),
+    SyncToken: String(existing.SyncToken ?? '0'),
+    sparse: true,
+    Line,
+  }
+
+  await quickBooksService.makeAPIRequest(
+    session.accessToken,
+    session.realmId,
+    '/payment',
+    'POST',
+    payload,
+    { tenantId, entityType: 'payment', entityId: qboPaymentId, triggerSource: 'payment_edit' }
+  )
+
+  await logSync({
+    integrationId: session.integrationId,
+    type: 'payment',
+    action: 'update',
+    status: 'success',
+    entityId: qboPaymentId,
+    qboId: String(existing.Id),
+  })
+
+  return { ok: true as const }
+}
+
 export async function syncPaymentToQuickBooks(tenantId: string, paymentId: string) {
   const session = await getQboSession(tenantId)
   if (!session) return

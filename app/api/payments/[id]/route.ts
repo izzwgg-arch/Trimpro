@@ -4,11 +4,32 @@ import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { removeInvoicePayment } from '@/lib/payments/remove-invoice-payment'
+import { getPaymentView } from '@/lib/payments/payment-view'
 import {
   buildCustomPaymentNotes,
   mapCustomPaymentMethodToDb,
   type CustomPaymentUiMethod,
 } from '@/lib/payments/custom-payment'
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const authError = await authenticateRequest(request)
+  if (authError) return authError
+  const permError = await requirePermission(request, 'payments.view')
+  if (permError) return permError
+
+  const user = getAuthUser(request)
+  try {
+    const view = await getPaymentView(params.id, user.tenantId)
+    if (!view) return NextResponse.json({ error: 'Payment not found' }, { status: 404 })
+    return NextResponse.json({ payment: view })
+  } catch (error) {
+    console.error('Get payment view error:', error)
+    return NextResponse.json({ error: 'Failed to load payment' }, { status: 500 })
+  }
+}
 
 function toNumber(value: unknown): number {
   const n = Number(value)
