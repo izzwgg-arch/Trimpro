@@ -808,11 +808,6 @@ export default function InvoiceDetailPage() {
       setAddPaymentError('Please enter a valid amount.')
       return
     }
-    const balance = parseFloat(invoice.balance)
-    if (amount > balance) {
-      setAddPaymentError(`Amount cannot exceed the balance of $${balance.toFixed(2)}.`)
-      return
-    }
     if (addPaymentMethod === 'OTHER' && !addPaymentOtherLabel.trim()) {
       setAddPaymentError('Please enter a payment type name.')
       return
@@ -829,7 +824,7 @@ export default function InvoiceDetailPage() {
     setAddPaymentSaving(true)
     try {
       const token = localStorage.getItem('accessToken')
-      const res = await fetch(`/api/invoices/${invoice.id}/mark-paid`, {
+      const res = await fetch(`/api/invoices/${invoice.id}/record-payment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
@@ -851,7 +846,12 @@ export default function InvoiceDetailPage() {
       setAddPaymentMethod('CHECK')
       setAddPaymentOtherLabel('')
       setAddPaymentReference('')
-      await fetchInvoice()
+      // Open the payment editor to review/adjust how it applied across invoices.
+      if (data.paymentId) {
+        router.push(`/dashboard/payments/${data.paymentId}`)
+      } else {
+        await fetchInvoice()
+      }
     } catch {
       setAddPaymentError('Failed to record payment. Please try again.')
     } finally {
@@ -1383,7 +1383,10 @@ export default function InvoiceDetailPage() {
                 />
               </div>
               {invoice && (
-                <p className="text-xs text-gray-500">Balance due: ${parseFloat(invoice.balance).toFixed(2)}</p>
+                <p className="text-xs text-gray-500">
+                  Enter the full amount received. It applies to this invoice first (balance ${parseFloat(invoice.balance).toFixed(2)}),
+                  then the customer&apos;s other open invoices; anything extra is held as credit. You can fine-tune it on the next screen.
+                </p>
               )}
             </div>
             <div className="space-y-1">
