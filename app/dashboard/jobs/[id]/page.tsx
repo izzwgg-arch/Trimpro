@@ -1045,7 +1045,17 @@ export default function JobDetailPage() {
               variant="outline"
               size="sm"
               className="h-8 text-xs px-2"
-              onClick={() => navigateWithReturn(router, `/dashboard/invoices/new?jobId=${jobId}`)}
+              onClick={() =>
+                navigateWithReturn(
+                  router,
+                  `/dashboard/invoices/new${buildCreateContextQuery({
+                    clientId: job.client.id,
+                    sourceType: 'job',
+                    sourceId: jobId,
+                    jobId,
+                  })}`
+                )
+              }
             >
               <DollarSign className="mr-1.5 h-3.5 w-3.5" />
               New Invoice
@@ -1054,7 +1064,17 @@ export default function JobDetailPage() {
               variant="outline"
               size="sm"
               className="h-8 text-xs px-2"
-              onClick={() => navigateWithReturn(router, `/dashboard/purchase-orders/new?jobId=${jobId}`)}
+              onClick={() =>
+                navigateWithReturn(
+                  router,
+                  `/dashboard/purchase-orders/new${buildCreateContextQuery({
+                    clientId: job.client.id,
+                    sourceType: 'job',
+                    sourceId: jobId,
+                    jobId,
+                  })}`
+                )
+              }
             >
               <ShoppingCart className="mr-1.5 h-3.5 w-3.5" />
               New PO

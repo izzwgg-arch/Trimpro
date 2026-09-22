@@ -227,6 +227,34 @@ export default function NewInvoicePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [estimateIdParam, billingModeParam, percentageParam, selectedLineItemIdsParam])
 
+  // Resolve clientId from jobId when the caller only passed a job (e.g. the Job
+  // page's "New Invoice" quick action). Mirrors estimates/new/page.tsx.
+  useEffect(() => {
+    if (!jobIdParam) return
+    const fetchJobContext = async () => {
+      try {
+        const token = localStorage.getItem('accessToken')
+        const response = await fetch(`/api/jobs/${jobIdParam}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (!response.ok) return
+        const data = await response.json()
+        const job = data?.job
+        if (!job?.id) return
+
+        setFormData((prev) => ({
+          ...prev,
+          jobId: job.id,
+          clientId: prev.clientId || job.client?.id || '',
+          title: prev.title || `Invoice for ${job.title}`,
+        }))
+      } catch (error) {
+        console.error('Error loading job context:', error)
+      }
+    }
+    fetchJobContext()
+  }, [jobIdParam])
+
   // Separate effect: fetch jobs when clientId is available
   useEffect(() => {
     if (formData.clientId) {
