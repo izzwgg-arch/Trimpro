@@ -67,7 +67,7 @@ export function buildInvoiceEmail(opts: InvoiceEmailOptions): string {
     }),
     buildEmailButtonGroup(buttons),
     buildEmailSupportNote(
-      'Questions about this invoice? <strong style="color:#ffffff;">Reply to this email</strong>.'
+      'Questions about this invoice? <strong style="color:#111827;">Reply to this email</strong>.'
     ),
   ].join('')
 

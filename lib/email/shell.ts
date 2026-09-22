@@ -1,14 +1,23 @@
 /**
  * Outlook-safe email layout primitives.
  * Table-based structure, inline CSS, no flex/grid/div spacers.
+ * Light theme: white canvas + white card, dark text, gold CTA.
  */
 
 export const EMAIL_WIDTH = 600
 export const EMAIL_OUTER_BG = '#ffffff'
-export const EMAIL_CARD_BG = '#243f53'
-export const EMAIL_ACCENT = '#f8dea4'
+export const EMAIL_CARD_BG = '#ffffff'
+export const EMAIL_ACCENT = '#b7791f' // dark gold — readable text accent on white
 export const EMAIL_BUTTON_BG = '#f0c974'
 export const EMAIL_BUTTON_TEXT = '#1e2937'
+
+// Internal light-theme palette
+const HEADING = '#1f2937'
+const BODY_TEXT = '#374151'
+const MUTED = '#6b7280'
+const BORDER = '#e5e7eb'
+const SUBTLE_BG = '#f9fafb'
+const PANEL_BG = '#f3f4f6'
 
 export function escapeHtml(value: string | null | undefined): string {
   return String(value ?? '')
@@ -31,7 +40,7 @@ export interface EmailShellOptions {
   lockColors?: boolean
 }
 
-/** Full document wrapper — centered 600px card on dark background. */
+/** Full document wrapper — centered 600px card on a white background. */
 export function buildEmailShell(opts: EmailShellOptions): string {
   const lockAttr = opts.lockColors !== false ? ' data-tp-lock-colors="1"' : ''
   const preheader = opts.preheader
@@ -65,9 +74,7 @@ export function buildEmailShell(opts: EmailShellOptions): string {
       .tp-headline { font-size:24px !important; line-height:30px !important; }
       .tp-btn-full { display:block !important; width:100% !important; }
     }
-    /* This is a dark-branded email. Keep the dark palette in every client
-       (Gmail, new Outlook, Apple Mail) rather than letting a client's light
-       mode swap backgrounds/text and break contrast. */
+    /* Keep the light palette even in clients that force dark mode. */
     [data-ogsc] .tp-email-body, [data-ogsb] .tp-email-body { background-color:${EMAIL_OUTER_BG} !important; }
     [data-ogsc] .tp-email-card, [data-ogsb] .tp-email-card { background-color:${EMAIL_CARD_BG} !important; }
   </style>
@@ -77,7 +84,7 @@ export function buildEmailShell(opts: EmailShellOptions): string {
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${EMAIL_OUTER_BG}" style="${TABLE_RESET}background-color:${EMAIL_OUTER_BG};">
     <tr>
       <td align="center" valign="top" bgcolor="${EMAIL_OUTER_BG}" style="padding:20px 12px 28px;background-color:${EMAIL_OUTER_BG};">
-        <table role="presentation" class="tp-email-container tp-email-card" cellpadding="0" cellspacing="0" border="0" width="${EMAIL_WIDTH}" bgcolor="${EMAIL_CARD_BG}" style="${TABLE_RESET}width:${EMAIL_WIDTH}px;max-width:${EMAIL_WIDTH}px;background-color:${EMAIL_CARD_BG};">
+        <table role="presentation" class="tp-email-container tp-email-card" cellpadding="0" cellspacing="0" border="0" width="${EMAIL_WIDTH}" bgcolor="${EMAIL_CARD_BG}" style="${TABLE_RESET}width:${EMAIL_WIDTH}px;max-width:${EMAIL_WIDTH}px;background-color:${EMAIL_CARD_BG};border:1px solid ${BORDER};border-radius:12px;">
           ${opts.headerHtml}
           ${opts.bodyHtml}
           ${opts.footerHtml || ''}
@@ -96,15 +103,15 @@ export function buildEmailHeaderBlock(opts: {
 }): string {
   const company = escapeHtml(opts.companyName || 'TrimPro')
   const eyebrow = opts.eyebrow
-    ? `<p style="margin:8px 0 0;font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:#f5e3aa;line-height:16px;">${escapeHtml(opts.eyebrow)}</p>`
+    ? `<p style="margin:8px 0 0;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:${EMAIL_ACCENT};line-height:16px;">${escapeHtml(opts.eyebrow)}</p>`
     : ''
 
   const logo = opts.logoUrl
     ? `<img src="${escapeHtml(opts.logoUrl)}" alt="${company}" width="200" height="72" style="display:block;margin:0 auto 8px;max-width:220px;width:auto;height:auto;border:0;" />`
-    : `<p style="margin:0 0 6px;font-size:22px;font-weight:800;letter-spacing:-0.3px;color:${EMAIL_ACCENT};line-height:28px;">${company}</p>`
+    : `<p style="margin:0 0 6px;font-size:22px;font-weight:800;letter-spacing:-0.3px;color:${HEADING};line-height:28px;">${company}</p>`
 
   return `<tr>
-    <td class="tp-pad-header" align="center" valign="top" bgcolor="${EMAIL_CARD_BG}" style="padding:30px 32px 22px;background-color:${EMAIL_CARD_BG};border-bottom:1px solid #3d5a73;text-align:center;">
+    <td class="tp-pad-header" align="center" valign="top" bgcolor="${EMAIL_CARD_BG}" style="padding:30px 32px 22px;background-color:${EMAIL_CARD_BG};border-bottom:1px solid ${BORDER};text-align:center;">
       ${logo}
       ${eyebrow}
     </td>
@@ -119,7 +126,7 @@ export function buildEmailHeroBlock(opts: {
   const badge = opts.badge
     ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="${TABLE_RESET}margin:0 auto 14px;">
         <tr>
-          <td align="center" bgcolor="#334155" style="background-color:#334155;border:1px solid ${EMAIL_ACCENT};padding:5px 16px;font-size:12px;font-weight:700;letter-spacing:0.3px;color:#ffffff;line-height:18px;mso-line-height-rule:exactly;">
+          <td align="center" bgcolor="${PANEL_BG}" style="background-color:${PANEL_BG};border:1px solid #d1d5db;padding:5px 16px;font-size:12px;font-weight:700;letter-spacing:0.3px;color:${BODY_TEXT};line-height:18px;mso-line-height-rule:exactly;">
             ${escapeHtml(opts.badge)}
           </td>
         </tr>
@@ -127,13 +134,13 @@ export function buildEmailHeroBlock(opts: {
     : ''
 
   const meta = opts.meta
-    ? `<p class="tp-hero-meta" style="margin:0;font-size:13px;font-weight:600;color:#c4d5e9;line-height:20px;mso-line-height-rule:exactly;">${opts.meta}</p>`
+    ? `<p class="tp-hero-meta" style="margin:0;font-size:13px;font-weight:600;color:${MUTED};line-height:20px;mso-line-height-rule:exactly;">${opts.meta}</p>`
     : ''
 
   return `<tr>
-    <td class="tp-pad-hero" align="center" valign="top" bgcolor="${EMAIL_CARD_BG}" style="padding:26px 32px 20px;background-color:${EMAIL_CARD_BG};border-bottom:1px solid #3d5a73;text-align:center;">
+    <td class="tp-pad-hero" align="center" valign="top" bgcolor="${EMAIL_CARD_BG}" style="padding:26px 32px 20px;background-color:${EMAIL_CARD_BG};border-bottom:1px solid ${BORDER};text-align:center;">
       ${badge}
-      <p class="tp-headline" style="margin:0 0 8px;font-size:28px;font-weight:800;line-height:34px;letter-spacing:-0.4px;color:${EMAIL_ACCENT};mso-line-height-rule:exactly;">${escapeHtml(opts.headline)}</p>
+      <p class="tp-headline" style="margin:0 0 8px;font-size:28px;font-weight:800;line-height:34px;letter-spacing:-0.4px;color:${HEADING};mso-line-height-rule:exactly;">${escapeHtml(opts.headline)}</p>
       ${meta}
     </td>
   </tr>`
@@ -154,7 +161,7 @@ export function buildEmailParagraph(
   const mb = opts?.marginBottom ?? 16
   const fs = opts?.fontSize ?? 15
   const weight = opts?.bold ? 'font-weight:600;' : ''
-  return `<p class="tp-body-text" style="margin:0 0 ${mb}px;font-size:${fs}px;line-height:24px;color:#d5e1f1;mso-line-height-rule:exactly;${weight}">${html}</p>`
+  return `<p class="tp-body-text" style="margin:0 0 ${mb}px;font-size:${fs}px;line-height:24px;color:${BODY_TEXT};mso-line-height-rule:exactly;${weight}">${html}</p>`
 }
 
 export function buildEmailDetailsCard(opts: {
@@ -163,14 +170,14 @@ export function buildEmailDetailsCard(opts: {
   featuredLabel?: string
   featuredValue?: string
 }): string {
-  const divider = `<tr><td colspan="2" style="border-top:1px solid #46627f;font-size:0;line-height:0;mso-line-height-rule:exactly;height:0;padding:0;">&nbsp;</td></tr>`
+  const divider = `<tr><td colspan="2" style="border-top:1px solid ${BORDER};font-size:0;line-height:0;mso-line-height-rule:exactly;height:0;padding:0;">&nbsp;</td></tr>`
 
   const detailRows = opts.rows
     .map(
       (row, i) => `${i > 0 ? divider : ''}
       <tr>
-        <td width="44%" valign="top" style="padding:10px 0 10px;font-size:13px;color:#c2d1e3;font-weight:600;line-height:20px;mso-line-height-rule:exactly;">${escapeHtml(row.label)}</td>
-        <td align="right" valign="top" style="padding:10px 0 10px;font-size:13px;color:#eff6ff;font-weight:700;line-height:20px;mso-line-height-rule:exactly;">${escapeHtml(row.value)}</td>
+        <td width="44%" valign="top" style="padding:10px 0 10px;font-size:13px;color:${MUTED};font-weight:600;line-height:20px;mso-line-height-rule:exactly;">${escapeHtml(row.label)}</td>
+        <td align="right" valign="top" style="padding:10px 0 10px;font-size:13px;color:${HEADING};font-weight:700;line-height:20px;mso-line-height-rule:exactly;">${escapeHtml(row.value)}</td>
       </tr>`
     )
     .join('')
@@ -179,21 +186,21 @@ export function buildEmailDetailsCard(opts: {
     opts.featuredLabel && opts.featuredValue
       ? `${divider}
       <tr>
-        <td colspan="2" bgcolor="#30495f" style="background-color:#30495f;padding:14px 0 4px;">
+        <td colspan="2" bgcolor="${PANEL_BG}" style="background-color:${PANEL_BG};padding:14px 12px 8px;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="${TABLE_RESET}">
             <tr>
-              <td valign="middle" style="font-size:11px;color:#cdd9e8;font-weight:700;letter-spacing:1px;text-transform:uppercase;line-height:16px;mso-line-height-rule:exactly;">${escapeHtml(opts.featuredLabel)}</td>
-              <td align="right" valign="middle" style="font-size:32px;font-weight:800;color:#ffffff;line-height:38px;mso-line-height-rule:exactly;letter-spacing:-1px;">${escapeHtml(opts.featuredValue)}</td>
+              <td valign="middle" style="font-size:11px;color:${MUTED};font-weight:700;letter-spacing:1px;text-transform:uppercase;line-height:16px;mso-line-height-rule:exactly;">${escapeHtml(opts.featuredLabel)}</td>
+              <td align="right" valign="middle" style="font-size:32px;font-weight:800;color:${HEADING};line-height:38px;mso-line-height-rule:exactly;letter-spacing:-1px;">${escapeHtml(opts.featuredValue)}</td>
             </tr>
           </table>
         </td>
       </tr>`
       : ''
 
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="${TABLE_RESET}background-color:#1e3345;border:1px solid #46627f;margin-bottom:20px;">
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${SUBTLE_BG}" style="${TABLE_RESET}background-color:${SUBTLE_BG};border:1px solid ${BORDER};border-radius:8px;margin-bottom:20px;">
     <tr>
-      <td colspan="2" style="padding:10px 16px;border-bottom:1px solid #46627f;background-color:#1e3345;">
-        <p style="margin:0;font-size:10px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:#c2d1e3;line-height:14px;mso-line-height-rule:exactly;">${escapeHtml(opts.title)}</p>
+      <td colspan="2" style="padding:10px 16px;border-bottom:1px solid ${BORDER};">
+        <p style="margin:0;font-size:10px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:${MUTED};line-height:14px;mso-line-height-rule:exactly;">${escapeHtml(opts.title)}</p>
       </td>
     </tr>
     <tr>
@@ -208,9 +215,9 @@ export function buildEmailDetailsCard(opts: {
 }
 
 export function buildEmailAlertBanner(text: string): string {
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="${TABLE_RESET}background-color:#2f475f;border:1px solid #9f7a2f;margin-bottom:18px;">
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#fef3c7" style="${TABLE_RESET}background-color:#fef3c7;border:1px solid ${EMAIL_BUTTON_BG};border-radius:8px;margin-bottom:18px;">
     <tr>
-      <td align="center" style="padding:10px 14px;font-size:13px;font-weight:700;color:#ffd27a;line-height:20px;mso-line-height-rule:exactly;">${escapeHtml(text)}</td>
+      <td align="center" style="padding:10px 14px;font-size:13px;font-weight:700;color:#92400e;line-height:20px;mso-line-height-rule:exactly;">${escapeHtml(text)}</td>
     </tr>
   </table>`
 }
@@ -254,10 +261,10 @@ export function buildEmailButtonGroup(buttons: EmailButtonSpec[]): string {
 }
 
 export function buildEmailSupportNote(html: string): string {
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="${TABLE_RESET}background-color:#263f56;border:1px solid #46627f;">
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${SUBTLE_BG}" style="${TABLE_RESET}background-color:${SUBTLE_BG};border:1px solid ${BORDER};border-radius:8px;">
     <tr>
       <td align="center" style="padding:12px 16px;">
-        <p style="margin:0;font-size:13px;line-height:20px;color:#d6e3f2;mso-line-height-rule:exactly;">${html}</p>
+        <p style="margin:0;font-size:13px;line-height:20px;color:${BODY_TEXT};mso-line-height-rule:exactly;">${html}</p>
       </td>
     </tr>
   </table>`
@@ -269,19 +276,19 @@ export function buildEmailFooterBlock(opts: {
   supportEmail?: string
 }): string {
   const support = opts.supportEmail
-    ? `<p style="margin:0 0 8px;font-size:12px;line-height:18px;mso-line-height-rule:exactly;"><a href="mailto:${escapeHtml(opts.supportEmail)}" style="color:#9eb3cf;text-decoration:none;">${escapeHtml(opts.supportEmail)}</a></p>`
+    ? `<p style="margin:0 0 8px;font-size:12px;line-height:18px;mso-line-height-rule:exactly;"><a href="mailto:${escapeHtml(opts.supportEmail)}" style="color:${MUTED};text-decoration:none;">${escapeHtml(opts.supportEmail)}</a></p>`
     : ''
 
   const lines = opts.lines
     .map(
       (line) =>
-        `<p class="tp-foot-copy" style="margin:0 0 4px;font-size:11px;line-height:16px;color:#93a9c2;mso-line-height-rule:exactly;">${line}</p>`
+        `<p class="tp-foot-copy" style="margin:0 0 4px;font-size:11px;line-height:16px;color:${MUTED};mso-line-height-rule:exactly;">${line}</p>`
     )
     .join('')
 
   return `<tr>
-    <td class="tp-pad-footer" align="center" valign="top" bgcolor="#223347" style="padding:20px 32px 22px;background-color:#223347;border-top:1px solid #46627f;text-align:center;">
-      <p style="margin:0 0 6px;font-size:13px;font-weight:700;color:${EMAIL_ACCENT};line-height:18px;mso-line-height-rule:exactly;">${escapeHtml(opts.companyName)}</p>
+    <td class="tp-pad-footer" align="center" valign="top" bgcolor="${SUBTLE_BG}" style="padding:20px 32px 22px;background-color:${SUBTLE_BG};border-top:1px solid ${BORDER};text-align:center;">
+      <p style="margin:0 0 6px;font-size:13px;font-weight:700;color:${HEADING};line-height:18px;mso-line-height-rule:exactly;">${escapeHtml(opts.companyName)}</p>
       ${support}
       ${lines}
     </td>

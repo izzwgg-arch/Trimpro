@@ -32,7 +32,7 @@ export function buildStatementEmail(opts: StatementEmailOptions): string {
 
   const bodyInner = [
     buildEmailParagraph(`Hi ${escapeHtml(clientName)},`, { marginBottom: 10, bold: true }),
-    `<p class="tp-body-text" style="margin:0 0 22px;font-size:15px;line-height:24px;color:#d5e1f1;mso-line-height-rule:exactly;">Please find your account statement${
+    `<p class="tp-body-text" style="margin:0 0 22px;font-size:15px;line-height:24px;color:#374151;mso-line-height-rule:exactly;">Please find your account statement${
       hasPdf ? ' <strong style="color:#f0c974;">attached as a PDF</strong>' : ''
     }. You currently have <strong style="color:#f0c974;">${openCount} open invoice${
       openCount !== 1 ? 's' : ''

@@ -50,7 +50,7 @@ export function buildCreditMemoEmail(opts: CreditMemoEmailOptions): string {
       featuredValue: `$${total}`,
     }),
     buildEmailSupportNote(
-      'Questions about this credit? <strong style="color:#ffffff;">Reply to this email</strong>.'
+      'Questions about this credit? <strong style="color:#111827;">Reply to this email</strong>.'
     ),
   ].join('')
 

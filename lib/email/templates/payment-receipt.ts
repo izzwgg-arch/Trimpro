@@ -85,7 +85,7 @@ export function buildInvoicePaymentReceiptEmail(opts: InvoicePaymentReceiptEmail
     }),
     buildEmailButtonGroup([{ label: 'View Receipt', href: receiptUrl }]),
     buildEmailSupportNote(
-      'Questions? <strong style="color:#ffffff;">Reply to this email</strong> and we will help.'
+      'Questions? <strong style="color:#111827;">Reply to this email</strong> and we will help.'
     ),
   ].join('')
 
@@ -135,7 +135,7 @@ export function buildBulkPaymentReceiptEmail(opts: {
     }),
     buildEmailButtonGroup([{ label: 'View Account', href: opts.portalUrl }]),
     buildEmailSupportNote(
-      'Questions? <strong style="color:#ffffff;">Reply to this email</strong> and we will help.'
+      'Questions? <strong style="color:#111827;">Reply to this email</strong> and we will help.'
     ),
   ].join('')
 
@@ -211,7 +211,7 @@ export function buildPaymentReceiptEmail(opts: PaymentReceiptEmailOptions): stri
     }),
     buildEmailButtonGroup(buttons),
     buildEmailSupportNote(
-      'If you have any questions, <strong style="color:#ffffff;">reply to this email</strong> &mdash; we&rsquo;re here to help.'
+      'If you have any questions, <strong style="color:#111827;">reply to this email</strong> &mdash; we&rsquo;re here to help.'
     ),
   ].join('')
 

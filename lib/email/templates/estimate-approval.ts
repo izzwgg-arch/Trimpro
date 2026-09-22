@@ -48,7 +48,7 @@ export function buildEstimateApprovalEmail(opts: EstimateApprovalEmailOptions): 
   const bodyInner = [
     buildEmailParagraph(`Hi ${escapeHtml(recipientName)},`, { marginBottom: 4, bold: true }),
     buildEmailParagraph(
-      `Please review the estimate prepared for <strong style="color:#e2e8f0;">${escapeHtml(customerName)}</strong> (${escapeHtml(estimateNumber)}). Once approved, we&rsquo;ll get started right away.`,
+      `Please review the estimate prepared for <strong style="color:#111827;">${escapeHtml(customerName)}</strong> (${escapeHtml(estimateNumber)}). Once approved, we&rsquo;ll get started right away.`,
       { marginBottom: 20 }
     ),
     message
@@ -71,7 +71,7 @@ export function buildEstimateApprovalEmail(opts: EstimateApprovalEmailOptions): 
       { label: 'View Estimate', href: viewUrl },
     ]),
     buildEmailSupportNote(
-      'Questions or need changes? <strong style="color:#ffffff;">Just reply to this email</strong> &mdash; we&rsquo;re happy to assist.'
+      'Questions or need changes? <strong style="color:#111827;">Just reply to this email</strong> &mdash; we&rsquo;re happy to assist.'
     ),
   ].join('')
 
@@ -87,7 +87,7 @@ export function buildEstimateApprovalEmail(opts: EstimateApprovalEmailOptions): 
       buildEmailHeroBlock({
         badge: 'Awaiting Your Approval',
         headline: 'Review Your Estimate',
-        meta: `Estimate <strong style="color:#e7f1ff;">${escapeHtml(estimateNumber)}</strong> &bull; ${escapeHtml(sentDisplay)}`,
+        meta: `Estimate <strong style="color:#111827;">${escapeHtml(estimateNumber)}</strong> &bull; ${escapeHtml(sentDisplay)}`,
       }),
       buildEmailBodySection(bodyInner),
     ].join(''),
