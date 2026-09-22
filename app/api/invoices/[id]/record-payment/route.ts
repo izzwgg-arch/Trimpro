@@ -61,8 +61,44 @@ export async function POST(
       return NextResponse.json({ error: 'This invoice cannot accept payments.' }, { status: 400 })
     }
 
-    // Ordered target list: the current invoice first, then the customer's other
-    // open invoices oldest-first.
+    // Explicit split (from the new-payment editor) or auto oldest-first.
+    const rawAllocations = Array.isArray(body?.allocations) ? body.allocations : null
+    let explicitPlan: Array<{ invoiceId: string; amount: number }> | null = null
+    if (rawAllocations) {
+      const allocs: Array<{ invoiceId: string; amount: number }> = (rawAllocations as any[])
+        .map((a: any) => ({ invoiceId: String(a?.invoiceId || ''), amount: round2(a?.amount) }))
+        .filter((a: { invoiceId: string; amount: number }) => a.invoiceId && a.amount > 0)
+      if (allocs.length > 0) {
+        const allocInvoices = await prisma.invoice.findMany({
+          where: { id: { in: allocs.map((a) => a.invoiceId) }, tenantId: user.tenantId },
+          select: { id: true, clientId: true, balance: true, status: true },
+        })
+        const byId = new Map(allocInvoices.map((i) => [i.id, i]))
+        let sum = 0
+        for (const a of allocs) {
+          const inv = byId.get(a.invoiceId)
+          if (!inv) return NextResponse.json({ error: 'An invoice was not found.' }, { status: 404 })
+          if (inv.clientId !== current.clientId) {
+            return NextResponse.json({ error: 'All invoices must belong to one customer.' }, { status: 400 })
+          }
+          if (['CANCELLED', 'REFUNDED'].includes(String(inv.status))) {
+            return NextResponse.json({ error: 'An invoice cannot accept payment.' }, { status: 400 })
+          }
+          if (a.amount > round2(inv.balance) + 0.005) {
+            return NextResponse.json({ error: 'An amount exceeds the invoice balance.' }, { status: 400 })
+          }
+          sum = round2(sum + a.amount)
+        }
+        if (sum > amount + 0.005) {
+          return NextResponse.json({ error: 'Applied amounts exceed the payment total.' }, { status: 400 })
+        }
+        explicitPlan = allocs
+      } else {
+        explicitPlan = []
+      }
+    }
+
+    // Ordered target list for auto-apply: current invoice first, then oldest-first.
     const others = await prisma.invoice.findMany({
       where: {
         clientId: current.clientId,
@@ -89,16 +125,15 @@ export async function POST(
     const paymentGroupId = `pg_manual_${crypto.randomBytes(12).toString('hex')}`
 
     const outcome = await prisma.$transaction(async (tx) => {
-      let remaining = amount
       const created: Array<{ paymentId: string; invoiceId: string; invoiceNumber: string; applied: number }> = []
+      let appliedTotal = 0
 
-      for (const invId of orderedIds) {
-        if (remaining <= 0) break
+      const applyTo = async (invId: string, want: number) => {
         const res = await applyInvoicePayment(
           {
             invoiceId: invId,
             tenantId: user.tenantId,
-            amount: remaining,
+            amount: want,
             method: paymentMethod as any,
             provider,
             processedAt,
@@ -109,17 +144,28 @@ export async function POST(
           { tx }
         )
         if (res.created && res.paymentId) {
-          // applyInvoicePayment clamps to the invoice's remaining balance; read
-          // back the row to know how much actually applied.
           const row = await tx.payment.findUnique({ where: { id: res.paymentId }, select: { amount: true } })
           const appliedAmt = round2(row?.amount || 0)
           created.push({ paymentId: res.paymentId, invoiceId: invId, invoiceNumber: '', applied: appliedAmt })
-          remaining = round2(remaining - appliedAmt)
+          appliedTotal = round2(appliedTotal + appliedAmt)
+        }
+      }
+
+      if (explicitPlan) {
+        for (const a of explicitPlan) {
+          await applyTo(a.invoiceId, a.amount)
+        }
+      } else {
+        let remaining = amount
+        for (const invId of orderedIds) {
+          if (remaining <= 0) break
+          await applyTo(invId, remaining)
+          remaining = round2(amount - appliedTotal)
         }
       }
 
       let creditId: string | null = null
-      const leftover = round2(remaining)
+      const leftover = round2(amount - appliedTotal)
       if (leftover > 0) {
         const credit = await createOverpaymentCredit(tx, {
           tenantId: user.tenantId,

@@ -1216,15 +1216,7 @@ export default function InvoiceDetailPage() {
               </Button>
               <Button
                 variant="outline"
-                onClick={() => {
-                  setAddPaymentAmount(invoice.balance)
-                  setAddPaymentDate(new Date().toISOString().split('T')[0])
-                  setAddPaymentMethod('CHECK')
-                  setAddPaymentOtherLabel('')
-                  setAddPaymentReference('')
-                  setAddPaymentError('')
-                  setShowAddPayment(true)
-                }}
+                onClick={() => router.push(`/dashboard/payments/new?invoiceId=${invoice.id}`)}
               >
                 <Plus className="mr-2 h-4 w-4" />
                 Add Payment
