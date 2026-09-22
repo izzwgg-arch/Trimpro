@@ -54,6 +54,16 @@ export async function GET(request: NextRequest) {
   const status = searchParams.get('status') || 'all'
   const clientId = searchParams.get('clientId') || ''
   const { skip, take, page, limit } = getPaginationParams(searchParams)
+  const sortByRaw = searchParams.get('sortBy') || ''
+  const sortDirectionRaw = searchParams.get('sortDirection') || 'desc'
+  const sortDirection = sortDirectionRaw === 'asc' ? 'asc' : 'desc'
+  const sortMap: Record<string, any> = {
+    invoice: [{ invoiceNumber: sortDirection }, { title: sortDirection }],
+    status: { status: sortDirection },
+    client: { client: { name: sortDirection } },
+    total: { total: sortDirection },
+  }
+  const orderBy = sortMap[sortByRaw] || { createdAt: 'desc' }
 
   try {
     const where: any = {
@@ -131,9 +141,7 @@ export async function GET(request: NextRequest) {
             },
           },
         },
-        orderBy: {
-          createdAt: 'desc',
-        },
+        orderBy,
         skip,
         take,
       }),

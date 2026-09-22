@@ -42,7 +42,13 @@ export async function GET(request: NextRequest) {
     scheduledStart: { scheduledStart: sortDirection },
     createdAt: { createdAt: sortDirection },
     updatedAt: { updatedAt: sortDirection },
+    client: { client: { name: sortDirection } },
   }
+  // These aren't stored columns — they're computed by aggregating invoices per
+  // job/client — so they can't go through Prisma's orderBy. Handled below by
+  // computing the value for every matching job before paginating.
+  const COMPUTED_SORT_KEYS = new Set(['estimate', 'jobOpen', 'clientOpen', 'billing'])
+  const isComputedSort = COMPUTED_SORT_KEYS.has(sortByRaw)
   const orderBy = sortMap[sortByRaw] || sortMap.updatedAt
   const { skip, take, page, limit } = getPaginationParams(searchParams)
 
@@ -331,52 +337,95 @@ export async function GET(request: NextRequest) {
 
     applyJobTypeListFilter(where, jobTypeParam)
 
-    const [jobs, total] = await Promise.all([
-      prisma.job.findMany({
-        where,
+    const jobInclude = {
+      client: {
+        select: {
+          id: true,
+          name: true,
+          companyName: true,
+        },
+      },
+      assignments: {
         include: {
-          client: {
+          user: {
             select: {
               id: true,
-              name: true,
-              companyName: true,
-            },
-          },
-          assignments: {
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                },
-              },
-            },
-          },
-          addresses: {
-            where: { type: 'job_site' },
-            select: {
-              id: true,
-              street: true,
-              city: true,
-              state: true,
-              zipCode: true,
-            },
-            take: 1,
-          },
-          _count: {
-            select: {
-              tasks: true,
-              issues: true,
+              firstName: true,
+              lastName: true,
             },
           },
         },
-        orderBy,
-        skip,
-        take,
-      }),
-      prisma.job.count({ where }),
-    ])
+      },
+      addresses: {
+        where: { type: 'job_site' },
+        select: {
+          id: true,
+          street: true,
+          city: true,
+          state: true,
+          zipCode: true,
+        },
+        take: 1,
+      },
+      _count: {
+        select: {
+          tasks: true,
+          issues: true,
+        },
+      },
+    }
+
+    let jobs: any[]
+    let total: number
+
+    if (isComputedSort) {
+      // Total Cost / Job Open / Client Open / Billing aren't stored columns —
+      // they're derived from invoice aggregates — so sort them by computing the
+      // value for every matching job first, THEN paginating the sorted id list.
+      const allMinimal = await prisma.job.findMany({
+        where,
+        select: { id: true, clientId: true, actualAmount: true, estimateAmount: true },
+      })
+      const enrichedAll = await enrichJobsWithFinancials(allMinimal as any[])
+
+      const sortValueFor = (job: any) => {
+        if (sortByRaw === 'estimate') return Number(job.totalCost || job.estimateAmount || 0)
+        if (sortByRaw === 'jobOpen') return Number(job.openInvoiceBalance || 0)
+        if (sortByRaw === 'clientOpen') return Number(job.clientOpenInvoiceBalance || 0)
+        if (sortByRaw === 'billing') {
+          return parseInt(String(job.billingStatus || '0').match(/(\d+)/)?.[1] || '0', 10)
+        }
+        return 0
+      }
+
+      const sortedIds = enrichedAll
+        .map((j) => ({ id: j.id as string, value: sortValueFor(j) }))
+        .sort((a, b) => (sortDirection === 'asc' ? a.value - b.value : b.value - a.value))
+        .map((x) => x.id)
+
+      total = sortedIds.length
+      const pageIds = sortedIds.slice(skip, skip + take)
+
+      const pageJobsUnordered = await prisma.job.findMany({
+        where: { id: { in: pageIds } },
+        include: jobInclude,
+      })
+      const byId = new Map(pageJobsUnordered.map((j) => [j.id, j]))
+      jobs = pageIds.map((id) => byId.get(id)).filter(Boolean)
+    } else {
+      const [pageJobs, count] = await Promise.all([
+        prisma.job.findMany({
+          where,
+          include: jobInclude,
+          orderBy,
+          skip,
+          take,
+        }),
+        prisma.job.count({ where }),
+      ])
+      jobs = pageJobs
+      total = count
+    }
 
     const enrichedJobs = await enrichJobsWithFinancials(jobs as any[])
     return NextResponse.json({

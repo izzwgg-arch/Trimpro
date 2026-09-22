@@ -75,6 +75,17 @@ function progressBillingLabel(invoice: Invoice): string | null {
   return `${pct}% of ${invoice.estimate.estimateNumber}`
 }
 
+// Maps TableView column keys to the API's sortBy values so sorting happens
+// server-side across the whole result set, not just the current page.
+// 'jobSiteAddress' has no server-side equivalent (free-text derived from
+// relations) and remains unsorted.
+const INVOICE_SORT_KEY_MAP: Record<string, string> = {
+  invoice: 'invoice',
+  status: 'status',
+  client: 'client',
+  total: 'total',
+}
+
 function renderJobSiteAddress(address?: string) {
   const value = String(address || '').trim()
   if (!value) return null
@@ -152,13 +163,13 @@ export default function InvoicesPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [debouncedSearch, status])
+  }, [debouncedSearch, status, persistedSortKey, persistedSortDirection])
 
   useEffect(() => {
     if (permissionsLoading) return
     fetchInvoices()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch, status, page, permissionsLoading, canViewList])
+  }, [debouncedSearch, status, page, permissionsLoading, canViewList, persistedSortKey, persistedSortDirection])
 
   const fetchInvoices = async () => {
     if (!canViewList) {
@@ -178,6 +189,11 @@ export default function InvoicesPage() {
         page: String(page),
         limit: '50',
       })
+      const apiSortKey = persistedSortKey ? INVOICE_SORT_KEY_MAP[persistedSortKey] : null
+      if (apiSortKey) {
+        params.set('sortBy', apiSortKey)
+        params.set('sortDirection', persistedSortDirection)
+      }
 
       const response = await fetch(`/api/invoices?${params}`, {
         headers: {

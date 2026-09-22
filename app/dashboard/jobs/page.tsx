@@ -103,6 +103,22 @@ function formatJobAssignees(job: Job): string {
     .join(', ')
 }
 
+// Maps TableView column keys to the API's sortBy values so sorting happens
+// server-side across the whole result set, not just the current page.
+// 'site' and 'assignees' have no server-side equivalent (free-text derived
+// from relations) and remain page-local sorts.
+const JOB_SORT_KEY_MAP: Record<string, string> = {
+  job: 'jobNumber',
+  client: 'client',
+  scheduled: 'createdAt',
+  jobType: 'jobType',
+  status: 'status',
+  billing: 'billing',
+  estimate: 'estimate',
+  jobOpen: 'jobOpen',
+  clientOpen: 'clientOpen',
+}
+
 function UnreadMessagesBadge({ count }: { count?: number }) {
   if (!count || count <= 0) return null
   return (
@@ -168,13 +184,13 @@ export default function JobsPage() {
       return
     }
     setPage(1)
-  }, [debouncedSearch, status, jobType, startDate, endDate])
+  }, [debouncedSearch, status, jobType, startDate, endDate, persistedSortKey, persistedSortDirection])
 
   useEffect(() => {
     if (permissionsLoading) return
     fetchJobs()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch, status, jobType, startDate, endDate, page, permissionsLoading, canViewList])
+  }, [debouncedSearch, status, jobType, startDate, endDate, page, permissionsLoading, canViewList, persistedSortKey, persistedSortDirection])
 
   const fetchJobs = async () => {
     if (!canViewList) {
@@ -196,6 +212,11 @@ export default function JobsPage() {
       })
       if (startDate) params.set('startDate', startDate)
       if (endDate) params.set('endDate', endDate)
+      const apiSortKey = persistedSortKey ? JOB_SORT_KEY_MAP[persistedSortKey] : null
+      if (apiSortKey) {
+        params.set('sortBy', apiSortKey)
+        params.set('sortDirection', persistedSortDirection)
+      }
 
       const response = await fetch(`/api/jobs?${params}`, {
         headers: {

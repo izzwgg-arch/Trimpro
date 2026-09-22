@@ -55,6 +55,17 @@ function clientListBalance(c: Client) {
   return c.openInvoiceBalanceWithSubClients ?? c.openInvoiceBalance ?? '0'
 }
 
+// Maps TableView column keys to the API's sortBy values so sorting happens
+// server-side across the whole result set, not just the current page.
+const CLIENT_SORT_KEY_MAP: Record<string, string> = {
+  name: 'name',
+  status: 'status',
+  company: 'company',
+  jobs: 'jobs',
+  invoices: 'invoices',
+  openBalance: 'openBalance',
+}
+
 export default function ClientsPage() {
   const router = useRouter()
   const { highlightedId } = useListRestore('clients')
@@ -82,15 +93,15 @@ export default function ClientsPage() {
   }
 
   useEffect(() => {
-    // Reset to first page on filter changes.
+    // Reset to first page on filter/sort changes.
     setPage(1)
-  }, [debouncedSearch, status])
+  }, [debouncedSearch, status, persistedSortKey, persistedSortDirection])
 
   useEffect(() => {
     if (permissionsLoading) return
     fetchClients()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch, status, page, permissionsLoading, canViewList])
+  }, [debouncedSearch, status, page, permissionsLoading, canViewList, persistedSortKey, persistedSortDirection])
 
   const fetchClients = async () => {
     if (!canViewList) {
@@ -109,6 +120,11 @@ export default function ClientsPage() {
         page: String(page),
         limit: '50',
       })
+      const apiSortKey = persistedSortKey ? CLIENT_SORT_KEY_MAP[persistedSortKey] : null
+      if (apiSortKey) {
+        params.set('sortBy', apiSortKey)
+        params.set('sortDirection', persistedSortDirection)
+      }
 
       const response = await fetch(`/api/clients?${params}`, {
         headers: {

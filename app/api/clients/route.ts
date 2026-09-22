@@ -7,6 +7,82 @@ import { validateRequest, createClientSchema } from '@/lib/validation'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { applySmartSearch, buildSmartSearchAnd, ilike } from '@/lib/search/prisma-filters'
 
+const CLIENT_RAW_SORT_KEYS = new Set(['name', 'company', 'status', 'jobs', 'invoices'])
+
+/**
+ * Computes each client's own open invoice balance plus, for parent clients,
+ * the rolled-up balance across all descendants. Shared by the default page
+ * (rollup only needed for the current page) and the openBalance global sort
+ * (rollup needed for every client so paging stays correct across pages).
+ */
+async function computeClientOpenBalances(
+  tenantId: string,
+  clientRows: Array<{ id: string; parentId: string | null }>
+) {
+  const clientIds = clientRows.map((c) => c.id)
+  const parentIdsInSet = clientRows.filter((c) => !c.parentId).map((c) => c.id)
+  const childIdsByParent = new Map<string, string[]>()
+  const rootParentByClientId = new Map<string, string>()
+  for (const parentId of parentIdsInSet) rootParentByClientId.set(parentId, parentId)
+
+  let frontierParentIds = [...parentIdsInSet]
+  const allDescendants: Array<{ id: string; parentId: string | null }> = []
+  while (frontierParentIds.length > 0) {
+    const nextLayer = await prisma.client.findMany({
+      where: { tenantId, parentId: { in: frontierParentIds } },
+      select: { id: true, parentId: true },
+    })
+    if (nextLayer.length === 0) break
+
+    frontierParentIds = []
+    for (const child of nextLayer) {
+      if (!child.parentId) continue
+      const rootParentId = rootParentByClientId.get(child.parentId) || child.parentId
+      rootParentByClientId.set(child.id, rootParentId)
+      const list = childIdsByParent.get(rootParentId) || []
+      list.push(child.id)
+      childIdsByParent.set(rootParentId, list)
+      frontierParentIds.push(child.id)
+      allDescendants.push(child)
+    }
+  }
+
+  const extraChildIds = allDescendants.map((c) => c.id).filter((id) => !clientIds.includes(id))
+  const balanceClientIds = [...clientIds, ...extraChildIds]
+  const openBalanceByClientId = new Map<string, string>()
+
+  if (balanceClientIds.length) {
+    // "Open" means there is a remaining balance and it isn't closed/cancelled/refunded.
+    const grouped = await prisma.invoice.groupBy({
+      by: ['clientId'],
+      where: {
+        tenantId,
+        clientId: { in: balanceClientIds },
+        balance: { gt: 0 },
+        status: { notIn: ['PAID', 'CANCELLED', 'REFUNDED'] as any },
+      } as any,
+      _sum: { balance: true },
+    })
+
+    for (const row of grouped) {
+      openBalanceByClientId.set(String(row.clientId), row._sum.balance?.toString() || '0')
+    }
+  }
+
+  const sumOpen = (clientId: string) => parseFloat(openBalanceByClientId.get(clientId) || '0')
+
+  const ownById = new Map<string, number>()
+  const withSubsById = new Map<string, number | null>()
+  for (const c of clientRows) {
+    const own = sumOpen(c.id)
+    ownById.set(c.id, own)
+    const childIds = childIdsByParent.get(c.id) || []
+    withSubsById.set(c.id, childIds.length > 0 ? own + childIds.reduce((s, cid) => s + sumOpen(cid), 0) : null)
+  }
+
+  return { ownById, withSubsById }
+}
+
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
@@ -22,6 +98,18 @@ export async function GET(request: NextRequest) {
   const limit = Math.min(5000, Math.max(1, parseInt(searchParams.get('limit') || '50', 10)))
   const skip = (page - 1) * limit
   const take = limit
+  const sortByRaw = searchParams.get('sortBy') || ''
+  const sortDirectionRaw = searchParams.get('sortDirection') || 'desc'
+  const sortDirection = sortDirectionRaw === 'asc' ? 'asc' : 'desc'
+  const sortMap: Record<string, any> = {
+    name: { name: sortDirection },
+    company: { companyName: sortDirection },
+    status: { isActive: sortDirection },
+    jobs: { jobs: { _count: sortDirection } },
+    invoices: { invoices: { _count: sortDirection } },
+  }
+  const isOpenBalanceSort = sortByRaw === 'openBalance'
+  const orderBy = CLIENT_RAW_SORT_KEYS.has(sortByRaw) ? sortMap[sortByRaw] : { updatedAt: 'desc' }
 
   try {
     const where: any = {
@@ -67,116 +155,98 @@ export async function GET(request: NextRequest) {
       where.isActive = status === 'active'
     }
 
-    const [clients, total] = await Promise.all([
-      prisma.client.findMany({
+    const clientInclude = {
+      parent: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+      contacts: {
+        where: { isPrimary: true },
+        take: 1,
+      },
+      addresses: {
+        orderBy: { isDefault: 'desc' as const },
+        take: 1,
+        select: {
+          street: true,
+          city: true,
+          state: true,
+          zipCode: true,
+        },
+      },
+      _count: {
+        select: {
+          jobs: true,
+          invoices: true,
+        },
+      },
+    }
+
+    const formatClient = (c: any, ownById: Map<string, number>, withSubsById: Map<string, number | null>) => {
+      const own = ownById.get(c.id) || 0
+      const withSubs = withSubsById.get(c.id)
+      return {
+        ...c,
+        address: c.addresses?.[0]
+          ? [c.addresses[0].street, [c.addresses[0].city, c.addresses[0].state, c.addresses[0].zipCode].filter(Boolean).join(' ')]
+              .filter(Boolean)
+              .join(', ')
+          : null,
+        openInvoiceBalance: own.toFixed(2),
+        openInvoiceBalanceWithSubClients: withSubs != null ? withSubs.toFixed(2) : null,
+      }
+    }
+
+    let clients: any[]
+    let total: number
+
+    if (isOpenBalanceSort) {
+      // Open Balance isn't a stored column — it's a rollup across invoices (and,
+      // for parent clients, descendants). To keep sorting correct across pages,
+      // compute it for every matching client up front, sort, THEN paginate.
+      const allRows = await prisma.client.findMany({
         where,
-        include: {
-          parent: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
-          contacts: {
-            where: { isPrimary: true },
-            take: 1,
-          },
-          addresses: {
-            orderBy: { isDefault: 'desc' },
-            take: 1,
-            select: {
-              street: true,
-              city: true,
-              state: true,
-              zipCode: true,
-            },
-          },
-          _count: {
-            select: {
-              jobs: true,
-              invoices: true,
-            },
-          },
-        },
-        orderBy: {
-          updatedAt: 'desc',
-        },
-        skip,
-        take,
-      }),
-      prisma.client.count({ where }),
-    ])
-
-    const clientIds = clients.map((c) => c.id)
-    const openBalanceByClientId = new Map<string, string>()
-
-    const parentIdsOnPage = clients.filter((c) => !c.parentId).map((c) => c.id)
-    const childIdsByParent = new Map<string, string[]>()
-    const rootParentByClientId = new Map<string, string>()
-    for (const parentId of parentIdsOnPage) rootParentByClientId.set(parentId, parentId)
-
-    let frontierParentIds = [...parentIdsOnPage]
-    const allDescendants: Array<{ id: string; parentId: string | null }> = []
-    while (frontierParentIds.length > 0) {
-      const nextLayer = await prisma.client.findMany({
-        where: { tenantId: user.tenantId, parentId: { in: frontierParentIds } },
         select: { id: true, parentId: true },
       })
-      if (nextLayer.length === 0) break
+      const { ownById, withSubsById } = await computeClientOpenBalances(user.tenantId, allRows)
+      const valueFor = (id: string) => withSubsById.get(id) ?? ownById.get(id) ?? 0
 
-      frontierParentIds = []
-      for (const child of nextLayer) {
-        if (!child.parentId) continue
-        const rootParentId = rootParentByClientId.get(child.parentId) || child.parentId
-        rootParentByClientId.set(child.id, rootParentId)
-        const list = childIdsByParent.get(rootParentId) || []
-        list.push(child.id)
-        childIdsByParent.set(rootParentId, list)
-        frontierParentIds.push(child.id)
-        allDescendants.push(child)
-      }
-    }
+      const sortedIds = allRows
+        .map((r) => r.id)
+        .sort((a, b) => (sortDirection === 'asc' ? valueFor(a) - valueFor(b) : valueFor(b) - valueFor(a)))
 
-    const extraChildIds = allDescendants.map((c) => c.id).filter((id) => !clientIds.includes(id))
-    const balanceClientIds = [...clientIds, ...extraChildIds]
+      total = sortedIds.length
+      const pageIds = sortedIds.slice(skip, skip + take)
 
-    if (balanceClientIds.length) {
-      // "Open" means there is a remaining balance and it isn't closed/cancelled/refunded.
-      const grouped = await prisma.invoice.groupBy({
-        by: ['clientId'],
-        where: {
-          tenantId: user.tenantId,
-          clientId: { in: balanceClientIds },
-          balance: { gt: 0 },
-          status: { notIn: ['PAID', 'CANCELLED', 'REFUNDED'] as any },
-        } as any,
-        _sum: { balance: true },
+      const pageClientsUnordered = await prisma.client.findMany({
+        where: { id: { in: pageIds } },
+        include: clientInclude,
       })
-
-      for (const row of grouped) {
-        openBalanceByClientId.set(String(row.clientId), row._sum.balance?.toString() || '0')
-      }
+      const byId = new Map(pageClientsUnordered.map((c) => [c.id, c]))
+      clients = pageIds.map((id) => byId.get(id)).filter(Boolean).map((c) => formatClient(c, ownById, withSubsById))
+    } else {
+      const [pageClients, count] = await Promise.all([
+        prisma.client.findMany({
+          where,
+          include: clientInclude,
+          orderBy,
+          skip,
+          take,
+        }),
+        prisma.client.count({ where }),
+      ])
+      total = count
+      const { ownById, withSubsById } = await computeClientOpenBalances(
+        user.tenantId,
+        pageClients.map((c) => ({ id: c.id, parentId: c.parentId }))
+      )
+      clients = pageClients.map((c) => formatClient(c, ownById, withSubsById))
     }
-
-    const sumOpen = (clientId: string) => parseFloat(openBalanceByClientId.get(clientId) || '0')
 
     return NextResponse.json({
-      clients: clients.map((c) => {
-        const own = sumOpen(c.id)
-        const childIds = childIdsByParent.get(c.id) || []
-        const withSubs =
-          childIds.length > 0 ? own + childIds.reduce((s, cid) => s + sumOpen(cid), 0) : own
-        return {
-          ...c,
-          address: c.addresses?.[0]
-            ? [c.addresses[0].street, [c.addresses[0].city, c.addresses[0].state, c.addresses[0].zipCode].filter(Boolean).join(' ')]
-                .filter(Boolean)
-                .join(', ')
-            : null,
-          openInvoiceBalance: own.toFixed(2),
-          openInvoiceBalanceWithSubClients: childIds.length > 0 ? withSubs.toFixed(2) : null,
-        }
-      }),
+      clients,
       pagination: createPaginationResponse(total, limit, skip),
     })
   } catch (error) {
