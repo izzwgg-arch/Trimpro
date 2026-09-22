@@ -45,7 +45,7 @@ import { formatDistanceToNow } from 'date-fns'
 // about are included here.
 const NAV_ITEM_LINK_TYPES: Record<string, string> = {
   Jobs: 'job',
-  Requests: 'request',
+  // Requests is driven by lead status (see newRequests), not notifications.
   Issues: 'issue',
   Tasks: 'task',
   Messages: 'message',
@@ -189,6 +189,9 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
   const [unreadNavNotifications, setUnreadNavNotifications] = useState<UnreadNavNotification[]>([])
+  // Requests badge is driven by lead STATUS (stays until the lead leaves NEW),
+  // not by whether a notification was read.
+  const [newRequests, setNewRequests] = useState<UnreadNavNotification[]>([])
 
   // Persist collapse state across sessions
   useEffect(() => {
@@ -224,8 +227,46 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
     }
   }, [])
 
-  const unreadByNavItem = (itemName: string) =>
-    unreadNavNotifications.filter((n) => n.linkType === NAV_ITEM_LINK_TYPES[itemName])
+  // Poll leads still in NEW status to drive the Requests badge. Unlike the
+  // notification-based badges, this stays until the request's status changes.
+  useEffect(() => {
+    let cancelled = false
+    const fetchNewRequests = async () => {
+      try {
+        const token = localStorage.getItem('accessToken')
+        if (!token) return
+        const res = await fetch('/api/leads?status=NEW&limit=50', {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (!res.ok) return
+        const data = await res.json()
+        if (cancelled) return
+        const items: UnreadNavNotification[] = (data.leads || []).map((lead: any) => ({
+          id: lead.id,
+          title: `${lead.firstName ?? ''} ${lead.lastName ?? ''}`.trim() || lead.company || 'New request',
+          message: lead.company || lead.notes || null,
+          linkType: 'request',
+          linkUrl: `/dashboard/requests/${lead.id}`,
+          createdAt: lead.createdAt,
+        }))
+        setNewRequests(items)
+      } catch (error) {
+        console.error('Failed to fetch new requests:', error)
+      }
+    }
+    fetchNewRequests()
+    const interval = setInterval(fetchNewRequests, 30000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [])
+
+  const unreadByNavItem = (itemName: string) => {
+    // Requests badge follows lead status (stays until it leaves NEW).
+    if (itemName === 'Requests') return newRequests
+    return unreadNavNotifications.filter((n) => n.linkType === NAV_ITEM_LINK_TYPES[itemName])
+  }
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
