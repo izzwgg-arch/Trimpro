@@ -65,22 +65,19 @@ export function buildEmailShell(opts: EmailShellOptions): string {
       .tp-headline { font-size:24px !important; line-height:30px !important; }
       .tp-btn-full { display:block !important; width:100% !important; }
     }
-    @media (prefers-color-scheme: light) {
-      .tp-email-body { background-color:#f8f9fc !important; }
-      .tp-email-card { background-color:#ffffff !important; }
-      .tp-headline { color:#1f2937 !important; }
-      .tp-hero-meta { color:#475569 !important; }
-      .tp-body-text { color:#1f2937 !important; }
-      .tp-foot-copy { color:#475569 !important; }
-    }
+    /* This is a dark-branded email. Keep the dark palette in every client
+       (Gmail, new Outlook, Apple Mail) rather than letting a client's light
+       mode swap backgrounds/text and break contrast. */
+    [data-ogsc] .tp-email-body, [data-ogsb] .tp-email-body { background-color:${EMAIL_OUTER_BG} !important; }
+    [data-ogsc] .tp-email-card, [data-ogsb] .tp-email-card { background-color:${EMAIL_CARD_BG} !important; }
   </style>
 </head>
 <body class="tp-email-body" style="margin:0;padding:0;width:100%;background-color:${EMAIL_OUTER_BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
   ${preheader}
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="${TABLE_RESET}background-color:${EMAIL_OUTER_BG};">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${EMAIL_OUTER_BG}" style="${TABLE_RESET}background-color:${EMAIL_OUTER_BG};">
     <tr>
-      <td align="center" valign="top" style="padding:20px 12px 28px;">
-        <table role="presentation" class="tp-email-container tp-email-card" cellpadding="0" cellspacing="0" border="0" width="${EMAIL_WIDTH}" style="${TABLE_RESET}width:${EMAIL_WIDTH}px;max-width:${EMAIL_WIDTH}px;background-color:${EMAIL_CARD_BG};">
+      <td align="center" valign="top" bgcolor="${EMAIL_OUTER_BG}" style="padding:20px 12px 28px;background-color:${EMAIL_OUTER_BG};">
+        <table role="presentation" class="tp-email-container tp-email-card" cellpadding="0" cellspacing="0" border="0" width="${EMAIL_WIDTH}" bgcolor="${EMAIL_CARD_BG}" style="${TABLE_RESET}width:${EMAIL_WIDTH}px;max-width:${EMAIL_WIDTH}px;background-color:${EMAIL_CARD_BG};">
           ${opts.headerHtml}
           ${opts.bodyHtml}
           ${opts.footerHtml || ''}
@@ -107,7 +104,7 @@ export function buildEmailHeaderBlock(opts: {
     : `<p style="margin:0 0 6px;font-size:22px;font-weight:800;letter-spacing:-0.3px;color:${EMAIL_ACCENT};line-height:28px;">${company}</p>`
 
   return `<tr>
-    <td class="tp-pad-header" align="center" valign="top" style="padding:30px 32px 22px;background-color:${EMAIL_CARD_BG};border-bottom:1px solid #3d5a73;text-align:center;">
+    <td class="tp-pad-header" align="center" valign="top" bgcolor="${EMAIL_CARD_BG}" style="padding:30px 32px 22px;background-color:${EMAIL_CARD_BG};border-bottom:1px solid #3d5a73;text-align:center;">
       ${logo}
       ${eyebrow}
     </td>
@@ -134,7 +131,7 @@ export function buildEmailHeroBlock(opts: {
     : ''
 
   return `<tr>
-    <td class="tp-pad-hero" align="center" valign="top" style="padding:26px 32px 20px;border-bottom:1px solid #3d5a73;text-align:center;">
+    <td class="tp-pad-hero" align="center" valign="top" bgcolor="${EMAIL_CARD_BG}" style="padding:26px 32px 20px;background-color:${EMAIL_CARD_BG};border-bottom:1px solid #3d5a73;text-align:center;">
       ${badge}
       <p class="tp-headline" style="margin:0 0 8px;font-size:28px;font-weight:800;line-height:34px;letter-spacing:-0.4px;color:${EMAIL_ACCENT};mso-line-height-rule:exactly;">${escapeHtml(opts.headline)}</p>
       ${meta}
@@ -144,7 +141,7 @@ export function buildEmailHeroBlock(opts: {
 
 export function buildEmailBodySection(innerHtml: string): string {
   return `<tr>
-    <td class="tp-pad-body" valign="top" style="padding:24px 32px;background-color:${EMAIL_CARD_BG};">
+    <td class="tp-pad-body" valign="top" bgcolor="${EMAIL_CARD_BG}" style="padding:24px 32px;background-color:${EMAIL_CARD_BG};">
       ${innerHtml}
     </td>
   </tr>`
@@ -283,7 +280,7 @@ export function buildEmailFooterBlock(opts: {
     .join('')
 
   return `<tr>
-    <td class="tp-pad-footer" align="center" valign="top" style="padding:20px 32px 22px;background-color:#223347;border-top:1px solid #46627f;text-align:center;">
+    <td class="tp-pad-footer" align="center" valign="top" bgcolor="#223347" style="padding:20px 32px 22px;background-color:#223347;border-top:1px solid #46627f;text-align:center;">
       <p style="margin:0 0 6px;font-size:13px;font-weight:700;color:${EMAIL_ACCENT};line-height:18px;mso-line-height-rule:exactly;">${escapeHtml(opts.companyName)}</p>
       ${support}
       ${lines}
