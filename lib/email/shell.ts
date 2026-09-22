@@ -4,7 +4,7 @@
  */
 
 export const EMAIL_WIDTH = 600
-export const EMAIL_OUTER_BG = '#0f172a'
+export const EMAIL_OUTER_BG = '#ffffff'
 export const EMAIL_CARD_BG = '#243f53'
 export const EMAIL_ACCENT = '#f8dea4'
 export const EMAIL_BUTTON_BG = '#f0c974'
