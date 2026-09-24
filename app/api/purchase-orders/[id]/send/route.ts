@@ -12,6 +12,7 @@ import { getPdfBranding } from '@/lib/branding/pdf'
 import { buildPurchaseOrderEmail } from '@/lib/email/templates/purchase-order'
 import { renderPurchaseOrderEmailPdfAttachment } from '@/lib/documents/email-pdf-attachments'
 import { loadEmailEntityAttachments } from '@/lib/documents/email-entity-attachments'
+import { formatAmount } from '@/lib/utils'
 
 export const runtime = 'nodejs'
 
@@ -92,7 +93,7 @@ export async function POST(
       )
     }
 
-    const total = Number(purchaseOrder.total).toFixed(2)
+    const total = formatAmount(Number(purchaseOrder.total))
     const vendorCompany =
       purchaseOrder.vendorRef?.name || purchaseOrder.vendor || 'Vendor'
     const vendorName =

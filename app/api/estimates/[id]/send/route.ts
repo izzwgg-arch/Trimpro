@@ -14,6 +14,7 @@ import { renderEstimateEmailPdfAttachment } from '@/lib/documents/email-pdf-atta
 import { loadEmailEntityAttachments } from '@/lib/documents/email-entity-attachments'
 import { parseEstimatePdfView } from '@/lib/estimates/estimate-pdf-view'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
+import { formatCurrency } from '@/lib/utils'
 
 export const runtime = 'nodejs'
 
@@ -151,7 +152,7 @@ export async function POST(
       recipientName: customerName,
       customerName,
       estimateNumber: estimate.estimateNumber,
-      total: `$${Number(estimate.total || 0).toFixed(2)}`,
+      total: formatCurrency(Number(estimate.total || 0)),
       sentDisplay: sentDisplay || sentIso,
       approveUrl,
       viewUrl,
@@ -190,7 +191,7 @@ export async function POST(
 
 ${message ? String(message) : `Please review estimate ${estimate.estimateNumber}.`}
 
-Total: $${Number(estimate.total || 0).toFixed(2)}
+Total: ${formatCurrency(Number(estimate.total || 0))}
 ${validUntil ? `Valid until: ${validUntil}\n` : ''}View estimate: ${viewUrl}
 Approve estimate: ${approveUrl}`.trim()
 

@@ -11,6 +11,7 @@ import { getPdfBranding } from '@/lib/branding/pdf'
 import { buildCreditMemoEmail } from '@/lib/email/templates/credit-memo'
 import { renderCreditMemoEmailPdfAttachment } from '@/lib/documents/email-pdf-attachments'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
+import { formatAmount } from '@/lib/utils'
 
 export const runtime = 'nodejs'
 
@@ -97,8 +98,8 @@ export async function POST(
     const html = buildCreditMemoEmail({
       creditMemoNumber: creditMemo.creditMemoNumber,
       clientName,
-      total: Number(creditMemo.total).toFixed(2),
-      remaining: Number(creditMemo.remainingCredit).toFixed(2),
+      total: formatAmount(Number(creditMemo.total)),
+      remaining: formatAmount(Number(creditMemo.remainingCredit)),
       message: message ? String(message) : undefined,
       logoUrl: logoUrl || undefined,
       companyName,
@@ -109,7 +110,7 @@ export async function POST(
       to: recipients,
       subject: subject || `Credit Memo ${creditMemo.creditMemoNumber} from ${companyName}`,
       html,
-      text: `Credit Memo ${creditMemo.creditMemoNumber}\nTotal: $${Number(creditMemo.total).toFixed(2)}\nRemaining: $${Number(creditMemo.remainingCredit).toFixed(2)}`,
+      text: `Credit Memo ${creditMemo.creditMemoNumber}\nTotal: $${formatAmount(Number(creditMemo.total))}\nRemaining: $${formatAmount(Number(creditMemo.remainingCredit))}`,
       attachments: [pdfAttachment],
     })
 

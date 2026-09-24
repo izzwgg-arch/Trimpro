@@ -9,6 +9,7 @@ import { getPdfBranding } from '@/lib/branding/pdf'
 import { renderInvoiceEmailPdfAttachment } from '@/lib/documents/email-pdf-attachments'
 import { loadEmailEntityAttachments } from '@/lib/documents/email-entity-attachments'
 import { formatAddressParts } from '@/lib/address/parse'
+import { formatAmount } from '@/lib/utils'
 
 function formatEmailSentDate(value: Date | number | string) {
   const date = value instanceof Date ? value : new Date(value)
@@ -118,8 +119,8 @@ export async function sendInvoiceEmailForInvoice(params: {
     return { ok: false, status: 400, error: 'Email integration is not configured. Please configure Email Provider first.' }
   }
 
-  const total = Number(invoice.total || 0).toFixed(2)
-  const balance = Number(invoice.balance || 0).toFixed(2)
+  const total = formatAmount(Number(invoice.total || 0))
+  const balance = formatAmount(Number(invoice.balance || 0))
   const dueDate = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : ''
   const emailBranding = await getEmailBranding(tenantId)
   const logoUrl = emailBranding?.emailLogoUrl || emailBranding?.webLogoUrl || ''

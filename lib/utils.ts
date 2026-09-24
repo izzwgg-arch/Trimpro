@@ -13,6 +13,15 @@ export function formatCurrency(amount: number | string): string {
   }).format(num)
 }
 
+/** Comma-grouped number with 2 decimals, no currency symbol — for building "$${amount}" strings in emails/PDFs. */
+export function formatAmount(amount: number | string): string {
+  const num = typeof amount === 'string' ? parseFloat(amount) : amount
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(num)
+}
+
 export function formatDate(date: Date | string): string {
   const d = typeof date === 'string' ? new Date(date) : date
   return new Intl.DateTimeFormat('en-US', {
