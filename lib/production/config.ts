@@ -51,6 +51,26 @@ export interface ProductionStageConfig {
   nextAction: string
 }
 
+/**
+ * A board column groups one or more existing Job Statuses under a custom
+ * heading. Admins can add columns and assign statuses to them. Jobs still
+ * belong to their real Job.status; a job renders in whichever column claims
+ * its status (each active status belongs to exactly one column).
+ */
+export interface ProductionColumnConfig {
+  id: string
+  displayName: string
+  color: string
+  icon: string
+  order: number
+  visible: boolean
+  showJobCount: boolean
+  defaultSort: ProductionSortKey
+  defaultSortDir: ProductionSortDir
+  /** Existing Job Statuses that feed this column (never archive statuses). */
+  statuses: JobStatusValue[]
+}
+
 /** The card fields an admin can show/hide/reorder. Keys are stable. */
 export type ProductionCardFieldKey =
   | 'jobNumber'
@@ -116,10 +136,18 @@ export interface ProductionAutomationConfig {
 
 export interface ProductionConfig {
   version: number
+  /** Board columns (custom groupings of statuses). */
+  columns: ProductionColumnConfig[]
+  /** Per-status settings: card "Stage" label + Next Action (+ On Hold/archive display). */
   stages: ProductionStageConfig[]
   card: ProductionCardConfig
   filters: Record<ProductionFilterKey, boolean>
   automation: Record<JobStatusValue, ProductionAutomationConfig>
+}
+
+/** Active statuses that can be placed into board columns (not On Hold/archive). */
+export function activeColumnStatuses(): JobStatusValue[] {
+  return ALL_STATUSES.filter((s) => s !== 'ON_HOLD' && !isArchiveStatus(s))
 }
 
 /** Card-field catalog: key → label + whether it renders by default. */
@@ -204,6 +232,68 @@ function defaultAutomation(): ProductionAutomationConfig {
   }
 }
 
+/** Default columns: one per active status, seeded from the stage display. */
+function buildColumnsFromStages(stages: ProductionStageConfig[]): ProductionColumnConfig[] {
+  const active = activeColumnStatuses()
+  return stages
+    .filter((s) => active.includes(s.status))
+    .sort((a, b) => a.order - b.order)
+    .map((s, i) => ({
+      id: `col_${s.status}`,
+      displayName: s.displayName,
+      color: s.color,
+      icon: s.icon,
+      order: i,
+      visible: s.visible,
+      showJobCount: s.showJobCount,
+      defaultSort: s.defaultSort,
+      defaultSortDir: s.defaultSortDir,
+      statuses: [s.status],
+    }))
+}
+
+/**
+ * Normalize stored columns: keep real active statuses, partition each status
+ * to exactly one column (first wins), and append a default column for any
+ * active status left uncovered so no jobs can silently vanish.
+ */
+function sanitizeColumns(stored: any[], fallbackStages: ProductionStageConfig[]): ProductionColumnConfig[] {
+  const active = new Set<string>(activeColumnStatuses())
+  const seen = new Set<string>()
+  const columns: ProductionColumnConfig[] = []
+  let order = 0
+  for (const c of stored) {
+    if (!c || typeof c !== 'object') continue
+    const statuses = (Array.isArray(c.statuses) ? c.statuses : [])
+      .filter((s: any) => typeof s === 'string' && active.has(s) && !seen.has(s)) as JobStatusValue[]
+    statuses.forEach((s) => seen.add(s))
+    columns.push({
+      id: typeof c.id === 'string' && c.id ? c.id : `col_${order}_${Math.random().toString(36).slice(2, 7)}`,
+      displayName: typeof c.displayName === 'string' ? c.displayName : 'Column',
+      color: typeof c.color === 'string' ? c.color : '#64748b',
+      icon: typeof c.icon === 'string' ? c.icon : 'Circle',
+      order: Number.isFinite(c.order) ? Number(c.order) : order,
+      visible: typeof c.visible === 'boolean' ? c.visible : true,
+      showJobCount: typeof c.showJobCount === 'boolean' ? c.showJobCount : true,
+      defaultSort: typeof c.defaultSort === 'string' ? c.defaultSort : 'lastUpdated',
+      defaultSortDir: c.defaultSortDir === 'asc' || c.defaultSortDir === 'desc' ? c.defaultSortDir : 'desc',
+      statuses,
+    })
+    order++
+  }
+  // Any active status not covered anywhere gets its own column so jobs show up.
+  for (const s of fallbackStages) {
+    if (!active.has(s.status) || seen.has(s.status)) continue
+    columns.push({
+      id: `col_${s.status}`, displayName: s.displayName, color: s.color, icon: s.icon,
+      order: order++, visible: s.visible, showJobCount: s.showJobCount,
+      defaultSort: s.defaultSort, defaultSortDir: s.defaultSortDir, statuses: [s.status],
+    })
+    seen.add(s.status)
+  }
+  return columns.sort((a, b) => a.order - b.order).map((c, i) => ({ ...c, order: i }))
+}
+
 /** Build the full default config from the existing status map. */
 export function buildDefaultProductionConfig(): ProductionConfig {
   const stages: ProductionStageConfig[] = DEFAULT_STAGE_ORDER.map((status, i) => {
@@ -238,7 +328,7 @@ export function buildDefaultProductionConfig(): ProductionConfig {
     overdue: true,
   }
 
-  return { version: PRODUCTION_CONFIG_VERSION, stages, card: defaultCard(), filters, automation }
+  return { version: PRODUCTION_CONFIG_VERSION, columns: buildColumnsFromStages(stages), stages, card: defaultCard(), filters, automation }
 }
 
 /**
@@ -329,7 +419,13 @@ export function mergeProductionConfig(stored: any): ProductionConfig {
     }
   }
 
-  return { version: PRODUCTION_CONFIG_VERSION, stages, card, filters, automation }
+  // Columns: use stored columns when present (sanitized/partitioned); otherwise
+  // derive one column per active stage (also migrates older v1 configs).
+  const columns = Array.isArray(stored.columns) && stored.columns.length
+    ? sanitizeColumns(stored.columns, stages)
+    : buildColumnsFromStages(stages)
+
+  return { version: PRODUCTION_CONFIG_VERSION, columns, stages, card, filters, automation }
 }
 
 /** Effective production info for a status, with tenant display overrides applied. */

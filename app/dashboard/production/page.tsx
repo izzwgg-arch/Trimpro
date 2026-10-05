@@ -249,19 +249,19 @@ export default function ProductionPage() {
   const onHoldStage = useMemo(() => config.stages.find((s) => s.status === 'ON_HOLD'), [config])
   const onHoldJobs = useMemo(() => visibleJobs.filter((j) => j.status === 'ON_HOLD'), [visibleJobs])
 
-  // Active board columns come from the tenant config: one column per existing
-  // Job Status (excluding On Hold + archive), honoring visibility + order.
-  // Jobs are grouped strictly by job.status — the single source of truth.
+  // Active board columns come from the tenant config. Each column groups one
+  // or more existing Job Statuses; a job renders in whichever column claims its
+  // status. Jobs are grouped strictly by job.status — the single source of truth.
   const columns = useMemo(() => {
-    return [...config.stages]
-      .filter((s) => s.visible && s.status !== 'ON_HOLD' && !isArchiveStatus(s.status))
+    return [...config.columns]
+      .filter((c) => c.visible)
       .sort((a, b) => a.order - b.order)
-      .map((stage) => ({
-        stage,
+      .map((col) => ({
+        col,
         jobs: sortJobs(
-          visibleJobs.filter((j) => j.status === stage.status),
-          stage.defaultSort,
-          stage.defaultSortDir
+          visibleJobs.filter((j) => col.statuses.includes(j.status as any)),
+          col.defaultSort,
+          col.defaultSortDir
         ),
       }))
   }, [visibleJobs, config])
@@ -429,33 +429,33 @@ export default function ProductionPage() {
               Production Board
             </div>
             <div className="scrollbar-visible-x flex gap-4 overflow-x-auto pb-3">
-              {columns.map((col) => (
+              {columns.map(({ col, jobs: colJobs }) => (
                 <div
-                  key={col.stage.status}
+                  key={col.id}
                   className="flex max-h-[65vh] flex-shrink-0 flex-col rounded-lg border bg-gray-50"
                   style={{ width: config.card.width }}
                 >
-                  <div className="flex items-center justify-between rounded-t-lg border-b px-3 py-2 text-white" style={{ backgroundColor: col.stage.color }}>
+                  <div className="flex items-center justify-between rounded-t-lg border-b px-3 py-2 text-white" style={{ backgroundColor: col.color }}>
                     <span className="flex items-center gap-1.5 text-sm font-semibold">
-                      <StageIcon name={col.stage.icon} className="h-4 w-4" />
-                      {col.stage.displayName}
+                      <StageIcon name={col.icon} className="h-4 w-4" />
+                      {col.displayName}
                     </span>
-                    {col.stage.showJobCount && (
+                    {col.showJobCount && (
                       <span className="rounded-full bg-white/25 px-2 py-0.5 text-xs font-semibold">
-                        {col.jobs.length}
+                        {colJobs.length}
                       </span>
                     )}
                   </div>
                   <div className="scrollbar-visible-x flex-1 space-y-2 overflow-y-auto p-2">
-                    {col.jobs.length === 0 ? (
+                    {colJobs.length === 0 ? (
                       <p className="px-2 py-4 text-center text-xs text-gray-400">No jobs</p>
                     ) : (
-                      col.jobs.map((job) => (
+                      colJobs.map((job) => (
                         <ProductionJobCard
                           key={job.id}
                           job={toCardData(job)}
                           config={config}
-                          stageColor={col.stage.color}
+                          stageColor={col.color}
                           onClick={() => router.push(`/dashboard/jobs/${job.id}`)}
                         />
                       ))

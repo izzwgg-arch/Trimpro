@@ -13,14 +13,17 @@ import { StageIcon } from '@/components/production/StageIcon'
 import {
   buildDefaultProductionConfig,
   mergeProductionConfig,
+  activeColumnStatuses,
   PRODUCTION_CARD_FIELDS,
   PRODUCTION_ICONS,
   type ProductionConfig,
   type ProductionStageConfig,
+  type ProductionColumnConfig,
   type ProductionCardFieldKey,
   type ProductionSortKey,
 } from '@/lib/production/config'
-import { formatJobStatus } from '@/lib/jobs/statuses'
+import { formatJobStatus, type JobStatusValue } from '@/lib/jobs/statuses'
+import { Plus, Trash2 } from 'lucide-react'
 
 const SORT_OPTIONS: Array<{ value: ProductionSortKey; label: string }> = [
   { value: 'dueDate', label: 'Due Date' },
@@ -155,6 +158,54 @@ export default function ProductionSettingsPage() {
     return c
   })
 
+  const moveColumn = (index: number, dir: -1 | 1) => update((c) => {
+    const arr = [...c.columns].sort((a, b) => a.order - b.order)
+    const j = index + dir
+    if (j < 0 || j >= arr.length) return c
+    ;[arr[index], arr[j]] = [arr[j], arr[index]]
+    arr.forEach((col, i) => (col.order = i))
+    c.columns = arr
+    return c
+  })
+
+  const setColumn = (id: string, patch: Partial<ProductionColumnConfig>) => update((c) => {
+    c.columns = c.columns.map((col) => (col.id === id ? { ...col, ...patch } : col))
+    return c
+  })
+
+  const addColumn = () => update((c) => {
+    const order = c.columns.length
+    c.columns = [...c.columns, {
+      id: `col_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      displayName: 'New Column', color: '#64748b', icon: 'Circle', order,
+      visible: true, showJobCount: true, defaultSort: 'lastUpdated', defaultSortDir: 'desc', statuses: [],
+    }]
+    return c
+  })
+
+  const deleteColumn = (id: string) => update((c) => {
+    if (c.columns.length <= 1) return c
+    const removed = c.columns.find((col) => col.id === id)
+    const rest = c.columns.filter((col) => col.id !== id).sort((a, b) => a.order - b.order)
+    // Don't lose statuses: move them to the first remaining column.
+    if (removed && removed.statuses.length && rest[0]) {
+      rest[0] = { ...rest[0], statuses: [...rest[0].statuses, ...removed.statuses] }
+    }
+    c.columns = rest.map((col, i) => ({ ...col, order: i }))
+    return c
+  })
+
+  // Assign a status to a column (each status belongs to exactly one column).
+  const assignStatus = (columnId: string, status: JobStatusValue) => update((c) => {
+    c.columns = c.columns.map((col) => {
+      if (col.id === columnId) {
+        return col.statuses.includes(status) ? col : { ...col, statuses: [...col.statuses, status] }
+      }
+      return { ...col, statuses: col.statuses.filter((s) => s !== status) }
+    })
+    return c
+  })
+
   const stageColorForPreview = useMemo(() => {
     const s = config?.stages.find((x) => x.status === SAMPLE_JOB.status)
     return s?.color || '#64748b'
@@ -196,65 +247,88 @@ export default function ProductionSettingsPage() {
 
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <div className="space-y-6">
-          {/* STAGES / COLUMNS */}
+          {/* BOARD COLUMNS */}
           <Card>
             <CardHeader>
-              <CardTitle>Production Stages &amp; Columns</CardTitle>
-              <CardDescription>Each stage maps to an existing Job Status (shown as a tag). Rename, recolor, reorder, hide, and set the Next Action — the underlying Job Status never changes.</CardDescription>
+              <CardTitle>Board Columns</CardTitle>
+              <CardDescription>Add columns and group one or more existing Job Statuses under each. Jobs still live under their real Job Status — a job shows in whichever column claims its status. Each status belongs to exactly one column.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              {sortedStages.map((s, i) => (
-                <div key={s.status} className="rounded-lg border p-3">
+              {[...config.columns].sort((a, b) => a.order - b.order).map((col, i, arr) => (
+                <div key={col.id} className="rounded-lg border p-3">
                   <div className="flex items-start gap-2">
                     <div className="flex flex-col pt-1">
-                      <button disabled={ro || i === 0} onClick={() => moveStage(i, -1)} className="text-gray-400 hover:text-gray-700 disabled:opacity-30"><ChevronUp className="h-4 w-4" /></button>
-                      <button disabled={ro || i === sortedStages.length - 1} onClick={() => moveStage(i, 1)} className="text-gray-400 hover:text-gray-700 disabled:opacity-30"><ChevronDown className="h-4 w-4" /></button>
+                      <button disabled={ro || i === 0} onClick={() => moveColumn(i, -1)} className="text-gray-400 hover:text-gray-700 disabled:opacity-30"><ChevronUp className="h-4 w-4" /></button>
+                      <button disabled={ro || i === arr.length - 1} onClick={() => moveColumn(i, 1)} className="text-gray-400 hover:text-gray-700 disabled:opacity-30"><ChevronDown className="h-4 w-4" /></button>
                     </div>
-                    <div className="grid flex-1 gap-3 sm:grid-cols-2">
-                      <div>
-                        <Label className="text-xs text-gray-500">Display Name <span className="ml-1 rounded bg-gray-100 px-1 py-0.5 font-mono text-[10px] text-gray-500">{formatJobStatus(s.status)}</span></Label>
-                        <Input disabled={ro} value={s.displayName} onChange={(e) => setStage(s.status, { displayName: e.target.value })} />
-                      </div>
-                      <div>
-                        <Label className="text-xs text-gray-500">Next Action</Label>
-                        <Input disabled={ro} value={s.nextAction} onChange={(e) => setStage(s.status, { nextAction: e.target.value })} />
-                      </div>
-                      <div>
-                        <Label className="text-xs text-gray-500">Description / Stage</Label>
-                        <Input disabled={ro} value={s.description} onChange={(e) => setStage(s.status, { description: e.target.value })} />
-                      </div>
-                      <div className="flex items-end gap-3">
-                        <div>
-                          <Label className="text-xs text-gray-500">Color</Label>
-                          <div className="flex items-center gap-2">
-                            <input disabled={ro} type="color" value={s.color} onChange={(e) => setStage(s.status, { color: e.target.value })} className="h-9 w-10 rounded border" />
-                            <Input disabled={ro} value={s.color} onChange={(e) => setStage(s.status, { color: e.target.value })} className="w-24" />
-                          </div>
-                        </div>
-                        <div>
-                          <Label className="text-xs text-gray-500">Icon</Label>
-                          <div className="flex items-center gap-1">
-                            <StageIcon name={s.icon} className="h-4 w-4 text-gray-500" />
-                            <select disabled={ro} value={s.icon} onChange={(e) => setStage(s.status, { icon: e.target.value })} className="rounded border px-2 py-1.5 text-sm">
-                              {PRODUCTION_ICONS.map((ic) => <option key={ic} value={ic}>{ic}</option>)}
-                            </select>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-4 sm:col-span-2">
-                        <label className="flex items-center gap-1 text-sm"><input disabled={ro} type="checkbox" checked={s.visible} onChange={(e) => setStage(s.status, { visible: e.target.checked })} /> Visible</label>
-                        <label className="flex items-center gap-1 text-sm"><input disabled={ro} type="checkbox" checked={s.showJobCount} onChange={(e) => setStage(s.status, { showJobCount: e.target.checked })} /> Show job count</label>
-                        <div className="flex items-center gap-1 text-sm">
-                          <span className="text-gray-500">Default sort</span>
-                          <select disabled={ro} value={s.defaultSort} onChange={(e) => setStage(s.status, { defaultSort: e.target.value as ProductionSortKey })} className="rounded border px-2 py-1 text-sm">
-                            {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    <div className="flex-1 space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input disabled={ro} type="color" value={col.color} onChange={(e) => setColumn(col.id, { color: e.target.value })} className="h-9 w-10 rounded border" />
+                        <Input disabled={ro} value={col.displayName} onChange={(e) => setColumn(col.id, { displayName: e.target.value })} className="w-48" placeholder="Column name" />
+                        <div className="flex items-center gap-1">
+                          <StageIcon name={col.icon} className="h-4 w-4 text-gray-500" />
+                          <select disabled={ro} value={col.icon} onChange={(e) => setColumn(col.id, { icon: e.target.value })} className="rounded border px-2 py-1.5 text-sm">
+                            {PRODUCTION_ICONS.map((ic) => <option key={ic} value={ic}>{ic}</option>)}
                           </select>
-                          <select disabled={ro} value={s.defaultSortDir} onChange={(e) => setStage(s.status, { defaultSortDir: e.target.value as 'asc' | 'desc' })} className="rounded border px-2 py-1 text-sm">
-                            <option value="asc">Asc</option><option value="desc">Desc</option>
-                          </select>
+                        </div>
+                        {!ro && config.columns.length > 1 && (
+                          <button onClick={() => deleteColumn(col.id)} className="ml-auto text-gray-400 hover:text-red-600" title="Delete column"><Trash2 className="h-4 w-4" /></button>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-3 text-sm">
+                        <label className="flex items-center gap-1"><input disabled={ro} type="checkbox" checked={col.visible} onChange={(e) => setColumn(col.id, { visible: e.target.checked })} /> Visible</label>
+                        <label className="flex items-center gap-1"><input disabled={ro} type="checkbox" checked={col.showJobCount} onChange={(e) => setColumn(col.id, { showJobCount: e.target.checked })} /> Show count</label>
+                        <span className="text-gray-500">Sort</span>
+                        <select disabled={ro} value={col.defaultSort} onChange={(e) => setColumn(col.id, { defaultSort: e.target.value as ProductionSortKey })} className="rounded border px-2 py-1 text-sm">
+                          {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                        <select disabled={ro} value={col.defaultSortDir} onChange={(e) => setColumn(col.id, { defaultSortDir: e.target.value as 'asc' | 'desc' })} className="rounded border px-2 py-1 text-sm">
+                          <option value="asc">Asc</option><option value="desc">Desc</option>
+                        </select>
+                      </div>
+                      <div>
+                        <div className="mb-1 text-xs text-gray-500">Job Statuses in this column (click a status to move it here):</div>
+                        <div className="flex flex-wrap gap-1">
+                          {activeColumnStatuses().map((st) => {
+                            const inThis = col.statuses.includes(st)
+                            return (
+                              <button key={st} disabled={ro} onClick={() => assignStatus(col.id, st)}
+                                className={`rounded px-2 py-0.5 text-[11px] font-medium ${inThis ? 'text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                                style={inThis ? { backgroundColor: col.color } : undefined}>
+                                {formatJobStatus(st)}
+                              </button>
+                            )
+                          })}
                         </div>
                       </div>
                     </div>
+                  </div>
+                </div>
+              ))}
+              {!ro && <Button variant="outline" onClick={addColumn}><Plus className="mr-1 h-4 w-4" />Add Column</Button>}
+            </CardContent>
+          </Card>
+
+          {/* STAGE LABELS & NEXT ACTIONS (per existing Job Status) */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Stage Labels &amp; Next Actions</CardTitle>
+              <CardDescription>Per existing Job Status (shown as a tag): the card “Stage” label and the Next Action text. Changing these never renames the underlying Job Status. (Column layout is set above.)</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {sortedStages.map((s) => (
+                <div key={s.status} className="grid gap-3 rounded-lg border p-3 sm:grid-cols-3">
+                  <div>
+                    <Label className="text-xs text-gray-500">Status</Label>
+                    <div className="pt-1"><span className="rounded bg-gray-100 px-2 py-1 font-mono text-[11px] text-gray-600">{formatJobStatus(s.status)}</span></div>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-gray-500">Stage label (card)</Label>
+                    <Input disabled={ro} value={s.description} onChange={(e) => setStage(s.status, { description: e.target.value })} />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-gray-500">Next Action</Label>
+                    <Input disabled={ro} value={s.nextAction} onChange={(e) => setStage(s.status, { nextAction: e.target.value })} />
                   </div>
                 </div>
               ))}
