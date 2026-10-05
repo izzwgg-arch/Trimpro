@@ -213,14 +213,16 @@ export default function NewVendorPage() {
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="email">Email</Label>
+                    <Label htmlFor="email">Email(s)</Label>
                     <Input
                       id="email"
-                      type="email"
+                      type="text"
+                      inputMode="email"
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      placeholder="vendor@example.com"
+                      placeholder="vendor@example.com, orders@example.com"
                     />
+                    <p className="mt-1 text-xs text-gray-500">Separate multiple emails with commas.</p>
                   </div>
                   <div>
                     <Label htmlFor="phone">Phone</Label>
