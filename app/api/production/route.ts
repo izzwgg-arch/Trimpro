@@ -7,10 +7,12 @@ import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } f
 import { jobTypeScopeWhere } from '@/lib/jobs/job-type-scope'
 import {
   ARCHIVE_JOB_STATUSES,
-  getProductionInfo,
   PRODUCTION_STATUS_MAP,
 } from '@/lib/production/production-status'
 import type { JobStatusValue } from '@/lib/jobs/statuses'
+import { getProductionConfigForTenant } from '@/lib/production/settings'
+import { resolveProductionInfo } from '@/lib/production/config'
+import { getJobBillingStatus } from '@/lib/jobs/billing-status'
 
 /**
  * Production board data — entirely derived from the existing Job.status.
@@ -64,6 +66,13 @@ export async function GET(request: NextRequest) {
       status: view === 'archive' ? { in: ARCHIVE_JOB_STATUSES } : { notIn: ARCHIVE_JOB_STATUSES },
     }
 
+    // Per-tenant display config (defaults when unset). Only pull the heavier
+    // relations when the corresponding card fields are actually enabled.
+    const config = await getProductionConfigForTenant(user.tenantId)
+    const fieldOn = (key: string) => config.card.fields.some((f) => f.key === key && f.visible)
+    const needInvoices = fieldOn('invoiceAmount') || fieldOn('billingStatus')
+    const needPOs = fieldOn('purchaseOrder')
+
     const [jobs, statusCounts] = await Promise.all([
       prisma.job.findMany({
         where: listWhere,
@@ -81,6 +90,8 @@ export async function GET(request: NextRequest) {
             select: { id: true, street: true, city: true, state: true, zipCode: true },
             take: 1,
           },
+          ...(needInvoices ? { invoices: { select: { total: true } } } : {}),
+          ...(needPOs ? { purchaseOrders: { select: { id: true } } } : {}),
         },
         orderBy: { updatedAt: 'desc' },
         take: 500,
@@ -116,27 +127,42 @@ export async function GET(request: NextRequest) {
       completed: countByStatus.COMPLETED || 0,
     }
 
-    const enrichedJobs = jobs.map((job) => ({
-      id: job.id,
-      jobNumber: job.jobNumber,
-      title: job.title,
-      status: job.status,
-      priority: job.priority,
-      jobType: job.jobType,
-      scheduledStart: job.scheduledStart,
-      scheduledEnd: job.scheduledEnd,
-      estimateAmount: job.estimateAmount != null ? job.estimateAmount.toString() : null,
-      actualAmount: job.actualAmount != null ? job.actualAmount.toString() : null,
-      client: job.client,
-      assignments: job.assignments.map((a) => ({
-        id: a.id,
-        user: a.user,
-      })),
-      addresses: job.addresses,
-      production: getProductionInfo(job.status),
-    }))
+    const enrichedJobs = jobs.map((job: any) => {
+      const invoiceTotal = Array.isArray(job.invoices)
+        ? job.invoices.reduce((sum: number, inv: any) => sum + Number(inv.total || 0), 0)
+        : null
+      const billingStatus = needInvoices
+        ? getJobBillingStatus({
+            estimateAmount: job.estimateAmount != null ? Number(job.estimateAmount) : null,
+            actualAmount: job.actualAmount != null ? Number(job.actualAmount) : null,
+            totalInvoicedAmount: invoiceTotal || 0,
+          } as any)
+        : null
+      return {
+        id: job.id,
+        jobNumber: job.jobNumber,
+        title: job.title,
+        status: job.status,
+        priority: job.priority,
+        jobType: job.jobType,
+        scheduledStart: job.scheduledStart,
+        scheduledEnd: job.scheduledEnd,
+        createdAt: job.createdAt,
+        estimateAmount: job.estimateAmount != null ? job.estimateAmount.toString() : null,
+        actualAmount: job.actualAmount != null ? job.actualAmount.toString() : null,
+        invoiceAmount: invoiceTotal,
+        billingStatus,
+        poCount: Array.isArray(job.purchaseOrders) ? job.purchaseOrders.length : null,
+        client: job.client,
+        assignments: job.assignments.map((a: any) => ({ id: a.id, user: a.user })),
+        addresses: job.addresses,
+        // Production info with the tenant's display overrides (stage name,
+        // next action) applied — still keyed by the real Job.status.
+        production: resolveProductionInfo(job.status, config),
+      }
+    })
 
-    return NextResponse.json({ jobs: enrichedJobs, counts })
+    return NextResponse.json({ jobs: enrichedJobs, counts, config })
   } catch (error) {
     console.error('Get production data error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

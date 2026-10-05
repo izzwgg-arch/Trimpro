@@ -248,6 +248,13 @@ export const PERMISSIONS: PermissionDefinition[] = [
     category: 'Production',
     module: 'production',
   },
+  {
+    key: 'production.manage',
+    label: 'Manage Production Settings',
+    description: 'Customize the Production board (stages, columns, cards, colors, next actions, automation). Display only — never changes Job Status.',
+    category: 'Production',
+    module: 'production',
+  },
 
   // ============================================
   // SCHEDULE / CALENDAR

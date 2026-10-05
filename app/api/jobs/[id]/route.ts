@@ -7,6 +7,7 @@ import { geocodeAddressPartsFromString } from '@/lib/geocoding'
 import { getJobTimeSummary } from '@/lib/time-tracking'
 import { syncAutoJobSchedules } from '@/lib/services/job-schedule-sync'
 import { createNotificationsForUsers, notifyJobStatusChanged } from '@/lib/notifications'
+import { applyProductionAutomation } from '@/lib/production/automation'
 import { getJobBillingStatus } from '@/lib/jobs/billing-status'
 import { assertCanAccessJobType, resolveJobTypeForWrite } from '@/lib/jobs/job-type-scope'
 
@@ -511,6 +512,14 @@ export async function PUT(
         oldStatus: existing.status,
         newStatus: job.status,
         actorUserId: user.id,
+      })
+
+      // Optional Production automation (admin-configured Task / Notification).
+      await applyProductionAutomation({
+        tenantId: user.tenantId,
+        actorUserId: user.id,
+        newStatus: job.status,
+        job: { id: job.id, jobNumber: job.jobNumber, title: job.title, clientId: job.clientId },
       })
     }
 

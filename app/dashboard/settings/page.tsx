@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { User, Bell, Link as LinkIcon, Users, Palette } from 'lucide-react'
+import { User, Bell, Link as LinkIcon, Users, Palette, Factory } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
@@ -188,6 +188,13 @@ export default function SettingsPage() {
         >
           <Palette className="inline mr-2 h-4 w-4" />
           Branding
+        </button>
+        <button
+          onClick={() => router.push('/dashboard/settings/production')}
+          className="px-4 py-2 border-b-2 border-transparent text-gray-600 hover:text-gray-900"
+        >
+          <Factory className="inline mr-2 h-4 w-4" />
+          Production
         </button>
         <button
           onClick={() => setActiveTab('security')}

@@ -76,6 +76,7 @@ model Tenant {
   invoiceLineItemSources InvoiceLineItemSource[]
   estimateMaterialLines  EstimateMaterialLine[]
   brandingSettings       BrandingSettings?
+  productionSettings     ProductionSettings?
   measuringRequests      MeasuringRequest[]
 
   @@map("tenants")
@@ -3404,6 +3405,21 @@ model BrandingSettings {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@map("branding_settings")
+}
+
+/// Per-tenant Production board customization (display only). The config is a
+/// JSON blob (stages/card/filters/automation) keyed internally by existing
+/// JobStatus values — it never stores a second status system.
+model ProductionSettings {
+  id        String   @id @default(cuid())
+  tenantId  String   @unique
+  config    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("production_settings")
 }
 
 // ============================================

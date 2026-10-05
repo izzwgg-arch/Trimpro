@@ -8,9 +8,17 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ResponsivePage } from '@/components/layout/ResponsivePage'
 import { usePermissions, hasPermission } from '@/hooks/usePermissions'
-import { formatCurrency } from '@/lib/utils'
-import { JOB_STATUSES, jobStatusColors, formatJobStatus } from '@/lib/jobs/statuses'
-import { PRODUCTION_BOARD_COLUMNS, type ProductionBoardColumn } from '@/lib/production/production-status'
+import { JOB_STATUSES } from '@/lib/jobs/statuses'
+import type { ProductionBoardColumn } from '@/lib/production/production-status'
+import {
+  buildDefaultProductionConfig,
+  mergeProductionConfig,
+  isArchiveStatus,
+  type ProductionConfig,
+  type ProductionSortKey,
+} from '@/lib/production/config'
+import { ProductionJobCard, type ProductionJobCardData } from '@/components/production/ProductionJobCard'
+import { StageIcon } from '@/components/production/StageIcon'
 import {
   Factory,
   Search,
@@ -18,9 +26,6 @@ import {
   AlertTriangle,
   Archive,
   LayoutGrid,
-  MapPin,
-  Users,
-  Calendar,
 } from 'lucide-react'
 
 interface TeamMember {
@@ -39,6 +44,11 @@ interface ProductionJob {
   scheduledEnd: string | null
   estimateAmount: string | null
   actualAmount: string | null
+  jobType?: string | null
+  createdAt?: string | null
+  invoiceAmount?: number | null
+  billingStatus?: string | null
+  poCount?: number | null
   client: { id: string; name: string; companyName: string | null } | null
   assignments: Array<{ id: string; user: { id: string; firstName: string; lastName: string } }>
   addresses: Array<{ id: string; street: string | null; city: string | null; state: string | null; zipCode: string | null }>
@@ -51,6 +61,51 @@ interface ProductionJob {
     isOnHold: boolean
     isArchived: boolean
   }
+}
+
+function toCardData(job: ProductionJob): ProductionJobCardData {
+  const addr = job.addresses?.[0]
+  const address = addr?.street ? `${addr.street}${addr.city ? `, ${addr.city}` : ''}` : null
+  return {
+    id: job.id,
+    jobNumber: job.jobNumber,
+    title: job.title,
+    status: job.status,
+    priority: job.priority,
+    jobType: job.jobType ?? null,
+    estimateAmount: job.estimateAmount,
+    invoiceAmount: job.invoiceAmount ?? null,
+    billingStatus: job.billingStatus ?? null,
+    poCount: job.poCount ?? null,
+    scheduledEnd: job.scheduledEnd,
+    createdAt: job.createdAt ?? null,
+    clientName: job.client?.companyName || job.client?.name || null,
+    address,
+    assignedNames: job.assignments.map((a) => a.user.firstName).filter(Boolean),
+    stage: job.production.stage,
+    nextAction: job.production.nextAction,
+  }
+}
+
+function sortJobs(list: ProductionJob[], key: ProductionSortKey, dir: 'asc' | 'desc'): ProductionJob[] {
+  const mul = dir === 'asc' ? 1 : -1
+  const val = (j: ProductionJob): number | string => {
+    switch (key) {
+      case 'dueDate': return j.scheduledEnd ? new Date(j.scheduledEnd).getTime() : (dir === 'asc' ? Infinity : -Infinity)
+      case 'priority': return j.priority || 0
+      case 'createdDate': return j.createdAt ? new Date(j.createdAt).getTime() : 0
+      case 'jobNumber': return j.jobNumber || ''
+      case 'client': return (j.client?.companyName || j.client?.name || '').toLowerCase()
+      case 'jobSiteAddress': return (j.addresses?.[0]?.street || '').toLowerCase()
+      case 'assignedUser': return (j.assignments?.[0]?.user?.firstName || '').toLowerCase()
+      case 'lastUpdated': default: return 0
+    }
+  }
+  return [...list].sort((a, b) => {
+    const va = val(a), vb = val(b)
+    if (typeof va === 'string' || typeof vb === 'string') return String(va).localeCompare(String(vb)) * mul
+    return (Number(va) - Number(vb)) * mul
+  })
 }
 
 interface ProductionCounts {
@@ -92,6 +147,7 @@ export default function ProductionPage() {
   const canView = hasPermission(permissions, 'production.view')
   const [jobs, setJobs] = useState<ProductionJob[]>([])
   const [counts, setCounts] = useState<ProductionCounts | null>(null)
+  const [config, setConfig] = useState<ProductionConfig>(buildDefaultProductionConfig())
   const [loading, setLoading] = useState(true)
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
 
@@ -161,6 +217,7 @@ export default function ProductionPage() {
       const data = await response.json()
       setJobs(data.jobs || [])
       setCounts(data.counts || null)
+      if (data.config) setConfig(mergeProductionConfig(data.config))
     } catch (error) {
       console.error('Failed to fetch production data:', error)
     } finally {
@@ -189,14 +246,25 @@ export default function ProductionPage() {
     })
   }, [jobs, statusFilter, dueFilter, today])
 
-  const onHoldJobs = useMemo(() => visibleJobs.filter((j) => j.production.isOnHold), [visibleJobs])
+  const onHoldStage = useMemo(() => config.stages.find((s) => s.status === 'ON_HOLD'), [config])
+  const onHoldJobs = useMemo(() => visibleJobs.filter((j) => j.status === 'ON_HOLD'), [visibleJobs])
 
+  // Active board columns come from the tenant config: one column per existing
+  // Job Status (excluding On Hold + archive), honoring visibility + order.
+  // Jobs are grouped strictly by job.status — the single source of truth.
   const columns = useMemo(() => {
-    return PRODUCTION_BOARD_COLUMNS.map((col) => ({
-      ...col,
-      jobs: visibleJobs.filter((j) => j.production.board === col.id),
-    }))
-  }, [visibleJobs])
+    return [...config.stages]
+      .filter((s) => s.visible && s.status !== 'ON_HOLD' && !isArchiveStatus(s.status))
+      .sort((a, b) => a.order - b.order)
+      .map((stage) => ({
+        stage,
+        jobs: sortJobs(
+          visibleJobs.filter((j) => j.status === stage.status),
+          stage.defaultSort,
+          stage.defaultSortDir
+        ),
+      }))
+  }, [visibleJobs, config])
 
   if (!permissionsLoading && !canView) {
     return (
@@ -249,67 +317,77 @@ export default function ProductionPage() {
       <Card>
         <CardContent className="space-y-4 pt-6">
           <div className="flex flex-wrap items-center gap-3">
-            <div className="relative min-w-[240px] flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform text-gray-400" />
-              <Input
-                placeholder="Search jobs by #, title, client, or address..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-10"
-              />
-            </div>
+            {config.filters.search && (
+              <div className="relative min-w-[240px] flex-1">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform text-gray-400" />
+                <Input
+                  placeholder="Search jobs by #, title, client, or address..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-2">
               <Filter className="h-4 w-4 text-gray-400" />
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[180px] text-sm">
-                  <SelectValue placeholder="All Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  {JOB_STATUSES.map((s) => (
-                    <SelectItem key={s.value} value={s.value}>
-                      {s.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={assignedTo} onValueChange={setAssignedTo}>
-                <SelectTrigger className="w-[170px] text-sm">
-                  <SelectValue placeholder="Assigned To" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Everyone</SelectItem>
-                  {teamMembers.map((member) => (
-                    <SelectItem key={member.id} value={member.id}>
-                      {member.firstName} {member.lastName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-                <SelectTrigger className="w-[140px] text-sm">
-                  <SelectValue placeholder="Priority" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Any Priority</SelectItem>
-                  {[5, 4, 3, 2, 1].map((p) => (
-                    <SelectItem key={p} value={String(p)}>
-                      P{p}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={dueFilter} onValueChange={setDueFilter}>
-                <SelectTrigger className="w-[150px] text-sm">
-                  <SelectValue placeholder="Due Date" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Any Due Date</SelectItem>
-                  <SelectItem value="overdue">Overdue</SelectItem>
-                  <SelectItem value="today">Due Today</SelectItem>
-                  <SelectItem value="week">Due This Week</SelectItem>
-                </SelectContent>
-              </Select>
+              {config.filters.status && (
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-[180px] text-sm">
+                    <SelectValue placeholder="All Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    {JOB_STATUSES.map((s) => (
+                      <SelectItem key={s.value} value={s.value}>
+                        {s.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {config.filters.assignedTo && (
+                <Select value={assignedTo} onValueChange={setAssignedTo}>
+                  <SelectTrigger className="w-[170px] text-sm">
+                    <SelectValue placeholder="Assigned To" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Everyone</SelectItem>
+                    {teamMembers.map((member) => (
+                      <SelectItem key={member.id} value={member.id}>
+                        {member.firstName} {member.lastName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {config.filters.priority && (
+                <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+                  <SelectTrigger className="w-[140px] text-sm">
+                    <SelectValue placeholder="Priority" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Any Priority</SelectItem>
+                    {[5, 4, 3, 2, 1].map((p) => (
+                      <SelectItem key={p} value={String(p)}>
+                        P{p}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {(config.filters.dueDate || config.filters.overdue) && (
+                <Select value={dueFilter} onValueChange={setDueFilter}>
+                  <SelectTrigger className="w-[150px] text-sm">
+                    <SelectValue placeholder="Due Date" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Any Due Date</SelectItem>
+                    <SelectItem value="overdue">Overdue</SelectItem>
+                    {config.filters.dueDate && <SelectItem value="today">Due Today</SelectItem>}
+                    {config.filters.dueDate && <SelectItem value="week">Due This Week</SelectItem>}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
           </div>
         </CardContent>
@@ -323,15 +401,15 @@ export default function ProductionPage() {
           </div>
         </div>
       ) : archiveView ? (
-        <ArchiveList jobs={visibleJobs} onOpenJob={(id) => router.push(`/dashboard/jobs/${id}`)} />
+        <ArchiveList jobs={visibleJobs} config={config} onOpenJob={(id) => router.push(`/dashboard/jobs/${id}`)} />
       ) : (
         <>
-          {onHoldJobs.length > 0 && (
+          {onHoldJobs.length > 0 && (onHoldStage?.visible ?? true) && (
             <Card className="border-amber-300 bg-amber-50/60">
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-base text-amber-800">
                   <AlertTriangle className="h-5 w-5" />
-                  On Hold / Attention Needed
+                  {onHoldStage?.displayName || 'On Hold'} / Attention Needed
                   <span className="ml-1 rounded-full bg-amber-200 px-2 py-0.5 text-xs font-semibold text-amber-900">
                     {onHoldJobs.length}
                   </span>
@@ -339,7 +417,7 @@ export default function ProductionPage() {
               </CardHeader>
               <CardContent className="grid grid-cols-1 gap-3 pt-0 sm:grid-cols-2 lg:grid-cols-3">
                 {onHoldJobs.map((job) => (
-                  <ProductionJobCard key={job.id} job={job} onOpen={() => router.push(`/dashboard/jobs/${job.id}`)} />
+                  <ProductionJobCard key={job.id} job={toCardData(job)} config={config} stageColor={onHoldStage?.color} onClick={() => router.push(`/dashboard/jobs/${job.id}`)} />
                 ))}
               </CardContent>
             </Card>
@@ -353,14 +431,20 @@ export default function ProductionPage() {
             <div className="scrollbar-visible-x flex gap-4 overflow-x-auto pb-3">
               {columns.map((col) => (
                 <div
-                  key={col.id}
-                  className="flex max-h-[65vh] w-72 flex-shrink-0 flex-col rounded-lg border bg-gray-50"
+                  key={col.stage.status}
+                  className="flex max-h-[65vh] flex-shrink-0 flex-col rounded-lg border bg-gray-50"
+                  style={{ width: config.card.width }}
                 >
-                  <div className="flex items-center justify-between rounded-t-lg border-b bg-white px-3 py-2">
-                    <span className="text-sm font-semibold text-gray-900">{col.label}</span>
-                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-600">
-                      {col.jobs.length}
+                  <div className="flex items-center justify-between rounded-t-lg border-b px-3 py-2 text-white" style={{ backgroundColor: col.stage.color }}>
+                    <span className="flex items-center gap-1.5 text-sm font-semibold">
+                      <StageIcon name={col.stage.icon} className="h-4 w-4" />
+                      {col.stage.displayName}
                     </span>
+                    {col.stage.showJobCount && (
+                      <span className="rounded-full bg-white/25 px-2 py-0.5 text-xs font-semibold">
+                        {col.jobs.length}
+                      </span>
+                    )}
                   </div>
                   <div className="scrollbar-visible-x flex-1 space-y-2 overflow-y-auto p-2">
                     {col.jobs.length === 0 ? (
@@ -369,8 +453,10 @@ export default function ProductionPage() {
                       col.jobs.map((job) => (
                         <ProductionJobCard
                           key={job.id}
-                          job={job}
-                          onOpen={() => router.push(`/dashboard/jobs/${job.id}`)}
+                          job={toCardData(job)}
+                          config={config}
+                          stageColor={col.stage.color}
+                          onClick={() => router.push(`/dashboard/jobs/${job.id}`)}
                         />
                       ))
                     )}
@@ -385,89 +471,7 @@ export default function ProductionPage() {
   )
 }
 
-function ProductionJobCard({ job, onOpen }: { job: ProductionJob; onOpen: () => void }) {
-  const address = job.addresses?.[0]
-  const clientName = job.client?.companyName || job.client?.name
-  const crewNames = job.assignments.map((a) => a.user.firstName).filter(Boolean)
-  const dueLabel = formatDateShort(job.scheduledEnd)
-  const isHighPriority = job.priority >= 4
-  const amount = job.estimateAmount || job.actualAmount
-
-  const overdue = (() => {
-    if (!job.scheduledEnd || job.production.isArchived) return false
-    const due = new Date(job.scheduledEnd)
-    if (Number.isNaN(due.getTime())) return false
-    const now = new Date()
-    return due < now && !isSameDay(due, now)
-  })()
-
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="w-full rounded-md border bg-white p-3 text-left shadow-sm transition hover:shadow-md"
-    >
-      <div className="flex items-start justify-between gap-2">
-        <span className="text-sm font-bold text-[var(--brand-primary-color)]">{job.jobNumber}</span>
-        {isHighPriority && (
-          <span className="shrink-0 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
-            P{job.priority}
-          </span>
-        )}
-      </div>
-
-      {job.title && <p className="mt-0.5 line-clamp-1 text-xs font-medium text-gray-800">{job.title}</p>}
-
-      {address?.street && (
-        <p className="mt-1 flex items-start gap-1 text-xs text-gray-600">
-          <MapPin className="mt-0.5 h-3 w-3 shrink-0 text-gray-400" />
-          <span className="line-clamp-1">
-            {address.street}
-            {address.city ? `, ${address.city}` : ''}
-          </span>
-        </p>
-      )}
-
-      {clientName && <p className="mt-0.5 line-clamp-1 text-xs text-gray-500">{clientName}</p>}
-
-      <div className="mt-2 border-t pt-2">
-        <div className="flex items-center gap-1.5">
-          <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${jobStatusColors[job.status] || 'bg-gray-100 text-gray-800'}`}>
-            {formatJobStatus(job.status)}
-          </span>
-          {overdue && (
-            <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">Overdue</span>
-          )}
-        </div>
-        <p className="mt-1 text-[11px] text-gray-500">
-          <span className="font-semibold text-gray-600">Stage:</span> {job.production.stage}
-        </p>
-        <p className="mt-1 text-xs font-medium text-gray-800">
-          <span className="font-semibold text-gray-600">Next:</span> {job.production.nextAction}
-        </p>
-      </div>
-
-      <div className="mt-2 flex items-center justify-between border-t pt-2 text-[11px] text-gray-500">
-        <span className="flex items-center gap-1">
-          <Users className="h-3 w-3" />
-          {crewNames.length ? crewNames.join(', ') : 'Unassigned'}
-        </span>
-        {dueLabel && (
-          <span className="flex items-center gap-1">
-            <Calendar className="h-3 w-3" />
-            {dueLabel}
-          </span>
-        )}
-      </div>
-
-      {amount && (
-        <p className="mt-1 text-[11px] font-medium text-gray-600">{formatCurrency(parseFloat(amount))}</p>
-      )}
-    </button>
-  )
-}
-
-function ArchiveList({ jobs, onOpenJob }: { jobs: ProductionJob[]; onOpenJob: (id: string) => void }) {
+function ArchiveList({ jobs, config, onOpenJob }: { jobs: ProductionJob[]; config: ProductionConfig; onOpenJob: (id: string) => void }) {
   if (jobs.length === 0) {
     return (
       <Card>
@@ -484,9 +488,12 @@ function ArchiveList({ jobs, onOpenJob }: { jobs: ProductionJob[]; onOpenJob: (i
         <CardTitle className="text-base">Archive — Completed / Cancelled / Invoiced</CardTitle>
       </CardHeader>
       <CardContent className="grid grid-cols-1 gap-3 pt-0 sm:grid-cols-2 lg:grid-cols-3">
-        {jobs.map((job) => (
-          <ProductionJobCard key={job.id} job={job} onOpen={() => onOpenJob(job.id)} />
-        ))}
+        {jobs.map((job) => {
+          const stage = config.stages.find((s) => s.status === job.status)
+          return (
+            <ProductionJobCard key={job.id} job={toCardData(job)} config={config} stageColor={stage?.color} onClick={() => onOpenJob(job.id)} />
+          )
+        })}
       </CardContent>
     </Card>
   )
