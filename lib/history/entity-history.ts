@@ -69,25 +69,52 @@ const VERB: Record<string, string> = {
   PERMISSION_CHANGE: 'Changed permissions',
 }
 
-/** Pull a readable list of changed field names from the (inconsistent) changes JSON. */
-function changedFieldsOf(changes: any): string[] {
-  if (!changes || typeof changes !== 'object') return []
-  const after = changes.after && typeof changes.after === 'object' ? changes.after : null
-  const before = changes.before && typeof changes.before === 'object' ? changes.before : null
-  const NOISE = new Set(['id', 'updatedAt', 'createdAt', 'before', 'after', 'tenantId'])
-  if (after) {
-    const keys = Object.keys(after).filter((k) => !NOISE.has(k))
-    if (before) return keys.filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k])).slice(0, 12)
-    return keys.slice(0, 12)
-  }
-  return Object.keys(changes).filter((k) => !NOISE.has(k)).slice(0, 12)
+// Friendlier, plain-English labels for raw field keys.
+const FIELD_LABELS: Record<string, string> = {
+  estimateNumber: 'number', invoiceNumber: 'number', poNumber: 'number', creditMemoNumber: 'number',
+  clientId: 'customer', vendorId: 'vendor', assigneeId: 'assignee', assignee: 'assignee',
+  dueDate: 'due date', validUntil: 'valid-until date', creditMemoDate: 'date', processedAt: 'date',
+  unitPrice: 'unit price', taxRate: 'tax', hourlyRateCents: 'hourly rate', chargeByHour: 'billing type',
+  isNotesVisibleToClient: 'notes visibility', paymentTerms: 'payment terms',
 }
 
-function auditText(action: string, entityType: string, fields: string[]): string {
+function fieldLabel(key: string): string {
+  if (FIELD_LABELS[key]) return FIELD_LABELS[key]
+  // camelCase / PascalCase -> spaced lower case
+  return key.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').trim().toLowerCase()
+}
+
+/** Pull a readable list of changed fields + any line-item summary from the (inconsistent) changes JSON. */
+function changedInfoOf(changes: any): { fields: string[]; lineSummary: string | null } {
+  if (!changes || typeof changes !== 'object') return { fields: [], lineSummary: null }
+  const lineSummary =
+    changes.lineItems && typeof changes.lineItems === 'object' && typeof changes.lineItems.summary === 'string'
+      ? changes.lineItems.summary
+      : null
+  const after = changes.after && typeof changes.after === 'object' ? changes.after : null
+  const before = changes.before && typeof changes.before === 'object' ? changes.before : null
+  const NOISE = new Set(['id', 'updatedAt', 'createdAt', 'before', 'after', 'tenantId', 'lineItems'])
+  let keys: string[]
+  if (after) {
+    const afterKeys = Object.keys(after).filter((k) => !NOISE.has(k))
+    keys = before
+      ? afterKeys.filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]))
+      : afterKeys
+  } else {
+    keys = Object.keys(changes).filter((k) => !NOISE.has(k))
+  }
+  const labels = Array.from(new Set(keys.map(fieldLabel))).slice(0, 12)
+  return { fields: labels, lineSummary }
+}
+
+function auditText(action: string, entityType: string, info: { fields: string[]; lineSummary: string | null }): string {
   const verb = VERB[action] || action
   const noun = FRIENDLY[entityType] || entityType.replace(/([A-Z])/g, ' $1').trim().toLowerCase()
-  if (action === 'UPDATE' && fields.length) {
-    return `${verb} ${noun} (${fields.slice(0, 6).join(', ')}${fields.length > 6 ? '…' : ''})`
+  if (action === 'UPDATE') {
+    const bits: string[] = []
+    if (info.fields.length) bits.push(info.fields.slice(0, 6).join(', ') + (info.fields.length > 6 ? '…' : ''))
+    if (info.lineSummary) bits.push(`line items: ${info.lineSummary}`)
+    if (bits.length) return `${verb} ${noun} — changed ${bits.join('; ')}`
   }
   return `${verb} ${noun}`
 }
@@ -136,15 +163,15 @@ export async function getEntityHistory(params: {
     })
   }
   for (const l of audits as any[]) {
-    const fields = changedFieldsOf(l.changes)
+    const info = changedInfoOf(l.changes)
     items.push({
       id: `aud_${l.id}`,
       source: 'audit',
       timestamp: l.createdAt.toISOString(),
       actor: actorName(l.user),
       action: l.action,
-      text: auditText(l.action, l.entityType, fields),
-      changedFields: fields.length ? fields : undefined,
+      text: auditText(l.action, l.entityType, info),
+      changedFields: info.fields.length ? info.fields : undefined,
     })
   }
 

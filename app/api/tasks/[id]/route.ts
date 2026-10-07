@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { notifyTaskAssigned, createNotificationsForUsers, formatEntityStatusChangedMessage } from '@/lib/notifications'
 import { formatTaskStatus } from '@/lib/tasks/statuses'
+import { recordAuditLog, auditContextFromRequest } from '@/lib/audit/log'
 
 export async function GET(
   request: NextRequest,
@@ -199,6 +200,32 @@ export async function PUT(
         })
       }
     }
+
+    // Record who edited the task (captures any field change, not just status).
+    void recordAuditLog({
+      tenantId: user.tenantId,
+      userId: user.id,
+      action: 'UPDATE',
+      entityType: 'Task',
+      entityId: task.id,
+      changes: {
+        before: {
+          title: existing.title,
+          status: existing.status,
+          priority: existing.priority,
+          assignee: existing.assignee ? `${existing.assignee.firstName || ''} ${existing.assignee.lastName || ''}`.trim() || existing.assignee.email : null,
+          dueDate: existing.dueDate,
+        },
+        after: {
+          title: task.title,
+          status: task.status,
+          priority: task.priority,
+          assignee: task.assignee ? `${task.assignee.firstName || ''} ${task.assignee.lastName || ''}`.trim() || task.assignee.email : null,
+          dueDate: task.dueDate,
+        },
+      },
+      ...auditContextFromRequest(request),
+    })
 
     // Create activity for status change
     if (statusChanged) {

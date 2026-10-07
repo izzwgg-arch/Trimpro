@@ -217,6 +217,18 @@ export async function PATCH(
       },
     })
 
+    // Show the edit on the invoice's history timeline too.
+    void prisma.activity.create({
+      data: {
+        tenantId: user.tenantId,
+        userId: user.id,
+        type: 'OTHER',
+        description: `Payment edited: $${beforeSnapshot.amount.toFixed(2)} → $${Number(result.payment.amount).toFixed(2)}`,
+        invoiceId: payment.invoice.id,
+        paymentId: params.id,
+      },
+    }).catch(() => {})
+
     // Re-sync to QuickBooks.
     try {
       await enqueueQboSync(user.tenantId, 'payment', params.id)
@@ -315,6 +327,17 @@ export async function DELETE(
         },
       },
     })
+
+    // Show the removal on the invoice's history timeline too.
+    void prisma.activity.create({
+      data: {
+        tenantId: user.tenantId,
+        userId: user.id,
+        type: 'OTHER',
+        description: `Payment of $${Number(payment.amount).toFixed(2)} removed`,
+        invoiceId: payment.invoice.id,
+      },
+    }).catch(() => {})
 
     try {
       await enqueueQboSync(user.tenantId, 'invoice', payment.invoice.id)

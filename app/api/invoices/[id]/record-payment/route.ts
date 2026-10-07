@@ -7,6 +7,7 @@ import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { afterInvoicePayment } from '@/lib/payments/after-invoice-payment'
 import { applyInvoicePayment } from '@/lib/payments/apply-payment'
 import { createOverpaymentCredit } from '@/lib/payments/customer-credit'
+import { recordAuditLog, auditContextFromRequest } from '@/lib/audit/log'
 import crypto from 'crypto'
 
 const ALLOWED_METHODS = new Set(['CHECK', 'QUICK_PAY', 'OTHER'])
@@ -193,6 +194,30 @@ export async function POST(
       } catch (error) {
         console.error('QBO sync trigger error (record-payment):', error)
       }
+    }
+
+    // Record who took the payment — on each invoice's history and as an audit entry.
+    const methodText = method === 'CHECK' ? 'check' : method === 'QUICK_PAY' ? 'Quick Pay' : methodLabel || 'payment'
+    for (const c of outcome.created) {
+      void prisma.activity.create({
+        data: {
+          tenantId: user.tenantId,
+          userId: user.id,
+          type: 'OTHER',
+          description: `Payment of $${c.applied.toFixed(2)} recorded (${methodText})`,
+          invoiceId: c.invoiceId,
+          paymentId: c.paymentId,
+        },
+      }).catch(() => {})
+      void recordAuditLog({
+        tenantId: user.tenantId,
+        userId: user.id,
+        action: 'CREATE',
+        entityType: 'Payment',
+        entityId: c.paymentId,
+        changes: { invoiceId: c.invoiceId, amount: c.applied, method: methodText, reference },
+        ...auditContextFromRequest(request),
+      })
     }
 
     for (const c of outcome.created) {

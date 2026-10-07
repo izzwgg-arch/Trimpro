@@ -14,6 +14,7 @@ import {
 } from '@/lib/qbo/doc-numbers'
 import { syncJobCostFromLinkedDocuments } from '@/lib/jobs/sync-job-cost'
 import { recordAuditLog, auditContextFromRequest } from '@/lib/audit/log'
+import { summarizeLineItemChanges } from '@/lib/history/line-items'
 
 export async function GET(
   request: NextRequest,
@@ -495,6 +496,7 @@ export async function PUT(
     }
 
     // Record who edited this estimate (and what high-level fields changed).
+    const estimateLineChanges = summarizeLineItemChanges(existing.lineItems as any, lineItems)
     void recordAuditLog({
       tenantId: user.tenantId,
       userId: user.id,
@@ -516,6 +518,7 @@ export async function PUT(
           total: Number(estimateRecord.total),
           clientId: estimateRecord.clientId,
         },
+        ...(estimateLineChanges.summary ? { lineItems: estimateLineChanges } : {}),
       },
       ...auditContextFromRequest(request),
     })

@@ -9,6 +9,7 @@ import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { calculateOrderedSubtotalRows } from '@/lib/documents/subtotals'
 import { getBilledToDateByEstimateLine } from '@/lib/invoices/billed-to-date'
 import { recordAuditLog, auditContextFromRequest } from '@/lib/audit/log'
+import { summarizeLineItemChanges } from '@/lib/history/line-items'
 import { getClientCreditBalance } from '@/lib/payments/customer-credit'
 import {
   assertInvoiceNumberAvailableInQuickBooks,
@@ -573,6 +574,7 @@ export async function PUT(
     }
 
     // Record who edited this invoice (and what high-level fields changed).
+    const invoiceLineChanges = summarizeLineItemChanges(existing.lineItems as any, lineItems)
     void recordAuditLog({
       tenantId: user.tenantId,
       userId: user.id,
@@ -592,6 +594,7 @@ export async function PUT(
           status: invoiceRecord.status,
           total: Number(invoiceRecord.total),
         },
+        ...(invoiceLineChanges.summary ? { lineItems: invoiceLineChanges } : {}),
       },
       ...auditContextFromRequest(request),
     })

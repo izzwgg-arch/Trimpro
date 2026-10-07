@@ -345,6 +345,18 @@ export async function POST(request: NextRequest) {
         },
       })
 
+      // Show the refund on the invoice's history timeline too.
+      await tx.activity.create({
+        data: {
+          tenantId: payment.invoice.tenantId,
+          userId: user.id,
+          type: 'OTHER',
+          description: `Refund of $${refundAmount.toFixed(2)} issued${reason ? ` (${reason})` : ''}`,
+          invoiceId: payment.invoice.id,
+          paymentId: payment.id,
+        },
+      })
+
       return updatedPayment
     })
 

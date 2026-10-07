@@ -12,6 +12,7 @@ import { TaskStatusSelect } from '@/components/tasks/TaskStatusSelect'
 import { EditableNotesList } from '@/components/notes/editable-notes-list'
 import { taskStatusColors, formatTaskStatus } from '@/lib/tasks/statuses'
 import { usePermissions, hasPermission } from '@/hooks/usePermissions'
+import { EntityHistory } from '@/components/history/EntityHistory'
 
 interface TaskDetail {
   id: string
@@ -523,6 +524,10 @@ export default function TaskDetailPage() {
             </CardContent>
           </Card>
         </div>
+      </div>
+
+      <div className="mt-6">
+        <EntityHistory entityType="task" entityId={taskId} />
       </div>
     </div>
   )

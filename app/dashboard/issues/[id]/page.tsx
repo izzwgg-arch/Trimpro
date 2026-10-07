@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { formatDate } from '@/lib/utils'
 import { AlertCircle, Calendar, CheckCircle, Clock, Trash2, User } from 'lucide-react'
 import { EditableNotesList } from '@/components/notes/editable-notes-list'
+import { EntityHistory } from '@/components/history/EntityHistory'
 
 interface IssueDetail {
   id: string
@@ -465,6 +466,10 @@ export default function IssueDetailPage() {
             </CardContent>
           </Card>
         </div>
+      </div>
+
+      <div className="mt-6">
+        <EntityHistory entityType="issue" entityId={issueId} />
       </div>
     </div>
   )

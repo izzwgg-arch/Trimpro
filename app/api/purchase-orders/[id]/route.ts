@@ -6,6 +6,7 @@ import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { formatAddressParts } from '@/lib/address/parse'
 import { normalizePurchaseOrderNumber } from '@/lib/qbo/doc-numbers'
 import { recordAuditLog, auditContextFromRequest } from '@/lib/audit/log'
+import { summarizeLineItemChanges } from '@/lib/history/line-items'
 
 export async function GET(
   request: NextRequest,
@@ -156,6 +157,7 @@ export async function PUT(
         id: params.id,
         tenantId: user.tenantId,
       },
+      include: { lineItems: true },
     })
 
     if (!existing) {
@@ -372,13 +374,18 @@ export async function PUT(
       },
     })
 
+    const poLineChanges = summarizeLineItemChanges((existing as any).lineItems, lineItems)
     void recordAuditLog({
       tenantId: user.tenantId,
       userId: user.id,
       action: 'UPDATE',
       entityType: 'PurchaseOrder',
       entityId: params.id,
-      changes: { poNumber: purchaseOrder.poNumber, status: purchaseOrder.status },
+      changes: {
+        poNumber: purchaseOrder.poNumber,
+        status: purchaseOrder.status,
+        ...(poLineChanges.summary ? { lineItems: poLineChanges } : {}),
+      },
       ...auditContextFromRequest(request),
     })
 

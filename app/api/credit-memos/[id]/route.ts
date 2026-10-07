@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { computeCreditMemoTotals } from '@/lib/credit-memos/apply-credit'
 import { recordAuditLog, auditContextFromRequest } from '@/lib/audit/log'
+import { summarizeLineItemChanges } from '@/lib/history/line-items'
 
 function serializeCreditMemo(cm: any) {
   return {
@@ -100,6 +101,7 @@ export async function PUT(
   try {
     const existing = await prisma.creditMemo.findFirst({
       where: { id: params.id, tenantId: user.tenantId },
+      include: { lineItems: true },
     })
     if (!existing) {
       return NextResponse.json({ error: 'Credit memo not found' }, { status: 404 })
@@ -163,6 +165,7 @@ export async function PUT(
       include: detailInclude,
     })
 
+    const cmLineChanges = summarizeLineItemChanges((existing as any).lineItems, lineItems)
     void recordAuditLog({
       tenantId: user.tenantId,
       userId: user.id,
@@ -172,6 +175,7 @@ export async function PUT(
       changes: {
         before: { title: existing.title, status: existing.status, total: Number(existing.total) },
         after: { title: updated.title, status: updated.status, total: Number(updated.total) },
+        ...(cmLineChanges.summary ? { lineItems: cmLineChanges } : {}),
       },
       ...auditContextFromRequest(request),
     })

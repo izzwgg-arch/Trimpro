@@ -3,6 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { notifyIssueAssigned, createNotificationsForUsers, formatEntityStatusChangedMessage } from '@/lib/notifications'
+import { recordAuditLog, auditContextFromRequest } from '@/lib/audit/log'
 
 function formatIssueStatus(status: string): string {
   return String(status || '')
@@ -293,6 +294,34 @@ export async function PUT(
         }
       }
     }
+
+    // Record who edited the issue (captures any field change, not just status).
+    void recordAuditLog({
+      tenantId: user.tenantId,
+      userId: user.id,
+      action: 'UPDATE',
+      entityType: 'Issue',
+      entityId: issue.id,
+      changes: {
+        before: {
+          title: existing.title,
+          status: existing.status,
+          priority: existing.priority,
+          type: existing.type,
+          assigneeId: existing.assigneeId,
+          dueDate: existing.dueDate,
+        },
+        after: {
+          title: issue.title,
+          status: issue.status,
+          priority: issue.priority,
+          type: issue.type,
+          assigneeId: issue.assigneeId,
+          dueDate: issue.dueDate,
+        },
+      },
+      ...auditContextFromRequest(request),
+    })
 
     // Create activity for status change
     if (statusChanged) {
