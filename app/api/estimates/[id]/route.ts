@@ -13,6 +13,7 @@ import {
   normalizeEstimateNumber,
 } from '@/lib/qbo/doc-numbers'
 import { syncJobCostFromLinkedDocuments } from '@/lib/jobs/sync-job-cost'
+import { recordAuditLog, auditContextFromRequest } from '@/lib/audit/log'
 
 export async function GET(
   request: NextRequest,
@@ -492,6 +493,32 @@ export async function PUT(
       }
       throw err
     }
+
+    // Record who edited this estimate (and what high-level fields changed).
+    void recordAuditLog({
+      tenantId: user.tenantId,
+      userId: user.id,
+      action: 'UPDATE',
+      entityType: 'Estimate',
+      entityId: params.id,
+      changes: {
+        before: {
+          estimateNumber: existing.estimateNumber,
+          title: existing.title,
+          status: existing.status,
+          total: Number(existing.total),
+          clientId: existing.clientId,
+        },
+        after: {
+          estimateNumber: estimateRecord.estimateNumber,
+          title: estimateRecord.title,
+          status: estimateRecord.status,
+          total: Number(estimateRecord.total),
+          clientId: estimateRecord.clientId,
+        },
+      },
+      ...auditContextFromRequest(request),
+    })
 
     // Best-effort: if this estimate is connected to QBO, push edits over as an update.
     try {

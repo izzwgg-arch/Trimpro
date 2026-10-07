@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { computeCreditMemoTotals } from '@/lib/credit-memos/apply-credit'
+import { recordAuditLog, auditContextFromRequest } from '@/lib/audit/log'
 
 function serializeCreditMemo(cm: any) {
   return {
@@ -160,6 +161,19 @@ export async function PUT(
         },
       },
       include: detailInclude,
+    })
+
+    void recordAuditLog({
+      tenantId: user.tenantId,
+      userId: user.id,
+      action: 'UPDATE',
+      entityType: 'CreditMemo',
+      entityId: existing.id,
+      changes: {
+        before: { title: existing.title, status: existing.status, total: Number(existing.total) },
+        after: { title: updated.title, status: updated.status, total: Number(updated.total) },
+      },
+      ...auditContextFromRequest(request),
     })
 
     try {

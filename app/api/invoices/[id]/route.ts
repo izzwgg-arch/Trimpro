@@ -8,6 +8,7 @@ import { geocodeAddressPartsFromString } from '@/lib/geocoding'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { calculateOrderedSubtotalRows } from '@/lib/documents/subtotals'
 import { getBilledToDateByEstimateLine } from '@/lib/invoices/billed-to-date'
+import { recordAuditLog, auditContextFromRequest } from '@/lib/audit/log'
 import { getClientCreditBalance } from '@/lib/payments/customer-credit'
 import {
   assertInvoiceNumberAvailableInQuickBooks,
@@ -570,6 +571,30 @@ export async function PUT(
         )
       }
     }
+
+    // Record who edited this invoice (and what high-level fields changed).
+    void recordAuditLog({
+      tenantId: user.tenantId,
+      userId: user.id,
+      action: 'UPDATE',
+      entityType: 'Invoice',
+      entityId: params.id,
+      changes: {
+        before: {
+          invoiceNumber: existing.invoiceNumber,
+          title: existing.title,
+          status: existing.status,
+          total: Number(existing.total),
+        },
+        after: {
+          invoiceNumber: invoiceRecord.invoiceNumber,
+          title: invoiceRecord.title,
+          status: invoiceRecord.status,
+          total: Number(invoiceRecord.total),
+        },
+      },
+      ...auditContextFromRequest(request),
+    })
 
     // Best-effort: if this invoice is connected to QBO, push edits over as an update.
     try {

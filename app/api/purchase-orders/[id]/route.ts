@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { formatAddressParts } from '@/lib/address/parse'
 import { normalizePurchaseOrderNumber } from '@/lib/qbo/doc-numbers'
+import { recordAuditLog, auditContextFromRequest } from '@/lib/audit/log'
 
 export async function GET(
   request: NextRequest,
@@ -360,14 +361,25 @@ export async function PUT(
       }
     }
 
-    // Create activity
+    // Create activity (linked to the PO so it shows on its history timeline)
     await prisma.activity.create({
       data: {
         tenantId: user.tenantId,
         userId: user.id,
         type: 'OTHER',
         description: `Purchase order ${purchaseOrder.poNumber} updated`,
+        purchaseOrderId: params.id,
       },
+    })
+
+    void recordAuditLog({
+      tenantId: user.tenantId,
+      userId: user.id,
+      action: 'UPDATE',
+      entityType: 'PurchaseOrder',
+      entityId: params.id,
+      changes: { poNumber: purchaseOrder.poNumber, status: purchaseOrder.status },
+      ...auditContextFromRequest(request),
     })
 
     // Calculate totals for response
