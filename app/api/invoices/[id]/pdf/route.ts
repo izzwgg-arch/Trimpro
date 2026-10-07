@@ -7,6 +7,7 @@ import { getPdfBranding } from '@/lib/branding/pdf'
 import { parseInvoicePdfView } from '@/lib/invoices/invoice-pdf-view'
 import { buildInvoicePdfHtml } from '@/lib/documents/pdf-templates'
 import { getBilledToDateByEstimateLine } from '@/lib/invoices/billed-to-date'
+import { recordAuditLog, auditContextFromRequest } from '@/lib/audit/log'
 
 export const runtime = 'nodejs'
 
@@ -31,6 +32,15 @@ export async function GET(
     const format = request.nextUrl.searchParams.get('format') || 'pdf'
     const wantsHtml = format === 'html'
     const view = parseInvoicePdfView(request.nextUrl.searchParams.get('view'))
+    // Log real PDF views/downloads (skip the in-app HTML preview to avoid noise).
+    if (!wantsHtml) {
+      void recordAuditLog({
+        tenantId: user.tenantId, userId: user.id,
+        action: shouldDownload ? 'DOWNLOAD' : 'VIEW',
+        entityType: 'Invoice', entityId: params.id,
+        ...auditContextFromRequest(request),
+      })
+    }
     const brand = await getPdfBranding(user.tenantId)
 
     const invoice = await prisma.invoice.findFirst({

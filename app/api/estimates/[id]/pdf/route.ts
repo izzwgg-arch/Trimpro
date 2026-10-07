@@ -6,6 +6,7 @@ import { renderPdfFromHtml } from '@/lib/pdf/render-html-to-pdf'
 import { getPdfBranding } from '@/lib/branding/pdf'
 import { buildEstimatePdfHtml } from '@/lib/documents/pdf-templates'
 import { parseEstimatePdfView } from '@/lib/estimates/estimate-pdf-view'
+import { recordAuditLog, auditContextFromRequest } from '@/lib/audit/log'
 
 export const runtime = 'nodejs'
 
@@ -30,6 +31,14 @@ export async function GET(
     const format = request.nextUrl.searchParams.get('format') || 'pdf'
     const view = parseEstimatePdfView(request.nextUrl.searchParams.get('view'))
     const wantsHtml = format === 'html'
+    if (!wantsHtml) {
+      void recordAuditLog({
+        tenantId: user.tenantId, userId: user.id,
+        action: shouldDownload ? 'DOWNLOAD' : 'VIEW',
+        entityType: 'Estimate', entityId: params.id,
+        ...auditContextFromRequest(request),
+      })
+    }
     const brand = await getPdfBranding(user.tenantId)
 
     const estimate = await prisma.estimate.findFirst({

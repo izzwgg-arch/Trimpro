@@ -19,6 +19,7 @@ import { ResponsiveTableContainer } from '@/components/layout/ResponsiveTableCon
 import { ItemPicker } from '@/components/items/ItemPicker'
 import { Checkbox } from '@/components/ui/checkbox'
 import { DocumentAttachments } from '@/components/common/document-attachments'
+import { EntityHistory } from '@/components/history/EntityHistory'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -2334,6 +2335,8 @@ export default function InvoiceDetailPage() {
               <DocumentAttachments entityType="invoice" entityId={invoiceId} />
             </CardContent>
           </Card>
+
+          <EntityHistory entityType="invoice" entityId={invoiceId} />
         </div>
       </div>
 

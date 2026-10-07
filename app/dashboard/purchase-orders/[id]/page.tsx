@@ -11,6 +11,7 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { ShoppingCart, Calendar, Building2, FileText, CheckCircle, XCircle, Send, Download, Edit, Package, AlertCircle, Trash2, Mail, Phone, Printer, Copy } from 'lucide-react'
 import Link from 'next/link'
 import { DocumentAttachments } from '@/components/common/document-attachments'
+import { EntityHistory } from '@/components/history/EntityHistory'
 import { ContactRecipientPicker, type RecipientOption } from '@/components/email/contact-recipient-picker'
 
 interface PurchaseOrderDetail {
@@ -736,6 +737,8 @@ export default function PurchaseOrderDetailPage() {
               </CardContent>
             </Card>
           )}
+
+          {po && <EntityHistory entityType="purchaseOrder" entityId={po.id} title="Full History" />}
         </div>
 
         {/* Sidebar */}

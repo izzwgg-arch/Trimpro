@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { recordAuditLog, auditContextFromRequest } from '@/lib/audit/log'
 import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
@@ -230,6 +231,19 @@ export async function PATCH(
       },
     })
 
+    void recordAuditLog({
+      tenantId: user.tenantId,
+      userId: user.id,
+      action: 'UPDATE',
+      entityType: 'Vendor',
+      entityId: params.id,
+      changes: {
+        before: { name: existing.name, email: existing.email, phone: existing.phone, status: existing.status },
+        after: { name: vendor.name, email: vendor.email, phone: vendor.phone, status: vendor.status },
+      },
+      ...auditContextFromRequest(request),
+    })
+
     const updated = await prisma.vendor.findFirst({
       where: { id: params.id },
       include: {
@@ -308,6 +322,15 @@ export async function DELETE(
     // Delete vendor
     await prisma.vendor.delete({
       where: { id: params.id },
+    })
+
+    void recordAuditLog({
+      tenantId: user.tenantId,
+      userId: user.id,
+      action: 'DELETE',
+      entityType: 'Vendor',
+      entityId: params.id,
+      ...auditContextFromRequest(request),
     })
 
     // Create activity

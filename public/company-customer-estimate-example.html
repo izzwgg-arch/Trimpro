@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TrimPro — Company + Customer Estimate Example</title>
+  <style>
+    :root {
+      --ink: #1e293b;
+      --muted: #64748b;
+      --line: #cbd5e1;
+      --company: #1e293b;
+      --customer: #065f46;
+      --amber: #fef3c7;
+      --amber-ink: #78350f;
+      --bg: #f8fafc;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      color: var(--ink);
+      background: linear-gradient(180deg, #eef2f7 0%, var(--bg) 220px);
+    }
+    header {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 28px 20px 12px;
+    }
+    h1 { margin: 0 0 8px; font-size: 1.6rem; }
+    .sub { color: var(--muted); max-width: 70ch; line-height: 1.45; }
+    .stage { max-width: 1100px; margin: 0 auto; padding: 12px 20px 40px; }
+    .banner {
+      background: var(--amber);
+      color: var(--amber-ink);
+      border: 1px solid #fcd34d;
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-bottom: 14px;
+      font-size: 0.95rem;
+      line-height: 1.4;
+    }
+    .tabs { display: flex; gap: 8px; margin: 14px 0; }
+    .tab {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .tab.on-company { background: var(--company); color: #fff; border-color: var(--company); }
+    .tab.on-customer { background: var(--customer); color: #fff; border-color: var(--customer); }
+    .panel { display: none; }
+    .panel.show { display: block; }
+    .card {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      margin-bottom: 14px;
+      overflow: hidden;
+    }
+    .card-h {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+    }
+    .company .card-h { background: #f1f5f9; }
+    .customer .card-h { background: #ecfdf5; }
+    .pill {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .pill.company { background: var(--company); }
+    .pill.customer { background: var(--customer); }
+    .badge {
+      font-size: 12px;
+      border-radius: 999px;
+      padding: 3px 8px;
+      border: 1px solid #86efac;
+      background: #dcfce7;
+      color: #14532d;
+    }
+    .badge.sticky {
+      border-color: #fcd34d;
+      background: #fef3c7;
+      color: #78350f;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 0.95rem; }
+    th { color: var(--muted); font-size: 0.8rem; font-weight: 600; }
+    .money { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+    .desc {
+      white-space: pre-line;
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 0.92rem;
+      line-height: 1.45;
+    }
+    .totals {
+      display: flex;
+      justify-content: flex-end;
+      gap: 24px;
+      margin-top: 8px;
+      font-weight: 700;
+    }
+    .steps {
+      margin-top: 18px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px 18px;
+    }
+    .steps ol { margin: 8px 0 0; padding-left: 18px; color: #334155; }
+    .live { margin-top: 10px; font-size: 0.9rem; }
+    .live a { color: #0f766e; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Company + Customer Estimate — Example</h1>
+    <p class="sub">
+      Company estimate holds detailed items under Line #1, #2… (QuickBooks sync source).
+      Customer estimate shows one bundle per line: stacked descriptions and summed totals.
+      Customer edits stick until that company line is edited again.
+    </p>
+  </header>
+  <div class="stage">
+    <div class="banner" id="note">
+      Static example snapshot. Interactive demo: <code>/dashboard/estimates/company-customer-demo</code>
+    </div>
+    <div class="tabs">
+      <button class="tab on-company" id="btnCompany" type="button">Company estimate</button>
+      <button class="tab" id="btnCustomer" type="button">Customer estimate</button>
+    </div>
+
+    <div class="panel company show" id="companyPanel">
+      <div class="card">
+        <div class="card-h">
+          <span class="pill company">Line #1</span>
+          <strong>Kitchen remodel</strong>
+          <span style="margin-left:auto" class="money">$4,500.00</span>
+        </div>
+        <table>
+          <thead>
+            <tr><th>Item description</th><th>Qty</th><th>Price (QB)</th><th>Total</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Cabinet install — upper and lower</td><td>1</td><td>$2,500.00</td><td class="money">$2,500.00</td></tr>
+            <tr><td>Quartz countertop supply &amp; install</td><td>1</td><td>$1,800.00</td><td class="money">$1,800.00</td></tr>
+            <tr><td>Hardware and soft-close hinges</td><td>1</td><td>$200.00</td><td class="money">$200.00</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="card-h">
+          <span class="pill company">Line #2</span>
+          <strong>Hall bathroom</strong>
+          <span style="margin-left:auto" class="money">$2,100.00</span>
+        </div>
+        <table>
+          <thead>
+            <tr><th>Item description</th><th>Qty</th><th>Price (QB)</th><th>Total</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Vanity and faucet package</td><td>1</td><td>$900.00</td><td class="money">$900.00</td></tr>
+            <tr><td>Floor tile labor and materials</td><td>1</td><td>$1,200.00</td><td class="money">$1,200.00</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="totals"><span>Company / QB total: $6,600.00</span></div>
+    </div>
+
+    <div class="panel customer" id="customerPanel">
+      <div class="card">
+        <div class="card-h">
+          <span class="pill customer">Line #1</span>
+          <strong>Kitchen remodel</strong>
+          <span class="badge">Synced from company</span>
+        </div>
+        <table>
+          <thead><tr><th>Description (each item on its own row)</th><th>Line total</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="desc">Cabinet install — upper and lower
+Quartz countertop supply &amp; install
+Hardware and soft-close hinges</td>
+              <td class="money">$4,500.00</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="card-h">
+          <span class="pill customer">Line #2</span>
+          <strong>Hall bathroom</strong>
+          <span class="badge">Synced from company</span>
+        </div>
+        <table>
+          <thead><tr><th>Description (each item on its own row)</th><th>Line total</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="desc">Vanity and faucet package
+Floor tile labor and materials</td>
+              <td class="money">$2,100.00</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="totals"><span>Customer estimate total: $6,600.00</span></div>
+    </div>
+
+    <div class="steps">
+      <strong>How the sync works</strong>
+      <ol>
+        <li>Create / edit items under Line #1, #2… on the company estimate (QB sync stays on these detailed rows).</li>
+        <li>Customer estimate gets one row per line: descriptions stacked, total = sum of that line’s company items.</li>
+        <li>If you edit the customer line, it sticks until someone edits that same line on the company estimate — then it rebuilds.</li>
+      </ol>
+      <p class="live">
+        Live interactive editor (dev login):
+        <a href="/dashboard/estimates/company-customer-demo">/dashboard/estimates/company-customer-demo</a>
+      </p>
+    </div>
+  </div>
+  <script>
+    const btnC = document.getElementById('btnCompany')
+    const btnU = document.getElementById('btnCustomer')
+    const pC = document.getElementById('companyPanel')
+    const pU = document.getElementById('customerPanel')
+    btnC.onclick = () => {
+      btnC.className = 'tab on-company'
+      btnU.className = 'tab'
+      pC.classList.add('show')
+      pU.classList.remove('show')
+    }
+    btnU.onclick = () => {
+      btnU.className = 'tab on-customer'
+      btnC.className = 'tab'
+      pU.classList.add('show')
+      pC.classList.remove('show')
+    }
+  </script>
+</body>
+</html>

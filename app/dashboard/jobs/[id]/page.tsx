@@ -13,6 +13,7 @@ import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
 import { DocumentAttachments } from '@/components/common/document-attachments'
+import { EntityHistory } from '@/components/history/EntityHistory'
 import { buildCreateContextQuery } from '@/src/lib/create-context'
 import { UnifiedDocumentsSection } from '@/components/documents/unified-documents-section'
 import { EditableNotesList } from '@/components/notes/editable-notes-list'
@@ -1623,6 +1624,8 @@ export default function JobDetailPage() {
               <DocumentAttachments entityType="job" entityId={jobId} />
             </CardContent>
           </Card>
+
+          <EntityHistory entityType="job" entityId={jobId} />
         </div>
       </div>
 

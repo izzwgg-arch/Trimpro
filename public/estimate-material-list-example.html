@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Estimate Material List — Example</title>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --card: #ffffff;
+      --text: #111827;
+      --muted: #6b7280;
+      --line: #e5e7eb;
+      --primary: #2e4a59;
+      --amber: #fffbeb;
+      --amber-border: #fde68a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 24px;
+    }
+    .wrap { max-width: 1100px; margin: 0 auto; }
+    h1 { margin: 0 0 6px; font-size: 28px; }
+    .sub { color: var(--muted); margin-bottom: 18px; }
+    .banner {
+      background: var(--amber);
+      border: 1px solid var(--amber-border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 16px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .card-head {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+    }
+    .card-head h2 { margin: 0; font-size: 18px; }
+    .card-head p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+    .sorts { display: flex; flex-wrap: wrap; gap: 8px; }
+    .sorts button {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 8px;
+      padding: 7px 10px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .sorts button.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+    table { width: 100%; border-collapse: collapse; min-width: 860px; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; font-size: 14px; }
+    th { color: #374151; }
+    td.num, th.num { text-align: right; }
+    .muted { color: var(--muted); }
+    .scroll { overflow-x: auto; }
+    .total { font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Material List — Example</h1>
+    <p class="sub">Dev preview for estimate vendor pricing (not linked to QuickBooks). Each row is a separate material/vendor/price line.</p>
+
+    <div class="banner">
+      Example estimate: <strong>EST-1042 — Custom Closet – Maple</strong>. Same material can appear on multiple lines with different vendors so you can compare prices.
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h2>Material List</h2>
+          <p>Internal worksheet for vendor pricing. Total cost: <span class="total" id="total">$0.00</span></p>
+        </div>
+        <div class="sorts">
+          <button class="active" data-sort="manual">Manual</button>
+          <button data-sort="material">By material</button>
+          <button data-sort="vendor">By vendor</button>
+          <button data-sort="price">By price</button>
+        </div>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Material</th>
+              <th>Vendor</th>
+              <th class="num">Qty</th>
+              <th>Unit</th>
+              <th class="num">Unit price</th>
+              <th class="num">Line total</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <script>
+    const lines = [
+      { materialName: '3/4" Maple Plywood', vendorName: 'Atlantic Plywood', quantity: 12, unit: 'sheet', unitPrice: 68.5, notes: 'A-grade face', sortOrder: 0 },
+      { materialName: '3/4" Maple Plywood', vendorName: 'Home Depot Pro', quantity: 12, unit: 'sheet', unitPrice: 74.2, notes: 'Same spec – compare price', sortOrder: 1 },
+      { materialName: 'Soft-close hinge (Blum)', vendorName: 'Richelieu', quantity: 48, unit: 'ea', unitPrice: 4.85, notes: '', sortOrder: 2 },
+      { materialName: 'Edge banding – maple 22mm', vendorName: 'CabinetParts.com', quantity: 250, unit: 'ft', unitPrice: 0.42, notes: 'Pre-glued', sortOrder: 3 },
+    ]
+    let sortKey = 'manual'
+    const money = (n) => n.toLocaleString(undefined, { style: 'currency', currency: 'USD' })
+    function sorted() {
+      const next = lines.map((l) => ({ ...l, lineTotal: l.quantity * l.unitPrice }))
+      if (sortKey === 'material') next.sort((a,b) => a.materialName.localeCompare(b.materialName) || a.sortOrder - b.sortOrder)
+      else if (sortKey === 'vendor') next.sort((a,b) => a.vendorName.localeCompare(b.vendorName) || a.sortOrder - b.sortOrder)
+      else if (sortKey === 'price') next.sort((a,b) => a.unitPrice - b.unitPrice || a.sortOrder - b.sortOrder)
+      else next.sort((a,b) => a.sortOrder - b.sortOrder)
+      return next
+    }
+    function render() {
+      const rows = sorted()
+      document.getElementById('total').textContent = money(rows.reduce((s, l) => s + l.lineTotal, 0))
+      document.getElementById('rows').innerHTML = rows.map((l) => `
+        <tr>
+          <td><strong>${l.materialName}</strong></td>
+          <td>${l.vendorName}</td>
+          <td class="num">${l.quantity}</td>
+          <td>${l.unit}</td>
+          <td class="num">${money(l.unitPrice)}</td>
+          <td class="num"><strong>${money(l.lineTotal)}</strong></td>
+          <td class="muted">${l.notes || '—'}</td>
+        </tr>
+      `).join('')
+    }
+    document.querySelectorAll('.sorts button').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        sortKey = btn.getAttribute('data-sort')
+        document.querySelectorAll('.sorts button').forEach((b) => b.classList.toggle('active', b === btn))
+        render()
+      })
+    })
+    render()
+  </script>
+</body>
+</html>

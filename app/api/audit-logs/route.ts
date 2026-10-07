@@ -15,6 +15,8 @@ export async function GET(request: NextRequest) {
   const entityType = searchParams.get('entityType') || ''
   const entityId = searchParams.get('entityId') || ''
   const userId = searchParams.get('userId') || ''
+  const action = searchParams.get('action') || ''
+  const search = (searchParams.get('search') || '').trim()
   const from = searchParams.get('from')
   const to = searchParams.get('to')
   const { skip, take, limit } = getPaginationParams(searchParams)
@@ -24,6 +26,16 @@ export async function GET(request: NextRequest) {
     if (entityType) where.entityType = entityType
     if (entityId) where.entityId = entityId
     if (userId) where.userId = userId
+    if (action) where.action = action
+    if (search) {
+      where.OR = [
+        { entityType: { contains: search, mode: 'insensitive' } },
+        { entityId: { contains: search, mode: 'insensitive' } },
+        { user: { firstName: { contains: search, mode: 'insensitive' } } },
+        { user: { lastName: { contains: search, mode: 'insensitive' } } },
+        { user: { email: { contains: search, mode: 'insensitive' } } },
+      ]
+    }
     if (from || to) {
       where.createdAt = {
         ...(from ? { gte: new Date(from) } : {}),

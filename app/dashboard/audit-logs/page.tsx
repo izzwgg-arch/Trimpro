@@ -37,10 +37,38 @@ const ACTION_COLORS: Record<string, string> = {
   UPDATE: 'bg-blue-100 text-blue-700',
   DELETE: 'bg-red-100 text-red-700',
   REFUND: 'bg-amber-100 text-amber-700',
+  VIEW: 'bg-slate-100 text-slate-600',
+  DOWNLOAD: 'bg-cyan-100 text-cyan-700',
+  SEND: 'bg-teal-100 text-teal-700',
   LOGIN: 'bg-gray-100 text-gray-700',
   LOGOUT: 'bg-gray-100 text-gray-700',
   PASSWORD_RESET: 'bg-purple-100 text-purple-700',
   PERMISSION_CHANGE: 'bg-indigo-100 text-indigo-700',
+}
+
+const ACTION_OPTIONS = [
+  'CREATE', 'UPDATE', 'DELETE', 'VIEW', 'DOWNLOAD', 'SEND',
+  'REFUND', 'LOGIN', 'LOGOUT', 'PASSWORD_RESET', 'PERMISSION_CHANGE',
+]
+
+// Map an audit entityType to the detail page it belongs to, so each row links
+// to the record. Returns null when the type has no dedicated page.
+function entityHref(entityType: string, entityId: string | null): string | null {
+  if (!entityId) return null
+  const routes: Record<string, string> = {
+    Invoice: '/dashboard/invoices',
+    Estimate: '/dashboard/estimates',
+    PurchaseOrder: '/dashboard/purchase-orders',
+    CreditMemo: '/dashboard/credit-memos',
+    Client: '/dashboard/clients',
+    Vendor: '/dashboard/vendors',
+    Job: '/dashboard/jobs',
+    Payment: '/dashboard/payments',
+    Task: '/dashboard/tasks',
+    Issue: '/dashboard/issues',
+  }
+  const base = routes[entityType]
+  return base ? `${base}/${entityId}` : null
 }
 
 export default function AuditLogsPage() {
@@ -53,6 +81,8 @@ export default function AuditLogsPage() {
   const [entityType, setEntityType] = useState('all')
   const [entityId, setEntityId] = useState('')
   const [userId, setUserId] = useState('')
+  const [action, setAction] = useState('all')
+  const [search, setSearch] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [page, setPage] = useState(1)
@@ -62,12 +92,13 @@ export default function AuditLogsPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [entityType, entityId, userId, from, to])
+  }, [entityType, entityId, userId, action, search, from, to])
 
   useEffect(() => {
-    fetchLogs()
+    const t = setTimeout(() => fetchLogs(), search ? 300 : 0)
+    return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entityType, entityId, userId, from, to, page])
+  }, [entityType, entityId, userId, action, search, from, to, page])
 
   const fetchLogs = async () => {
     setIsFetching(true)
@@ -83,6 +114,8 @@ export default function AuditLogsPage() {
       if (entityType !== 'all') params.set('entityType', entityType)
       if (entityId.trim()) params.set('entityId', entityId.trim())
       if (userId.trim()) params.set('userId', userId.trim())
+      if (action !== 'all') params.set('action', action)
+      if (search.trim()) params.set('search', search.trim())
       if (from) params.set('from', from)
       if (to) params.set('to', to)
 
@@ -123,6 +156,8 @@ export default function AuditLogsPage() {
     setEntityType('all')
     setEntityId('')
     setUserId('')
+    setAction('all')
+    setSearch('')
     setFrom('')
     setTo('')
   }
@@ -150,8 +185,16 @@ export default function AuditLogsPage() {
 
       <Card>
         <CardContent className="pt-6 space-y-4">
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">Search</label>
+            <Input
+              placeholder="Search by record type, id, or user…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
-            <div className="w-full lg:w-[200px]">
+            <div className="w-full lg:w-[180px]">
               <label className="mb-1 block text-xs text-muted-foreground">Entity Type</label>
               <Select value={entityType} onValueChange={setEntityType}>
                 <SelectTrigger className="text-sm">
@@ -162,6 +205,22 @@ export default function AuditLogsPage() {
                   {entityTypes.map((t) => (
                     <SelectItem key={t} value={t}>
                       {t}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="w-full lg:w-[160px]">
+              <label className="mb-1 block text-xs text-muted-foreground">Action</label>
+              <Select value={action} onValueChange={setAction}>
+                <SelectTrigger className="text-sm">
+                  <SelectValue placeholder="All Actions" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Actions</SelectItem>
+                  {ACTION_OPTIONS.map((a) => (
+                    <SelectItem key={a} value={a}>
+                      {a}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -197,7 +256,7 @@ export default function AuditLogsPage() {
                 className="w-[160px]"
               />
             </div>
-            {(entityType !== 'all' || entityId || userId || from || to) && (
+            {(entityType !== 'all' || entityId || userId || action !== 'all' || search || from || to) && (
               <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>
                 Clear filters
               </Button>
@@ -250,10 +309,38 @@ export default function AuditLogsPage() {
                         >
                           {log.action}
                         </span>
-                        <span className="text-sm font-medium text-gray-900 shrink-0">{log.entityType}</span>
-                        {log.entityId && (
-                          <span className="text-xs text-gray-400 font-mono truncate">{log.entityId}</span>
-                        )}
+                        {(() => {
+                          const href = entityHref(log.entityType, log.entityId)
+                          const label = (
+                            <>
+                              <span className="text-sm font-medium text-gray-900 shrink-0">{log.entityType}</span>
+                              {log.entityId && (
+                                <span className="text-xs text-gray-400 font-mono truncate">{log.entityId}</span>
+                              )}
+                            </>
+                          )
+                          if (!href) return label
+                          return (
+                            <span
+                              role="link"
+                              tabIndex={0}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                router.push(href)
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.stopPropagation()
+                                  router.push(href)
+                                }
+                              }}
+                              className="flex items-center gap-2 min-w-0 hover:underline text-blue-700"
+                              title="Open this record"
+                            >
+                              {label}
+                            </span>
+                          )
+                        })()}
                         <span className="flex-1" />
                         <span className="text-sm text-gray-600 shrink-0">{actorName(log.user)}</span>
                         <span className="text-xs text-gray-400 shrink-0">{formatDateTime(log.createdAt)}</span>

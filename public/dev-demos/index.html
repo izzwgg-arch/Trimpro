@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>TrimPro Dev Feature Walkthrough</title>
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; }
+    header { padding: 20px 24px; border-bottom: 1px solid #334155; }
+    h1 { margin: 0 0 6px; font-size: 22px; }
+    p { margin: 0; color: #94a3b8; }
+    .stage { max-width: 1100px; margin: 0 auto; padding: 20px; }
+    img { width: 100%; border-radius: 12px; border: 1px solid #334155; background: #000; }
+    .caption { margin-top: 12px; font-size: 15px; line-height: 1.45; }
+    .nav { display: flex; gap: 8px; margin: 16px 0; flex-wrap: wrap; }
+    button { background: #2E4A59; color: #fff; border: 0; border-radius: 8px; padding: 10px 14px; font-weight: 700; cursor: pointer; }
+    button.secondary { background: #334155; }
+    .dots { display: flex; gap: 6px; margin-top: 10px; }
+    .dot { width: 8px; height: 8px; border-radius: 999px; background: #475569; }
+    .dot.on { background: #f59e0b; }
+    ul { color: #cbd5e1; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>TrimPro — Dev-only feature walkthrough</h1>
+    <p>Localhost demos captured Jul 27, 2026 · PO changes excluded</p>
+  </header>
+  <div class="stage">
+    <div class="nav">
+      <button type="button" id="prev" class="secondary">Prev</button>
+      <button type="button" id="play">Play slideshow</button>
+      <button type="button" id="next" class="secondary">Next</button>
+    </div>
+    <img id="slide" alt="Feature screenshot" />
+    <div class="caption" id="caption"></div>
+    <div class="dots" id="dots"></div>
+    <h2 style="margin-top:28px;font-size:16px;">What was built (dev)</h2>
+    <ul>
+      <li>Movable markups (Select tool) + save marked image as attachment copy (mobile)</li>
+      <li>Customer multi-contacts + email recipient multi-select (estimates/invoices)</li>
+      <li>Per-job chat popup (web Send Message) + mobile job thread</li>
+      <li>Unread badges for job messages/notes (MVP)</li>
+      <li>Web messages: reply + reactions + job thread polish</li>
+      <li>Audit Logs page + sidebar link</li>
+      <li>Share-into-app ingress screen + Android SEND intent filters (native file bridge still partial)</li>
+    </ul>
+  </div>
+  <script>
+    const slides = [
+      { src: './01-audit-logs.png', text: '1) Audit Logs — who changed what, with filters and expandable JSON diffs.' },
+      { src: './02-jobs-list.png', text: '2) Jobs list in local Dev Login — starting point for job chat + unread badges.' },
+      { src: './03-job-detail-send-message.png', text: '3) Job detail — Send Message button opens a per-job chat (not Team/DM).' },
+      { src: './04-job-chat-popup.png', text: '4) Job Chat popup for JOB-DEV-001 — separate conversation per job.' },
+    ]
+    let i = 0, timer = null
+    const img = document.getElementById('slide')
+    const caption = document.getElementById('caption')
+    const dots = document.getElementById('dots')
+    slides.forEach((_, idx) => {
+      const d = document.createElement('div')
+      d.className = 'dot' + (idx === 0 ? ' on' : '')
+      dots.appendChild(d)
+    })
+    function show(n) {
+      i = (n + slides.length) % slides.length
+      img.src = slides[i].src
+      caption.textContent = slides[i].text
+      Array.from(dots.children).forEach((d, idx) => d.classList.toggle('on', idx === i))
+    }
+    document.getElementById('prev').onclick = () => show(i - 1)
+    document.getElementById('next').onclick = () => show(i + 1)
+    document.getElementById('play').onclick = () => {
+      if (timer) { clearInterval(timer); timer = null; document.getElementById('play').textContent = 'Play slideshow'; return }
+      document.getElementById('play').textContent = 'Pause'
+      timer = setInterval(() => show(i + 1), 2500)
+    }
+    show(0)
+  </script>
+</body>
+</html>

@@ -2473,6 +2473,9 @@ enum AuditAction {
   LOGOUT
   PASSWORD_RESET
   PERMISSION_CHANGE
+  VIEW
+  DOWNLOAD
+  SEND
 }
 
 model AuditLog {

@@ -5,6 +5,7 @@ import { navigateWithReturn } from '@/lib/navigation/nav-stack'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { EntityHistory } from '@/components/history/EntityHistory'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -1557,6 +1558,8 @@ export default function ClientDetailPage() {
               </CardContent>
             </Card>
           )}
+
+          {clientId && <EntityHistory entityType="client" entityId={clientId} />}
         </div>
       </div>
     </div>

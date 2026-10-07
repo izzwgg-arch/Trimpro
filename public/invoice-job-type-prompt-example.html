@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Invoice → Job type prompt example</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Segoe UI, system-ui, sans-serif;
+      background: #f3f4f6;
+      color: #111827;
+    }
+    .page {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 28px 20px 60px;
+    }
+    .eyebrow {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: #2E4A59;
+      margin: 0 0 8px;
+    }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    .sub { color: #4b5563; margin: 0 0 24px; max-width: 640px; }
+    .card {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 1px 2px rgba(0,0,0,.04);
+    }
+    .row { display: grid; gap: 8px; margin-bottom: 16px; }
+    label { font-size: 14px; font-weight: 600; }
+    .fake-input {
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #f9fafb;
+      color: #6b7280;
+    }
+    .note { font-size: 12px; color: #6b7280; margin-top: 6px; }
+    .backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, .45);
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      z-index: 20;
+    }
+    .dialog {
+      width: min(100%, 420px);
+      background: #fff;
+      border-radius: 12px;
+      border: 1px solid #e5e7eb;
+      box-shadow: 0 25px 60px rgba(0,0,0,.25);
+      padding: 20px;
+    }
+    .dialog h2 { margin: 0 0 8px; font-size: 18px; }
+    .dialog p { margin: 0 0 16px; color: #4b5563; font-size: 14px; line-height: 1.45; }
+    select {
+      width: 100%;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 14px;
+      margin-bottom: 16px;
+    }
+    .actions { display: flex; justify-content: flex-end; }
+    button {
+      background: #2E4A59;
+      color: #fff;
+      border: 0;
+      border-radius: 8px;
+      padding: 10px 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .badge {
+      display: inline-block;
+      background: #ecfdf5;
+      color: #047857;
+      border: 1px solid #a7f3d0;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <p class="eyebrow">Example</p>
+    <h1>Invoice creates a new job</h1>
+    <p class="sub">
+      When you convert an estimate to an invoice and there is no existing job,
+      TrimPro asks which job type the new job should use — including for users with access to all job types.
+    </p>
+    <span class="badge">Mock UI — not live data</span>
+
+    <div class="card">
+      <div class="row">
+        <label>Client</label>
+        <div class="fake-input">Acme Cabinets LLC</div>
+      </div>
+      <div class="row">
+        <label>Job (Optional)</label>
+        <div class="fake-input">No job</div>
+        <div class="note">No job selected → a new job will be created from this invoice.</div>
+      </div>
+      <div class="row">
+        <label>Job Type</label>
+        <div class="fake-input">Custom</div>
+        <div class="note">This invoice will create a new job. Choose which job type it should use.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="backdrop" role="dialog" aria-modal="true" aria-labelledby="dlg-title">
+    <div class="dialog">
+      <h2 id="dlg-title">Please choose a job type</h2>
+      <p>This invoice will create a new job. Choose which job type it should use.</p>
+      <label for="jobType" style="display:block;font-size:14px;font-weight:600;margin-bottom:6px;">Job Type</label>
+      <select id="jobType">
+        <option>Custom</option>
+        <option>Standard</option>
+        <option selected>Railing</option>
+        <option>Closets</option>
+      </select>
+      <div class="actions">
+        <button type="button">Continue</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

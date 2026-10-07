@@ -4,6 +4,7 @@ import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { EntityHistory } from '@/components/history/EntityHistory'
 import { Button } from '@/components/ui/button'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Edit, Plus, ShoppingCart, Package, FileText, Eye, Download, Trash2, Building2, Phone, Mail, Globe, MapPin, DollarSign, Calendar } from 'lucide-react'
@@ -589,7 +590,21 @@ export default function VendorDetailPage() {
                           </div>
                         </div>
                         <div className="flex items-center space-x-2">
-                          <a href={attachment.url} target="_blank" rel="noopener noreferrer">
+                          <a
+                            href={attachment.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={() => {
+                              try {
+                                const t = localStorage.getItem('accessToken')
+                                void fetch(`/api/attachments/${attachment.id}`, {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
+                                  body: JSON.stringify({ action: 'download' }),
+                                }).catch(() => {})
+                              } catch {}
+                            }}
+                          >
                             <Button variant="ghost" size="sm">
                               <Download className="h-4 w-4" />
                             </Button>
@@ -655,6 +670,8 @@ export default function VendorDetailPage() {
               </div>
             </CardContent>
           </Card>
+
+          <EntityHistory entityType="vendor" entityId={vendorId} />
         </div>
       </div>
     </div>

@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { DocumentAttachments } from '@/components/common/document-attachments'
+import { EntityHistory } from '@/components/history/EntityHistory'
 import { EstimateMaterialList } from '@/components/estimates/estimate-material-list'
 import { CustomerEstimatePanel } from '@/components/estimates/customer-estimate-panel'
 import { ContactRecipientPicker } from '@/components/email/contact-recipient-picker'
@@ -1684,6 +1685,7 @@ export default function EstimateDetailPage() {
             </CardContent>
           </Card>
 
+          <EntityHistory entityType="estimate" entityId={estimateId} />
         </div>
         </>
         ) : null}

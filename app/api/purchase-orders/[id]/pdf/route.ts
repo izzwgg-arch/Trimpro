@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { renderPdfFromHtml } from '@/lib/pdf/render-html-to-pdf'
 import { getPdfBranding } from '@/lib/branding/pdf'
 import { buildPurchaseOrderPdfHtml } from '@/lib/documents/pdf-templates'
+import { recordAuditLog, auditContextFromRequest } from '@/lib/audit/log'
 
 export const runtime = 'nodejs'
 
@@ -28,6 +29,14 @@ export async function GET(
     const shouldDownload = request.nextUrl.searchParams.get('download') === '1'
     const format = request.nextUrl.searchParams.get('format') || 'pdf'
     const wantsHtml = format === 'html'
+    if (!wantsHtml) {
+      void recordAuditLog({
+        tenantId: user.tenantId, userId: user.id,
+        action: shouldDownload ? 'DOWNLOAD' : 'VIEW',
+        entityType: 'PurchaseOrder', entityId: params.id,
+        ...auditContextFromRequest(request),
+      })
+    }
     const brand = await getPdfBranding(user.tenantId)
 
     const purchaseOrder = await prisma.purchaseOrder.findFirst({

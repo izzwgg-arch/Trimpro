@@ -114,7 +114,25 @@ export function DocumentAttachments({ entityType, entityId }: Props) {
     if (entityId) load()
   }, [entityType, entityId])
 
+  const logAccess = (attachmentId: string, action: 'view' | 'download') => {
+    try {
+      const token = localStorage.getItem('accessToken')
+      void fetch(`/api/attachments/${attachmentId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ action }),
+      }).catch(() => {})
+    } catch {
+      // Logging is best-effort; never block opening the file.
+    }
+  }
+
   const openGallery = (index: number) => {
+    const a = attachments[index]
+    if (a?.id) logAccess(a.id, 'view')
     setGalleryIndex(index)
     setGalleryOpen(true)
   }
@@ -334,7 +352,10 @@ export function DocumentAttachments({ entityType, entityId }: Props) {
                       size="sm"
                       className="h-6 w-6 p-0"
                       title="Open in new tab"
-                      onClick={() => window.open(publicUrl, '_blank')}
+                      onClick={() => {
+                        logAccess(a.id, 'view')
+                        window.open(publicUrl, '_blank')
+                      }}
                     >
                       <ExternalLink className="h-3 w-3" />
                     </Button>

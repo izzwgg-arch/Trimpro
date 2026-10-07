@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
+import { recordAuditLog, auditContextFromRequest } from '@/lib/audit/log'
 import { requirePermission, requireAnyPermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
@@ -198,6 +199,16 @@ export async function POST(request: NextRequest) {
         country: country && country.trim() ? country.trim() : 'USA',
         contactPerson: contactPerson && contactPerson.trim() ? contactPerson.trim() : null,
       },
+    })
+
+    void recordAuditLog({
+      tenantId: user.tenantId,
+      userId: user.id,
+      action: 'CREATE',
+      entityType: 'Vendor',
+      entityId: vendor.id,
+      changes: { name: vendor.name, email: vendor.email, phone: vendor.phone },
+      ...auditContextFromRequest(request),
     })
 
     // Create contacts if provided
