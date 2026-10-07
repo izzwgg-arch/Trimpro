@@ -96,7 +96,7 @@ interface UnreadNavNotification {
 function NewBadge({ items }: { items: UnreadNavNotification[] }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
-  const [position, setPosition] = useState({ top: 0, left: 0 })
+  const [position, setPosition] = useState({ top: 0, left: 0, maxHeight: 400 })
   const badgeRef = useRef<HTMLSpanElement>(null)
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -124,7 +124,10 @@ function NewBadge({ items }: { items: UnreadNavNotification[] }) {
     cancelClose()
     const rect = badgeRef.current?.getBoundingClientRect()
     if (rect) {
-      setPosition({ top: rect.bottom, left: Math.min(rect.left, window.innerWidth - 300) })
+      // Leave a 16px gutter at the bottom of the viewport; the list scrolls
+      // inside whatever height is available below the badge.
+      const maxHeight = Math.max(160, window.innerHeight - rect.bottom - 16)
+      setPosition({ top: rect.bottom, left: Math.min(rect.left, window.innerWidth - 300), maxHeight })
     }
     setOpen(true)
   }
@@ -141,44 +144,44 @@ function NewBadge({ items }: { items: UnreadNavNotification[] }) {
       </span>
       {open && (
         <div
-          className="fixed z-[100] w-72 rounded-md border border-gray-200 bg-white p-2 pt-3 text-left normal-case shadow-lg"
-          style={{ top: position.top, left: position.left }}
+          className="fixed z-[100] flex w-72 flex-col rounded-md border border-gray-200 bg-white p-2 pt-3 text-left normal-case shadow-lg"
+          style={{ top: position.top, left: position.left, maxHeight: position.maxHeight }}
           onMouseEnter={cancelClose}
           onMouseLeave={scheduleClose}
         >
-          <p className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
-            What&apos;s new
+          <p className="mb-1 flex shrink-0 items-center justify-between px-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+            <span>What&apos;s new</span>
+            <span className="text-gray-400">{items.length}</span>
           </p>
-          {items.slice(0, 5).map((n) => (
-            <div
-              key={n.id}
-              role="button"
-              tabIndex={0}
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                setOpen(false)
-                if (n.linkUrl) router.push(n.linkUrl)
-              }}
-              onKeyDown={(e) => {
-                if (e.key !== 'Enter' && e.key !== ' ') return
-                e.preventDefault()
-                e.stopPropagation()
-                setOpen(false)
-                if (n.linkUrl) router.push(n.linkUrl)
-              }}
-              className="cursor-pointer rounded px-1 py-1.5 hover:bg-gray-50"
-            >
-              <p className="truncate text-xs font-medium text-gray-900">{n.title}</p>
-              {n.message && <p className="line-clamp-2 text-[11px] text-gray-600">{n.message}</p>}
-              <p className="mt-0.5 text-[10px] text-gray-400">
-                {formatDistanceToNow(new Date(n.createdAt), { addSuffix: true })}
-              </p>
-            </div>
-          ))}
-          {items.length > 5 && (
-            <p className="px-1 pt-1 text-[10px] text-gray-400">+{items.length - 5} more</p>
-          )}
+          <div className="-mr-1 flex-1 overflow-y-auto pr-1">
+            {items.map((n) => (
+              <div
+                key={n.id}
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setOpen(false)
+                  if (n.linkUrl) router.push(n.linkUrl)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter' && e.key !== ' ') return
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setOpen(false)
+                  if (n.linkUrl) router.push(n.linkUrl)
+                }}
+                className="cursor-pointer rounded px-1 py-1.5 hover:bg-gray-50"
+              >
+                <p className="truncate text-xs font-medium text-gray-900">{n.title}</p>
+                {n.message && <p className="line-clamp-2 text-[11px] text-gray-600">{n.message}</p>}
+                <p className="mt-0.5 text-[10px] text-gray-400">
+                  {formatDistanceToNow(new Date(n.createdAt), { addSuffix: true })}
+                </p>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </>
