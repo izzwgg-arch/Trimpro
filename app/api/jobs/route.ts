@@ -491,31 +491,56 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Client not found' }, { status: 404 })
     }
 
-    // Generate job number
-    const jobCount = await prisma.job.count({
-      where: { tenantId: user.tenantId },
-    })
-    const jobNumber = `JOB-${String(jobCount + 1).padStart(6, '0')}`
+    // Generate a unique job number from the HIGHEST existing number. A count-based
+    // number (count + 1) collides whenever an earlier job was deleted, which was
+    // throwing a unique-constraint error and blocking job creation. Retry on the
+    // rare race where two creates pick the same number.
+    const resolvedPriority =
+      typeof priority === 'number' ? priority : (priority ? parseInt(String(priority)) : 3)
+    let job: any = null
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const latestJob = await prisma.job.findFirst({
+        where: { tenantId: user.tenantId, jobNumber: { startsWith: 'JOB-' } },
+        orderBy: { jobNumber: 'desc' },
+        select: { jobNumber: true },
+      })
+      const latestNum = latestJob?.jobNumber
+        ? parseInt(String(latestJob.jobNumber).replace(/^JOB-/, ''), 10)
+        : 0
+      const baseNum = Number.isFinite(latestNum) ? latestNum : 0
+      const jobNumber = `JOB-${String(baseNum + 1 + attempt).padStart(6, '0')}`
 
-    // Create job
-    const job = await prisma.job.create({
-      data: {
-        tenantId: user.tenantId,
-        clientId,
-        jobNumber,
-        title,
-        description: description || null,
-        status: status || 'QUOTE',
-        jobType: resolvedType.jobType,
-        priority: typeof priority === 'number' ? priority : (priority ? parseInt(String(priority)) : 3),
-        scheduledStart: scheduledStart ? new Date(scheduledStart) : null,
-        scheduledEnd: scheduledEnd ? new Date(scheduledEnd) : null,
-        estimateAmount: estimateAmount ? (typeof estimateAmount === 'string' ? parseFloat(estimateAmount) : estimateAmount) : null,
-      },
-      include: {
-        client: true,
-      },
-    })
+      try {
+        job = await prisma.job.create({
+          data: {
+            tenantId: user.tenantId,
+            clientId,
+            jobNumber,
+            title,
+            description: description || null,
+            status: status || 'QUOTE',
+            jobType: resolvedType.jobType,
+            priority: resolvedPriority,
+            scheduledStart: scheduledStart ? new Date(scheduledStart) : null,
+            scheduledEnd: scheduledEnd ? new Date(scheduledEnd) : null,
+            estimateAmount: estimateAmount ? (typeof estimateAmount === 'string' ? parseFloat(estimateAmount) : estimateAmount) : null,
+          },
+          include: {
+            client: true,
+          },
+        })
+        break
+      } catch (err: any) {
+        if (err?.code === 'P2002' && err?.meta?.target?.includes?.('jobNumber')) continue
+        throw err
+      }
+    }
+
+    if (!job) {
+      return NextResponse.json({ error: 'Unable to allocate a unique job number' }, { status: 500 })
+    }
+
+    const jobNumber = job.jobNumber
 
     // Create job site address if provided
     if (jobSite) {

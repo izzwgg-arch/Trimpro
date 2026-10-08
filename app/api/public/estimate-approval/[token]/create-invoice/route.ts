@@ -6,6 +6,7 @@ import { rateLimitOrThrow } from '@/lib/security/rate-limit'
 import { hashApprovalToken } from '@/lib/estimate-approval'
 import { allocateNextInvoiceNumber, normalizeInvoiceNumber } from '@/lib/qbo/doc-numbers'
 import { getEstimateConversionSummary } from '@/lib/documents/conversion'
+import { ensureJobFromInvoice } from '@/lib/jobs/ensure-job-from-invoice'
 
 export const runtime = 'nodejs'
 
@@ -239,6 +240,15 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
 
       return invoice
     })
+
+    // Auto-create (or link) a job for this invoice, exactly like the internal
+    // estimate→invoice conversion does. Idempotent and best-effort: a failure
+    // here must not fail the customer's invoice creation.
+    try {
+      await ensureJobFromInvoice(result.id)
+    } catch (jobErr) {
+      console.error('Failed to auto-create job from public estimate approval:', jobErr)
+    }
 
     return NextResponse.json({
       ok: true,
