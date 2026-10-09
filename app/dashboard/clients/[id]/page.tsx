@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { EntityHistory } from '@/components/history/EntityHistory'
+import { RecurringPaymentsPanel } from '@/components/payments/RecurringPaymentsPanel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -937,6 +938,7 @@ export default function ClientDetailPage() {
     ? client.subClientInvoices
     : []
   const hasSubClients = subClients.length > 0
+  const canViewPayments = !permissionsLoading && hasPermission(userPermissions, 'payments.view')
   const canCreateRequest = !permissionsLoading && hasPermission(userPermissions, 'leads.create')
   const canEditNotes = !permissionsLoading && hasPermission(userPermissions, 'clients.edit')
   const selectedInvoices = documents.filter(
@@ -1557,6 +1559,10 @@ export default function ClientDetailPage() {
                 ))}
               </CardContent>
             </Card>
+          )}
+
+          {clientId && canViewPayments && (
+            <RecurringPaymentsPanel clientId={clientId} />
           )}
 
           {clientId && <EntityHistory entityType="client" entityId={clientId} />}

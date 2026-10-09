@@ -20,6 +20,8 @@ import { ItemPicker } from '@/components/items/ItemPicker'
 import { Checkbox } from '@/components/ui/checkbox'
 import { DocumentAttachments } from '@/components/common/document-attachments'
 import { EntityHistory } from '@/components/history/EntityHistory'
+import { RecurringPaymentsPanel } from '@/components/payments/RecurringPaymentsPanel'
+import { usePermissions, hasPermission } from '@/hooks/usePermissions'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -156,6 +158,8 @@ export default function InvoiceDetailPage() {
   const params = useParams()
   const router = useRouter()
   const invoiceId = params.id as string
+  const { permissions: userPermissions, loading: permissionsLoading } = usePermissions()
+  const canViewPayments = !permissionsLoading && hasPermission(userPermissions, 'payments.view')
   const [invoice, setInvoice] = useState<InvoiceDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
@@ -2335,6 +2339,15 @@ export default function InvoiceDetailPage() {
               <DocumentAttachments entityType="invoice" entityId={invoiceId} />
             </CardContent>
           </Card>
+
+          {canViewPayments && invoice.client?.id && (
+            <RecurringPaymentsPanel
+              clientId={invoice.client.id}
+              invoiceId={invoiceId}
+              defaultAmount={invoiceBalanceNum > 0 ? invoiceBalanceNum : undefined}
+              title="Recurring payment for this invoice"
+            />
+          )}
 
           <EntityHistory entityType="invoice" entityId={invoiceId} />
         </div>

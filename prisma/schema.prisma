@@ -249,6 +249,8 @@ model Client {
   attachments    Attachment[]
   activities     Activity[]
   conversations  Conversation[]
+  cardsOnFile       CardOnFile[]
+  recurringPayments RecurringPayment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -3461,4 +3463,85 @@ model MeasuringRequest {
   @@index([status])
   @@index([tenantId, assignedUserId, status])
   @@map("measuring_requests")
+}
+
+// A customer's saved card (Cardknox xToken). The raw card never touches our
+// servers — only the gateway token + masked display data are stored. Staff-only.
+model CardOnFile {
+  id         String  @id @default(cuid())
+  tenantId   String
+  clientId   String
+  client     Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  token      String // Cardknox xToken (reusable)
+  maskedCard String? // e.g. 4xxxxxxxxxxx1111
+  cardType   String? // e.g. Visa
+  expMonth   Int?
+  expYear    Int?
+  label      String?
+  isDefault  Boolean @default(false)
+  status     String  @default("ACTIVE") // ACTIVE | REMOVED
+
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  recurringPayments RecurringPayment[]
+
+  @@index([tenantId, clientId])
+  @@index([tenantId, status])
+  @@map("cards_on_file")
+}
+
+// A staff-created recurring credit-card charge. The scheduler charges the saved
+// card at Cardknox on each due date and records a Payment. Not exposed to customers.
+model RecurringPayment {
+  id           String  @id @default(cuid())
+  tenantId     String
+  clientId     String
+  client       Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  invoiceId    String? // optional: collect a specific invoice over time
+  cardOnFileId String
+  card         CardOnFile @relation(fields: [cardOnFileId], references: [id], onDelete: Restrict)
+
+  amount         Decimal  @db.Decimal(12, 2)
+  frequency      String // WEEKLY | BIWEEKLY | MONTHLY
+  startDate      DateTime
+  nextRunAt      DateTime
+  endDate        DateTime?
+  maxOccurrences Int?
+  occurrences    Int      @default(0)
+  status         String   @default("ACTIVE") // ACTIVE | PAUSED | COMPLETED | CANCELLED | FAILED
+  lastRunAt      DateTime?
+  lastError      String?
+  notes          String?
+
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  runs RecurringPaymentRun[]
+
+  @@index([tenantId, status, nextRunAt])
+  @@index([tenantId, clientId])
+  @@map("recurring_payments")
+}
+
+// One execution attempt of a recurring payment (audit trail of each charge).
+model RecurringPaymentRun {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  recurringPaymentId String
+  recurring          RecurringPayment @relation(fields: [recurringPaymentId], references: [id], onDelete: Cascade)
+
+  runAt          DateTime @default(now())
+  status         String // SUCCESS | FAILED | SKIPPED
+  amount         Decimal  @db.Decimal(12, 2)
+  paymentId      String?
+  cardknoxRefNum String?
+  error          String?
+
+  @@index([recurringPaymentId])
+  @@index([tenantId, runAt])
+  @@map("recurring_payment_runs")
 }
