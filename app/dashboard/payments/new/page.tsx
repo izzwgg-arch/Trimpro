@@ -36,6 +36,14 @@ function NewPaymentInner() {
   const [reference, setReference] = useState('')
   const [alloc, setAlloc] = useState<Record<string, string>>({})
 
+  // Recurring (auto-record) option
+  const [makeRecurring, setMakeRecurring] = useState(false)
+  const [frequency, setFrequency] = useState('MONTHLY')
+  const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [endMode, setEndMode] = useState<'none' | 'date' | 'count'>('none')
+  const [endDate, setEndDate] = useState('')
+  const [maxOccurrences, setMaxOccurrences] = useState('')
+
   const load = useCallback(async () => {
     if (!invoiceId) {
       setError('Missing invoice context')
@@ -95,6 +103,42 @@ function NewPaymentInner() {
       setError('Enter a payment type name.')
       return
     }
+
+    // Recurring auto-record schedule (Check / Quick Pay / Other).
+    if (makeRecurring) {
+      setSaving(true)
+      try {
+        const token = localStorage.getItem('accessToken')
+        const res = await fetch('/api/recurring-payments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({
+            type: 'CUSTOM',
+            clientId: ctx.clientId,
+            invoiceId,
+            method,
+            methodLabel: method === 'OTHER' ? otherLabel.trim() : undefined,
+            amount: amountNum,
+            frequency,
+            startDate,
+            endDate: endMode === 'date' ? endDate : null,
+            maxOccurrences: endMode === 'count' ? Number(maxOccurrences) : null,
+          }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          setError(data.error || 'Failed to create the recurring payment.')
+          return
+        }
+        router.push(`/dashboard/invoices/${invoiceId}`)
+      } catch {
+        setError('Failed to create the recurring payment.')
+      } finally {
+        setSaving(false)
+      }
+      return
+    }
+
     if (over) {
       setError('Applied amounts exceed the payment total.')
       return
@@ -207,9 +251,59 @@ function NewPaymentInner() {
               />
             </div>
           )}
+
+          <label className="mt-3 flex items-center gap-2 text-sm text-gray-700">
+            <input type="checkbox" checked={makeRecurring} onChange={(e) => setMakeRecurring(e.target.checked)} />
+            Make this a recurring payment (auto-recorded each cycle)
+          </label>
+
+          {makeRecurring && (
+            <div className="mt-3 grid grid-cols-1 gap-3 rounded-md border border-gray-200 bg-white p-3 sm:grid-cols-4">
+              <div>
+                <label className="text-xs text-gray-500">Frequency</label>
+                <select value={frequency} onChange={(e) => setFrequency(e.target.value)} className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm">
+                  <option value="WEEKLY">Weekly</option>
+                  <option value="BIWEEKLY">Every 2 weeks</option>
+                  <option value="MONTHLY">Monthly</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">First date</label>
+                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">Ends</label>
+                <select value={endMode} onChange={(e) => setEndMode(e.target.value as any)} className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm">
+                  <option value="none">Until cancelled</option>
+                  <option value="date">On a date</option>
+                  <option value="count">After N payments</option>
+                </select>
+              </div>
+              {endMode === 'date' && (
+                <div>
+                  <label className="text-xs text-gray-500">End date</label>
+                  <input type="date" min={startDate} value={endDate} onChange={(e) => setEndDate(e.target.value)} className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm" />
+                </div>
+              )}
+              {endMode === 'count' && (
+                <div>
+                  <label className="text-xs text-gray-500"># of payments</label>
+                  <input inputMode="numeric" placeholder="e.g. 12" value={maxOccurrences} onChange={(e) => setMaxOccurrences(e.target.value)} className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm" />
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="p-5">
+          {makeRecurring && (
+            <p className="mb-3 rounded-md bg-blue-50 px-4 py-3 text-sm text-blue-800">
+              Each cycle, a {method === 'CHECK' ? 'check' : method === 'QUICK_PAY' ? 'Quick Pay' : otherLabel || 'custom'} payment of {money(amountNum)} will be recorded automatically and applied to this invoice. No card is charged.
+            </p>
+          )}
+
+          {!makeRecurring && (
+          <>
           <div className="mb-2 text-sm font-semibold text-gray-700">Apply to open invoices</div>
           {ctx.openInvoices.length === 0 ? (
             <p className="text-sm text-gray-500">This customer has no open invoices. The full amount will be held as credit.</p>
@@ -262,16 +356,18 @@ function NewPaymentInner() {
             Applying {money(sumAlloc)} of {money(amountNum)} ·{' '}
             {over ? 'over the payment total!' : `${money(credit)} held as credit`}
           </div>
+          </>
+          )}
 
           {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
 
           <div className="mt-4 flex items-center gap-2">
             <button
               onClick={save}
-              disabled={saving || over || amountNum <= 0}
+              disabled={saving || (!makeRecurring && over) || amountNum <= 0}
               className="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-60"
             >
-              {saving ? 'Saving…' : 'Record payment'}
+              {saving ? 'Saving…' : makeRecurring ? 'Create recurring payment' : 'Record payment'}
             </button>
             <button
               onClick={() => router.back()}

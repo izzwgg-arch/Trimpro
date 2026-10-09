@@ -3501,8 +3501,14 @@ model RecurringPayment {
   clientId     String
   client       Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
   invoiceId    String? // optional: collect a specific invoice over time
-  cardOnFileId String
-  card         CardOnFile @relation(fields: [cardOnFileId], references: [id], onDelete: Restrict)
+
+  // CARD schedules auto-charge a saved card; CUSTOM schedules auto-RECORD a
+  // check / quick-pay / other payment each cycle (no money moved by the system).
+  type         String  @default("CARD") // CARD | CUSTOM
+  cardOnFileId String? // required for CARD
+  card         CardOnFile? @relation(fields: [cardOnFileId], references: [id], onDelete: Restrict)
+  method       String? // CUSTOM: CHECK | QUICK_PAY | OTHER
+  methodLabel  String? // CUSTOM + OTHER: the custom type name
 
   amount         Decimal  @db.Decimal(12, 2)
   frequency      String // WEEKLY | BIWEEKLY | MONTHLY

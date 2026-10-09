@@ -45,9 +45,12 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json().catch(() => ({}))
+    const type = String(body?.type || 'CARD').toUpperCase() === 'CUSTOM' ? 'CUSTOM' : 'CARD'
     const clientId = String(body?.clientId || '').trim()
     const invoiceId = body?.invoiceId ? String(body.invoiceId).trim() : null
     const cardOnFileId = String(body?.cardOnFileId || '').trim()
+    const method = String(body?.method || '').toUpperCase() // CUSTOM only
+    const methodLabel = body?.methodLabel ? String(body.methodLabel).trim() : null
     const amount = Math.round(Number(body?.amount) * 100) / 100
     const frequency = String(body?.frequency || '').toUpperCase()
     const startDateRaw = body?.startDate ? new Date(String(body.startDate)) : null
@@ -57,8 +60,9 @@ export async function POST(request: NextRequest) {
       : null
     const notes = body?.notes ? String(body.notes).trim() : null
 
+    const CUSTOM_METHODS = new Set(['CHECK', 'QUICK_PAY', 'OTHER'])
+
     if (!clientId) return NextResponse.json({ error: 'Customer is required' }, { status: 400 })
-    if (!cardOnFileId) return NextResponse.json({ error: 'A saved card is required' }, { status: 400 })
     if (!FREQUENCIES.has(frequency)) return NextResponse.json({ error: 'Invalid frequency' }, { status: 400 })
     if (!(amount > 0)) return NextResponse.json({ error: 'Amount must be greater than zero' }, { status: 400 })
     if (!startDateRaw || Number.isNaN(startDateRaw.getTime())) {
@@ -68,11 +72,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'End date must be after the start date' }, { status: 400 })
     }
 
-    const card = await prisma.cardOnFile.findFirst({
-      where: { id: cardOnFileId, tenantId: user.tenantId, clientId, status: 'ACTIVE' },
-      select: { id: true },
-    })
-    if (!card) return NextResponse.json({ error: 'Saved card not found for this customer' }, { status: 404 })
+    if (type === 'CARD') {
+      if (!cardOnFileId) return NextResponse.json({ error: 'A saved card is required' }, { status: 400 })
+      const card = await prisma.cardOnFile.findFirst({
+        where: { id: cardOnFileId, tenantId: user.tenantId, clientId, status: 'ACTIVE' },
+        select: { id: true },
+      })
+      if (!card) return NextResponse.json({ error: 'Saved card not found for this customer' }, { status: 404 })
+    } else {
+      if (!CUSTOM_METHODS.has(method)) {
+        return NextResponse.json({ error: 'Payment method must be Check, Quick Pay, or Other' }, { status: 400 })
+      }
+      if (method === 'OTHER' && !methodLabel) {
+        return NextResponse.json({ error: 'Please enter a payment type name.' }, { status: 400 })
+      }
+    }
 
     if (invoiceId) {
       const inv = await prisma.invoice.findFirst({
@@ -87,7 +101,10 @@ export async function POST(request: NextRequest) {
         tenantId: user.tenantId,
         clientId,
         invoiceId,
-        cardOnFileId,
+        type,
+        cardOnFileId: type === 'CARD' ? cardOnFileId : null,
+        method: type === 'CUSTOM' ? method : null,
+        methodLabel: type === 'CUSTOM' && method === 'OTHER' ? methodLabel : null,
         amount,
         frequency,
         startDate: startDateRaw,
@@ -105,7 +122,7 @@ export async function POST(request: NextRequest) {
       action: 'CREATE',
       entityType: 'RecurringPayment',
       entityId: created.id,
-      changes: { clientId, invoiceId, amount, frequency, startDate: startDateRaw },
+      changes: { type, clientId, invoiceId, amount, frequency, method: type === 'CUSTOM' ? method : undefined, startDate: startDateRaw },
       ...auditContextFromRequest(request),
     })
 

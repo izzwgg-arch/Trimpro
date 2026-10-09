@@ -70,16 +70,17 @@ export async function processRecurringPayment(recurringId: string): Promise<Proc
   if (rec.status !== 'ACTIVE') {
     return { status: 'SKIPPED', amount: 0, paymentIds: [], refNum: null, error: `status_${rec.status}` }
   }
-  if (!cardknoxConfigured()) {
+  const isCard = rec.type !== 'CUSTOM'
+  if (isCard && !cardknoxConfigured()) {
     return { status: 'SKIPPED', amount: 0, paymentIds: [], refNum: null, error: 'gateway_not_configured' }
   }
-  if (!rec.card || rec.card.status !== 'ACTIVE') {
+  if (isCard && (!rec.card || rec.card.status !== 'ACTIVE')) {
     await markFailure(rec.id, 'Saved card is missing or removed')
     await recordRun(rec.tenantId, rec.id, 'FAILED', 0, null, null, 'Saved card is missing or removed')
     return { status: 'FAILED', amount: 0, paymentIds: [], refNum: null, error: 'card_unavailable' }
   }
 
-  // Determine the amount to charge this cycle.
+  // Determine the amount this cycle.
   let chargeAmount = round2(rec.amount)
   let targetInvoice: { id: string; invoiceNumber: string; balance: number } | null = null
 
@@ -98,7 +99,7 @@ export async function processRecurringPayment(recurringId: string): Promise<Proc
       return { status: 'SKIPPED', amount: 0, paymentIds: [], refNum: null, error: 'invoice_settled' }
     }
     targetInvoice = { id: inv.id, invoiceNumber: inv.invoiceNumber, balance: round2(inv.balance) }
-    // Never charge more than the invoice still owes.
+    // Never record/charge more than the invoice still owes.
     chargeAmount = Math.min(chargeAmount, targetInvoice.balance)
   }
 
@@ -107,11 +108,36 @@ export async function processRecurringPayment(recurringId: string): Promise<Proc
     return { status: 'SKIPPED', amount: 0, paymentIds: [], refNum: null, error: 'zero_amount' }
   }
 
-  // 1) Charge the saved card at Cardknox.
+  // CUSTOM schedules auto-record a payment; no gateway involved.
+  if (!isCard) {
+    const m = mapCustomMethod(rec.method, rec.methodLabel)
+    const providerPaymentId = `rc_${crypto.randomBytes(8).toString('hex')}`
+    try {
+      const paymentIds = await recordAcrossInvoices(rec, chargeAmount, targetInvoice, {
+        method: m.method,
+        provider: m.provider,
+        providerPaymentId,
+        reference: m.reference,
+        notes: m.notes,
+        creditReason: 'Recurring payment (credit on account)',
+        receipts: false,
+      })
+      await advanceSchedule(rec.id)
+      await recordRun(rec.tenantId, rec.id, 'SUCCESS', chargeAmount, paymentIds[0] || null, null, null)
+      return { status: 'SUCCESS', amount: chargeAmount, paymentIds, refNum: null }
+    } catch (err: any) {
+      const message = String(err?.message || 'Failed to record payment')
+      await markFailure(rec.id, message)
+      await recordRun(rec.tenantId, rec.id, 'FAILED', chargeAmount, null, null, message)
+      return { status: 'FAILED', amount: chargeAmount, paymentIds: [], refNum: null, error: message }
+    }
+  }
+
+  // CARD schedules charge the saved card at Cardknox, then record the payment.
   let refNum: string | null = null
   try {
     const result = await chargeSavedCard({
-      token: rec.card.token,
+      token: rec.card!.token,
       amount: chargeAmount,
       invoiceNumber: targetInvoice?.invoiceNumber,
       description: `Recurring payment${targetInvoice ? ` for ${targetInvoice.invoiceNumber}` : ''}`,
@@ -126,101 +152,139 @@ export async function processRecurringPayment(recurringId: string): Promise<Proc
     return { status: 'FAILED', amount: chargeAmount, paymentIds: [], refNum: null, error: message }
   }
 
-  // 2) Record the payment(s) in TrimPro (charge already succeeded).
-  const paymentIds: string[] = []
   const providerPaymentId = refNum || `ck_${crypto.randomBytes(8).toString('hex')}`
+  let paymentIds: string[] = []
   try {
-    if (targetInvoice) {
-      const res = await applyInvoicePayment({
-        invoiceId: targetInvoice.id,
-        amount: chargeAmount,
-        method: 'CARD',
-        provider: 'cardknox',
-        providerPaymentId,
-        reference: refNum ? `Recurring card ${refNum}` : 'Recurring card',
-        processedAt: new Date(),
-        notes: 'Recurring card payment',
-        dedupeWhere: { provider: 'cardknox', providerPaymentId },
-      })
-      if (res.created && res.paymentId) {
-        paymentIds.push(res.paymentId)
-        await afterInvoicePayment(targetInvoice.id).catch(() => null)
-        await enqueueQboSync(rec.tenantId, 'payment', res.paymentId, { processImmediately: true }).catch(() => null)
-        await sendPaymentReceiptForPayment(res.paymentId, rec.tenantId).catch(() => null)
-      }
-    } else {
-      // Customer-level: apply across open invoices oldest-first, leftover -> credit.
-      const openInvoices = await prisma.invoice.findMany({
-        where: {
-          tenantId: rec.tenantId,
-          clientId: rec.clientId,
-          status: { notIn: ['PAID', 'CANCELLED', 'REFUNDED'] },
-          balance: { gt: 0 } as any,
-        },
-        orderBy: [{ dueDate: 'asc' }, { invoiceDate: 'asc' }],
-        select: { id: true },
-      })
-      const groupId = `pg_recurring_${providerPaymentId}`
-      let remaining = chargeAmount
-      let idx = 0
-      for (const inv of openInvoices) {
-        if (remaining <= 0) break
-        const res = await applyInvoicePayment({
-          invoiceId: inv.id,
-          amount: remaining,
-          method: 'CARD',
-          provider: 'cardknox',
-          providerPaymentId: `${providerPaymentId}:${inv.id}`,
-          reference: refNum ? `Recurring card ${refNum}` : 'Recurring card',
-          processedAt: new Date(),
-          notes: 'Recurring card payment',
-          paymentGroupId: groupId,
-          dedupeWhere: { provider: 'cardknox', providerPaymentId: `${providerPaymentId}:${inv.id}` },
-        })
-        if (res.created && res.paymentId) {
-          paymentIds.push(res.paymentId)
-          const row = await prisma.payment.findUnique({
-            where: { id: res.paymentId },
-            select: { amount: true },
-          })
-          const applied = round2(row?.amount || 0)
-          remaining = round2(remaining - applied)
-          await afterInvoicePayment(inv.id).catch(() => null)
-          await sendPaymentReceiptForPayment(res.paymentId, rec.tenantId).catch(() => null)
-        }
-        idx += 1
-      }
-      if (paymentIds.length > 0) {
-        await enqueueQboSync(rec.tenantId, 'payment', paymentIds[0], { processImmediately: true }).catch(() => null)
-      }
-      // Hold any leftover as customer credit.
-      if (remaining > 0.005) {
-        await prisma.$transaction(async (tx) => {
-          await createOverpaymentCredit(tx, {
-            tenantId: rec.tenantId,
-            clientId: rec.clientId,
-            amount: remaining,
-            sourcePaymentId: paymentIds[0] || null,
-            sourcePaymentGroupId: groupId,
-            reason: 'Recurring card payment (credit on account)',
-          })
-        })
-      }
-    }
+    paymentIds = await recordAcrossInvoices(rec, chargeAmount, targetInvoice, {
+      method: 'CARD',
+      provider: 'cardknox',
+      providerPaymentId,
+      reference: refNum ? `Recurring card ${refNum}` : 'Recurring card',
+      notes: 'Recurring card payment',
+      creditReason: 'Recurring card payment (credit on account)',
+      receipts: true,
+    })
   } catch (err: any) {
     // The card WAS charged but recording failed — surface loudly; do not re-charge.
     const message = `Charged at gateway (ref ${refNum}) but failed to record: ${String(err?.message || err)}`
     console.error('[recurring] record-after-charge failure:', message)
     await recordRun(rec.tenantId, rec.id, 'FAILED', chargeAmount, null, refNum, message)
-    // Still advance the schedule so we don't double-charge next run.
     await advanceSchedule(rec.id)
-    return { status: 'FAILED', amount: chargeAmount, paymentIds, refNum, error: message }
+    return { status: 'FAILED', amount: chargeAmount, paymentIds: [], refNum, error: message }
   }
 
-  // 3) Advance the schedule and log success.
   await advanceSchedule(rec.id)
   await recordRun(rec.tenantId, rec.id, 'SUCCESS', chargeAmount, paymentIds[0] || null, refNum, null)
   return { status: 'SUCCESS', amount: chargeAmount, paymentIds, refNum }
+}
+
+function mapCustomMethod(method?: string | null, label?: string | null): {
+  method: string
+  provider: string
+  notes: string
+  reference: string
+} {
+  const m = String(method || '').toUpperCase()
+  if (m === 'CHECK') return { method: 'CHECK', provider: 'manual', notes: 'Payment by check', reference: 'Recurring check' }
+  if (m === 'QUICK_PAY') return { method: 'OTHER', provider: 'quick_pay', notes: 'Payment by Quick Pay', reference: 'Recurring Quick Pay' }
+  const name = String(label || 'Other').trim() || 'Other'
+  const slug = name.toLowerCase().replace(/\s+/g, '_')
+  return { method: 'OTHER', provider: slug, notes: `Payment — ${name}`, reference: `Recurring ${name}` }
+}
+
+/**
+ * Record a payment of `amount` against a target invoice, or across the customer's
+ * open invoices (oldest-first) with any leftover held as customer credit.
+ * Shared by CARD (after a successful charge) and CUSTOM (auto-record) schedules.
+ */
+async function recordAcrossInvoices(
+  rec: { id: string; tenantId: string; clientId: string },
+  amount: number,
+  targetInvoice: { id: string; invoiceNumber: string; balance: number } | null,
+  opts: {
+    method: string
+    provider: string
+    providerPaymentId: string
+    reference: string
+    notes: string
+    creditReason: string
+    receipts: boolean
+  }
+): Promise<string[]> {
+  const paymentIds: string[] = []
+
+  if (targetInvoice) {
+    const res = await applyInvoicePayment({
+      invoiceId: targetInvoice.id,
+      amount,
+      method: opts.method as any,
+      provider: opts.provider,
+      providerPaymentId: opts.providerPaymentId,
+      reference: opts.reference,
+      processedAt: new Date(),
+      notes: opts.notes,
+      dedupeWhere: { provider: opts.provider, providerPaymentId: opts.providerPaymentId },
+    })
+    if (res.created && res.paymentId) {
+      paymentIds.push(res.paymentId)
+      await afterInvoicePayment(targetInvoice.id).catch(() => null)
+      await enqueueQboSync(rec.tenantId, 'payment', res.paymentId, { processImmediately: true }).catch(() => null)
+      if (opts.receipts) await sendPaymentReceiptForPayment(res.paymentId, rec.tenantId).catch(() => null)
+    }
+    return paymentIds
+  }
+
+  const openInvoices = await prisma.invoice.findMany({
+    where: {
+      tenantId: rec.tenantId,
+      clientId: rec.clientId,
+      status: { notIn: ['PAID', 'CANCELLED', 'REFUNDED'] },
+      balance: { gt: 0 } as any,
+    },
+    orderBy: [{ dueDate: 'asc' }, { invoiceDate: 'asc' }],
+    select: { id: true },
+  })
+  const groupId = `pg_recurring_${opts.providerPaymentId}`
+  let remaining = amount
+  for (const inv of openInvoices) {
+    if (remaining <= 0) break
+    const res = await applyInvoicePayment({
+      invoiceId: inv.id,
+      amount: remaining,
+      method: opts.method as any,
+      provider: opts.provider,
+      providerPaymentId: `${opts.providerPaymentId}:${inv.id}`,
+      reference: opts.reference,
+      processedAt: new Date(),
+      notes: opts.notes,
+      paymentGroupId: groupId,
+      dedupeWhere: { provider: opts.provider, providerPaymentId: `${opts.providerPaymentId}:${inv.id}` },
+    })
+    if (res.created && res.paymentId) {
+      paymentIds.push(res.paymentId)
+      const row = await prisma.payment.findUnique({ where: { id: res.paymentId }, select: { amount: true } })
+      const applied = round2(row?.amount || 0)
+      remaining = round2(remaining - applied)
+      await afterInvoicePayment(inv.id).catch(() => null)
+      if (opts.receipts) await sendPaymentReceiptForPayment(res.paymentId, rec.tenantId).catch(() => null)
+    }
+  }
+  if (paymentIds.length > 0) {
+    await enqueueQboSync(rec.tenantId, 'payment', paymentIds[0], { processImmediately: true }).catch(() => null)
+  }
+  if (remaining > 0.005) {
+    await prisma.$transaction(async (tx) => {
+      await createOverpaymentCredit(tx, {
+        tenantId: rec.tenantId,
+        clientId: rec.clientId,
+        amount: remaining,
+        sourcePaymentId: paymentIds[0] || null,
+        sourcePaymentGroupId: groupId,
+        reason: opts.creditReason,
+      })
+    })
+  }
+  return paymentIds
 }
 
 /** Advance nextRunAt by the frequency, counting the occurrence and applying end conditions. */

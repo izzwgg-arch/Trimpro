@@ -21,6 +21,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { DocumentAttachments } from '@/components/common/document-attachments'
 import { EntityHistory } from '@/components/history/EntityHistory'
 import { RecurringPaymentsPanel } from '@/components/payments/RecurringPaymentsPanel'
+import { ReceivePaymentModal } from '@/components/payments/ReceivePaymentModal'
 import { usePermissions, hasPermission } from '@/hooks/usePermissions'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -160,6 +161,7 @@ export default function InvoiceDetailPage() {
   const invoiceId = params.id as string
   const { permissions: userPermissions, loading: permissionsLoading } = usePermissions()
   const canViewPayments = !permissionsLoading && hasPermission(userPermissions, 'payments.view')
+  const [showReceivePayment, setShowReceivePayment] = useState(false)
   const [invoice, setInvoice] = useState<InvoiceDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
@@ -1213,20 +1215,11 @@ export default function InvoiceDetailPage() {
             <Edit className="mr-2 h-4 w-4" />
             Edit
           </Button>
-          {parseFloat(invoice.balance) > 0 && (
-            <>
-              <Button onClick={handlePayNow} disabled={creatingPaymentLink}>
-                <CreditCard className="mr-2 h-4 w-4" />
-                {creatingPaymentLink ? 'Preparing...' : 'Pay Now'}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => router.push(`/dashboard/payments/new?invoiceId=${invoice.id}`)}
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Add Payment
-              </Button>
-            </>
+          {parseFloat(invoice.balance) > 0 && canViewPayments && (
+            <Button onClick={() => setShowReceivePayment(true)}>
+              <CreditCard className="mr-2 h-4 w-4" />
+              Receive Payment
+            </Button>
           )}
           <Button onClick={handleSendInvoice} disabled={sending}>
             <Send className="mr-2 h-4 w-4" />
@@ -2339,6 +2332,17 @@ export default function InvoiceDetailPage() {
               <DocumentAttachments entityType="invoice" entityId={invoiceId} />
             </CardContent>
           </Card>
+
+          {canViewPayments && invoice.client?.id && (
+            <ReceivePaymentModal
+              open={showReceivePayment}
+              onOpenChange={setShowReceivePayment}
+              invoiceId={invoiceId}
+              clientId={invoice.client.id}
+              balance={invoiceBalanceNum}
+              onDone={fetchInvoice}
+            />
+          )}
 
           {canViewPayments && invoice.client?.id && (
             <RecurringPaymentsPanel
