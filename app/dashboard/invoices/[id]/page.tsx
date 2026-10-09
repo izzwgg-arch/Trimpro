@@ -21,7 +21,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { DocumentAttachments } from '@/components/common/document-attachments'
 import { EntityHistory } from '@/components/history/EntityHistory'
 import { RecurringPaymentsPanel } from '@/components/payments/RecurringPaymentsPanel'
-import { ReceivePaymentModal } from '@/components/payments/ReceivePaymentModal'
+import { ReceivePaymentHub } from '@/components/payments/ReceivePaymentHub'
 import { usePermissions, hasPermission } from '@/hooks/usePermissions'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -2341,7 +2341,7 @@ export default function InvoiceDetailPage() {
           </Card>
 
           {canViewPayments && invoice.client?.id && (
-            <ReceivePaymentModal
+            <ReceivePaymentHub
               open={showReceivePayment}
               onOpenChange={setShowReceivePayment}
               invoiceId={invoiceId}

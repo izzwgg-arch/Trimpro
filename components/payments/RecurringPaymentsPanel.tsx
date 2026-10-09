@@ -22,6 +22,9 @@ interface CardRow {
 interface RecurringRow {
   id: string
   invoiceId: string | null
+  type?: string
+  method?: string | null
+  methodLabel?: string | null
   amount: string | number
   frequency: string
   startDate: string
@@ -47,6 +50,14 @@ const FREQ_LABEL: Record<string, string> = {
   WEEKLY: 'Weekly',
   BIWEEKLY: 'Every 2 weeks',
   MONTHLY: 'Monthly',
+  QUARTERLY: 'Quarterly',
+  YEARLY: 'Yearly',
+}
+
+const METHOD_LABEL: Record<string, string> = {
+  CHECK: 'Check',
+  QUICK_PAY: 'Quick Pay',
+  OTHER: 'Other',
 }
 
 function authHeaders() {
@@ -295,6 +306,8 @@ export function RecurringPaymentsPanel(props: {
                     <option value="WEEKLY">Weekly</option>
                     <option value="BIWEEKLY">Every 2 weeks</option>
                     <option value="MONTHLY">Monthly</option>
+                    <option value="QUARTERLY">Quarterly</option>
+                    <option value="YEARLY">Yearly</option>
                   </select>
                 </div>
                 <div>
@@ -368,9 +381,13 @@ export function RecurringPaymentsPanel(props: {
                         >
                           {r.status}
                         </span>
-                        {r.card?.maskedCard && (
+                        {r.type === 'CUSTOM' ? (
+                          <span className="text-xs text-gray-400">
+                            {r.method === 'OTHER' ? (r.methodLabel || 'Other') : METHOD_LABEL[r.method || ''] || 'Custom'} (auto-record)
+                          </span>
+                        ) : r.card?.maskedCard ? (
                           <span className="text-xs text-gray-400">{r.card.cardType} {r.card.maskedCard}</span>
-                        )}
+                        ) : null}
                       </div>
                       <div className="flex items-center gap-1">
                         {active && (

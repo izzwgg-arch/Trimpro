@@ -27,6 +27,13 @@ function round2(n: unknown): number {
 /** Advance a run date by the schedule frequency, preserving the day where possible. */
 export function advanceNextRun(from: Date, frequency: string): Date {
   const d = new Date(from)
+  const addMonths = (n: number) => {
+    const day = d.getDate()
+    d.setMonth(d.getMonth() + n)
+    // Guard month overflow (e.g. Jan 31 -> Mar 3): clamp to end of target month.
+    if (d.getDate() < day) d.setDate(0)
+    return d
+  }
   switch (String(frequency).toUpperCase()) {
     case 'WEEKLY':
       d.setDate(d.getDate() + 7)
@@ -34,14 +41,13 @@ export function advanceNextRun(from: Date, frequency: string): Date {
     case 'BIWEEKLY':
       d.setDate(d.getDate() + 14)
       return d
+    case 'QUARTERLY':
+      return addMonths(3)
+    case 'YEARLY':
+      return addMonths(12)
     case 'MONTHLY':
-    default: {
-      const day = d.getDate()
-      d.setMonth(d.getMonth() + 1)
-      // Guard month overflow (e.g. Jan 31 -> Mar 3): clamp to end of target month.
-      if (d.getDate() < day) d.setDate(0)
-      return d
-    }
+    default:
+      return addMonths(1)
   }
 }
 

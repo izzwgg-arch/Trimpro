@@ -270,6 +270,8 @@ function NewPaymentInner() {
                   <option value="WEEKLY">Weekly</option>
                   <option value="BIWEEKLY">Every 2 weeks</option>
                   <option value="MONTHLY">Monthly</option>
+                  <option value="QUARTERLY">Quarterly</option>
+                  <option value="YEARLY">Yearly</option>
                 </select>
               </div>
               <div>

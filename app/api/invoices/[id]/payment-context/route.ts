@@ -34,7 +34,7 @@ export async function GET(
         status: { notIn: ['PAID', 'CANCELLED', 'REFUNDED'] },
         balance: { gt: 0 },
       },
-      select: { id: true, invoiceNumber: true, total: true, balance: true },
+      select: { id: true, invoiceNumber: true, total: true, balance: true, invoiceDate: true },
       orderBy: [{ dueDate: 'asc' }, { invoiceDate: 'asc' }],
     })
 
@@ -47,6 +47,8 @@ export async function GET(
       invoiceNumber: i.invoiceNumber,
       total: round2(i.total),
       balance: round2(i.balance),
+      paidAmount: round2(Number(i.total) - Number(i.balance)),
+      invoiceDate: i.invoiceDate,
     }))
 
     return NextResponse.json({

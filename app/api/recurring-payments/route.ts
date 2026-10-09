@@ -4,7 +4,7 @@ import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { recordAuditLog, auditContextFromRequest } from '@/lib/audit/log'
 
-const FREQUENCIES = new Set(['WEEKLY', 'BIWEEKLY', 'MONTHLY'])
+const FREQUENCIES = new Set(['WEEKLY', 'BIWEEKLY', 'MONTHLY', 'QUARTERLY', 'YEARLY'])
 
 // GET — list recurring payments, optionally filtered by client or invoice (staff only).
 export async function GET(request: NextRequest) {
