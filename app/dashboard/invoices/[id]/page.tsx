@@ -1942,6 +1942,7 @@ export default function InvoiceDetailPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Payments</CardTitle>
+                <CardDescription>Click Edit to change which invoices a payment is applied to.</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
@@ -1977,7 +1978,13 @@ export default function InvoiceDetailPage() {
                         {payment.status === 'COMPLETED' && (
                           <CheckCircle className="h-5 w-5 text-green-600" />
                         )}
-                        <span className="text-xs text-gray-400 group-hover:text-gray-600">Open →</span>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); router.push(`/dashboard/payments/${payment.id}`) }}
+                          className="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                          title="Edit where this payment is applied"
+                        >
+                          <Pencil className="h-3.5 w-3.5" /> Edit
+                        </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); handleDeletePayment(payment) }}
                           disabled={deletingPaymentId === payment.id}

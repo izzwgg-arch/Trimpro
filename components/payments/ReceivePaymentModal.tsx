@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   Dialog,
   DialogContent,
@@ -46,6 +47,7 @@ export function ReceivePaymentModal(props: {
   onDone?: () => void
 }) {
   const { open, onOpenChange, invoiceId, clientId, balance, onDone } = props
+  const router = useRouter()
 
   const [method, setMethod] = useState<Method>('CHECK')
   const [amount, setAmount] = useState('')
@@ -186,32 +188,16 @@ export function ReceivePaymentModal(props: {
       return
     }
 
-    // Custom, one-time — record a payment.
+    // Custom, one-time — open the full payment page so the amount can be split
+    // across open invoices (and edited afterward from the payment editor).
     if (isCustom) {
-      if (!(Number(amount) > 0)) return setError('Enter an amount greater than zero.')
       if (method === 'OTHER' && !otherLabel.trim()) return setError('Enter a payment type name.')
-      setSubmitting(true)
-      try {
-        const res = await fetch(`/api/invoices/${invoiceId}/record-payment`, {
-          method: 'POST',
-          headers: authHeaders(),
-          body: JSON.stringify({
-            method,
-            methodLabel: method === 'OTHER' ? otherLabel.trim() : undefined,
-            amount: Number(amount),
-            reference: reference.trim() || undefined,
-            paidAt,
-          }),
-        })
-        const data = await res.json().catch(() => ({}))
-        setSubmitting(false)
-        if (!res.ok) return setError(data.error || 'Failed to record the payment.')
-        onOpenChange(false)
-        onDone?.()
-      } catch {
-        setSubmitting(false)
-        setError('Failed to record the payment.')
-      }
+      const qs = new URLSearchParams({ invoiceId })
+      if (Number(amount) > 0) qs.set('amount', String(Number(amount)))
+      qs.set('method', method)
+      if (method === 'OTHER') qs.set('label', otherLabel.trim())
+      onOpenChange(false)
+      router.push(`/dashboard/payments/new?${qs.toString()}`)
       return
     }
   }
@@ -221,7 +207,7 @@ export function ReceivePaymentModal(props: {
       ? 'Create ACH link'
       : method === 'CARD'
         ? makeRecurring ? 'Create recurring charge' : 'Open payment page'
-        : makeRecurring ? 'Create recurring payment' : 'Record payment'
+        : makeRecurring ? 'Create recurring payment' : 'Continue to apply'
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -278,21 +264,14 @@ export function ReceivePaymentModal(props: {
                       <Input id="rpvLabel" placeholder="e.g. Cash, Zelle" value={otherLabel} onChange={(e) => setOtherLabel(e.target.value)} />
                     </div>
                   )}
-                  {isCustom && method !== 'OTHER' && !makeRecurring && (
-                    <div>
-                      <Label htmlFor="rpvRef">{method === 'CHECK' ? 'Check #' : 'Reference'} (optional)</Label>
-                      <Input id="rpvRef" value={reference} onChange={(e) => setReference(e.target.value)} />
-                    </div>
-                  )}
                 </div>
               )}
 
-              {/* One-time custom: payment date */}
+              {/* One-time custom: next step is the full page to split across invoices */}
               {isCustom && !makeRecurring && (
-                <div className="w-1/2 pr-1.5">
-                  <Label htmlFor="rpvDate">Payment date</Label>
-                  <Input id="rpvDate" type="date" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} />
-                </div>
+                <p className="text-xs text-gray-500">
+                  Next, you’ll choose how to apply this across the customer’s open invoices (with auto-split), then it’s editable afterward.
+                </p>
               )}
 
               {method === 'CARD' && !makeRecurring && (

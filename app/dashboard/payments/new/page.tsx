@@ -23,15 +23,20 @@ function NewPaymentInner() {
   const router = useRouter()
   const search = useSearchParams()
   const invoiceId = String(search.get('invoiceId') || '')
+  const prefillAmount = String(search.get('amount') || '')
+  const prefillMethod = String(search.get('method') || '').toUpperCase()
+  const prefillLabel = String(search.get('label') || '')
 
   const [ctx, setCtx] = useState<Context | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
-  const [amount, setAmount] = useState('')
-  const [method, setMethod] = useState<'CHECK' | 'QUICK_PAY' | 'OTHER'>('CHECK')
-  const [otherLabel, setOtherLabel] = useState('')
+  const [amount, setAmount] = useState(prefillAmount && Number(prefillAmount) > 0 ? prefillAmount : '')
+  const [method, setMethod] = useState<'CHECK' | 'QUICK_PAY' | 'OTHER'>(
+    ['CHECK', 'QUICK_PAY', 'OTHER'].includes(prefillMethod) ? (prefillMethod as any) : 'CHECK'
+  )
+  const [otherLabel, setOtherLabel] = useState(prefillLabel)
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0])
   const [reference, setReference] = useState('')
   const [alloc, setAlloc] = useState<Record<string, string>>({})
