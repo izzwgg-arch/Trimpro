@@ -4,7 +4,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { recordAuditLog, auditContextFromRequest } from '@/lib/audit/log'
-import { chargeSavedCard, cardknoxConfigured } from '@/lib/services/cardknox-gateway'
+import { chargeSavedCard, chargeCardWithToken, cardknoxConfigured } from '@/lib/services/cardknox-gateway'
 import { applyInvoicePayment } from '@/lib/payments/apply-payment'
 import { afterInvoicePayment } from '@/lib/payments/after-invoice-payment'
 import { createOverpaymentCredit } from '@/lib/payments/customer-credit'
@@ -39,6 +39,10 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}))
     const clientId = String(body?.clientId || '').trim()
     const cardOnFileId = String(body?.cardOnFileId || '').trim()
+    // One-time (entered-now) card, charged directly without vaulting:
+    const cardToken = String(body?.cardToken || '').trim()
+    const cardExp = String(body?.exp || '').replace(/\D/g, '')
+    const cvvToken = body?.cvvToken ? String(body.cvvToken).trim() : undefined
     const memo = body?.memo ? String(body.memo).trim() : null
     const rawAllocations = Array.isArray(body?.allocations) ? body.allocations : []
     const allocations = rawAllocations
@@ -46,14 +50,18 @@ export async function POST(request: NextRequest) {
       .filter((a: { invoiceId: string; amount: number }) => a.invoiceId && a.amount > 0)
 
     if (!clientId) return NextResponse.json({ error: 'Customer is required' }, { status: 400 })
-    if (!cardOnFileId) return NextResponse.json({ error: 'A saved card is required' }, { status: 400 })
+    if (!cardOnFileId && !cardToken) return NextResponse.json({ error: 'A card is required' }, { status: 400 })
+    if (cardToken && cardExp.length !== 4) return NextResponse.json({ error: 'Card expiration is required (MMYY).' }, { status: 400 })
     if (allocations.length === 0) return NextResponse.json({ error: 'Select at least one invoice to apply the payment to.' }, { status: 400 })
 
-    const card = await prisma.cardOnFile.findFirst({
-      where: { id: cardOnFileId, tenantId: user.tenantId, clientId, status: 'ACTIVE' },
-      select: { id: true, token: true },
-    })
-    if (!card) return NextResponse.json({ error: 'Saved card not found for this customer' }, { status: 404 })
+    let savedCard: { id: string; token: string } | null = null
+    if (cardOnFileId) {
+      savedCard = await prisma.cardOnFile.findFirst({
+        where: { id: cardOnFileId, tenantId: user.tenantId, clientId, status: 'ACTIVE' },
+        select: { id: true, token: true },
+      })
+      if (!savedCard) return NextResponse.json({ error: 'Saved card not found for this customer' }, { status: 404 })
+    }
 
     // Validate every target invoice belongs to this customer and isn't closed,
     // and never over-apply beyond an invoice's balance.
@@ -81,7 +89,7 @@ export async function POST(request: NextRequest) {
     // cannot double-charge; return the stored result if already completed.
     const idemKey =
       String(body?.idempotencyKey || '').trim() ||
-      `cardcharge:${crypto.createHash('sha256').update(`${cardOnFileId}|${total}|${invoiceIds.slice().sort().join(',')}`).digest('hex')}`
+      `cardcharge:${crypto.createHash('sha256').update(`${cardOnFileId || cardToken}|${total}|${invoiceIds.slice().sort().join(',')}`).digest('hex')}`
     const scope = 'staff-card-charge'
 
     const existing = await prisma.idempotencyKey.findFirst({ where: { key: idemKey, scope }, select: { response: true } })
@@ -110,14 +118,16 @@ export async function POST(request: NextRequest) {
     const client = await prisma.client.findFirst({ where: { id: clientId }, select: { name: true, email: true } })
     let refNum: string | null = null
     try {
-      const result = await chargeSavedCard({
-        token: card.token,
+      const common = {
         amount: total,
         invoiceNumber: invoices.map((i) => i.invoiceNumber).join(', ').slice(0, 100),
         description: memo || 'Card payment',
         name: client?.name || undefined,
         email: client?.email || undefined,
-      })
+      }
+      const result = savedCard
+        ? await chargeSavedCard({ token: savedCard.token, ...common })
+        : await chargeCardWithToken({ cardToken, exp: cardExp, cvvToken, ...common })
       refNum = result.refNum
     } catch (err: any) {
       // Charge failed — release the idempotency reservation so a corrected retry can proceed.

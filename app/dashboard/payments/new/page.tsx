@@ -39,6 +39,7 @@ function NewPaymentInner() {
   const [otherLabel, setOtherLabel] = useState(prefillLabel)
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0])
   const [reference, setReference] = useState('')
+  const [bankName, setBankName] = useState('')
   const [alloc, setAlloc] = useState<Record<string, string>>({})
 
   // Recurring (auto-record) option
@@ -162,7 +163,9 @@ function NewPaymentInner() {
           method,
           methodLabel: method === 'OTHER' ? otherLabel.trim() : undefined,
           paidAt: date,
-          reference: reference.trim() || undefined,
+          reference: [reference.trim(), method === 'CHECK' && bankName.trim() ? bankName.trim() : '']
+            .filter(Boolean)
+            .join(' · ') || undefined,
           allocations,
         }),
       })
@@ -236,15 +239,26 @@ function NewPaymentInner() {
               />
             </div>
             <div>
-              <label className="text-xs text-gray-500">Reference</label>
+              <label className="text-xs text-gray-500">{method === 'CHECK' ? 'Check #' : 'Reference'}</label>
               <input
-                placeholder="Check # / note"
+                placeholder={method === 'CHECK' ? 'Check #' : 'Reference / note'}
                 value={reference}
                 onChange={(e) => setReference(e.target.value)}
                 className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
               />
             </div>
           </div>
+          {method === 'CHECK' && (
+            <div className="mt-3">
+              <label className="text-xs text-gray-500">Bank name (optional)</label>
+              <input
+                placeholder="e.g. Chase"
+                value={bankName}
+                onChange={(e) => setBankName(e.target.value)}
+                className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+              />
+            </div>
+          )}
           {method === 'OTHER' && (
             <div className="mt-3">
               <label className="text-xs text-gray-500">Payment type name</label>

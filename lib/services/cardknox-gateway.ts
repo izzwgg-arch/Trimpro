@@ -110,6 +110,44 @@ export async function saveCardFromIfieldsToken(input: {
 }
 
 /**
+ * One-time charge of a card entered right now via iFields (cardholder present).
+ * Uses the iFields single-use token directly — the card is NOT vaulted.
+ */
+export async function chargeCardWithToken(input: {
+  cardToken: string // iFields xCardNum single-use token
+  exp: string // MMYY
+  cvvToken?: string // iFields xCVV token
+  amount: number
+  invoiceNumber?: string
+  description?: string
+  name?: string
+  email?: string
+}): Promise<ChargeResult> {
+  const amount = Math.round(Number(input.amount) * 100) / 100
+  if (!(amount > 0)) throw new Error('Charge amount must be greater than zero.')
+
+  const json = await cardknoxRequest({
+    xCommand: 'cc:sale',
+    xCardNum: input.cardToken,
+    xExp: String(input.exp || '').replace(/\D/g, ''),
+    ...(input.cvvToken ? { xCVV: input.cvvToken } : {}),
+    xAmount: amount.toFixed(2),
+    ...(input.invoiceNumber ? { xInvoice: input.invoiceNumber } : {}),
+    ...(input.description ? { xDescription: input.description } : {}),
+    ...(input.name ? { xName: input.name } : {}),
+    ...(input.email ? { xEmail: input.email } : {}),
+  })
+  return {
+    refNum: json.xRefNum || null,
+    authCode: json.xAuthCode || null,
+    maskedCard: json.xMaskedCardNumber || null,
+    cardType: json.xCardType || null,
+    amount,
+    raw: json,
+  }
+}
+
+/**
  * Charge a previously-saved card token. Marked as a recurring / merchant-
  * initiated transaction (the cardholder is not present).
  */
