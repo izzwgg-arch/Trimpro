@@ -35,7 +35,7 @@ export function SaveCardDialog(props: {
 
   const handleSave = async () => {
     setError(null)
-    let tokens: { cardToken: string; cvvToken: string; exp: string }
+    let tokens: { cardToken: string; cvvToken: string; exp: string; zip: string }
     try {
       tokens = await terminalRef.current!.tokenize()
     } catch (e: any) {
@@ -47,7 +47,7 @@ export function SaveCardDialog(props: {
       const res = await fetch(`/api/clients/${clientId}/cards`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ cardToken: tokens.cardToken, cvvToken: tokens.cvvToken, exp: tokens.exp, label: label.trim() || undefined }),
+        body: JSON.stringify({ cardToken: tokens.cardToken, cvvToken: tokens.cvvToken, exp: tokens.exp, zip: tokens.zip || undefined, label: label.trim() || undefined }),
       })
       const data = await res.json().catch(() => ({}))
       setSaving(false)

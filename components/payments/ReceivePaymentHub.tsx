@@ -111,7 +111,7 @@ export function ReceivePaymentHub(props: {
     setInfo(null)
     if (!chargeNow && !makeRecurring) return setError('Choose to charge now, set up recurring, or both.')
 
-    let tokens: { cardToken: string; cvvToken: string; exp: string }
+    let tokens: { cardToken: string; cvvToken: string; exp: string; zip: string }
     try {
       tokens = await terminalRef.current!.tokenize()
     } catch (e: any) {
@@ -123,7 +123,7 @@ export function ReceivePaymentHub(props: {
     if (makeRecurring) {
       if (!(Number(amount) > 0)) return setError('Enter a recurring amount greater than zero.')
       setBusy(true)
-      const v = await post(`/api/clients/${clientId}/cards`, { cardToken: tokens.cardToken, cvvToken: tokens.cvvToken, exp: tokens.exp })
+      const v = await post(`/api/clients/${clientId}/cards`, { cardToken: tokens.cardToken, cvvToken: tokens.cvvToken, exp: tokens.exp, zip: tokens.zip || undefined })
       if (!v.ok) {
         setBusy(false)
         return setError(v.data.error || 'Could not save the card for the recurring schedule.')
@@ -140,7 +140,7 @@ export function ReceivePaymentHub(props: {
       setBusy(true)
       const body: any = { clientId, allocations, memo: memo || undefined, idempotencyKey: idemRef.current }
       if (cardOnFileId) body.cardOnFileId = cardOnFileId
-      else { body.cardToken = tokens.cardToken; body.cvvToken = tokens.cvvToken; body.exp = tokens.exp }
+      else { body.cardToken = tokens.cardToken; body.cvvToken = tokens.cvvToken; body.exp = tokens.exp; body.zip = tokens.zip || undefined }
       const { ok, data } = await post('/api/payments/charge-card', body)
       if (!ok) {
         setBusy(false)

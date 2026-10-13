@@ -64,13 +64,14 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const cardToken = String(body?.cardToken || '').trim()
     const exp = String(body?.exp || '').replace(/\D/g, '')
     const cvvToken = body?.cvvToken ? String(body.cvvToken).trim() : undefined
+    const zip = body?.zip ? String(body.zip).trim() : undefined
     const label = body?.label ? String(body.label).trim() : null
     const makeDefault = body?.isDefault === true
 
     if (!cardToken) return NextResponse.json({ error: 'Missing card token' }, { status: 400 })
     if (exp.length !== 4) return NextResponse.json({ error: 'Card expiration is required (MMYY)' }, { status: 400 })
 
-    const saved = await saveCardFromIfieldsToken({ cardToken, exp, cvvToken, name: undefined })
+    const saved = await saveCardFromIfieldsToken({ cardToken, exp, cvvToken, zip, name: undefined })
     if (!saved.token) {
       return NextResponse.json({ error: 'Gateway did not return a card token.' }, { status: 502 })
     }

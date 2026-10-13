@@ -43,6 +43,7 @@ export async function POST(request: NextRequest) {
     const cardToken = String(body?.cardToken || '').trim()
     const cardExp = String(body?.exp || '').replace(/\D/g, '')
     const cvvToken = body?.cvvToken ? String(body.cvvToken).trim() : undefined
+    const zip = body?.zip ? String(body.zip).trim() : undefined
     const memo = body?.memo ? String(body.memo).trim() : null
     const rawAllocations = Array.isArray(body?.allocations) ? body.allocations : []
     const allocations = rawAllocations
@@ -124,6 +125,7 @@ export async function POST(request: NextRequest) {
         description: memo || 'Card payment',
         name: client?.name || undefined,
         email: client?.email || undefined,
+        zip,
       }
       const result = savedCard
         ? await chargeSavedCard({ token: savedCard.token, ...common })

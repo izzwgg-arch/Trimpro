@@ -122,6 +122,7 @@ export async function chargeCardWithToken(input: {
   description?: string
   name?: string
   email?: string
+  zip?: string
 }): Promise<ChargeResult> {
   const amount = Math.round(Number(input.amount) * 100) / 100
   if (!(amount > 0)) throw new Error('Charge amount must be greater than zero.')
@@ -132,6 +133,7 @@ export async function chargeCardWithToken(input: {
     xExp: String(input.exp || '').replace(/\D/g, ''),
     ...(input.cvvToken ? { xCVV: input.cvvToken } : {}),
     xAmount: amount.toFixed(2),
+    ...(input.zip ? { xZip: input.zip } : {}),
     ...(input.invoiceNumber ? { xInvoice: input.invoiceNumber } : {}),
     ...(input.description ? { xDescription: input.description } : {}),
     ...(input.name ? { xName: input.name } : {}),
@@ -159,6 +161,7 @@ export async function chargeSavedCard(input: {
   name?: string
   email?: string
   intentRef?: string
+  zip?: string
 }): Promise<ChargeResult> {
   const amount = Math.round(Number(input.amount) * 100) / 100
   if (!(amount > 0)) throw new Error('Charge amount must be greater than zero.')
@@ -168,6 +171,7 @@ export async function chargeSavedCard(input: {
     xToken: input.token,
     xAmount: amount.toFixed(2),
     xRecurring: 'True', // merchant-initiated / stored-credential recurring
+    ...(input.zip ? { xZip: input.zip } : {}),
     ...(input.invoiceNumber ? { xInvoice: input.invoiceNumber } : {}),
     ...(input.description ? { xDescription: input.description } : {}),
     ...(input.name ? { xName: input.name } : {}),
