@@ -1,8 +1,6 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import {
   Dimensions,
-  FlatList,
-  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -10,95 +8,116 @@ import {
   Text,
   TextInput,
   View,
-  Alert,
 } from 'react-native'
-import { Swipeable } from 'react-native-gesture-handler'
-import * as Haptics from 'expo-haptics'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Ionicons } from '@expo/vector-icons'
 import { AppScreen } from '../../components/AppScreen'
-import { Card } from '../../components/Card'
 import { EmptyState } from '../../components/EmptyState'
 import { apiRequest } from '../../api/client'
-import { useMobilePermissions } from '../../hooks/useMobilePermissions'
 import { colors, radius, spacing, typography } from '../../theme/tokens'
-import {
-  PRODUCTION_BOARD_COLUMNS,
-  getProductionInfo,
-  type ProductionBoardColumn,
-} from '../../lib/productionBoard'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { JobsStackParamList } from '../../types/navigation'
 
 type Props = NativeStackScreenProps<JobsStackParamList, 'Production'>
 
+// ---- types mirroring the /api/production response (same as the web board) ----
 interface ProductionJob {
   id: string
   jobNumber: string
   title: string
   status: string
   priority: number
-  scheduledStart: string | null
+  jobType?: string | null
   scheduledEnd: string | null
+  createdAt?: string | null
   estimateAmount: string | null
-  actualAmount: string | null
+  invoiceAmount?: number | null
+  billingStatus?: string | null
+  poCount?: number | null
   client: { id: string; name: string; companyName: string | null } | null
   assignments: Array<{ id: string; user: { id: string; firstName: string; lastName: string } }>
-  addresses: Array<{ id: string; street: string | null; city: string | null; state: string | null; zipCode: string | null }>
-  production: {
-    stage: string
-    nextAction: string
-    board: ProductionBoardColumn
-    boardLabel: string
-    isActive: boolean
-    isOnHold: boolean
-    isArchived: boolean
-  }
+  addresses: Array<{ id: string; street: string | null; city: string | null }>
+  production: { stage: string; nextAction: string }
 }
-
-interface ProductionColumnConfig {
+interface ColumnConfig {
   id: string
-  label?: string
-  name?: string
+  displayName: string
+  color: string
+  icon: string
   order: number
+  visible: boolean
+  showJobCount: boolean
   statuses: string[]
 }
+interface CardFieldConfig { key: string; visible: boolean; order: number }
+interface CardConfig {
+  density: 'compact' | 'comfortable' | 'detailed'
+  width: number
+  borderStyle: 'none' | 'left-accent' | 'full'
+  showStatusBadge: boolean
+  showNextAction: boolean
+  emphasizeJobNumber: boolean
+  showAddress: boolean
+  showAssignedUser: boolean
+  showDueDate: boolean
+  accentFromStageColor: boolean
+  fields: CardFieldConfig[]
+}
+interface StageConfig { status: string; displayName: string; color: string; visible: boolean }
 interface ProductionConfig {
-  columns?: ProductionColumnConfig[]
+  columns: ColumnConfig[]
+  stages: StageConfig[]
+  card: CardConfig
 }
 interface ProductionResponse {
   jobs: ProductionJob[]
   counts: Record<string, number>
-  config?: ProductionConfig
+  config: ProductionConfig
 }
 
-interface BoardColumn {
-  id: string
-  label: string
-  statuses: string[] // actual Job.status values that live in this column
+// Same hex palette the web board uses (lib/jobs/statuses.jobStatusHexColors).
+const STATUS_HEX: Record<string, string> = {
+  QUOTE: '#94a3b8', SCHEDULED: '#3b82f6', IN_PROGRESS: '#eab308', MEASURED: '#6366f1',
+  NEED_TO_ORDER: '#d97706', ORDERED: '#0ea5e9', INSTALLATION_COMPLETE: '#06b6d4',
+  NEED_TOUCH_UPS: '#d946ef', FINISHING_COMPLETE: '#14b8a6', ON_HOLD: '#f97316',
+  COMPLETED: '#22c55e', CANCELLED: '#ef4444', INVOICED: '#a855f7',
 }
-type BoardColumnWithJobs = BoardColumn & { jobs: ProductionJob[] }
+
+// Map the web's lucide StageIcon keys to the closest Ionicons.
+const ICON_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
+  Circle: 'ellipse-outline', CircleDot: 'radio-button-on', PlayCircle: 'play-circle-outline',
+  Ruler: 'resize-outline', ShoppingCart: 'cart-outline', Truck: 'car-outline',
+  Hammer: 'hammer-outline', Wrench: 'build-outline', CheckCircle: 'checkmark-circle-outline',
+  PauseCircle: 'pause-circle-outline', Package: 'cube-outline', Clock: 'time-outline',
+  AlertCircle: 'alert-circle-outline', Flag: 'flag-outline', Factory: 'business-outline', Boxes: 'albums-outline',
+}
+const iconFor = (name?: string): keyof typeof Ionicons.glyphMap => (name && ICON_MAP[name]) || 'ellipse-outline'
 
 const SCREEN_W = Dimensions.get('window').width
 
-function formatDateShort(value: string | null): string | null {
-  if (!value) return null
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return null
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+function money(v: unknown): string {
+  const n = Number(v)
+  if (!Number.isFinite(n) || n === 0) return ''
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n)
+}
+function fmtDate(v?: string | null): string {
+  if (!v) return '—'
+  const d = new Date(v)
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+function isOverdue(v?: string | null): boolean {
+  if (!v) return false
+  const d = new Date(v)
+  return !Number.isNaN(d.getTime()) && d.getTime() < Date.now()
+}
+// 15%-opacity tint of a hex color for badge backgrounds.
+function tint(hex: string): string {
+  return hex.length === 7 ? `${hex}26` : hex
 }
 
 export function ProductionScreen({ navigation }: Props) {
-  const queryClient = useQueryClient()
-  const { canChangeJobStatus } = useMobilePermissions()
-  const canMove = canChangeJobStatus()
-
   const [search, setSearch] = useState('')
   const [archiveView, setArchiveView] = useState(false)
-  const [activeIndex, setActiveIndex] = useState(0)
-  const [moveJob, setMoveJob] = useState<ProductionJob | null>(null)
-  const pagerRef = useRef<FlatList<BoardColumnWithJobs>>(null)
-  const tabsRef = useRef<ScrollView>(null)
 
   const query = useQuery({
     queryKey: ['production-board', archiveView],
@@ -107,113 +126,41 @@ export function ProductionScreen({ navigation }: Props) {
   })
 
   const jobs = query.data?.jobs ?? []
-
-  // Build the columns from the tenant's web Production Settings config so the
-  // mobile board matches the customized web board exactly. Fall back to the
-  // default mapping only if the server returns no config.
-  const columns: BoardColumn[] = useMemo(() => {
-    const cfg = query.data?.config?.columns
-    if (cfg && cfg.length) {
-      return [...cfg]
-        .sort((a, b) => a.order - b.order)
-        .map((c) => ({ id: c.id, label: c.label || c.name || c.id, statuses: c.statuses || [] }))
-    }
-    return PRODUCTION_BOARD_COLUMNS.map((c) => ({ id: c.id, label: c.label, statuses: [] }))
-  }, [query.data?.config])
-
-  const usingConfig = Boolean(query.data?.config?.columns?.length)
+  const config = query.data?.config
 
   const visibleJobs = useMemo(() => {
     const term = search.trim().toLowerCase()
     if (!term) return jobs
     return jobs.filter((job) => {
-      const address = job.addresses?.[0]
-      const haystack = [job.jobNumber, job.title, job.client?.companyName, job.client?.name, address?.street, address?.city]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-      return haystack.includes(term)
+      const a = job.addresses?.[0]
+      return [job.jobNumber, job.title, job.client?.companyName, job.client?.name, a?.street, a?.city]
+        .filter(Boolean).join(' ').toLowerCase().includes(term)
     })
   }, [jobs, search])
 
-  const onHoldJobs = useMemo(() => visibleJobs.filter((j) => j.production.isOnHold), [visibleJobs])
+  const columns = useMemo(() => {
+    const cols = (config?.columns || []).filter((c) => c.visible).sort((a, b) => a.order - b.order)
+    return cols.map((col) => ({
+      col,
+      jobs: visibleJobs.filter((j) => j.status !== 'ON_HOLD' && col.statuses.includes(j.status)),
+    }))
+  }, [config, visibleJobs])
 
-  const columnIdOfJob = useCallback(
-    (job: ProductionJob): string | undefined => {
-      if (usingConfig) return columns.find((c) => c.statuses.includes(job.status))?.id
-      return job.production.board
-    },
-    [columns, usingConfig]
-  )
+  const onHoldStage = config?.stages?.find((s) => s.status === 'ON_HOLD')
+  const onHoldJobs = useMemo(() => visibleJobs.filter((j) => j.status === 'ON_HOLD'), [visibleJobs])
 
-  const columnsWithJobs = useMemo(
-    () =>
-      columns.map((col) => ({
-        ...col,
-        jobs: visibleJobs.filter((j) => !j.production.isOnHold && columnIdOfJob(j) === col.id),
-      })),
-    [columns, visibleJobs, columnIdOfJob]
-  )
-
-  // ---- Move a job to another column (sets Job.status, optimistic) ----
-  const moveMutation = useMutation({
-    mutationFn: async ({ jobId, status }: { jobId: string; status: string }) => {
-      await apiRequest(`/api/jobs/${jobId}`, 'PUT', { status })
-    },
-    onMutate: async ({ jobId, status }) => {
-      await queryClient.cancelQueries({ queryKey: ['production-board', archiveView] })
-      const prev = queryClient.getQueryData<ProductionResponse>(['production-board', archiveView])
-      if (prev) {
-        queryClient.setQueryData<ProductionResponse>(['production-board', archiveView], {
-          ...prev,
-          jobs: prev.jobs.map((j) => (j.id === jobId ? { ...j, status } : j)),
-        })
-      }
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {})
-      return { prev }
-    },
-    onError: (err: any, _vars, ctx) => {
-      if (ctx?.prev) queryClient.setQueryData(['production-board', archiveView], ctx.prev)
-      Alert.alert('Could not move job', err?.message || 'Please try again.')
-    },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ['production-board', archiveView] }),
-  })
-
-  const targetStatusForColumn = (col: BoardColumn): string | null => col.statuses[0] || null
-
-  const moveToColumn = (job: ProductionJob, col: BoardColumn) => {
-    const status = targetStatusForColumn(col)
-    if (!status) {
-      Alert.alert('Not available', 'This column has no stage to move to.')
-      return
-    }
-    if (status === job.status) return
-    moveMutation.mutate({ jobId: job.id, status })
-  }
-
-  const moveRelative = (job: ProductionJob, dir: -1 | 1) => {
-    const idx = columns.findIndex((c) => c.id === columnIdOfJob(job))
-    const next = columns[idx + dir]
-    if (!next) return
-    moveToColumn(job, next)
-  }
-
-  const goToColumn = (index: number) => {
-    setActiveIndex(index)
-    pagerRef.current?.scrollToIndex({ index, animated: true })
-  }
-
-  const openCard = (job: ProductionJob) => navigation.navigate('AdminJobDetail', { jobId: job.id })
+  const colWidth = config ? Math.min(config.card.width, SCREEN_W * 0.86) : SCREEN_W * 0.86
+  const open = (id: string) => navigation.navigate('AdminJobDetail', { jobId: id })
 
   return (
     <AppScreen padded={false}>
-      {/* Controls */}
+      {/* Controls (search + archive) — same affordances as web */}
       <View style={styles.controlsRow}>
         <View style={styles.searchBox}>
           <Ionicons name="search-outline" size={18} color={colors.textSecondary} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search jobs, client, address..."
+            placeholder="Search jobs by #, title, client, or address..."
             placeholderTextColor={colors.muted}
             value={search}
             onChangeText={setSearch}
@@ -225,310 +172,271 @@ export function ProductionScreen({ navigation }: Props) {
         </Pressable>
       </View>
 
-      {query.isLoading ? (
-        <View style={styles.loadingWrap}>
-          <Text style={styles.loadingText}>Loading production board...</Text>
-        </View>
+      {query.isLoading || !config ? (
+        <View style={styles.loadingWrap}><Text style={styles.loadingText}>Loading production board...</Text></View>
       ) : archiveView ? (
-        <ScrollView
-          contentContainerStyle={styles.archiveList}
-          refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => query.refetch()} />}
-        >
+        <ScrollView contentContainerStyle={styles.archiveList} refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => query.refetch()} />}>
           {visibleJobs.length === 0 ? (
             <EmptyState icon="archive-outline" title="Nothing here" description="No completed, cancelled, or invoiced jobs match these filters." />
           ) : (
-            visibleJobs.map((job) => <ProductionCard key={job.id} job={job} canMove={false} onPress={() => openCard(job)} onAdvance={() => {}} onBack={() => {}} onMove={() => {}} />)
+            visibleJobs.map((job) => {
+              const stage = config.stages.find((s) => s.status === job.status)
+              return <ProductionCard key={job.id} job={job} config={config} stageColor={stage?.color} onPress={() => open(job.id)} />
+            })
           )}
         </ScrollView>
       ) : (
-        <>
-          {/* On Hold banner (tap to jump) */}
-          {onHoldJobs.length > 0 && (
-            <Pressable style={styles.onHoldBar} onPress={() => setMoveJob(null)}>
-              <Ionicons name="warning-outline" size={15} color="#C2410C" />
-              <Text style={styles.onHoldBarText}>{onHoldJobs.length} on hold / need attention</Text>
-            </Pressable>
+        <ScrollView refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => query.refetch()} />}>
+          {/* On Hold / Attention Needed — amber, like web */}
+          {onHoldJobs.length > 0 && (onHoldStage?.visible ?? true) && (
+            <View style={styles.onHoldSection}>
+              <View style={styles.onHoldHeader}>
+                <Ionicons name="warning-outline" size={16} color="#B45309" />
+                <Text style={styles.onHoldTitle}>{onHoldStage?.displayName || 'On Hold'} / Attention Needed</Text>
+                <View style={styles.onHoldCount}><Text style={styles.onHoldCountText}>{onHoldJobs.length}</Text></View>
+              </View>
+              {onHoldJobs.map((job) => (
+                <ProductionCard key={job.id} job={job} config={config} stageColor={onHoldStage?.color} onPress={() => open(job.id)} />
+              ))}
+            </View>
           )}
 
-          {/* Column tabs (swipe or tap to switch — no horizontal board scrollbar) */}
-          <ScrollView ref={tabsRef} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsRow}>
-            {columnsWithJobs.map((col, i) => (
-              <Pressable key={col.id} onPress={() => goToColumn(i)} style={[styles.tab, i === activeIndex && styles.tabActive]}>
-                <Text style={[styles.tabText, i === activeIndex && styles.tabTextActive]} numberOfLines={1}>
-                  {col.label}
-                </Text>
-                <View style={[styles.tabCount, i === activeIndex && styles.tabCountActive]}>
-                  <Text style={[styles.tabCountText, i === activeIndex && styles.tabCountTextActive]}>{col.jobs.length}</Text>
+          <View style={styles.boardHeaderRow}>
+            <Ionicons name="grid-outline" size={16} color={colors.textSecondary} />
+            <Text style={styles.boardHeaderText}>Production Board</Text>
+          </View>
+
+          {/* Horizontal columns (swipe across) — matches the web board */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.boardRow}>
+            {columns.map(({ col, jobs: colJobs }) => (
+              <View key={col.id} style={[styles.column, { width: colWidth }]}>
+                <View style={[styles.columnHeader, { backgroundColor: col.color }]}>
+                  <View style={styles.columnHeaderLeft}>
+                    <Ionicons name={iconFor(col.icon)} size={16} color="#fff" />
+                    <Text style={styles.columnTitle} numberOfLines={1}>{col.displayName}</Text>
+                  </View>
+                  {col.showJobCount && (
+                    <View style={styles.columnCount}><Text style={styles.columnCountText}>{colJobs.length}</Text></View>
+                  )}
                 </View>
-              </Pressable>
+                <ScrollView style={styles.columnBody} nestedScrollEnabled contentContainerStyle={{ gap: spacing.xs, padding: spacing.xs }}>
+                  {colJobs.length === 0 ? (
+                    <Text style={styles.noJobs}>No jobs</Text>
+                  ) : (
+                    colJobs.map((job) => (
+                      <ProductionCard key={job.id} job={job} config={config} stageColor={col.color} onPress={() => open(job.id)} />
+                    ))
+                  )}
+                </ScrollView>
+              </View>
             ))}
           </ScrollView>
-
-          {/* Swipeable full-width column pages */}
-          <FlatList
-            ref={pagerRef}
-            data={columnsWithJobs}
-            keyExtractor={(c) => c.id}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            onMomentumScrollEnd={(e) => {
-              const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_W)
-              setActiveIndex(idx)
-              tabsRef.current?.scrollTo({ x: Math.max(0, idx * 96 - 96), animated: true })
-            }}
-            getItemLayout={(_, index) => ({ length: SCREEN_W, offset: SCREEN_W * index, index })}
-            renderItem={({ item: col }) => (
-              <View style={{ width: SCREEN_W }}>
-                <FlatList
-                  data={col.jobs}
-                  keyExtractor={(j) => j.id}
-                  contentContainerStyle={styles.columnList}
-                  refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => query.refetch()} />}
-                  ListEmptyComponent={<Text style={styles.noJobs}>No jobs in {col.label}</Text>}
-                  renderItem={({ item: job }) => (
-                    <ProductionCard
-                      job={job}
-                      canMove={canMove && usingConfig}
-                      onPress={() => openCard(job)}
-                      onAdvance={() => moveRelative(job, 1)}
-                      onBack={() => moveRelative(job, -1)}
-                      onMove={() => setMoveJob(job)}
-                    />
-                  )}
-                />
-              </View>
-            )}
-          />
-        </>
+        </ScrollView>
       )}
-
-      {/* Move sheet: pick any column */}
-      <Modal visible={!!moveJob} transparent animationType="slide" onRequestClose={() => setMoveJob(null)}>
-        <Pressable style={styles.sheetBackdrop} onPress={() => setMoveJob(null)}>
-          <Pressable style={styles.sheet} onPress={() => {}}>
-            <View style={styles.sheetHandle} />
-            <Text style={styles.sheetTitle}>Move {moveJob?.jobNumber} to…</Text>
-            <ScrollView style={{ maxHeight: 360 }}>
-              {columns.map((col) => {
-                const isCurrent = moveJob ? columnIdOfJob(moveJob) === col.id : false
-                return (
-                  <Pressable
-                    key={col.id}
-                    style={[styles.sheetRow, isCurrent && styles.sheetRowCurrent]}
-                    disabled={isCurrent || !targetStatusForColumn(col)}
-                    onPress={() => {
-                      if (moveJob) moveToColumn(moveJob, col)
-                      setMoveJob(null)
-                    }}
-                  >
-                    <Text style={[styles.sheetRowText, isCurrent && styles.sheetRowTextCurrent]}>{col.label}</Text>
-                    {isCurrent && <Ionicons name="checkmark" size={18} color={colors.brandPrimary} />}
-                  </Pressable>
-                )
-              })}
-            </ScrollView>
-            <Pressable style={styles.sheetCancel} onPress={() => setMoveJob(null)}>
-              <Text style={styles.sheetCancelText}>Cancel</Text>
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
     </AppScreen>
   )
 }
 
-function ProductionCard({
-  job,
-  canMove,
-  onPress,
-  onAdvance,
-  onBack,
-  onMove,
-}: {
-  job: ProductionJob
-  canMove: boolean
-  onPress: () => void
-  onAdvance: () => void
-  onBack: () => void
-  onMove: () => void
-}) {
-  const address = job.addresses?.[0]
-  const clientName = job.client?.companyName || job.client?.name
-  const crewNames = job.assignments.map((a) => a.user.firstName).filter(Boolean)
-  const dueLabel = formatDateShort(job.scheduledEnd)
-  const isHighPriority = Number(job.priority) >= 4
-  const amount = job.estimateAmount || job.actualAmount
-  const info = getProductionInfo(job.status)
+// Config-driven card — mirrors components/production/ProductionJobCard.tsx (web).
+function ProductionCard({ job, config, stageColor, onPress }: { job: ProductionJob; config: ProductionConfig; stageColor?: string; onPress: () => void }) {
+  const card = config.card
+  const compact = card.density === 'compact'
+  const detailed = card.density === 'detailed'
+  const pad = compact ? 8 : detailed ? 16 : 12
+  const gap = compact ? 2 : detailed ? 8 : 4
+  const titleSize = compact ? 12 : detailed ? 15 : 14
+  const metaSize = compact ? 11 : 12
 
-  const card = (
-    <Pressable
-      onPress={onPress}
-      onLongPress={canMove ? onMove : undefined}
-      delayLongPress={250}
-      style={({ pressed }) => [styles.jobCard, pressed && styles.jobCardPressed]}
-    >
-      <View style={styles.jobCardTop}>
-        <Text style={styles.jobNumber}>{job.jobNumber}</Text>
-        {isHighPriority && (
-          <View style={styles.priorityBadge}>
-            <Text style={styles.priorityBadgeText}>P{job.priority}</Text>
+  const vis = new Map<string, boolean>()
+  for (const f of card.fields) vis.set(f.key, f.visible)
+  const show = (key: string, toggle = true) => (vis.get(key) ?? false) && toggle
+
+  const overdue = isOverdue(job.scheduledEnd)
+  const address = job.addresses?.[0]?.street
+    ? `${job.addresses[0].street}${job.addresses[0].city ? `, ${job.addresses[0].city}` : ''}`
+    : null
+  const clientName = job.client?.companyName || job.client?.name || null
+  const assigned = job.assignments.map((a) => a.user.firstName).filter(Boolean)
+  const statusHex = STATUS_HEX[job.status] || '#6b7280'
+
+  const ordered = [...card.fields].sort((a, b) => a.order - b.order)
+  const rows: React.ReactNode[] = []
+  for (const f of ordered) {
+    switch (f.key) {
+      case 'jobNumber':
+        if (!show('jobNumber')) break
+        rows.push(
+          <View key="jn" style={styles.rowBetween}>
+            <Text style={[styles.jobNumber, card.emphasizeJobNumber ? styles.jobNumberEmph : { fontSize: metaSize }]}>{job.jobNumber}</Text>
+            {show('priority') && job.priority >= 4 && (
+              <View style={styles.prBadge}><Text style={styles.prBadgeText}>P{job.priority}</Text></View>
+            )}
           </View>
-        )}
-      </View>
-      {job.title ? <Text style={styles.jobTitle} numberOfLines={1}>{job.title}</Text> : null}
-      {address?.street ? (
-        <Text style={styles.jobMeta} numberOfLines={1}>
-          {address.street}
-          {address.city ? `, ${address.city}` : ''}
-        </Text>
-      ) : null}
-      {clientName ? <Text style={styles.jobClient} numberOfLines={1}>{clientName}</Text> : null}
-      <View style={styles.jobDivider} />
-      <Text style={styles.jobStage} numberOfLines={1}>Stage: {info.stage}</Text>
-      <Text style={styles.jobNextAction} numberOfLines={2}>Next: {info.nextAction}</Text>
-      <View style={styles.jobDivider} />
-      <View style={styles.jobFooterRow}>
-        <Text style={styles.jobFooterText} numberOfLines={1}>{crewNames.length ? crewNames.join(', ') : 'Unassigned'}</Text>
-        {dueLabel ? <Text style={styles.jobFooterText}>{dueLabel}</Text> : null}
-      </View>
-      {amount ? <Text style={styles.jobAmount}>${Number(amount).toFixed(2)}</Text> : null}
-      {canMove ? <Text style={styles.jobHint}>Long-press to move · swipe to advance</Text> : null}
-    </Pressable>
-  )
+        )
+        break
+      case 'jobName':
+        if (!show('jobName') || !job.title) break
+        rows.push(<Text key="jnm" style={[styles.jobTitle, { fontSize: titleSize }]} numberOfLines={2}>{job.title}</Text>)
+        break
+      case 'client':
+        if (!show('client') || !clientName) break
+        rows.push(<Text key="cl" style={[styles.meta, { fontSize: metaSize }]} numberOfLines={1}>{clientName}</Text>)
+        break
+      case 'jobSiteAddress':
+        if (!show('jobSiteAddress', card.showAddress) || !address) break
+        rows.push(
+          <View key="ad" style={styles.iconRow}>
+            <Ionicons name="location-outline" size={12} color={colors.muted} />
+            <Text style={[styles.metaMuted, { fontSize: metaSize }]} numberOfLines={1}>{address}</Text>
+          </View>
+        )
+        break
+      case 'jobStatus':
+        if (!show('jobStatus', card.showStatusBadge)) break
+        rows.push(
+          <View key="st" style={styles.badgeRow}>
+            <View style={[styles.statusBadge, { backgroundColor: tint(statusHex) }]}>
+              <Text style={[styles.statusBadgeText, { color: statusHex }]}>{job.status.replace(/_/g, ' ')}</Text>
+            </View>
+            {overdue && <View style={styles.overdueBadge}><Text style={styles.overdueText}>Overdue</Text></View>}
+          </View>
+        )
+        break
+      case 'productionStage':
+        if (!show('productionStage') || !job.production?.stage) break
+        rows.push(<Text key="sg" style={[styles.metaMuted, { fontSize: metaSize }]}><Text style={styles.metaLabel}>Stage: </Text>{job.production.stage}</Text>)
+        break
+      case 'nextAction':
+        if (!show('nextAction', card.showNextAction) || !job.production?.nextAction || job.production.nextAction === 'None') break
+        rows.push(<Text key="na" style={[styles.metaMuted, { fontSize: metaSize }]} numberOfLines={2}><Text style={styles.metaLabel}>Next: </Text>{job.production.nextAction}</Text>)
+        break
+      case 'assignedUser':
+        if (!show('assignedUser', card.showAssignedUser)) break
+        rows.push(
+          <View key="as" style={styles.iconRow}>
+            <Ionicons name="person-outline" size={12} color={colors.muted} />
+            <Text style={[styles.metaMuted, { fontSize: metaSize }]} numberOfLines={1}>{assigned.length ? assigned.join(', ') : 'Unassigned'}</Text>
+          </View>
+        )
+        break
+      case 'dueDate':
+        if (!show('dueDate', card.showDueDate)) break
+        rows.push(
+          <View key="dd" style={styles.iconRow}>
+            <Ionicons name="calendar-outline" size={12} color={overdue ? colors.danger : colors.muted} />
+            <Text style={[{ fontSize: metaSize }, overdue ? styles.overdueMeta : styles.metaMuted]}>Due {fmtDate(job.scheduledEnd)}</Text>
+          </View>
+        )
+        break
+      case 'createdDate':
+        if (!show('createdDate')) break
+        rows.push(
+          <View key="cd" style={styles.iconRow}>
+            <Ionicons name="time-outline" size={12} color={colors.muted} />
+            <Text style={[styles.metaFaint, { fontSize: metaSize }]}>Created {fmtDate(job.createdAt)}</Text>
+          </View>
+        )
+        break
+      case 'jobType':
+        if (!show('jobType') || !job.jobType) break
+        rows.push(<Text key="jt" style={[styles.metaMuted, { fontSize: metaSize }]}>{String(job.jobType).replace(/_/g, ' ')}</Text>)
+        break
+      case 'estimateAmount': {
+        if (!show('estimateAmount')) break
+        const m = money(job.estimateAmount)
+        if (!m) break
+        rows.push(
+          <View key="ea" style={styles.iconRow}>
+            <Ionicons name="cash-outline" size={12} color={colors.textSecondary} />
+            <Text style={[styles.amount, { fontSize: metaSize }]}>{m}</Text>
+          </View>
+        )
+        break
+      }
+      case 'invoiceAmount':
+        if (!show('invoiceAmount') || job.invoiceAmount == null) break
+        rows.push(<Text key="ia" style={[styles.meta, { fontSize: metaSize }]}>Invoiced: {money(job.invoiceAmount)}</Text>)
+        break
+      case 'billingStatus':
+        if (!show('billingStatus') || !job.billingStatus) break
+        rows.push(<Text key="bs" style={[styles.meta, { fontSize: metaSize }]}>Billing: {job.billingStatus}</Text>)
+        break
+      case 'purchaseOrder':
+        if (!show('purchaseOrder') || !job.poCount) break
+        rows.push(
+          <View key="po" style={styles.iconRow}>
+            <Ionicons name="cube-outline" size={12} color={colors.muted} />
+            <Text style={[styles.metaMuted, { fontSize: metaSize }]}>{job.poCount} PO{job.poCount === 1 ? '' : 's'}</Text>
+          </View>
+        )
+        break
+    }
+  }
 
-  if (!canMove) return card
+  const borderStyle =
+    card.borderStyle === 'left-accent' && card.accentFromStageColor && stageColor
+      ? { borderLeftWidth: 3, borderLeftColor: stageColor }
+      : card.borderStyle === 'full'
+        ? { borderWidth: 2 }
+        : { borderWidth: 1 }
 
   return (
-    <Swipeable
-      renderLeftActions={() => (
-        <View style={[styles.swipeAction, styles.swipeBack]}>
-          <Ionicons name="arrow-back" size={18} color="#fff" />
-          <Text style={styles.swipeActionText}>Back</Text>
-        </View>
-      )}
-      renderRightActions={() => (
-        <View style={[styles.swipeAction, styles.swipeAdvance]}>
-          <Ionicons name="arrow-forward" size={18} color="#fff" />
-          <Text style={styles.swipeActionText}>Advance</Text>
-        </View>
-      )}
-      onSwipeableOpen={(dir) => {
-        if (dir === 'right') onAdvance()
-        else onBack()
-      }}
-      friction={2}
-      rightThreshold={60}
-      leftThreshold={60}
-    >
-      {card}
-    </Swipeable>
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.card, { padding: pad }, borderStyle, pressed && styles.cardPressed]}>
+      <View style={{ gap }}>{rows}</View>
+    </Pressable>
   )
 }
 
 const styles = StyleSheet.create({
   controlsRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingTop: spacing.sm },
-  searchBox: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.divider,
-    paddingHorizontal: spacing.md,
-    height: 42,
-  },
+  searchBox: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.xs, backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.divider, paddingHorizontal: spacing.md, height: 42 },
   searchInput: { flex: 1, ...typography.sub, color: colors.textPrimary, padding: 0 },
-  archiveButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderWidth: 1,
-    borderColor: colors.brandPrimary,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    height: 42,
-  },
+  archiveButton: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: colors.brandPrimary, borderRadius: radius.md, paddingHorizontal: spacing.md, height: 42 },
   archiveButtonActive: { backgroundColor: colors.brandPrimary },
   archiveButtonText: { ...typography.caption, color: colors.brandPrimary, fontWeight: '700' },
   archiveButtonTextActive: { color: colors.surface },
 
   loadingWrap: { padding: spacing.xl, alignItems: 'center' },
   loadingText: { ...typography.sub, color: colors.textSecondary },
-
   archiveList: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: spacing.sm },
 
-  onHoldBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginHorizontal: spacing.md,
-    marginTop: spacing.sm,
-    paddingVertical: 6,
-    paddingHorizontal: spacing.sm,
-    borderRadius: radius.md,
-    backgroundColor: 'rgba(249,115,22,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(249,115,22,0.3)',
-  },
-  onHoldBarText: { ...typography.caption, color: '#C2410C', fontWeight: '700' },
+  onHoldSection: { marginHorizontal: spacing.md, marginTop: spacing.sm, padding: spacing.sm, borderRadius: radius.lg, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FCD34D', gap: spacing.xs },
+  onHoldHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 },
+  onHoldTitle: { ...typography.sub, color: '#92400E', fontWeight: '700', flex: 1 },
+  onHoldCount: { backgroundColor: '#FDE68A', borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 1 },
+  onHoldCountText: { ...typography.caption, color: '#92400E', fontWeight: '700' },
 
-  tabsRow: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: spacing.xs },
-  tab: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.divider,
-    marginRight: spacing.xs,
-  },
-  tabActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  tabText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700', maxWidth: 140 },
-  tabTextActive: { color: '#E6C98B' },
-  tabCount: { backgroundColor: colors.divider, borderRadius: radius.pill, paddingHorizontal: 7, paddingVertical: 1 },
-  tabCountActive: { backgroundColor: 'rgba(255,255,255,0.2)' },
-  tabCountText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' },
-  tabCountTextActive: { color: '#fff' },
+  boardHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.md, paddingTop: spacing.md, paddingBottom: spacing.xs },
+  boardHeaderText: { ...typography.sub, color: colors.textSecondary, fontWeight: '700' },
 
-  columnList: { paddingHorizontal: spacing.md, paddingBottom: spacing.xl, gap: spacing.xs },
-  noJobs: { ...typography.caption, color: colors.muted, textAlign: 'center', padding: spacing.xl },
+  boardRow: { paddingHorizontal: spacing.md, paddingBottom: spacing.xl, gap: spacing.md },
+  column: { backgroundColor: '#F9FAFB', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.divider, maxHeight: Dimensions.get('window').height * 0.62, overflow: 'hidden' },
+  columnHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg },
+  columnHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
+  columnTitle: { ...typography.sub, color: '#fff', fontWeight: '700', flexShrink: 1 },
+  columnCount: { backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 1 },
+  columnCountText: { ...typography.caption, color: '#fff', fontWeight: '700' },
+  columnBody: { flexGrow: 0 },
+  noJobs: { ...typography.caption, color: colors.muted, textAlign: 'center', paddingVertical: spacing.md },
 
-  jobCard: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.sm, marginVertical: spacing.xs, borderWidth: 1, borderColor: colors.divider },
-  jobCardPressed: { opacity: 0.9 },
-  jobCardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  jobNumber: { ...typography.sub, color: colors.brandPrimary, fontWeight: '700' },
-  priorityBadge: { backgroundColor: 'rgba(220,38,38,0.12)', borderRadius: radius.pill, paddingHorizontal: 6, paddingVertical: 1 },
-  priorityBadgeText: { ...typography.caption, color: colors.danger, fontWeight: '700' },
-  jobTitle: { ...typography.caption, color: colors.textPrimary, fontWeight: '600', marginTop: 2 },
-  jobMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
-  jobClient: { ...typography.caption, color: colors.muted, marginTop: 1 },
-  jobDivider: { height: 1, backgroundColor: colors.divider, marginVertical: spacing.xs },
-  jobStage: { ...typography.caption, color: colors.textSecondary },
-  jobNextAction: { ...typography.caption, color: colors.textPrimary, fontWeight: '600', marginTop: 2 },
-  jobFooterRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  jobFooterText: { ...typography.caption, color: colors.muted, fontSize: 11 },
-  jobAmount: { ...typography.caption, color: colors.textSecondary, fontWeight: '600', marginTop: 4 },
-  jobHint: { ...typography.caption, color: colors.muted, fontSize: 10, marginTop: 4, fontStyle: 'italic' },
-
-  swipeAction: { justifyContent: 'center', alignItems: 'center', width: 92, marginVertical: spacing.xs, borderRadius: radius.md },
-  swipeAdvance: { backgroundColor: '#16A34A' },
-  swipeBack: { backgroundColor: '#6B7280' },
-  swipeActionText: { ...typography.caption, color: '#fff', fontWeight: '700', marginTop: 2 },
-
-  sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, padding: spacing.md, paddingBottom: spacing.xl },
-  sheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: colors.divider, marginBottom: spacing.sm },
-  sheetTitle: { ...typography.sub, color: colors.textPrimary, fontWeight: '700', marginBottom: spacing.sm },
-  sheetRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: spacing.sm, paddingHorizontal: spacing.sm, borderRadius: radius.md },
-  sheetRowCurrent: { backgroundColor: 'rgba(0,0,0,0.04)' },
-  sheetRowText: { ...typography.sub, color: colors.textPrimary },
-  sheetRowTextCurrent: { color: colors.brandPrimary, fontWeight: '700' },
-  sheetCancel: { marginTop: spacing.sm, alignItems: 'center', paddingVertical: spacing.sm },
-  sheetCancelText: { ...typography.sub, color: colors.textSecondary, fontWeight: '700' },
+  card: { backgroundColor: colors.surface, borderRadius: radius.md, borderColor: colors.divider, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 3, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
+  cardPressed: { opacity: 0.92 },
+  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  jobNumber: { fontFamily: 'monospace', fontWeight: '700', color: '#374151' },
+  jobNumberEmph: { color: '#1d4ed8', fontSize: 14 },
+  prBadge: { backgroundColor: '#FEE2E2', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1 },
+  prBadgeText: { color: '#B91C1C', fontWeight: '700', fontSize: 10 },
+  jobTitle: { color: '#111827', fontWeight: '600' },
+  meta: { color: '#4B5563' },
+  metaMuted: { color: '#6B7280' },
+  metaFaint: { color: '#9CA3AF' },
+  metaLabel: { color: '#4B5563', fontWeight: '600' },
+  iconRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 4, flexWrap: 'wrap' },
+  statusBadge: { borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
+  statusBadgeText: { fontSize: 10, fontWeight: '700' },
+  overdueBadge: { backgroundColor: '#FEE2E2', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
+  overdueText: { color: '#B91C1C', fontSize: 10, fontWeight: '700' },
+  overdueMeta: { color: '#DC2626', fontWeight: '600' },
+  amount: { color: '#374151', fontWeight: '700' },
 })

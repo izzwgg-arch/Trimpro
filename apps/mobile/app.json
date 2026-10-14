@@ -13,7 +13,7 @@
       "fallbackToCacheTimeout": 0,
       "url": "https://u.expo.dev/5d6344e3-86ce-4e96-93e8-13893313d47f"
     },
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
