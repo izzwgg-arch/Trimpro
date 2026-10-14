@@ -135,7 +135,7 @@ const linking = baseLinking
 function JobsStackNavigator() {
   return (
     <JobsStack.Navigator
-      initialRouteName="JobsList"
+      initialRouteName="Production"
       screenOptions={stackOptions}
     >
       <JobsStack.Screen name="JobsList" component={JobsScreen} options={mainHeaderOptions('Production Line')} />
@@ -317,7 +317,7 @@ function MainTabsNavigator() {
         ),
         tabBarIcon: ({ focused, size }) => {
           const iconByRoute: Record<keyof RootMainTabParamList, keyof typeof Ionicons.glyphMap> = {
-            JobsTab: 'briefcase-outline',
+            JobsTab: 'construct-outline',
             MessagesTab: 'chatbubble-ellipses-outline',
             TasksTab: 'checkbox-outline',
             ScheduleTab: 'calendar-outline',
@@ -336,11 +336,11 @@ function MainTabsNavigator() {
       <MainTabs.Screen
         name="JobsTab"
         component={JobsStackNavigator}
-        options={{ title: 'Jobs' }}
+        options={{ title: 'Production' }}
         listeners={({ navigation }) => ({
           tabPress: (event) => {
             event.preventDefault()
-            navigation.navigate('JobsTab', { screen: 'JobsList' } as never)
+            navigation.navigate('JobsTab', { screen: 'Production' } as never)
           },
         })}
       />
