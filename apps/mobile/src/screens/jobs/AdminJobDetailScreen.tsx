@@ -1,6 +1,7 @@
-import React, { useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import {
   Alert,
+  Image,
   Linking,
   Modal,
   Platform,
@@ -22,7 +23,10 @@ import { StatusBadge } from '../../components/StatusBadge'
 import { BillingStatusBadge } from '../../components/BillingStatusBadge'
 import { AttachmentPickerSheet } from '../../components/attachments/AttachmentPickerSheet'
 import { AttachmentUploadQueue } from '../../components/attachments/AttachmentUploadQueue'
+import { AttachmentOpenPressable } from '../../components/attachments/AttachmentOpenPressable'
+import { AttachmentGalleryModal } from '../../components/attachments/AttachmentGalleryModal'
 import { pickAttachmentsByAction, uploadFileWithProgress } from '../../services/attachment-upload'
+import { isPdfAttachment, normalizeAttachmentUrl } from '../../services/open-attachment'
 import { useAttachmentUploadQueue } from '../../hooks/useAttachmentUploadQueue'
 import { JobsStackParamList } from '../../types/navigation'
 import { useMobilePermissions } from '../../hooks/useMobilePermissions'
@@ -54,13 +58,14 @@ function asArray<T>(value: unknown): T[] {
 }
 interface JobResponse { job: Job }
 interface JobTimeResponse { entries: TimeEntry[]; activeEntries: TimeEntry[]; summary: { totalMinutes: number; billableHours: number; billableAmountCents: number } }
+interface AttachmentsResponse { attachments: Attachment[] }
 
 export function AdminJobDetailScreen({ route, navigation }: Props) {
   const { jobId } = route.params
   const queryClient = useQueryClient()
   const perms = useMobilePermissions()
   const {
-    canEditJobs, canAssignJobs, canScheduleJobs, canChangeJobStatus, canCreateTasks,
+    canEditJobs, canAssignJobs, canScheduleJobs, canChangeJobStatus, canCreateTasks, canUploadMedia,
     canViewJobFinancials, canViewJobDocuments, canViewJobBilling, canViewJobTimeEntries,
     canViewJobNotes, canViewJobCrew, canViewJobSchedules, canViewJobClientDetails, canViewJobTasksIssues,
   } = perms
@@ -69,8 +74,12 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
   const [assignPickerVisible, setAssignPickerVisible] = useState(false)
   const [attachmentPickerVisible, setAttachmentPickerVisible] = useState(false)
   const [busyAction, setBusyAction] = useState<string | null>(null)
+  const [galleryVisible, setGalleryVisible] = useState(false)
+  const [galleryIndex, setGalleryIndex] = useState(0)
+  const [localAttachments, setLocalAttachments] = useState<Attachment[]>([])
   const [openSummary, setOpenSummary] = useState(true)
   const [openDocs, setOpenDocs] = useState(false)
+  const [openFiles, setOpenFiles] = useState(false)
   const [openTasks, setOpenTasks] = useState(false)
   const [openNotes, setOpenNotes] = useState(false)
   const [openMore, setOpenMore] = useState(false)
@@ -90,6 +99,11 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
     queryKey: ['assignable-users', jobId],
     queryFn: () => apiRequest<{ users: Array<{ id: string; firstName: string; lastName: string; role: string; status?: string | null }> }>('/api/users?limit=200'),
     enabled: assignPickerVisible,
+  })
+  const attachmentsQuery = useQuery({
+    queryKey: ['admin-job-attachments', jobId],
+    queryFn: () => apiRequest<AttachmentsResponse>(`/api/attachments?entityType=job&entityId=${jobId}`),
+    enabled: !!jobQuery.data?.job && canViewJobDocuments(),
   })
 
   const job = jobQuery.data?.job
@@ -123,10 +137,31 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
       const task = uploadFileWithProgress<{ attachment: Attachment }>(`/api/jobs/${jobId}/attachments`, file, onProgress)
       return { promise: task.promise.then((result) => result.raw), cancel: task.cancel }
     },
-    onUploaded: () => { queryClient.invalidateQueries({ queryKey: ['admin-job', jobId] }) },
+    onUploaded: (result) => {
+      const created = result.attachment
+      if (created?.id) {
+        setLocalAttachments((prev) => [{ ...created, url: normalizeAttachmentUrl(created.url) }, ...prev.filter((x) => x.id !== created.id)])
+      }
+      queryClient.invalidateQueries({ queryKey: ['admin-job', jobId] })
+      queryClient.invalidateQueries({ queryKey: ['admin-job-attachments', jobId] })
+    },
   })
 
-  const onRefresh = async () => { await Promise.all([jobQuery.refetch(), timeQuery.refetch()]) }
+  const attachmentRows = useMemo(() => {
+    const merged = [
+      ...localAttachments,
+      ...asArray<Attachment>(attachmentsQuery.data?.attachments),
+      ...asArray<Attachment>(job?.attachments),
+    ]
+    const deduped = new Map<string, Attachment>()
+    for (const row of merged) {
+      if (!row?.id || deduped.has(row.id)) continue
+      deduped.set(row.id, { ...row, url: normalizeAttachmentUrl(row.url) })
+    }
+    return Array.from(deduped.values()).sort((a, b) => ((a.createdAt || '') < (b.createdAt || '') ? 1 : -1))
+  }, [attachmentsQuery.data?.attachments, job?.attachments, localAttachments])
+
+  const onRefresh = async () => { await Promise.all([jobQuery.refetch(), timeQuery.refetch(), attachmentsQuery.refetch()]) }
 
   if (jobQuery.isError) {
     return (
@@ -230,7 +265,7 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
   const quickActions = [
     { key: 'message', icon: 'chatbubble-ellipses-outline', label: 'Message', onPress: sendMessage, show: true },
     { key: 'task', icon: 'clipboard-outline', label: 'Add Task', onPress: addTask, show: canCreateTasks() },
-    { key: 'photo', icon: 'camera-outline', label: 'Add Photo', onPress: () => setAttachmentPickerVisible(true), show: canEditJobs() || canViewJobDocuments() },
+    { key: 'photo', icon: 'camera-outline', label: 'Add Photo', onPress: () => setAttachmentPickerVisible(true), show: canUploadMedia() },
     { key: 'schedule', icon: 'calendar-outline', label: 'Schedule', onPress: schedule, show: canScheduleJobs() },
   ].filter((a) => a.show)
 
@@ -311,6 +346,64 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
             }
           >
             <JobDocumentsSection job={job} />
+          </CollapsibleCard>
+        )}
+
+        {/* Files & Photos (collapsible) */}
+        {canViewJobDocuments() && (
+          <CollapsibleCard
+            icon="images-outline"
+            title="Files & Photos"
+            countBadge={attachmentRows.length}
+            open={openFiles}
+            onToggle={() => setOpenFiles((v) => !v)}
+            collapsedChildren={<Text style={styles.emptyHint}>{attachmentRows.length === 0 ? 'No files yet' : `${attachmentRows.length} file${attachmentRows.length === 1 ? '' : 's'} — tap to view`}</Text>}
+          >
+            {canUploadMedia() ? (
+              <Pressable style={styles.addFileBtn} onPress={() => setAttachmentPickerVisible(true)}>
+                <Ionicons name="add" size={16} color={colors.brandPrimary} />
+                <Text style={styles.addFileText}>Add photo or file</Text>
+              </Pressable>
+            ) : null}
+            {attachmentRows.length === 0 ? (
+              <Text style={styles.emptyHint}>No files or photos for this job yet.</Text>
+            ) : (
+              <View style={styles.mediaGrid}>
+                {attachmentRows.map((a) => {
+                  const mime = String(a.mimeType || '').toLowerCase()
+                  const isImage = mime.startsWith('image/')
+                  const isVideo = mime.startsWith('video/')
+                  const isPdf = isPdfAttachment(a.mimeType, a.fileName)
+                  const previewUrl = String((a as any).thumbnailUrl || (a as any).previewUrl || '').trim() || null
+                  return (
+                    <View key={a.id} style={styles.mediaTileWrap}>
+                      <AttachmentOpenPressable
+                        attachment={a}
+                        onOpenGallery={() => {
+                          const idx = attachmentRows.findIndex((x) => x.id === a.id)
+                          setGalleryIndex(Math.max(0, idx))
+                          setGalleryVisible(true)
+                        }}
+                      >
+                        <View style={styles.mediaTile}>
+                          {isImage ? (
+                            <Image source={{ uri: a.url }} style={styles.mediaTileImage} />
+                          ) : isPdf && previewUrl ? (
+                            <Image source={{ uri: previewUrl }} style={styles.mediaTileImage} />
+                          ) : (
+                            <View style={styles.mediaTileIcon}>
+                              <Ionicons name={isVideo ? 'videocam-outline' : isPdf ? 'document-outline' : 'document-text-outline'} size={24} color={colors.textSecondary} />
+                              <Text style={styles.mediaFileBadge}>{isVideo ? 'VIDEO' : isPdf ? 'PDF' : 'FILE'}</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text style={styles.mediaFileName} numberOfLines={1}>{a.fileName || (isPdf ? 'PDF' : isVideo ? 'Video' : 'File')}</Text>
+                      </AttachmentOpenPressable>
+                    </View>
+                  )
+                })}
+              </View>
+            )}
           </CollapsibleCard>
         )}
 
@@ -423,6 +516,26 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
       </ScrollView>
 
       <AttachmentPickerSheet visible={attachmentPickerVisible} onClose={() => setAttachmentPickerVisible(false)} onSelect={onSelectAttachment} />
+
+      <AttachmentGalleryModal
+        visible={galleryVisible}
+        attachments={attachmentRows.map((row) => ({
+          id: row.id,
+          fileName: row.fileName || 'Attachment',
+          fileSize: row.fileSize,
+          mimeType: row.mimeType || 'application/octet-stream',
+          url: row.url,
+        }))}
+        index={galleryIndex}
+        onClose={() => setGalleryVisible(false)}
+        onIndexChange={setGalleryIndex}
+        entityType="job"
+        entityId={jobId}
+        onAttachmentCreated={() => {
+          queryClient.invalidateQueries({ queryKey: ['admin-job', jobId] })
+          queryClient.invalidateQueries({ queryKey: ['admin-job-attachments', jobId] })
+        }}
+      />
     </AppScreen>
   )
 }
@@ -553,4 +666,14 @@ const styles = StyleSheet.create({
   modalCloseButton: { marginTop: spacing.sm, alignItems: 'center', paddingVertical: spacing.sm },
   modalCloseText: { ...typography.sub, color: colors.textSecondary, fontWeight: '700' },
   emptyText: { ...typography.caption, color: colors.textSecondary, padding: spacing.sm },
+
+  addFileBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', paddingVertical: 6, paddingHorizontal: 10, borderRadius: radius.md, borderWidth: 1, borderColor: colors.brandPrimary, marginBottom: spacing.sm },
+  addFileText: { ...typography.caption, color: colors.brandPrimary, fontWeight: '700' },
+  mediaGrid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -spacing.xs },
+  mediaTileWrap: { width: '33.333%', padding: spacing.xs },
+  mediaTile: { aspectRatio: 1, borderRadius: radius.md, overflow: 'hidden', backgroundColor: '#F1F5F9', borderWidth: 1, borderColor: colors.divider, alignItems: 'center', justifyContent: 'center' },
+  mediaTileImage: { width: '100%', height: '100%' },
+  mediaTileIcon: { alignItems: 'center', gap: 4 },
+  mediaFileBadge: { ...typography.caption, color: colors.muted, fontSize: 9, fontWeight: '800' },
+  mediaFileName: { ...typography.caption, color: colors.textSecondary, fontSize: 11, marginTop: 4 },
 })
