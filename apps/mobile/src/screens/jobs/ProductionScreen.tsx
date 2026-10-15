@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import {
   Dimensions,
+  FlatList,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -186,8 +187,8 @@ export function ProductionScreen({ navigation }: Props) {
           )}
         </ScrollView>
       ) : (
-        <ScrollView refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => query.refetch()} />}>
-          {/* On Hold / Attention Needed — amber, like web */}
+        <View style={styles.boardWrap}>
+          {/* On Hold / Attention Needed — amber, like web (capped, scrolls on its own) */}
           {onHoldJobs.length > 0 && (onHoldStage?.visible ?? true) && (
             <View style={styles.onHoldSection}>
               <View style={styles.onHoldHeader}>
@@ -195,9 +196,11 @@ export function ProductionScreen({ navigation }: Props) {
                 <Text style={styles.onHoldTitle}>{onHoldStage?.displayName || 'On Hold'} / Attention Needed</Text>
                 <View style={styles.onHoldCount}><Text style={styles.onHoldCountText}>{onHoldJobs.length}</Text></View>
               </View>
-              {onHoldJobs.map((job) => (
-                <ProductionCard key={job.id} job={job} config={config} stageColor={onHoldStage?.color} onPress={() => open(job.id)} />
-              ))}
+              <ScrollView style={styles.onHoldScroll} nestedScrollEnabled contentContainerStyle={{ gap: spacing.xs }}>
+                {onHoldJobs.map((job) => (
+                  <ProductionCard key={job.id} job={job} config={config} stageColor={onHoldStage?.color} onPress={() => open(job.id)} />
+                ))}
+              </ScrollView>
             </View>
           )}
 
@@ -206,8 +209,8 @@ export function ProductionScreen({ navigation }: Props) {
             <Text style={styles.boardHeaderText}>Production Board</Text>
           </View>
 
-          {/* Horizontal columns (swipe across) — matches the web board */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.boardRow}>
+          {/* Horizontal columns; each column scrolls vertically on its own */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.boardScroll} contentContainerStyle={styles.boardRow}>
             {columns.map(({ col, jobs: colJobs }) => (
               <View key={col.id} style={[styles.column, { width: colWidth }]}>
                 <View style={[styles.columnHeader, { backgroundColor: col.color }]}>
@@ -219,19 +222,23 @@ export function ProductionScreen({ navigation }: Props) {
                     <View style={styles.columnCount}><Text style={styles.columnCountText}>{colJobs.length}</Text></View>
                   )}
                 </View>
-                <View style={styles.columnBody}>
-                  {colJobs.length === 0 ? (
-                    <Text style={styles.noJobs}>No jobs</Text>
-                  ) : (
-                    colJobs.map((job) => (
-                      <ProductionCard key={job.id} job={job} config={config} stageColor={col.color} onPress={() => open(job.id)} />
-                    ))
+                <FlatList
+                  data={colJobs}
+                  keyExtractor={(j) => j.id}
+                  style={styles.columnBody}
+                  contentContainerStyle={styles.columnBodyContent}
+                  nestedScrollEnabled
+                  showsVerticalScrollIndicator
+                  refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => query.refetch()} />}
+                  ListEmptyComponent={<Text style={styles.noJobs}>No jobs</Text>}
+                  renderItem={({ item: job }) => (
+                    <ProductionCard job={job} config={config} stageColor={col.color} onPress={() => open(job.id)} />
                   )}
-                </View>
+                />
               </View>
             ))}
           </ScrollView>
-        </ScrollView>
+        </View>
       )}
     </AppScreen>
   )
@@ -409,14 +416,18 @@ const styles = StyleSheet.create({
   boardHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.md, paddingTop: spacing.md, paddingBottom: spacing.xs },
   boardHeaderText: { ...typography.sub, color: colors.textSecondary, fontWeight: '700' },
 
-  boardRow: { paddingHorizontal: spacing.md, paddingBottom: spacing.xl, gap: spacing.md },
+  boardWrap: { flex: 1 },
+  boardScroll: { flex: 1 },
+  onHoldScroll: { maxHeight: Dimensions.get('window').height * 0.22 },
+  boardRow: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: spacing.md, alignItems: 'stretch' },
   column: { backgroundColor: '#F9FAFB', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.divider, overflow: 'hidden' },
+  columnBodyContent: { padding: spacing.xs, gap: spacing.xs },
   columnHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg },
   columnHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
   columnTitle: { ...typography.sub, color: '#fff', fontWeight: '700', flexShrink: 1 },
   columnCount: { backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 1 },
   columnCountText: { ...typography.caption, color: '#fff', fontWeight: '700' },
-  columnBody: { padding: spacing.xs, gap: spacing.xs },
+  columnBody: { flex: 1 },
   noJobs: { ...typography.caption, color: colors.muted, textAlign: 'center', paddingVertical: spacing.md },
 
   card: { backgroundColor: colors.surface, borderRadius: radius.md, borderColor: colors.divider, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 3, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
