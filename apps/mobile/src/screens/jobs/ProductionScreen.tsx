@@ -219,7 +219,7 @@ export function ProductionScreen({ navigation }: Props) {
                     <View style={styles.columnCount}><Text style={styles.columnCountText}>{colJobs.length}</Text></View>
                   )}
                 </View>
-                <ScrollView style={styles.columnBody} nestedScrollEnabled contentContainerStyle={{ gap: spacing.xs, padding: spacing.xs }}>
+                <View style={styles.columnBody}>
                   {colJobs.length === 0 ? (
                     <Text style={styles.noJobs}>No jobs</Text>
                   ) : (
@@ -227,7 +227,7 @@ export function ProductionScreen({ navigation }: Props) {
                       <ProductionCard key={job.id} job={job} config={config} stageColor={col.color} onPress={() => open(job.id)} />
                     ))
                   )}
-                </ScrollView>
+                </View>
               </View>
             ))}
           </ScrollView>
@@ -410,13 +410,13 @@ const styles = StyleSheet.create({
   boardHeaderText: { ...typography.sub, color: colors.textSecondary, fontWeight: '700' },
 
   boardRow: { paddingHorizontal: spacing.md, paddingBottom: spacing.xl, gap: spacing.md },
-  column: { backgroundColor: '#F9FAFB', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.divider, maxHeight: Dimensions.get('window').height * 0.62, overflow: 'hidden' },
+  column: { backgroundColor: '#F9FAFB', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.divider, overflow: 'hidden' },
   columnHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg },
   columnHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
   columnTitle: { ...typography.sub, color: '#fff', fontWeight: '700', flexShrink: 1 },
   columnCount: { backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 1 },
   columnCountText: { ...typography.caption, color: '#fff', fontWeight: '700' },
-  columnBody: { flexGrow: 0 },
+  columnBody: { padding: spacing.xs, gap: spacing.xs },
   noJobs: { ...typography.caption, color: colors.muted, textAlign: 'center', paddingVertical: spacing.md },
 
   card: { backgroundColor: colors.surface, borderRadius: radius.md, borderColor: colors.divider, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 3, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
