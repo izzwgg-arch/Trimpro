@@ -2,10 +2,10 @@ import React from 'react'
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   Image,
   Linking,
   Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -181,6 +181,16 @@ const STATUS_LABELS: Record<string, string> = {
   LOST: 'Lost',
 }
 
+// Matches the Requests production board colors (lib/production/boards.ts).
+const LEAD_STATUS_HEX: Record<string, string> = {
+  NEW: '#3b82f6', CONTACTED: '#0ea5e9', QUALIFIED: '#6366f1', ESTIMATE_CREATED: '#8b5cf6',
+  ESTIMATE_SENT: '#a855f7', FOLLOW_UP: '#d97706', CONVERTED: '#16a34a', LOST: '#ef4444',
+}
+// 15%-opacity tint of a hex color for badge backgrounds.
+function tint(hex: string) {
+  return hex.length === 7 ? `${hex}26` : hex
+}
+
 function formatLabel(value?: string | null) {
   if (!value) return ''
   return STATUS_LABELS[value] || value.replace(/_/g, ' ')
@@ -212,22 +222,58 @@ function personName(person?: RequestPerson | null) {
   return `${person.firstName || ''} ${person.lastName || ''}`.trim() || 'Unassigned'
 }
 
-function ActionChip({
-  label,
-  icon,
-  onPress,
-  active,
-}: {
-  label: string
-  icon: keyof typeof Ionicons.glyphMap
-  onPress: () => void
-  active?: boolean
+function CollapsibleCard({ icon, title, countBadge, rightText, open, onToggle, collapsedChildren, children }: {
+  icon?: keyof typeof Ionicons.glyphMap
+  title: string
+  countBadge?: number
+  rightText?: string
+  open: boolean
+  onToggle: () => void
+  collapsedChildren?: React.ReactNode
+  children: React.ReactNode
 }) {
   return (
-    <Pressable style={[styles.actionChip, active && styles.actionChipActive]} onPress={onPress}>
-      <Ionicons name={icon} size={16} color={active ? '#B91C1C' : colors.brandPrimary} />
-      <Text style={[styles.actionChipText, active && styles.actionChipTextActive]}>{label}</Text>
-    </Pressable>
+    <View style={styles.card}>
+      <Pressable style={styles.cardHeader} onPress={onToggle}>
+        <View style={styles.cardHeaderLeft}>
+          {icon ? <Ionicons name={icon} size={18} color={colors.textPrimary} /> : null}
+          <Text style={styles.cardTitle}>{title}</Text>
+        </View>
+        <View style={styles.cardHeaderRight}>
+          {typeof countBadge === 'number' ? <View style={styles.countPill}><Text style={styles.countPillText}>{countBadge}</Text></View> : null}
+          {rightText ? <View style={styles.countPill}><Text style={styles.countPillText}>{rightText}</Text></View> : null}
+          <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={18} color={colors.muted} />
+        </View>
+      </Pressable>
+      {!open && collapsedChildren ? <View style={styles.cardCollapsed}>{collapsedChildren}</View> : null}
+      {open ? <View style={styles.cardBody}>{children}</View> : null}
+    </View>
+  )
+}
+
+function SummaryRow({ icon, label, value, action }: { icon: keyof typeof Ionicons.glyphMap; label: string; value: string; action?: { icon: keyof typeof Ionicons.glyphMap; onPress: () => void } }) {
+  return (
+    <View style={styles.summaryRow}>
+      <Ionicons name={icon} size={18} color={colors.textSecondary} style={{ marginTop: 2 }} />
+      <View style={{ flex: 1 }}>
+        <Text style={styles.summaryLabel}>{label}</Text>
+        <Text style={styles.summaryValue}>{value}</Text>
+      </View>
+      {action ? (
+        <Pressable style={styles.summaryActionBtn} onPress={action.onPress}>
+          <Ionicons name={action.icon} size={18} color="#2563EB" />
+        </Pressable>
+      ) : null}
+    </View>
+  )
+}
+
+function FinCell({ label, value }: { label: string; value: string | null | undefined }) {
+  return (
+    <View style={styles.finCell}>
+      <Text style={styles.finLabel}>{label}</Text>
+      <Text style={styles.finValue}>{value || '—'}</Text>
+    </View>
   )
 }
 
@@ -279,6 +325,13 @@ export function RequestDetailScreen({ route }: Props) {
   const [localAttachments, setLocalAttachments] = React.useState<AttachmentResponse['attachments']>([])
   const [galleryVisible, setGalleryVisible] = React.useState(false)
   const [galleryIndex, setGalleryIndex] = React.useState(0)
+  const [openSummary, setOpenSummary] = React.useState(true)
+  const [openDocs, setOpenDocs] = React.useState(false)
+  const [openFiles, setOpenFiles] = React.useState(false)
+  const [openComms, setOpenComms] = React.useState(false)
+  const [openTasks, setOpenTasks] = React.useState(false)
+  const [openNotes, setOpenNotes] = React.useState(false)
+  const [openMore, setOpenMore] = React.useState(false)
 
   const detailQuery = useQuery({
     queryKey: ['mobile-request-detail', requestId],
@@ -534,307 +587,349 @@ export function RequestDetailScreen({ route }: Props) {
     void Linking.openURL(`mailto:${lead.email}`)
   }
 
+  const fullAddress = lead.jobSiteAddress
+    ? `${lead.jobSiteAddress}${lead.jobSiteCity ? `, ${lead.jobSiteCity}` : ''}${lead.jobSiteState ? `, ${lead.jobSiteState}` : ''}${lead.jobSiteZipCode ? ` ${lead.jobSiteZipCode}` : ''}`.trim()
+    : null
+  const shortAddress = lead.jobSiteAddress
+    ? `${lead.jobSiteAddress}${lead.jobSiteCity ? `, ${lead.jobSiteCity}` : ''}`
+    : null
+  const openMaps = () => {
+    if (!fullAddress) return
+    const encoded = encodeURIComponent(fullAddress)
+    const nativeUrl = Platform.OS === 'android' ? `comgooglemaps://?q=${encoded}` : `googlemaps://?q=${encoded}`
+    const webUrl = `https://maps.google.com/?q=${encoded}`
+    Linking.canOpenURL(nativeUrl)
+      .then((ok) => (ok ? Linking.openURL(nativeUrl) : Linking.openURL(webUrl)))
+      .catch(() => Linking.openURL(webUrl))
+  }
+  const statusHex = LEAD_STATUS_HEX[String(lead.status || '').toUpperCase()] || colors.brandPrimary
+  const assignedName = lead.assignedTo ? personName(lead.assignedTo) : null
+  const name = `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || lead.company || 'Request'
+  const commCount = (count.calls ?? calls.length) + (count.smsMessages ?? smsMessages.length) + (count.emails ?? emails.length)
+  const taskCount = count.tasks ?? tasks.length
+  const issueCount = count.issues ?? issues.length
+
+  const quickActions = [
+    lead.phone ? { key: 'call', icon: 'call-outline', label: 'Call', onPress: openPhone } : null,
+    lead.email ? { key: 'email', icon: 'mail-outline', label: 'Email', onPress: openEmail } : null,
+    allowEditRequests ? { key: 'urgent', icon: 'alert-circle-outline', label: lead.isUrgent ? 'Unmark' : 'Urgent', onPress: () => urgentMutation.mutate(!lead.isUrgent) } : null,
+    { key: 'photo', icon: 'camera-outline', label: 'Add Photo', onPress: () => setShowAttachmentPicker(true) },
+    allowAssignRequests ? { key: 'assign', icon: 'person-add-outline', label: 'Assign', onPress: () => setShowAssignPicker(true) } : null,
+  ].filter(Boolean) as Array<{ key: string; icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void }>
+
   return (
     <AppScreen>
-      <FlatList
-        data={attachments}
-        keyExtractor={(item) => item.id}
-        numColumns={2}
-        columnWrapperStyle={styles.attachmentRow}
-        refreshControl={
-          <RefreshControl refreshing={isPullRefreshing} onRefresh={() => void handlePullRefresh()} />
-        }
-        contentContainerStyle={styles.content}
-        ListHeaderComponent={
-          <View>
-            <DetailSection title="Request">
-              <Text style={styles.name}>
-                {lead.firstName} {lead.lastName}
-              </Text>
-              <View style={styles.badgeRow}>
-                {lead.isUrgent ? <Text style={styles.urgentBadge}>URGENT</Text> : null}
-                <Text style={styles.statusBadge}>{formatLabel(lead.status)}</Text>
-                {lead.jobType ? <Text style={styles.metaBadge}>{formatLabel(lead.jobType)}</Text> : null}
-                <Text style={styles.metaBadge}>{formatLabel(lead.source)}</Text>
-              </View>
-              {lead.company ? <Text style={styles.companyText}>{lead.company}</Text> : null}
-              <DetailRow label="Created" value={formatDate(lead.createdAt)} />
-              <DetailRow label="Request ID" value={lead.id} />
-            </DetailSection>
-
-            <DetailSection title="Quick Actions">
-              <View style={styles.actionsRow}>
-                {lead.phone ? <ActionChip label="Call" icon="call-outline" onPress={openPhone} /> : null}
-                {lead.email ? <ActionChip label="Email" icon="mail-outline" onPress={openEmail} /> : null}
-                {allowEditRequests ? (
-                  <ActionChip
-                    label={lead.isUrgent ? 'Unmark Urgent' : 'Mark Urgent'}
-                    icon="alert-circle-outline"
-                    active={!!lead.isUrgent}
-                    onPress={() => urgentMutation.mutate(!lead.isUrgent)}
-                  />
-                ) : null}
-                <ActionChip label="Add Attachment" icon="attach-outline" onPress={() => setShowAttachmentPicker(true)} />
-              </View>
-              <AttachmentUploadQueue
-                items={requestUploadQueue.items}
-                onRetry={(item) => requestUploadQueue.retryItem(item.id)}
-                onRemove={(item) => requestUploadQueue.removeItem(item.id)}
-                onCancel={(item) => requestUploadQueue.cancelItem(item.id)}
-              />
-            </DetailSection>
-
-            <DetailSection title="Contact Information">
-              <DetailRow label="Phone" value={lead.phone} />
-              <DetailRow label="Email" value={lead.email} />
-              <DetailRow label="Company" value={lead.company} />
-              {!lead.phone && !lead.email && !lead.company ? (
-                <Text style={styles.emptyText}>No contact details</Text>
-              ) : null}
-            </DetailSection>
-
-            {lead.jobSiteAddress ? (
-              <DetailSection title="Job Site">
-                <DetailRow label="Address" value={lead.jobSiteAddress} multiline />
-                <DetailRow label="City" value={lead.jobSiteCity || '-'} />
-                <DetailRow label="State" value={lead.jobSiteState || '-'} />
-                <DetailRow label="Zip Code" value={lead.jobSiteZipCode || '-'} />
-              </DetailSection>
-            ) : null}
-
-            {allowViewFinancials && (lead.value || probability !== null) ? (
-              <DetailSection title="Financial Information">
-                <DetailRow label="Estimated Value" value={formatCurrency(lead.value)} />
-                <DetailRow label="Probability" value={probability !== null ? `${probability}%` : null} />
-                <DetailRow label="Expected Value" value={formatCurrency(expectedValue)} />
-              </DetailSection>
-            ) : null}
-
-            {lead.notes ? (
-              <DetailSection title="Notes">
-                <Text style={styles.notesText}>{lead.notes}</Text>
-              </DetailSection>
-            ) : null}
-
-            {allowViewEstimates ? (
-              <DetailSection title={`Estimates (${count.estimates ?? estimates.length})`}>
-                {estimates.length === 0 ? (
-                  <Text style={styles.emptyText}>No estimates</Text>
-                ) : (
-                  estimates.map((estimate) => (
-                    <View key={estimate.id} style={styles.listCard}>
-                      <View style={styles.listCardMain}>
-                        <Text style={styles.listCardTitle}>{estimate.estimateNumber}</Text>
-                        <Text style={styles.listCardSubtitle}>{estimate.title}</Text>
-                      </View>
-                      <View style={styles.listCardSide}>
-                        <Text style={styles.listCardAmount}>{formatCurrency(estimate.total)}</Text>
-                        <Text style={styles.metaBadge}>{formatLabel(estimate.status)}</Text>
-                      </View>
-                    </View>
-                  ))
-                )}
-              </DetailSection>
-            ) : null}
-
-            {allowViewCommunication ? (
-              <DetailSection title="Communication Timeline">
-                {calls.slice(0, 5).map((call) => (
-                  <TimelineItem
-                    key={call.id}
-                    icon="call-outline"
-                    title={`${call.direction === 'INBOUND' ? 'Inbound' : 'Outbound'} Call`}
-                    subtitle={`${call.fromNumber} → ${call.toNumber}`}
-                    meta={`${formatDate(call.startedAt) || ''} • ${formatDuration(call.duration)}`}
-                    badge={call.status}
-                  />
-                ))}
-                {smsMessages.slice(0, 5).map((sms) => (
-                  <TimelineItem
-                    key={sms.id}
-                    icon="chatbubble-outline"
-                    title={`${sms.direction === 'INBOUND' ? 'Inbound' : 'Outbound'} SMS`}
-                    subtitle={
-                      sms.body
-                        ? sms.body.length > 100
-                          ? `${sms.body.slice(0, 100)}...`
-                          : sms.body
-                        : 'No content'
-                    }
-                    meta={sms.sentAt ? formatDate(sms.sentAt) : 'Pending'}
-                  />
-                ))}
-                {emails.slice(0, 5).map((email) => (
-                  <TimelineItem
-                    key={email.id}
-                    icon="mail-outline"
-                    title={email.subject || 'Email'}
-                    subtitle={email.direction === 'INBOUND' ? 'Received' : 'Sent'}
-                    meta={email.sentAt ? formatDate(email.sentAt) : 'Draft'}
-                    badge={email.status}
-                  />
-                ))}
-                {calls.length === 0 && smsMessages.length === 0 && emails.length === 0 ? (
-                  <Text style={styles.emptyText}>No communication history</Text>
-                ) : null}
-              </DetailSection>
-            ) : null}
-
-            {allowViewActivity && activities.length > 0 ? (
-              <DetailSection title="Activity Timeline">
-                {activities.map((activity) => (
-                  <View key={activity.id} style={styles.activityItem}>
-                    <Text style={styles.timelineSubtitle}>{activity.description}</Text>
-                    <Text style={styles.timelineMeta}>
-                      {activity.user
-                        ? `${activity.user.firstName || ''} ${activity.user.lastName || ''}`.trim() || 'System'
-                        : 'System'}
-                      {' • '}
-                      {formatDate(activity.createdAt)}
-                    </Text>
-                  </View>
-                ))}
-              </DetailSection>
-            ) : null}
-
-            <DetailSection title="Statistics">
-              <View style={styles.statsGrid}>
-                <View style={styles.statCell}>
-                  <Text style={styles.statValue}>{count.estimates ?? 0}</Text>
-                  <Text style={styles.statLabel}>Estimates</Text>
-                </View>
-                <View style={styles.statCell}>
-                  <Text style={styles.statValue}>{count.tasks ?? 0}</Text>
-                  <Text style={styles.statLabel}>Tasks</Text>
-                </View>
-                <View style={styles.statCell}>
-                  <Text style={styles.statValue}>{count.calls ?? 0}</Text>
-                  <Text style={styles.statLabel}>Calls</Text>
-                </View>
-                <View style={styles.statCell}>
-                  <Text style={styles.statValue}>{count.smsMessages ?? 0}</Text>
-                  <Text style={styles.statLabel}>Messages</Text>
-                </View>
-              </View>
-            </DetailSection>
-
-            <DetailSection
-              title="Assigned To"
-              right={
-                allowAssignRequests ? (
-                  <Pressable style={styles.assignButton} onPress={() => setShowAssignPicker(true)}>
-                    <Ionicons name="person-add-outline" size={16} color={colors.brandPrimary} />
-                    <Text style={styles.assignButtonText}>Assign</Text>
-                  </Pressable>
-                ) : undefined
-              }
-            >
-              {lead.assignedTo ? (
-                <>
-                  <DetailRow label="Name" value={personName(lead.assignedTo)} />
-                  <DetailRow label="Email" value={lead.assignedTo.email} />
-                  <DetailRow label="Phone" value={lead.assignedTo.phone} />
-                </>
-              ) : (
-                <Text style={styles.emptyText}>Unassigned</Text>
-              )}
-            </DetailSection>
-
-            {allowViewConvertedClient && lead.convertedToClientId && lead.client ? (
-              <DetailSection title="Converted Client">
-                <DetailRow label="Client" value={lead.client.name} />
-                <DetailRow label="Company" value={lead.client.companyName} />
-                <DetailRow label="Converted" value={formatDate(lead.convertedAt)} />
-              </DetailSection>
-            ) : null}
-
-            {allowViewTasksIssues ? (
-              <>
-                <DetailSection title={`Tasks (${count.tasks ?? tasks.length})`}>
-                  {tasks.length === 0 ? (
-                    <Text style={styles.emptyText}>No tasks</Text>
-                  ) : (
-                    tasks.map((task) => (
-                      <View key={task.id} style={styles.listCard}>
-                        <View style={styles.listCardMain}>
-                          <Text style={styles.listCardTitle}>{task.title}</Text>
-                          <Text style={styles.listCardSubtitle}>
-                            {formatLabel(task.status)}
-                            {task.dueDate ? ` • Due ${formatDate(task.dueDate)}` : ''}
-                          </Text>
-                        </View>
-                        {task.priority ? <Text style={styles.metaBadge}>{formatLabel(task.priority)}</Text> : null}
-                      </View>
-                    ))
-                  )}
-                </DetailSection>
-
-                <DetailSection title={`Issues (${count.issues ?? issues.length})`}>
-                  {issues.length === 0 ? (
-                    <Text style={styles.emptyText}>No issues</Text>
-                  ) : (
-                    issues.map((issue) => (
-                      <View key={issue.id} style={styles.listCard}>
-                        <View style={styles.listCardMain}>
-                          <Text style={styles.listCardTitle}>{issue.title}</Text>
-                          <Text style={styles.listCardSubtitle}>{formatLabel(issue.status)}</Text>
-                        </View>
-                        {issue.priority ? <Text style={styles.metaBadge}>{formatLabel(issue.priority)}</Text> : null}
-                      </View>
-                    ))
-                  )}
-                </DetailSection>
-              </>
-            ) : null}
-
-            <Text style={styles.sectionTitle}>Attachments ({attachments.length})</Text>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        refreshControl={<RefreshControl refreshing={isPullRefreshing} onRefresh={() => void handlePullRefresh()} />}
+      >
+        {/* Request overview */}
+        <View style={styles.overview}>
+          <Text style={styles.overviewName}>{name}</Text>
+          {shortAddress ? (
+            <Pressable style={styles.addrRow} onPress={openMaps}>
+              <Ionicons name="location-outline" size={16} color={colors.textSecondary} />
+              <Text style={styles.addrText}>{shortAddress}</Text>
+            </Pressable>
+          ) : null}
+          <View style={styles.overviewBadges}>
+            {lead.isUrgent ? <Text style={styles.urgentBadge}>URGENT</Text> : null}
+            <View style={[styles.statusPill, { backgroundColor: tint(statusHex) }]}>
+              <Text style={[styles.statusPillText, { color: statusHex }]}>{formatLabel(lead.status)}</Text>
+            </View>
+            {lead.jobType ? <Text style={styles.metaBadge}>{formatLabel(lead.jobType)}</Text> : null}
+            <Text style={styles.metaBadge}>{formatLabel(lead.source)}</Text>
           </View>
-        }
-        ListEmptyComponent={<Text style={styles.emptyAttachments}>No attachments.</Text>}
-        renderItem={({ item }) => {
-          const idx = attachments.findIndex((row) => row.id === item.id)
-          return (
-          <AttachmentOpenPressable
-            attachment={item}
-            style={styles.attachmentCard}
-            onOpenGallery={() => {
-              setGalleryIndex(Math.max(0, idx))
-              setGalleryVisible(true)
-            }}
-          >
-            {String(item.mimeType || '').toLowerCase().startsWith('image/') ? (
-              <Image source={{ uri: item.url }} style={styles.attachmentImage} resizeMode="cover" />
-            ) : isPdfAttachment(item.mimeType, item.fileName) &&
-              String(item.thumbnailUrl || item.previewUrl || '').trim() ? (
-              <Image
-                source={{ uri: String(item.thumbnailUrl || item.previewUrl) }}
-                style={styles.attachmentImage}
-                resizeMode="cover"
-              />
-            ) : (
-              <View style={styles.attachmentIconWrap}>
-                <Ionicons
-                  name={
-                    String(item.mimeType || '').toLowerCase().startsWith('video/')
-                      ? 'videocam-outline'
-                      : isPdfAttachment(item.mimeType, item.fileName)
-                        ? 'document-outline'
-                        : 'document-text-outline'
-                  }
-                  size={22}
-                  color={colors.textSecondary}
+        </View>
+
+        {/* Quick actions */}
+        {quickActions.length > 0 && (
+          <View style={styles.card}>
+            <View style={styles.quickGrid}>
+              {quickActions.map((a) => (
+                <Pressable key={a.key} style={styles.quickAction} onPress={a.onPress}>
+                  <Ionicons name={a.icon} size={22} color={colors.brandPrimary} />
+                  <Text style={styles.quickLabel}>{a.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+            {requestUploadQueue.items.length > 0 && (
+              <View style={styles.cardBody}>
+                <AttachmentUploadQueue
+                  items={requestUploadQueue.items}
+                  onRetry={(item) => requestUploadQueue.retryItem(item.id)}
+                  onRemove={(item) => requestUploadQueue.removeItem(item.id)}
+                  onCancel={(item) => requestUploadQueue.cancelItem(item.id)}
                 />
-                {!String(item.mimeType || '').toLowerCase().startsWith('video/') ? (
-                  <Text style={styles.attachmentFileBadge}>
-                    {isPdfAttachment(item.mimeType, item.fileName) ? 'PDF FILE' : 'FILE'}
-                  </Text>
-                ) : null}
               </View>
             )}
-          </AttachmentOpenPressable>
-          )
-        }}
-      />
+          </View>
+        )}
+
+        {/* Summary (collapsible) */}
+        <CollapsibleCard title="Summary" open={openSummary} onToggle={() => setOpenSummary((v) => !v)}>
+          <SummaryRow icon="person-outline" label="Contact" value={`${lead.firstName || ''} ${lead.lastName || ''}`.trim() || '—'} />
+          {lead.company ? <SummaryRow icon="business-outline" label="Company" value={lead.company} /> : null}
+          {lead.phone ? <SummaryRow icon="call-outline" label="Phone" value={lead.phone} action={{ icon: 'call', onPress: openPhone }} /> : null}
+          {lead.email ? <SummaryRow icon="mail-outline" label="Email" value={lead.email} action={{ icon: 'mail', onPress: openEmail }} /> : null}
+          {fullAddress ? <SummaryRow icon="location-outline" label="Job Site Address" value={fullAddress} action={{ icon: 'navigate', onPress: openMaps }} /> : null}
+          {allowViewFinancials && (lead.value || probability !== null) ? (
+            <View style={styles.finCard}>
+              <Text style={styles.finTitle}>Financial Summary</Text>
+              <View style={styles.finRow}>
+                <FinCell label="Est. Value" value={formatCurrency(lead.value)} />
+                <FinCell label="Probability" value={probability !== null ? `${probability}%` : '—'} />
+                <FinCell label="Expected" value={formatCurrency(expectedValue)} />
+              </View>
+            </View>
+          ) : null}
+        </CollapsibleCard>
+
+        {/* Estimates (collapsible) */}
+        {allowViewEstimates ? (
+          <CollapsibleCard
+            icon="document-text-outline"
+            title="Estimates"
+            countBadge={count.estimates ?? estimates.length}
+            open={openDocs}
+            onToggle={() => setOpenDocs((v) => !v)}
+            collapsedChildren={<Text style={styles.emptyHint}>{estimates.length === 0 ? 'No estimates' : `${estimates.length} estimate${estimates.length === 1 ? '' : 's'} — tap to view`}</Text>}
+          >
+            {estimates.length === 0 ? (
+              <Text style={styles.emptyText}>No estimates</Text>
+            ) : (
+              estimates.map((estimate) => (
+                <View key={estimate.id} style={styles.listCard}>
+                  <View style={styles.listCardMain}>
+                    <Text style={styles.listCardTitle}>{estimate.estimateNumber}</Text>
+                    <Text style={styles.listCardSubtitle}>{estimate.title}</Text>
+                  </View>
+                  <View style={styles.listCardSide}>
+                    <Text style={styles.listCardAmount}>{formatCurrency(estimate.total)}</Text>
+                    <Text style={styles.metaBadge}>{formatLabel(estimate.status)}</Text>
+                  </View>
+                </View>
+              ))
+            )}
+          </CollapsibleCard>
+        ) : null}
+
+        {/* Files & Photos (collapsible) */}
+        <CollapsibleCard
+          icon="images-outline"
+          title="Files & Photos"
+          countBadge={attachments.length}
+          open={openFiles}
+          onToggle={() => setOpenFiles((v) => !v)}
+          collapsedChildren={<Text style={styles.emptyHint}>{attachments.length === 0 ? 'No files yet' : `${attachments.length} file${attachments.length === 1 ? '' : 's'} — tap to view`}</Text>}
+        >
+          <Pressable style={styles.addFileBtn} onPress={() => setShowAttachmentPicker(true)}>
+            <Ionicons name="add" size={16} color={colors.brandPrimary} />
+            <Text style={styles.addFileText}>Add photo or file</Text>
+          </Pressable>
+          {attachments.length === 0 ? (
+            <Text style={styles.emptyHint}>No files or photos for this request yet.</Text>
+          ) : (
+            <View style={styles.mediaGrid}>
+              {attachments.map((a) => {
+                const mime = String(a.mimeType || '').toLowerCase()
+                const isImage = mime.startsWith('image/')
+                const isVideo = mime.startsWith('video/')
+                const isPdf = isPdfAttachment(a.mimeType, a.fileName)
+                const previewUrl = String(a.thumbnailUrl || a.previewUrl || '').trim() || null
+                return (
+                  <View key={a.id} style={styles.mediaTileWrap}>
+                    <AttachmentOpenPressable
+                      attachment={a}
+                      onOpenGallery={() => {
+                        const idx = attachments.findIndex((x) => x.id === a.id)
+                        setGalleryIndex(Math.max(0, idx))
+                        setGalleryVisible(true)
+                      }}
+                    >
+                      <View style={styles.mediaTile}>
+                        {isImage ? (
+                          <Image source={{ uri: a.url }} style={styles.mediaTileImage} />
+                        ) : isPdf && previewUrl ? (
+                          <Image source={{ uri: previewUrl }} style={styles.mediaTileImage} />
+                        ) : (
+                          <View style={styles.mediaTileIcon}>
+                            <Ionicons name={isVideo ? 'videocam-outline' : isPdf ? 'document-outline' : 'document-text-outline'} size={24} color={colors.textSecondary} />
+                            <Text style={styles.mediaFileBadge}>{isVideo ? 'VIDEO' : isPdf ? 'PDF' : 'FILE'}</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={styles.mediaFileName} numberOfLines={1}>{a.fileName || (isPdf ? 'PDF' : isVideo ? 'Video' : 'File')}</Text>
+                    </AttachmentOpenPressable>
+                  </View>
+                )
+              })}
+            </View>
+          )}
+        </CollapsibleCard>
+
+        {/* Communication (collapsible) */}
+        {allowViewCommunication ? (
+          <CollapsibleCard
+            icon="chatbubbles-outline"
+            title="Communication"
+            countBadge={commCount}
+            open={openComms}
+            onToggle={() => setOpenComms((v) => !v)}
+            collapsedChildren={<Text style={styles.emptyHint}>{commCount === 0 ? 'No communication history' : 'Calls, SMS and emails — tap to view'}</Text>}
+          >
+            {calls.slice(0, 5).map((call) => (
+              <TimelineItem
+                key={call.id}
+                icon="call-outline"
+                title={`${call.direction === 'INBOUND' ? 'Inbound' : 'Outbound'} Call`}
+                subtitle={`${call.fromNumber} → ${call.toNumber}`}
+                meta={`${formatDate(call.startedAt) || ''} • ${formatDuration(call.duration)}`}
+                badge={call.status}
+              />
+            ))}
+            {smsMessages.slice(0, 5).map((sms) => (
+              <TimelineItem
+                key={sms.id}
+                icon="chatbubble-outline"
+                title={`${sms.direction === 'INBOUND' ? 'Inbound' : 'Outbound'} SMS`}
+                subtitle={sms.body ? (sms.body.length > 100 ? `${sms.body.slice(0, 100)}...` : sms.body) : 'No content'}
+                meta={sms.sentAt ? formatDate(sms.sentAt) : 'Pending'}
+              />
+            ))}
+            {emails.slice(0, 5).map((email) => (
+              <TimelineItem
+                key={email.id}
+                icon="mail-outline"
+                title={email.subject || 'Email'}
+                subtitle={email.direction === 'INBOUND' ? 'Received' : 'Sent'}
+                meta={email.sentAt ? formatDate(email.sentAt) : 'Draft'}
+                badge={email.status}
+              />
+            ))}
+            {commCount === 0 ? <Text style={styles.emptyText}>No communication history</Text> : null}
+          </CollapsibleCard>
+        ) : null}
+
+        {/* Tasks & Issues (collapsible) */}
+        {allowViewTasksIssues ? (
+          <CollapsibleCard
+            icon="checkbox-outline"
+            title="Tasks & Issues"
+            rightText={`${taskCount} / ${issueCount}`}
+            open={openTasks}
+            onToggle={() => setOpenTasks((v) => !v)}
+            collapsedChildren={<Text style={styles.emptyHint}>{taskCount + issueCount === 0 ? 'No tasks or issues' : `${taskCount} task${taskCount === 1 ? '' : 's'}, ${issueCount} issue${issueCount === 1 ? '' : 's'}`}</Text>}
+          >
+            {tasks.length === 0 && issues.length === 0 ? (
+              <Text style={styles.emptyText}>No tasks or issues</Text>
+            ) : (
+              <>
+                {tasks.map((task) => (
+                  <View key={task.id} style={styles.listCard}>
+                    <View style={styles.listCardMain}>
+                      <Text style={styles.listCardTitle}>{task.title}</Text>
+                      <Text style={styles.listCardSubtitle}>
+                        {formatLabel(task.status)}{task.dueDate ? ` • Due ${formatDate(task.dueDate)}` : ''}
+                      </Text>
+                    </View>
+                    {task.priority ? <Text style={styles.metaBadge}>{formatLabel(task.priority)}</Text> : null}
+                  </View>
+                ))}
+                {issues.map((issue) => (
+                  <View key={issue.id} style={styles.listCard}>
+                    <View style={styles.listCardMain}>
+                      <Text style={styles.listCardTitle}>{issue.title}</Text>
+                      <Text style={styles.listCardSubtitle}>{formatLabel(issue.status)}</Text>
+                    </View>
+                    {issue.priority ? <Text style={styles.metaBadge}>{formatLabel(issue.priority)}</Text> : null}
+                  </View>
+                ))}
+              </>
+            )}
+          </CollapsibleCard>
+        ) : null}
+
+        {/* Notes (collapsible) */}
+        {lead.notes ? (
+          <CollapsibleCard icon="reader-outline" title="Notes" open={openNotes} onToggle={() => setOpenNotes((v) => !v)} collapsedChildren={<Text style={styles.emptyHint}>Tap to view notes…</Text>}>
+            <Text style={styles.notesText}>{lead.notes}</Text>
+          </CollapsibleCard>
+        ) : null}
+
+        {/* More details (collapsible) */}
+        <CollapsibleCard
+          icon="ellipsis-horizontal-circle-outline"
+          title="More Details"
+          open={openMore}
+          onToggle={() => setOpenMore((v) => !v)}
+          collapsedChildren={<Text style={styles.emptyHint}>Assignee, converted client, activity, stats…</Text>}
+        >
+          <DetailSection
+            title="Assigned To"
+            right={
+              allowAssignRequests ? (
+                <Pressable style={styles.assignButton} onPress={() => setShowAssignPicker(true)}>
+                  <Ionicons name="person-add-outline" size={16} color={colors.brandPrimary} />
+                  <Text style={styles.assignButtonText}>Assign</Text>
+                </Pressable>
+              ) : undefined
+            }
+          >
+            {lead.assignedTo ? (
+              <>
+                <DetailRow label="Name" value={assignedName} />
+                <DetailRow label="Email" value={lead.assignedTo.email} />
+                <DetailRow label="Phone" value={lead.assignedTo.phone} />
+              </>
+            ) : (
+              <Text style={styles.emptyText}>Unassigned</Text>
+            )}
+          </DetailSection>
+
+          {allowViewConvertedClient && lead.convertedToClientId && lead.client ? (
+            <DetailSection title="Converted Client">
+              <DetailRow label="Client" value={lead.client.name} />
+              <DetailRow label="Company" value={lead.client.companyName} />
+              <DetailRow label="Converted" value={formatDate(lead.convertedAt)} />
+            </DetailSection>
+          ) : null}
+
+          {allowViewActivity && activities.length > 0 ? (
+            <DetailSection title="Activity Timeline">
+              {activities.map((activity) => (
+                <View key={activity.id} style={styles.activityItem}>
+                  <Text style={styles.timelineSubtitle}>{activity.description}</Text>
+                  <Text style={styles.timelineMeta}>
+                    {activity.user ? `${activity.user.firstName || ''} ${activity.user.lastName || ''}`.trim() || 'System' : 'System'}
+                    {' • '}
+                    {formatDate(activity.createdAt)}
+                  </Text>
+                </View>
+              ))}
+            </DetailSection>
+          ) : null}
+
+          <DetailSection title="Statistics">
+            <View style={styles.statsGrid}>
+              <View style={styles.statCell}><Text style={styles.statValue}>{count.estimates ?? 0}</Text><Text style={styles.statLabel}>Estimates</Text></View>
+              <View style={styles.statCell}><Text style={styles.statValue}>{count.tasks ?? 0}</Text><Text style={styles.statLabel}>Tasks</Text></View>
+              <View style={styles.statCell}><Text style={styles.statValue}>{count.calls ?? 0}</Text><Text style={styles.statLabel}>Calls</Text></View>
+              <View style={styles.statCell}><Text style={styles.statValue}>{count.smsMessages ?? 0}</Text><Text style={styles.statLabel}>Messages</Text></View>
+            </View>
+          </DetailSection>
+
+          <DetailSection title="Request Info">
+            <DetailRow label="Created" value={formatDate(lead.createdAt)} />
+            <DetailRow label="Source" value={formatLabel(lead.source)} />
+            {lead.jobType ? <DetailRow label="Job Type" value={formatLabel(lead.jobType)} /> : null}
+            <DetailRow label="Request ID" value={lead.id} />
+          </DetailSection>
+        </CollapsibleCard>
+      </ScrollView>
 
       <AttachmentGalleryModal
         visible={galleryVisible}
@@ -938,6 +1033,55 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
     paddingHorizontal: spacing.md,
   },
+  scrollView: { flex: 1 },
+  scrollContent: { padding: spacing.md, paddingBottom: spacing.xxl, gap: spacing.md },
+
+  overview: { paddingHorizontal: spacing.xs, paddingTop: spacing.xs, gap: 6 },
+  overviewName: { fontSize: 24, fontWeight: '800', color: colors.textPrimary },
+  overviewBadges: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: 4, flexWrap: 'wrap' },
+  addrRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  addrText: { ...typography.sub, color: colors.textSecondary },
+  statusPill: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
+  statusPillText: { ...typography.caption, fontWeight: '800' },
+
+  card: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.divider, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 1, overflow: 'hidden' },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: spacing.md },
+  cardHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
+  cardHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  cardTitle: { ...typography.h3, color: colors.textPrimary, fontWeight: '800' },
+  countPill: { backgroundColor: '#EEF2F7', borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 2, minWidth: 28, alignItems: 'center' },
+  countPillText: { ...typography.caption, color: colors.textSecondary, fontWeight: '800' },
+  cardCollapsed: { paddingHorizontal: spacing.md, paddingBottom: spacing.md },
+  cardBody: { paddingHorizontal: spacing.md, paddingBottom: spacing.sm, gap: spacing.xs },
+
+  quickGrid: { flexDirection: 'row', flexWrap: 'wrap', padding: spacing.sm, gap: spacing.sm },
+  quickAction: { flexGrow: 1, flexBasis: '20%', minWidth: 68, minHeight: 64, alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#F1F5F9', borderRadius: radius.md, paddingVertical: spacing.sm },
+  quickLabel: { ...typography.caption, color: colors.textPrimary, fontWeight: '700' },
+
+  summaryRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider },
+  summaryLabel: { ...typography.caption, color: colors.muted, fontWeight: '600' },
+  summaryValue: { ...typography.sub, color: colors.textPrimary, fontWeight: '600' },
+  summaryActionBtn: { width: 40, height: 40, borderRadius: radius.md, backgroundColor: '#DBEAFE', alignItems: 'center', justifyContent: 'center' },
+
+  finCard: { marginTop: spacing.sm, backgroundColor: '#F8FAFC', borderRadius: radius.md, padding: spacing.md },
+  finTitle: { ...typography.caption, color: colors.muted, fontWeight: '700', marginBottom: 6 },
+  finRow: { flexDirection: 'row' },
+  finCell: { flex: 1, borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: colors.divider, paddingHorizontal: 8 },
+  finLabel: { ...typography.caption, color: colors.textSecondary },
+  finValue: { ...typography.h3, color: colors.textPrimary, fontWeight: '800', marginTop: 2 },
+
+  emptyHint: { ...typography.caption, color: colors.muted },
+
+  addFileBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', paddingVertical: 6, paddingHorizontal: 10, borderRadius: radius.md, borderWidth: 1, borderColor: colors.brandPrimary, marginBottom: spacing.sm },
+  addFileText: { ...typography.caption, color: colors.brandPrimary, fontWeight: '700' },
+  mediaGrid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -spacing.xs },
+  mediaTileWrap: { width: '33.333%', padding: spacing.xs },
+  mediaTile: { aspectRatio: 1, borderRadius: radius.md, overflow: 'hidden', backgroundColor: '#F1F5F9', borderWidth: 1, borderColor: colors.divider, alignItems: 'center', justifyContent: 'center' },
+  mediaTileImage: { width: '100%', height: '100%' },
+  mediaTileIcon: { alignItems: 'center', gap: 4 },
+  mediaFileBadge: { ...typography.caption, color: colors.muted, fontSize: 9, fontWeight: '800' },
+  mediaFileName: { ...typography.caption, color: colors.textSecondary, fontSize: 11, marginTop: 4 },
+
   name: {
     ...typography.h3,
     color: colors.textPrimary,
