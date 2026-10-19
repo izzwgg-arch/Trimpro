@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Modal,
+  PanResponder,
   Pressable,
   StyleSheet,
   Text,
@@ -111,6 +112,28 @@ export function AttachmentGalleryModal({
     onIndexChange((safeIndex + 1) % total)
   }
 
+  // Swipe left/right to move between attachments (in addition to the arrows).
+  // Latest handlers are read from a ref so the responder is created only once.
+  const navRef = useRef({ prev: goPrev, next: goNext, can: canNavigate })
+  navRef.current = { prev: goPrev, next: goNext, can: canNavigate }
+  const SWIPE = 45
+  const panResponder = useRef(
+    PanResponder.create({
+      // Capture only a decisive, near-horizontal single-finger drag so taps,
+      // vertical scrolls, pinch-zoom and markup drawing still reach the content.
+      onMoveShouldSetPanResponderCapture: (_e, g) =>
+        navRef.current.can &&
+        g.numberActiveTouches === 1 &&
+        Math.abs(g.dx) > SWIPE &&
+        Math.abs(g.dx) > Math.abs(g.dy) * 2.5,
+      onPanResponderRelease: (_e, g) => {
+        if (g.dx <= -SWIPE) navRef.current.next()
+        else if (g.dx >= SWIPE) navRef.current.prev()
+      },
+      onPanResponderTerminationRequest: () => false,
+    })
+  ).current
+
   const onOpenExternal = async () => {
     if (!current) return
     setOpening(true)
@@ -154,7 +177,7 @@ export function AttachmentGalleryModal({
           </Pressable>
         </View>
 
-        <View style={styles.body}>
+        <View style={styles.body} {...panResponder.panHandlers}>
           {canNavigate ? (
             <Pressable style={[styles.navBtn, styles.navLeft]} onPress={goPrev}>
               <Ionicons name="chevron-back" size={28} color="#fff" />

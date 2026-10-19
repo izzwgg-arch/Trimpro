@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import {
   Dimensions,
   FlatList,
+  Linking,
   Modal,
   Pressable,
   RefreshControl,
@@ -11,6 +12,7 @@ import {
   TextInput,
   View,
 } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useQuery } from '@tanstack/react-query'
 import { Ionicons } from '@expo/vector-icons'
 import { AppScreen } from '../../components/AppScreen'
@@ -96,7 +98,13 @@ interface LeadItem {
   lastName?: string | null
   company?: string | null
   phone?: string | null
+  email?: string | null
   status: string
+  source?: string | null
+  jobType?: string | null
+  value?: number | string | null
+  jobSiteAddress?: string | null
+  createdAt?: string | null
   assignedTo?: { firstName?: string | null; lastName?: string | null } | null
 }
 
@@ -287,6 +295,11 @@ export function ProductionScreen({ navigation }: Props) {
   const colWidth = config ? Math.min(config.card.width, SCREEN_W * 0.86) : SCREEN_W * 0.86
   const openJob = (id: string) => navigation.navigate('AdminJobDetail', { jobId: id })
   const openRequest = (id: string) => navigation.navigate('RequestDetail', { requestId: id })
+  // Tasks live in their own tab stack; hop across to the task detail.
+  const openTask = (id: string) => {
+    const parent: any = navigation.getParent()
+    if (parent) parent.navigate('TasksTab', { screen: 'TaskDetail', params: { taskId: id } })
+  }
 
   const tabs: Array<{ key: BoardKey; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
     { key: 'jobs', label: 'Production', icon: 'construct-outline' },
@@ -422,7 +435,7 @@ export function ProductionScreen({ navigation }: Props) {
               showsVerticalScrollIndicator
               refreshControl={<RefreshControl refreshing={tasksQuery.isRefetching} onRefresh={() => tasksQuery.refetch()} />}
               ListEmptyComponent={<Text style={styles.noJobs}>No tasks</Text>}
-              renderItem={({ item }) => <TaskCard task={item} />}
+              renderItem={({ item }) => <TaskCard task={item} onPress={() => openTask(item.id)} />}
             />
           )}
           emptyTitle="No tasks assigned to you"
@@ -518,16 +531,22 @@ function StatusBoard({
   )
 }
 
-function TaskCard({ task }: { task: TaskItem }) {
+const TASK_STATUS_HEX: Record<string, string> = { TODO: '#64748b', IN_PROGRESS: '#eab308', COMPLETED: '#22c55e' }
+
+function TaskCard({ task, onPress }: { task: TaskItem; onPress: () => void }) {
   const assignee = task.assignee ? `${task.assignee.firstName || ''} ${task.assignee.lastName || ''}`.trim() : ''
   const overdue = isOverdue(task.dueDate)
+  const accent = TASK_STATUS_HEX[String(task.status || '').toUpperCase()] || '#64748b'
   return (
-    <View style={[styles.card, { padding: 12, borderWidth: 1 }]}>
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.card, { padding: 12, borderLeftWidth: 3, borderLeftColor: accent, borderWidth: 1 }, pressed && styles.cardPressed]}>
       <Text style={[styles.jobTitle, { fontSize: 14 }]} numberOfLines={2}>{task.title}</Text>
       <View style={styles.badgeRow}>
         {task.priority != null && String(task.priority) !== '' && (
           <View style={styles.prBadge}><Text style={styles.prBadgeText}>{String(task.priority)}</Text></View>
         )}
+      </View>
+      <View style={styles.iconRow}>
+        <Ionicons name="person-outline" size={12} color={colors.muted} />
         <Text style={[styles.metaMuted, { fontSize: 11 }]} numberOfLines={1}>{assignee || 'Unassigned'}</Text>
       </View>
       {task.dueDate ? (
@@ -536,22 +555,61 @@ function TaskCard({ task }: { task: TaskItem }) {
           <Text style={[{ fontSize: 11 }, overdue ? styles.overdueMeta : styles.metaMuted]}>Due {fmtDate(task.dueDate)}</Text>
         </View>
       ) : null}
-      {task.job?.jobNumber ? <Text style={[styles.metaFaint, { fontSize: 11 }]}>Job {task.job.jobNumber}</Text> : null}
-    </View>
+      {task.job?.jobNumber ? (
+        <View style={styles.iconRow}>
+          <Ionicons name="briefcase-outline" size={12} color={colors.muted} />
+          <Text style={[styles.metaFaint, { fontSize: 11 }]}>Job {task.job.jobNumber}</Text>
+        </View>
+      ) : null}
+    </Pressable>
   )
 }
 
+const LEAD_STATUS_HEX: Record<string, string> = Object.fromEntries(LEAD_BOARD_COLUMNS.map((c) => [c.id, c.color]))
+
+// Organized, jobs-style request card — the whole card and the phone row are tappable.
 function LeadCard({ lead, onPress }: { lead: LeadItem; onPress: () => void }) {
   const name = `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || lead.company || 'Request'
   const assignee = lead.assignedTo ? `${lead.assignedTo.firstName || ''} ${lead.assignedTo.lastName || ''}`.trim() : ''
+  const statusHex = LEAD_STATUS_HEX[String(lead.status || '').toUpperCase()] || '#6b7280'
+  const statusLabel = String(lead.status || '').replace(/_/g, ' ')
+  const amount = money(lead.value)
+  const meta = [lead.source, lead.jobType].filter(Boolean).map((s) => String(s).replace(/_/g, ' ')).join(' · ')
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.card, { padding: 12, borderWidth: 1 }, pressed && styles.cardPressed]}>
-      <Text style={[styles.jobTitle, { fontSize: 14 }]} numberOfLines={1}>{name}</Text>
-      {lead.company ? <Text style={[styles.metaMuted, { fontSize: 11 }]} numberOfLines={1}>{lead.company}</Text> : null}
-      <View style={styles.badgeRow}>
-        {lead.phone ? <Text style={[styles.metaMuted, { fontSize: 11 }]}>{lead.phone}</Text> : null}
-        {assignee ? <Text style={[styles.metaMuted, { fontSize: 11 }]} numberOfLines={1}>· {assignee}</Text> : null}
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.card, { padding: 12, borderLeftWidth: 3, borderLeftColor: statusHex, borderWidth: 1 }, pressed && styles.cardPressed]}>
+      <View style={styles.rowBetween}>
+        <Text style={[styles.jobTitle, { fontSize: 14, flex: 1 }]} numberOfLines={1}>{name}</Text>
+        <Ionicons name="chevron-forward" size={16} color={colors.muted} />
       </View>
+      {lead.company ? <Text style={[styles.meta, { fontSize: 12 }]} numberOfLines={1}>{lead.company}</Text> : null}
+      <View style={styles.badgeRow}>
+        <View style={[styles.statusBadge, { backgroundColor: tint(statusHex) }]}>
+          <Text style={[styles.statusBadgeText, { color: statusHex }]}>{statusLabel}</Text>
+        </View>
+      </View>
+      {lead.jobSiteAddress ? (
+        <View style={styles.iconRow}>
+          <Ionicons name="location-outline" size={12} color={colors.muted} />
+          <Text style={[styles.metaMuted, { fontSize: 11 }]} numberOfLines={1}>{lead.jobSiteAddress}</Text>
+        </View>
+      ) : null}
+      {lead.phone ? (
+        <Pressable onPress={() => Linking.openURL(`tel:${String(lead.phone).replace(/[^\d+]/g, '')}`)} style={styles.iconRow} hitSlop={6}>
+          <Ionicons name="call-outline" size={12} color={colors.brandPrimary} />
+          <Text style={[{ fontSize: 11, color: colors.brandPrimary, fontWeight: '600' }]}>{lead.phone}</Text>
+        </Pressable>
+      ) : null}
+      {amount ? (
+        <View style={styles.iconRow}>
+          <Ionicons name="cash-outline" size={12} color={colors.textSecondary} />
+          <Text style={[styles.amount, { fontSize: 11 }]}>{amount}</Text>
+        </View>
+      ) : null}
+      <View style={styles.iconRow}>
+        <Ionicons name="person-outline" size={12} color={colors.muted} />
+        <Text style={[styles.metaMuted, { fontSize: 11 }]} numberOfLines={1}>{assignee || 'Unassigned'}</Text>
+      </View>
+      {meta ? <Text style={[styles.metaFaint, { fontSize: 11 }]} numberOfLines={1}>{meta}</Text> : null}
     </Pressable>
   )
 }
@@ -573,6 +631,7 @@ function CustomizeViewModal({
   pref: BoardViewPref
   onSave: (pref: BoardViewPref) => void | Promise<void>
 }) {
+  const insets = useSafeAreaInsets()
   const [order, setOrder] = useState<string[]>([])
   const [hidden, setHidden] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
@@ -617,7 +676,7 @@ function CustomizeViewModal({
   return (
     <Modal visible={open} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.modalBackdrop}>
-        <View style={styles.modalCard}>
+        <View style={[styles.modalCard, { paddingBottom: Math.max(insets.bottom + spacing.lg, spacing.xl) }]}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Customize {title}</Text>
             <Pressable onPress={onClose} hitSlop={8}><Ionicons name="close" size={22} color={colors.textSecondary} /></Pressable>

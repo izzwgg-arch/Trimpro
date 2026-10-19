@@ -24,6 +24,7 @@ import { CustomizeViewDialog } from '@/components/production/CustomizeViewDialog
 import { TASK_BOARD_COLUMNS, LEAD_BOARD_COLUMNS } from '@/lib/production/boards'
 import { applyBoardPref, type ProductionViewPrefs, type BoardViewPref } from '@/lib/production/view-preferences'
 import { formatCurrency } from '@/lib/utils'
+import { navigateWithReturn } from '@/lib/navigation/nav-stack'
 import {
   Factory,
   Search,
@@ -518,7 +519,7 @@ export default function ProductionPage() {
           </div>
         </div>
       ) : archiveView ? (
-        <ArchiveList jobs={visibleJobs} config={config} onOpenJob={(id) => router.push(`/dashboard/jobs/${id}`)} />
+        <ArchiveList jobs={visibleJobs} config={config} onOpenJob={(id) => navigateWithReturn(router, `/dashboard/jobs/${id}`)} />
       ) : (
         <>
           {onHoldJobs.length > 0 && (onHoldStage?.visible ?? true) && (
@@ -534,7 +535,7 @@ export default function ProductionPage() {
               </CardHeader>
               <CardContent className="grid grid-cols-1 gap-3 pt-0 sm:grid-cols-2 lg:grid-cols-3">
                 {onHoldJobs.map((job) => (
-                  <ProductionJobCard key={job.id} job={toCardData(job)} config={config} stageColor={onHoldStage?.color} onClick={() => router.push(`/dashboard/jobs/${job.id}`)} />
+                  <ProductionJobCard key={job.id} job={toCardData(job)} config={config} stageColor={onHoldStage?.color} onClick={() => navigateWithReturn(router, `/dashboard/jobs/${job.id}`)} />
                 ))}
               </CardContent>
             </Card>
@@ -573,7 +574,7 @@ export default function ProductionPage() {
                           job={toCardData(job)}
                           config={config}
                           stageColor={col.color}
-                          onClick={() => router.push(`/dashboard/jobs/${job.id}`)}
+                          onClick={() => navigateWithReturn(router, `/dashboard/jobs/${job.id}`)}
                         />
                       ))
                     )}
@@ -607,7 +608,7 @@ export default function ProductionPage() {
             columns={leadColumns}
             itemsByColumn={leadsByCol}
             emptyLabel="No requests"
-            renderCard={(l: any) => <LeadCard lead={l} onOpen={() => router.push(`/dashboard/requests/${l.id}`)} />}
+            renderCard={(l: any) => <LeadCard lead={l} onOpen={() => navigateWithReturn(router, `/dashboard/requests/${l.id}`)} />}
           />
         )
       )}
