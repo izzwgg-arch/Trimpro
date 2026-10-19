@@ -89,6 +89,12 @@ export async function GET(request: NextRequest) {
       where.assignedToId = assignedToId
     }
 
+    // `mine=1` scopes to the signed-in user's assigned leads (used by the
+    // production-line "Requests" tab so each user sees only their own).
+    if (searchParams.get('mine') === '1') {
+      where.assignedToId = user.id
+    }
+
     const [leads, total] = await Promise.all([
       prisma.lead.findMany({
         where,

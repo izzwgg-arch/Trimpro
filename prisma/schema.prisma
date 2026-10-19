@@ -3427,6 +3427,22 @@ model ProductionSettings {
   @@map("production_settings")
 }
 
+// Per-user personal view of the production line boards (Production/Tasks/Leads):
+// column order and hidden columns, layered on top of the tenant config. Purely
+// a display preference — never changes data, status rules, or anyone else's view.
+model ProductionViewPreference {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String
+  // { jobs?: { order: string[], hidden: string[] }, tasks?: {...}, leads?: {...} }
+  prefs     Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, userId])
+  @@map("production_view_preferences")
+}
+
 // ============================================
 // MEASURING REQUESTS
 // ============================================

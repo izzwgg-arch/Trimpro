@@ -19,6 +19,11 @@ import {
 } from '@/lib/production/config'
 import { ProductionJobCard, type ProductionJobCardData } from '@/components/production/ProductionJobCard'
 import { StageIcon } from '@/components/production/StageIcon'
+import { StatusBoard } from '@/components/production/StatusBoard'
+import { CustomizeViewDialog } from '@/components/production/CustomizeViewDialog'
+import { TASK_BOARD_COLUMNS, LEAD_BOARD_COLUMNS } from '@/lib/production/boards'
+import { applyBoardPref, type ProductionViewPrefs, type BoardViewPref } from '@/lib/production/view-preferences'
+import { formatCurrency } from '@/lib/utils'
 import {
   Factory,
   Search,
@@ -26,6 +31,7 @@ import {
   AlertTriangle,
   Archive,
   LayoutGrid,
+  SlidersHorizontal,
 } from 'lucide-react'
 
 interface TeamMember {
@@ -159,10 +165,68 @@ export default function ProductionPage() {
   const [dueFilter, setDueFilter] = useState('all')
   const [archiveView, setArchiveView] = useState(false)
 
+  // Tabs: Production (jobs) | Tasks | Requests (leads)
+  const [tab, setTab] = useState<'jobs' | 'tasks' | 'leads'>('jobs')
+  const [tasks, setTasks] = useState<any[]>([])
+  const [leads, setLeads] = useState<any[]>([])
+  const [tabLoading, setTabLoading] = useState(false)
+  const [viewPrefs, setViewPrefs] = useState<ProductionViewPrefs>({})
+  const [customizeOpen, setCustomizeOpen] = useState(false)
+  const canViewTasks = hasPermission(permissions, 'tasks.view')
+  const canViewLeads = hasPermission(permissions, 'leads.view')
+
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300)
     return () => clearTimeout(t)
   }, [search])
+
+  // Load this user's personal view preferences once.
+  useEffect(() => {
+    if (permissionsLoading || !canView) return
+    ;(async () => {
+      try {
+        const token = localStorage.getItem('accessToken')
+        const res = await fetch('/api/production/view-preferences', { headers: { Authorization: `Bearer ${token}` } })
+        if (res.ok) setViewPrefs((await res.json()).prefs || {})
+      } catch {}
+    })()
+  }, [permissionsLoading, canView])
+
+  // Fetch the active tab's items (scoped to the signed-in user).
+  useEffect(() => {
+    if (permissionsLoading || !canView) return
+    if (tab === 'jobs') return
+    ;(async () => {
+      setTabLoading(true)
+      try {
+        const token = localStorage.getItem('accessToken')
+        const url = tab === 'tasks'
+          ? '/api/tasks?filter=assigned&limit=500'
+          : '/api/leads?mine=1&limit=500'
+        const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+        if (res.ok) {
+          const data = await res.json()
+          if (tab === 'tasks') setTasks(data.tasks || [])
+          else setLeads(data.leads || [])
+        }
+      } catch {} finally {
+        setTabLoading(false)
+      }
+    })()
+  }, [tab, permissionsLoading, canView])
+
+  const saveViewPref = async (board: 'jobs' | 'tasks' | 'leads', pref: BoardViewPref) => {
+    const next: ProductionViewPrefs = { ...viewPrefs, [board]: pref }
+    setViewPrefs(next)
+    try {
+      const token = localStorage.getItem('accessToken')
+      await fetch('/api/production/view-preferences', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ prefs: next }),
+      })
+    } catch {}
+  }
 
   useEffect(() => {
     fetchTeamMembers()
@@ -253,10 +317,11 @@ export default function ProductionPage() {
   // or more existing Job Statuses; a job renders in whichever column claims its
   // status. Jobs are grouped strictly by job.status — the single source of truth.
   const columns = useMemo(() => {
-    return [...config.columns]
+    const base = [...config.columns]
       .filter((c) => c.visible)
       .sort((a, b) => a.order - b.order)
       .map((col) => ({
+        id: col.id,
         col,
         jobs: sortJobs(
           visibleJobs.filter((j) => col.statuses.includes(j.status as any)),
@@ -264,7 +329,32 @@ export default function ProductionPage() {
           col.defaultSortDir
         ),
       }))
-  }, [visibleJobs, config])
+    return applyBoardPref(base, viewPrefs.jobs) // user's personal order/hidden
+  }, [visibleJobs, config, viewPrefs.jobs])
+
+  // Tasks / Leads boards (scoped to the signed-in user), grouped by status.
+  const taskColumns = useMemo(() => applyBoardPref(TASK_BOARD_COLUMNS, viewPrefs.tasks), [viewPrefs.tasks])
+  const leadColumns = useMemo(() => applyBoardPref(LEAD_BOARD_COLUMNS, viewPrefs.leads), [viewPrefs.leads])
+  const tasksByCol = useMemo(() => {
+    const m: Record<string, any[]> = {}
+    for (const c of TASK_BOARD_COLUMNS) m[c.id] = []
+    for (const t of tasks) { const s = String(t.status || '').toUpperCase(); (m[s] = m[s] || []).push(t) }
+    return m
+  }, [tasks])
+  const leadsByCol = useMemo(() => {
+    const m: Record<string, any[]> = {}
+    for (const c of LEAD_BOARD_COLUMNS) m[c.id] = []
+    for (const l of leads) { const s = String(l.status || '').toUpperCase(); (m[s] = m[s] || []).push(l) }
+    return m
+  }, [leads])
+
+  // What the Customize dialog edits for the active tab.
+  const customizeCols =
+    tab === 'jobs'
+      ? [...config.columns].filter((c) => c.visible).sort((a, b) => a.order - b.order).map((c) => ({ id: c.id, label: c.displayName, color: c.color }))
+      : tab === 'tasks'
+        ? TASK_BOARD_COLUMNS.map((c) => ({ id: c.id, label: c.label, color: c.color }))
+        : LEAD_BOARD_COLUMNS.map((c) => ({ id: c.id, label: c.label, color: c.color }))
 
   if (!permissionsLoading && !canView) {
     return (
@@ -288,12 +378,39 @@ export default function ProductionPage() {
           </h1>
           <p className="mt-2 text-gray-600">Production overview and workflow</p>
         </div>
-        <Button variant="outline" onClick={() => setArchiveView((v) => !v)}>
-          <Archive className="mr-2 h-4 w-4" />
-          {archiveView ? 'Back to Board' : 'Archive'}
+        {tab === 'jobs' && (
+          <Button variant="outline" onClick={() => setArchiveView((v) => !v)}>
+            <Archive className="mr-2 h-4 w-4" />
+            {archiveView ? 'Back to Board' : 'Archive'}
+          </Button>
+        )}
+      </div>
+
+      {/* Tabs + Customize */}
+      <div className="flex items-center justify-between border-b">
+        <div className="flex gap-1">
+          {[
+            { k: 'jobs', l: 'Production', show: true },
+            { k: 'tasks', l: 'Tasks', show: canViewTasks },
+            { k: 'leads', l: 'Requests', show: canViewLeads },
+          ].filter((t) => t.show).map((t) => (
+            <button
+              key={t.k}
+              type="button"
+              onClick={() => { setTab(t.k as any); setArchiveView(false) }}
+              className={`border-b-2 px-4 py-2 text-sm font-medium ${tab === t.k ? 'border-[var(--brand-primary-color)] text-[var(--brand-primary-color)]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+            >
+              {t.l}
+            </button>
+          ))}
+        </div>
+        <Button variant="ghost" size="sm" onClick={() => setCustomizeOpen(true)}>
+          <SlidersHorizontal className="mr-2 h-4 w-4" />
+          Customize
         </Button>
       </div>
 
+      {tab === 'jobs' && (<>
       {/* Summary cards */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         {SUMMARY_CARDS.map((card) => (
@@ -467,7 +584,74 @@ export default function ProductionPage() {
           </div>
         </>
       )}
+      </>)}
+
+      {tab === 'tasks' && (
+        tabLoading ? (
+          <div className="py-10 text-center text-sm text-gray-500">Loading your tasks…</div>
+        ) : (
+          <StatusBoard
+            columns={taskColumns}
+            itemsByColumn={tasksByCol}
+            emptyLabel="No tasks"
+            renderCard={(t: any) => <TaskCard task={t} />}
+          />
+        )
+      )}
+
+      {tab === 'leads' && (
+        tabLoading ? (
+          <div className="py-10 text-center text-sm text-gray-500">Loading your requests…</div>
+        ) : (
+          <StatusBoard
+            columns={leadColumns}
+            itemsByColumn={leadsByCol}
+            emptyLabel="No requests"
+            renderCard={(l: any) => <LeadCard lead={l} onOpen={() => router.push(`/dashboard/requests/${l.id}`)} />}
+          />
+        )
+      )}
+
+      <CustomizeViewDialog
+        open={customizeOpen}
+        onOpenChange={setCustomizeOpen}
+        title={tab === 'jobs' ? 'Production board' : tab === 'tasks' ? 'Tasks board' : 'Requests board'}
+        columns={customizeCols}
+        pref={viewPrefs[tab] || { order: [], hidden: [] }}
+        onSave={(pref) => saveViewPref(tab, pref)}
+      />
     </ResponsivePage>
+  )
+}
+
+function TaskCard({ task }: { task: any }) {
+  const assignee = task.assignee ? `${task.assignee.firstName || ''} ${task.assignee.lastName || ''}`.trim() : task.assignedTo?.name
+  const due = task.dueDate ? new Date(task.dueDate) : null
+  return (
+    <div className="rounded-lg border bg-white p-3 shadow-sm">
+      <div className="text-sm font-semibold text-gray-900 line-clamp-2">{task.title}</div>
+      <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-gray-500">
+        {task.priority ? <span className="rounded bg-gray-100 px-1.5 py-0.5 font-semibold">{String(task.priority)}</span> : null}
+        {assignee ? <span>· {assignee}</span> : <span>· Unassigned</span>}
+        {due && !Number.isNaN(due.getTime()) ? <span>· Due {due.toLocaleDateString()}</span> : null}
+      </div>
+      {task.job?.jobNumber ? <div className="mt-1 text-[11px] text-gray-400">Job {task.job.jobNumber}</div> : null}
+    </div>
+  )
+}
+
+function LeadCard({ lead, onOpen }: { lead: any; onOpen: () => void }) {
+  const name = `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || lead.company || 'Request'
+  const assignee = lead.assignedTo ? `${lead.assignedTo.firstName || ''} ${lead.assignedTo.lastName || ''}`.trim() : null
+  return (
+    <div className="cursor-pointer rounded-lg border bg-white p-3 shadow-sm hover:shadow-md" onClick={onOpen}>
+      <div className="text-sm font-semibold text-gray-900 line-clamp-1">{name}</div>
+      {lead.company ? <div className="text-[11px] text-gray-500 line-clamp-1">{lead.company}</div> : null}
+      <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-gray-500">
+        {lead.phone ? <span>{lead.phone}</span> : null}
+        {assignee ? <span>· {assignee}</span> : null}
+      </div>
+    </div>
   )
 }
 
