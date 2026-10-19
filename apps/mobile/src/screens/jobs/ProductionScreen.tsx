@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import {
   Dimensions,
   FlatList,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -15,11 +16,14 @@ import { Ionicons } from '@expo/vector-icons'
 import { AppScreen } from '../../components/AppScreen'
 import { EmptyState } from '../../components/EmptyState'
 import { apiRequest } from '../../api/client'
+import { useMobilePermissions } from '../../hooks/useMobilePermissions'
 import { colors, radius, spacing, typography } from '../../theme/tokens'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { JobsStackParamList } from '../../types/navigation'
 
 type Props = NativeStackScreenProps<JobsStackParamList, 'Production'>
+
+type BoardKey = 'jobs' | 'tasks' | 'leads'
 
 // ---- types mirroring the /api/production response (same as the web board) ----
 interface ProductionJob {
@@ -76,6 +80,63 @@ interface ProductionResponse {
   config: ProductionConfig
 }
 
+// ---- Tasks / Requests boards ------------------------------------------------
+interface TaskItem {
+  id: string
+  title: string
+  status: string
+  priority?: string | number | null
+  dueDate?: string | null
+  assignee?: { firstName?: string | null; lastName?: string | null } | null
+  job?: { jobNumber?: string | null } | null
+}
+interface LeadItem {
+  id: string
+  firstName?: string | null
+  lastName?: string | null
+  company?: string | null
+  phone?: string | null
+  status: string
+  assignedTo?: { firstName?: string | null; lastName?: string | null } | null
+}
+
+interface BoardColumnDef { id: string; label: string; color: string; icon: string }
+
+// Mirrors lib/production/boards.ts (shared with the web production line).
+const TASK_BOARD_COLUMNS: BoardColumnDef[] = [
+  { id: 'TODO', label: 'To Do', color: '#64748b', icon: 'Circle' },
+  { id: 'IN_PROGRESS', label: 'In Progress', color: '#eab308', icon: 'PlayCircle' },
+  { id: 'COMPLETED', label: 'Completed', color: '#22c55e', icon: 'CheckCircle' },
+]
+const LEAD_BOARD_COLUMNS: BoardColumnDef[] = [
+  { id: 'NEW', label: 'New', color: '#3b82f6', icon: 'Flag' },
+  { id: 'CONTACTED', label: 'Contacted', color: '#0ea5e9', icon: 'PlayCircle' },
+  { id: 'QUALIFIED', label: 'Qualified', color: '#6366f1', icon: 'CheckCircle' },
+  { id: 'ESTIMATE_CREATED', label: 'Estimate Created', color: '#8b5cf6', icon: 'Ruler' },
+  { id: 'ESTIMATE_SENT', label: 'Estimate Sent', color: '#a855f7', icon: 'Truck' },
+  { id: 'FOLLOW_UP', label: 'Follow Up', color: '#d97706', icon: 'Clock' },
+  { id: 'CONVERTED', label: 'Converted', color: '#16a34a', icon: 'CheckCircle' },
+  { id: 'LOST', label: 'Lost', color: '#ef4444', icon: 'AlertCircle' },
+]
+
+// ---- per-user view preferences (shared schema with the web page) ------------
+interface BoardViewPref { order: string[]; hidden: string[] }
+type ViewPrefs = Partial<Record<BoardKey, BoardViewPref>>
+
+/** Apply a user's personal order + hidden columns on top of the full set. */
+function applyBoardPref<T extends { id: string }>(cols: T[], pref?: BoardViewPref): T[] {
+  if (!pref) return cols
+  const byId = new Map(cols.map((c) => [c.id, c]))
+  const ordered: T[] = []
+  for (const id of pref.order) {
+    const col = byId.get(id)
+    if (col) { ordered.push(col); byId.delete(id) }
+  }
+  for (const col of cols) if (byId.has(col.id)) ordered.push(col)
+  const hidden = new Set(pref.hidden || [])
+  return ordered.filter((c) => !hidden.has(c.id))
+}
+
 // Same hex palette the web board uses (lib/jobs/statuses.jobStatusHexColors).
 const STATUS_HEX: Record<string, string> = {
   QUOTE: '#94a3b8', SCHEDULED: '#3b82f6', IN_PROGRESS: '#eab308', MEASURED: '#6366f1',
@@ -117,13 +178,55 @@ function tint(hex: string): string {
 }
 
 export function ProductionScreen({ navigation }: Props) {
+  const { hasWebPermission, canViewRequests } = useMobilePermissions()
+  const canViewTasks = hasWebPermission('tasks.view')
+  const canViewLeads = canViewRequests()
+
+  const [tab, setTab] = useState<BoardKey>('jobs')
   const [search, setSearch] = useState('')
   const [archiveView, setArchiveView] = useState(false)
+  const [customizeOpen, setCustomizeOpen] = useState(false)
 
+  // ---- per-user view preferences ----
+  const prefsQuery = useQuery({
+    queryKey: ['production-view-prefs'],
+    queryFn: () => apiRequest<{ prefs: ViewPrefs }>(`/api/production/view-preferences`),
+    staleTime: 5 * 60_000,
+  })
+  const [prefs, setPrefs] = useState<ViewPrefs>({})
+  useEffect(() => {
+    if (prefsQuery.data?.prefs) setPrefs(prefsQuery.data.prefs)
+  }, [prefsQuery.data])
+
+  const saveViewPref = async (board: BoardKey, pref: BoardViewPref) => {
+    const next: ViewPrefs = { ...prefs, [board]: pref }
+    setPrefs(next)
+    try {
+      await apiRequest(`/api/production/view-preferences`, 'PUT', { prefs: next })
+    } catch {
+      // keep the optimistic local view even if the save fails
+    }
+  }
+
+  // ---- jobs board ----
   const query = useQuery({
     queryKey: ['production-board', archiveView],
     queryFn: () => apiRequest<ProductionResponse>(`/api/production${archiveView ? '?view=archive' : ''}`),
     refetchInterval: 60_000,
+  })
+
+  // ---- tasks board (scoped to the signed-in user) ----
+  const tasksQuery = useQuery({
+    queryKey: ['production-tasks'],
+    queryFn: () => apiRequest<{ tasks: TaskItem[] }>(`/api/tasks?filter=assigned&limit=500&mobile=true`),
+    enabled: tab === 'tasks' && canViewTasks,
+  })
+
+  // ---- requests (leads) board (scoped to the signed-in user) ----
+  const leadsQuery = useQuery({
+    queryKey: ['production-leads'],
+    queryFn: () => apiRequest<{ leads: LeadItem[] }>(`/api/leads?mine=1&limit=500`),
+    enabled: tab === 'leads' && canViewLeads,
   })
 
   const jobs = query.data?.jobs ?? []
@@ -141,106 +244,414 @@ export function ProductionScreen({ navigation }: Props) {
 
   const columns = useMemo(() => {
     const cols = (config?.columns || []).filter((c) => c.visible).sort((a, b) => a.order - b.order)
-    return cols.map((col) => ({
+    const withJobs = cols.map((col) => ({
+      id: col.id,
       col,
       jobs: visibleJobs.filter((j) => j.status !== 'ON_HOLD' && col.statuses.includes(j.status)),
     }))
-  }, [config, visibleJobs])
+    return applyBoardPref(withJobs, prefs.jobs) // user's personal order/hidden
+  }, [config, visibleJobs, prefs.jobs])
 
   const onHoldStage = config?.stages?.find((s) => s.status === 'ON_HOLD')
   const onHoldJobs = useMemo(() => visibleJobs.filter((j) => j.status === 'ON_HOLD'), [visibleJobs])
 
+  // ---- tasks grouped into columns ----
+  const tasks = tasksQuery.data?.tasks ?? []
+  const taskColumns = useMemo(() => applyBoardPref(TASK_BOARD_COLUMNS, prefs.tasks), [prefs.tasks])
+  const tasksByCol = useMemo(() => {
+    const m: Record<string, TaskItem[]> = {}
+    for (const c of TASK_BOARD_COLUMNS) m[c.id] = []
+    for (const t of tasks) { const s = String(t.status || '').toUpperCase(); (m[s] = m[s] || []).push(t) }
+    return m
+  }, [tasks])
+
+  // ---- leads grouped into columns ----
+  const leads = leadsQuery.data?.leads ?? []
+  const leadColumns = useMemo(() => applyBoardPref(LEAD_BOARD_COLUMNS, prefs.leads), [prefs.leads])
+  const leadsByCol = useMemo(() => {
+    const m: Record<string, LeadItem[]> = {}
+    for (const c of LEAD_BOARD_COLUMNS) m[c.id] = []
+    for (const l of leads) { const s = String(l.status || '').toUpperCase(); (m[s] = m[s] || []).push(l) }
+    return m
+  }, [leads])
+
+  // What the Customize modal edits for the active tab.
+  const customizeCols: BoardColumnDef[] =
+    tab === 'jobs'
+      ? (config?.columns || []).filter((c) => c.visible).sort((a, b) => a.order - b.order).map((c) => ({ id: c.id, label: c.displayName, color: c.color, icon: c.icon }))
+      : tab === 'tasks'
+        ? TASK_BOARD_COLUMNS
+        : LEAD_BOARD_COLUMNS
+  const customizePref: BoardViewPref = prefs[tab] || { order: [], hidden: [] }
+
   const colWidth = config ? Math.min(config.card.width, SCREEN_W * 0.86) : SCREEN_W * 0.86
-  const open = (id: string) => navigation.navigate('AdminJobDetail', { jobId: id })
+  const openJob = (id: string) => navigation.navigate('AdminJobDetail', { jobId: id })
+  const openRequest = (id: string) => navigation.navigate('RequestDetail', { requestId: id })
+
+  const tabs: Array<{ key: BoardKey; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
+    { key: 'jobs', label: 'Production', icon: 'construct-outline' },
+    ...(canViewTasks ? [{ key: 'tasks' as BoardKey, label: 'Tasks', icon: 'checkbox-outline' as keyof typeof Ionicons.glyphMap }] : []),
+    ...(canViewLeads ? [{ key: 'leads' as BoardKey, label: 'Requests', icon: 'megaphone-outline' as keyof typeof Ionicons.glyphMap }] : []),
+  ]
 
   return (
     <AppScreen padded={false}>
-      {/* Controls (search + archive) — same affordances as web */}
+      {/* Tab bar: Production | Tasks | Requests */}
+      <View style={styles.tabBar}>
+        {tabs.map((t) => {
+          const active = tab === t.key
+          return (
+            <Pressable key={t.key} onPress={() => setTab(t.key)} style={[styles.tabItem, active && styles.tabItemActive]}>
+              <Ionicons name={t.icon} size={15} color={active ? colors.brandPrimary : colors.textSecondary} />
+              <Text style={[styles.tabText, active && styles.tabTextActive]}>{t.label}</Text>
+            </Pressable>
+          )
+        })}
+      </View>
+
+      {/* Controls (search + customize, and archive on the jobs tab) */}
       <View style={styles.controlsRow}>
         <View style={styles.searchBox}>
           <Ionicons name="search-outline" size={18} color={colors.textSecondary} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search jobs by #, title, client, or address..."
+            placeholder={tab === 'jobs' ? 'Search jobs…' : tab === 'tasks' ? 'Search tasks…' : 'Search requests…'}
             placeholderTextColor={colors.muted}
             value={search}
             onChangeText={setSearch}
           />
         </View>
-        <Pressable style={[styles.archiveButton, archiveView && styles.archiveButtonActive]} onPress={() => setArchiveView((v) => !v)}>
-          <Ionicons name="archive-outline" size={16} color={archiveView ? colors.surface : colors.brandPrimary} />
-          <Text style={[styles.archiveButtonText, archiveView && styles.archiveButtonTextActive]}>{archiveView ? 'Board' : 'Archive'}</Text>
+        <Pressable style={styles.iconButton} onPress={() => setCustomizeOpen(true)} hitSlop={8}>
+          <Ionicons name="options-outline" size={18} color={colors.brandPrimary} />
         </Pressable>
+        {tab === 'jobs' && (
+          <Pressable style={[styles.archiveButton, archiveView && styles.archiveButtonActive]} onPress={() => setArchiveView((v) => !v)}>
+            <Ionicons name="archive-outline" size={16} color={archiveView ? colors.surface : colors.brandPrimary} />
+            <Text style={[styles.archiveButtonText, archiveView && styles.archiveButtonTextActive]}>{archiveView ? 'Board' : 'Archive'}</Text>
+          </Pressable>
+        )}
       </View>
 
-      {query.isLoading || !config ? (
-        <View style={styles.loadingWrap}><Text style={styles.loadingText}>Loading production board...</Text></View>
-      ) : archiveView ? (
-        <ScrollView contentContainerStyle={styles.archiveList} refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => query.refetch()} />}>
-          {visibleJobs.length === 0 ? (
-            <EmptyState icon="archive-outline" title="Nothing here" description="No completed, cancelled, or invoiced jobs match these filters." />
-          ) : (
-            visibleJobs.map((job) => {
-              const stage = config.stages.find((s) => s.status === job.status)
-              return <ProductionCard key={job.id} job={job} config={config} stageColor={stage?.color} onPress={() => open(job.id)} />
-            })
-          )}
-        </ScrollView>
-      ) : (
-        <View style={styles.boardWrap}>
-          {/* On Hold / Attention Needed — amber, like web (capped, scrolls on its own) */}
-          {onHoldJobs.length > 0 && (onHoldStage?.visible ?? true) && (
-            <View style={styles.onHoldSection}>
-              <View style={styles.onHoldHeader}>
-                <Ionicons name="warning-outline" size={16} color="#B45309" />
-                <Text style={styles.onHoldTitle}>{onHoldStage?.displayName || 'On Hold'} / Attention Needed</Text>
-                <View style={styles.onHoldCount}><Text style={styles.onHoldCountText}>{onHoldJobs.length}</Text></View>
-              </View>
-              <ScrollView style={styles.onHoldScroll} nestedScrollEnabled contentContainerStyle={{ gap: spacing.xs }}>
-                {onHoldJobs.map((job) => (
-                  <ProductionCard key={job.id} job={job} config={config} stageColor={onHoldStage?.color} onPress={() => open(job.id)} />
-                ))}
-              </ScrollView>
-            </View>
-          )}
-
-          <View style={styles.boardHeaderRow}>
-            <Ionicons name="grid-outline" size={16} color={colors.textSecondary} />
-            <Text style={styles.boardHeaderText}>Production Board</Text>
-          </View>
-
-          {/* Horizontal columns; each column scrolls vertically on its own */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.boardScroll} contentContainerStyle={styles.boardRow}>
-            {columns.map(({ col, jobs: colJobs }) => (
-              <View key={col.id} style={[styles.column, { width: colWidth }]}>
-                <View style={[styles.columnHeader, { backgroundColor: col.color }]}>
-                  <View style={styles.columnHeaderLeft}>
-                    <Ionicons name={iconFor(col.icon)} size={16} color="#fff" />
-                    <Text style={styles.columnTitle} numberOfLines={1}>{col.displayName}</Text>
-                  </View>
-                  {col.showJobCount && (
-                    <View style={styles.columnCount}><Text style={styles.columnCountText}>{colJobs.length}</Text></View>
-                  )}
-                </View>
-                <FlatList
-                  data={colJobs}
-                  keyExtractor={(j) => j.id}
-                  style={styles.columnBody}
-                  contentContainerStyle={styles.columnBodyContent}
-                  nestedScrollEnabled
-                  showsVerticalScrollIndicator
-                  refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => query.refetch()} />}
-                  ListEmptyComponent={<Text style={styles.noJobs}>No jobs</Text>}
-                  renderItem={({ item: job }) => (
-                    <ProductionCard job={job} config={config} stageColor={col.color} onPress={() => open(job.id)} />
-                  )}
-                />
-              </View>
-            ))}
+      {/* ---- JOBS TAB ---- */}
+      {tab === 'jobs' && (
+        query.isLoading || !config ? (
+          <View style={styles.loadingWrap}><Text style={styles.loadingText}>Loading production board...</Text></View>
+        ) : archiveView ? (
+          <ScrollView contentContainerStyle={styles.archiveList} refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => query.refetch()} />}>
+            {visibleJobs.length === 0 ? (
+              <EmptyState icon="archive-outline" title="Nothing here" description="No completed, cancelled, or invoiced jobs match these filters." />
+            ) : (
+              visibleJobs.map((job) => {
+                const stage = config.stages.find((s) => s.status === job.status)
+                return <ProductionCard key={job.id} job={job} config={config} stageColor={stage?.color} onPress={() => openJob(job.id)} />
+              })
+            )}
           </ScrollView>
-        </View>
+        ) : (
+          <View style={styles.boardWrap}>
+            {/* On Hold / Attention Needed — amber, like web (capped, scrolls on its own) */}
+            {onHoldJobs.length > 0 && (onHoldStage?.visible ?? true) && (
+              <View style={styles.onHoldSection}>
+                <View style={styles.onHoldHeader}>
+                  <Ionicons name="warning-outline" size={16} color="#B45309" />
+                  <Text style={styles.onHoldTitle}>{onHoldStage?.displayName || 'On Hold'} / Attention Needed</Text>
+                  <View style={styles.onHoldCount}><Text style={styles.onHoldCountText}>{onHoldJobs.length}</Text></View>
+                </View>
+                <ScrollView style={styles.onHoldScroll} nestedScrollEnabled contentContainerStyle={{ gap: spacing.xs }}>
+                  {onHoldJobs.map((job) => (
+                    <ProductionCard key={job.id} job={job} config={config} stageColor={onHoldStage?.color} onPress={() => openJob(job.id)} />
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+
+            <View style={styles.boardHeaderRow}>
+              <Ionicons name="grid-outline" size={16} color={colors.textSecondary} />
+              <Text style={styles.boardHeaderText}>Production Board</Text>
+            </View>
+
+            {/* Horizontal columns; each column scrolls vertically on its own */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.boardScroll} contentContainerStyle={styles.boardRow}>
+              {columns.map(({ col, jobs: colJobs }) => (
+                <View key={col.id} style={[styles.column, { width: colWidth }]}>
+                  <View style={[styles.columnHeader, { backgroundColor: col.color }]}>
+                    <View style={styles.columnHeaderLeft}>
+                      <Ionicons name={iconFor(col.icon)} size={16} color="#fff" />
+                      <Text style={styles.columnTitle} numberOfLines={1}>{col.displayName}</Text>
+                    </View>
+                    {col.showJobCount && (
+                      <View style={styles.columnCount}><Text style={styles.columnCountText}>{colJobs.length}</Text></View>
+                    )}
+                  </View>
+                  <FlatList
+                    data={colJobs}
+                    keyExtractor={(j) => j.id}
+                    style={styles.columnBody}
+                    contentContainerStyle={styles.columnBodyContent}
+                    nestedScrollEnabled
+                    showsVerticalScrollIndicator
+                    refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => query.refetch()} />}
+                    ListEmptyComponent={<Text style={styles.noJobs}>No jobs</Text>}
+                    renderItem={({ item: job }) => (
+                      <ProductionCard job={job} config={config} stageColor={col.color} onPress={() => openJob(job.id)} />
+                    )}
+                  />
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        )
       )}
+
+      {/* ---- TASKS TAB ---- */}
+      {tab === 'tasks' && (
+        <StatusBoard
+          columns={taskColumns}
+          loading={tasksQuery.isLoading}
+          refreshing={tasksQuery.isRefetching}
+          onRefresh={() => tasksQuery.refetch()}
+          colWidth={Math.min(320, SCREEN_W * 0.86)}
+          countFor={(id) => (tasksByCol[id] || []).length}
+          renderColumn={(id) => (
+            <FlatList
+              data={tasksByCol[id] || []}
+              keyExtractor={(t) => t.id}
+              style={styles.columnBody}
+              contentContainerStyle={styles.columnBodyContent}
+              nestedScrollEnabled
+              showsVerticalScrollIndicator
+              refreshControl={<RefreshControl refreshing={tasksQuery.isRefetching} onRefresh={() => tasksQuery.refetch()} />}
+              ListEmptyComponent={<Text style={styles.noJobs}>No tasks</Text>}
+              renderItem={({ item }) => <TaskCard task={item} />}
+            />
+          )}
+          emptyTitle="No tasks assigned to you"
+        />
+      )}
+
+      {/* ---- REQUESTS TAB ---- */}
+      {tab === 'leads' && (
+        <StatusBoard
+          columns={leadColumns}
+          loading={leadsQuery.isLoading}
+          refreshing={leadsQuery.isRefetching}
+          onRefresh={() => leadsQuery.refetch()}
+          colWidth={Math.min(300, SCREEN_W * 0.86)}
+          countFor={(id) => (leadsByCol[id] || []).length}
+          renderColumn={(id) => (
+            <FlatList
+              data={leadsByCol[id] || []}
+              keyExtractor={(l) => l.id}
+              style={styles.columnBody}
+              contentContainerStyle={styles.columnBodyContent}
+              nestedScrollEnabled
+              showsVerticalScrollIndicator
+              refreshControl={<RefreshControl refreshing={leadsQuery.isRefetching} onRefresh={() => leadsQuery.refetch()} />}
+              ListEmptyComponent={<Text style={styles.noJobs}>No requests</Text>}
+              renderItem={({ item }) => <LeadCard lead={item} onPress={() => openRequest(item.id)} />}
+            />
+          )}
+          emptyTitle="No requests assigned to you"
+        />
+      )}
+
+      <CustomizeViewModal
+        open={customizeOpen}
+        onClose={() => setCustomizeOpen(false)}
+        title={tab === 'jobs' ? 'Production' : tab === 'tasks' ? 'Tasks' : 'Requests'}
+        columns={customizeCols}
+        pref={customizePref}
+        onSave={(p) => saveViewPref(tab, p)}
+      />
     </AppScreen>
+  )
+}
+
+// Generic status board (colored columns + per-column vertical list), matching
+// the jobs board look. Used for the Tasks and Requests tabs.
+function StatusBoard({
+  columns,
+  loading,
+  refreshing,
+  onRefresh,
+  colWidth,
+  countFor,
+  renderColumn,
+  emptyTitle,
+}: {
+  columns: BoardColumnDef[]
+  loading: boolean
+  refreshing: boolean
+  onRefresh: () => void
+  colWidth: number
+  countFor: (id: string) => number
+  renderColumn: (id: string) => React.ReactNode
+  emptyTitle: string
+}) {
+  if (loading) {
+    return <View style={styles.loadingWrap}><Text style={styles.loadingText}>Loading…</Text></View>
+  }
+  if (columns.length === 0) {
+    return (
+      <View style={styles.loadingWrap}>
+        <EmptyState icon="eye-off-outline" title="All columns hidden" description="Use the options button to show columns again." />
+      </View>
+    )
+  }
+  return (
+    <View style={styles.boardWrap}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.boardScroll} contentContainerStyle={styles.boardRow}>
+        {columns.map((col) => (
+          <View key={col.id} style={[styles.column, { width: colWidth }]}>
+            <View style={[styles.columnHeader, { backgroundColor: col.color }]}>
+              <View style={styles.columnHeaderLeft}>
+                <Ionicons name={iconFor(col.icon)} size={16} color="#fff" />
+                <Text style={styles.columnTitle} numberOfLines={1}>{col.label}</Text>
+              </View>
+              <View style={styles.columnCount}><Text style={styles.columnCountText}>{countFor(col.id)}</Text></View>
+            </View>
+            {renderColumn(col.id)}
+          </View>
+        ))}
+      </ScrollView>
+    </View>
+  )
+}
+
+function TaskCard({ task }: { task: TaskItem }) {
+  const assignee = task.assignee ? `${task.assignee.firstName || ''} ${task.assignee.lastName || ''}`.trim() : ''
+  const overdue = isOverdue(task.dueDate)
+  return (
+    <View style={[styles.card, { padding: 12, borderWidth: 1 }]}>
+      <Text style={[styles.jobTitle, { fontSize: 14 }]} numberOfLines={2}>{task.title}</Text>
+      <View style={styles.badgeRow}>
+        {task.priority != null && String(task.priority) !== '' && (
+          <View style={styles.prBadge}><Text style={styles.prBadgeText}>{String(task.priority)}</Text></View>
+        )}
+        <Text style={[styles.metaMuted, { fontSize: 11 }]} numberOfLines={1}>{assignee || 'Unassigned'}</Text>
+      </View>
+      {task.dueDate ? (
+        <View style={styles.iconRow}>
+          <Ionicons name="calendar-outline" size={12} color={overdue ? colors.danger : colors.muted} />
+          <Text style={[{ fontSize: 11 }, overdue ? styles.overdueMeta : styles.metaMuted]}>Due {fmtDate(task.dueDate)}</Text>
+        </View>
+      ) : null}
+      {task.job?.jobNumber ? <Text style={[styles.metaFaint, { fontSize: 11 }]}>Job {task.job.jobNumber}</Text> : null}
+    </View>
+  )
+}
+
+function LeadCard({ lead, onPress }: { lead: LeadItem; onPress: () => void }) {
+  const name = `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || lead.company || 'Request'
+  const assignee = lead.assignedTo ? `${lead.assignedTo.firstName || ''} ${lead.assignedTo.lastName || ''}`.trim() : ''
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.card, { padding: 12, borderWidth: 1 }, pressed && styles.cardPressed]}>
+      <Text style={[styles.jobTitle, { fontSize: 14 }]} numberOfLines={1}>{name}</Text>
+      {lead.company ? <Text style={[styles.metaMuted, { fontSize: 11 }]} numberOfLines={1}>{lead.company}</Text> : null}
+      <View style={styles.badgeRow}>
+        {lead.phone ? <Text style={[styles.metaMuted, { fontSize: 11 }]}>{lead.phone}</Text> : null}
+        {assignee ? <Text style={[styles.metaMuted, { fontSize: 11 }]} numberOfLines={1}>· {assignee}</Text> : null}
+      </View>
+    </Pressable>
+  )
+}
+
+// Per-user "Customize view": reorder columns and hide/show them. Saves only this
+// user's personal view — never the tenant config.
+function CustomizeViewModal({
+  open,
+  onClose,
+  title,
+  columns,
+  pref,
+  onSave,
+}: {
+  open: boolean
+  onClose: () => void
+  title: string
+  columns: BoardColumnDef[]
+  pref: BoardViewPref
+  onSave: (pref: BoardViewPref) => void | Promise<void>
+}) {
+  const [order, setOrder] = useState<string[]>([])
+  const [hidden, setHidden] = useState<Set<string>>(new Set())
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    const known = columns.map((c) => c.id)
+    const ordered = [...(pref.order || []).filter((id) => known.includes(id))]
+    for (const id of known) if (!ordered.includes(id)) ordered.push(id)
+    setOrder(ordered)
+    setHidden(new Set(pref.hidden || []))
+  }, [open, columns, pref])
+
+  const byId = new Map(columns.map((c) => [c.id, c]))
+  const move = (idx: number, dir: -1 | 1) => {
+    setOrder((prev) => {
+      const next = [...prev]
+      const j = idx + dir
+      if (j < 0 || j >= next.length) return prev
+      ;[next[idx], next[j]] = [next[j], next[idx]]
+      return next
+    })
+  }
+  const toggleHidden = (id: string) =>
+    setHidden((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      await onSave({ order, hidden: Array.from(hidden) })
+      onClose()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal visible={open} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalCard}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Customize {title}</Text>
+            <Pressable onPress={onClose} hitSlop={8}><Ionicons name="close" size={22} color={colors.textSecondary} /></Pressable>
+          </View>
+          <Text style={styles.modalSub}>Reorder or hide columns. This changes only your own view.</Text>
+          <ScrollView style={{ maxHeight: Dimensions.get('window').height * 0.5 }} contentContainerStyle={{ gap: 6, paddingVertical: spacing.xs }}>
+            {order.map((id, idx) => {
+              const col = byId.get(id)
+              if (!col) return null
+              const isHidden = hidden.has(id)
+              return (
+                <View key={id} style={styles.modalRow}>
+                  <View style={[styles.dot, { backgroundColor: col.color }]} />
+                  <Text style={[styles.modalRowLabel, isHidden && styles.modalRowLabelHidden]} numberOfLines={1}>{col.label}</Text>
+                  <Pressable onPress={() => move(idx, -1)} disabled={idx === 0} hitSlop={6} style={[styles.modalIconBtn, idx === 0 && styles.modalIconBtnDisabled]}>
+                    <Ionicons name="chevron-up" size={18} color={colors.textSecondary} />
+                  </Pressable>
+                  <Pressable onPress={() => move(idx, 1)} disabled={idx === order.length - 1} hitSlop={6} style={[styles.modalIconBtn, idx === order.length - 1 && styles.modalIconBtnDisabled]}>
+                    <Ionicons name="chevron-down" size={18} color={colors.textSecondary} />
+                  </Pressable>
+                  <Pressable onPress={() => toggleHidden(id)} hitSlop={6} style={styles.modalIconBtn}>
+                    <Ionicons name={isHidden ? 'eye-off-outline' : 'eye-outline'} size={18} color={isHidden ? colors.muted : colors.brandPrimary} />
+                  </Pressable>
+                </View>
+              )
+            })}
+          </ScrollView>
+          <View style={styles.modalFooter}>
+            <Pressable onPress={onClose} style={styles.modalCancel} disabled={saving}><Text style={styles.modalCancelText}>Cancel</Text></Pressable>
+            <Pressable onPress={save} style={styles.modalSave} disabled={saving}><Text style={styles.modalSaveText}>{saving ? 'Saving…' : 'Save my view'}</Text></Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
   )
 }
 
@@ -395,9 +806,16 @@ function ProductionCard({ job, config, stageColor, onPress }: { job: ProductionJ
 }
 
 const styles = StyleSheet.create({
+  tabBar: { flexDirection: 'row', gap: spacing.xs, paddingHorizontal: spacing.md, paddingTop: spacing.sm },
+  tabItem: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.divider },
+  tabItemActive: { backgroundColor: '#EFF6FF', borderColor: colors.brandPrimary },
+  tabText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' },
+  tabTextActive: { color: colors.brandPrimary },
+
   controlsRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingTop: spacing.sm },
   searchBox: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.xs, backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.divider, paddingHorizontal: spacing.md, height: 42 },
   searchInput: { flex: 1, ...typography.sub, color: colors.textPrimary, padding: 0 },
+  iconButton: { width: 42, height: 42, borderRadius: radius.md, borderWidth: 1, borderColor: colors.brandPrimary, alignItems: 'center', justifyContent: 'center' },
   archiveButton: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: colors.brandPrimary, borderRadius: radius.md, paddingHorizontal: spacing.md, height: 42 },
   archiveButtonActive: { backgroundColor: colors.brandPrimary },
   archiveButtonText: { ...typography.caption, color: colors.brandPrimary, fontWeight: '700' },
@@ -450,4 +868,21 @@ const styles = StyleSheet.create({
   overdueText: { color: '#B91C1C', fontSize: 10, fontWeight: '700' },
   overdueMeta: { color: '#DC2626', fontWeight: '600' },
   amount: { color: '#374151', fontWeight: '700' },
+
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  modalCard: { backgroundColor: colors.surface, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, padding: spacing.lg, paddingBottom: spacing.xl },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  modalTitle: { ...typography.h2, color: colors.textPrimary },
+  modalSub: { ...typography.caption, color: colors.textSecondary, marginTop: 2, marginBottom: spacing.sm },
+  modalRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderWidth: 1, borderColor: colors.divider, borderRadius: radius.md, paddingHorizontal: spacing.sm, paddingVertical: 10 },
+  dot: { width: 12, height: 12, borderRadius: 6 },
+  modalRowLabel: { flex: 1, ...typography.sub, color: colors.textPrimary },
+  modalRowLabelHidden: { color: colors.muted, textDecorationLine: 'line-through' },
+  modalIconBtn: { padding: 4 },
+  modalIconBtnDisabled: { opacity: 0.3 },
+  modalFooter: { flexDirection: 'row', justifyContent: 'flex-end', gap: spacing.sm, marginTop: spacing.md },
+  modalCancel: { paddingHorizontal: spacing.lg, paddingVertical: 10, borderRadius: radius.md },
+  modalCancelText: { ...typography.sub, color: colors.textSecondary, fontWeight: '700' },
+  modalSave: { paddingHorizontal: spacing.lg, paddingVertical: 10, borderRadius: radius.md, backgroundColor: colors.brandPrimary },
+  modalSaveText: { ...typography.sub, color: colors.surface, fontWeight: '700' },
 })
