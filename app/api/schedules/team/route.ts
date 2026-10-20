@@ -68,6 +68,7 @@ export async function GET(request: NextRequest) {
           },
         },
         status: true,
+        createdAt: true,
         _count: {
           select: {
             schedules: true,

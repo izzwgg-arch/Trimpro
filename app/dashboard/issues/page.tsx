@@ -32,6 +32,7 @@ interface Issue {
   firstResponseAt: string | null
   resolvedAt: string | null
   closedAt: string | null
+  createdAt?: string | null
   assignee: {
     id: string
     firstName: string
@@ -474,6 +475,83 @@ export default function IssuesPage() {
               header: 'Assignee',
               sortValue: (issue) => issue.assignee ? `${issue.assignee.firstName} ${issue.assignee.lastName}` : '',
               render: (issue) => issue.assignee ? `${issue.assignee.firstName} ${issue.assignee.lastName}` : '-',
+            },
+            {
+              key: 'client',
+              header: 'Client',
+              sortValue: (issue) => issue.client?.name || '',
+              render: (issue) =>
+                issue.client ? (
+                  <Link
+                    href={`/dashboard/clients/${issue.client.id}`}
+                    className="text-blue-600 hover:underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {issue.client.name}
+                  </Link>
+                ) : (
+                  '—'
+                ),
+              defaultHidden: true,
+            },
+            {
+              key: 'job',
+              header: 'Job',
+              sortValue: (issue) => issue.job?.jobNumber || '',
+              render: (issue) =>
+                issue.job ? (
+                  <Link
+                    href={`/dashboard/jobs/${issue.job.id}`}
+                    className="text-blue-600 hover:underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {`Job ${issue.job.jobNumber}`}
+                  </Link>
+                ) : (
+                  '—'
+                ),
+              defaultHidden: true,
+            },
+            {
+              key: 'reportedBy',
+              header: 'Reported By',
+              sortValue: (issue) => `${issue.creator.firstName} ${issue.creator.lastName}`,
+              render: (issue) => `${issue.creator.firstName} ${issue.creator.lastName}`,
+              defaultHidden: true,
+            },
+            {
+              key: 'firstResponseAt',
+              header: 'First Response',
+              sortValue: (issue) => issue.firstResponseAt || '',
+              render: (issue) => (issue.firstResponseAt ? formatDate(issue.firstResponseAt) : '—'),
+              defaultHidden: true,
+            },
+            {
+              key: 'resolvedAt',
+              header: 'Resolved',
+              sortValue: (issue) => issue.resolvedAt || '',
+              render: (issue) => (issue.resolvedAt ? formatDate(issue.resolvedAt) : '—'),
+              defaultHidden: true,
+            },
+            {
+              key: 'notes',
+              header: 'Notes',
+              sortValue: (issue) => issue._count.notes,
+              render: (issue) => issue._count.notes,
+              defaultHidden: true,
+            },
+            {
+              key: 'tasks',
+              header: 'Tasks',
+              sortValue: (issue) => issue._count.tasks,
+              render: (issue) => issue._count.tasks,
+              defaultHidden: true,
+            },
+            {
+              key: 'date',
+              header: 'Date',
+              sortValue: (issue) => issue.createdAt || '',
+              render: (issue) => (issue.createdAt ? formatDate(issue.createdAt) : '—'),
             },
           ]}
         />

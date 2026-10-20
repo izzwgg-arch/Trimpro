@@ -48,6 +48,7 @@ interface TeamMember {
     role: string
   } | null
   status: string
+  createdAt?: string | null
   _count: {
     schedules: number
   }
@@ -577,6 +578,54 @@ export default function TeamsPage() {
               header: 'Schedules',
               sortValue: (member) => member._count.schedules,
               render: (member) => member._count.schedules,
+            },
+            {
+              key: 'phone',
+              header: 'Phone',
+              defaultHidden: true,
+              sortValue: (member) => member.phone || '',
+              render: (member) =>
+                member.phone ? (
+                  <a
+                    href={`tel:${member.phone}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-blue-600 hover:underline"
+                  >
+                    {member.phone}
+                  </a>
+                ) : (
+                  '—'
+                ),
+            },
+            {
+              key: 'webLogin',
+              header: 'Web Login',
+              defaultHidden: true,
+              sortValue: (member) => (member.allowWebLogin ? 1 : 0),
+              render: (member) => (member.allowWebLogin ? 'Yes' : 'No'),
+            },
+            {
+              key: 'mobileLogin',
+              header: 'Mobile Login',
+              defaultHidden: true,
+              sortValue: (member) => (member.allowMobileLogin ? 1 : 0),
+              render: (member) => (member.allowMobileLogin ? 'Yes' : 'No'),
+            },
+            {
+              key: 'jobTypes',
+              header: 'Job Types',
+              defaultHidden: true,
+              sortValue: (member) => (member.assignedJobTypes || []).join(', '),
+              render: (member) =>
+                member.assignedJobTypes && member.assignedJobTypes.length > 0
+                  ? member.assignedJobTypes.join(', ')
+                  : '—',
+            },
+            {
+              key: 'createdAt',
+              header: 'Date',
+              sortValue: (member) => member.createdAt || '',
+              render: (member) => (member.createdAt ? new Date(member.createdAt).toLocaleDateString() : '—'),
             },
             {
               key: 'actions',

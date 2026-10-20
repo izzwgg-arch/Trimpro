@@ -970,6 +970,34 @@ export default function RequestsPage() {
               ),
             },
             {
+              key: 'email',
+              header: 'Email',
+              defaultHidden: true,
+              sortValue: (request) => request.email || '',
+              render: (request) => request.email || '—',
+            },
+            {
+              key: 'phone',
+              header: 'Phone',
+              defaultHidden: true,
+              sortValue: (request) => request.phone || '',
+              render: (request) => request.phone || '—',
+            },
+            {
+              key: 'company',
+              header: 'Company',
+              defaultHidden: true,
+              sortValue: (request) => request.company || '',
+              render: (request) => request.company || '—',
+            },
+            {
+              key: 'value',
+              header: 'Value',
+              defaultHidden: true,
+              sortValue: (request) => (request.value ? parseFloat(request.value) : 0),
+              render: (request) => (request.value ? formatCurrency(parseFloat(request.value)) : '—'),
+            },
+            {
               key: 'actions',
               header: 'Actions',
               render: (request) => (

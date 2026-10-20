@@ -562,6 +562,56 @@ export default function TasksPage() {
               sortValue: (task) => task.dueDate || '',
               render: (task) => (task.dueDate ? formatDate(task.dueDate) : '-'),
             },
+            {
+              key: 'client',
+              header: 'Client',
+              sortValue: (task) => task.client?.name || '',
+              render: (task) =>
+                task.client ? (
+                  <Link
+                    href={`/dashboard/clients/${task.client.id}`}
+                    className="text-blue-600 hover:underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {task.client.name}
+                  </Link>
+                ) : (
+                  '—'
+                ),
+              defaultHidden: true,
+            },
+            {
+              key: 'job',
+              header: 'Job',
+              sortValue: (task) => task.job?.jobNumber || '',
+              render: (task) =>
+                task.job ? (
+                  <Link
+                    href={`/dashboard/jobs/${task.job.id}`}
+                    className="text-blue-600 hover:underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {`Job ${task.job.jobNumber}`}
+                  </Link>
+                ) : (
+                  '—'
+                ),
+              defaultHidden: true,
+            },
+            {
+              key: 'createdBy',
+              header: 'Created By',
+              sortValue: (task) => `${task.creator.firstName} ${task.creator.lastName}`,
+              render: (task) => `${task.creator.firstName} ${task.creator.lastName}`,
+              defaultHidden: true,
+            },
+            {
+              key: 'completedAt',
+              header: 'Completed',
+              sortValue: (task) => task.completedAt || '',
+              render: (task) => (task.completedAt ? formatDate(task.completedAt) : '—'),
+              defaultHidden: true,
+            },
           ]}
         />
       )}

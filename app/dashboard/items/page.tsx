@@ -704,8 +704,7 @@ export default function ItemsPage() {
             },
             {
               key: 'updatedAt',
-              header: 'Updated',
-              defaultHidden: true,
+              header: 'Date',
               sortValue: (item) => item.updatedAt,
               render: (item) => <span className="text-gray-600">{formatDate(item.updatedAt)}</span>,
             },

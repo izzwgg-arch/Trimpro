@@ -865,6 +865,64 @@ export default function JobsPage() {
               render: (job) => <span className="font-medium text-amber-700">{formatCurrency(parseFloat(job.clientOpenInvoiceBalance || '0'))}</span>,
             },
             {
+              key: 'priority',
+              header: 'Priority',
+              defaultHidden: true,
+              sortValue: (job) => job.priority,
+              render: (job) => priorityLabels[job.priority] || 'Medium',
+            },
+            {
+              key: 'description',
+              header: 'Description',
+              defaultHidden: true,
+              sortValue: (job) => job.description || '',
+              render: (job) => (
+                <span className="line-clamp-2 text-gray-600">{job.description || '—'}</span>
+              ),
+            },
+            {
+              key: 'scheduledStart',
+              header: 'Scheduled Start',
+              defaultHidden: true,
+              sortValue: (job) => job.scheduledStart || '',
+              render: (job) => (job.scheduledStart ? formatDate(job.scheduledStart) : '—'),
+            },
+            {
+              key: 'scheduledEnd',
+              header: 'Scheduled End',
+              defaultHidden: true,
+              sortValue: (job) => job.scheduledEnd || '',
+              render: (job) => (job.scheduledEnd ? formatDate(job.scheduledEnd) : '—'),
+            },
+            {
+              key: 'estimateAmount',
+              header: 'Estimate',
+              defaultHidden: true,
+              sortValue: (job) => Number(job.estimateAmount || 0),
+              render: (job) => (job.estimateAmount ? formatCurrency(parseFloat(job.estimateAmount)) : '—'),
+            },
+            {
+              key: 'openInvoiceCount',
+              header: 'Open Invoices',
+              defaultHidden: true,
+              sortValue: (job) => job.openInvoiceCount || 0,
+              render: (job) => job.openInvoiceCount || 0,
+            },
+            {
+              key: 'tasks',
+              header: 'Tasks',
+              defaultHidden: true,
+              sortValue: (job) => job._count.tasks,
+              render: (job) => job._count.tasks,
+            },
+            {
+              key: 'issues',
+              header: 'Issues',
+              defaultHidden: true,
+              sortValue: (job) => job._count.issues,
+              render: (job) => job._count.issues,
+            },
+            {
               key: 'actions',
               header: 'Actions',
               render: (job) => (

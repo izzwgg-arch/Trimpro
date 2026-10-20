@@ -29,6 +29,7 @@ interface Client {
   email: string | null
   phone: string | null
   isActive: boolean
+  createdAt?: string | null
   openInvoiceBalance?: string
   /** When this client is a parent with sub-clients, combined open AR (parent + all children). */
   openInvoiceBalanceWithSubClients?: string | null
@@ -666,6 +667,68 @@ export default function ClientsPage() {
                   ) : null}
                 </span>
               ),
+            },
+            {
+              key: 'email',
+              header: 'Email',
+              defaultHidden: true,
+              sortValue: (client) => client.email || '',
+              render: (client) =>
+                client.email ? (
+                  <a
+                    href={`mailto:${client.email}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-blue-600 hover:underline"
+                  >
+                    {client.email}
+                  </a>
+                ) : (
+                  '—'
+                ),
+            },
+            {
+              key: 'phone',
+              header: 'Phone',
+              defaultHidden: true,
+              sortValue: (client) => client.phone || '',
+              render: (client) =>
+                client.phone ? (
+                  <a
+                    href={`tel:${client.phone}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-blue-600 hover:underline"
+                  >
+                    {client.phone}
+                  </a>
+                ) : (
+                  '—'
+                ),
+            },
+            {
+              key: 'contact',
+              header: 'Primary Contact',
+              defaultHidden: true,
+              sortValue: (client) => {
+                const c = client.contacts.find((x) => x.isPrimary) || client.contacts[0]
+                return c ? `${c.firstName} ${c.lastName}`.trim() : ''
+              },
+              render: (client) => {
+                const c = client.contacts.find((x) => x.isPrimary) || client.contacts[0]
+                return c ? `${c.firstName} ${c.lastName}`.trim() || '—' : '—'
+              },
+            },
+            {
+              key: 'parent',
+              header: 'Parent',
+              defaultHidden: true,
+              sortValue: (client) => client.parent?.name || '',
+              render: (client) => client.parent?.name || '—',
+            },
+            {
+              key: 'createdAt',
+              header: 'Date',
+              sortValue: (client) => client.createdAt || '',
+              render: (client) => (client.createdAt ? new Date(client.createdAt).toLocaleDateString() : '—'),
             },
             {
               key: 'actions',

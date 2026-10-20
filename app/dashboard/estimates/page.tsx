@@ -30,6 +30,7 @@ interface Estimate {
   validUntil: string | null
   sentAt: string | null
   acceptedAt: string | null
+  createdAt?: string | null
   client: {
     id: string
     name: string
@@ -679,6 +680,61 @@ export default function EstimatesPage() {
               header: 'Total',
               sortValue: (estimate) => Number(estimate.total),
               render: (estimate) => formatCurrency(parseFloat(estimate.total)),
+            },
+            {
+              key: 'createdAt',
+              header: 'Date',
+              sortValue: (estimate) => estimate.createdAt || '',
+              render: (estimate) => (estimate.createdAt ? formatDate(estimate.createdAt) : '—'),
+            },
+            {
+              key: 'validUntil',
+              header: 'Valid Until',
+              defaultHidden: true,
+              sortValue: (estimate) => estimate.validUntil || '',
+              render: (estimate) => (estimate.validUntil ? formatDate(estimate.validUntil) : '—'),
+            },
+            {
+              key: 'sentAt',
+              header: 'Sent',
+              defaultHidden: true,
+              sortValue: (estimate) => estimate.sentAt || '',
+              render: (estimate) => (estimate.sentAt ? formatDate(estimate.sentAt) : '—'),
+            },
+            {
+              key: 'acceptedAt',
+              header: 'Accepted',
+              defaultHidden: true,
+              sortValue: (estimate) => estimate.acceptedAt || '',
+              render: (estimate) => (estimate.acceptedAt ? formatDate(estimate.acceptedAt) : '—'),
+            },
+            {
+              key: 'convertedPercent',
+              header: 'Converted %',
+              defaultHidden: true,
+              sortValue: (estimate) => estimate.convertedPercent ?? 0,
+              render: (estimate) => (estimate.convertedPercent ? `${estimate.convertedPercent}%` : '—'),
+            },
+            {
+              key: 'job',
+              header: 'Job #',
+              defaultHidden: true,
+              sortValue: (estimate) => estimate.job?.jobNumber || '',
+              render: (estimate) => estimate.job?.jobNumber || '—',
+            },
+            {
+              key: 'lead',
+              header: 'Lead',
+              defaultHidden: true,
+              sortValue: (estimate) => (estimate.lead ? `${estimate.lead.firstName} ${estimate.lead.lastName}` : ''),
+              render: (estimate) => (estimate.lead ? `${estimate.lead.firstName} ${estimate.lead.lastName}` : '—'),
+            },
+            {
+              key: 'lineItems',
+              header: 'Line Items',
+              defaultHidden: true,
+              sortValue: (estimate) => estimate._count.lineItems,
+              render: (estimate) => estimate._count.lineItems,
             },
             {
               key: 'actions',

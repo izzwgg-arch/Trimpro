@@ -469,6 +469,44 @@ export default function PurchaseOrdersPage() {
               sortValue: (po) => po.total,
               render: (po) => formatCurrency(po.total),
             },
+            {
+              key: 'subtotal',
+              header: 'Subtotal',
+              sortValue: (po) => po.subtotal,
+              render: (po) => formatCurrency(po.subtotal),
+              defaultHidden: true,
+            },
+            {
+              key: 'job',
+              header: 'Job',
+              sortValue: (po) => po.job?.jobNumber || '',
+              render: (po) =>
+                po.job ? (
+                  <Link
+                    href={`/dashboard/jobs/${po.job.id}`}
+                    className="text-blue-600 hover:underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {`JOB-${po.job.jobNumber}`}
+                  </Link>
+                ) : (
+                  '—'
+                ),
+              defaultHidden: true,
+            },
+            {
+              key: 'expectedDate',
+              header: 'Expected',
+              sortValue: (po) => po.expectedDate || '',
+              render: (po) => (po.expectedDate ? formatDate(po.expectedDate) : '—'),
+              defaultHidden: true,
+            },
+            {
+              key: 'date',
+              header: 'Date',
+              sortValue: (po) => po.orderDate || '',
+              render: (po) => (po.orderDate ? formatDate(po.orderDate) : '—'),
+            },
           ]}
         />
       )}
