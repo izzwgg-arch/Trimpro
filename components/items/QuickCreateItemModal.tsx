@@ -71,6 +71,7 @@ export function QuickCreateItemModal({
   const [unit, setUnit] = useState('ea')
   const [price, setPrice] = useState('')
   const [cost, setCost] = useState('')
+  const [description, setDescription] = useState('')
   const [taxable, setTaxable] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -82,6 +83,7 @@ export function QuickCreateItemModal({
       setUnit('ea')
       setPrice('')
       setCost('')
+      setDescription('')
       setTaxable(true)
       setError(null)
       setSaving(false)
@@ -110,6 +112,7 @@ export function QuickCreateItemModal({
           unit: unit.trim() || 'ea',
           defaultUnitPrice: price === '' ? 0 : Number(price),
           defaultUnitCost: cost === '' ? null : Number(cost),
+          description: description.trim() || null,
           taxable,
         }),
       })
@@ -166,6 +169,17 @@ export function QuickCreateItemModal({
               <Label htmlFor="qc-cost">Unit cost (optional)</Label>
               <Input id="qc-cost" type="number" inputMode="decimal" value={cost} onChange={(e) => setCost(e.target.value)} placeholder="0.00" />
             </div>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="qc-description">Description (optional)</Label>
+            <textarea
+              id="qc-description"
+              rows={3}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Shown on estimates/invoices for this item"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
           </div>
           <label className="flex items-center gap-2 text-sm text-gray-700">
             <input type="checkbox" checked={taxable} onChange={(e) => setTaxable(e.target.checked)} className="h-4 w-4" />
