@@ -124,20 +124,21 @@ export async function PATCH(
 
       const total = round2(toNumber(payment.invoice.total))
 
-      // Determine the new amount — clamped to what's owed by the OTHER payments.
       const otherPaid = round2(
         otherPayments.reduce((sum, p) => sum + toNumber(p.amount), 0)
       )
-      const maxAllowable = round2(Math.max(0, total - otherPaid))
 
+      // The user may set the full payment amount — we no longer clamp it to the
+      // invoice's remaining balance. The invoice balance below floors at 0, so an
+      // overpayment simply marks the invoice PAID (excess is handled as credit by
+      // the normal payment flows). Only require a positive amount.
       let newAmount: number
       if (amountRaw === undefined || amountRaw === null) {
         newAmount = round2(toNumber(payment.amount))
       } else {
         const requested = round2(toNumber(amountRaw))
         if (requested <= 0) throw new Error('Amount must be greater than zero.')
-        newAmount = Math.min(requested, maxAllowable)
-        if (newAmount <= 0) throw new Error('No remaining balance to apply payment to.')
+        newAmount = requested
       }
 
       // Only remap method when explicitly updating a custom payment type.

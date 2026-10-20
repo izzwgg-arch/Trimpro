@@ -305,6 +305,7 @@ export async function POST(
               estimateId: estimate.id,
               invoiceNumber,
               title: `${estimate.title} - ${billingMode === 'FULL' ? 'Full Billing' : billingMode === 'PERCENTAGE' ? `${percentage.toFixed(2)}% Billing` : 'Partial Billing'}`,
+              jobType: (estimate as any).jobType || 'CUSTOM',
               status: 'DRAFT',
               subtotal: finalSubtotal,
               taxRate,

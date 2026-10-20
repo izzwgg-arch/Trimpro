@@ -194,6 +194,7 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
                 jobNumber,
                 title: estimate.title,
                 description: estimate.notes || null,
+                jobType: (estimate as any).jobType || 'CUSTOM',
                 status: 'QUOTE',
                 priority: 3,
                 estimateAmount: estimate.total,
@@ -238,7 +239,8 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
       // (app/api/invoices/route.ts), so titles/fields stay consistent.
       const depositPct = (() => {
         const raw = Number((estimate as any).depositPercent)
-        if (!Number.isFinite(raw) || raw <= 0 || raw > 100) return 50
+        // Default deposit billing is 65% when the estimate has no explicit deposit %.
+        if (!Number.isFinite(raw) || raw <= 0 || raw > 100) return 65
         return raw
       })()
       const selectedForThisApproval = Array.from(new Set(normalizedSelected))
@@ -332,6 +334,7 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
                 estimateId: estimate.id,
                 invoiceNumber,
                 title: `${estimate.title} - ${billingSuffix}`,
+                jobType: (estimate as any).jobType || 'CUSTOM',
                 status: 'SENT',
                 subtotal,
                 taxRate,

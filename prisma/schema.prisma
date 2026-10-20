@@ -555,6 +555,7 @@ model Estimate {
   jobId          String?
   estimateNumber String         @unique
   title          String
+  jobType        JobType        @default(CUSTOM)
   jobSiteAddress String?        @db.Text
   status           EstimateStatus @default(DRAFT)
   convertedPercent Int?
@@ -804,6 +805,7 @@ model Invoice {
   estimateId    String?
   invoiceNumber String        @unique
   title         String
+  jobType       JobType       @default(CUSTOM)
   status        InvoiceStatus @default(DRAFT)
 
   // Financials

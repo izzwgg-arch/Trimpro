@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { calculateOrderedSubtotalRows } from '@/lib/documents/subtotals'
 import { calculateEstimateConversionSummary } from '@/lib/documents/conversion'
+import { parseJobType } from '@/lib/jobs/types'
 import {
   allocateNextEstimateNumber,
   assertEstimateNumberAvailableForCreate,
@@ -153,6 +154,7 @@ export async function POST(request: NextRequest) {
       jobId,
       estimateNumber: estimateNumberOverride,
       title,
+      jobType,
       jobSiteAddress,
       lineItems,
       optionalItems,
@@ -197,6 +199,7 @@ export async function POST(request: NextRequest) {
       leadId: leadId || null,
       jobId: jobId || null,
       title,
+      jobType: parseJobType(jobType) || 'CUSTOM',
       jobSiteAddress: jobSiteAddress || null,
       status: 'DRAFT' as const,
       subtotal: subtotal,

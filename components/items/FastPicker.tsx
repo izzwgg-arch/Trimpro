@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, KeyboardEvent, useMemo } from 'react'
 import { Input } from '@/components/ui/input'
-import { Package } from 'lucide-react'
+import { Package, Plus } from 'lucide-react'
 import { scrollPickerRowIntoComfortZone } from '@/lib/ui/scroll-picker-row'
 import { smartMatch, scoreHaystack } from '@/lib/search/scoring'
 
@@ -45,6 +45,9 @@ interface FastPickerProps {
   inputRef?: (el: HTMLInputElement | null) => void // Callback to expose input ref
   /** When true, show a "Tag" column in the dropdown (e.g. for purchase orders) */
   showTagColumn?: boolean
+  /** When provided, shows an "Add new item" row that opens a quick-create modal.
+   *  Receives the text currently typed so the modal can prefill the name. */
+  onCreateItem?: (typedName: string) => void
 }
 
 const ITEM_HEIGHT = 48 // Height of each item in pixels
@@ -62,6 +65,7 @@ export function FastPicker({
   className = '',
   inputRef: inputRefCallback,
   showTagColumn = false,
+  onCreateItem,
 }: FastPickerProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -508,15 +512,44 @@ export function FastPicker({
               </div>
             )
           })}
+          {onCreateItem && (
+            <div
+              className="sticky bottom-0 flex items-center gap-2 px-4 py-3 cursor-pointer border-t bg-white text-blue-600 font-medium active:bg-blue-50 sm:hover:bg-blue-50 touch-manipulation min-h-[48px]"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setIsOpen(false)
+                onCreateItem(inputRef.current?.value ?? value)
+              }}
+            >
+              <Plus className="h-4 w-4 flex-shrink-0" />
+              <span className="truncate">{value?.trim() ? `Add "${value.trim()}" as a new item` : 'Add new item'}</span>
+            </div>
+          )}
         </div>
       )}
-      
+
       {/* No items found */}
       {isOpen && filteredItems.length === 0 && (
         <div className="absolute z-[100] w-full bg-white border border-gray-200 rounded-md shadow-lg mt-1">
-          <div className="px-4 py-8 text-center text-gray-500">
-            No items found
-          </div>
+          {onCreateItem ? (
+            <div
+              className="flex items-center gap-2 px-4 py-3 cursor-pointer text-blue-600 font-medium active:bg-blue-50 sm:hover:bg-blue-50 touch-manipulation min-h-[48px]"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setIsOpen(false)
+                onCreateItem(inputRef.current?.value ?? value)
+              }}
+            >
+              <Plus className="h-4 w-4 flex-shrink-0" />
+              <span className="truncate">{value?.trim() ? `Add "${value.trim()}" as a new item` : 'Add new item'}</span>
+            </div>
+          ) : (
+            <div className="px-4 py-8 text-center text-gray-500">
+              No items found
+            </div>
+          )}
         </div>
       )}
     </div>

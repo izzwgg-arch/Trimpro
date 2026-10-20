@@ -13,6 +13,8 @@ import { Save, Plus, Trash2, Eye, EyeOff, Copy, Building2, User } from 'lucide-r
 import { LineItemDragHandle } from '@/components/documents/line-item-drag-handle'
 import Link from 'next/link'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
+import { QuickCreateItemModal } from '@/components/items/QuickCreateItemModal'
+import { JobTypeSelect } from '@/components/jobs/JobTypeSelect'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
 import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
 import { computePercentOfAbovePrice } from '@/lib/documents/percent-of-above'
@@ -146,6 +148,7 @@ export default function EditInvoicePage() {
     clientId: '',
     jobId: '',
     title: '',
+    jobType: 'CUSTOM',
     taxRate: '0',
     discount: '0',
     invoiceDate: '',
@@ -155,6 +158,9 @@ export default function EditInvoicePage() {
     memo: '',
     status: 'DRAFT',
   })
+
+  // Quick "Add new item" modal launched from the line-item picker.
+  const [quickItem, setQuickItem] = useState<{ open: boolean; name: string; index: number; optional: boolean }>({ open: false, name: '', index: 0, optional: false })
 
   const lineItemRefs = useRef<(HTMLDivElement | null)[]>([])
   const pickerInputRefs = useRef<(HTMLInputElement | null)[]>([])
@@ -238,6 +244,7 @@ export default function EditInvoicePage() {
         clientId: inv.client?.id || '',
         jobId: inv.job?.id || '',
         title: inv.title || '',
+        jobType: (inv as any).jobType || 'CUSTOM',
         taxRate: taxRatePercent,
         discount: inv.discount || '0',
         invoiceDate: inv.invoiceDate ? new Date(inv.invoiceDate).toISOString().split('T')[0] : '',
@@ -1074,6 +1081,7 @@ export default function EditInvoicePage() {
           jobId: formData.jobId || null,
           invoiceNumber,
           title: formData.title,
+          jobType: formData.jobType || 'CUSTOM',
           taxRate: taxRate,
           discount,
           status: formData.status,
@@ -1230,6 +1238,10 @@ export default function EditInvoicePage() {
                     placeholder="e.g., Kitchen Remodel Invoice"
                   />
                 </div>
+                <JobTypeSelect
+                  value={formData.jobType}
+                  onValueChange={(value) => setFormData({ ...formData, jobType: value })}
+                />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="invoiceDate">Invoice Date *</Label>
@@ -1565,6 +1577,7 @@ export default function EditInvoicePage() {
                                 onChange={(value) => updateLineItem(index, 'description', value)}
                                 onSelect={(selectedItem) => handleItemSelect(selectedItem, index)}
                                 onNextLine={() => handleNextLine(index)}
+                                onCreateItem={(name) => setQuickItem({ open: true, name, index, optional: false })}
                                 items={pickerItems}
                                 bundles={pickerBundles}
                                 placeholder="Type to search items..."
@@ -1944,6 +1957,7 @@ export default function EditInvoicePage() {
                                   onChange={(value) => updateOptionalItem(index, 'description', value)}
                                   onSelect={(selectedItem) => handleOptionalItemSelect(selectedItem, index)}
                                   onNextLine={() => handleNextOptionalLine(index)}
+                                  onCreateItem={(name) => setQuickItem({ open: true, name, index, optional: true })}
                                   items={pickerItems}
                                   bundles={pickerBundles}
                                   placeholder="Type to search items..."
@@ -2249,6 +2263,16 @@ export default function EditInvoicePage() {
           </div>
         </div>
       </form>
+      <QuickCreateItemModal
+        open={quickItem.open}
+        onOpenChange={(open) => setQuickItem((prev) => ({ ...prev, open }))}
+        initialName={quickItem.name}
+        onCreated={(pickerItem) => {
+          if (quickItem.optional) handleOptionalItemSelect(pickerItem, quickItem.index)
+          else handleItemSelect(pickerItem, quickItem.index)
+          fetchPickerData()
+        }}
+      />
     </div>
   )
 }

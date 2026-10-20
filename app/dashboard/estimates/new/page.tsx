@@ -15,6 +15,8 @@ import Link from 'next/link'
 import { ResponsivePage } from '@/components/layout/ResponsivePage'
 import { MobileActionBar } from '@/components/layout/MobileActionBar'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
+import { QuickCreateItemModal } from '@/components/items/QuickCreateItemModal'
+import { JobTypeSelect } from '@/components/jobs/JobTypeSelect'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
 import { refreshAccessToken } from '@/lib/auth/client'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -150,6 +152,7 @@ export default function NewEstimatePage() {
     jobId: jobIdParam || '',
     estimateNumber: '',
     title: '',
+    jobType: 'CUSTOM',
     jobSiteAddress: '',
     taxRate: '0',
     discount: '0',
@@ -157,6 +160,9 @@ export default function NewEstimatePage() {
     notes: '',
     terms: '',
   })
+
+  // Quick "Add new item" modal launched from the line-item picker.
+  const [quickItem, setQuickItem] = useState<{ open: boolean; name: string; index: number; optional: boolean }>({ open: false, name: '', index: 0, optional: false })
 
   const lineItemRefs = useRef<(HTMLDivElement | null)[]>([])
   const pickerInputRefs = useRef<(HTMLInputElement | null)[]>([])
@@ -1094,6 +1100,7 @@ export default function NewEstimatePage() {
           jobId: formData.jobId || null,
           estimateNumber: formData.estimateNumber || null,
           title: formData.title,
+          jobType: formData.jobType || 'CUSTOM',
           jobSiteAddress: formData.jobSiteAddress || null,
           subtotal,
           taxRate: taxRate,
@@ -1590,6 +1597,7 @@ export default function NewEstimatePage() {
                                 onChange={(value) => updateLineItem(index, 'description', value)}
                                 onSelect={(selectedItem) => handleItemSelect(selectedItem, index)}
                                 onNextLine={() => handleNextLine(index)}
+                                onCreateItem={(name) => setQuickItem({ open: true, name, index, optional: false })}
                                 items={pickerItems}
                                 bundles={pickerBundles}
                                 placeholder="Type to search items..."
@@ -2040,6 +2048,7 @@ export default function NewEstimatePage() {
                                 onChange={(value) => updateOptionalItem(index, 'description', value)}
                                 onSelect={(selectedItem) => handleOptionalItemSelect(selectedItem, index)}
                                 onNextLine={() => handleNextOptionalLine(index)}
+                                onCreateItem={(name) => setQuickItem({ open: true, name, index, optional: true })}
                                 items={pickerItems}
                                 bundles={pickerBundles}
                                 placeholder="Type to search items..."
@@ -2299,6 +2308,10 @@ export default function NewEstimatePage() {
                     onChange={(e) => setFormData({ ...formData, validUntil: e.target.value })}
                   />
                 </div>
+                <JobTypeSelect
+                  value={formData.jobType}
+                  onValueChange={(value) => setFormData({ ...formData, jobType: value })}
+                />
               </CardContent>
             </Card>
           </div>
@@ -2366,6 +2379,16 @@ export default function NewEstimatePage() {
           </div>
         </div>
       </form>
+      <QuickCreateItemModal
+        open={quickItem.open}
+        onOpenChange={(open) => setQuickItem((prev) => ({ ...prev, open }))}
+        initialName={quickItem.name}
+        onCreated={(pickerItem) => {
+          if (quickItem.optional) handleOptionalItemSelect(pickerItem, quickItem.index)
+          else handleItemSelect(pickerItem, quickItem.index)
+          fetchPickerData()
+        }}
+      />
     </ResponsivePage>
   )
 }

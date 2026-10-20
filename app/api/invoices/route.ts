@@ -21,6 +21,7 @@ import {
 import { ensureJobFromInvoice } from '@/lib/jobs/ensure-job-from-invoice'
 import { syncJobCostFromLinkedDocuments } from '@/lib/jobs/sync-job-cost'
 import { resolveJobTypeForWrite } from '@/lib/jobs/job-type-scope'
+import { parseJobType } from '@/lib/jobs/types'
 import { invoiceJobSiteAddressSearchClauses } from '@/lib/search/job-site-address'
 import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
 
@@ -372,6 +373,7 @@ export async function POST(request: NextRequest) {
       jobId: jobId || null,
       estimateId: estimateId || null,
       title,
+      jobType: parseJobType(requestedJobType),
       status: 'DRAFT' as const,
       subtotal: subtotal,
       taxRate: taxRateValue,

@@ -15,6 +15,8 @@ import Link from 'next/link'
 import { ResponsivePage } from '@/components/layout/ResponsivePage'
 import { MobileActionBar } from '@/components/layout/MobileActionBar'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
+import { QuickCreateItemModal } from '@/components/items/QuickCreateItemModal'
+import { JobTypeSelect } from '@/components/jobs/JobTypeSelect'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
 import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
 import { computePercentOfAbovePrice } from '@/lib/documents/percent-of-above'
@@ -189,6 +191,9 @@ export default function NewInvoicePage() {
   })
   const [estimateAlreadyHasJob, setEstimateAlreadyHasJob] = useState(false)
   const [jobTypeChosen, setJobTypeChosen] = useState(false)
+
+  // Quick "Add new item" modal launched from the line-item picker.
+  const [quickItem, setQuickItem] = useState<{ open: boolean; name: string; index: number; optional: boolean }>({ open: false, name: '', index: 0, optional: false })
 
   const lineItemRefs = useRef<(HTMLDivElement | null)[]>([])
   const pickerInputRefs = useRef<(HTMLInputElement | null)[]>([])
@@ -1518,7 +1523,7 @@ export default function NewInvoicePage() {
           clientId: formData.clientId,
           jobId: formData.jobId || null,
           estimateId: formData.estimateId || null,
-          ...(willCreateNewJob ? { jobType: formData.jobType || 'CUSTOM' } : {}),
+          jobType: formData.jobType || 'CUSTOM',
           invoiceNumber: formData.invoiceNumber || null,
           title: formData.title,
           subtotal,
@@ -1658,7 +1663,12 @@ export default function NewInvoicePage() {
                       This invoice will create a new job. Choose which job type it should use.
                     </p>
                   </div>
-                ) : null}
+                ) : (
+                  <JobTypeSelect
+                    value={formData.jobType}
+                    onValueChange={(value) => setFormData((prev) => ({ ...prev, jobType: value }))}
+                  />
+                )}
                 <div>
                   <Label htmlFor="invoiceNumber">Invoice # (optional)</Label>
                   <Input
@@ -1999,6 +2009,7 @@ export default function NewInvoicePage() {
                                 onChange={(value) => updateLineItem(index, 'description', value)}
                                 onSelect={(selectedItem) => handleItemSelect(selectedItem, index)}
                                 onNextLine={() => handleNextLine(index)}
+                                onCreateItem={(name) => setQuickItem({ open: true, name, index, optional: false })}
                                 items={pickerItems}
                                 bundles={pickerBundles}
                                 placeholder="Type to search items..."
@@ -2460,6 +2471,7 @@ export default function NewInvoicePage() {
                                 onChange={(value) => updateOptionalItem(index, 'description', value)}
                                 onSelect={(selectedItem) => handleOptionalItemSelect(selectedItem, index)}
                                 onNextLine={() => handleNextOptionalLine(index)}
+                                onCreateItem={(name) => setQuickItem({ open: true, name, index, optional: true })}
                                 items={pickerItems}
                                 bundles={pickerBundles}
                                 placeholder="Type to search items..."
@@ -2779,6 +2791,16 @@ export default function NewInvoicePage() {
           </div>
         </div>
       </form>
+      <QuickCreateItemModal
+        open={quickItem.open}
+        onOpenChange={(open) => setQuickItem((prev) => ({ ...prev, open }))}
+        initialName={quickItem.name}
+        onCreated={(pickerItem) => {
+          if (quickItem.optional) handleOptionalItemSelect(pickerItem, quickItem.index)
+          else handleItemSelect(pickerItem, quickItem.index)
+          fetchPickerData()
+        }}
+      />
     </ResponsivePage>
   )
 }

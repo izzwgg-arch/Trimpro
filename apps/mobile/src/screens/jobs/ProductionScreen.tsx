@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react'
 import {
   Dimensions,
   FlatList,
-  Linking,
   Modal,
   Pressable,
   RefreshControl,
@@ -594,10 +593,10 @@ function LeadCard({ lead, onPress }: { lead: LeadItem; onPress: () => void }) {
         </View>
       ) : null}
       {lead.phone ? (
-        <Pressable onPress={() => Linking.openURL(`tel:${String(lead.phone).replace(/[^\d+]/g, '')}`)} style={styles.iconRow} hitSlop={6}>
-          <Ionicons name="call-outline" size={12} color={colors.brandPrimary} />
-          <Text style={[{ fontSize: 11, color: colors.brandPrimary, fontWeight: '600' }]}>{lead.phone}</Text>
-        </Pressable>
+        <View style={styles.iconRow}>
+          <Ionicons name="call-outline" size={12} color={colors.muted} />
+          <Text style={[styles.metaMuted, { fontSize: 11 }]}>{lead.phone}</Text>
+        </View>
       ) : null}
       {amount ? (
         <View style={styles.iconRow}>

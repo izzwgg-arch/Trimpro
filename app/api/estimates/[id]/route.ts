@@ -7,6 +7,7 @@ import { geocodeAddressPartsFromString } from '@/lib/geocoding'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { calculateOrderedSubtotalRows } from '@/lib/documents/subtotals'
 import { calculateEstimateConversionSummary, getEstimateConversionProgress, getEstimateConversionSummary } from '@/lib/documents/conversion'
+import { parseJobType } from '@/lib/jobs/types'
 import {
   assertEstimateNumberAvailableForCreate,
   mapEstimateDocNumberErrorToResponse,
@@ -228,6 +229,7 @@ export async function PUT(
       clientId,
       estimateNumber,
       title,
+      jobType,
       jobSiteAddress,
       lineItems,
       optionalItems,
@@ -456,6 +458,7 @@ export async function PUT(
               : undefined,
           title: title !== undefined ? title : existing.title,
           clientId: resolvedClientId !== undefined ? resolvedClientId : undefined,
+        jobType: jobType !== undefined ? parseJobType(jobType) : (existing as any).jobType,
         jobSiteAddress:
           jobSiteAddress !== undefined
             ? (jobSiteAddress || null)

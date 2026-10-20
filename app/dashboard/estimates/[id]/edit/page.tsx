@@ -13,6 +13,8 @@ import { Save, Plus, Trash2, Eye, EyeOff, Copy, Building2, User, ChevronDown, Ch
 import { LineItemDragHandle } from '@/components/documents/line-item-drag-handle'
 import Link from 'next/link'
 import { FastPicker, FastPickerItem } from '@/components/items/FastPicker'
+import { QuickCreateItemModal } from '@/components/items/QuickCreateItemModal'
+import { JobTypeSelect } from '@/components/jobs/JobTypeSelect'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
 import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
 import { computePercentOfAbovePrice } from '@/lib/documents/percent-of-above'
@@ -134,6 +136,7 @@ export default function EditEstimatePage() {
   const [formData, setFormData] = useState({
     clientId: '',
     title: '',
+    jobType: 'CUSTOM',
     jobSiteAddress: '',
     taxRate: '0',
     discount: '0',
@@ -143,6 +146,9 @@ export default function EditEstimatePage() {
     terms: '',
     status: 'DRAFT',
   })
+
+  // Quick "Add new item" modal launched from the line-item picker.
+  const [quickItem, setQuickItem] = useState<{ open: boolean; name: string; index: number; optional: boolean }>({ open: false, name: '', index: 0, optional: false })
 
   const lineItemRefs = useRef<(HTMLDivElement | null)[]>([])
   const pickerInputRefs = useRef<(HTMLInputElement | null)[]>([])
@@ -225,6 +231,7 @@ export default function EditEstimatePage() {
       setFormData({
         clientId: est.client?.id || '',
         title: est.title || '',
+        jobType: (est as any).jobType || 'CUSTOM',
         jobSiteAddress: est.jobSiteAddress || '',
         taxRate: taxRatePercent,
         discount: est.discount || '0',
@@ -1049,6 +1056,7 @@ export default function EditEstimatePage() {
           clientId: formData.clientId || null,
           estimateNumber,
           title: formData.title,
+          jobType: formData.jobType || 'CUSTOM',
           jobSiteAddress: formData.jobSiteAddress || null,
           taxRate: taxRate,
           discount,
@@ -1549,6 +1557,7 @@ export default function EditEstimatePage() {
                                 onChange={(value) => updateLineItem(index, 'description', value)}
                                 onSelect={(selectedItem) => handleItemSelect(selectedItem, index)}
                                 onNextLine={() => handleNextLine(index)}
+                                onCreateItem={(name) => setQuickItem({ open: true, name, index, optional: false })}
                                 items={pickerItems}
                                 bundles={pickerBundles}
                                 placeholder="Type to search items..."
@@ -1947,6 +1956,7 @@ export default function EditEstimatePage() {
                                   onChange={(value) => updateOptionalItem(index, 'description', value)}
                                   onSelect={(selectedItem) => handleOptionalItemSelect(selectedItem, index)}
                                   onNextLine={() => handleNextOptionalLine(index)}
+                                  onCreateItem={(name) => setQuickItem({ open: true, name, index, optional: true })}
                                   items={pickerItems}
                                   bundles={pickerBundles}
                                   placeholder="Type to search items..."
@@ -2186,6 +2196,10 @@ export default function EditEstimatePage() {
                     onChange={(e) => setFormData({ ...formData, validUntil: e.target.value })}
                   />
                 </div>
+                <JobTypeSelect
+                  value={formData.jobType}
+                  onValueChange={(value) => setFormData({ ...formData, jobType: value })}
+                />
                 <div>
                   <Label htmlFor="depositPercent">Required Deposit (%)</Label>
                   <Input
@@ -2200,7 +2214,7 @@ export default function EditEstimatePage() {
                   />
                   <p className="mt-1 text-xs text-gray-500">
                     Initial payment requested when the customer approves online. The invoice is created for the full
-                    amount and stays partially paid until the balance is collected. Defaults to 50% if blank.
+                    amount and stays partially paid until the balance is collected. Defaults to 65% if blank.
                   </p>
                 </div>
               </CardContent>
@@ -2266,6 +2280,16 @@ export default function EditEstimatePage() {
           </div>
         </div>
       </form>
+      <QuickCreateItemModal
+        open={quickItem.open}
+        onOpenChange={(open) => setQuickItem((prev) => ({ ...prev, open }))}
+        initialName={quickItem.name}
+        onCreated={(pickerItem) => {
+          if (quickItem.optional) handleOptionalItemSelect(pickerItem, quickItem.index)
+          else handleItemSelect(pickerItem, quickItem.index)
+          fetchPickerData()
+        }}
+      />
     </div>
   )
 }

@@ -3020,15 +3020,13 @@ async function createGroupedQboPayment(params: {
   }
   const totalAmt = toNumber(appliedAmt + overpaymentCredit)
 
+  // The reference belongs in QBO's PaymentRefNum (reference field), NOT the memo,
+  // so don't fall back to primary.reference for the PrivateNote/memo.
   const paymentNote =
     payments.length > 1
       ? `Payment applied across ${payments.length} invoices`
-      : primary.reference || primary.notes || `Payment for Invoice ${primary.invoice.invoiceNumber || primary.invoice.id}`
+      : primary.notes || `Payment for Invoice ${primary.invoice.invoiceNumber || primary.invoice.id}`
 
-  const isCardPayment =
-    (primary as any).method === 'CARD' ||
-    (primary as any).provider === 'sola' ||
-    !!(primary as any).solaTransactionId
   const paymentRefNum = buildQboPaymentRefNum({
     providerPaymentId: (primary as any).providerPaymentId,
     solaTransactionId: (primary as any).solaTransactionId,
@@ -3059,7 +3057,9 @@ async function createGroupedQboPayment(params: {
     TotalAmt: totalAmt,
     TxnDate: qboDate(primary.processedAt || primary.createdAt),
     PrivateNote: paymentNote,
-    ...(isCardPayment && paymentRefNum ? { PaymentRefNum: paymentRefNum } : {}),
+    // Always send the reference to QBO's reference field (PaymentRefNum), for
+    // check/manual/custom payments too — not just card payments.
+    ...(paymentRefNum ? { PaymentRefNum: paymentRefNum } : {}),
     ...(paymentMethodRef ? { PaymentMethodRef: paymentMethodRef } : {}),
     Line: lines,
   }
@@ -3251,6 +3251,58 @@ export async function setQboPaymentLines(params: {
   return { ok: true as const }
 }
 
+/**
+ * Sparse-update an already-synced QBO payment's reference (PaymentRefNum) and
+ * memo (PrivateNote) to match the edited TrimPro payment. Used when a payment
+ * that is already in QuickBooks is edited — so the reference lands in QBO's
+ * reference field (not the notes). Amount/line changes are intentionally left
+ * untouched here to avoid disturbing invoice applications.
+ */
+async function updateQboPaymentRefNumAndMemo(params: {
+  tenantId: string
+  session: any
+  qboPaymentId: string
+  payment: any
+}) {
+  const { tenantId, session, qboPaymentId, payment } = params
+  const getRes = await quickBooksService.makeAPIRequest(
+    session.accessToken,
+    session.realmId,
+    `/payment/${qboPaymentId}`,
+    'GET',
+    undefined,
+    { tenantId, entityType: 'payment', entityId: payment.id, triggerSource: 'payment_edit' }
+  )
+  const existing = getRes?.Payment
+  if (!existing?.Id) return
+
+  const paymentRefNum = buildQboPaymentRefNum({
+    providerPaymentId: payment.providerPaymentId,
+    solaTransactionId: payment.solaTransactionId,
+    reference: payment.reference,
+    invoiceNumber: payment.invoice?.invoiceNumber,
+    paymentId: payment.id,
+  })
+  const memo = payment.notes || `Payment for Invoice ${payment.invoice?.invoiceNumber || payment.invoice?.id}`
+
+  const payload: Record<string, unknown> = {
+    Id: String(existing.Id),
+    SyncToken: String(existing.SyncToken ?? '0'),
+    sparse: true,
+    PrivateNote: memo,
+    ...(paymentRefNum ? { PaymentRefNum: paymentRefNum } : {}),
+  }
+
+  await quickBooksService.makeAPIRequest(
+    session.accessToken,
+    session.realmId,
+    '/payment',
+    'POST',
+    payload,
+    { tenantId, entityType: 'payment', entityId: payment.id, triggerSource: 'payment_edit' }
+  )
+}
+
 export async function syncPaymentToQuickBooks(tenantId: string, paymentId: string) {
   const session = await getQboSession(tenantId)
   if (!session) return
@@ -3272,10 +3324,20 @@ export async function syncPaymentToQuickBooks(tenantId: string, paymentId: strin
         })
       : [trigger]
 
-    // Idempotency: if any member is already synced, the group is done.
+    // Idempotency: if any member is already synced, the group is done — but this
+    // may be an EDIT, so push the corrected reference + memo to the existing QBO
+    // payment (sparse update) before stopping, so the ref lands in QBO's
+    // reference field even for payments synced before this behavior existed.
     for (const gp of groupPayments) {
       const mapped = await getMappedQboId(session.integrationId, 'payment', gp.id)
-      if (mapped) return
+      if (mapped) {
+        try {
+          await updateQboPaymentRefNumAndMemo({ tenantId, session, qboPaymentId: String(mapped), payment: gp })
+        } catch (e: any) {
+          console.error('QBO payment ref/memo sparse update failed:', e?.message || e)
+        }
+        return
+      }
     }
 
     const syncable = groupPayments.filter((gp) => !shouldSkipOutboundQboPaymentSync(gp))
