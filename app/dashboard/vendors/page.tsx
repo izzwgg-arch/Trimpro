@@ -12,6 +12,7 @@ import { ViewModeSelector } from '@/components/ui/ViewModeSelector'
 import { useViewMode } from '@/hooks/useViewMode'
 import { RowCompactItem } from '@/components/lists/RowCompactItem'
 import { RowDetailedItem } from '@/components/lists/RowDetailedItem'
+import { TableView } from '@/components/lists/TableView'
 import { PaginationControls } from '@/components/ui/PaginationControls'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { formatCurrency, formatDate } from '@/lib/utils'
@@ -425,58 +426,161 @@ export default function VendorsPage() {
             <CardTitle>Vendors ({vendors.length})</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-semibold">Vendor Name</th>
-                    <th className="text-left py-3 px-4 font-semibold">Primary Contact</th>
-                    <th className="text-left py-3 px-4 font-semibold">Email</th>
-                    <th className="text-left py-3 px-4 font-semibold">Phone</th>
-                    <th className="text-left py-3 px-4 font-semibold">Payment Terms</th>
-                    <th className="text-left py-3 px-4 font-semibold">Status</th>
-                    <th className="text-left py-3 px-4 font-semibold">Last Updated</th>
-                    <th className="text-right py-3 px-4 font-semibold">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {vendors.map((vendor) => {
+            <TableView<Vendor>
+              tableKey="vendors"
+              highlightedRowId={highlightedId}
+              data={vendors}
+              rowKey={(vendor) => vendor.id}
+              onRowClick={(vendor) =>
+                openFromList(router, { entity: 'vendors', detailHref: `/dashboard/vendors/${vendor.id}`, itemId: vendor.id })
+              }
+              columns={[
+                {
+                  key: 'name',
+                  header: 'Vendor Name',
+                  sortValue: (vendor) => vendor.name,
+                  render: (vendor) => (
+                    <div>
+                      <Link
+                        href={`/dashboard/vendors/${vendor.id}`}
+                        className="text-primary hover:underline font-medium"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {vendor.name}
+                      </Link>
+                      {vendor.vendorCode && <div className="text-sm text-gray-500">Code: {vendor.vendorCode}</div>}
+                    </div>
+                  ),
+                },
+                {
+                  key: 'contact',
+                  header: 'Primary Contact',
+                  sortValue: (vendor) => primaryContact(vendor)?.name || '',
+                  render: (vendor) => {
                     const contact = primaryContact(vendor)
-                    return (
-                      <tr key={vendor.id} className="border-b hover:bg-gray-50">
-                        <td className="py-3 px-4">
-                          <Link href={`/dashboard/vendors/${vendor.id}`} className="text-primary hover:underline font-medium">
-                            {vendor.name}
-                          </Link>
-                          {vendor.vendorCode && <div className="text-sm text-gray-500">Code: {vendor.vendorCode}</div>}
-                        </td>
-                        <td className="py-3 px-4">{contact ? <div className="font-medium">{contact.name}</div> : <span className="text-gray-400">No contact</span>}</td>
-                        <td className="py-3 px-4">{contact?.email || vendor.email || <span className="text-gray-400">-</span>}</td>
-                        <td className="py-3 px-4">{contact?.phone || vendor.phone || <span className="text-gray-400">-</span>}</td>
-                        <td className="py-3 px-4">{paymentTermsLabels[vendor.paymentTerms] || vendor.paymentTerms}</td>
-                        <td className="py-3 px-4">
-                          <span className={`px-2 py-1 text-xs rounded-full ${statusColors[vendor.status] || 'bg-gray-100 text-gray-800'}`}>{vendor.status}</span>
-                        </td>
-                        <td className="py-3 px-4 text-sm text-gray-600">{formatDate(vendor.updatedAt)}</td>
-                        <td className="py-3 px-4">
-                          <div className="flex items-center justify-end space-x-2">
-                            <Link href={`/dashboard/vendors/${vendor.id}`}>
-                              <Button variant="ghost" size="sm"><Eye className="h-4 w-4" /></Button>
-                            </Link>
-                            <Link href={`/dashboard/vendors/${vendor.id}/edit`}>
-                              <Button variant="ghost" size="sm"><Edit className="h-4 w-4" /></Button>
-                            </Link>
-                            <Button variant="ghost" size="sm" onClick={() => handleDelete(vendor.id, vendor.name)} className="text-red-600 hover:text-red-700">
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+                    return contact ? <div className="font-medium">{contact.name}</div> : <span className="text-gray-400">No contact</span>
+                  },
+                },
+                {
+                  key: 'email',
+                  header: 'Email',
+                  sortValue: (vendor) => primaryContact(vendor)?.email || vendor.email || '',
+                  render: (vendor) => primaryContact(vendor)?.email || vendor.email || <span className="text-gray-400">-</span>,
+                },
+                {
+                  key: 'phone',
+                  header: 'Phone',
+                  sortValue: (vendor) => primaryContact(vendor)?.phone || vendor.phone || '',
+                  render: (vendor) => primaryContact(vendor)?.phone || vendor.phone || <span className="text-gray-400">-</span>,
+                },
+                {
+                  key: 'paymentTerms',
+                  header: 'Payment Terms',
+                  sortValue: (vendor) => paymentTermsLabels[vendor.paymentTerms] || vendor.paymentTerms,
+                  render: (vendor) => paymentTermsLabels[vendor.paymentTerms] || vendor.paymentTerms,
+                },
+                {
+                  key: 'status',
+                  header: 'Status',
+                  sortValue: (vendor) => vendor.status,
+                  render: (vendor) => (
+                    <span className={`px-2 py-1 text-xs rounded-full ${statusColors[vendor.status] || 'bg-gray-100 text-gray-800'}`}>{vendor.status}</span>
+                  ),
+                },
+                {
+                  key: 'updatedAt',
+                  header: 'Last Updated',
+                  sortValue: (vendor) => vendor.updatedAt,
+                  className: 'text-sm text-gray-600',
+                  render: (vendor) => formatDate(vendor.updatedAt),
+                },
+                // Additional vendor fields, hidden by default (revealable from the Columns menu).
+                {
+                  key: 'vendorCode',
+                  header: 'Vendor Code',
+                  defaultHidden: true,
+                  sortValue: (vendor) => vendor.vendorCode || '',
+                  render: (vendor) => vendor.vendorCode || <span className="text-gray-400">-</span>,
+                },
+                {
+                  key: 'vendorEmail',
+                  header: 'Vendor Email',
+                  defaultHidden: true,
+                  sortValue: (vendor) => vendor.email || '',
+                  render: (vendor) => vendor.email || <span className="text-gray-400">-</span>,
+                },
+                {
+                  key: 'vendorPhone',
+                  header: 'Vendor Phone',
+                  defaultHidden: true,
+                  sortValue: (vendor) => vendor.phone || '',
+                  render: (vendor) => vendor.phone || <span className="text-gray-400">-</span>,
+                },
+                {
+                  key: 'contactEmail',
+                  header: 'Contact Email',
+                  defaultHidden: true,
+                  sortValue: (vendor) => primaryContact(vendor)?.email || '',
+                  render: (vendor) => primaryContact(vendor)?.email || <span className="text-gray-400">-</span>,
+                },
+                {
+                  key: 'contactPhone',
+                  header: 'Contact Phone',
+                  defaultHidden: true,
+                  sortValue: (vendor) => primaryContact(vendor)?.phone || '',
+                  render: (vendor) => primaryContact(vendor)?.phone || <span className="text-gray-400">-</span>,
+                },
+                {
+                  key: 'contactCount',
+                  header: 'Contacts',
+                  defaultHidden: true,
+                  sortValue: (vendor) => vendor.contacts.length,
+                  render: (vendor) => vendor.contacts.length,
+                },
+                {
+                  key: 'purchaseOrders',
+                  header: 'Purchase Orders',
+                  defaultHidden: true,
+                  sortValue: (vendor) => vendor._count.purchaseOrders,
+                  render: (vendor) => vendor._count.purchaseOrders,
+                },
+                {
+                  key: 'items',
+                  header: 'Items',
+                  defaultHidden: true,
+                  sortValue: (vendor) => vendor._count.items,
+                  render: (vendor) => vendor._count.items,
+                },
+                {
+                  key: 'actions',
+                  header: 'Actions',
+                  locked: true,
+                  headerClassName: 'text-right',
+                  className: 'text-right',
+                  render: (vendor) => (
+                    <div className="flex items-center justify-end space-x-2">
+                      <Link href={`/dashboard/vendors/${vendor.id}`} onClick={(e) => e.stopPropagation()}>
+                        <Button variant="ghost" size="sm"><Eye className="h-4 w-4" /></Button>
+                      </Link>
+                      <Link href={`/dashboard/vendors/${vendor.id}/edit`} onClick={(e) => e.stopPropagation()}>
+                        <Button variant="ghost" size="sm"><Edit className="h-4 w-4" /></Button>
+                      </Link>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleDelete(vendor.id, vendor.name)
+                        }}
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ),
+                },
+              ]}
+            />
           </CardContent>
         </Card>
       )}

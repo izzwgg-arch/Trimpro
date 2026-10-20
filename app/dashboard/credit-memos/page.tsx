@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Plus, Search, Download } from 'lucide-react'
 import Link from 'next/link'
+import { TableView, type TableColumn } from '@/components/lists/TableView'
 
 interface CreditMemoRow {
   id: string
@@ -117,6 +118,100 @@ export default function CreditMemosPage() {
     }
   }
 
+  const columns: TableColumn<CreditMemoRow>[] = [
+    {
+      key: 'creditMemoNumber',
+      header: 'Number',
+      sortValue: (row) => row.creditMemoNumber,
+      render: (row) => <span className="font-medium">{row.creditMemoNumber}</span>,
+    },
+    {
+      key: 'client',
+      header: 'Client',
+      sortValue: (row) => row.client?.companyName || row.client?.name || '',
+      render: (row) => row.client?.companyName || row.client?.name || '—',
+    },
+    {
+      key: 'job',
+      header: 'Job',
+      sortValue: (row) => row.job?.jobNumber || '',
+      render: (row) =>
+        row.job
+          ? `${row.job.jobNumber}${row.job.title ? ` — ${row.job.title}` : ''}`
+          : '—',
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      sortValue: (row) => row.status,
+      render: (row) => (
+        <span
+          className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+            statusColors[row.status] || 'bg-gray-100 text-gray-800'
+          }`}
+        >
+          {row.status.replace(/_/g, ' ')}
+        </span>
+      ),
+    },
+    {
+      key: 'creditMemoDate',
+      header: 'Date',
+      sortValue: (row) => row.creditMemoDate,
+      render: (row) => formatDate(row.creditMemoDate),
+    },
+    {
+      key: 'total',
+      header: 'Total',
+      headerClassName: 'text-right',
+      className: 'text-right',
+      sortValue: (row) => row.total,
+      render: (row) => formatCurrency(row.total),
+    },
+    {
+      key: 'remainingCredit',
+      header: 'Remaining',
+      headerClassName: 'text-right',
+      className: 'text-right',
+      sortValue: (row) => row.remainingCredit,
+      render: (row) => formatCurrency(row.remainingCredit),
+    },
+    {
+      key: 'title',
+      header: 'Title',
+      defaultHidden: true,
+      sortValue: (row) => row.title || '',
+      render: (row) => row.title || '—',
+    },
+    {
+      key: 'appliedAmount',
+      header: 'Applied',
+      headerClassName: 'text-right',
+      className: 'text-right',
+      defaultHidden: true,
+      sortValue: (row) => row.appliedAmount,
+      render: (row) => formatCurrency(row.appliedAmount),
+    },
+    {
+      key: 'sourceInvoice',
+      header: 'Source Invoice',
+      defaultHidden: true,
+      sortValue: (row) => row.sourceInvoice?.invoiceNumber || '',
+      render: (row) =>
+        row.sourceInvoice ? (
+          <Link
+            href={`/dashboard/invoices/${row.sourceInvoice.id}`}
+            onClick={(e) => e.stopPropagation()}
+            className="text-blue-600 hover:underline"
+          >
+            {row.sourceInvoice.invoiceNumber}
+          </Link>
+        ) : (
+          '—'
+        ),
+    },
+  ]
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -185,51 +280,14 @@ export default function CreditMemosPage() {
           ) : rows.length === 0 ? (
             <div className="p-8 text-center text-gray-500">No credit memos found</div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-gray-50">
-                    <th className="px-4 py-3 text-left">Number</th>
-                    <th className="px-4 py-3 text-left">Client</th>
-                    <th className="px-4 py-3 text-left">Job</th>
-                    <th className="px-4 py-3 text-left">Status</th>
-                    <th className="px-4 py-3 text-left">Date</th>
-                    <th className="px-4 py-3 text-right">Total</th>
-                    <th className="px-4 py-3 text-right">Remaining</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row) => (
-                    <tr
-                      key={row.id}
-                      className="border-b hover:bg-gray-50 cursor-pointer"
-                      onClick={() => router.push(`/dashboard/credit-memos/${row.id}`)}
-                    >
-                      <td className="px-4 py-3 font-medium">{row.creditMemoNumber}</td>
-                      <td className="px-4 py-3">
-                        {row.client?.companyName || row.client?.name || '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        {row.job
-                          ? `${row.job.jobNumber}${row.job.title ? ` — ${row.job.title}` : ''}`
-                          : '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                            statusColors[row.status] || 'bg-gray-100 text-gray-800'
-                          }`}
-                        >
-                          {row.status.replace(/_/g, ' ')}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">{formatDate(row.creditMemoDate)}</td>
-                      <td className="px-4 py-3 text-right">{formatCurrency(row.total)}</td>
-                      <td className="px-4 py-3 text-right">{formatCurrency(row.remainingCredit)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="p-4">
+              <TableView
+                tableKey="credit-memos"
+                data={rows}
+                rowKey={(row) => row.id}
+                columns={columns}
+                onRowClick={(row) => router.push(`/dashboard/credit-memos/${row.id}`)}
+              />
             </div>
           )}
         </CardContent>

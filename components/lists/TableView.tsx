@@ -19,6 +19,8 @@ export interface TableColumn<T> {
   resizable?: boolean
   /** Pinned column that can't be hidden or reordered (e.g. select / actions). */
   locked?: boolean
+  /** Hidden by default; the user can reveal it from the Columns menu. */
+  defaultHidden?: boolean
 }
 
 interface TableViewProps<T> {
@@ -67,21 +69,22 @@ function writeStoredSort(entity: string | undefined, sortKey: string | null, sor
 
 interface ColumnPrefs {
   order: string[]
+  /** Columns the user explicitly hid. */
   hidden: string[]
+  /** Columns the user explicitly revealed (overriding defaultHidden). */
+  shown: string[]
 }
 
 function readStoredColumns(entity?: string | null): ColumnPrefs {
-  if (!entity || typeof window === 'undefined') return { order: [], hidden: [] }
+  if (!entity || typeof window === 'undefined') return { order: [], hidden: [], shown: [] }
   try {
     const raw = localStorage.getItem(`trimpro.table.columns.${entity}`)
-    if (!raw) return { order: [], hidden: [] }
+    if (!raw) return { order: [], hidden: [], shown: [] }
     const p = JSON.parse(raw)
-    return {
-      order: Array.isArray(p.order) ? p.order.filter((x: unknown) => typeof x === 'string') : [],
-      hidden: Array.isArray(p.hidden) ? p.hidden.filter((x: unknown) => typeof x === 'string') : [],
-    }
+    const arr = (v: unknown) => (Array.isArray(v) ? v.filter((x: unknown) => typeof x === 'string') : [])
+    return { order: arr(p.order), hidden: arr(p.hidden), shown: arr(p.shown) }
   } catch {
-    return { order: [], hidden: [] }
+    return { order: [], hidden: [], shown: [] }
   }
 }
 
@@ -119,7 +122,7 @@ export function TableView<T>({
   // ---- per-user column show/hide + reorder ----
   const columnsEntity = tableKey === null ? null : (tableKey ?? persistWidthsEntity ?? persistSortEntity ?? null)
   const customizable = Boolean(columnsEntity)
-  const [colPrefs, setColPrefs] = useState<ColumnPrefs>({ order: [], hidden: [] })
+  const [colPrefs, setColPrefs] = useState<ColumnPrefs>({ order: [], hidden: [], shown: [] })
   const [menuOpen, setMenuOpen] = useState(false)
   const [dragKey, setDragKey] = useState<string | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -167,7 +170,14 @@ export function TableView<T>({
     return order
   }, [customColumns, colPrefs.order])
 
-  const hiddenSet = useMemo(() => new Set(colPrefs.hidden || []), [colPrefs.hidden])
+  // Effective hidden = (defaultHidden columns the user hasn't revealed) + (columns the user hid).
+  const hiddenSet = useMemo(() => {
+    const shown = new Set(colPrefs.shown || [])
+    const set = new Set<string>()
+    for (const c of customColumns) if (c.defaultHidden && !shown.has(c.key)) set.add(c.key)
+    for (const k of colPrefs.hidden || []) set.add(k)
+    return set
+  }, [customColumns, colPrefs.hidden, colPrefs.shown])
 
   const displayColumns = useMemo(() => {
     if (!customizable) return columns
@@ -180,9 +190,17 @@ export function TableView<T>({
 
   const toggleHidden = (key: string) => {
     const hidden = new Set(colPrefs.hidden || [])
-    if (hidden.has(key)) hidden.delete(key)
-    else hidden.add(key)
-    savePrefs({ ...colPrefs, hidden: Array.from(hidden) })
+    const shown = new Set(colPrefs.shown || [])
+    if (hiddenSet.has(key)) {
+      // reveal: clear explicit-hide and mark explicitly shown (overrides defaultHidden)
+      hidden.delete(key)
+      shown.add(key)
+    } else {
+      // hide
+      hidden.add(key)
+      shown.delete(key)
+    }
+    savePrefs({ ...colPrefs, hidden: Array.from(hidden), shown: Array.from(shown) })
   }
 
   const moveColumn = (from: string, to: string) => {
@@ -195,7 +213,7 @@ export function TableView<T>({
     savePrefs({ ...colPrefs, order })
   }
 
-  const resetColumns = () => savePrefs({ order: [], hidden: [] })
+  const resetColumns = () => savePrefs({ order: [], hidden: [], shown: [] })
 
   const widthDefaults = useMemo(() => {
     const map: Record<string, number> = {}

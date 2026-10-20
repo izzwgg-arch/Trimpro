@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Plus, Search, Filter, Package, Download, Upload, Trash2, Edit, Eye, Copy } from 'lucide-react'
 import Link from 'next/link'
+import { TableView } from '@/components/lists/TableView'
 
 interface Item {
   id: string
@@ -532,138 +533,215 @@ export default function ItemsPage() {
           </CardContent>
         </Card>
       ) : (
-        <Card>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b bg-gray-50">
-                    <th className="text-center py-3 px-2 font-medium text-gray-700">
-                      <input
-                        type="checkbox"
-                        checked={items.length > 0 && selectedIds.length === items.length}
-                        ref={(el) => {
-                          if (el) el.indeterminate = selectedIds.length > 0 && selectedIds.length < items.length
-                        }}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedIds(items.map((item) => item.id))
-                          } else {
-                            setSelectedIds([])
-                          }
-                        }}
-                        className="h-4 w-4"
-                        title="Select all"
-                      />
-                    </th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Name</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Description</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">SKU</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Type</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Unit</th>
-                    <th className="text-right py-3 px-4 font-medium text-gray-700">Unit Cost</th>
-                    <th className="text-right py-3 px-4 font-medium text-gray-700">Unit Price</th>
-                    <th className="text-center py-3 px-4 font-medium text-gray-700">Taxable</th>
-                    <th className="text-center py-3 px-4 font-medium text-gray-700">Status</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Category</th>
-                    <th className="text-right py-3 px-4 font-medium text-gray-700">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((item) => (
-                    <tr key={item.id} className="border-b hover:bg-gray-50">
-                      <td className="py-3 px-2 text-center">
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.includes(item.id)}
-                          onChange={(e) =>
-                            setSelectedIds((prev) =>
-                              e.target.checked
-                                ? [...prev, item.id]
-                                : prev.filter((id) => id !== item.id)
-                            )
-                          }
-                          className="h-4 w-4"
-                          title="Select for duplicate"
-                        />
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="flex items-center space-x-2">
-                          <Link href={`/dashboard/items/${item.id}`} className="text-primary hover:underline font-medium">
-                            {item.name}
-                          </Link>
-                          {item.kind === 'BUNDLE' && (
-                            <span className="px-2 py-0.5 text-xs rounded-full bg-purple-100 text-purple-800 font-medium">
-                              Bundle
-                            </span>
-                          )}
-                        </div>
-                        {item.kind === 'BUNDLE' && (
-                          <div className="text-xs text-gray-500 mt-1">
-                            Contains multiple items
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-gray-600">
-                        <div className="max-w-[360px] truncate" title={item.description || ''}>
-                          {item.description || '-'}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-gray-600">{item.sku || '-'}</td>
-                      <td className="py-3 px-4">
-                        <span className={`px-2 py-1 text-xs rounded-full ${typeColors[item.type] || 'bg-gray-100 text-gray-800'}`}>
-                          {typeLabels[item.type] || item.type}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-gray-600">{item.unit}</td>
-                      <td className="py-3 px-4 text-right text-gray-600">
-                        {item.defaultUnitCost ? formatCurrency(item.defaultUnitCost) : '-'}
-                      </td>
-                      <td className="py-3 px-4 text-right font-medium">{formatCurrency(item.defaultUnitPrice)}</td>
-                      <td className="py-3 px-4 text-center">
-                        {item.taxable ? (
-                          <span className="text-green-600">Yes</span>
-                        ) : (
-                          <span className="text-gray-400">No</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        {item.isActive ? (
-                          <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">Active</span>
-                        ) : (
-                          <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-800">Inactive</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-gray-600">{item.category?.name || '-'}</td>
-                      <td className="py-3 px-4">
-                        <div className="flex items-center justify-end space-x-2">
-                          <Link href={`/dashboard/items/${item.id}`}>
-                            <Button variant="ghost" size="sm">
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          </Link>
-                          <Link href={`/dashboard/items/${item.id}/edit`}>
-                            <Button variant="ghost" size="sm">
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                          </Link>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDelete(item.id, item.name)}
-                            className="text-red-600 hover:text-red-700"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
+        <TableView
+          tableKey="items"
+          highlightedRowId={highlightedId}
+          data={items}
+          rowKey={(item) => item.id}
+          onRowClick={(item) =>
+            openFromList(router, { entity: 'items', detailHref: `/dashboard/items/${item.id}`, itemId: item.id })
+          }
+          columns={[
+            {
+              key: 'select',
+              header: '',
+              locked: true,
+              headerClassName: 'w-[40px]',
+              className: 'text-center',
+              render: (item) => (
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(item.id)}
+                  onChange={(e) =>
+                    setSelectedIds((prev) =>
+                      e.target.checked ? [...prev, item.id] : prev.filter((id) => id !== item.id)
+                    )
+                  }
+                  onClick={(e) => e.stopPropagation()}
+                  className="h-4 w-4"
+                  title="Select for duplicate"
+                />
+              ),
+            },
+            {
+              key: 'name',
+              header: 'Name',
+              sortValue: (item) => item.name,
+              render: (item) => (
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <Link
+                      href={`/dashboard/items/${item.id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-primary hover:underline font-medium"
+                    >
+                      {item.name}
+                    </Link>
+                    {item.kind === 'BUNDLE' && (
+                      <span className="px-2 py-0.5 text-xs rounded-full bg-purple-100 text-purple-800 font-medium">
+                        Bundle
+                      </span>
+                    )}
+                  </div>
+                  {item.kind === 'BUNDLE' && (
+                    <div className="text-xs text-gray-500 mt-1">Contains multiple items</div>
+                  )}
+                </div>
+              ),
+            },
+            {
+              key: 'description',
+              header: 'Description',
+              sortValue: (item) => item.description || '',
+              render: (item) => (
+                <div className="max-w-[360px] truncate text-gray-600" title={item.description || ''}>
+                  {item.description || '-'}
+                </div>
+              ),
+            },
+            {
+              key: 'sku',
+              header: 'SKU',
+              sortValue: (item) => item.sku || '',
+              render: (item) => <span className="text-gray-600">{item.sku || '-'}</span>,
+            },
+            {
+              key: 'type',
+              header: 'Type',
+              sortValue: (item) => item.type,
+              render: (item) => (
+                <span className={`px-2 py-1 text-xs rounded-full ${typeColors[item.type] || 'bg-gray-100 text-gray-800'}`}>
+                  {typeLabels[item.type] || item.type}
+                </span>
+              ),
+            },
+            {
+              key: 'unit',
+              header: 'Unit',
+              sortValue: (item) => item.unit,
+              render: (item) => <span className="text-gray-600">{item.unit}</span>,
+            },
+            {
+              key: 'unitCost',
+              header: 'Unit Cost',
+              className: 'text-right',
+              sortValue: (item) => item.defaultUnitCost ?? 0,
+              render: (item) => (
+                <span className="text-gray-600">
+                  {item.defaultUnitCost ? formatCurrency(item.defaultUnitCost) : '-'}
+                </span>
+              ),
+            },
+            {
+              key: 'unitPrice',
+              header: 'Unit Price',
+              className: 'text-right',
+              sortValue: (item) => item.defaultUnitPrice,
+              render: (item) => <span className="font-medium">{formatCurrency(item.defaultUnitPrice)}</span>,
+            },
+            {
+              key: 'taxable',
+              header: 'Taxable',
+              className: 'text-center',
+              sortValue: (item) => (item.taxable ? 1 : 0),
+              render: (item) =>
+                item.taxable ? (
+                  <span className="text-green-600">Yes</span>
+                ) : (
+                  <span className="text-gray-400">No</span>
+                ),
+            },
+            {
+              key: 'status',
+              header: 'Status',
+              className: 'text-center',
+              sortValue: (item) => (item.isActive ? 1 : 0),
+              render: (item) =>
+                item.isActive ? (
+                  <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">Active</span>
+                ) : (
+                  <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-800">Inactive</span>
+                ),
+            },
+            {
+              key: 'category',
+              header: 'Category',
+              sortValue: (item) => item.category?.name || '',
+              render: (item) => <span className="text-gray-600">{item.category?.name || '-'}</span>,
+            },
+            {
+              key: 'kind',
+              header: 'Kind',
+              defaultHidden: true,
+              sortValue: (item) => item.kind,
+              render: (item) => <span className="text-gray-600">{item.kind}</span>,
+            },
+            {
+              key: 'taxRate',
+              header: 'Tax Rate',
+              className: 'text-right',
+              defaultHidden: true,
+              sortValue: (item) => item.taxRate ?? 0,
+              render: (item) => (
+                <span className="text-gray-600">{item.taxRate != null ? `${item.taxRate}%` : '-'}</span>
+              ),
+            },
+            {
+              key: 'vendor',
+              header: 'Vendor',
+              defaultHidden: true,
+              sortValue: (item) => item.vendor?.name || '',
+              render: (item) => <span className="text-gray-600">{item.vendor?.name || '-'}</span>,
+            },
+            {
+              key: 'tags',
+              header: 'Tags',
+              defaultHidden: true,
+              sortValue: (item) => (item.tags || []).join(', '),
+              render: (item) => (
+                <span className="text-gray-600">{item.tags && item.tags.length ? item.tags.join(', ') : '-'}</span>
+              ),
+            },
+            {
+              key: 'updatedAt',
+              header: 'Updated',
+              defaultHidden: true,
+              sortValue: (item) => item.updatedAt,
+              render: (item) => <span className="text-gray-600">{formatDate(item.updatedAt)}</span>,
+            },
+            {
+              key: 'actions',
+              header: 'Actions',
+              locked: true,
+              className: 'text-right',
+              render: (item) => (
+                <div className="flex items-center justify-end space-x-2">
+                  <Link href={`/dashboard/items/${item.id}`} onClick={(e) => e.stopPropagation()}>
+                    <Button variant="ghost" size="sm">
+                      <Eye className="h-4 w-4" />
+                    </Button>
+                  </Link>
+                  <Link href={`/dashboard/items/${item.id}/edit`} onClick={(e) => e.stopPropagation()}>
+                    <Button variant="ghost" size="sm">
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                  </Link>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleDelete(item.id, item.name)
+                    }}
+                    className="text-red-600 hover:text-red-700"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ),
+            },
+          ]}
+        />
       )}
 
       {/* Pagination */}

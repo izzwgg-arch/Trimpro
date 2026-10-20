@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import { TableView, type TableColumn } from '@/components/lists/TableView'
 import {
   Calendar,
   Camera,
@@ -405,6 +406,96 @@ export default function DispatchPage() {
 
   const openJobs = useMemo(() => jobs.filter((j) => !['COMPLETED', 'CANCELLED'].includes(j.status)), [jobs])
 
+  const crewNames = (j: Job) => j.assignments.map((a) => `${a.firstName} ${a.lastName}`).join(', ')
+
+  const dispatchListColumns: TableColumn<Job>[] = useMemo(() => [
+    {
+      key: 'job',
+      header: 'Job',
+      sortValue: (j) => j.jobNumber,
+      render: (j) => <span>{j.jobNumber} · {j.title}</span>,
+    },
+    {
+      key: 'client',
+      header: 'Client',
+      sortValue: (j) => j.client.name,
+      render: (j) => j.client.name,
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      sortValue: (j) => j.status,
+      render: (j) => j.status,
+    },
+    {
+      key: 'crew',
+      header: 'Crew',
+      sortValue: (j) => crewNames(j),
+      render: (j) => crewNames(j) || '—',
+    },
+    {
+      key: 'schedule',
+      header: 'Schedule',
+      sortValue: (j) => j.scheduledStart || '',
+      render: (j) => (j.scheduledStart ? new Date(j.scheduledStart).toLocaleString() : 'Unscheduled'),
+    },
+    {
+      key: 'scheduledEnd',
+      header: 'Scheduled End',
+      defaultHidden: true,
+      sortValue: (j) => j.scheduledEnd || '',
+      render: (j) => (j.scheduledEnd ? new Date(j.scheduledEnd).toLocaleString() : '—'),
+    },
+    {
+      key: 'priority',
+      header: 'Priority',
+      defaultHidden: true,
+      sortValue: (j) => j.priority,
+      render: (j) => j.priority,
+    },
+    {
+      key: 'assignedTo',
+      header: 'Assigned To',
+      defaultHidden: true,
+      sortValue: (j) => (j.assignedTo ? `${j.assignedTo.firstName} ${j.assignedTo.lastName}` : ''),
+      render: (j) => (j.assignedTo ? `${j.assignedTo.firstName} ${j.assignedTo.lastName}` : '—'),
+    },
+    {
+      key: 'address',
+      header: 'Job Site',
+      defaultHidden: true,
+      sortValue: (j) => [j.jobSite?.street, j.jobSite?.city, j.jobSite?.state, j.jobSite?.zipCode].filter(Boolean).join(' '),
+      render: (j) =>
+        [j.jobSite?.street, j.jobSite?.city, j.jobSite?.state, j.jobSite?.zipCode].filter(Boolean).join(', ') || '—',
+    },
+    {
+      key: 'recentActivity',
+      header: 'Recent Activity',
+      defaultHidden: true,
+      sortValue: (j) => j.indicators.recentActivityCount,
+      render: (j) => j.indicators.recentActivityCount,
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      locked: true,
+      headerClassName: 'text-right',
+      className: 'text-right',
+      render: (j) => (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={(e) => {
+            e.stopPropagation()
+            openPanel(j.id)
+          }}
+        >
+          Open
+        </Button>
+      ),
+    },
+  ], [openPanel])
+
   const onDropStatus = async (statusKey: 'unassigned' | 'scheduled' | 'inProgress' | 'completed') => {
     const jid = dragJobIdRef.current
     if (!jid) return
@@ -602,39 +693,18 @@ export default function DispatchPage() {
         <Card className="shadow-sm">
           <CardContent className="pt-4">
             <div className="max-h-[70vh] overflow-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-slate-500 border-b">
-                    <th className="py-2">Job</th>
-                    <th>Client</th>
-                    <th>Status</th>
-                    <th>Crew</th>
-                    <th>Schedule</th>
-                    <th className="text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {jobs.slice(0, 180).map((j) => (
-                    <tr key={j.id} className="border-b hover:bg-slate-50">
-                      <td className="py-2">{j.jobNumber} · {j.title}</td>
-                      <td>{j.client.name}</td>
-                      <td>{j.status}</td>
-                      <td>{j.assignments.map((a) => `${a.firstName} ${a.lastName}`).join(', ') || '—'}</td>
-                      <td>{j.scheduledStart ? new Date(j.scheduledStart).toLocaleString() : 'Unscheduled'}</td>
-                      <td className="text-right">
-                        <Button size="sm" variant="outline" onClick={() => openPanel(j.id)}>Open</Button>
-                      </td>
-                    </tr>
-                  ))}
-                  {jobs.length > 180 && (
-                    <tr>
-                      <td colSpan={6} className="py-3 text-xs text-slate-500 text-center">
-                        Showing first 180 of {jobs.length} jobs
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+              <TableView
+                tableKey="dispatch"
+                data={jobs.slice(0, 180)}
+                rowKey={(j) => j.id}
+                onRowClick={(j) => openPanel(j.id)}
+                columns={dispatchListColumns}
+              />
+              {jobs.length > 180 && (
+                <div className="py-3 text-xs text-slate-500 text-center">
+                  Showing first 180 of {jobs.length} jobs
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

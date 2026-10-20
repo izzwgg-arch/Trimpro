@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PaginationControls } from '@/components/ui/PaginationControls'
+import { TableView, type TableColumn } from '@/components/lists/TableView'
 import { Filter, Ruler, Search } from 'lucide-react'
 
 type MeasuringRequestRow = {
@@ -160,6 +161,153 @@ export default function MeasuringRequestsAdminPage() {
     }
   }
 
+  const columns: TableColumn<MeasuringRequestRow>[] = [
+    {
+      key: 'request',
+      header: 'Request',
+      sortValue: (row) => row.request.id,
+      render: (row) => <span className="font-medium">{row.request.id}</span>,
+    },
+    {
+      key: 'customer',
+      header: 'Customer',
+      sortValue: (row) => row.request.customerName,
+      render: (row) => (
+        <div>
+          <div>{row.request.customerName}</div>
+          {row.request.address ? (
+            <div className="max-w-[320px] truncate text-xs text-gray-500">{row.request.address}</div>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      key: 'assignedTo',
+      header: 'Assigned To',
+      sortValue: (row) => `${row.assignedUser.firstName} ${row.assignedUser.lastName}`,
+      render: (row) => (
+        <>
+          {row.assignedUser.firstName} {row.assignedUser.lastName}
+        </>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      sortValue: (row) => row.status,
+      render: (row) => (
+        <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${statusBadgeClass[row.status]}`}>
+          {row.status}
+        </span>
+      ),
+    },
+    {
+      key: 'created',
+      header: 'Created',
+      sortValue: (row) => new Date(row.createdAt).getTime(),
+      render: (row) => (
+        <div className="text-xs text-gray-600">
+          <div>{new Date(row.createdAt).toLocaleString()}</div>
+          {row.completedAt ? <div>Done {new Date(row.completedAt).toLocaleString()}</div> : null}
+        </div>
+      ),
+    },
+    {
+      key: 'notes',
+      header: 'Notes',
+      sortValue: (row) => row.notes || '',
+      render: (row) => (
+        <div className="text-xs text-gray-600">
+          <div className="max-w-[260px] truncate">{row.notes || '-'}</div>
+          <div>Reminders: {row.notificationAttempts}</div>
+        </div>
+      ),
+    },
+    {
+      key: 'address',
+      header: 'Address',
+      defaultHidden: true,
+      sortValue: (row) => row.request.address || '',
+      render: (row) => <span className="text-xs text-gray-600">{row.request.address || '-'}</span>,
+    },
+    {
+      key: 'assigneeEmail',
+      header: 'Assignee Email',
+      defaultHidden: true,
+      sortValue: (row) => row.assignedUser.email || '',
+      render: (row) => <span className="text-xs text-gray-600">{row.assignedUser.email || '-'}</span>,
+    },
+    {
+      key: 'openedAt',
+      header: 'Opened',
+      defaultHidden: true,
+      sortValue: (row) => (row.openedAt ? new Date(row.openedAt).getTime() : 0),
+      render: (row) => (
+        <span className="text-xs text-gray-600">{row.openedAt ? new Date(row.openedAt).toLocaleString() : '-'}</span>
+      ),
+    },
+    {
+      key: 'completedAt',
+      header: 'Completed',
+      defaultHidden: true,
+      sortValue: (row) => (row.completedAt ? new Date(row.completedAt).getTime() : 0),
+      render: (row) => (
+        <span className="text-xs text-gray-600">{row.completedAt ? new Date(row.completedAt).toLocaleString() : '-'}</span>
+      ),
+    },
+    {
+      key: 'notificationAttempts',
+      header: 'Reminders',
+      defaultHidden: true,
+      sortValue: (row) => row.notificationAttempts,
+      render: (row) => <span className="text-xs text-gray-600">{row.notificationAttempts}</span>,
+    },
+    {
+      key: 'createdBy',
+      header: 'Created By',
+      defaultHidden: true,
+      sortValue: (row) => `${row.createdByUser.firstName} ${row.createdByUser.lastName}`,
+      render: (row) => (
+        <span className="text-xs text-gray-600">
+          {row.createdByUser.firstName} {row.createdByUser.lastName}
+        </span>
+      ),
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      locked: true,
+      headerClassName: 'text-right',
+      className: 'text-right',
+      render: (row) => (
+        <div className="flex justify-end gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation()
+              router.push(`/dashboard/requests/${row.requestId}`)
+            }}
+          >
+            Open Request
+          </Button>
+          {row.status !== 'completed' ? (
+            <Button
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation()
+                void handleMarkCompleted(row.id)
+              }}
+              disabled={completingId === row.id}
+            >
+              {completingId === row.id ? 'Saving...' : 'Mark Completed'}
+            </Button>
+          ) : null}
+        </div>
+      ),
+    },
+  ]
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
@@ -230,66 +378,13 @@ export default function MeasuringRequestsAdminPage() {
           ) : rows.length === 0 ? (
             <div className="py-10 text-center text-sm text-gray-500">No measuring requests found.</div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead>
-                  <tr className="text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    <th className="px-3 py-2">Request</th>
-                    <th className="px-3 py-2">Customer</th>
-                    <th className="px-3 py-2">Assigned To</th>
-                    <th className="px-3 py-2">Status</th>
-                    <th className="px-3 py-2">Created</th>
-                    <th className="px-3 py-2">Notes</th>
-                    <th className="px-3 py-2 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {rows.map((row) => (
-                    <tr key={row.id} className="text-sm text-gray-700">
-                      <td className="px-3 py-3 font-medium">{row.request.id}</td>
-                      <td className="px-3 py-3">
-                        <div>{row.request.customerName}</div>
-                        {row.request.address ? (
-                          <div className="max-w-[320px] truncate text-xs text-gray-500">{row.request.address}</div>
-                        ) : null}
-                      </td>
-                      <td className="px-3 py-3">
-                        {row.assignedUser.firstName} {row.assignedUser.lastName}
-                      </td>
-                      <td className="px-3 py-3">
-                        <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${statusBadgeClass[row.status]}`}>
-                          {row.status}
-                        </span>
-                      </td>
-                      <td className="px-3 py-3 text-xs text-gray-600">
-                        <div>{new Date(row.createdAt).toLocaleString()}</div>
-                        {row.completedAt ? <div>Done {new Date(row.completedAt).toLocaleString()}</div> : null}
-                      </td>
-                      <td className="px-3 py-3 text-xs text-gray-600">
-                        <div className="max-w-[260px] truncate">{row.notes || '-'}</div>
-                        <div>Reminders: {row.notificationAttempts}</div>
-                      </td>
-                      <td className="px-3 py-3">
-                        <div className="flex justify-end gap-2">
-                          <Button variant="outline" size="sm" onClick={() => router.push(`/dashboard/requests/${row.requestId}`)}>
-                            Open Request
-                          </Button>
-                          {row.status !== 'completed' ? (
-                            <Button
-                              size="sm"
-                              onClick={() => void handleMarkCompleted(row.id)}
-                              disabled={completingId === row.id}
-                            >
-                              {completingId === row.id ? 'Saving...' : 'Mark Completed'}
-                            </Button>
-                          ) : null}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <TableView
+              tableKey="measuring-requests"
+              data={rows}
+              rowKey={(row) => row.id}
+              columns={columns}
+              onRowClick={(row) => router.push(`/dashboard/requests/${row.requestId}`)}
+            />
           )}
         </CardContent>
       </Card>
