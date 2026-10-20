@@ -49,13 +49,10 @@ export default function PaymentPage() {
   const [saving, setSaving] = useState(false)
   const [amounts, setAmounts] = useState<Record<string, string>>({})
 
-  // Edit the payment's own amount + reference (separate from allocation).
-  const [editingMeta, setEditingMeta] = useState(false)
+  // Payment-level fields, editable in the same Edit mode as the allocation.
   const [metaAmount, setMetaAmount] = useState('')
   const [metaReference, setMetaReference] = useState('')
   const [metaDate, setMetaDate] = useState('')
-  const [metaSaving, setMetaSaving] = useState(false)
-  const [metaError, setMetaError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -93,81 +90,67 @@ export default function PaymentPage() {
     return rows
   }, [pay])
 
+  const isGrouped = Boolean(pay?.groupId)
+
   const startEdit = () => {
     if (!pay) return
     const init: Record<string, string> = {}
     for (const l of pay.lines) init[l.invoiceId] = l.amount.toFixed(2)
     for (const o of pay.openInvoices) init[o.invoiceId] = '0.00'
     setAmounts(init)
-    setEditing(true)
-    setError(null)
-  }
-
-  const isGrouped = Boolean(pay?.groupId)
-
-  const startEditMeta = () => {
-    if (!pay) return
     setMetaAmount(pay.totalReceived.toFixed(2))
     setMetaReference(pay.reference || '')
     setMetaDate(pay.paidAt ? new Date(pay.paidAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0])
-    setMetaError(null)
-    setEditingMeta(true)
-  }
-
-  const saveMeta = async () => {
-    if (!pay) return
-    setMetaError(null)
-    const amount = parseFloat(metaAmount)
-    if (!isGrouped && (!metaAmount || Number.isNaN(amount) || amount <= 0)) {
-      setMetaError('Please enter a valid amount.')
-      return
-    }
-    setMetaSaving(true)
-    try {
-      const token = localStorage.getItem('accessToken')
-      const body: Record<string, unknown> = {
-        reference: metaReference.trim() || null,
-        paidAt: metaDate || undefined,
-      }
-      // The payment amount can only be changed for a single (non-grouped) payment;
-      // grouped payments change amounts per invoice in the allocation editor.
-      if (!isGrouped) body.amount = amount
-      const res = await fetch(`/api/payments/${encodeURIComponent(paymentId)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify(body),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        setMetaError(data.error || 'Failed to save changes.')
-        return
-      }
-      setEditingMeta(false)
-      await load()
-    } catch {
-      setMetaError('Failed to save changes. Please try again.')
-    } finally {
-      setMetaSaving(false)
-    }
+    setEditing(true)
+    setError(null)
   }
 
   const sumApplied = useMemo(
     () => r2(Object.values(amounts).reduce((s, v) => s + (parseFloat(v) || 0), 0)),
     [amounts]
   )
-  const remainingUnapplied = pay ? r2(pay.totalReceived - sumApplied) : 0
-  const overAllocated = pay ? sumApplied > pay.totalReceived + 0.005 : false
+  // While editing a single payment the total comes from the editable amount field;
+  // grouped payments keep their computed total (amounts change per invoice).
+  const editedTotal = pay ? (isGrouped ? pay.totalReceived : r2(parseFloat(metaAmount) || 0)) : 0
+  const remainingUnapplied = r2(editedTotal - sumApplied)
+  const overAllocated = sumApplied > editedTotal + 0.005
 
   const save = async () => {
     if (!pay) return
-    setSaving(true)
     setError(null)
+    const amountNum = parseFloat(metaAmount)
+    if (!isGrouped && (!metaAmount || Number.isNaN(amountNum) || amountNum <= 0)) {
+      setError('Please enter a valid payment amount.')
+      return
+    }
+    if (overAllocated) {
+      setError('Applied amount is over the payment total.')
+      return
+    }
+    setSaving(true)
     try {
+      const token = localStorage.getItem('accessToken')
+      // 1) Update the payment's own amount / reference / date.
+      const metaBody: Record<string, unknown> = {
+        reference: metaReference.trim() || null,
+        paidAt: metaDate || undefined,
+      }
+      if (!isGrouped) metaBody.amount = amountNum
+      const metaRes = await fetch(`/api/payments/${encodeURIComponent(paymentId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify(metaBody),
+      })
+      if (!metaRes.ok) {
+        const d = await metaRes.json().catch(() => ({}))
+        setError(d.error || 'Failed to update the payment.')
+        return
+      }
+      // 2) Apply the (possibly new) total across invoices.
       const allocations = editRows.map((row) => ({
         invoiceId: row.invoiceId,
         amount: parseFloat(amounts[row.invoiceId] || '0') || 0,
       }))
-      const token = localStorage.getItem('accessToken')
       const res = await fetch(`/api/payments/${encodeURIComponent(paymentId)}/allocate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
@@ -175,11 +158,11 @@ export default function PaymentPage() {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        setError(data.error || 'Failed to save changes')
+        setError(data.error || 'Failed to apply the payment.')
         return
       }
-      setPay(data.payment)
       setEditing(false)
+      await load()
       if (data.qboWarning) {
         setError(`Saved, but QuickBooks did not update: ${data.qboWarning}`)
       }
@@ -207,84 +190,16 @@ export default function PaymentPage() {
               <div className="mt-1 text-3xl font-extrabold text-gray-900">{money(pay.totalReceived)}</div>
               <div className="mt-1 text-sm text-gray-600">{pay.clientName} · {pay.methodLabel}</div>
             </div>
-            {!editing && !editingMeta && (
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <button
-                  onClick={startEditMeta}
-                  className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-                >
-                  Edit amount &amp; reference
-                </button>
-                <button
-                  onClick={startEdit}
-                  className="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800"
-                >
-                  Edit
-                </button>
-              </div>
+            {!editing && (
+              <button
+                onClick={startEdit}
+                className="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800"
+              >
+                Edit
+              </button>
             )}
           </div>
 
-          {editingMeta && (
-            <div className="mt-4 rounded-lg border border-gray-200 bg-white p-4">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-gray-600">Payment amount</label>
-                  <div className="flex items-center gap-1">
-                    <span className="text-gray-400">$</span>
-                    <input
-                      type="number"
-                      min="0.01"
-                      step="0.01"
-                      value={metaAmount}
-                      disabled={isGrouped}
-                      onChange={(e) => setMetaAmount(e.target.value)}
-                      className="w-full rounded border border-gray-300 px-2 py-1 disabled:bg-gray-100 disabled:text-gray-400"
-                    />
-                  </div>
-                  {isGrouped && (
-                    <p className="text-[11px] text-gray-400">This payment is split across invoices — change amounts in “Apply to invoices”.</p>
-                  )}
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-gray-600">Reference</label>
-                  <input
-                    type="text"
-                    placeholder="Check #, transaction ID…"
-                    value={metaReference}
-                    onChange={(e) => setMetaReference(e.target.value)}
-                    className="w-full rounded border border-gray-300 px-2 py-1"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-gray-600">Date</label>
-                  <input
-                    type="date"
-                    value={metaDate}
-                    onChange={(e) => setMetaDate(e.target.value)}
-                    className="w-full rounded border border-gray-300 px-2 py-1"
-                  />
-                </div>
-              </div>
-              {metaError && <p className="mt-2 text-sm text-red-600">{metaError}</p>}
-              <div className="mt-3 flex items-center gap-2">
-                <button
-                  onClick={saveMeta}
-                  disabled={metaSaving}
-                  className="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-60"
-                >
-                  {metaSaving ? 'Saving…' : 'Save changes'}
-                </button>
-                <button
-                  onClick={() => { setEditingMeta(false); setMetaError(null) }}
-                  disabled={metaSaving}
-                  className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
           <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
             <div>
               <div className="text-gray-500">Applied</div>
@@ -339,11 +254,52 @@ export default function PaymentPage() {
             </>
           ) : (
             <>
+              {/* Payment fields — editable just like when first recording a payment. */}
+              <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-gray-600">Payment amount</label>
+                  <div className="flex items-center gap-1">
+                    <span className="text-gray-400">$</span>
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      value={metaAmount}
+                      disabled={isGrouped}
+                      onChange={(e) => setMetaAmount(e.target.value)}
+                      className="w-full rounded border border-gray-300 px-2 py-1 disabled:bg-gray-100 disabled:text-gray-400"
+                    />
+                  </div>
+                  {isGrouped && (
+                    <p className="text-[11px] text-gray-400">Split across invoices — set each amount below.</p>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-gray-600">Reference</label>
+                  <input
+                    type="text"
+                    placeholder="Check #, transaction ID…"
+                    value={metaReference}
+                    onChange={(e) => setMetaReference(e.target.value)}
+                    className="w-full rounded border border-gray-300 px-2 py-1"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-gray-600">Date</label>
+                  <input
+                    type="date"
+                    value={metaDate}
+                    onChange={(e) => setMetaDate(e.target.value)}
+                    className="w-full rounded border border-gray-300 px-2 py-1"
+                  />
+                </div>
+              </div>
+
               <div className="mb-2 text-sm font-semibold text-gray-700">
                 Apply this payment across invoices
               </div>
               <p className="mb-3 text-xs text-gray-500">
-                Set how much of this {money(pay.totalReceived)} payment applies to each invoice. Anything left over is
+                Set how much of this {money(editedTotal)} payment applies to each invoice. Anything left over is
                 held as the customer's account credit.
               </p>
               <table className="w-full text-sm">
@@ -401,7 +357,7 @@ export default function PaymentPage() {
               </table>
 
               <div className={`mt-3 rounded-md px-4 py-3 text-sm ${overAllocated ? 'bg-red-50 text-red-700' : 'bg-gray-50 text-gray-700'}`}>
-                Applying {money(sumApplied)} of {money(pay.totalReceived)} ·{' '}
+                Applying {money(sumApplied)} of {money(editedTotal)} ·{' '}
                 {overAllocated ? 'over the payment total!' : `${money(remainingUnapplied)} held as credit`}
               </div>
 
