@@ -963,6 +963,7 @@ export default function InvoicesPage() {
         </div>
       ) : (
         <TableView
+          tableKey="invoices"
           highlightedRowId={highlightedId}
           sortKey={persistedSortKey}
           sortDirection={persistedSortDirection}

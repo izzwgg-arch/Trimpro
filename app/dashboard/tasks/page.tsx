@@ -505,6 +505,7 @@ export default function TasksPage() {
         </div>
       ) : (
         <TableView
+          tableKey="tasks"
           highlightedRowId={highlightedId}
           sortKey={persistedSortKey}
           sortDirection={persistedSortDirection}

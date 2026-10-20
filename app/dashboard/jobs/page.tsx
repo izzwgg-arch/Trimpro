@@ -755,6 +755,7 @@ export default function JobsPage() {
         </div>
       ) : (
         <TableView
+          tableKey="jobs"
           highlightedRowId={highlightedId}
           sortKey={persistedSortKey}
           sortDirection={persistedSortDirection}

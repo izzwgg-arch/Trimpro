@@ -878,6 +878,7 @@ export default function RequestsPage() {
         </div>
       ) : (
         <TableView
+          tableKey="requests"
           highlightedRowId={highlightedId}
           data={requests}
           rowKey={(request) => request.id}

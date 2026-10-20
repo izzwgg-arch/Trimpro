@@ -596,6 +596,7 @@ export default function ClientsPage() {
         </div>
       ) : (
         <TableView
+          tableKey="clients"
           highlightedRowId={highlightedId}
           sortKey={persistedSortKey}
           sortDirection={persistedSortDirection}

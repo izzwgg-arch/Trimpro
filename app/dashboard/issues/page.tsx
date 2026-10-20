@@ -436,6 +436,7 @@ export default function IssuesPage() {
         </div>
       ) : (
         <TableView
+          tableKey="issues"
           highlightedRowId={highlightedId}
           sortKey={persistedSortKey}
           sortDirection={persistedSortDirection}

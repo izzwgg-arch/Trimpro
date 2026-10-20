@@ -1,7 +1,7 @@
 'use client'
 
-import { useMemo, useState, type ReactNode } from 'react'
-import { ArrowDown, ArrowUp } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { ArrowDown, ArrowUp, SlidersHorizontal, Eye, EyeOff, GripVertical } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ResponsiveTableContainer } from '@/components/layout/ResponsiveTableContainer'
 import { ColumnResizeHandle, useResizableColumns } from '@/hooks/useResizableColumns'
@@ -17,6 +17,8 @@ export interface TableColumn<T> {
   defaultWidth?: number
   /** Disable resize for this column */
   resizable?: boolean
+  /** Pinned column that can't be hidden or reordered (e.g. select / actions). */
+  locked?: boolean
 }
 
 interface TableViewProps<T> {
@@ -34,6 +36,9 @@ interface TableViewProps<T> {
   persistWidthsEntity?: string
   /** Enable drag-to-resize column headers (default true). */
   resizableColumns?: boolean
+  /** Per-user column show/hide + reorder, persisted under this key.
+   *  Defaults to persistWidthsEntity / persistSortEntity. Set to null to disable. */
+  tableKey?: string | null
 }
 
 function readStoredSort(entity?: string): { sortKey: string | null; sortDirection: 'asc' | 'desc' } {
@@ -60,6 +65,37 @@ function writeStoredSort(entity: string | undefined, sortKey: string | null, sor
   }
 }
 
+interface ColumnPrefs {
+  order: string[]
+  hidden: string[]
+}
+
+function readStoredColumns(entity?: string | null): ColumnPrefs {
+  if (!entity || typeof window === 'undefined') return { order: [], hidden: [] }
+  try {
+    const raw = localStorage.getItem(`trimpro.table.columns.${entity}`)
+    if (!raw) return { order: [], hidden: [] }
+    const p = JSON.parse(raw)
+    return {
+      order: Array.isArray(p.order) ? p.order.filter((x: unknown) => typeof x === 'string') : [],
+      hidden: Array.isArray(p.hidden) ? p.hidden.filter((x: unknown) => typeof x === 'string') : [],
+    }
+  } catch {
+    return { order: [], hidden: [] }
+  }
+}
+
+function writeStoredColumns(entity: string | null | undefined, prefs: ColumnPrefs) {
+  if (!entity || typeof window === 'undefined') return
+  try {
+    localStorage.setItem(`trimpro.table.columns.${entity}`, JSON.stringify(prefs))
+  } catch {
+    /* ignore */
+  }
+}
+
+const isLockedCol = <T,>(c: TableColumn<T>) => c.locked || c.key === 'select' || c.key === 'actions'
+
 export function TableView<T>({
   data,
   columns,
@@ -72,12 +108,94 @@ export function TableView<T>({
   persistSortEntity,
   persistWidthsEntity,
   resizableColumns = true,
+  tableKey,
 }: TableViewProps<T>) {
   const stored = readStoredSort(persistSortEntity)
   const [localSortKey, setLocalSortKey] = useState<string | null>(stored.sortKey)
   const [localSortDirection, setLocalSortDirection] = useState<'asc' | 'desc'>(stored.sortDirection)
   const sortKey = controlledSortKey ?? localSortKey
   const sortDirection = controlledSortDirection ?? localSortDirection
+
+  // ---- per-user column show/hide + reorder ----
+  const columnsEntity = tableKey === null ? null : (tableKey ?? persistWidthsEntity ?? persistSortEntity ?? null)
+  const customizable = Boolean(columnsEntity)
+  const [colPrefs, setColPrefs] = useState<ColumnPrefs>({ order: [], hidden: [] })
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [dragKey, setDragKey] = useState<string | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    setColPrefs(readStoredColumns(columnsEntity))
+  }, [columnsEntity])
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const onDocClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [menuOpen])
+
+  const savePrefs = (next: ColumnPrefs) => {
+    setColPrefs(next)
+    writeStoredColumns(columnsEntity, next)
+  }
+
+  const { leadingLocked, trailingLocked, customColumns } = useMemo(() => {
+    const lead: TableColumn<T>[] = []
+    const trail: TableColumn<T>[] = []
+    const custom: TableColumn<T>[] = []
+    let seenCustom = false
+    for (const c of columns) {
+      if (isLockedCol(c)) {
+        if (seenCustom) trail.push(c)
+        else lead.push(c)
+      } else {
+        custom.push(c)
+        seenCustom = true
+      }
+    }
+    return { leadingLocked: lead, trailingLocked: trail, customColumns: custom }
+  }, [columns])
+
+  // Full ordered list of customizable keys (visible + hidden keep their slot).
+  const orderedCustomKeys = useMemo(() => {
+    const keys = customColumns.map((c) => c.key)
+    const order = (colPrefs.order || []).filter((k) => keys.includes(k))
+    for (const k of keys) if (!order.includes(k)) order.push(k)
+    return order
+  }, [customColumns, colPrefs.order])
+
+  const hiddenSet = useMemo(() => new Set(colPrefs.hidden || []), [colPrefs.hidden])
+
+  const displayColumns = useMemo(() => {
+    if (!customizable) return columns
+    const byKey = new Map(customColumns.map((c) => [c.key, c]))
+    const visibleCustom = orderedCustomKeys
+      .map((k) => byKey.get(k))
+      .filter((c): c is TableColumn<T> => Boolean(c) && !hiddenSet.has((c as TableColumn<T>).key))
+    return [...leadingLocked, ...visibleCustom, ...trailingLocked]
+  }, [customizable, columns, customColumns, orderedCustomKeys, hiddenSet, leadingLocked, trailingLocked])
+
+  const toggleHidden = (key: string) => {
+    const hidden = new Set(colPrefs.hidden || [])
+    if (hidden.has(key)) hidden.delete(key)
+    else hidden.add(key)
+    savePrefs({ ...colPrefs, hidden: Array.from(hidden) })
+  }
+
+  const moveColumn = (from: string, to: string) => {
+    if (from === to) return
+    const order = [...orderedCustomKeys]
+    const fromIdx = order.indexOf(from)
+    const toIdx = order.indexOf(to)
+    if (fromIdx < 0 || toIdx < 0) return
+    order.splice(toIdx, 0, order.splice(fromIdx, 1)[0])
+    savePrefs({ ...colPrefs, order })
+  }
+
+  const resetColumns = () => savePrefs({ order: [], hidden: [] })
 
   const widthDefaults = useMemo(() => {
     const map: Record<string, number> = {}
@@ -133,82 +251,150 @@ export function TableView<T>({
     })
   }
 
+  const hiddenCount = customizable ? customColumns.filter((c) => hiddenSet.has(c.key)).length : 0
+
   return (
-    <ResponsiveTableContainer className="rounded-md border bg-card">
-      <table className="w-full min-w-[640px] table-fixed text-sm">
-        <thead className="sticky top-0 z-10 bg-muted/60">
-          <tr>
-            {columns.map((column) => {
-              const canResize = resizableColumns && column.resizable !== false
-              const width = widths[column.key] ?? column.defaultWidth
-              return (
-                <th
-                  key={column.key}
-                  className={cn(
-                    'relative px-3 py-2 text-left font-medium',
-                    column.headerClassName,
-                    column.className
-                  )}
-                  style={width ? { width, minWidth: width } : undefined}
-                >
-                  {column.sortValue ? (
-                    <button
-                      type="button"
-                      className="inline-flex min-h-[44px] max-w-full items-center gap-1 rounded-md px-1 active:text-foreground"
-                      onClick={() => toggleSort(column.key)}
-                    >
-                      <span className="truncate">{column.header}</span>
-                      {sortKey === column.key ? (
-                        sortDirection === 'asc' ? (
-                          <ArrowUp className="h-3 w-3 shrink-0" />
+    <div className="space-y-2">
+      {customizable && (
+        <div className="flex items-center justify-end">
+          <div className="relative" ref={menuRef}>
+            <button
+              type="button"
+              onClick={() => setMenuOpen((v) => !v)}
+              className="inline-flex items-center gap-1.5 rounded-md border bg-card px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted/50"
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              Columns{hiddenCount > 0 ? ` (${customColumns.length - hiddenCount}/${customColumns.length})` : ''}
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 z-30 mt-1 w-60 rounded-md border bg-popover p-1 shadow-lg">
+                <div className="flex items-center justify-between px-2 py-1.5">
+                  <span className="text-xs font-semibold text-muted-foreground">Show columns</span>
+                  <button type="button" onClick={resetColumns} className="text-[11px] text-blue-600 hover:underline">
+                    Reset
+                  </button>
+                </div>
+                <div className="max-h-72 overflow-y-auto">
+                  {orderedCustomKeys.map((key) => {
+                    const col = customColumns.find((c) => c.key === key)
+                    if (!col) return null
+                    const isHidden = hiddenSet.has(key)
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => toggleHidden(key)}
+                        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted/60"
+                      >
+                        {isHidden ? (
+                          <EyeOff className="h-4 w-4 shrink-0 text-muted-foreground" />
                         ) : (
-                          <ArrowDown className="h-3 w-3 shrink-0" />
-                        )
-                      ) : null}
-                    </button>
-                  ) : (
-                    <span className="truncate">{column.header}</span>
+                          <Eye className="h-4 w-4 shrink-0 text-blue-600" />
+                        )}
+                        <span className={cn('truncate', isHidden ? 'text-muted-foreground line-through' : '')}>
+                          {col.header || key}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+                <p className="px-2 pb-1 pt-1.5 text-[11px] text-muted-foreground">
+                  Drag a column header to reorder. Saved for you on this device.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <ResponsiveTableContainer className="rounded-md border bg-card">
+        <table className="w-full min-w-[640px] table-fixed text-sm">
+          <thead className="sticky top-0 z-10 bg-muted/60">
+            <tr>
+              {displayColumns.map((column) => {
+                const canResize = resizableColumns && column.resizable !== false
+                const width = widths[column.key] ?? column.defaultWidth
+                const draggable = customizable && !isLockedCol(column)
+                return (
+                  <th
+                    key={column.key}
+                    className={cn(
+                      'relative px-3 py-2 text-left font-medium',
+                      column.headerClassName,
+                      column.className,
+                      draggable && dragKey === column.key ? 'opacity-50' : ''
+                    )}
+                    style={width ? { width, minWidth: width } : undefined}
+                    onDragOver={draggable ? (e) => { e.preventDefault() } : undefined}
+                    onDrop={draggable ? (e) => { e.preventDefault(); if (dragKey) moveColumn(dragKey, column.key); setDragKey(null) } : undefined}
+                  >
+                    <div
+                      className={cn('flex items-center gap-1', draggable ? 'cursor-grab active:cursor-grabbing' : '')}
+                      draggable={draggable}
+                      onDragStart={draggable ? (e) => { setDragKey(column.key); e.dataTransfer.effectAllowed = 'move' } : undefined}
+                      onDragEnd={draggable ? () => setDragKey(null) : undefined}
+                    >
+                      {draggable ? <GripVertical className="h-3 w-3 shrink-0 text-muted-foreground/50" /> : null}
+                      {column.sortValue ? (
+                        <button
+                          type="button"
+                          className="inline-flex min-h-[44px] max-w-full items-center gap-1 rounded-md px-1 active:text-foreground"
+                          onClick={() => toggleSort(column.key)}
+                        >
+                          <span className="truncate">{column.header}</span>
+                          {sortKey === column.key ? (
+                            sortDirection === 'asc' ? (
+                              <ArrowUp className="h-3 w-3 shrink-0" />
+                            ) : (
+                              <ArrowDown className="h-3 w-3 shrink-0" />
+                            )
+                          ) : null}
+                        </button>
+                      ) : (
+                        <span className="truncate">{column.header}</span>
+                      )}
+                    </div>
+                    {canResize ? (
+                      <ColumnResizeHandle onResizeStart={(x) => onResizeStart(column.key, x)} />
+                    ) : null}
+                  </th>
+                )
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {sortedData.map((item) => {
+              const id = rowKey(item)
+              const highlighted = Boolean(highlightedRowId && highlightedRowId === id)
+              return (
+                <tr
+                  key={id}
+                  data-row-id={id}
+                  className={cn(
+                    'border-t active:bg-muted/40 sm:hover:bg-muted/30 transition-colors',
+                    onRowClick ? 'cursor-pointer touch-active-row' : '',
+                    highlighted ? 'bg-amber-50 ring-2 ring-inset ring-amber-300' : ''
                   )}
-                  {canResize ? (
-                    <ColumnResizeHandle onResizeStart={(x) => onResizeStart(column.key, x)} />
-                  ) : null}
-                </th>
+                  onClick={() => onRowClick?.(item)}
+                >
+                  {displayColumns.map((column) => {
+                    const width = widths[column.key] ?? column.defaultWidth
+                    return (
+                      <td
+                        key={column.key}
+                        className={cn('px-3 py-2 align-middle', column.className)}
+                        style={width ? { width, minWidth: 48, maxWidth: width } : undefined}
+                      >
+                        {column.render(item)}
+                      </td>
+                    )
+                  })}
+                </tr>
               )
             })}
-          </tr>
-        </thead>
-        <tbody>
-          {sortedData.map((item) => {
-            const id = rowKey(item)
-            const highlighted = Boolean(highlightedRowId && highlightedRowId === id)
-            return (
-              <tr
-                key={id}
-                data-row-id={id}
-                className={cn(
-                  'border-t active:bg-muted/40 sm:hover:bg-muted/30 transition-colors',
-                  onRowClick ? 'cursor-pointer touch-active-row' : '',
-                  highlighted ? 'bg-amber-50 ring-2 ring-inset ring-amber-300' : ''
-                )}
-                onClick={() => onRowClick?.(item)}
-              >
-                {columns.map((column) => {
-                  const width = widths[column.key] ?? column.defaultWidth
-                  return (
-                    <td
-                      key={column.key}
-                      className={cn('px-3 py-2 align-middle', column.className)}
-                      style={width ? { width, minWidth: 48, maxWidth: width } : undefined}
-                    >
-                      {column.render(item)}
-                    </td>
-                  )
-                })}
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </ResponsiveTableContainer>
+          </tbody>
+        </table>
+      </ResponsiveTableContainer>
+    </div>
   )
 }

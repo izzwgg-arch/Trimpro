@@ -525,6 +525,7 @@ export default function TeamsPage() {
         </div>
       ) : (
         <TableView
+          tableKey="teams"
           data={filteredMembers}
           rowKey={(member) => member.id}
           sortKey={persistedSortKey}

@@ -618,6 +618,7 @@ export default function EstimatesPage() {
         </div>
       ) : (
         <TableView
+          tableKey="estimates"
           data={estimates}
           rowKey={(estimate) => estimate.id}
           highlightedRowId={highlightedId}

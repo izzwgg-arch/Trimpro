@@ -408,6 +408,7 @@ export default function PurchaseOrdersPage() {
         </div>
       ) : (
         <TableView
+          tableKey="purchase-orders"
           highlightedRowId={highlightedId}
           sortKey={persistedSortKey}
           sortDirection={persistedSortDirection}
