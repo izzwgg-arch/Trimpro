@@ -90,7 +90,10 @@ export default function PaymentPage() {
     return rows
   }, [pay])
 
-  const isGrouped = Boolean(pay?.groupId)
+  // The single "Payment amount" is editable whenever the payment targets at most
+  // one invoice (the common case). When it's split across multiple invoices, the
+  // amount is driven by the per-invoice rows instead.
+  const amountEditable = (pay?.lines.length ?? 0) <= 1
 
   const startEdit = () => {
     if (!pay) return
@@ -111,7 +114,7 @@ export default function PaymentPage() {
   )
   // While editing a single payment the total comes from the editable amount field;
   // grouped payments keep their computed total (amounts change per invoice).
-  const editedTotal = pay ? (isGrouped ? pay.totalReceived : r2(parseFloat(metaAmount) || 0)) : 0
+  const editedTotal = pay ? (amountEditable ? r2(parseFloat(metaAmount) || 0) : pay.totalReceived) : 0
   const remainingUnapplied = r2(editedTotal - sumApplied)
   const overAllocated = sumApplied > editedTotal + 0.005
 
@@ -119,7 +122,7 @@ export default function PaymentPage() {
     if (!pay) return
     setError(null)
     const amountNum = parseFloat(metaAmount)
-    if (!isGrouped && (!metaAmount || Number.isNaN(amountNum) || amountNum <= 0)) {
+    if (amountEditable && (!metaAmount || Number.isNaN(amountNum) || amountNum <= 0)) {
       setError('Please enter a valid payment amount.')
       return
     }
@@ -135,7 +138,7 @@ export default function PaymentPage() {
         reference: metaReference.trim() || null,
         paidAt: metaDate || undefined,
       }
-      if (!isGrouped) metaBody.amount = amountNum
+      if (amountEditable) metaBody.amount = amountNum
       const metaRes = await fetch(`/api/payments/${encodeURIComponent(paymentId)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
@@ -265,12 +268,12 @@ export default function PaymentPage() {
                       min="0.01"
                       step="0.01"
                       value={metaAmount}
-                      disabled={isGrouped}
+                      disabled={!amountEditable}
                       onChange={(e) => setMetaAmount(e.target.value)}
                       className="w-full rounded border border-gray-300 px-2 py-1 disabled:bg-gray-100 disabled:text-gray-400"
                     />
                   </div>
-                  {isGrouped && (
+                  {!amountEditable && (
                     <p className="text-[11px] text-gray-400">Split across invoices — set each amount below.</p>
                   )}
                 </div>
