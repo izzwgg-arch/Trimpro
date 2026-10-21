@@ -3180,16 +3180,18 @@ export async function applyCreditToQboPayment(params: {
 
 /**
  * Set a QBO payment's applied lines to EXACTLY the given invoice allocations
- * (sparse update). TotalAmt is left untouched, so anything not covered by the
- * lines shows in QuickBooks as unapplied credit. Used by the payment editor to
- * apply/unapply across invoices. Throws on failure (caller decides fallout).
+ * (sparse update). Anything not covered by the lines shows in QuickBooks as
+ * unapplied credit. With `edit`, TotalAmt/date/reference/method are updated too.
+ * Used by the payment editor. Throws on failure (caller decides fallout).
  */
 export async function setQboPaymentLines(params: {
   tenantId: string
   qboPaymentId: string
   lines: Array<{ invoiceId: string; amount: number }>
+  /** When set, the payment-level fields are mirrored too: TotalAmt, date, reference, method. */
+  edit?: { paymentId: string; totalReceived: number }
 }) {
-  const { tenantId, qboPaymentId, lines } = params
+  const { tenantId, qboPaymentId, lines, edit } = params
   const session = await getQboSession(tenantId)
   if (!session) return { ok: false as const, reason: 'no_session' }
 
@@ -3230,6 +3232,43 @@ export async function setQboPaymentLines(params: {
     sparse: true,
     CustomerRef: existing.CustomerRef,
     Line,
+  }
+
+  if (edit) {
+    // Anything not covered by the lines stays in QuickBooks as unapplied credit.
+    payload.TotalAmt = toNumber(edit.totalReceived)
+
+    const pay = await prisma.payment.findUnique({
+      where: { id: edit.paymentId },
+      include: { invoice: { select: { id: true, invoiceNumber: true } } },
+    })
+    if (pay) {
+      payload.TxnDate = qboDate(pay.processedAt || pay.createdAt)
+      const refNum = buildQboPaymentRefNum({
+        providerPaymentId: pay.providerPaymentId,
+        solaTransactionId: pay.solaTransactionId,
+        reference: pay.reference,
+        invoiceNumber: pay.invoice?.invoiceNumber,
+        paymentId: pay.id,
+      })
+      if (refNum) payload.PaymentRefNum = refNum
+
+      const methodNames = resolveOutboundQboPaymentMethodNames(pay)
+      if (methodNames.length > 0) {
+        try {
+          const pmId = await resolveQboPaymentMethodId({
+            tenantId,
+            paymentId: pay.id,
+            accessToken: session.accessToken,
+            realmId: session.realmId,
+            names: methodNames,
+          })
+          if (pmId) payload.PaymentMethodRef = { value: String(pmId) }
+        } catch {
+          // Non-fatal: leave the method as it is in QuickBooks.
+        }
+      }
+    }
   }
 
   await quickBooksService.makeAPIRequest(

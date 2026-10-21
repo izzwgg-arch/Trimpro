@@ -1,5 +1,11 @@
 import { prisma } from '@/lib/prisma'
 import { formatPaymentMethodLabel } from '@/lib/payments/receipts'
+import {
+  getCustomPaymentLabel,
+  getCustomPaymentUiMethod,
+  isCustomPayment,
+  type CustomPaymentUiMethod,
+} from '@/lib/payments/custom-payment'
 
 function round2(n: unknown): number {
   const v = Number(n)
@@ -10,6 +16,8 @@ export type PaymentViewLine = {
   paymentId: string
   invoiceId: string
   invoiceNumber: string
+  title: string | null
+  dueDate: string | null
   amount: number
   invoiceTotal: number
   invoiceBalance: number
@@ -18,6 +26,8 @@ export type PaymentViewLine = {
 export type PaymentOpenInvoice = {
   invoiceId: string
   invoiceNumber: string
+  title: string | null
+  dueDate: string | null
   total: number
   balance: number
 }
@@ -30,6 +40,10 @@ export type PaymentView = {
   method: string
   methodLabel: string
   provider: string | null
+  /** Manual/custom payments can change method; gateway (card/ACH) payments cannot. */
+  methodEditable: boolean
+  customMethod: CustomPaymentUiMethod
+  customMethodLabel: string
   reference: string | null
   paidAt: string | null
   totalReceived: number
@@ -44,6 +58,8 @@ const memberInclude = {
     select: {
       id: true,
       invoiceNumber: true,
+      title: true,
+      dueDate: true,
       total: true,
       balance: true,
       clientId: true,
@@ -96,6 +112,8 @@ export async function getPaymentView(
       paymentId: m.id,
       invoiceId: m.invoice.id,
       invoiceNumber: m.invoice.invoiceNumber,
+      title: m.invoice.title || null,
+      dueDate: m.invoice.dueDate ? m.invoice.dueDate.toISOString() : null,
       amount: round2(m.amount),
       invoiceTotal: round2(m.invoice.total),
       invoiceBalance: round2(m.invoice.balance),
@@ -113,12 +131,14 @@ export async function getPaymentView(
       balance: { gt: 0 },
       id: { notIn: [...memberInvoiceIds] },
     },
-    select: { id: true, invoiceNumber: true, total: true, balance: true },
+    select: { id: true, invoiceNumber: true, title: true, dueDate: true, total: true, balance: true },
     orderBy: [{ dueDate: 'asc' }, { invoiceDate: 'asc' }],
   })
   const openInvoices: PaymentOpenInvoice[] = open.map((i) => ({
     invoiceId: i.id,
     invoiceNumber: i.invoiceNumber,
+    title: i.title || null,
+    dueDate: i.dueDate ? i.dueDate.toISOString() : null,
     total: round2(i.total),
     balance: round2(i.balance),
   }))
@@ -131,6 +151,9 @@ export async function getPaymentView(
     method: trigger.method,
     methodLabel: formatPaymentMethodLabel(trigger),
     provider: trigger.provider,
+    methodEditable: isCustomPayment(trigger),
+    customMethod: getCustomPaymentUiMethod(trigger),
+    customMethodLabel: getCustomPaymentLabel(trigger),
     reference: trigger.reference,
     paidAt: (trigger.processedAt || trigger.createdAt)?.toISOString?.() || null,
     totalReceived: round2(appliedTotal + unapplied),

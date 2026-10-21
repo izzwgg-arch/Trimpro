@@ -1,6 +1,12 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import crypto from 'crypto'
+import {
+  buildCustomPaymentNotes,
+  isCustomPayment,
+  mapCustomPaymentMethodToDb,
+  type CustomPaymentUiMethod,
+} from '@/lib/payments/custom-payment'
 
 const PAID_EPSILON = 0.005
 function round2(n: unknown): number {
@@ -9,6 +15,14 @@ function round2(n: unknown): number {
 }
 
 export type PaymentAllocation = { invoiceId: string; amount: number }
+
+/** Payment-level fields saved together with the allocation, applied to every row of the payment. */
+export type PaymentEditFields = {
+  reference?: string | null
+  paidAt?: Date | null
+  method?: CustomPaymentUiMethod
+  methodLabel?: string
+}
 
 export type ReconcileResult = {
   groupId: string
@@ -63,14 +77,18 @@ export async function reconcilePaymentAllocations(params: {
   tenantId: string
   paymentId: string
   allocations: PaymentAllocation[]
+  /** Explicit amount received. When omitted, the current applied + unapplied total is kept. */
+  totalReceived?: number
+  fields?: PaymentEditFields
 }): Promise<ReconcileResult> {
-  const { tenantId, paymentId, allocations } = params
+  const { tenantId, paymentId, allocations, fields } = params
 
   return prisma.$transaction(async (tx) => {
     const trigger = await tx.payment.findFirst({
       where: { id: paymentId, invoice: { tenantId } },
       select: {
         id: true,
+        status: true,
         paymentGroupId: true,
         method: true,
         provider: true,
@@ -78,6 +96,8 @@ export async function reconcilePaymentAllocations(params: {
         processedAt: true,
         notes: true,
         currency: true,
+        solaTransactionId: true,
+        providerPaymentId: true,
         invoice: { select: { clientId: true } },
       },
     })
@@ -103,7 +123,12 @@ export async function reconcilePaymentAllocations(params: {
       credits.filter((c) => c.status === 'ACTIVE').reduce((s, c) => s + round2(c.remainingAmount), 0)
     )
     const appliedNow = round2(members.reduce((s, m) => s + round2(m.amount), 0))
-    const totalReceived = round2(appliedNow + existingUnapplied)
+    let totalReceived = round2(appliedNow + existingUnapplied)
+    if (params.totalReceived !== undefined) {
+      const requested = round2(params.totalReceived)
+      if (!(requested > 0)) throw new Error('Please enter an amount received greater than zero')
+      totalReceived = requested
+    }
 
     // Desired allocation map (merge dupes, drop negatives).
     const desired = new Map<string, number>()
@@ -155,6 +180,27 @@ export async function reconcilePaymentAllocations(params: {
     const pool = members.map((m) => ({ id: m.id, invoiceId: m.invoiceId, amount: round2(m.amount) }))
     const used = new Set<string>()
 
+    // Rows move between invoices below, and (invoiceId, reference) is unique, so park
+    // the reference (NULLs never collide) and restore the final one at the end.
+    await tx.payment.updateMany({
+      where: { paymentGroupId: groupId, status: 'COMPLETED' },
+      data: { reference: null },
+    })
+
+    // 0) Pin the trigger row: it is the row this payment's URL (and its QuickBooks
+    //    mapping) points at, so it must survive every edit. It takes its own
+    //    invoice's allocation when there is one, otherwise the first allocation.
+    const triggerRow = pool.find((r) => r.id === trigger.id)
+    if (triggerRow && wants.length > 0) {
+      const w = wants.find((x) => x.invoiceId === triggerRow.invoiceId) || wants[0]
+      used.add(triggerRow.id)
+      const data: { amount?: number; invoiceId?: string } = {}
+      if (triggerRow.amount !== w.amount) data.amount = w.amount
+      if (triggerRow.invoiceId !== w.invoiceId) data.invoiceId = w.invoiceId
+      if (Object.keys(data).length > 0) await tx.payment.update({ where: { id: triggerRow.id }, data })
+      w.invoiceId = '__done__'
+    }
+
     // 1) Reuse the row already on the target invoice.
     for (const w of wants) {
       const row = pool.find((r) => !used.has(r.id) && r.invoiceId === w.invoiceId)
@@ -187,7 +233,7 @@ export async function reconcilePaymentAllocations(params: {
             status: 'COMPLETED',
             method: trigger.method,
             provider: trigger.provider,
-            reference: trigger.reference,
+            reference: null,
             paymentGroupId: groupId,
             processedAt: trigger.processedAt ?? new Date(),
             notes: trigger.notes,
@@ -206,6 +252,28 @@ export async function reconcilePaymentAllocations(params: {
       }
     }
 
+    // Payment-level fields (date / reference / method) apply to every row of the payment.
+    const fieldData: Prisma.PaymentUpdateManyMutationInput = {
+      reference: fields?.reference !== undefined ? fields.reference : trigger.reference,
+    }
+    if (fields?.paidAt) fieldData.processedAt = fields.paidAt
+    if (fields?.method) {
+      if (!isCustomPayment(trigger)) {
+        throw new Error('Gateway payments cannot change payment method')
+      }
+      if (fields.method === 'OTHER' && !String(fields.methodLabel || '').trim()) {
+        throw new Error('Please enter a payment type name')
+      }
+      const mapped = mapCustomPaymentMethodToDb(fields.method, fields.methodLabel)
+      fieldData.method = mapped.method
+      fieldData.provider = mapped.provider
+      fieldData.notes = buildCustomPaymentNotes(fields.method, fields.methodLabel)
+    }
+    await tx.payment.updateMany({
+      where: { paymentGroupId: groupId, status: 'COMPLETED' },
+      data: fieldData,
+    })
+
     for (const invId of affected) {
       await recomputeInvoice(tx, invId)
     }
@@ -217,7 +285,11 @@ export async function reconcilePaymentAllocations(params: {
       if (activeCredit) {
         await tx.customerCredit.update({
           where: { id: activeCredit.id },
-          data: { remainingAmount: newUnapplied, status: 'ACTIVE' },
+          data: {
+            remainingAmount: newUnapplied,
+            originalAmount: Math.max(round2(activeCredit.originalAmount), newUnapplied),
+            status: 'ACTIVE',
+          },
         })
         for (const c of credits) {
           if (c.id !== activeCredit.id && c.status === 'ACTIVE') {

@@ -4,15 +4,26 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 
+type UiMethod = 'CHECK' | 'QUICK_PAY' | 'OTHER'
+
 type Line = {
   paymentId: string
   invoiceId: string
   invoiceNumber: string
+  title: string | null
+  dueDate: string | null
   amount: number
   invoiceTotal: number
   invoiceBalance: number
 }
-type OpenInvoice = { invoiceId: string; invoiceNumber: string; total: number; balance: number }
+type OpenInvoice = {
+  invoiceId: string
+  invoiceNumber: string
+  title: string | null
+  dueDate: string | null
+  total: number
+  balance: number
+}
 type PaymentView = {
   paymentId: string
   groupId: string | null
@@ -21,6 +32,9 @@ type PaymentView = {
   method: string
   methodLabel: string
   provider: string | null
+  methodEditable: boolean
+  customMethod: UiMethod
+  customMethodLabel: string
   reference: string | null
   paidAt: string | null
   totalReceived: number
@@ -30,11 +44,24 @@ type PaymentView = {
   openInvoices: OpenInvoice[]
 }
 
+type Row = {
+  invoiceId: string
+  invoiceNumber: string
+  title: string | null
+  dueDate: string | null
+  originalAmount: number
+  /** Most that can be applied to this invoice by this payment. */
+  cap: number
+}
+
 function money(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(n || 0))
 }
 function r2(n: number) {
   return Math.round((Number(n) || 0) * 100) / 100
+}
+function toDateInput(iso: string | null) {
+  return iso ? new Date(iso).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
 }
 
 export default function PaymentPage() {
@@ -42,17 +69,34 @@ export default function PaymentPage() {
   const router = useRouter()
   const paymentId = String(params?.paymentId || '')
 
+  // Last saved state from the server — the form is always populated from it.
   const [pay, setPay] = useState<PaymentView | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [warning, setWarning] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+
+  // Editable form state.
+  const [received, setReceived] = useState('')
+  const [paidAt, setPaidAt] = useState('')
+  const [method, setMethod] = useState<UiMethod>('CHECK')
+  const [methodLabel, setMethodLabel] = useState('')
+  const [reference, setReference] = useState('')
   const [amounts, setAmounts] = useState<Record<string, string>>({})
 
-  // Payment-level fields, editable in the same Edit mode as the allocation.
-  const [metaAmount, setMetaAmount] = useState('')
-  const [metaReference, setMetaReference] = useState('')
-  const [metaDate, setMetaDate] = useState('')
+  const hydrate = useCallback((v: PaymentView) => {
+    setPay(v)
+    setReceived(v.totalReceived.toFixed(2))
+    setPaidAt(toDateInput(v.paidAt))
+    setMethod(v.customMethod)
+    setMethodLabel(v.customMethodLabel)
+    setReference(v.reference || '')
+    const init: Record<string, string> = {}
+    for (const l of v.lines) init[l.invoiceId] = l.amount.toFixed(2)
+    for (const o of v.openInvoices) init[o.invoiceId] = '0.00'
+    setAmounts(init)
+  }, [])
 
   const load = useCallback(async () => {
     try {
@@ -62,118 +106,169 @@ export default function PaymentPage() {
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error || 'Failed to load')
       const data = await res.json()
-      setPay(data.payment)
+      hydrate(data.payment)
     } catch (e: any) {
       setError(e?.message || 'Failed to load payment')
     } finally {
       setLoading(false)
     }
-  }, [paymentId])
+  }, [paymentId, hydrate])
 
   useEffect(() => {
     load()
   }, [load])
 
-  // All rows shown in edit mode: applied invoices first, then other open invoices.
-  const editRows = useMemo(() => {
-    if (!pay) return [] as Array<{ invoiceId: string; invoiceNumber: string; maxApplicable: number; current: number }>
-    const rows = pay.lines.map((l) => ({
+  // Applied invoices first, then the customer's other open invoices.
+  const rows: Row[] = useMemo(() => {
+    if (!pay) return []
+    const out: Row[] = pay.lines.map((l) => ({
       invoiceId: l.invoiceId,
       invoiceNumber: l.invoiceNumber,
-      // balance already excludes this payment; add back this payment's amount to get the cap
-      maxApplicable: r2(l.invoiceBalance + l.amount),
-      current: l.amount,
+      title: l.title,
+      dueDate: l.dueDate,
+      originalAmount: l.invoiceTotal,
+      // The invoice balance already excludes this payment, so add it back for the cap.
+      cap: r2(l.invoiceBalance + l.amount),
     }))
     for (const o of pay.openInvoices) {
-      rows.push({ invoiceId: o.invoiceId, invoiceNumber: o.invoiceNumber, maxApplicable: o.balance, current: 0 })
+      out.push({
+        invoiceId: o.invoiceId,
+        invoiceNumber: o.invoiceNumber,
+        title: o.title,
+        dueDate: o.dueDate,
+        originalAmount: o.total,
+        cap: o.balance,
+      })
     }
-    return rows
+    return out
   }, [pay])
 
-  // The single "Payment amount" is editable whenever the payment targets at most
-  // one invoice (the common case). When it's split across multiple invoices, the
-  // amount is driven by the per-invoice rows instead.
-  const amountEditable = (pay?.lines.length ?? 0) <= 1
-
-  const startEdit = () => {
-    if (!pay) return
-    const init: Record<string, string> = {}
-    for (const l of pay.lines) init[l.invoiceId] = l.amount.toFixed(2)
-    for (const o of pay.openInvoices) init[o.invoiceId] = '0.00'
-    setAmounts(init)
-    setMetaAmount(pay.totalReceived.toFixed(2))
-    setMetaReference(pay.reference || '')
-    setMetaDate(pay.paidAt ? new Date(pay.paidAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0])
-    setEditing(true)
-    setError(null)
-  }
-
+  const receivedNum = r2(parseFloat(received) || 0)
   const sumApplied = useMemo(
     () => r2(Object.values(amounts).reduce((s, v) => s + (parseFloat(v) || 0), 0)),
     [amounts]
   )
-  // While editing a single payment the total comes from the editable amount field;
-  // grouped payments keep their computed total (amounts change per invoice).
-  const editedTotal = pay ? (amountEditable ? r2(parseFloat(metaAmount) || 0) : pay.totalReceived) : 0
-  const remainingUnapplied = r2(editedTotal - sumApplied)
-  const overAllocated = sumApplied > editedTotal + 0.005
+  const toCredit = r2(receivedNum - sumApplied)
+  const overApplied = sumApplied > receivedNum + 0.005
+  const overCapRow = rows.find((r) => (parseFloat(amounts[r.invoiceId]) || 0) > r.cap + 0.005)
+
+  const dirty = useMemo(() => {
+    if (!pay) return false
+    if (receivedNum !== r2(pay.totalReceived)) return true
+    if (paidAt !== toDateInput(pay.paidAt)) return true
+    if (reference.trim() !== (pay.reference || '').trim()) return true
+    if (pay.methodEditable) {
+      if (method !== pay.customMethod) return true
+      if (method === 'OTHER' && methodLabel.trim() !== pay.customMethodLabel.trim()) return true
+    }
+    const baseline: Record<string, number> = {}
+    for (const l of pay.lines) baseline[l.invoiceId] = l.amount
+    return rows.some((r) => r2(parseFloat(amounts[r.invoiceId]) || 0) !== r2(baseline[r.invoiceId] || 0))
+  }, [pay, receivedNum, paidAt, reference, method, methodLabel, rows, amounts])
+
+  const setAmount = (invoiceId: string, value: string) => {
+    setNotice(null)
+    setAmounts((prev) => ({ ...prev, [invoiceId]: value }))
+  }
+
+  const toggleRow = (row: Row, checked: boolean) => {
+    setNotice(null)
+    if (!checked) {
+      setAmount(row.invoiceId, '0.00')
+      return
+    }
+    const remaining = r2(receivedNum - sumApplied)
+    const amt = Math.min(row.cap, Math.max(0, remaining))
+    if (amt <= 0) {
+      setNotice('Nothing left to apply. Increase "Amount received" or clear another invoice first.')
+      return
+    }
+    setAmount(row.invoiceId, amt.toFixed(2))
+  }
+
+  const autoApply = () => {
+    setNotice(null)
+    let remaining = receivedNum
+    const next: Record<string, string> = {}
+    for (const r of rows) {
+      const amt = Math.min(r.cap, Math.max(0, remaining))
+      next[r.invoiceId] = amt.toFixed(2)
+      remaining = r2(remaining - amt)
+    }
+    setAmounts(next)
+  }
+
+  const clearAll = () => {
+    setNotice(null)
+    const next: Record<string, string> = {}
+    for (const r of rows) next[r.invoiceId] = '0.00'
+    setAmounts(next)
+  }
+
+  const revert = () => {
+    if (!pay) return
+    setError(null)
+    setNotice(null)
+    hydrate(pay)
+  }
 
   const save = async () => {
     if (!pay) return
     setError(null)
-    const amountNum = parseFloat(metaAmount)
-    if (amountEditable && (!metaAmount || Number.isNaN(amountNum) || amountNum <= 0)) {
-      setError('Please enter a valid payment amount.')
+    setWarning(null)
+    setNotice(null)
+    if (!(receivedNum > 0)) {
+      setError('Please enter an amount received greater than zero.')
       return
     }
-    if (overAllocated) {
-      setError('Applied amount is over the payment total.')
+    if (overApplied) {
+      setError('The amount applied to invoices is more than the amount received.')
       return
     }
+    if (overCapRow) {
+      setError(`${overCapRow.invoiceNumber}: the payment is more than its open balance.`)
+      return
+    }
+    if (pay.methodEditable && method === 'OTHER' && !methodLabel.trim()) {
+      setError('Please enter a payment type name.')
+      return
+    }
+    if (!paidAt) {
+      setError('Please enter a payment date.')
+      return
+    }
+
     setSaving(true)
     try {
       const token = localStorage.getItem('accessToken')
-      // 1) Update the payment's own amount / reference / date.
-      const metaBody: Record<string, unknown> = {
-        reference: metaReference.trim() || null,
-        paidAt: metaDate || undefined,
+      const body: Record<string, unknown> = {
+        totalReceived: receivedNum,
+        paidAt,
+        reference: reference.trim(),
+        allocations: rows.map((r) => ({
+          invoiceId: r.invoiceId,
+          amount: r2(parseFloat(amounts[r.invoiceId]) || 0),
+        })),
       }
-      if (amountEditable) {
-        // The total includes any unapplied credit, which is held on the group's credit
-        // row. Only the applied portion belongs on the payment row, otherwise the
-        // unapplied part is counted twice.
-        const rowAmount = r2(amountNum - pay.unapplied)
-        if (rowAmount > 0) metaBody.amount = rowAmount
+      if (pay.methodEditable) {
+        body.method = method
+        if (method === 'OTHER') body.methodLabel = methodLabel.trim()
       }
-      const metaRes = await fetch(`/api/payments/${encodeURIComponent(paymentId)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify(metaBody),
-      })
-      if (!metaRes.ok) {
-        const d = await metaRes.json().catch(() => ({}))
-        setError(d.error || 'Failed to update the payment.')
-        return
-      }
-      // 2) Apply the (possibly new) total across invoices.
-      const allocations = editRows.map((row) => ({
-        invoiceId: row.invoiceId,
-        amount: parseFloat(amounts[row.invoiceId] || '0') || 0,
-      }))
       const res = await fetch(`/api/payments/${encodeURIComponent(paymentId)}/allocate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ allocations }),
+        body: JSON.stringify(body),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        setError(data.error || 'Failed to apply the payment.')
+        setError(data.error || 'Failed to save the payment.')
         return
       }
-      setEditing(false)
-      await load()
+      if (data.payment) hydrate(data.payment)
+      else await load()
+      setNotice('Saved.')
       if (data.qboWarning) {
-        setError(`Saved, but QuickBooks did not update: ${data.qboWarning}`)
+        setWarning(`Saved, but QuickBooks did not update: ${data.qboWarning}. Click Save again to retry.`)
       }
     } catch {
       setError('Failed to save changes. Please try again.')
@@ -185,213 +280,221 @@ export default function PaymentPage() {
   if (loading) return <div className="p-6 text-sm text-gray-500">Loading payment…</div>
   if (!pay) return <div className="p-6 text-sm text-red-600">{error || 'Payment not found'}</div>
 
+  const inputCls = 'w-full rounded border border-gray-300 px-2 py-1.5 text-sm'
+
   return (
-    <div className="mx-auto max-w-3xl p-4 sm:p-6">
+    <div className="mx-auto max-w-4xl p-4 sm:p-6">
       <button onClick={() => router.back()} className="text-sm text-gray-500 hover:text-gray-700">
         ← Back
       </button>
 
       <div className="mt-3 rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="border-b border-gray-100 bg-gray-50 p-5">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Payment</div>
-              <div className="mt-1 text-3xl font-extrabold text-gray-900">{money(pay.totalReceived)}</div>
-              <div className="mt-1 text-sm text-gray-600">{pay.clientName} · {pay.methodLabel}</div>
-            </div>
-            {!editing && (
-              <button
-                onClick={startEdit}
-                className="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800"
-              >
-                Edit
-              </button>
-            )}
+          <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Payment</div>
+          <div className="mt-1 text-3xl font-extrabold text-gray-900">{money(pay.totalReceived)}</div>
+          <div className="mt-1 text-sm text-gray-600">
+            <Link href={`/dashboard/clients/${pay.clientId}`} className="font-medium text-blue-600 hover:underline">
+              {pay.clientName}
+            </Link>{' '}
+            · {pay.methodLabel}
           </div>
-
-          <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
-            <div>
-              <div className="text-gray-500">Applied</div>
-              <div className="font-semibold text-gray-900">{money(editing ? sumApplied : pay.appliedTotal)}</div>
-            </div>
-            <div>
-              <div className="text-gray-500">Unapplied</div>
-              <div className={`font-semibold ${(editing ? remainingUnapplied : pay.unapplied) > 0 ? 'text-emerald-700' : 'text-gray-900'}`}>
-                {money(editing ? remainingUnapplied : pay.unapplied)}
-              </div>
-            </div>
-            <div>
-              <div className="text-gray-500">Date</div>
-              <div className="font-semibold text-gray-900">
-                {pay.paidAt ? new Date(pay.paidAt).toLocaleDateString() : '—'}
-              </div>
-            </div>
-          </div>
-          {pay.reference && <div className="mt-2 text-xs text-gray-500">Reference: {pay.reference}</div>}
         </div>
 
         <div className="p-5">
-          {!editing ? (
-            <>
-              <div className="mb-2 text-sm font-semibold text-gray-700">Applied to invoices</div>
-              {pay.lines.length === 0 ? (
-                <p className="text-sm text-gray-500">Not applied to any invoice (fully unapplied).</p>
+          {/* Payment details */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-gray-600">Amount received</label>
+              <div className="flex items-center gap-1">
+                <span className="text-gray-400">$</span>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={received}
+                  onChange={(e) => setReceived(e.target.value)}
+                  className={inputCls}
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-gray-600">Payment date</label>
+              <input type="date" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} className={inputCls} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-gray-600">Payment method</label>
+              {pay.methodEditable ? (
+                <select value={method} onChange={(e) => setMethod(e.target.value as UiMethod)} className={inputCls}>
+                  <option value="CHECK">Check</option>
+                  <option value="QUICK_PAY">QuickPay</option>
+                  <option value="OTHER">Other</option>
+                </select>
               ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-xs uppercase tracking-wide text-gray-500">
-                      <th className="py-2 pr-4">Invoice</th>
-                      <th className="py-2 px-4 text-right">Invoice Total</th>
-                      <th className="py-2 pl-4 text-right">Applied</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pay.lines.map((l) => (
-                      <tr key={l.invoiceId} className="border-b border-gray-100">
-                        <td className="py-2 pr-4">
-                          <Link href={`/dashboard/invoices/${l.invoiceId}`} className="font-medium text-blue-600 hover:underline">
-                            {l.invoiceNumber}
-                          </Link>
-                        </td>
-                        <td className="py-2 px-4 text-right text-gray-600">{money(l.invoiceTotal)}</td>
-                        <td className="py-2 pl-4 text-right font-semibold text-gray-900">{money(l.amount)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <div className="rounded border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm text-gray-600">
+                  {pay.methodLabel}
+                </div>
               )}
-            </>
-          ) : (
-            <>
-              {/* Payment fields — editable just like when first recording a payment. */}
-              <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-gray-600">Payment amount</label>
-                  <div className="flex items-center gap-1">
-                    <span className="text-gray-400">$</span>
-                    <input
-                      type="number"
-                      min="0.01"
-                      step="0.01"
-                      value={metaAmount}
-                      disabled={!amountEditable}
-                      onChange={(e) => setMetaAmount(e.target.value)}
-                      className="w-full rounded border border-gray-300 px-2 py-1 disabled:bg-gray-100 disabled:text-gray-400"
-                    />
-                  </div>
-                  {!amountEditable && (
-                    <p className="text-[11px] text-gray-400">Split across invoices — set each amount below.</p>
-                  )}
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-gray-600">Reference</label>
-                  <input
-                    type="text"
-                    placeholder="Check #, transaction ID…"
-                    value={metaReference}
-                    onChange={(e) => setMetaReference(e.target.value)}
-                    className="w-full rounded border border-gray-300 px-2 py-1"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-gray-600">Date</label>
-                  <input
-                    type="date"
-                    value={metaDate}
-                    onChange={(e) => setMetaDate(e.target.value)}
-                    className="w-full rounded border border-gray-300 px-2 py-1"
-                  />
-                </div>
-              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-gray-600">Reference no.</label>
+              <input
+                type="text"
+                placeholder="Check #, transaction ID…"
+                value={reference}
+                onChange={(e) => setReference(e.target.value)}
+                className={inputCls}
+              />
+            </div>
+          </div>
+          {pay.methodEditable && method === 'OTHER' && (
+            <div className="mt-3 max-w-xs space-y-1">
+              <label className="text-xs font-semibold text-gray-600">Payment type name</label>
+              <input
+                type="text"
+                placeholder="e.g. Zelle, Wire…"
+                value={methodLabel}
+                onChange={(e) => setMethodLabel(e.target.value)}
+                className={inputCls}
+              />
+            </div>
+          )}
 
-              <div className="mb-2 text-sm font-semibold text-gray-700">
-                Apply this payment across invoices
-              </div>
-              <p className="mb-3 text-xs text-gray-500">
-                Set how much of this {money(editedTotal)} payment applies to each invoice. Anything left over is
-                held as the customer's account credit.
-              </p>
-              <table className="w-full text-sm">
+          {/* Outstanding transactions */}
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
+            <div className="text-sm font-semibold text-gray-700">Outstanding transactions</div>
+            <div className="flex gap-3 text-xs">
+              <button type="button" onClick={autoApply} className="text-blue-600 hover:underline">
+                Auto-apply
+              </button>
+              <button type="button" onClick={clearAll} className="text-gray-500 hover:underline">
+                Clear all
+              </button>
+            </div>
+          </div>
+
+          {rows.length === 0 ? (
+            <p className="mt-3 text-sm text-gray-500">This customer has no invoices to apply this payment to.</p>
+          ) : (
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full min-w-[640px] text-sm">
                 <thead>
                   <tr className="border-b text-left text-xs uppercase tracking-wide text-gray-500">
+                    <th className="w-8 py-2 pr-2"></th>
                     <th className="py-2 pr-4">Invoice</th>
-                    <th className="py-2 px-4 text-right">Open Balance</th>
-                    <th className="py-2 pl-4 text-right">Apply</th>
+                    <th className="py-2 px-3">Due</th>
+                    <th className="py-2 px-3 text-right">Original</th>
+                    <th className="py-2 px-3 text-right">Open balance</th>
+                    <th className="py-2 pl-3 text-right">Payment</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {editRows.map((row) => (
-                    <tr key={row.invoiceId} className="border-b border-gray-100">
-                      <td className="py-2 pr-4">
-                        <Link href={`/dashboard/invoices/${row.invoiceId}`} className="font-medium text-blue-600 hover:underline">
-                          {row.invoiceNumber}
-                        </Link>
-                      </td>
-                      <td className="py-2 px-4 text-right text-gray-600">{money(row.maxApplicable)}</td>
-                      <td className="py-2 pl-4 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <span className="text-gray-400">$</span>
+                  {rows.map((row) => {
+                    const val = amounts[row.invoiceId] ?? '0.00'
+                    const checked = (parseFloat(val) || 0) > 0
+                    const over = (parseFloat(val) || 0) > row.cap + 0.005
+                    return (
+                      <tr key={row.invoiceId} className={`border-b border-gray-100 ${checked ? 'bg-blue-50/40' : ''}`}>
+                        <td className="py-2 pr-2">
                           <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            max={row.maxApplicable}
-                            value={amounts[row.invoiceId] ?? '0'}
-                            onChange={(e) => setAmounts((prev) => ({ ...prev, [row.invoiceId]: e.target.value }))}
-                            className="w-28 rounded border border-gray-300 px-2 py-1 text-right"
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => toggleRow(row, e.target.checked)}
+                            className="h-4 w-4"
                           />
-                          <button
-                            type="button"
-                            className="ml-1 text-xs text-blue-600 hover:underline"
-                            onClick={() =>
-                              setAmounts((prev) => ({ ...prev, [row.invoiceId]: row.maxApplicable.toFixed(2) }))
-                            }
-                            title="Apply full balance (capped by payment total)"
+                        </td>
+                        <td className="py-2 pr-4">
+                          <Link
+                            href={`/dashboard/invoices/${row.invoiceId}`}
+                            className="font-medium text-blue-600 hover:underline"
                           >
-                            max
-                          </button>
-                          <button
-                            type="button"
-                            className="ml-1 text-xs text-gray-500 hover:underline"
-                            onClick={() => setAmounts((prev) => ({ ...prev, [row.invoiceId]: '0.00' }))}
-                            title="Unapply"
-                          >
-                            clear
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                            {row.invoiceNumber}
+                          </Link>
+                          {row.title && <div className="max-w-[260px] truncate text-xs text-gray-500">{row.title}</div>}
+                        </td>
+                        <td className="py-2 px-3 text-gray-600">
+                          {row.dueDate ? new Date(row.dueDate).toLocaleDateString() : '—'}
+                        </td>
+                        <td className="py-2 px-3 text-right text-gray-600">{money(row.originalAmount)}</td>
+                        <td className="py-2 px-3 text-right text-gray-600">{money(row.cap)}</td>
+                        <td className="py-2 pl-3 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <span className="text-gray-400">$</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={val}
+                              onChange={(e) => setAmount(row.invoiceId, e.target.value)}
+                              className={`w-28 rounded border px-2 py-1 text-right text-sm ${
+                                over ? 'border-red-400 bg-red-50' : 'border-gray-300'
+                              }`}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
-
-              <div className={`mt-3 rounded-md px-4 py-3 text-sm ${overAllocated ? 'bg-red-50 text-red-700' : 'bg-gray-50 text-gray-700'}`}>
-                Applying {money(sumApplied)} of {money(editedTotal)} ·{' '}
-                {overAllocated ? 'over the payment total!' : `${money(remainingUnapplied)} held as credit`}
-              </div>
-
-              {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
-
-              <div className="mt-4 flex items-center gap-2">
-                <button
-                  onClick={save}
-                  disabled={saving || overAllocated}
-                  className="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-60"
-                >
-                  {saving ? 'Saving…' : 'Save changes'}
-                </button>
-                <button
-                  onClick={() => { setEditing(false); setError(null); }}
-                  disabled={saving}
-                  className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-              </div>
-            </>
+            </div>
           )}
 
-          {!editing && error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+          {/* Summary */}
+          <div className="mt-4 grid grid-cols-3 gap-3 rounded-md bg-gray-50 px-4 py-3 text-sm">
+            <div>
+              <div className="text-gray-500">Amount received</div>
+              <div className="font-semibold text-gray-900">{money(receivedNum)}</div>
+            </div>
+            <div>
+              <div className="text-gray-500">Amount to apply</div>
+              <div className={`font-semibold ${overApplied ? 'text-red-700' : 'text-gray-900'}`}>{money(sumApplied)}</div>
+            </div>
+            <div>
+              <div className="text-gray-500">Amount to credit</div>
+              <div className={`font-semibold ${toCredit > 0 ? 'text-emerald-700' : 'text-gray-900'}`}>
+                {money(Math.max(0, toCredit))}
+              </div>
+            </div>
+          </div>
+          {overApplied && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+              You're applying {money(sumApplied)} but only {money(receivedNum)} was received.
+              <button
+                type="button"
+                onClick={() => setReceived(sumApplied.toFixed(2))}
+                className="font-semibold underline"
+              >
+                Set amount received to {money(sumApplied)}
+              </button>
+            </div>
+          )}
+          {!overApplied && toCredit > 0 && (
+            <p className="mt-2 text-xs text-gray-500">
+              {money(toCredit)} is not applied to any invoice and is held as the customer's account credit.
+            </p>
+          )}
+
+          {notice && <p className="mt-2 text-sm text-gray-600">{notice}</p>}
+          {warning && <p className="mt-2 text-sm text-amber-700">{warning}</p>}
+          {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+
+          <div className="mt-4 flex items-center gap-2">
+            <button
+              onClick={save}
+              disabled={saving || (!dirty && !warning) || overApplied}
+              className="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-50"
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              onClick={revert}
+              disabled={saving || !dirty}
+              className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              Revert
+            </button>
+            {!dirty && !saving && <span className="text-xs text-gray-400">No unsaved changes</span>}
+          </div>
         </div>
       </div>
     </div>
