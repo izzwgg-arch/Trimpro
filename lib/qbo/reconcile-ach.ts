@@ -81,25 +81,66 @@ export async function shouldAttemptPublicInvoiceReconcile(invoiceId: string): Pr
   return Date.now() - latestReconcileEvent.createdAt.getTime() >= PUBLIC_INVOICE_RECONCILE_COOLDOWN_MS
 }
 
+// QBO query IN-lists are kept short so the GET URL stays well under length limits.
+const SWEEP_QBO_BATCH_SIZE = 100
+
+/**
+ * Sweep EVERY unpaid invoice that has an open QBO ACH pay link (not just the newest few),
+ * fetching QBO balances in batches and only running the full reconcile where QBO's balance
+ * is lower than ours.
+ */
 export async function reconcileTenantRecentAchPayments(tenantId: string): Promise<void> {
-  const intents = await prisma.invoicePaymentIntent.findMany({
+  const invoices = await prisma.invoice.findMany({
     where: {
       tenantId,
-      provider: 'qbo',
-      method: 'ach',
-      status: { in: ['CREATED', 'LINK_CREATED', 'PENDING'] as any },
+      balance: { gt: 0 },
+      qboSyncId: { not: null },
+      status: { notIn: ['PAID', 'CANCELLED', 'REFUNDED'] as any },
+      paymentIntents: {
+        some: {
+          provider: 'qbo',
+          method: 'ach',
+          status: { in: ['CREATED', 'LINK_CREATED', 'PENDING'] as any },
+        },
+      },
     },
-    orderBy: { createdAt: 'desc' },
-    take: 25,
-    select: { invoiceId: true },
+    select: { id: true, qboSyncId: true, balance: true },
   })
+  if (invoices.length === 0) return
 
-  const invoiceIds = Array.from(new Set(intents.map((i) => i.invoiceId).filter(Boolean)))
-  for (const invoiceId of invoiceIds) {
+  const session = await getQboSessionForTenant(tenantId)
+  if (!session) return
+
+  for (let i = 0; i < invoices.length; i += SWEEP_QBO_BATCH_SIZE) {
+    const batch = invoices.slice(i, i + SWEEP_QBO_BATCH_SIZE)
+    const idList = batch.map((inv) => `'${String(inv.qboSyncId).replace(/'/g, '')}'`).join(', ')
+
+    let qboInvoices: any[] = []
     try {
-      await reconcileSingleInvoiceAchPayment(invoiceId, { source: 'qbo_reconcile_sweep' })
+      const res = await quickBooksService.query(
+        session.accessToken,
+        session.realmId,
+        `select * from Invoice where Id in (${idList}) maxresults 1000`,
+        { tenantId, entityType: 'invoice', triggerSource: 'qbo_reconcile_sweep' }
+      )
+      qboInvoices = res?.QueryResponse?.Invoice || []
     } catch (e) {
-      console.error('[QBO ACH] Reconcile (tenant sweep) failed:', { tenantId, invoiceId, error: e })
+      console.error('[QBO ACH] Reconcile (tenant sweep) batch query failed:', { tenantId, error: e })
+      continue
+    }
+
+    const byQboId = new Map(qboInvoices.map((q: any) => [String(q.Id), q]))
+    for (const inv of batch) {
+      const qboInvoice = byQboId.get(String(inv.qboSyncId))
+      const qboBalance = Number(qboInvoice?.Balance ?? NaN)
+      if (!qboInvoice || !Number.isFinite(qboBalance)) continue
+      if (toMoney(Number(inv.balance) - qboBalance) <= 0) continue
+
+      try {
+        await reconcileSingleInvoiceAchPayment(inv.id, { qboInvoice, source: 'qbo_reconcile_sweep' })
+      } catch (e) {
+        console.error('[QBO ACH] Reconcile (tenant sweep) failed:', { tenantId, invoiceId: inv.id, error: e })
+      }
     }
   }
 }

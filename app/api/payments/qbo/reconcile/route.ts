@@ -27,8 +27,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const recentWindow = new Date(Date.now() - 1000 * 60 * 60 * 24 * 30)
-
   // Rate guard: skip tenants whose reconcile ran within the last 90 minutes.
   // This prevents repeated cron runs from multiplying QBO API calls.
   const RECONCILE_COOLDOWN_MS = 90 * 60 * 1000
@@ -38,8 +36,8 @@ export async function POST(request: NextRequest) {
     where: {
       provider: 'qbo',
       method: 'ach',
+      // No age cutoff: an old pay link can still be paid in QuickBooks.
       status: { in: ['CREATED', 'LINK_CREATED', 'PENDING'] as any },
-      createdAt: { gte: recentWindow },
     },
     select: { tenantId: true },
     distinct: ['tenantId'],
