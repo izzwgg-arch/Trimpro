@@ -138,7 +138,13 @@ export default function PaymentPage() {
         reference: metaReference.trim() || null,
         paidAt: metaDate || undefined,
       }
-      if (amountEditable) metaBody.amount = amountNum
+      if (amountEditable) {
+        // The total includes any unapplied credit, which is held on the group's credit
+        // row. Only the applied portion belongs on the payment row, otherwise the
+        // unapplied part is counted twice.
+        const rowAmount = r2(amountNum - pay.unapplied)
+        if (rowAmount > 0) metaBody.amount = rowAmount
+      }
       const metaRes = await fetch(`/api/payments/${encodeURIComponent(paymentId)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },

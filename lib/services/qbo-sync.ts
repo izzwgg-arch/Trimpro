@@ -3223,10 +3223,12 @@ export async function setQboPaymentLines(params: {
     LinkedTxn: [{ TxnId: r.qboId, TxnType: 'Invoice' }],
   }))
 
+  // QuickBooks rejects Payment updates (even sparse) without CustomerRef.
   const payload: Record<string, unknown> = {
     Id: String(existing.Id),
     SyncToken: String(existing.SyncToken ?? '0'),
     sparse: true,
+    CustomerRef: existing.CustomerRef,
     Line,
   }
 
