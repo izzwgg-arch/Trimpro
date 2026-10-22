@@ -99,10 +99,13 @@ export async function PUT(
       startTime,
       endTime,
       allDay,
-      userId,
+      userId: userIdField,
+      assignedUserId,
       jobId,
       leadId,
     } = body
+    // The mobile app sends `assignedUserId`, the web form `userId`.
+    const userId = userIdField ?? assignedUserId
 
     // Get existing schedule
     const existing = await prisma.schedule.findFirst({

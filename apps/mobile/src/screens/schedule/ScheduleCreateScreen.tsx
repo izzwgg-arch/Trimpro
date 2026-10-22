@@ -153,9 +153,10 @@ export function ScheduleCreateScreen({ navigation, route }: Props) {
   }, [type])
 
   const allowedAssignedUserId = useMemo(() => {
-    if (canCreateSchedulesForOthers()) return assignedUserId || user?.id || ''
+    // Same rule as the assignee picker, so what is picked is what gets saved.
+    if (canCreateSchedulesForOthers() || canAssignJobs()) return assignedUserId || user?.id || ''
     return user?.id || ''
-  }, [assignedUserId, canCreateSchedulesForOthers, user?.id])
+  }, [assignedUserId, canCreateSchedulesForOthers, canAssignJobs, user?.id])
 
   const teamMembers = teamQuery.data?.teamMembers || []
   const canAssignOthers = canCreateSchedulesForOthers() || canAssignJobs()
