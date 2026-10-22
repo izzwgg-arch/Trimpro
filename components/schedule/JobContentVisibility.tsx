@@ -8,7 +8,7 @@ export type JobVisibilityValue = {
   noteIds: string[]
 }
 
-type ShareAttachment = { id: string; fileName: string; fileSize: number; mimeType: string }
+type ShareAttachment = { id: string; fileName: string; fileSize: number; mimeType: string; url: string }
 type ShareNote = { id: string; content: string; isJobDescription: boolean; scheduleId?: string | null }
 
 function formatBytes(bytes: number) {
@@ -168,18 +168,50 @@ export function JobContentVisibility({
             {attachments.length === 0 ? (
               <p className="text-sm text-gray-500">This job has no attachments.</p>
             ) : (
-              <div className="max-h-56 space-y-1 overflow-y-auto">
-                {attachments.map((a) => (
-                  <label key={a.id} className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={value.attachmentIds.includes(a.id)}
-                      onChange={() => onChange({ ...value, attachmentIds: toggle(value.attachmentIds, a.id) })}
-                    />
-                    <span className="min-w-0 flex-1 truncate text-gray-800">{a.fileName}</span>
-                    <span className="shrink-0 text-xs text-gray-400">{formatBytes(a.fileSize)}</span>
-                  </label>
-                ))}
+              <div className="grid max-h-80 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3 md:grid-cols-4">
+                {attachments.map((a) => {
+                  const selected = value.attachmentIds.includes(a.id)
+                  const mime = String(a.mimeType || '').toLowerCase()
+                  const isImage = mime.startsWith('image/')
+                  const kind = mime.startsWith('video/') ? 'VIDEO' : mime === 'application/pdf' ? 'PDF' : 'FILE'
+                  return (
+                    <div
+                      key={a.id}
+                      className={`relative overflow-hidden rounded-md border-2 ${selected ? 'border-blue-500' : 'border-gray-200'}`}
+                    >
+                      <button
+                        type="button"
+                        className="block w-full"
+                        onClick={() => onChange({ ...value, attachmentIds: toggle(value.attachmentIds, a.id) })}
+                        title={selected ? 'Shared - click to hide' : 'Hidden - click to share'}
+                      >
+                        {isImage ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={a.url} alt={a.fileName} className="h-24 w-full object-cover" loading="lazy" />
+                        ) : (
+                          <div className="flex h-24 w-full items-center justify-center bg-gray-100 text-xs font-semibold text-gray-500">
+                            {kind}
+                          </div>
+                        )}
+                        <span className="block truncate px-1 py-0.5 text-left text-[11px] text-gray-700">{a.fileName}</span>
+                      </button>
+                      <input
+                        type="checkbox"
+                        readOnly
+                        checked={selected}
+                        className="pointer-events-none absolute left-1 top-1 h-4 w-4"
+                      />
+                      <a
+                        href={a.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="absolute right-1 top-1 rounded bg-white/90 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 shadow"
+                      >
+                        Open
+                      </a>
+                    </div>
+                  )
+                })}
               </div>
             )}
           </div>

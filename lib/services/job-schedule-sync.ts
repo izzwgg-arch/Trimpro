@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client'
+import type { Prisma, PrismaClient } from '@prisma/client'
 
 const AUTO_SCHEDULE_MARKER = '[AUTO_JOB_SCHEDULE]'
 
@@ -45,6 +45,17 @@ export async function syncAutoJobSchedules(db: DbClient, params: SyncJobSchedule
     }
     return
   }
+
+  // A job with hand-made schedules is scheduled person by person: don't spread the
+  // job's dates onto the rest of the crew.
+  const handMade = await db.schedule.count({
+    where: {
+      tenantId: params.tenantId,
+      jobId: params.jobId,
+      NOT: { description: { startsWith: AUTO_SCHEDULE_MARKER } },
+    },
+  })
+  if (handMade > 0) return
 
   const keepUserIdSet = new Set(distinctUserIds)
   const staleIds = existingAutoSchedules.filter((s) => !keepUserIdSet.has(s.userId)).map((s) => s.id)

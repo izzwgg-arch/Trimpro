@@ -1,9 +1,10 @@
-import React, { useEffect, useRef } from 'react'
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import React, { useEffect, useRef, useState } from 'react'
+import { ActivityIndicator, Image, Linking, Modal, Pressable, StyleSheet, Text, View } from 'react-native'
 import { useQuery } from '@tanstack/react-query'
 import { Ionicons } from '@expo/vector-icons'
 import { apiRequest } from '../../api/client'
 import { colors, radius, spacing, typography } from '../../theme/tokens'
+import { SwipePager } from '../attachments/SwipePager'
 
 export type JobVisibilityValue = {
   restrictContent: boolean
@@ -12,7 +13,7 @@ export type JobVisibilityValue = {
 }
 
 type ShareOptions = {
-  attachments: Array<{ id: string; fileName: string; fileSize: number; mimeType: string }>
+  attachments: Array<{ id: string; fileName: string; fileSize: number; mimeType: string; url?: string }>
   notes: Array<{ id: string; content: string; isJobDescription: boolean; scheduleId?: string | null }>
 }
 
@@ -46,6 +47,8 @@ export function JobContentVisibilityPicker({
   onChange: (next: JobVisibilityValue | null) => void
   initial?: JobVisibilityValue
 }) {
+  // Index into the photos list; swiping in the viewer moves between photos.
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null)
   const query = useQuery({
     queryKey: ['job-share-options', jobId],
     queryFn: () => apiRequest<ShareOptions>(`/api/jobs/${jobId}/share-options`),
@@ -77,6 +80,7 @@ export function JobContentVisibilityPicker({
   }
 
   const { attachments, notes } = query.data
+  const photos = attachments.filter((a) => String(a.mimeType || '').toLowerCase().startsWith('image/') && Boolean(a.url))
 
   const Check = ({ checked, disabled }: { checked: boolean; disabled?: boolean }) => (
     <Ionicons
@@ -134,23 +138,76 @@ export function JobContentVisibilityPicker({
             ) : null}
           </View>
           {attachments.length === 0 ? <Text style={styles.empty}>This job has no attachments.</Text> : null}
-          <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled>
-            {attachments.map((a) => (
-              <Pressable
-                key={a.id}
-                style={styles.checkRow}
-                onPress={() => onChange({ ...value, attachmentIds: toggle(value.attachmentIds, a.id) })}
-              >
-                <Check checked={value.attachmentIds.includes(a.id)} />
-                <Text style={[styles.rowText, { flex: 1 }]} numberOfLines={1}>
-                  {a.fileName}
-                </Text>
-                <Text style={styles.size}>{formatBytes(a.fileSize)}</Text>
-              </Pressable>
-            ))}
-          </ScrollView>
+          <View style={styles.grid}>
+            {attachments.map((a) => {
+              const selected = value.attachmentIds.includes(a.id)
+              const mime = String(a.mimeType || '').toLowerCase()
+              const isImage = mime.startsWith('image/') && Boolean(a.url)
+              const isVideo = mime.startsWith('video/')
+              return (
+                <View key={a.id} style={styles.tileWrap}>
+                  <Pressable
+                    style={[styles.tile, selected && styles.tileSelected]}
+                    onPress={() => onChange({ ...value, attachmentIds: toggle(value.attachmentIds, a.id) })}
+                  >
+                    {isImage ? (
+                      <Image source={{ uri: a.url }} style={styles.tileImage} />
+                    ) : (
+                      <View style={styles.tileIcon}>
+                        <Ionicons
+                          name={isVideo ? 'videocam-outline' : 'document-text-outline'}
+                          size={26}
+                          color={colors.textSecondary}
+                        />
+                        <Text style={styles.tileBadge}>{isVideo ? 'VIDEO' : mime === 'application/pdf' ? 'PDF' : 'FILE'}</Text>
+                      </View>
+                    )}
+                    <View style={styles.tileCheck}>
+                      <Check checked={selected} />
+                    </View>
+                  </Pressable>
+                  <Pressable
+                    style={styles.tileOpen}
+                    hitSlop={6}
+                    onPress={() => {
+                      if (!a.url) return
+                      if (isImage) setPreviewIndex(Math.max(0, photos.findIndex((x) => x.id === a.id)))
+                      else Linking.openURL(a.url).catch(() => {})
+                    }}
+                  >
+                    <Ionicons name="expand-outline" size={16} color={colors.textPrimary} />
+                  </Pressable>
+                  <Text style={styles.tileName} numberOfLines={1}>
+                    {a.fileName}
+                  </Text>
+                </View>
+              )
+            })}
+          </View>
         </>
       ) : null}
+      <Modal visible={previewIndex !== null} transparent animationType="fade" onRequestClose={() => setPreviewIndex(null)}>
+        <View style={styles.previewBackdrop}>
+          {previewIndex !== null && photos.length > 0 ? (
+            <SwipePager
+              count={photos.length}
+              index={previewIndex}
+              onIndexChange={setPreviewIndex}
+              renderItem={(i) => (
+                <View style={styles.previewPage}>
+                  <Image source={{ uri: photos[i].url }} style={styles.previewImage} resizeMode="contain" />
+                  <Text style={styles.previewName}>
+                    {photos[i].fileName} ({i + 1}/{photos.length})
+                  </Text>
+                </View>
+              )}
+            />
+          ) : null}
+          <Pressable style={styles.previewClose} onPress={() => setPreviewIndex(null)} hitSlop={10}>
+            <Text style={styles.previewCloseText}>Close</Text>
+          </Pressable>
+        </View>
+      </Modal>
     </View>
   )
 }
@@ -169,4 +226,20 @@ const styles = StyleSheet.create({
   link: { ...typography.caption, color: colors.brandPrimary, fontWeight: '700' },
   empty: { ...typography.caption, color: colors.muted },
   size: { ...typography.caption, color: colors.muted },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.xs },
+  tileWrap: { width: '31%' },
+  tile: { aspectRatio: 1, borderRadius: radius.sm, borderWidth: 2, borderColor: colors.divider, overflow: 'hidden' },
+  tileSelected: { borderColor: colors.brandPrimary },
+  tileImage: { width: '100%', height: '100%' },
+  tileIcon: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2 },
+  tileBadge: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' },
+  tileCheck: { position: 'absolute', top: 2, left: 2, backgroundColor: 'rgba(255,255,255,0.85)', borderRadius: 4 },
+  tileOpen: { position: 'absolute', top: 4, right: 4, backgroundColor: 'rgba(255,255,255,0.85)', borderRadius: 4, padding: 2 },
+  tileName: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  previewBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', alignItems: 'center', justifyContent: 'center', padding: spacing.md },
+  previewPage: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  previewImage: { width: '100%', height: '80%' },
+  previewClose: { position: 'absolute', top: 40, right: spacing.md, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 6, paddingHorizontal: 12, paddingVertical: 6 },
+  previewCloseText: { ...typography.caption, color: '#fff', fontWeight: '700' },
+  previewName: { ...typography.caption, color: '#fff', marginTop: spacing.sm },
 })

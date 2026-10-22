@@ -14,21 +14,25 @@ export type JobContentScope =
 /**
  * What a person may see when they open a job.
  *
- * Unrestricted unless they have a schedule on this job that was created by hand
- * with "limit what they see" switched on. Then they see only the attachments and
- * notes chosen on those limiting schedule(s) (plus the notes made from those schedules'
- * own descriptions). Only attachments and notes are ever limited; everything else comes
- * from the person's permissions. A limiting schedule always wins: adding another, unlimited schedule for the
- * same job does not lift the limit (edit or delete the limiting one instead).
+ * The schedule that governs is the person's latest hand-made schedule on this job that
+ * has started; before the first one starts, the next one coming up. So what was chosen
+ * on a schedule applies until their next schedule on the job takes over. If that schedule
+ * limits them, they see only the attachments and notes chosen on it (plus the note made
+ * from its own description). Only attachments and notes are ever limited; everything
+ * else comes from the person's permissions.
  */
 export async function resolveJobContentScope(userId: string, jobId: string): Promise<JobContentScope> {
   const rows = await prisma.schedule.findMany({
     where: { jobId, userId },
-    select: { id: true, description: true, restrictContent: true, visibleAttachmentIds: true, visibleNoteIds: true },
+    select: { id: true, description: true, startTime: true, restrictContent: true, visibleAttachmentIds: true, visibleNoteIds: true },
   })
-  const limiting = rows.filter(
-    (r) => r.restrictContent && !String(r.description || '').startsWith(AUTO_SCHEDULE_MARKER)
-  )
+  const now = Date.now()
+  const handMade = rows
+    .filter((r) => !String(r.description || '').startsWith(AUTO_SCHEDULE_MARKER))
+    .sort((x, y) => x.startTime.getTime() - y.startTime.getTime())
+  const started = handMade.filter((r) => r.startTime.getTime() <= now)
+  const governing = started.length > 0 ? started[started.length - 1] : handMade[0]
+  const limiting = governing && governing.restrictContent ? [governing] : []
   if (limiting.length === 0) return { restricted: false }
 
   const attachmentIds = new Set<string>()

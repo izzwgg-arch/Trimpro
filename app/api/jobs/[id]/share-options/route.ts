@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { canSetContentVisibility } from '@/lib/jobs/content-visibility'
 import { ensureJobDescriptionNote } from '@/lib/jobs/description-note'
 import { guardJob } from '@/lib/assignments/scope'
+import { normalizePublicFileUrl } from '@/lib/public-url'
 
 // GET — what can be shared with a scheduled person on this job: every attachment
 // and note. The job description note is created on demand and listed first. Notes made
@@ -44,7 +45,10 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       }),
     ])
 
-    return NextResponse.json({ attachments, notes })
+    return NextResponse.json({
+      attachments: attachments.map((a) => ({ ...a, url: normalizePublicFileUrl(a.url, request) })),
+      notes,
+    })
   } catch (error) {
     console.error('Get job share options error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

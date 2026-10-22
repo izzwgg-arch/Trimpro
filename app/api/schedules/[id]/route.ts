@@ -5,6 +5,7 @@ import { createNotification } from '@/lib/notifications'
 import { hasMobilePermission, isMobileRequest, requireAnyPermission, requireMobilePermission, requirePermission } from '@/lib/authorization'
 import { ensureJobDescriptionNote } from '@/lib/jobs/description-note'
 import { syncScheduleNote } from '@/lib/jobs/schedule-note'
+import { ensureScheduledCrewMember } from '@/lib/jobs/schedule-crew'
 import { canSetContentVisibility, cleanVisibilityForJob, parseVisibilityInput } from '@/lib/jobs/content-visibility'
 import { guardSchedule } from '@/lib/assignments/scope'
 
@@ -240,6 +241,9 @@ export async function PUT(
         lead: true,
       },
     })
+
+    // Whoever the schedule is for is a Field Worker on the job's crew.
+    if (schedule.jobId) await ensureScheduledCrewMember(schedule.jobId, schedule.userId)
 
     // Keep the job note that mirrors this schedule's description in step.
     await syncScheduleNote({
