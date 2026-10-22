@@ -7,6 +7,7 @@ import { hasMobilePermission, hasPermission, isMobileRequest, requireAnyPermissi
 import { resolveScheduleScope } from '@/lib/schedule/scope'
 import { ensureJobDescriptionNote } from '@/lib/jobs/description-note'
 import { canSetContentVisibility, cleanVisibilityForJob, parseVisibilityInput } from '@/lib/jobs/content-visibility'
+import { isAssignedOnly } from '@/lib/assignments/scope'
 
 function normalizeScheduleDateTime(rawDate: unknown, rawTime: unknown, fallbackIso?: string): Date | null {
   if (typeof fallbackIso === 'string' && fallbackIso.trim().length > 0) {
@@ -54,11 +55,14 @@ export async function GET(request: NextRequest) {
       user.role === 'ADMIN' ||
       (await hasMobilePermission(user.id, user.tenantId, 'canCreateSchedulesForOthers')) ||
       (await hasMobilePermission(user.id, user.tenantId, 'mobile.jobs.assign'))
+    // "See only my schedule" overrides every view-all right.
+    const scheduleOwnOnly = await isAssignedOnly(user, 'schedule')
     const canViewAllSchedule =
-      user.role === 'ADMIN' ||
-      canCreateForOthers ||
-      (await hasMobilePermission(user.id, user.tenantId, 'mobile.schedule.view_all')) ||
-      (await hasPermission(user.id, user.tenantId, 'schedule.view_all'))
+      !scheduleOwnOnly &&
+      (user.role === 'ADMIN' ||
+        canCreateForOthers ||
+        (await hasMobilePermission(user.id, user.tenantId, 'mobile.schedule.view_all')) ||
+        (await hasPermission(user.id, user.tenantId, 'schedule.view_all')))
     let start: Date
     let end: Date
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
+import { guardIssue } from '@/lib/assignments/scope'
 
 async function getIssueNote(issueId: string, noteId: string, tenantId: string) {
   return prisma.issueNote.findFirst({
@@ -24,6 +25,8 @@ export async function PATCH(
   if (permError) return permError
 
   const user = getAuthUser(request)
+  const scopeError = await guardIssue(user, params.id)
+  if (scopeError) return scopeError
 
   try {
     const note = await getIssueNote(params.id, params.noteId, user.tenantId)
@@ -66,6 +69,8 @@ export async function DELETE(
   if (permError) return permError
 
   const user = getAuthUser(request)
+  const scopeError = await guardIssue(user, params.id)
+  if (scopeError) return scopeError
 
   try {
     const note = await getIssueNote(params.id, params.noteId, user.tenantId)

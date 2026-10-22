@@ -9,6 +9,7 @@ import {
   EstimateDocNumberError,
   mapEstimateDocNumberErrorToResponse,
 } from '@/lib/qbo/doc-numbers'
+import { guardLead } from '@/lib/assignments/scope'
 
 function normalizePhone(value: string | null | undefined) {
   return (value || '').replace(/\D/g, '')
@@ -24,6 +25,8 @@ export async function POST(
   if (permError) return permError
 
   const user = getAuthUser(request)
+  const scopeError = await guardLead(user, params.id)
+  if (scopeError) return scopeError
 
   try {
     const lead = await prisma.lead.findFirst({

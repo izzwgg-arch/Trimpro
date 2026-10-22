@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requireAnyPermission, requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
+import { guardJob } from '@/lib/assignments/scope'
 
 async function getTenantNote(noteId: string, tenantId: string) {
   return prisma.note.findFirst({
@@ -44,6 +45,11 @@ export async function PATCH(
       return NextResponse.json({ error: 'Note not found' }, { status: 404 })
     }
 
+    if (note.jobId) {
+      const scopeError = await guardJob(user, note.jobId)
+      if (scopeError) return scopeError
+    }
+
     const permError = await requireNotePermission(request, note)
     if (permError) return permError
 
@@ -84,6 +90,11 @@ export async function DELETE(
     const note = await getTenantNote(params.id, user.tenantId)
     if (!note) {
       return NextResponse.json({ error: 'Note not found' }, { status: 404 })
+    }
+
+    if (note.jobId) {
+      const scopeError = await guardJob(user, note.jobId)
+      if (scopeError) return scopeError
     }
 
     const permError = await requireNotePermission(request, note)

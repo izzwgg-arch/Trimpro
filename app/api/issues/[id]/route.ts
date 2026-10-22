@@ -7,6 +7,7 @@ import { recordAuditLog, auditContextFromRequest } from '@/lib/audit/log'
 import { teamInclude } from '@/lib/assignments/where'
 import { defaultRoleForUser, parseTeamInput, type TeamInput } from '@/lib/assignments/roles'
 import { setIssueTeam, validateUsers } from '@/lib/assignments/team-service'
+import { guardIssue } from '@/lib/assignments/scope'
 
 function formatIssueStatus(status: string): string {
   return String(status || '')
@@ -32,6 +33,8 @@ export async function GET(
   if (permError) return permError
 
   const user = getAuthUser(request)
+  const scopeError = await guardIssue(user, params.id)
+  if (scopeError) return scopeError
 
   try {
     const issue = await prisma.issue.findFirst({
@@ -174,6 +177,8 @@ export async function PUT(
   if (permError) return permError
 
   const user = getAuthUser(request)
+  const scopeError = await guardIssue(user, params.id)
+  if (scopeError) return scopeError
 
   try {
     const body = await request.json()
@@ -436,6 +441,8 @@ export async function DELETE(
   if (permError) return permError
 
   const user = getAuthUser(request)
+  const scopeError = await guardIssue(user, params.id)
+  if (scopeError) return scopeError
   const isMobile = isMobileRequest(request)
 
   try {

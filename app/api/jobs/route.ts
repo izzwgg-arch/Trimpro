@@ -12,6 +12,7 @@ import { getJobBillingStatus } from '@/lib/jobs/billing-status'
 import { applyJobTypeListFilter, jobTypeScopeWhere, resolveJobTypeForWrite } from '@/lib/jobs/job-type-scope'
 import { getUnreadJobThreadCounts } from '@/lib/chat/service'
 import { ensureJobDescriptionNote } from '@/lib/jobs/description-note'
+import { andScope, isAssignedOnly, jobScopeWhere } from '@/lib/assignments/scope'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -208,6 +209,9 @@ export async function GET(request: NextRequest) {
 
         applyJobTypeListFilter(where, jobTypeParam)
 
+        // "See only assigned jobs" restriction: AND it in so no other filter can widen it.
+        if (await isAssignedOnly(user, 'jobs')) andScope(where, jobScopeWhere(user.id))
+
         const [jobs, total] = await Promise.all([
           prisma.job.findMany({
             where,
@@ -338,6 +342,9 @@ export async function GET(request: NextRequest) {
     }
 
     applyJobTypeListFilter(where, jobTypeParam)
+
+    // "See only assigned jobs" restriction: AND it in so no other filter can widen it.
+    if (await isAssignedOnly(user, 'jobs')) andScope(where, jobScopeWhere(user.id))
 
     const jobInclude = {
       client: {

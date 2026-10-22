@@ -3,6 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requireWebOrMobilePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { getUnreadJobThreadCounts } from '@/lib/chat/service'
+import { guardJob } from '@/lib/assignments/scope'
 
 export async function GET(
   request: NextRequest,
@@ -14,6 +15,8 @@ export async function GET(
   if (permError) return permError
 
   const user = getAuthUser(request)
+  const scopeError = await guardJob(user, params.id)
+  if (scopeError) return scopeError
 
   try {
     const job = await prisma.job.findFirst({

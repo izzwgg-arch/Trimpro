@@ -8,6 +8,7 @@ import { getJobBillingStatus } from '@/lib/jobs/billing-status'
 import { buildTeam, normalizeAssignmentRole } from '@/lib/assignments/roles'
 import { resolveJobContentScope } from '@/lib/jobs/content-visibility'
 import { ensureJobDescriptionNote } from '@/lib/jobs/description-note'
+import { isAssignedOnly } from '@/lib/assignments/scope'
 
 // Select for a task/issue team on job detail lists.
 const teamSelect = {
@@ -50,7 +51,9 @@ export async function GET(
   const jobId = params.id
 
   try {
-    const canViewAll = await hasMobilePermission(user.id, user.tenantId, 'mobile.jobs.view_all')
+    // "See only assigned jobs" overrides view-all.
+    const canViewAll =
+      (await hasMobilePermission(user.id, user.tenantId, 'mobile.jobs.view_all')) && !(await isAssignedOnly(user, 'jobs'))
 
     const where: any = {
       id: jobId,

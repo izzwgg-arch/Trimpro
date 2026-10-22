@@ -4,6 +4,7 @@ import { requireAnyPermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { publishDispatchRealtime } from '@/lib/dispatch-realtime'
 import { notifyDispatchJobActivity } from '@/lib/notifications'
+import { guardJob } from '@/lib/assignments/scope'
 
 export async function POST(
   request: NextRequest,
@@ -16,6 +17,8 @@ export async function POST(
   if (permError) return permError
 
   const user = getAuthUser(request)
+  const scopeError = await guardJob(user, params.id)
+  if (scopeError) return scopeError
 
   try {
     const body = await request.json()

@@ -7,6 +7,7 @@ import { parseAddressParts } from '@/lib/address/parse'
 import { geocodeAddressPartsFromString } from '@/lib/geocoding'
 import { assertCanAccessJobType, resolveJobTypeForWrite } from '@/lib/jobs/job-type-scope'
 import { notifyRequestStatusChanged } from '@/lib/notifications'
+import { guardLead } from '@/lib/assignments/scope'
 
 export async function GET(
   request: NextRequest,
@@ -22,6 +23,8 @@ export async function GET(
   if (permError) return permError
 
   const user = getAuthUser(request)
+  const scopeError = await guardLead(user, params.id)
+  if (scopeError) return scopeError
 
   try {
     const lead = await prisma.lead.findFirst({
@@ -154,6 +157,8 @@ export async function PUT(
   if (permError) return permError
 
   const user = getAuthUser(request)
+  const scopeError = await guardLead(user, params.id)
+  if (scopeError) return scopeError
 
   try {
     const body = await request.json()
@@ -348,6 +353,8 @@ export async function DELETE(
   if (permError) return permError
 
   const user = getAuthUser(request)
+  const scopeError = await guardLead(user, params.id)
+  if (scopeError) return scopeError
 
   try {
     const lead = await prisma.lead.findFirst({

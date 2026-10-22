@@ -3,6 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { canSetContentVisibility } from '@/lib/jobs/content-visibility'
 import { ensureJobDescriptionNote } from '@/lib/jobs/description-note'
+import { guardJob } from '@/lib/assignments/scope'
 
 // GET — what can be shared with a scheduled person on this job: every attachment
 // and note. The job description note is created on demand and listed first.
@@ -11,6 +12,8 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   if (authError) return authError
 
   const user = getAuthUser(request)
+  const scopeError = await guardJob(user, params.id)
+  if (scopeError) return scopeError
   if (!(await canSetContentVisibility(user))) {
     return NextResponse.json(
       { error: 'You do not have permission to choose what scheduled people can see' },

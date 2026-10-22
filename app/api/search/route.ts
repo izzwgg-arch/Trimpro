@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { getUserPermissions, requirePermission } from '@/lib/authorization'
 import { runGlobalSearch } from '@/lib/search/global-search'
+import { isAssignedOnly } from '@/lib/assignments/scope'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -34,6 +35,10 @@ export async function GET(request: NextRequest) {
       tenantId: user.tenantId,
       permissions,
       limitPerGroup,
+      assignedOnly: {
+        jobsUserId: (await isAssignedOnly(user, 'jobs')) ? user.id : undefined,
+        tasksUserId: (await isAssignedOnly(user, 'tasks')) ? user.id : undefined,
+      },
     })
 
     console.log(

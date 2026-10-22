@@ -12,6 +12,7 @@ import {
   safeExtFromMimeType,
 } from '@/lib/uploads/policy'
 import { normalizePublicFileUrl } from '@/lib/public-url'
+import { guardLead } from '@/lib/assignments/scope'
 
 function getPublicBaseUrl(req: NextRequest): string {
   const envUrl = process.env.PUBLIC_APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL
@@ -31,6 +32,8 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   if (permError) return permError
 
   const user = getAuthUser(request)
+  const scopeError = await guardLead(user, params.id)
+  if (scopeError) return scopeError
   try {
     const requestRecord = await prisma.lead.findFirst({
       where: {

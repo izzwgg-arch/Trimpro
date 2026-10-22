@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { copyRequestAttachmentsToJob } from '@/lib/jobs/copy-request-attachments-to-job'
+import { guardLead } from '@/lib/assignments/scope'
 
 function normalizePhone(value: string | null | undefined) {
   return (value || '').replace(/\D/g, '')
@@ -39,6 +40,8 @@ export async function POST(
   if (permError) return permError
 
   const user = getAuthUser(request)
+  const scopeError = await guardLead(user, params.id)
+  if (scopeError) return scopeError
 
   try {
     let createdClientIdForSync: string | null = null

@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight, LayoutPanelLeft } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
+import { isRestrictionPermission } from '@/lib/permissions-catalog'
 import {
   PERMISSION_PAGE_MODULES,
   getModuleActionPermissions,
@@ -69,7 +70,8 @@ export function RolePermissionModulePicker({
   }
 
   const selectAllInModule = (module: PermissionPageModule) => {
-    const moduleKeys = getAllModulePermissionKeys(module)
+    // Restriction settings ("see only assigned ...") are never part of "select all".
+    const moduleKeys = getAllModulePermissionKeys(module).filter((key) => !isRestrictionPermission(key))
     const allSelected = moduleKeys.every((key) => selectedPermissions.includes(key))
     if (allSelected) {
       setSelected(selectedPermissions.filter((key) => !moduleKeys.includes(key)))

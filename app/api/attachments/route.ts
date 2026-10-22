@@ -6,6 +6,7 @@ import { publishDispatchRealtime } from '@/lib/dispatch-realtime'
 import { hasMobilePermission, isMobileRequest, requireAnyPermission } from '@/lib/authorization'
 import { normalizePublicFileUrl } from '@/lib/public-url'
 import { resolveJobContentScope } from '@/lib/jobs/content-visibility'
+import { guardEntity } from '@/lib/assignments/scope'
 
 type EntityType = 'estimate' | 'invoice' | 'purchase_order' | 'job' | 'task' | 'issue' | 'request' | 'lead'
 
@@ -94,6 +95,13 @@ export async function GET(request: NextRequest) {
     if (!hasAccess) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
+    const scopeError = await guardEntity(user, {
+      jobId: entityTypeRaw === 'job' ? entityId : null,
+      taskId: entityTypeRaw === 'task' ? entityId : null,
+      issueId: entityTypeRaw === 'issue' ? entityId : null,
+      leadId: entityTypeRaw === 'request' || entityTypeRaw === 'lead' ? entityId : null,
+    })
+    if (scopeError) return scopeError
 
     const where =
       entityTypeRaw === 'estimate'
@@ -168,6 +176,13 @@ export async function POST(request: NextRequest) {
     if (!hasAccess) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
+    const scopeError = await guardEntity(user, {
+      jobId: entityTypeRaw === 'job' ? entityId : null,
+      taskId: entityTypeRaw === 'task' ? entityId : null,
+      issueId: entityTypeRaw === 'issue' ? entityId : null,
+      leadId: entityTypeRaw === 'request' || entityTypeRaw === 'lead' ? entityId : null,
+    })
+    if (scopeError) return scopeError
     const normalizedUrl = normalizePublicFileUrl(url, request)
 
     const data =

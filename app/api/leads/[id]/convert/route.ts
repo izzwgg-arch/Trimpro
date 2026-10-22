@@ -3,6 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
+import { guardLead } from '@/lib/assignments/scope'
 
 export async function POST(
   request: NextRequest,
@@ -14,6 +15,8 @@ export async function POST(
   if (permError) return permError
 
   const user = getAuthUser(request)
+  const scopeError = await guardLead(user, params.id)
+  if (scopeError) return scopeError
 
   try {
     // Get lead

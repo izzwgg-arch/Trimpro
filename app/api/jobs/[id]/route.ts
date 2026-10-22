@@ -11,6 +11,7 @@ import { applyProductionAutomation } from '@/lib/production/automation'
 import { getJobBillingStatus } from '@/lib/jobs/billing-status'
 import { assertCanAccessJobType, resolveJobTypeForWrite } from '@/lib/jobs/job-type-scope'
 import { ensureJobDescriptionNote } from '@/lib/jobs/description-note'
+import { guardJob } from '@/lib/assignments/scope'
 
 export async function GET(
   request: NextRequest,
@@ -26,6 +27,8 @@ export async function GET(
   if (permError) return permError
 
   const user = getAuthUser(request)
+  const scopeError = await guardJob(user, params.id)
+  if (scopeError) return scopeError
 
   try {
     const job = await prisma.job.findFirst({
@@ -318,6 +321,8 @@ export async function PUT(
   if (permError) return permError
 
   const user = getAuthUser(request)
+  const scopeError = await guardJob(user, params.id)
+  if (scopeError) return scopeError
   const isMobile = isMobileRequest(request)
 
   try {
@@ -588,6 +593,8 @@ export async function DELETE(
   if (permError) return permError
 
   const user = getAuthUser(request)
+  const scopeError = await guardJob(user, params.id)
+  if (scopeError) return scopeError
 
   try {
     const job = await prisma.job.findFirst({

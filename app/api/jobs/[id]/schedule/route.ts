@@ -4,6 +4,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requireAnyPermission } from '@/lib/authorization'
 import { syncAutoJobSchedules } from '@/lib/services/job-schedule-sync'
 import { createNotificationsForUsers } from '@/lib/notifications'
+import { guardJob } from '@/lib/assignments/scope'
 
 const DEFAULT_DURATION_MINUTES = 60
 
@@ -36,6 +37,8 @@ export async function PATCH(
   if (permissionError) return permissionError
 
   const user = getAuthUser(request)
+  const scopeError = await guardJob(user, params.id)
+  if (scopeError) return scopeError
 
   try {
     const body = await request.json().catch(() => ({}))

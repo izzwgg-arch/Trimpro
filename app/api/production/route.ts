@@ -13,6 +13,7 @@ import type { JobStatusValue } from '@/lib/jobs/statuses'
 import { getProductionConfigForTenant } from '@/lib/production/settings'
 import { resolveProductionInfo } from '@/lib/production/config'
 import { getJobBillingStatus } from '@/lib/jobs/billing-status'
+import { andScope, isAssignedOnly, jobScopeWhere } from '@/lib/assignments/scope'
 
 /**
  * Production board data — entirely derived from the existing Job.status.
@@ -53,6 +54,9 @@ export async function GET(request: NextRequest) {
     if (crewId) {
       baseWhere.assignments = { some: { userId: crewId } }
     }
+
+    // "See only assigned jobs" restriction: AND it in so the crew filter above can't widen it.
+    if (await isAssignedOnly(user, 'jobs')) andScope(baseWhere, jobScopeWhere(user.id))
 
     if (priorityParam) {
       const parsedPriority = Number(priorityParam)

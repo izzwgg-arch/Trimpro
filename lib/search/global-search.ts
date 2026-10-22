@@ -14,6 +14,7 @@ import { prisma } from '@/lib/prisma'
 import { formatAddressParts } from '@/lib/address/parse'
 import { hasPermissionKey } from '@/lib/permission-aliases'
 import { computeScore, topN, queryVariants } from './scoring'
+import { jobScopeWhere, taskScopeWhere } from '@/lib/assignments/scope'
 
 export type { RawResult as SearchResult } from './scoring'
 
@@ -134,11 +135,14 @@ export async function runGlobalSearch({
   tenantId,
   permissions,
   limitPerGroup = 8,
+  assignedOnly,
 }: {
   query: string
   tenantId: string
   permissions: string[]
   limitPerGroup?: number
+  /** "See only assigned ..." restrictions for this person (user id when they apply). */
+  assignedOnly?: { jobsUserId?: string; tasksUserId?: string }
 }): Promise<SearchGroup[]> {
   const q = query.trim()
   if (!q || q.length < 2) return []
@@ -146,6 +150,8 @@ export async function runGlobalSearch({
   const can = (key: string) => hasPermissionKey(permissions, key)
   const terms = queryVariants(q) // synonyms + digit forms
   const fetch = limitPerGroup * 2 // fetch 2× then score/slice
+  const jobScope = assignedOnly?.jobsUserId ? jobScopeWhere(assignedOnly.jobsUserId) : {}
+  const taskScope = assignedOnly?.tasksUserId ? taskScopeWhere(assignedOnly.tasksUserId) : {}
 
   // ── parallel queries ──────────────────────────────────────────────────────
   const [
@@ -308,6 +314,7 @@ export async function runGlobalSearch({
       ? prisma.job.findMany({
           where: {
             tenantId,
+            ...jobScope,
             OR: [
               ...ilikeAny('jobNumber', terms),
               ...ilikeAny('title', terms),
@@ -340,6 +347,7 @@ export async function runGlobalSearch({
       ? prisma.task.findMany({
           where: {
             tenantId,
+            ...taskScope,
             OR: [
               ...ilikeAny('title', terms),
               ...ilikeAny('description', terms),
@@ -354,14 +362,16 @@ export async function runGlobalSearch({
     prisma.attachment.findMany({
       where: {
         fileName: ilike(q),
-        OR: [
-          { client: { tenantId } },
-          { job: { tenantId } },
-          { estimate: { tenantId } },
-          { invoice: { tenantId } },
-          { purchaseOrder: { tenantId } },
-          { vendor: { tenantId } },
-        ],
+        OR: assignedOnly?.jobsUserId
+          ? [{ job: { tenantId, ...jobScope } }]
+          : [
+              { client: { tenantId } },
+              { job: { tenantId } },
+              { estimate: { tenantId } },
+              { invoice: { tenantId } },
+              { purchaseOrder: { tenantId } },
+              { vendor: { tenantId } },
+            ],
       },
       include: {
         client: { select: { id: true, name: true } },
@@ -379,7 +389,9 @@ export async function runGlobalSearch({
     prisma.note.findMany({
       where: {
         content: ilike(q),
-        OR: [{ client: { tenantId } }, { job: { tenantId } }],
+        OR: assignedOnly?.jobsUserId
+          ? [{ job: { tenantId, ...jobScope } }]
+          : [{ client: { tenantId } }, { job: { tenantId } }],
       },
       include: {
         client: { select: { id: true, name: true, companyName: true } },
@@ -454,7 +466,7 @@ export async function runGlobalSearch({
             : Promise.resolve([]),
           can('jobs.view')
             ? prisma.job.findMany({
-                where: { tenantId, clientId: { in: relatedClientIds } },
+                where: { tenantId, ...jobScope, clientId: { in: relatedClientIds } },
                 include: {
                   client: { select: { name: true, companyName: true } },
                   addresses: {

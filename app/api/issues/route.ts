@@ -7,6 +7,7 @@ import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } f
 import { assignedToUserWhere, teamInclude, teamMemberNameClauses } from '@/lib/assignments/where'
 import { defaultRoleForUser, parseTeamInput, primaryAssigneeId, type TeamInput } from '@/lib/assignments/roles'
 import { setIssueTeam, validateUsers } from '@/lib/assignments/team-service'
+import { andScope, isAssignedOnly, issueScopeWhere } from '@/lib/assignments/scope'
 
 // Helper to detect if request is from mobile app
 function isMobileRequest(request: NextRequest): boolean {
@@ -39,6 +40,8 @@ export async function GET(request: NextRequest) {
     const where: any = {
       tenantId: user.tenantId,
     }
+    // "See only assigned ..." restriction: AND it in so no other filter can widen it.
+    if (await isAssignedOnly(user, 'issues')) andScope(where, issueScopeWhere(user.id))
 
     applySmartSearch(
       where,

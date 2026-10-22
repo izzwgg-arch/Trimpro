@@ -4,6 +4,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requireMobilePermission, hasMobilePermission } from '@/lib/authorization'
 import { publishDispatchRealtime } from '@/lib/dispatch-realtime'
 import { notifyJobStatusChanged } from '@/lib/notifications'
+import { isAssignedOnly } from '@/lib/assignments/scope'
 
 /**
  * Mobile API: Update job status
@@ -32,7 +33,9 @@ export async function POST(
     }
 
     // Check if user can view all jobs (admin/dispatch)
-    const canViewAll = await hasMobilePermission(user.id, user.tenantId, 'mobile.jobs.view_all')
+    // "See only assigned jobs" overrides view-all.
+    const canViewAll =
+      (await hasMobilePermission(user.id, user.tenantId, 'mobile.jobs.view_all')) && !(await isAssignedOnly(user, 'jobs'))
     const canAssign = await hasMobilePermission(user.id, user.tenantId, 'mobile.jobs.assign')
 
     // Verify job exists and belongs to tenant

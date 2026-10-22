@@ -5,6 +5,7 @@ import { isMobileRequest, requireMobilePermission, requirePermission } from '@/l
 import { notifyJobAssigned } from '@/lib/notifications'
 import { defaultRoleForUser, isAssignmentRole, parseTeamInput } from '@/lib/assignments/roles'
 import { setJobTeam } from '@/lib/assignments/team-service'
+import { guardJob } from '@/lib/assignments/scope'
 
 export async function GET(
   request: NextRequest,
@@ -16,6 +17,8 @@ export async function GET(
   if (permError) return permError
 
   const user = getAuthUser(request)
+  const scopeError = await guardJob(user, params.id)
+  if (scopeError) return scopeError
 
   try {
     // Verify job belongs to tenant
@@ -62,6 +65,8 @@ export async function POST(
   if (authError) return authError
 
   const user = getAuthUser(request)
+  const scopeError = await guardJob(user, params.id)
+  if (scopeError) return scopeError
   const isMobile = isMobileRequest(request)
 
   if (isMobile) {
@@ -186,6 +191,8 @@ export async function DELETE(
   if (permError) return permError
 
   const user = getAuthUser(request)
+  const scopeError = await guardJob(user, params.id)
+  if (scopeError) return scopeError
   const searchParams = request.nextUrl.searchParams
   const userId = searchParams.get('userId')
 
@@ -230,6 +237,8 @@ export async function PUT(
   if (authError) return authError
 
   const user = getAuthUser(request)
+  const scopeError = await guardJob(user, params.id)
+  if (scopeError) return scopeError
   const isMobile = isMobileRequest(request)
 
   if (isMobile) {

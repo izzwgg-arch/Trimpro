@@ -3,6 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { assignedToUserWhere } from '@/lib/assignments/where'
+import { isAssignedOnly, issueScopeWhere, jobScopeWhere } from '@/lib/assignments/scope'
 import { ACTIVE_JOB_STATUSES } from '@/lib/jobs/statuses'
 import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subDays, subMonths } from 'date-fns'
 
@@ -204,10 +205,17 @@ export async function GET(request: NextRequest) {
       },
     })
 
+    // "See only assigned ..." restrictions narrow these counts to the person's own work.
+    const jobsOwnOnly = await isAssignedOnly(user, 'jobs')
+    const issuesOwnOnly = await isAssignedOnly(user, 'issues')
+    const jobScope = jobsOwnOnly ? jobScopeWhere(user.id) : {}
+    const issueScope = issuesOwnOnly ? issueScopeWhere(user.id) : {}
+
     // Active jobs
     const activeJobs = await prisma.job.count({
       where: {
         tenantId: user.tenantId,
+        ...jobScope,
         status: {
           in: ACTIVE_JOB_STATUSES as any[],
         },
@@ -217,6 +225,7 @@ export async function GET(request: NextRequest) {
     const hourlyJobs = await prisma.job.findMany({
       where: {
         tenantId: user.tenantId,
+        ...jobScope,
         chargeByHour: true,
       },
       select: {
@@ -235,6 +244,7 @@ export async function GET(request: NextRequest) {
     const todaysJobs = await prisma.job.count({
       where: {
         tenantId: user.tenantId,
+        ...jobScope,
         scheduledStart: {
           gte: todayStart,
           lte: todayEnd,
@@ -293,6 +303,7 @@ export async function GET(request: NextRequest) {
     const openIssues = await prisma.issue.count({
       where: {
         tenantId: user.tenantId,
+        ...issueScope,
         status: {
           in: ['OPEN', 'IN_PROGRESS'],
         },

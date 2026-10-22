@@ -12,6 +12,7 @@ import {
   resolveJobTypeForWrite,
   assertCanAccessJobType,
 } from '@/lib/jobs/job-type-scope'
+import { andScope, isAssignedOnly, leadScopeWhere } from '@/lib/assignments/scope'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -53,6 +54,8 @@ export async function GET(request: NextRequest) {
       tenantId: user.tenantId,
       ...(await jobTypeScopeWhere(user.id, user.tenantId)),
     }
+    // "See only assigned ..." restriction: AND it in so no other filter can widen it.
+    if (await isAssignedOnly(user, 'leads')) andScope(where, leadScopeWhere(user.id))
 
     applySmartSearch(
       where,

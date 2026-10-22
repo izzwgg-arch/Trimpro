@@ -94,6 +94,14 @@ export const PERMISSIONS: PermissionDefinition[] = [
     module: 'leads',
   },
   {
+    key: 'leads.assigned_only',
+    label: 'See Only Assigned Requests',
+    description:
+      'Restriction: people with this can only see (and open) requests and measuring requests assigned to them. Never applies to admins.',
+    category: 'Leads',
+    module: 'leads',
+  },
+  {
     key: 'leads.create',
     label: 'Create Leads',
     description: 'Create new lead records',
@@ -143,6 +151,14 @@ export const PERMISSIONS: PermissionDefinition[] = [
     key: 'jobs.view',
     label: 'View All Jobs',
     description: 'Browse the full job list and open job details',
+    category: 'Jobs',
+    module: 'jobs',
+  },
+  {
+    key: 'jobs.assigned_only',
+    label: 'See Only Assigned Jobs',
+    description:
+      'Restriction: people with this can only see (and open) jobs they are assigned to. Never applies to admins.',
     category: 'Jobs',
     module: 'jobs',
   },
@@ -270,6 +286,14 @@ export const PERMISSIONS: PermissionDefinition[] = [
     key: 'schedule.view',
     label: 'View All Schedule',
     description: 'Browse the full calendar and schedule list',
+    category: 'Schedule',
+    module: 'schedule',
+  },
+  {
+    key: 'schedule.assigned_only',
+    label: 'See Only My Schedule',
+    description:
+      'Restriction: people with this can only see their own schedule entries. Never applies to admins.',
     category: 'Schedule',
     module: 'schedule',
   },
@@ -522,6 +546,14 @@ export const PERMISSIONS: PermissionDefinition[] = [
     module: 'tasks',
   },
   {
+    key: 'tasks.assigned_only',
+    label: 'See Only Assigned Tasks',
+    description:
+      'Restriction: people with this can only see (and open) tasks they are on the team of. Never applies to admins.',
+    category: 'Tasks',
+    module: 'tasks',
+  },
+  {
     key: 'tasks.create',
     label: 'Create Tasks',
     description: 'Create new tasks',
@@ -571,6 +603,14 @@ export const PERMISSIONS: PermissionDefinition[] = [
     key: 'issues.view',
     label: 'View All Issues',
     description: 'Browse the full issue list and open issue details',
+    category: 'Issues',
+    module: 'issues',
+  },
+  {
+    key: 'issues.assigned_only',
+    label: 'See Only Assigned Issues',
+    description:
+      'Restriction: people with this can only see (and open) issues they are on the team of. Never applies to admins.',
     category: 'Issues',
     module: 'issues',
   },
@@ -1436,3 +1476,9 @@ export function getPermissionsByModule(module: string): PermissionDefinition[] {
 export function getPermission(key: string): PermissionDefinition | undefined {
   return PERMISSIONS.find((p) => p.key === key)
 }
+
+/**
+ * Restriction permissions ("see only assigned ...") narrow what someone can see, so they
+ * are opt-in: never auto-granted to admins/owners and never part of "select all".
+ */
+export const isRestrictionPermission = (key: string): boolean => key.endsWith('.assigned_only')

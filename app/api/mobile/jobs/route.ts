@@ -6,6 +6,7 @@ import { getPaginationParams, createPaginationResponse } from '@/lib/pagination'
 import { getJobBillingStatus } from '@/lib/jobs/billing-status'
 import { jobRecordJobSiteAddressSearchClauses } from '@/lib/search/job-site-address'
 import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
+import { isAssignedOnly } from '@/lib/assignments/scope'
 
 /**
  * Mobile API: Get jobs
@@ -34,9 +35,13 @@ export async function GET(request: NextRequest) {
   const { skip, take, limit, offset } = getPaginationParams(searchParams)
 
   try {
-    const canViewAll = await hasMobilePermission(user.id, user.tenantId, 'mobile.jobs.view_all')
+    // "See only assigned jobs" overrides view-all.
+    const canViewAll =
+      (await hasMobilePermission(user.id, user.tenantId, 'mobile.jobs.view_all')) && !(await isAssignedOnly(user, 'jobs'))
 
-    if (filter === 'all' && !canViewAll) {
+    // Someone limited to assigned jobs just gets their assigned jobs for "all", not an error.
+    const limitedToAssigned = await isAssignedOnly(user, 'jobs')
+    if (filter === 'all' && !canViewAll && !limitedToAssigned) {
       return NextResponse.json(
         { error: 'You do not have permission to view all jobs' },
         { status: 403 }

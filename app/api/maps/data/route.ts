@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
+import { andScope, isAssignedOnly, jobScopeWhere } from '@/lib/assignments/scope'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -86,6 +87,9 @@ export async function GET(request: NextRequest) {
           },
         }
       }
+
+      // "See only assigned jobs" restriction: AND it in so the tech filter can't widen it.
+      if (await isAssignedOnly(user, 'jobs')) andScope(where, jobScopeWhere(user.id))
 
       const jobs = await prisma.job.findMany({
         where,

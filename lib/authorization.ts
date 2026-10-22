@@ -6,7 +6,7 @@
 import { prisma } from './prisma'
 import { User } from '@prisma/client'
 import { NextRequest, NextResponse } from 'next/server'
-import { PERMISSIONS } from './permissions-catalog'
+import { PERMISSIONS, isRestrictionPermission } from './permissions-catalog'
 import { hasPermissionKey } from './permission-aliases'
 
 export interface UserWithRoles extends User {
@@ -110,6 +110,8 @@ export async function getUserPermissions(
   // Guarantee full admin visibility on web when user enum role is ADMIN.
   if (user.role === 'ADMIN') {
     for (const perm of PERMISSIONS) {
+      // "See only assigned ..." restrictions are opt-in and never apply to admins.
+      if (isRestrictionPermission(perm.key)) continue
       permissions.add(perm.key)
     }
   }

@@ -3,6 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { hasMobilePermission, hasPermission, requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { syncJobBillableMinutes } from '@/lib/time-tracking'
+import { guardJob } from '@/lib/assignments/scope'
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   const authError = await authenticateRequest(request)
@@ -11,6 +12,8 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   if (permError) return permError
 
   const actor = getAuthUser(request)
+  const scopeError = await guardJob(actor, params.id)
+  if (scopeError) return scopeError
   const jobId = params.id
 
   try {

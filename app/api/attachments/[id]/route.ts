@@ -3,6 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requireAnyPermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { recordAuditLog, auditContextFromRequest } from '@/lib/audit/log'
+import { guardEntity } from '@/lib/assignments/scope'
 
 // POST logs a view or download of a file/attachment so it shows up in the
 // history timeline for the file itself and for the record it belongs to.
@@ -66,6 +67,9 @@ export async function POST(
     if (!tenantId || tenantId !== user.tenantId) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
+
+    const scopeError = await guardEntity(user, attachment)
+    if (scopeError) return scopeError
 
     const verb = action === 'DOWNLOAD' ? 'downloaded' : 'viewed'
     // Attach the activity to the parent record so it appears on its history.
@@ -148,6 +152,9 @@ export async function DELETE(
     if (!tenantId || tenantId !== user.tenantId) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
+
+    const scopeError = await guardEntity(user, attachment)
+    if (scopeError) return scopeError
 
     if (attachment.leadId) {
       const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown'

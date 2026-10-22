@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
+import { guardIssue } from '@/lib/assignments/scope'
 
 export async function GET(
   request: NextRequest,
@@ -13,6 +14,8 @@ export async function GET(
   if (permError) return permError
 
   const user = getAuthUser(request)
+  const scopeError = await guardIssue(user, params.id)
+  if (scopeError) return scopeError
 
   try {
     // Verify issue belongs to tenant
@@ -70,6 +73,8 @@ export async function POST(
   if (permError) return permError
 
   const user = getAuthUser(request)
+  const scopeError = await guardIssue(user, params.id)
+  if (scopeError) return scopeError
 
   try {
     const body = await request.json()

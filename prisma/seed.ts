@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcryptjs'
-import { PERMISSIONS } from '../lib/permissions-catalog'
+import { PERMISSIONS, isRestrictionPermission } from '../lib/permissions-catalog'
 
 const prisma = new PrismaClient()
 
@@ -53,13 +53,13 @@ async function seedRoles(tenantId: string) {
     {
       name: 'Owner',
       description: 'Full system access with all permissions',
-      permissions: allPermissions.map((p) => p.key), // All permissions
+      permissions: allPermissions.filter((p) => !isRestrictionPermission(p.key)).map((p) => p.key), // All permissions (restrictions are opt-in)
     },
     {
       name: 'Admin',
       description: 'Administrative access with most permissions',
       permissions: allPermissions
-        .filter((p) => !p.key.startsWith('roles.delete') && !p.key.startsWith('system.'))
+        .filter((p) => !p.key.startsWith('roles.delete') && !p.key.startsWith('system.') && !isRestrictionPermission(p.key))
         .map((p) => p.key),
     },
     {

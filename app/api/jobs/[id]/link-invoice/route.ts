@@ -3,6 +3,7 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { syncJobCostFromLinkedDocuments } from '@/lib/jobs/sync-job-cost'
+import { guardJob } from '@/lib/assignments/scope'
 
 /**
  * Attach an existing saved invoice (with no job) to this job.
@@ -19,6 +20,8 @@ export async function POST(
   if (permError) return permError
 
   const user = getAuthUser(request)
+  const scopeError = await guardJob(user, params.id)
+  if (scopeError) return scopeError
 
   try {
     const body = await request.json().catch(() => ({}))

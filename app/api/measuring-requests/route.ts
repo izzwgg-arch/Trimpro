@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { createNotification } from '@/lib/notifications'
 import { applySmartSearch, buildSmartSearchAnd, ilike } from '@/lib/search/prisma-filters'
+import { andScope, isAssignedOnly, measuringRequestScopeWhere } from '@/lib/assignments/scope'
 
 function toApiStatus(status: 'PENDING' | 'OPENED' | 'COMPLETED') {
   return status.toLowerCase()
@@ -37,6 +38,8 @@ export async function GET(request: NextRequest) {
     ...(statusFilter === 'ALL' ? {} : { status: statusFilter }),
     ...(assignedUserId ? { assignedUserId } : {}),
   }
+  // "See only assigned ..." restriction: AND it in so no other filter can widen it.
+  if (await isAssignedOnly(user, 'leads')) andScope(where, measuringRequestScopeWhere(user.id))
 
   applySmartSearch(
     where,

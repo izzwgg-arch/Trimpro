@@ -5,6 +5,7 @@ import { createNotification } from '@/lib/notifications'
 import { hasMobilePermission, isMobileRequest, requireAnyPermission, requireMobilePermission, requirePermission } from '@/lib/authorization'
 import { ensureJobDescriptionNote } from '@/lib/jobs/description-note'
 import { canSetContentVisibility, cleanVisibilityForJob, parseVisibilityInput } from '@/lib/jobs/content-visibility'
+import { guardSchedule } from '@/lib/assignments/scope'
 
 export async function GET(
   request: NextRequest,
@@ -16,6 +17,8 @@ export async function GET(
   if (permError) return permError
 
   const user = getAuthUser(request)
+  const scopeError = await guardSchedule(user, params.id)
+  if (scopeError) return scopeError
 
   try {
     const canCreateForOthers =
@@ -82,6 +85,8 @@ export async function PUT(
   }
 
   const user = getAuthUser(request)
+  const scopeError = await guardSchedule(user, params.id)
+  if (scopeError) return scopeError
 
   try {
     const body = await request.json()
@@ -288,6 +293,8 @@ export async function DELETE(
   if (permError) return permError
 
   const user = getAuthUser(request)
+  const scopeError = await guardSchedule(user, params.id)
+  if (scopeError) return scopeError
 
   try {
     const canCreateForOthers =

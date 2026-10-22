@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { hasMobilePermission, hasPermission, requireAnyPermission } from '@/lib/authorization'
+import { isAssignedOnly } from '@/lib/assignments/scope'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -12,12 +13,14 @@ export async function GET(request: NextRequest) {
   const user = getAuthUser(request)
 
   try {
+    const scheduleOwnOnly = await isAssignedOnly(user, 'schedule')
     const canViewTeamScheduleScope =
-      user.role === 'ADMIN' ||
+      !scheduleOwnOnly &&
+      (user.role === 'ADMIN' ||
       (await hasMobilePermission(user.id, user.tenantId, 'mobile.schedule.view_all')) ||
       (await hasMobilePermission(user.id, user.tenantId, 'canCreateSchedulesForOthers')) ||
       (await hasMobilePermission(user.id, user.tenantId, 'mobile.jobs.assign')) ||
-      (await hasPermission(user.id, user.tenantId, 'schedule.view_all'))
+      (await hasPermission(user.id, user.tenantId, 'schedule.view_all')))
 
     // Show active users and invited users so admins can track invite progress.
     const teamMembers = await prisma.user.findMany({
