@@ -9,6 +9,7 @@ import { ensureJobDescriptionNote } from '@/lib/jobs/description-note'
 import { syncScheduleNote } from '@/lib/jobs/schedule-note'
 import { canSetContentVisibility, cleanVisibilityForJob, parseVisibilityInput } from '@/lib/jobs/content-visibility'
 import { isAssignedOnly } from '@/lib/assignments/scope'
+import { defaultRoleForUser } from '@/lib/assignments/roles'
 
 function normalizeScheduleDateTime(rawDate: unknown, rawTime: unknown, fallbackIso?: string): Date | null {
   if (typeof fallbackIso === 'string' && fallbackIso.trim().length > 0) {
@@ -408,6 +409,28 @@ export async function POST(request: NextRequest) {
             status: job.status === 'QUOTE' ? 'SCHEDULED' : job.status,
           },
         })
+      }
+
+      // Scheduling a worker on a job also makes them a crew member of that job,
+      // so the job shows up as "theirs" everywhere (not just as a loose shift).
+      try {
+        const assignee = await prisma.user.findFirst({
+          where: { id: targetUserId, tenantId: user.tenantId },
+          select: { id: true, role: true },
+        })
+        if (assignee) {
+          const existingCrew = await prisma.jobAssignment.findUnique({
+            where: { jobId_userId: { jobId, userId: targetUserId } },
+            select: { id: true },
+          })
+          if (!existingCrew) {
+            await prisma.jobAssignment.create({
+              data: { jobId, userId: targetUserId, role: defaultRoleForUser(assignee.role) },
+            })
+          }
+        }
+      } catch (crewErr) {
+        console.error('Auto-assign to job crew from schedule failed:', crewErr)
       }
     }
 
