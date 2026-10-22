@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { PdfJsWebView } from './PdfJsWebView'
+import { SwipePager } from './SwipePager'
 import { openAttachment } from '../../services/open-attachment'
 import { BRAND } from '../../config/env'
 
@@ -13,13 +14,20 @@ export type JobDocumentPreview = {
 }
 
 type Props = {
-  document: JobDocumentPreview | null
+  /** Documents the user can swipe between (the list as currently filtered/sorted). */
+  documents: JobDocumentPreview[]
+  /** Index of the open document, or null when closed. */
+  index: number | null
+  onIndexChange: (index: number) => void
   onClose: () => void
 }
 
-export function JobDocumentPdfModal({ document, onClose }: Props) {
+export function JobDocumentPdfModal({ documents, index, onIndexChange, onClose }: Props) {
   const [opening, setOpening] = useState(false)
-  const visible = Boolean(document)
+  const total = documents.length
+  const visible = index !== null && total > 0
+  const safeIndex = visible ? (((index as number) % total) + total) % total : 0
+  const document = visible ? documents[safeIndex] : null
 
   const onOpenExternal = async () => {
     if (!document) return
@@ -45,6 +53,7 @@ export function JobDocumentPdfModal({ document, onClose }: Props) {
             </Text>
             <Text style={styles.meta} numberOfLines={1}>
               {document?.fileName || 'PDF'}
+              {total > 1 ? ` · ${safeIndex + 1} of ${total} · swipe to browse` : ''}
             </Text>
           </View>
           <Pressable style={styles.headerBtn} onPress={onOpenExternal} disabled={!document || opening}>
@@ -63,13 +72,20 @@ export function JobDocumentPdfModal({ document, onClose }: Props) {
         </View>
 
         {document ? (
-          <PdfJsWebView
-            key={document.id}
-            url={document.url}
-            fileName={document.fileName}
-            mimeType="application/pdf"
-            onOpenExternal={onOpenExternal}
-            openingExternal={opening}
+          <SwipePager
+            count={total}
+            index={safeIndex}
+            onIndexChange={onIndexChange}
+            renderItem={(i) => (
+              <PdfJsWebView
+                key={documents[i].id}
+                url={documents[i].url}
+                fileName={documents[i].fileName}
+                mimeType="application/pdf"
+                onOpenExternal={onOpenExternal}
+                openingExternal={opening}
+              />
+            )}
           />
         ) : null}
       </View>

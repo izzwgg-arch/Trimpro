@@ -10,6 +10,8 @@ type Props = {
   entityType?: 'job' | 'request' | 'task' | 'issue' | string
   entityId?: string
   onSavedCopy?: () => void
+  /** True while the image is zoomed in or a drawing tool is active. */
+  onSwipeLockChange?: (locked: boolean) => void
 }
 
 function buildMarkupHtml(src: string, fileName: string) {
@@ -288,6 +290,18 @@ function buildMarkupHtml(src: string, fileName: string) {
     zoomLabel.textContent = Math.round(zoom * 100) + '%';
     document.getElementById('undo').disabled = items.length === 0;
     document.getElementById('clear').disabled = items.length === 0;
+    syncSwipeLock();
+  }
+
+  // Tell the app when a horizontal swipe belongs to the image (zoomed in, or a
+  // drawing tool is active) so the gallery doesn't flip to the next attachment.
+  let lastSwipeLock = null;
+  function syncSwipeLock() {
+    const locked = zoom > 1.05 || tool !== 'pan';
+    if (locked !== lastSwipeLock) {
+      lastSwipeLock = locked;
+      post({ type: 'swipeLock', locked: locked });
+    }
   }
 
   function imagePoint(clientX, clientY) {
@@ -505,7 +519,7 @@ function buildMarkupHtml(src: string, fileName: string) {
 </html>`
 }
 
-export function ImageMarkupWebView({ src, fileName, active, entityType, entityId, onSavedCopy }: Props) {
+export function ImageMarkupWebView({ src, fileName, active, entityType, entityId, onSavedCopy, onSwipeLockChange }: Props) {
   const webRef = useRef<WebView>(null)
   const html = useMemo(() => buildMarkupHtml(src, fileName), [src, fileName])
 
@@ -538,6 +552,8 @@ export function ImageMarkupWebView({ src, fileName, active, entityType, entityId
       const payload = JSON.parse(event.nativeEvent.data)
       if (payload?.type === 'save' && payload.dataUrl) {
         void handleSave(payload.dataUrl, payload.fileName || fileName)
+      } else if (payload?.type === 'swipeLock') {
+        onSwipeLockChange?.(Boolean(payload.locked))
       }
     } catch {
       // ignore malformed messages

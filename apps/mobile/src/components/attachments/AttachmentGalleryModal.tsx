@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Modal,
-  PanResponder,
   Pressable,
   StyleSheet,
   Text,
@@ -12,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { Audio, ResizeMode, Video } from 'expo-av'
 import { ImageMarkupWebView } from './ImageMarkupWebView'
 import { PdfJsWebView } from './PdfJsWebView'
+import { SwipePager } from './SwipePager'
 import {
   getAttachmentKind,
   normalizeAttachmentUrl,
@@ -65,9 +65,14 @@ export function AttachmentGalleryModal({
   const current = total > 0 ? attachments[safeIndex] : null
   const url = current ? normalizeAttachmentUrl(current.url) : ''
   const kind = current ? getAttachmentKind(current.mimeType, current.fileName) : 'other'
-  const canNavigate = total > 1
   const [opening, setOpening] = useState(false)
+  // A swipe belongs to the image while it is zoomed in or being drawn on.
+  const [swipeLocked, setSwipeLocked] = useState(false)
   const soundRef = useRef<Audio.Sound | null>(null)
+
+  useEffect(() => {
+    setSwipeLocked(false)
+  }, [safeIndex])
 
   useEffect(() => {
     return () => {
@@ -102,38 +107,6 @@ export function AttachmentGalleryModal({
     }
   }, [visible, kind, url, current?.id])
 
-  const goPrev = () => {
-    if (!canNavigate) return
-    onIndexChange((safeIndex - 1 + total) % total)
-  }
-
-  const goNext = () => {
-    if (!canNavigate) return
-    onIndexChange((safeIndex + 1) % total)
-  }
-
-  // Swipe left/right to move between attachments (in addition to the arrows).
-  // Latest handlers are read from a ref so the responder is created only once.
-  const navRef = useRef({ prev: goPrev, next: goNext, can: canNavigate })
-  navRef.current = { prev: goPrev, next: goNext, can: canNavigate }
-  const SWIPE = 45
-  const panResponder = useRef(
-    PanResponder.create({
-      // Capture only a decisive, near-horizontal single-finger drag so taps,
-      // vertical scrolls, pinch-zoom and markup drawing still reach the content.
-      onMoveShouldSetPanResponderCapture: (_e, g) =>
-        navRef.current.can &&
-        g.numberActiveTouches === 1 &&
-        Math.abs(g.dx) > SWIPE &&
-        Math.abs(g.dx) > Math.abs(g.dy) * 2.5,
-      onPanResponderRelease: (_e, g) => {
-        if (g.dx <= -SWIPE) navRef.current.next()
-        else if (g.dx >= SWIPE) navRef.current.prev()
-      },
-      onPanResponderTerminationRequest: () => false,
-    })
-  ).current
-
   const onOpenExternal = async () => {
     if (!current) return
     setOpening(true)
@@ -148,6 +121,68 @@ export function AttachmentGalleryModal({
     }
   }
 
+  const renderAttachment = (att: GalleryAttachment) => {
+    const attUrl = normalizeAttachmentUrl(att.url)
+    const attKind = getAttachmentKind(att.mimeType, att.fileName)
+    if (attKind === 'image') {
+      return (
+        <ImageMarkupWebView
+          key={att.id}
+          src={attUrl}
+          fileName={att.fileName}
+          active={visible}
+          entityType={entityType}
+          entityId={entityId}
+          onSavedCopy={onAttachmentCreated}
+          onSwipeLockChange={setSwipeLocked}
+        />
+      )
+    }
+    if (attKind === 'video') {
+      return (
+        <Video
+          key={att.id}
+          source={{ uri: attUrl }}
+          style={styles.video}
+          useNativeControls
+          shouldPlay
+          resizeMode={ResizeMode.CONTAIN}
+        />
+      )
+    }
+    if (attKind === 'audio') {
+      return (
+        <View style={styles.centerCard}>
+          <Ionicons name="musical-notes-outline" size={48} color="#fff" />
+          <Text style={styles.centerTitle}>{att.fileName}</Text>
+          <Text style={styles.meta}>Playing audio… Use Open with… to share/download.</Text>
+        </View>
+      )
+    }
+    if (attKind === 'pdf') {
+      return (
+        <PdfJsWebView
+          key={att.id}
+          url={att.url}
+          fileName={att.fileName}
+          mimeType={att.mimeType || 'application/pdf'}
+          onOpenExternal={onOpenExternal}
+          openingExternal={opening}
+        />
+      )
+    }
+    return (
+      <View style={styles.centerCard}>
+        <Ionicons name="document-text-outline" size={48} color="#fff" />
+        <Text style={styles.centerTitle}>{att.fileName}</Text>
+        <Text style={styles.meta}>Tap Open with… to view this file in another app.</Text>
+        <Pressable style={styles.primaryBtn} onPress={onOpenExternal} disabled={opening}>
+          <Text style={styles.primaryBtnText}>{opening ? 'Opening…' : 'Open with…'}</Text>
+        </Pressable>
+      </View>
+    )
+  }
+
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={styles.root}>
@@ -158,6 +193,7 @@ export function AttachmentGalleryModal({
             </Text>
             <Text style={styles.meta} numberOfLines={1}>
               {total > 0 ? `${safeIndex + 1} of ${total}` : '0 of 0'}
+              {total > 1 ? ' · swipe to browse' : ''}
               {current?.fileSize ? ` · ${formatBytes(current.fileSize)}` : ''}
               {current?.mimeType ? ` · ${current.mimeType}` : ''}
             </Text>
@@ -177,65 +213,18 @@ export function AttachmentGalleryModal({
           </Pressable>
         </View>
 
-        <View style={styles.body} {...panResponder.panHandlers}>
-          {canNavigate ? (
-            <Pressable style={[styles.navBtn, styles.navLeft]} onPress={goPrev}>
-              <Ionicons name="chevron-back" size={28} color="#fff" />
-            </Pressable>
-          ) : null}
-
+        <View style={styles.body}>
           {!current ? (
             <Text style={styles.empty}>No attachments</Text>
-          ) : kind === 'image' ? (
-            <ImageMarkupWebView
-              key={current.id}
-              src={url}
-              fileName={current.fileName}
-              active={visible}
-              entityType={entityType}
-              entityId={entityId}
-              onSavedCopy={onAttachmentCreated}
-            />
-          ) : kind === 'video' ? (
-            <Video
-              key={current.id}
-              source={{ uri: url }}
-              style={styles.video}
-              useNativeControls
-              shouldPlay
-              resizeMode={ResizeMode.CONTAIN}
-            />
-          ) : kind === 'audio' ? (
-            <View style={styles.centerCard}>
-              <Ionicons name="musical-notes-outline" size={48} color="#fff" />
-              <Text style={styles.centerTitle}>{current.fileName}</Text>
-              <Text style={styles.meta}>Playing audio… Use Open with… to share/download.</Text>
-            </View>
-          ) : kind === 'pdf' ? (
-            <PdfJsWebView
-              key={current.id}
-              url={current.url}
-              fileName={current.fileName}
-              mimeType={current.mimeType || 'application/pdf'}
-              onOpenExternal={onOpenExternal}
-              openingExternal={opening}
-            />
           ) : (
-            <View style={styles.centerCard}>
-              <Ionicons name="document-text-outline" size={48} color="#fff" />
-              <Text style={styles.centerTitle}>{current.fileName}</Text>
-              <Text style={styles.meta}>Tap Open with… to view this file in another app.</Text>
-              <Pressable style={styles.primaryBtn} onPress={onOpenExternal} disabled={opening}>
-                <Text style={styles.primaryBtnText}>{opening ? 'Opening…' : 'Open with…'}</Text>
-              </Pressable>
-            </View>
+            <SwipePager
+              count={total}
+              index={safeIndex}
+              onIndexChange={onIndexChange}
+              locked={swipeLocked}
+              renderItem={(i) => renderAttachment(attachments[i])}
+            />
           )}
-
-          {canNavigate ? (
-            <Pressable style={[styles.navBtn, styles.navRight]} onPress={goNext}>
-              <Ionicons name="chevron-forward" size={28} color="#fff" />
-            </Pressable>
-          ) : null}
         </View>
       </View>
     </Modal>
@@ -288,17 +277,4 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   primaryBtnText: { color: '#fff', fontWeight: '700' },
-  navBtn: {
-    position: 'absolute',
-    top: '45%',
-    zIndex: 20,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  navLeft: { left: 8 },
-  navRight: { right: 8 },
 })

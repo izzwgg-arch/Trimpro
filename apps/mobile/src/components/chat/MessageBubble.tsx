@@ -26,7 +26,7 @@ import { openAttachment } from '../../services/open-attachment'
  * The server's upload handler intentionally returns relative paths; this is the
  * single place we resolve them for the client.
  */
-function resolveMediaUrl(url: string | null | undefined): string {
+export function resolveMediaUrl(url: string | null | undefined): string {
   if (!url) return ''
   const trimmed = url.trim()
   if (!trimmed) return ''

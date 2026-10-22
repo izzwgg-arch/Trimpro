@@ -181,7 +181,7 @@ export function JobDocumentsSection({ job }: { job: Job }) {
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<SortOption>('date-desc')
   const [typeFilter, setTypeFilter] = useState<'all' | DocKind>('all')
-  const [preview, setPreview] = useState<JobDocumentPreview | null>(null)
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null)
   const [expanded, setExpanded] = useState(true)
 
   const allRows = useMemo(() => buildJobDocumentRows(job), [job])
@@ -286,7 +286,7 @@ export function JobDocumentsSection({ job }: { job: Job }) {
                   key={row.key}
                   style={styles.docRow}
                   activeOpacity={0.55}
-                  onPress={() => setPreview(row.preview)}
+                  onPress={() => setPreviewIndex(filtered.indexOf(row))}
                   accessibilityRole="button"
                   accessibilityLabel={`Open ${KIND_LABEL[row.kind]} ${row.number}`}
                 >
@@ -315,7 +315,12 @@ export function JobDocumentsSection({ job }: { job: Job }) {
         )}
       </DetailSection>
 
-      <JobDocumentPdfModal document={preview} onClose={() => setPreview(null)} />
+      <JobDocumentPdfModal
+        documents={filtered.map((row) => row.preview)}
+        index={previewIndex}
+        onIndexChange={setPreviewIndex}
+        onClose={() => setPreviewIndex(null)}
+      />
     </>
   )
 }

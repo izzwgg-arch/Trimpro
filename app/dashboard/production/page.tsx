@@ -96,6 +96,9 @@ function toCardData(job: ProductionJob): ProductionJobCardData {
 
 function sortJobs(list: ProductionJob[], key: ProductionSortKey, dir: 'asc' | 'desc'): ProductionJob[] {
   const mul = dir === 'asc' ? 1 : -1
+  // "Last Updated": the API already returns jobs newest-updated first, so honor
+  // the direction by position (desc keeps that order, asc reverses it).
+  const apiIndex = new Map(list.map((j, i) => [j.id, i]))
   const val = (j: ProductionJob): number | string => {
     switch (key) {
       case 'dueDate': return j.scheduledEnd ? new Date(j.scheduledEnd).getTime() : (dir === 'asc' ? Infinity : -Infinity)
@@ -105,7 +108,7 @@ function sortJobs(list: ProductionJob[], key: ProductionSortKey, dir: 'asc' | 'd
       case 'client': return (j.client?.companyName || j.client?.name || '').toLowerCase()
       case 'jobSiteAddress': return (j.addresses?.[0]?.street || '').toLowerCase()
       case 'assignedUser': return (j.assignments?.[0]?.user?.firstName || '').toLowerCase()
-      case 'lastUpdated': default: return 0
+      case 'lastUpdated': default: return -(apiIndex.get(j.id) ?? 0)
     }
   }
   return [...list].sort((a, b) => {

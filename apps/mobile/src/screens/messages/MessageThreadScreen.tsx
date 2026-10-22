@@ -38,7 +38,8 @@ import { enqueueOutbox } from '../../offline/outbox'
 import { MessageBubble } from '../../components/chat/MessageBubble'
 import { Composer } from '../../components/chat/Composer'
 import { DateSeparator } from '../../components/chat/DateSeparator'
-import { MediaViewer } from '../../components/chat/MediaViewer'
+import { MediaViewer, type MediaViewerItem } from '../../components/chat/MediaViewer'
+import { resolveMediaUrl } from '../../components/chat/MessageBubble'
 import { VoiceRecorder } from '../../services/voiceRecorder'
 import { buildSendDraftSnapshot, toInvertedThreadItems } from './message-thread-utils'
 import { colors, spacing, typography } from '../../theme/tokens'
@@ -208,7 +209,7 @@ export function MessageThreadScreen({ route, navigation }: Props) {
   const pressSessionRef = useRef<number>(0)
   const stopInFlightRef = useRef(false)
   const pendingScrollAfterSendRef = useRef(false)
-  const [viewingMedia, setViewingMedia] = useState<{ uri: string; fileName?: string | null; kind: 'IMAGE' | 'VIDEO' } | null>(null)
+  const [viewingMediaIndex, setViewingMediaIndex] = useState<number | null>(null)
   const [mediaDrafts, setMediaDrafts] = useState<
     Array<{
       kind: 'IMAGE' | 'VIDEO' | 'FILE' | 'VOICE' | 'LOCATION'
@@ -1165,6 +1166,19 @@ export function MessageThreadScreen({ route, navigation }: Props) {
     return all.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
   }, [threadQuery.data?.messages, optimisticMessages])
 
+  // Every photo/video in the conversation (oldest first) so the viewer can swipe through them.
+  const threadMedia = useMemo<MediaViewerItem[]>(() => {
+    const out: MediaViewerItem[] = []
+    for (const message of messages as any[]) {
+      if (message.isDeletedForEveryone) continue
+      for (const a of message.attachments || []) {
+        if (!a?.url || (a.kind !== 'IMAGE' && a.kind !== 'VIDEO')) continue
+        out.push({ uri: resolveMediaUrl(a.url), fileName: a.fileName || null, kind: a.kind })
+      }
+    }
+    return out
+  }, [messages])
+
   const messagesWithDates = useMemo(() => {
     const result: Array<ChatMessage | OptimisticMessage | { type: 'DATE'; date: Date }> = []
     let lastDate: Date | null = null
@@ -1354,20 +1368,12 @@ export function MessageThreadScreen({ route, navigation }: Props) {
                   }
                 }}
                 onJobPress={(jobId) => Linking.openURL(`trimpro://jobs/${jobId}`)}
-                onImagePress={(uri, fileName) => {
-                  // uri is the resolved absolute URL; attachment.url may still be relative
-                  const attachment = message.attachments?.find((a: any) => {
-                    if (!a.url) return false
-                    if (a.url === uri) return true
-                    const resolved = a.url.startsWith('/') ? `${API_BASE_URL}${a.url}` : a.url
-                    return resolved === uri
-                  })
-                  // Determine kind: use attachment data or fall back to extension detection
-                  const kind: 'IMAGE' | 'VIDEO' =
-                    attachment?.kind === 'VIDEO' || /\.(mp4|mov|avi|mkv|webm|m4v)$/i.test(uri)
-                      ? 'VIDEO'
-                      : 'IMAGE'
-                  setViewingMedia({ uri, fileName, kind })
+                onImagePress={(uri) => {
+                  // uri is the resolved absolute URL; open the viewer at that item so
+                  // the user can swipe through the rest of the conversation's media.
+                  const at = threadMedia.findIndex((m) => m.uri === uri)
+                  if (at >= 0) setViewingMediaIndex(at)
+                  else Linking.openURL(uri)
                 }}
                 onLongPress={() => openMessageActions(message)}
               />
@@ -1457,13 +1463,13 @@ export function MessageThreadScreen({ route, navigation }: Props) {
         {threadColumn}
       </KeyboardAvoidingView>
 
-      {viewingMedia && (
+      {viewingMediaIndex !== null && threadMedia.length > 0 && (
         <MediaViewer
-          visible={!!viewingMedia}
-          uri={viewingMedia.uri}
-          fileName={viewingMedia.fileName}
-          kind={viewingMedia.kind}
-          onClose={() => setViewingMedia(null)}
+          visible
+          items={threadMedia}
+          index={viewingMediaIndex}
+          onIndexChange={setViewingMediaIndex}
+          onClose={() => setViewingMediaIndex(null)}
         />
       )}
       <ReactNativeModal

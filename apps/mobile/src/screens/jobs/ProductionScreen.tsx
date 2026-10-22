@@ -45,6 +45,30 @@ interface ProductionJob {
   addresses: Array<{ id: string; street: string | null; city: string | null }>
   production: { stage: string; nextAction: string }
 }
+// Same sort options as the web production line (lib/production/config.ts).
+type SortKey =
+  | 'dueDate'
+  | 'priority'
+  | 'createdDate'
+  | 'jobNumber'
+  | 'client'
+  | 'jobSiteAddress'
+  | 'assignedUser'
+  | 'lastUpdated'
+type SortDir = 'asc' | 'desc'
+
+const SORT_OPTIONS: Array<{ value: SortKey; label: string }> = [
+  { value: 'dueDate', label: 'Due Date' },
+  { value: 'priority', label: 'Priority' },
+  { value: 'createdDate', label: 'Created Date' },
+  { value: 'jobNumber', label: 'Job Number' },
+  { value: 'client', label: 'Client' },
+  { value: 'jobSiteAddress', label: 'Job Site Address' },
+  { value: 'assignedUser', label: 'Assigned User' },
+  { value: 'lastUpdated', label: 'Last Updated' },
+]
+const sortLabel = (key: SortKey) => SORT_OPTIONS.find((o) => o.value === key)?.label || 'Last Updated'
+
 interface ColumnConfig {
   id: string
   displayName: string
@@ -53,6 +77,8 @@ interface ColumnConfig {
   order: number
   visible: boolean
   showJobCount: boolean
+  defaultSort: SortKey
+  defaultSortDir: SortDir
   statuses: string[]
 }
 interface CardFieldConfig { key: string; visible: boolean; order: number }
@@ -164,6 +190,42 @@ const iconFor = (name?: string): keyof typeof Ionicons.glyphMap => (name && ICON
 
 const SCREEN_W = Dimensions.get('window').width
 
+/**
+ * Sort one board column's jobs — same rules as the web board's sortJobs.
+ * `list` arrives in the API's order (most recently updated first), which is what
+ * "Last Updated" uses; jobs without a value for the chosen field go last.
+ */
+function sortJobs(list: ProductionJob[], key: SortKey, dir: SortDir): ProductionJob[] {
+  const mul = dir === 'asc' ? 1 : -1
+  const apiIndex = new Map(list.map((j, i) => [j.id, i]))
+  const time = (v?: string | null): number | null => {
+    if (!v) return null
+    const t = new Date(v).getTime()
+    return Number.isNaN(t) ? null : t
+  }
+  const val = (j: ProductionJob): number | string | null => {
+    switch (key) {
+      case 'dueDate': return time(j.scheduledEnd)
+      case 'priority': return j.priority || 0
+      case 'createdDate': return time(j.createdAt)
+      case 'jobNumber': return j.jobNumber || ''
+      case 'client': return (j.client?.companyName || j.client?.name || '').toLowerCase()
+      case 'jobSiteAddress': return (j.addresses?.[0]?.street || '').toLowerCase()
+      case 'assignedUser': return (j.assignments?.[0]?.user?.firstName || '').toLowerCase()
+      case 'lastUpdated': default: return -(apiIndex.get(j.id) ?? 0)
+    }
+  }
+  return [...list].sort((a, b) => {
+    const va = val(a)
+    const vb = val(b)
+    if (va === null && vb === null) return 0
+    if (va === null) return 1 // missing values always last
+    if (vb === null) return -1
+    if (typeof va === 'string' || typeof vb === 'string') return String(va).localeCompare(String(vb)) * mul
+    return (va - vb) * mul
+  })
+}
+
 function money(v: unknown): string {
   const n = Number(v)
   if (!Number.isFinite(n) || n === 0) return ''
@@ -188,11 +250,13 @@ export function ProductionScreen({ navigation }: Props) {
   const { hasWebPermission, canViewRequests } = useMobilePermissions()
   const canViewTasks = hasWebPermission('tasks.view')
   const canViewLeads = canViewRequests()
+  const canManageProduction = hasWebPermission('production.manage')
 
   const [tab, setTab] = useState<BoardKey>('jobs')
   const [search, setSearch] = useState('')
   const [archiveView, setArchiveView] = useState(false)
   const [customizeOpen, setCustomizeOpen] = useState(false)
+  const [sortOpen, setSortOpen] = useState(false)
 
   // ---- per-user view preferences ----
   const prefsQuery = useQuery({
@@ -254,7 +318,12 @@ export function ProductionScreen({ navigation }: Props) {
     const withJobs = cols.map((col) => ({
       id: col.id,
       col,
-      jobs: visibleJobs.filter((j) => j.status !== 'ON_HOLD' && col.statuses.includes(j.status)),
+      // Each column is sorted by its own configured sort, exactly like the web board.
+      jobs: sortJobs(
+        visibleJobs.filter((j) => j.status !== 'ON_HOLD' && col.statuses.includes(j.status)),
+        col.defaultSort || 'lastUpdated',
+        col.defaultSortDir || 'desc'
+      ),
     }))
     return applyBoardPref(withJobs, prefs.jobs) // user's personal order/hidden
   }, [config, visibleJobs, prefs.jobs])
@@ -333,6 +402,11 @@ export function ProductionScreen({ navigation }: Props) {
             onChangeText={setSearch}
           />
         </View>
+        {tab === 'jobs' && !archiveView && (
+          <Pressable style={styles.iconButton} onPress={() => setSortOpen(true)} hitSlop={8} accessibilityLabel="Column sorting">
+            <Ionicons name="swap-vertical-outline" size={18} color={colors.brandPrimary} />
+          </Pressable>
+        )}
         <Pressable style={styles.iconButton} onPress={() => setCustomizeOpen(true)} hitSlop={8}>
           <Ionicons name="options-outline" size={18} color={colors.brandPrimary} />
         </Pressable>
@@ -394,6 +468,10 @@ export function ProductionScreen({ navigation }: Props) {
                     {col.showJobCount && (
                       <View style={styles.columnCount}><Text style={styles.columnCountText}>{colJobs.length}</Text></View>
                     )}
+                  </View>
+                  <View style={styles.sortBar}>
+                    <Ionicons name={col.defaultSortDir === 'asc' ? 'arrow-up' : 'arrow-down'} size={11} color={colors.textSecondary} />
+                    <Text style={styles.sortBarText} numberOfLines={1}>{sortLabel(col.defaultSort || 'lastUpdated')}</Text>
                   </View>
                   <FlatList
                     data={colJobs}
@@ -466,6 +544,14 @@ export function ProductionScreen({ navigation }: Props) {
           emptyTitle="No requests assigned to you"
         />
       )}
+
+      <SortColumnsModal
+        open={sortOpen}
+        onClose={() => setSortOpen(false)}
+        columns={(config?.columns || []).filter((c) => c.visible).sort((a, b) => a.order - b.order)}
+        canManage={canManageProduction}
+        onSaved={() => query.refetch()}
+      />
 
       <CustomizeViewModal
         open={customizeOpen}
@@ -610,6 +696,141 @@ function LeadCard({ lead, onPress }: { lead: LeadItem; onPress: () => void }) {
       </View>
       {meta ? <Text style={[styles.metaFaint, { fontSize: 11 }]} numberOfLines={1}>{meta}</Text> : null}
     </Pressable>
+  )
+}
+
+// Per-column sorting — the same 8 options the web's Production settings offer.
+// Like the web, this is a company-wide setting: people with production.manage can
+// change it; everyone else sees how each column is currently sorted.
+function SortColumnsModal({
+  open,
+  onClose,
+  columns,
+  canManage,
+  onSaved,
+}: {
+  open: boolean
+  onClose: () => void
+  columns: ColumnConfig[]
+  canManage: boolean
+  onSaved: () => void
+}) {
+  const insets = useSafeAreaInsets()
+  const [draft, setDraft] = useState<Record<string, { key: SortKey; dir: SortDir }>>({})
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const next: Record<string, { key: SortKey; dir: SortDir }> = {}
+    for (const c of columns) next[c.id] = { key: c.defaultSort || 'lastUpdated', dir: c.defaultSortDir || 'desc' }
+    setDraft(next)
+    setExpanded(null)
+    setError(null)
+  }, [open, columns])
+
+  const changed = columns.some((c) => {
+    const d = draft[c.id]
+    return d && (d.key !== (c.defaultSort || 'lastUpdated') || d.dir !== (c.defaultSortDir || 'desc'))
+  })
+
+  const setColumnSort = (id: string, patch: Partial<{ key: SortKey; dir: SortDir }>) =>
+    setDraft((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }))
+
+  const save = async () => {
+    setSaving(true)
+    setError(null)
+    try {
+      // Re-read the full company config so only the sort fields change.
+      const current = await apiRequest<{ config: any }>(`/api/production/settings`)
+      const config = current.config
+      config.columns = (config.columns || []).map((c: any) =>
+        draft[c.id] ? { ...c, defaultSort: draft[c.id].key, defaultSortDir: draft[c.id].dir } : c
+      )
+      await apiRequest(`/api/production/settings`, 'PUT', { config })
+      onSaved()
+      onClose()
+    } catch (e: any) {
+      setError(e?.message || 'Could not save the sorting. Please try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal visible={open} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={[styles.modalCard, { paddingBottom: Math.max(insets.bottom + spacing.lg, spacing.xl) }]}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Column sorting</Text>
+            <Pressable onPress={onClose} hitSlop={8}><Ionicons name="close" size={22} color={colors.textSecondary} /></Pressable>
+          </View>
+          <Text style={styles.modalSub}>
+            {canManage
+              ? 'Choose how each column is sorted. This applies to everyone, same as Production settings on the web.'
+              : 'How each column is sorted. An admin can change this in Production settings.'}
+          </Text>
+          <ScrollView style={{ maxHeight: Dimensions.get('window').height * 0.55 }} contentContainerStyle={{ gap: 6, paddingVertical: spacing.xs }}>
+            {columns.map((col) => {
+              const d = draft[col.id] || { key: 'lastUpdated' as SortKey, dir: 'desc' as SortDir }
+              const isOpen = canManage && expanded === col.id
+              return (
+                <View key={col.id} style={styles.sortCard}>
+                  <Pressable
+                    style={styles.sortCardHead}
+                    disabled={!canManage}
+                    onPress={() => setExpanded(isOpen ? null : col.id)}
+                  >
+                    <View style={[styles.dot, { backgroundColor: col.color }]} />
+                    <Text style={styles.modalRowLabel} numberOfLines={1}>{col.displayName}</Text>
+                    <Ionicons name={d.dir === 'asc' ? 'arrow-up' : 'arrow-down'} size={13} color={colors.textSecondary} />
+                    <Text style={styles.sortSummary} numberOfLines={1}>{sortLabel(d.key)}</Text>
+                    {canManage ? <Ionicons name={isOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.muted} /> : null}
+                  </Pressable>
+                  {isOpen ? (
+                    <View style={styles.sortOptions}>
+                      <View style={styles.sortDirRow}>
+                        {(['asc', 'desc'] as SortDir[]).map((dir) => (
+                          <Pressable
+                            key={dir}
+                            onPress={() => setColumnSort(col.id, { dir })}
+                            style={[styles.sortDirBtn, d.dir === dir && styles.sortDirBtnActive]}
+                          >
+                            <Ionicons name={dir === 'asc' ? 'arrow-up' : 'arrow-down'} size={14} color={d.dir === dir ? colors.surface : colors.textSecondary} />
+                            <Text style={[styles.sortDirText, d.dir === dir && styles.sortDirTextActive]}>{dir === 'asc' ? 'Ascending' : 'Descending'}</Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                      {SORT_OPTIONS.map((opt) => {
+                        const active = d.key === opt.value
+                        return (
+                          <Pressable key={opt.value} onPress={() => setColumnSort(col.id, { key: opt.value })} style={styles.sortOptionRow}>
+                            <Ionicons name={active ? 'radio-button-on' : 'radio-button-off'} size={18} color={active ? colors.brandPrimary : colors.muted} />
+                            <Text style={[styles.sortOptionText, active && styles.sortOptionTextActive]}>{opt.label}</Text>
+                          </Pressable>
+                        )
+                      })}
+                    </View>
+                  ) : null}
+                </View>
+              )
+            })}
+          </ScrollView>
+          {error ? <Text style={styles.sortError}>{error}</Text> : null}
+          <View style={styles.modalFooter}>
+            <Pressable onPress={onClose} style={styles.modalCancel} disabled={saving}>
+              <Text style={styles.modalCancelText}>{canManage ? 'Cancel' : 'Close'}</Text>
+            </Pressable>
+            {canManage ? (
+              <Pressable onPress={save} style={[styles.modalSave, (!changed || saving) && { opacity: 0.5 }]} disabled={!changed || saving}>
+                <Text style={styles.modalSaveText}>{saving ? 'Saving…' : 'Save sorting'}</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
+      </View>
+    </Modal>
   )
 }
 
@@ -936,6 +1157,21 @@ const styles = StyleSheet.create({
   dot: { width: 12, height: 12, borderRadius: 6 },
   modalRowLabel: { flex: 1, ...typography.sub, color: colors.textPrimary },
   modalRowLabelHidden: { color: colors.muted, textDecorationLine: 'line-through' },
+  sortBar: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: spacing.sm, paddingVertical: 4, backgroundColor: colors.surface },
+  sortBarText: { ...typography.caption, color: colors.textSecondary, fontSize: 11 },
+  sortCard: { borderWidth: 1, borderColor: colors.divider, borderRadius: radius.md },
+  sortCardHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.sm, paddingVertical: 10 },
+  sortSummary: { ...typography.caption, color: colors.textSecondary, maxWidth: 110 },
+  sortOptions: { borderTopWidth: 1, borderTopColor: colors.divider, padding: spacing.sm, gap: 2 },
+  sortDirRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.xs },
+  sortDirBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, borderRadius: radius.md, borderWidth: 1, borderColor: colors.divider },
+  sortDirBtnActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  sortDirText: { ...typography.sub, color: colors.textSecondary, fontWeight: '600' },
+  sortDirTextActive: { color: colors.surface },
+  sortOptionRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 8 },
+  sortOptionText: { ...typography.sub, color: colors.textPrimary },
+  sortOptionTextActive: { fontWeight: '700', color: colors.brandPrimary },
+  sortError: { ...typography.caption, color: colors.danger, marginTop: spacing.xs },
   modalIconBtn: { padding: 4 },
   modalIconBtnDisabled: { opacity: 0.3 },
   modalFooter: { flexDirection: 'row', justifyContent: 'flex-end', gap: spacing.sm, marginTop: spacing.md },
