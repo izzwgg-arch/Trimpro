@@ -40,15 +40,63 @@ import {
 import { useRef, useState, useEffect } from 'react'
 import { formatDistanceToNow } from 'date-fns'
 
-// Maps a nav item to the Notification.linkType whose unread count should
-// show a "New" badge next to it. Only items an assignee needs to be alerted
-// about are included here.
+// Only Messages is driven by unread notifications (a new message is the event).
 const NAV_ITEM_LINK_TYPES: Record<string, string> = {
-  Jobs: 'job',
-  // Requests is driven by lead status (see newRequests), not notifications.
-  Issues: 'issue',
-  Tasks: 'task',
   Messages: 'message',
+}
+
+// Every other "New" badge lists records still in their initial status, so it
+// clears the moment the status changes. Updates, reminders and assignments never
+// show here. Jobs start as Quote for a long time, so only recent ones count.
+const NEW_RECORD_SOURCES: Record<
+  string,
+  { url: string; key: string; map: (r: any) => Omit<UnreadNavNotification, 'linkType'>; recentDays?: number }
+> = {
+  Requests: {
+    url: '/api/leads?status=NEW&limit=50',
+    key: 'leads',
+    map: (r) => ({
+      id: r.id,
+      title: `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim() || r.company || 'New request',
+      message: r.company || r.notes || null,
+      linkUrl: `/dashboard/requests/${r.id}`,
+      createdAt: r.createdAt,
+    }),
+  },
+  Tasks: {
+    url: '/api/tasks?status=TODO&limit=50',
+    key: 'tasks',
+    map: (r) => ({
+      id: r.id,
+      title: r.title || 'New task',
+      message: r.description || null,
+      linkUrl: `/dashboard/tasks/${r.id}`,
+      createdAt: r.createdAt,
+    }),
+  },
+  Issues: {
+    url: '/api/issues?status=OPEN&limit=50',
+    key: 'issues',
+    map: (r) => ({
+      id: r.id,
+      title: r.title || 'New issue',
+      message: r.description || null,
+      linkUrl: `/dashboard/issues/${r.id}`,
+      createdAt: r.createdAt,
+    }),
+  },
+  Jobs: {
+    url: '/api/jobs?status=QUOTE&sortBy=createdAt&sortDirection=desc&limit=20',
+    key: 'jobs',
+    recentDays: 7,
+    map: (r) => ({
+      id: r.id,
+      title: [r.jobNumber, r.title].filter(Boolean).join(' · ') || 'New job',
+      message: r.client?.name || null,
+      linkUrl: `/dashboard/jobs/${r.id}`,
+      createdAt: r.createdAt,
+    }),
+  },
 }
 
 const navigation = [
@@ -192,9 +240,9 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
   const [unreadNavNotifications, setUnreadNavNotifications] = useState<UnreadNavNotification[]>([])
-  // Requests badge is driven by lead STATUS (stays until the lead leaves NEW),
-  // not by whether a notification was read.
-  const [newRequests, setNewRequests] = useState<UnreadNavNotification[]>([])
+  // Requests/Jobs/Tasks/Issues badges are driven by record STATUS (they stay until
+  // the status leaves its initial value), not by whether a notification was read.
+  const [newRecords, setNewRecords] = useState<Record<string, UnreadNavNotification[]>>({})
 
   // Persist collapse state across sessions
   useEffect(() => {
@@ -230,35 +278,39 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
     }
   }, [])
 
-  // Poll leads still in NEW status to drive the Requests badge. Unlike the
-  // notification-based badges, this stays until the request's status changes.
+  // Poll records still in their initial status to drive the New badges. A 403 (no
+  // permission for that module) or any failure just leaves that badge empty.
   useEffect(() => {
     let cancelled = false
-    const fetchNewRequests = async () => {
-      try {
-        const token = localStorage.getItem('accessToken')
-        if (!token) return
-        const res = await fetch('/api/leads?status=NEW&limit=50', {
-          headers: { Authorization: `Bearer ${token}` },
+    const fetchNewRecords = async () => {
+      const token = localStorage.getItem('accessToken')
+      if (!token) return
+      const entries = await Promise.all(
+        Object.entries(NEW_RECORD_SOURCES).map(async ([name, src]) => {
+          try {
+            const res = await fetch(src.url, { headers: { Authorization: `Bearer ${token}` } })
+            if (!res.ok) return [name, null] as const
+            const data = await res.json()
+            const cutoff = src.recentDays ? Date.now() - src.recentDays * 86400000 : 0
+            const items: UnreadNavNotification[] = (data[src.key] || [])
+              .filter((r: any) => !cutoff || new Date(r.createdAt).getTime() >= cutoff)
+              .map((r: any) => ({ ...src.map(r), linkType: name.toLowerCase() }))
+            return [name, items] as const
+          } catch (error) {
+            console.error(`Failed to fetch new ${name}:`, error)
+            return [name, null] as const
+          }
         })
-        if (!res.ok) return
-        const data = await res.json()
-        if (cancelled) return
-        const items: UnreadNavNotification[] = (data.leads || []).map((lead: any) => ({
-          id: lead.id,
-          title: `${lead.firstName ?? ''} ${lead.lastName ?? ''}`.trim() || lead.company || 'New request',
-          message: lead.company || lead.notes || null,
-          linkType: 'request',
-          linkUrl: `/dashboard/requests/${lead.id}`,
-          createdAt: lead.createdAt,
-        }))
-        setNewRequests(items)
-      } catch (error) {
-        console.error('Failed to fetch new requests:', error)
-      }
+      )
+      if (cancelled) return
+      setNewRecords((prev) => {
+        const next = { ...prev }
+        for (const [name, items] of entries) if (items) next[name] = items
+        return next
+      })
     }
-    fetchNewRequests()
-    const interval = setInterval(fetchNewRequests, 30000)
+    fetchNewRecords()
+    const interval = setInterval(fetchNewRecords, 30000)
     return () => {
       cancelled = true
       clearInterval(interval)
@@ -266,9 +318,9 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   }, [])
 
   const unreadByNavItem = (itemName: string) => {
-    // Requests badge follows lead status (stays until it leaves NEW).
-    if (itemName === 'Requests') return newRequests
-    return unreadNavNotifications.filter((n) => n.linkType === NAV_ITEM_LINK_TYPES[itemName])
+    if (NEW_RECORD_SOURCES[itemName]) return newRecords[itemName] || []
+    const linkType = NAV_ITEM_LINK_TYPES[itemName]
+    return linkType ? unreadNavNotifications.filter((n) => n.linkType === linkType) : []
   }
 
   const toggleCollapsed = () => {
