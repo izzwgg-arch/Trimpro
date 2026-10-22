@@ -45,59 +45,11 @@ const NAV_ITEM_LINK_TYPES: Record<string, string> = {
   Messages: 'message',
 }
 
-// Every other "New" badge lists records still in their initial status, so it
-// clears the moment the status changes. Updates, reminders and assignments never
-// show here. Jobs start as Quote for a long time, so only recent ones count.
-const NEW_RECORD_SOURCES: Record<
-  string,
-  { url: string; key: string; map: (r: any) => Omit<UnreadNavNotification, 'linkType'>; recentDays?: number }
-> = {
-  Requests: {
-    url: '/api/leads?status=NEW&limit=50',
-    key: 'leads',
-    map: (r) => ({
-      id: r.id,
-      title: `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim() || r.company || 'New request',
-      message: r.company || r.notes || null,
-      linkUrl: `/dashboard/requests/${r.id}`,
-      createdAt: r.createdAt,
-    }),
-  },
-  Tasks: {
-    url: '/api/tasks?status=TODO&limit=50',
-    key: 'tasks',
-    map: (r) => ({
-      id: r.id,
-      title: r.title || 'New task',
-      message: r.description || null,
-      linkUrl: `/dashboard/tasks/${r.id}`,
-      createdAt: r.createdAt,
-    }),
-  },
-  Issues: {
-    url: '/api/issues?status=OPEN&limit=50',
-    key: 'issues',
-    map: (r) => ({
-      id: r.id,
-      title: r.title || 'New issue',
-      message: r.description || null,
-      linkUrl: `/dashboard/issues/${r.id}`,
-      createdAt: r.createdAt,
-    }),
-  },
-  Jobs: {
-    url: '/api/jobs?status=QUOTE&sortBy=createdAt&sortDirection=desc&limit=20',
-    key: 'jobs',
-    recentDays: 7,
-    map: (r) => ({
-      id: r.id,
-      title: [r.jobNumber, r.title].filter(Boolean).join(' · ') || 'New job',
-      message: r.client?.name || null,
-      linkUrl: `/dashboard/jobs/${r.id}`,
-      createdAt: r.createdAt,
-    }),
-  },
-}
+// Requests/Jobs/Tasks/Issues badges come from /api/nav-badges: records still in their
+// initial status that are assigned to this person (or unassigned and in one of their
+// job types). They clear the moment the status changes; updates and reminders never
+// show here.
+const NEW_RECORD_ITEMS = ['Requests', 'Jobs', 'Tasks', 'Issues']
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, permission: 'dashboard.view' },
@@ -278,36 +230,25 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
     }
   }, [])
 
-  // Poll records still in their initial status to drive the New badges. A 403 (no
-  // permission for that module) or any failure just leaves that badge empty.
+  // Poll this person's New records. Any failure just leaves the badges as they were.
   useEffect(() => {
     let cancelled = false
     const fetchNewRecords = async () => {
-      const token = localStorage.getItem('accessToken')
-      if (!token) return
-      const entries = await Promise.all(
-        Object.entries(NEW_RECORD_SOURCES).map(async ([name, src]) => {
-          try {
-            const res = await fetch(src.url, { headers: { Authorization: `Bearer ${token}` } })
-            if (!res.ok) return [name, null] as const
-            const data = await res.json()
-            const cutoff = src.recentDays ? Date.now() - src.recentDays * 86400000 : 0
-            const items: UnreadNavNotification[] = (data[src.key] || [])
-              .filter((r: any) => !cutoff || new Date(r.createdAt).getTime() >= cutoff)
-              .map((r: any) => ({ ...src.map(r), linkType: name.toLowerCase() }))
-            return [name, items] as const
-          } catch (error) {
-            console.error(`Failed to fetch new ${name}:`, error)
-            return [name, null] as const
-          }
-        })
-      )
-      if (cancelled) return
-      setNewRecords((prev) => {
-        const next = { ...prev }
-        for (const [name, items] of entries) if (items) next[name] = items
-        return next
-      })
+      try {
+        const token = localStorage.getItem('accessToken')
+        if (!token) return
+        const res = await fetch('/api/nav-badges', { headers: { Authorization: `Bearer ${token}` } })
+        if (!res.ok) return
+        const data = await res.json()
+        if (cancelled) return
+        const next: Record<string, UnreadNavNotification[]> = {}
+        for (const name of NEW_RECORD_ITEMS) {
+          next[name] = (data[name] || []).map((r: any) => ({ ...r, linkType: name.toLowerCase() }))
+        }
+        setNewRecords(next)
+      } catch (error) {
+        console.error('Failed to fetch new records:', error)
+      }
     }
     fetchNewRecords()
     const interval = setInterval(fetchNewRecords, 30000)
@@ -318,7 +259,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   }, [])
 
   const unreadByNavItem = (itemName: string) => {
-    if (NEW_RECORD_SOURCES[itemName]) return newRecords[itemName] || []
+    if (NEW_RECORD_ITEMS.includes(itemName)) return newRecords[itemName] || []
     const linkType = NAV_ITEM_LINK_TYPES[itemName]
     return linkType ? unreadNavNotifications.filter((n) => n.linkType === linkType) : []
   }
