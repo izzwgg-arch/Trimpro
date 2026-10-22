@@ -8,7 +8,7 @@ import { getJobBillingStatus } from '@/lib/jobs/billing-status'
 import { buildTeam, normalizeAssignmentRole } from '@/lib/assignments/roles'
 import { resolveJobContentScope } from '@/lib/jobs/content-visibility'
 import { ensureJobDescriptionNote } from '@/lib/jobs/description-note'
-import { isAssignedOnly } from '@/lib/assignments/scope'
+import { andScope, isAssignedOnly, jobScopeWhere } from '@/lib/assignments/scope'
 
 // Select for a task/issue team on job detail lists.
 const teamSelect = {
@@ -60,13 +60,8 @@ export async function GET(
       tenantId: user.tenantId,
     }
 
-    if (!canViewAll) {
-      where.assignments = {
-        some: {
-          userId: user.id,
-        },
-      }
-    }
+    // Allowed when on the crew or scheduled on the job.
+    if (!canViewAll) andScope(where, jobScopeWhere(user.id))
 
     const job = await prisma.job.findFirst({
       where,

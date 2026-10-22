@@ -16,14 +16,15 @@ export type JobContentScope =
  *
  * Unrestricted unless they have a schedule on this job that was created by hand
  * with "limit what they see" switched on. Then they see only the attachments and
- * notes chosen on those limiting schedule(s) — always including the job description
- * note. A limiting schedule always wins: adding another, unlimited schedule for the
+ * notes chosen on those limiting schedule(s) (plus the notes made from those schedules'
+ * own descriptions). Only attachments and notes are ever limited; everything else comes
+ * from the person's permissions. A limiting schedule always wins: adding another, unlimited schedule for the
  * same job does not lift the limit (edit or delete the limiting one instead).
  */
 export async function resolveJobContentScope(userId: string, jobId: string): Promise<JobContentScope> {
   const rows = await prisma.schedule.findMany({
     where: { jobId, userId },
-    select: { description: true, restrictContent: true, visibleAttachmentIds: true, visibleNoteIds: true },
+    select: { id: true, description: true, restrictContent: true, visibleAttachmentIds: true, visibleNoteIds: true },
   })
   const limiting = rows.filter(
     (r) => r.restrictContent && !String(r.description || '').startsWith(AUTO_SCHEDULE_MARKER)
@@ -36,11 +37,11 @@ export async function resolveJobContentScope(userId: string, jobId: string): Pro
     r.visibleAttachmentIds.forEach((id) => attachmentIds.add(id))
     r.visibleNoteIds.forEach((id) => noteIds.add(id))
   }
-  const descriptionNote = await prisma.note.findFirst({
-    where: { jobId, isJobDescription: true },
+  const ownNotes = await prisma.note.findMany({
+    where: { jobId, scheduleId: { in: limiting.map((r) => r.id) } },
     select: { id: true },
   })
-  if (descriptionNote) noteIds.add(descriptionNote.id)
+  ownNotes.forEach((n) => noteIds.add(n.id))
   return { restricted: true, attachmentIds, noteIds }
 }
 
@@ -74,21 +75,16 @@ export function parseVisibilityInput(body: any): VisibilityInput {
 }
 
 /**
- * Keep only attachments/notes that really belong to the job, and make sure the
- * job description note (if any) is always among the shared notes.
+ * Keep only attachments/notes that really belong to the job.
  */
 export async function cleanVisibilityForJob(jobId: string, input: VisibilityInput) {
   const [attachments, notes] = await Promise.all([
     input.attachmentIds.length
       ? prisma.attachment.findMany({ where: { id: { in: input.attachmentIds }, jobId }, select: { id: true } })
       : Promise.resolve([] as Array<{ id: string }>),
-    prisma.note.findMany({
-      where: {
-        jobId,
-        OR: [{ isJobDescription: true }, ...(input.noteIds.length ? [{ id: { in: input.noteIds } }] : [])],
-      },
-      select: { id: true, isJobDescription: true },
-    }),
+    input.noteIds.length
+      ? prisma.note.findMany({ where: { id: { in: input.noteIds }, jobId }, select: { id: true } })
+      : Promise.resolve([] as Array<{ id: string }>),
   ])
   return {
     attachmentIds: attachments.map((a) => a.id),

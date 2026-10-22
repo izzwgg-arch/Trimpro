@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { createNotification } from '@/lib/notifications'
 import { hasMobilePermission, isMobileRequest, requireAnyPermission, requireMobilePermission, requirePermission } from '@/lib/authorization'
 import { ensureJobDescriptionNote } from '@/lib/jobs/description-note'
+import { syncScheduleNote } from '@/lib/jobs/schedule-note'
 import { canSetContentVisibility, cleanVisibilityForJob, parseVisibilityInput } from '@/lib/jobs/content-visibility'
 import { guardSchedule } from '@/lib/assignments/scope'
 
@@ -238,6 +239,14 @@ export async function PUT(
         },
         lead: true,
       },
+    })
+
+    // Keep the job note that mirrors this schedule's description in step.
+    await syncScheduleNote({
+      scheduleId: schedule.id,
+      jobId: schedule.jobId,
+      description: schedule.description,
+      createdById: user.id,
     })
 
     // Notify assigned user when schedule is updated or reassigned.

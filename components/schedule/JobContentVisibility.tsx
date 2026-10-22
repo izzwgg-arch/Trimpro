@@ -9,7 +9,7 @@ export type JobVisibilityValue = {
 }
 
 type ShareAttachment = { id: string; fileName: string; fileSize: number; mimeType: string }
-type ShareNote = { id: string; content: string; isJobDescription: boolean }
+type ShareNote = { id: string; content: string; isJobDescription: boolean; scheduleId?: string | null }
 
 function formatBytes(bytes: number) {
   if (!bytes) return ''
@@ -68,12 +68,7 @@ export function JobContentVisibility({
         const n: ShareNote[] = data.notes || []
         setAttachments(a)
         setNotes(n)
-        const descriptionIds = n.filter((x) => x.isJobDescription).map((x) => x.id)
-        onChange(
-          initial
-            ? { ...initial, noteIds: Array.from(new Set([...initial.noteIds, ...descriptionIds])) }
-            : { restrictContent: true, attachmentIds: [], noteIds: descriptionIds }
-        )
+        onChange(initial ?? { restrictContent: true, attachmentIds: [], noteIds: [] })
       } catch {
         if (!cancelled) onChange(null)
       } finally {
@@ -121,6 +116,9 @@ export function JobContentVisibility({
         <>
           <div>
             <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Notes</p>
+            <p className="mb-1 text-xs text-gray-500">
+              The schedule description is added to the job notes and shared with this person automatically.
+            </p>
             {notes.length === 0 ? (
               <p className="text-sm text-gray-500">This job has no notes.</p>
             ) : (
@@ -130,12 +128,13 @@ export function JobContentVisibility({
                     <input
                       type="checkbox"
                       className="mt-1"
-                      checked={value.noteIds.includes(n.id) || n.isJobDescription}
-                      disabled={n.isJobDescription}
+                      checked={value.noteIds.includes(n.id) || Boolean(n.scheduleId)}
+                      disabled={Boolean(n.scheduleId)}
                       onChange={() => onChange({ ...value, noteIds: toggle(value.noteIds, n.id) })}
                     />
                     <span className="min-w-0">
-                      {n.isJobDescription && <span className="mr-1 font-medium text-gray-700">Job description (always shared):</span>}
+                      {n.isJobDescription && <span className="mr-1 font-medium text-gray-700">Job description:</span>}
+                      {n.scheduleId && <span className="mr-1 font-medium text-gray-700">Schedule note (always shared):</span>}
                       <span className="line-clamp-2 break-words text-gray-600">{n.content}</span>
                     </span>
                   </label>

@@ -6,7 +6,7 @@ import { getPaginationParams, createPaginationResponse } from '@/lib/pagination'
 import { getJobBillingStatus } from '@/lib/jobs/billing-status'
 import { jobRecordJobSiteAddressSearchClauses } from '@/lib/search/job-site-address'
 import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
-import { isAssignedOnly } from '@/lib/assignments/scope'
+import { andScope, isAssignedOnly, jobScopeWhere } from '@/lib/assignments/scope'
 
 /**
  * Mobile API: Get jobs
@@ -53,13 +53,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Jobs tab always uses assigned; All Jobs (sidebar) uses filter=all when permitted.
-    if (filter === 'assigned' || !canViewAll) {
-      where.assignments = {
-        some: {
-          userId: user.id,
-        },
-      }
-    }
+    const onlyMine = filter === 'assigned' || !canViewAll
 
     if (status) {
       where.status = status
@@ -75,6 +69,9 @@ export async function GET(request: NextRequest) {
         ...jobRecordJobSiteAddressSearchClauses(term),
       ])
     )
+
+    // Mine = on the crew or scheduled on the job.
+    if (onlyMine) andScope(where, jobScopeWhere(user.id))
 
     const jobs = await prisma.job.findMany({
       where,

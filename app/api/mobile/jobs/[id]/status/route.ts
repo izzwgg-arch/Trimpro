@@ -48,6 +48,11 @@ export async function POST(
         assignments: {
           select: { userId: true },
         },
+        schedules: {
+          where: { userId: user.id },
+          select: { id: true },
+          take: 1,
+        },
       },
     })
 
@@ -56,7 +61,7 @@ export async function POST(
     }
 
     // Check access: user must be assigned OR have view_all+assign (admin)
-    const isAssigned = job.assignments.some((a) => a.userId === user.id)
+    const isAssigned = job.assignments.some((a) => a.userId === user.id) || job.schedules.length > 0
     const isAdmin = canViewAll && canAssign
 
     if (!isAssigned && !isAdmin) {

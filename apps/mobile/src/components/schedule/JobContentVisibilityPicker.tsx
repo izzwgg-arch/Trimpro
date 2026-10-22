@@ -13,7 +13,7 @@ export type JobVisibilityValue = {
 
 type ShareOptions = {
   attachments: Array<{ id: string; fileName: string; fileSize: number; mimeType: string }>
-  notes: Array<{ id: string; content: string; isJobDescription: boolean }>
+  notes: Array<{ id: string; content: string; isJobDescription: boolean; scheduleId?: string | null }>
 }
 
 function formatBytes(bytes: number) {
@@ -63,12 +63,7 @@ export function JobContentVisibilityPicker({
   useEffect(() => {
     if (!query.data || initializedFor.current === jobId) return
     initializedFor.current = jobId
-    const descriptionIds = query.data.notes.filter((n) => n.isJobDescription).map((n) => n.id)
-    onChange(
-      initial
-        ? { ...initial, noteIds: Array.from(new Set([...initial.noteIds, ...descriptionIds])) }
-        : { restrictContent: true, attachmentIds: [], noteIds: descriptionIds }
-    )
+    onChange(initial ?? { restrictContent: true, attachmentIds: [], noteIds: [] })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query.data, jobId])
 
@@ -108,17 +103,18 @@ export function JobContentVisibilityPicker({
       {value.restrictContent ? (
         <>
           <Text style={styles.groupTitle}>Notes</Text>
+          <Text style={styles.empty}>The schedule description is added to the job notes and shared automatically.</Text>
           {notes.length === 0 ? <Text style={styles.empty}>This job has no notes.</Text> : null}
           {notes.map((n) => (
             <Pressable
               key={n.id}
               style={styles.checkRow}
-              disabled={n.isJobDescription}
+              disabled={Boolean(n.scheduleId)}
               onPress={() => onChange({ ...value, noteIds: toggle(value.noteIds, n.id) })}
             >
-              <Check checked={n.isJobDescription || value.noteIds.includes(n.id)} disabled={n.isJobDescription} />
+              <Check checked={Boolean(n.scheduleId) || value.noteIds.includes(n.id)} disabled={Boolean(n.scheduleId)} />
               <Text style={styles.rowText} numberOfLines={2}>
-                {n.isJobDescription ? 'Job description (always shared): ' : ''}
+                {n.isJobDescription ? 'Job description: ' : n.scheduleId ? 'Schedule note (always shared): ' : ''}
                 {n.content}
               </Text>
             </Pressable>

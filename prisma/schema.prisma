@@ -2158,6 +2158,8 @@ model Note {
   isPinned Boolean @default(false)
   // True for the note that mirrors the job's description.
   isJobDescription Boolean @default(false)
+  // Set on the note a schedule's description became (see lib/jobs/schedule-note.ts).
+  scheduleId String?
 
   // Links
   clientId String?
@@ -2174,6 +2176,7 @@ model Note {
 
   @@index([clientId])
   @@index([jobId])
+  @@index([scheduleId])
   @@map("notes")
 }
 

@@ -6,7 +6,8 @@ import { ensureJobDescriptionNote } from '@/lib/jobs/description-note'
 import { guardJob } from '@/lib/assignments/scope'
 
 // GET — what can be shared with a scheduled person on this job: every attachment
-// and note. The job description note is created on demand and listed first.
+// and note. The job description note is created on demand and listed first. Notes made
+// from a schedule's description (scheduleId) are always shared with that schedule's person.
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   const authError = await authenticateRequest(request)
   if (authError) return authError
@@ -38,7 +39,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       }),
       prisma.note.findMany({
         where: { jobId: job.id },
-        select: { id: true, content: true, isJobDescription: true, createdAt: true },
+        select: { id: true, content: true, isJobDescription: true, scheduleId: true, createdAt: true },
         orderBy: [{ isJobDescription: 'desc' }, { createdAt: 'desc' }],
       }),
     ])

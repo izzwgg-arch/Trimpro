@@ -26,7 +26,11 @@ export async function isAssignedOnly(user: ScopeUser, module: ScopedModule): Pro
 }
 
 // Prisma `where` fragments — always AND these in; never assign them over an existing filter.
-export const jobScopeWhere = (userId: string) => ({ assignments: { some: { userId } } })
+// A job is yours when you are on its crew OR you have been scheduled on it.
+// Wrapped in AND so it can be spread next to a where that has its own OR.
+export const jobScopeWhere = (userId: string) => ({
+  AND: [{ OR: [{ assignments: { some: { userId } } }, { schedules: { some: { userId } } }] }],
+})
 export const taskScopeWhere = (userId: string) => assignedToUserWhere(userId)
 export const issueScopeWhere = (userId: string) => assignedToUserWhere(userId)
 export const leadScopeWhere = (userId: string) => ({ assignedToId: userId })
@@ -44,7 +48,10 @@ const notFound = (what: string) => NextResponse.json({ error: `${what} not found
 /** Null when the person may see this job; otherwise a 404 response to return. */
 export async function guardJob(user: ScopeUser, jobId: string): Promise<NextResponse | null> {
   if (!(await isAssignedOnly(user, 'jobs'))) return null
-  const hit = await prisma.jobAssignment.findFirst({ where: { jobId, userId: user.id }, select: { id: true } })
+  const hit = await prisma.job.findFirst({
+    where: { id: jobId, tenantId: user.tenantId, ...jobScopeWhere(user.id) },
+    select: { id: true },
+  })
   return hit ? null : notFound('Job')
 }
 
