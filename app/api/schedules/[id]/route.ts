@@ -3,6 +3,8 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import { createNotification } from '@/lib/notifications'
 import { hasMobilePermission, isMobileRequest, requireAnyPermission, requireMobilePermission, requirePermission } from '@/lib/authorization'
+import { ensureJobDescriptionNote } from '@/lib/jobs/description-note'
+import { canSetContentVisibility, cleanVisibilityForJob, parseVisibilityInput } from '@/lib/jobs/content-visibility'
 
 export async function GET(
   request: NextRequest,
@@ -132,6 +134,34 @@ export async function PUT(
       }
     }
 
+    // What the scheduled person may see on the job (attachments + notes).
+    const resolvedJobId = jobId !== undefined ? jobId || null : existing.jobId
+    const visibility = parseVisibilityInput(body)
+    let visibilityData: { restrictContent: boolean; visibleAttachmentIds: string[]; visibleNoteIds: string[] } | null = null
+    if (visibility.provided && resolvedJobId) {
+      if (!(await canSetContentVisibility(user))) {
+        return NextResponse.json(
+          { error: 'You do not have permission to choose what scheduled people can see' },
+          { status: 403 }
+        )
+      }
+      const visibilityJob = await prisma.job.findFirst({
+        where: { id: resolvedJobId, tenantId: user.tenantId },
+        select: { id: true },
+      })
+      if (!visibilityJob) return NextResponse.json({ error: 'Job not found' }, { status: 404 })
+      await ensureJobDescriptionNote({ jobId: resolvedJobId, createdById: user.id })
+      const cleaned = await cleanVisibilityForJob(resolvedJobId, visibility)
+      visibilityData = {
+        restrictContent: visibility.restrictContent,
+        visibleAttachmentIds: cleaned.attachmentIds,
+        visibleNoteIds: cleaned.noteIds,
+      }
+    } else if (resolvedJobId !== existing.jobId) {
+      // Moved to another job: the old job's selections no longer apply.
+      visibilityData = { restrictContent: false, visibleAttachmentIds: [], visibleNoteIds: [] }
+    }
+
     // Check for conflicts if time or user changed
     if ((startTime || endTime || userId) && (userId || existing.userId)) {
       const checkUserId = targetUserId
@@ -183,6 +213,7 @@ export async function PUT(
         userId: targetUserId,
         jobId: jobId !== undefined ? (jobId || null) : existing.jobId,
         leadId: leadId !== undefined ? (leadId || null) : existing.leadId,
+        ...(visibilityData || {}),
       },
       include: {
         user: {

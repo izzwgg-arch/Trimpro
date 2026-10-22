@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
+import { assignedToUserWhere } from '@/lib/assignments/where'
 import { ACTIVE_JOB_STATUSES } from '@/lib/jobs/statuses'
 import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subDays, subMonths } from 'date-fns'
 
@@ -281,7 +282,7 @@ export async function GET(request: NextRequest) {
     const pendingTasks = await prisma.task.count({
       where: {
         tenantId: user.tenantId,
-        assigneeId: user.id,
+        ...assignedToUserWhere(user.id),
         status: {
           in: ['TODO', 'IN_PROGRESS'],
         },

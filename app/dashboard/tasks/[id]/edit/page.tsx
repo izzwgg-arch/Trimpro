@@ -10,6 +10,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { TeamEditor, useAssignableUsers, type TeamEntry } from '@/components/assignments/TeamEditor'
+import { buildTeam } from '@/lib/assignments/roles'
 
 interface User {
   id: string
@@ -25,7 +27,12 @@ interface TaskResponse {
     status: string
     priority: string
     dueDate: string | null
-    assignee: { id: string } | null
+    assignee: { id: string; firstName: string; lastName: string; role?: string | null } | null
+    assignments?: Array<{
+      userId: string
+      role?: string | null
+      user: { id: string; firstName: string; lastName: string; role?: string | null }
+    }>
   }
 }
 
@@ -52,6 +59,8 @@ export default function EditTaskPage() {
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [users, setUsers] = useState<User[]>([])
+  const [team, setTeam] = useState<TeamEntry[]>([])
+  const { users: assignableUsers } = useAssignableUsers()
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -129,6 +138,9 @@ export default function EditTaskPage() {
         dueDate: toDateTimeLocal(data.task.dueDate),
         assigneeId: data.task.assignee?.id || '',
       })
+      setTeam(
+        buildTeam(data.task.assignments, data.task.assignee).map((m) => ({ userId: m.userId, role: m.role }))
+      )
       setError(null)
     } catch (e) {
       console.error('Error loading task:', e)
@@ -141,8 +153,8 @@ export default function EditTaskPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!normalizedTaskId) return
-    if (!formData.title.trim() || !formData.assigneeId) {
-      alert('Title and assignee are required')
+    if (!formData.title.trim() || team.length === 0) {
+      alert('Title and at least one person on the team are required')
       return
     }
 
@@ -166,7 +178,7 @@ export default function EditTaskPage() {
           status: formData.status,
           priority: formData.priority,
           dueDate: formData.dueDate || null,
-          assigneeId: formData.assigneeId,
+          assignments: team,
         }),
       })
 
@@ -293,25 +305,15 @@ export default function EditTaskPage() {
               />
             </div>
 
+            <div>
+              <Label>Assigned team *</Label>
+              <p className="mb-2 text-xs text-gray-500">
+                Site managers, office workers and field workers. People you add are notified.
+              </p>
+              <TeamEditor value={team} onChange={setTeam} users={assignableUsers} />
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="assigneeId">Assignee *</Label>
-                <Select
-                  value={formData.assigneeId}
-                  onValueChange={(value) => setFormData((prev) => ({ ...prev, assigneeId: value }))}
-                >
-                  <SelectTrigger id="assigneeId">
-                    <SelectValue placeholder="Select assignee" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {users.map((user) => (
-                      <SelectItem key={user.id} value={user.id}>
-                        {user.firstName} {user.lastName}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
               <div>
                 <Label htmlFor="priority">Priority</Label>
                 <Select

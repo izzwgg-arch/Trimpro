@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Save } from 'lucide-react'
+import { TeamEditor, useAssignableUsers, type TeamEntry } from '@/components/assignments/TeamEditor'
 import Link from 'next/link'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
 import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
@@ -44,6 +45,8 @@ export default function NewIssuePage() {
   const { prefillClientId, sourceType, sourceId, applyDefaultsOnce } = useCreateContextPrefill('issue')
   const [loading, setLoading] = useState(false)
   const [users, setUsers] = useState<User[]>([])
+  const [team, setTeam] = useState<TeamEntry[]>([])
+  const { users: assignableUsers } = useAssignableUsers()
   const [clients, setClients] = useState<PickerClient[]>([])
   const [jobs, setJobs] = useState<Job[]>([])
   const [jobContext, setJobContext] = useState<Job | null>(null)
@@ -181,6 +184,7 @@ export default function NewIssuePage() {
           leadId: formData.leadId || null,
           jobId: formData.jobId || null,
           assigneeId: formData.assigneeId || null,
+          assignments: team,
         }),
       })
 
@@ -304,20 +308,11 @@ export default function NewIssuePage() {
             </div>
 
             <div>
-              <Label htmlFor="assigneeId">Assignee</Label>
-              <Select value={formData.assigneeId || '__none__'} onValueChange={(value) => setFormData({ ...formData, assigneeId: value === '__none__' ? '' : value })}>
-                <SelectTrigger id="assigneeId" className="w-full">
-                  <SelectValue placeholder="Unassigned" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">Unassigned</SelectItem>
-                  {users.map((user) => (
-                    <SelectItem key={user.id} value={user.id}>
-                      {user.firstName} {user.lastName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>Assigned team</Label>
+              <p className="mb-2 text-xs text-gray-500">
+                Add site managers, office workers and field workers. Everyone added is notified.
+              </p>
+              <TeamEditor value={team} onChange={setTeam} users={assignableUsers} />
             </div>
 
             <div className="grid grid-cols-2 gap-4">

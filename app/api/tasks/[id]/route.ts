@@ -5,6 +5,9 @@ import { prisma } from '@/lib/prisma'
 import { notifyTaskAssigned, createNotificationsForUsers, formatEntityStatusChangedMessage } from '@/lib/notifications'
 import { formatTaskStatus } from '@/lib/tasks/statuses'
 import { recordAuditLog, auditContextFromRequest } from '@/lib/audit/log'
+import { teamInclude } from '@/lib/assignments/where'
+import { defaultRoleForUser, parseTeamInput, type TeamInput } from '@/lib/assignments/roles'
+import { setTaskTeam, validateUsers } from '@/lib/assignments/team-service'
 
 export async function GET(
   request: NextRequest,
@@ -24,6 +27,7 @@ export async function GET(
         tenantId: user.tenantId,
       },
       include: {
+        ...teamInclude,
         assignee: {
           select: {
             id: true,
@@ -31,6 +35,7 @@ export async function GET(
             lastName: true,
             email: true,
             phone: true,
+            role: true,
           },
         },
         creator: {
@@ -141,8 +146,16 @@ export async function PUT(
       return NextResponse.json({ error: 'Task not found' }, { status: 404 })
     }
 
-    // Verify assignee if changed
-    if (assigneeId && assigneeId !== existing.assigneeId) {
+    // The team: either sent whole (assignments), or derived from a changed legacy assigneeId.
+    let team: TeamInput | null = null
+    if (body.assignments !== undefined) {
+      const parsed = parseTeamInput(body.assignments)
+      if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 })
+      team = parsed.team
+      const invalid = await validateUsers(user.tenantId, team)
+      if (invalid) return NextResponse.json({ error: invalid }, { status: 400 })
+    } else if (assigneeId && assigneeId !== existing.assigneeId) {
+      // Older clients reassign by assigneeId: swap the old primary for the new person, keep the rest.
       const assignee = await prisma.user.findFirst({
         where: {
           id: assigneeId,
@@ -154,8 +167,13 @@ export async function PUT(
         return NextResponse.json({ error: 'Assignee not found' }, { status: 404 })
       }
 
-      // Notify new assignee with push notification
-      await notifyTaskAssigned(user.tenantId, assigneeId, existing.id, existing.title)
+      const current = await prisma.taskAssignment.findMany({ where: { taskId: existing.id } })
+      team = [
+        ...current
+          .filter((a) => a.userId !== existing.assigneeId && a.userId !== assigneeId)
+          .map((a) => ({ userId: a.userId, role: a.role as TeamInput[number]['role'] })),
+        { userId: assigneeId, role: defaultRoleForUser(assignee.role) },
+      ]
     }
 
     // Track status change
@@ -174,7 +192,8 @@ export async function PUT(
         priority: priority !== undefined ? priority : existing.priority,
         dueDate:
           resolvedDueDate !== undefined ? (resolvedDueDate ? new Date(resolvedDueDate) : null) : existing.dueDate,
-        assigneeId: assigneeId !== undefined ? (assigneeId || null) : existing.assigneeId,
+        // With a team, setTaskTeam below sets the primary assignee.
+        assigneeId: team ? existing.assigneeId : assigneeId !== undefined ? (assigneeId || null) : existing.assigneeId,
         completedAt,
       },
       include: {
@@ -182,6 +201,17 @@ export async function PUT(
         creator: true,
       },
     })
+
+    // Save the team and notify anyone newly added.
+    let teamSaved: Awaited<ReturnType<typeof setTaskTeam>> | null = null
+    if (team) {
+      teamSaved = await setTaskTeam(user.tenantId, existing.id, team)
+      if (teamSaved.ok) {
+        for (const addedId of teamSaved.added) {
+          await notifyTaskAssigned(user.tenantId, addedId, existing.id, existing.title)
+        }
+      }
+    }
 
     // Update subtasks if provided
     if (subtasks && Array.isArray(subtasks)) {
@@ -242,8 +272,12 @@ export async function PUT(
       })
     }
 
-    // Notify assignee about any update (including status changes and other field updates)
-    if (task.assigneeId) {
+    // Notify the team about any update (including status changes and other field updates)
+    const teamRows = await prisma.taskAssignment.findMany({ where: { taskId: task.id }, select: { userId: true } })
+    const notifyUserIds = Array.from(
+      new Set([...teamRows.map((r) => r.userId), ...(teamSaved?.ok ? teamSaved.primaryAssigneeId ? [teamSaved.primaryAssigneeId] : [] : task.assigneeId ? [task.assigneeId] : [])])
+    )
+    if (notifyUserIds.length > 0) {
       let notificationTitle = 'Task Updated'
       let notificationMessage = `"${task.title}" has been updated`
 
@@ -258,7 +292,7 @@ export async function PUT(
         })
       }
 
-      await createNotificationsForUsers(user.tenantId, [task.assigneeId], {
+      await createNotificationsForUsers(user.tenantId, notifyUserIds, {
         type: 'TASK_UPDATED',
         title: notificationTitle,
         message: notificationMessage,
@@ -270,7 +304,11 @@ export async function PUT(
       })
     }
 
-    return NextResponse.json({ task })
+    const withTeam = await prisma.task.findFirst({
+      where: { id: task.id },
+      include: { ...teamInclude, assignee: true, creator: true },
+    })
+    return NextResponse.json({ task: withTeam || task })
   } catch (error) {
     console.error('Update task error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

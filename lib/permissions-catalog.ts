@@ -315,6 +315,14 @@ export const PERMISSIONS: PermissionDefinition[] = [
     category: 'Schedule',
     module: 'schedule',
   },
+  {
+    key: 'schedule.set_content_visibility',
+    label: 'Choose What Scheduled People See',
+    description:
+      'When scheduling a job, choose which attachments and notes the scheduled person can see when they open the job',
+    category: 'Schedule',
+    module: 'schedule',
+  },
 
   // ============================================
   // ESTIMATES

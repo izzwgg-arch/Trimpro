@@ -13,6 +13,8 @@ import { EditableNotesList } from '@/components/notes/editable-notes-list'
 import { taskStatusColors, formatTaskStatus } from '@/lib/tasks/statuses'
 import { usePermissions, hasPermission } from '@/hooks/usePermissions'
 import { EntityHistory } from '@/components/history/EntityHistory'
+import { TeamSummary, teamOf } from '@/components/assignments/TeamSummary'
+import { DocumentAttachments } from '@/components/common/document-attachments'
 
 interface TaskDetail {
   id: string
@@ -23,7 +25,12 @@ interface TaskDetail {
   dueDate: string | null
   completedAt: string | null
   createdAt: string
-  assignee: { id: string; firstName: string; lastName: string; email: string; phone?: string | null } | null
+  assignee: { id: string; firstName: string; lastName: string; email: string; phone?: string | null; role?: string | null } | null
+  assignments?: Array<{
+    userId: string
+    role?: string | null
+    user: { id: string; firstName: string; lastName: string; role?: string | null }
+  }>
   creator: { id: string; firstName: string; lastName: string } | null
   client: { id: string; name: string; companyName: string | null } | null
   job: { id: string; jobNumber: string; title: string } | null
@@ -430,28 +437,19 @@ export default function TaskDetailPage() {
             </Card>
           )}
 
-          {task.attachments?.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Attachments</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {task.attachments.slice(0, 20).map((a) => (
-                    <a
-                      key={a.id}
-                      href={a.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="block text-sm text-blue-600 hover:underline"
-                    >
-                      {a.filename || a.type || 'Attachment'}
-                    </a>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          <Card>
+            <CardHeader>
+              <CardTitle>Attachments</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {task.job && (
+                <p className="mb-3 text-xs text-gray-500">
+                  Files added here are also added to job {task.job.jobNumber}.
+                </p>
+              )}
+              <DocumentAttachments entityType="task" entityId={task.id} />
+            </CardContent>
+          </Card>
         </div>
 
         <div className="space-y-6">
@@ -463,10 +461,8 @@ export default function TaskDetailPage() {
               <div className="flex items-start gap-2">
                 <User className="h-4 w-4 text-gray-400 mt-0.5" />
                 <div>
-                  <p className="text-gray-500">Assignee</p>
-                  <p className="font-medium text-gray-900">
-                    {task.assignee ? `${task.assignee.firstName} ${task.assignee.lastName}` : 'Unassigned'}
-                  </p>
+                  <p className="mb-1 text-gray-500">Team</p>
+                  <TeamSummary team={teamOf(task.assignments, task.assignee)} />
                 </div>
               </div>
 

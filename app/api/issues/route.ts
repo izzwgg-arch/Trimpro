@@ -4,6 +4,9 @@ import { prisma } from '@/lib/prisma'
 import { notifyIssueAssigned } from '@/lib/notifications'
 import { hasMobilePermission, requireMobilePermission, requirePermission } from '@/lib/authorization'
 import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
+import { assignedToUserWhere, teamInclude, teamMemberNameClauses } from '@/lib/assignments/where'
+import { defaultRoleForUser, parseTeamInput, primaryAssigneeId, type TeamInput } from '@/lib/assignments/roles'
+import { setIssueTeam, validateUsers } from '@/lib/assignments/team-service'
 
 // Helper to detect if request is from mobile app
 function isMobileRequest(request: NextRequest): boolean {
@@ -47,6 +50,7 @@ export async function GET(request: NextRequest) {
         { job: { title: ilike(term) } },
         { assignee: { firstName: ilike(term) } },
         { assignee: { lastName: ilike(term) } },
+        ...teamMemberNameClauses(ilike, term),
       ])
     )
 
@@ -59,7 +63,8 @@ export async function GET(request: NextRequest) {
     }
 
     if (assigneeId) {
-      where.assigneeId = assigneeId
+      where.AND = where.AND || []
+      where.AND.push(assignedToUserWhere(assigneeId))
     }
 
     if (scheduledFrom || scheduledTo) {
@@ -73,12 +78,13 @@ export async function GET(request: NextRequest) {
     if (filter === 'my') {
       where.createdById = user.id
     } else if (filter === 'assigned') {
-      where.assigneeId = user.id
+      where.AND = where.AND || []
+      where.AND.push(assignedToUserWhere(user.id))
     } else if (filter === 'assigned_or_created') {
       where.AND = where.AND || []
       where.AND.push({
         OR: [
-          { assigneeId: user.id },
+          assignedToUserWhere(user.id),
           { createdById: user.id },
         ],
       })
@@ -94,12 +100,14 @@ export async function GET(request: NextRequest) {
       prisma.issue.findMany({
         where,
         include: {
+          ...teamInclude,
           assignee: {
             select: {
               id: true,
               firstName: true,
               lastName: true,
               email: true,
+              role: true,
             },
           },
           creator: {
@@ -201,16 +209,29 @@ export async function POST(request: NextRequest) {
 
     const resolvedDueDate = dueDate ?? scheduledAt ?? null
 
+    // The team (site managers / office workers / field workers). The old single
+    // `assigneeId` still works; with a team, the primary person is derived from it.
+    let team: TeamInput | null = null
+    if (body.assignments !== undefined) {
+      const parsed = parseTeamInput(body.assignments)
+      if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 })
+      team = parsed.team
+      const invalid = await validateUsers(user.tenantId, team)
+      if (invalid) return NextResponse.json({ error: invalid }, { status: 400 })
+    }
+    const resolvedAssigneeId: string | null = team ? primaryAssigneeId(team) : assigneeId || null
+    const assigneeIdsToCheck = team ? team.map((t) => t.userId) : resolvedAssigneeId ? [resolvedAssigneeId] : []
+
     if (!title) {
       return NextResponse.json({ error: 'Title is required' }, { status: 400 })
     }
 
-    // If mobile request and assignee is provided, check assignment permissions
-    if (isMobile && assigneeId) {
+    // If mobile request, check assignment permissions for every person being assigned
+    for (const checkId of isMobile ? assigneeIdsToCheck : []) {
       // Verify assignee belongs to tenant
       const assignee = await prisma.user.findFirst({
         where: {
-          id: assigneeId,
+          id: checkId,
           tenantId: user.tenantId,
         },
         select: {
@@ -295,7 +316,7 @@ export async function POST(request: NextRequest) {
         status: status || 'OPEN',
         priority: priority || 'MEDIUM',
         dueDate: resolvedDueDate ? new Date(resolvedDueDate) : null,
-        assigneeId: assigneeId || null,
+        assigneeId: resolvedAssigneeId,
         createdById: user.id,
         clientId: resolvedClientId,
         leadId: leadId || null,
@@ -309,6 +330,15 @@ export async function POST(request: NextRequest) {
         creator: true,
       },
     })
+
+    // Save the team rows (also for the single-assignee case, so every issue has a team).
+    const teamToSave: TeamInput =
+      team ?? (issue.assignee ? [{ userId: issue.assignee.id, role: defaultRoleForUser(issue.assignee.role) }] : [])
+    let notifyIds: string[] = []
+    if (teamToSave.length > 0) {
+      const saved = await setIssueTeam(user.tenantId, issue.id, teamToSave)
+      if (saved.ok) notifyIds = saved.added
+    }
 
     // Add watchers
     if (watchers && Array.isArray(watchers)) {
@@ -345,9 +375,9 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // Notify assignee
-    if (assigneeId && assigneeId !== user.id) {
-      await notifyIssueAssigned(user.tenantId, assigneeId, issue.id, title)
+    // Notify everyone on the team (except the person who created it)
+    for (const notifyId of notifyIds) {
+      if (notifyId !== user.id) await notifyIssueAssigned(user.tenantId, notifyId, issue.id, title)
     }
 
     // Audit log for mobile issue creation
@@ -361,7 +391,8 @@ export async function POST(request: NextRequest) {
           entityId: issue.id,
           changes: {
             title,
-            assigneeId: assigneeId || null,
+            assigneeId: resolvedAssigneeId,
+            assignments: teamToSave,
             source: 'mobile',
           },
         },

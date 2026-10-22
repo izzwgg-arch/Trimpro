@@ -6,6 +6,7 @@ import { validateRequest, jobAssignmentSchema } from '@/lib/validation'
 import { createNotificationsForUsers, notifyDispatchJobActivity, notifyJobAssigned } from '@/lib/notifications'
 import { publishDispatchRealtime } from '@/lib/dispatch-realtime'
 import { syncAutoJobSchedules } from '@/lib/services/job-schedule-sync'
+import { defaultRoleForUser } from '@/lib/assignments/roles'
 
 export async function POST(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -50,13 +51,17 @@ export async function POST(request: NextRequest) {
         tenantId: user.tenantId,
       },
       include: {
-        assignments: { select: { userId: true } },
+        assignments: { select: { userId: true, role: true } },
       },
     })
 
     if (!job) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 })
     }
+
+    // Keep each retained person's role; new people get a default from their account role.
+    const accountRoleByUser = new Map<string, string>()
+    const existingRoleByUser = new Map(job.assignments.map((a) => [a.userId, a.role]))
 
     // If assignees provided, verify users exist and are in same tenant
     if (normalizedUserIds.length > 0) {
@@ -66,8 +71,9 @@ export async function POST(request: NextRequest) {
           tenantId: user.tenantId,
           status: 'ACTIVE',
         },
-        select: { id: true },
+        select: { id: true, role: true },
       })
+      for (const u of assignedUsers) accountRoleByUser.set(u.id, u.role)
 
       if (assignedUsers.length !== normalizedUserIds.length) {
         return NextResponse.json({ error: 'User not found or inactive' }, { status: 404 })
@@ -93,6 +99,7 @@ export async function POST(request: NextRequest) {
           data: normalizedUserIds.map((uid) => ({
             jobId,
             userId: uid,
+            role: existingRoleByUser.get(uid) || defaultRoleForUser(accountRoleByUser.get(uid)),
             notes: notes || null,
           })),
           skipDuplicates: true,

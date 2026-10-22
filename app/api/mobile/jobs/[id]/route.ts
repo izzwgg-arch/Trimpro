@@ -5,6 +5,31 @@ import { requireMobilePermission, hasMobilePermission } from '@/lib/authorizatio
 import { normalizePublicFileUrl } from '@/lib/public-url'
 import { getJobTimeSummary } from '@/lib/time-tracking'
 import { getJobBillingStatus } from '@/lib/jobs/billing-status'
+import { buildTeam, normalizeAssignmentRole } from '@/lib/assignments/roles'
+import { resolveJobContentScope } from '@/lib/jobs/content-visibility'
+import { ensureJobDescriptionNote } from '@/lib/jobs/description-note'
+
+// Select for a task/issue team on job detail lists.
+const teamSelect = {
+  assignments: {
+    select: {
+      userId: true,
+      role: true,
+      user: { select: { id: true, firstName: true, lastName: true, role: true } },
+    },
+  },
+} as const
+
+function teamForClient(
+  assignments: Array<{ userId: string; role: string | null; user: { id: string; firstName: string; lastName: string; role: string | null } }>,
+  assignee: { id: string; firstName: string; lastName: string; role: string | null } | null
+) {
+  return buildTeam(assignments, assignee).map((m) => ({
+    userId: m.userId,
+    role: m.role,
+    name: `${m.user.firstName} ${m.user.lastName}`.trim(),
+  }))
+}
 
 /**
  * Mobile API: Get single job details (parity with web job detail payload).
@@ -77,6 +102,7 @@ export async function GET(
                 lastName: true,
                 email: true,
                 phone: true,
+                role: true,
               },
             },
           },
@@ -149,6 +175,26 @@ export async function GET(
       return NextResponse.json({ error: 'Job not found' }, { status: 404 })
     }
 
+    // The job description lives on as a note; make sure it exists, and work out what
+    // this person may see (a schedule can limit them to chosen attachments/notes).
+    const descriptionNoteId = await ensureJobDescriptionNote({
+      jobId: job.id,
+      description: job.description,
+      createdById: user.id,
+    })
+    if (descriptionNoteId && !job.notes.some((n) => n.id === descriptionNoteId)) {
+      const created = await prisma.note.findUnique({
+        where: { id: descriptionNoteId },
+        select: { id: true, content: true, createdAt: true, createdById: true },
+      })
+      if (created) job.notes.unshift(created)
+    }
+    const scope = canViewAll ? ({ restricted: false } as const) : await resolveJobContentScope(user.id, job.id)
+    if (scope.restricted) {
+      job.notes = job.notes.filter((n) => scope.noteIds.has(n.id))
+      job.schedules = job.schedules.filter((sch) => sch.user?.id === user.id)
+    }
+
     const taskWhere = { tenantId: user.tenantId, jobId: job.id }
     const issueWhere = { tenantId: user.tenantId, jobId: job.id }
 
@@ -170,8 +216,10 @@ export async function GET(
                 id: true,
                 firstName: true,
                 lastName: true,
+                role: true,
               },
             },
+            ...teamSelect,
           },
           orderBy: [{ priority: 'desc' }, { dueDate: 'asc' }, { createdAt: 'desc' }],
           take: 200,
@@ -191,14 +239,16 @@ export async function GET(
                 id: true,
                 firstName: true,
                 lastName: true,
+                role: true,
               },
             },
+            ...teamSelect,
           },
           orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
           take: 200,
         }),
         prisma.attachment.findMany({
-          where: { jobId: job.id },
+          where: scope.restricted ? { jobId: job.id, id: { in: Array.from(scope.attachmentIds) } } : { jobId: job.id },
           select: {
             id: true,
             fileName: true,
@@ -350,7 +400,7 @@ export async function GET(
         assignedTo: job.assignments[0]?.user || null,
         assignments: job.assignments.map((assignment) => ({
           id: assignment.id,
-          role: assignment.role,
+          role: normalizeAssignmentRole(assignment.role, assignment.user.role),
           notes: assignment.notes,
           user: assignment.user,
         })),
@@ -430,6 +480,7 @@ export async function GET(
                 name: `${task.assignee.firstName} ${task.assignee.lastName}`.trim(),
               }
             : null,
+          team: teamForClient(task.assignments, task.assignee),
         })),
         issues: issues.map((issue) => ({
           id: issue.id,
@@ -445,6 +496,7 @@ export async function GET(
                 name: `${issue.assignee.firstName} ${issue.assignee.lastName}`.trim(),
               }
             : null,
+          team: teamForClient(issue.assignments, issue.assignee),
         })),
         attachments: attachments.map((attachment) => ({
           ...attachment,

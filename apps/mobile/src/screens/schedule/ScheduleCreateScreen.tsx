@@ -22,6 +22,7 @@ import { colors, spacing, typography } from '../../theme/tokens'
 import { Card } from '../../components/Card'
 import { useAuth } from '../../auth/AuthContext'
 import { useMobilePermissions } from '../../hooks/useMobilePermissions'
+import { JobContentVisibilityPicker, type JobVisibilityValue } from '../../components/schedule/JobContentVisibilityPicker'
 import { ScheduleStackParamList } from '../../types/navigation'
 
 type Props = NativeStackScreenProps<ScheduleStackParamList, 'ScheduleCreate'>
@@ -52,6 +53,9 @@ interface ScheduleDetailResponse {
     userId: string
     jobId: string | null
     leadId?: string | null
+    restrictContent?: boolean
+    visibleAttachmentIds?: string[]
+    visibleNoteIds?: string[]
   }
 }
 
@@ -82,6 +86,8 @@ export function ScheduleCreateScreen({ navigation, route }: Props) {
   const [assignedSearch, setAssignedSearch] = useState('')
   const [jobPickerOpen, setJobPickerOpen] = useState(false)
   const [jobSearch, setJobSearch] = useState('')
+  // null = not available (no job chosen, or no permission to choose what is shared)
+  const [visibility, setVisibility] = useState<JobVisibilityValue | null>(null)
 
   const teamQuery = useQuery({
     queryKey: ['mobile-schedule-team-create'],
@@ -193,6 +199,13 @@ export function ScheduleCreateScreen({ navigation, route }: Props) {
         assignedUserId: allowedAssignedUserId,
         jobId: linkToJob ? jobId || null : null,
         leadId: leadId || null,
+        ...(linkToJob && jobId && visibility
+          ? {
+              restrictContent: visibility.restrictContent,
+              visibleAttachmentIds: visibility.attachmentIds,
+              visibleNoteIds: visibility.noteIds,
+            }
+          : {}),
       }
       if (__DEV__) console.debug('[schedule] submit', { isEdit, payload })
       if (isEdit && scheduleId) {
@@ -347,6 +360,22 @@ export function ScheduleCreateScreen({ navigation, route }: Props) {
                 </View>
                 <Ionicons name="chevron-down" size={18} color={colors.textSecondary} />
               </Pressable>
+            ) : null}
+            {linkToJob && jobId ? (
+              <JobContentVisibilityPicker
+                jobId={jobId}
+                value={visibility}
+                onChange={setVisibility}
+                initial={
+                  isEdit && detailQuery.data?.schedule && detailQuery.data.schedule.jobId === jobId
+                    ? {
+                        restrictContent: Boolean(detailQuery.data.schedule.restrictContent),
+                        attachmentIds: detailQuery.data.schedule.visibleAttachmentIds || [],
+                        noteIds: detailQuery.data.schedule.visibleNoteIds || [],
+                      }
+                    : undefined
+                }
+              />
             ) : null}
           </View>
         </Card>

@@ -162,6 +162,7 @@ export interface Job {
     updatedAt: string
     shortDescription: string
     assignedTo: { id: string; name: string } | null
+    team?: Array<{ userId: string; name: string; role: string }>
   }>
   issues?: Array<{
     id: string
@@ -172,6 +173,7 @@ export interface Job {
     updatedAt: string
     shortDescription: string
     assignedTo: { id: string; name: string } | null
+    team?: Array<{ userId: string; name: string; role: string }>
   }>
   attachments?: Attachment[]
   _count?: {

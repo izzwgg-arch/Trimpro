@@ -10,6 +10,8 @@ import {
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { DetailRow, DetailSection } from '../../components/DetailSection'
+import { TeamSection } from '../../components/team/TeamSection'
+import { buildTeam, type TeamEntry } from '../../lib/team'
 import { Job, TimeEntry } from '../../types/models'
 import { colors, spacing, typography } from '../../theme/tokens'
 import { API_BASE_URL } from '../../config/env'
@@ -492,32 +494,29 @@ export function JobSiteSection({
   )
 }
 
+/** "Jo Smith +2" for a team, the lone assignee's name, or "Unassigned". */
+function teamText(team?: Array<{ name: string }>, fallbackName?: string): string {
+  if (team && team.length > 0) return team.length > 1 ? `${team[0].name} +${team.length - 1}` : team[0].name
+  return fallbackName || 'Unassigned'
+}
+
 export function JobCrewSection({
   job,
-  right,
+  canEdit,
+  onSaveTeam,
 }: {
   job: Job
-  right?: React.ReactNode
+  canEdit?: boolean
+  onSaveTeam?: (entries: TeamEntry[]) => Promise<void>
 }) {
   const assignments = asArray<NonNullable<Job['assignments']>[number]>(job.assignments)
   return (
-    <DetailSection title="Crew Assignments" right={right}>
-      {assignments.length === 0 ? <Text style={styles.empty}>No crew assigned</Text> : null}
-      {assignments.map((a) => (
-        <View key={a.id} style={styles.listRow}>
-          <Text style={styles.listTitle}>
-            {a.user.firstName} {a.user.lastName}
-          </Text>
-          {a.role ? <Text style={styles.docMeta}>{a.role}</Text> : null}
-          {a.notes ? <Text style={styles.docMeta}>{a.notes}</Text> : null}
-          {a.user.phone ? (
-            <Pressable onPress={() => Linking.openURL(`tel:${a.user.phone}`)}>
-              <Text style={styles.link}>{a.user.phone}</Text>
-            </Pressable>
-          ) : null}
-        </View>
-      ))}
-    </DetailSection>
+    <TeamSection
+      title="Team"
+      team={buildTeam(assignments.map((a) => ({ userId: a.user.id, role: a.role, user: a.user })), null)}
+      canEdit={Boolean(canEdit && onSaveTeam)}
+      onSave={onSaveTeam || (async () => {})}
+    />
   )
 }
 
@@ -624,7 +623,7 @@ export function JobTasksIssuesSection({
                 <Text style={styles.docMeta} numberOfLines={1}>
                   {String(task.status || '').replaceAll('_', ' ')} · {task.priority}
                   {' · '}
-                  {task.assignedTo?.name || 'Unassigned'}
+                  {teamText(task.team, task.assignedTo?.name)}
                   {' · Due '}
                   {formatDate(task.dueDate)}
                 </Text>
@@ -648,7 +647,7 @@ export function JobTasksIssuesSection({
                 <Text style={styles.docMeta} numberOfLines={1}>
                   {String(issue.status || '').replaceAll('_', ' ')} · {issue.priority}
                   {' · '}
-                  {issue.assignedTo?.name || 'Unassigned'}
+                  {teamText(issue.team, issue.assignedTo?.name)}
                 </Text>
               </Pressable>
             ))}

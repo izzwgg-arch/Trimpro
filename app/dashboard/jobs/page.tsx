@@ -26,6 +26,7 @@ import { JobStatusSelect } from '@/components/jobs/JobStatusSelect'
 import { JobTypeBadge } from '@/components/jobs/JobTypeSelect'
 import { JobBillingStatusBadge } from '@/components/jobs/JobBillingStatusBadge'
 import { formatJobBillingStatus } from '@/lib/jobs/billing-status'
+import { assignmentRoleLabel, normalizeAssignmentRole } from '@/lib/assignments/roles'
 
 interface Job {
   id: string
@@ -64,6 +65,7 @@ interface Job {
       id: string
       firstName: string
       lastName: string
+      role?: string | null
     }
   }>
   _count: {
@@ -600,7 +602,7 @@ export default function JobsPage() {
                         {job.assignments.map((assignment) => (
                           <span key={assignment.id} className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs">
                             {assignment.user.firstName} {assignment.user.lastName}
-                            {assignment.role && ` (${assignment.role})`}
+                            {` (${assignmentRoleLabel(normalizeAssignmentRole(assignment.role, assignment.user.role))})`}
                           </span>
                         ))}
                       </div>

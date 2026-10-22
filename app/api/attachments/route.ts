@@ -5,6 +5,7 @@ import { createNotificationsForUsers, notifyDispatchJobActivity } from '@/lib/no
 import { publishDispatchRealtime } from '@/lib/dispatch-realtime'
 import { hasMobilePermission, isMobileRequest, requireAnyPermission } from '@/lib/authorization'
 import { normalizePublicFileUrl } from '@/lib/public-url'
+import { resolveJobContentScope } from '@/lib/jobs/content-visibility'
 
 type EntityType = 'estimate' | 'invoice' | 'purchase_order' | 'job' | 'task' | 'issue' | 'request' | 'lead'
 
@@ -109,8 +110,17 @@ export async function GET(request: NextRequest) {
                 ? { leadId: entityId }
                 : { jobId: entityId }
 
+    // A person scheduled with "limit what they see" only gets the attachments chosen for them.
+    let visibleWhere: Record<string, unknown> = where
+    if (entityTypeRaw === 'job' && mobileRequest && !canViewAllJobs) {
+      const scope = await resolveJobContentScope(user.id, entityId)
+      if (scope.restricted) {
+        visibleWhere = { ...where, id: { in: Array.from(scope.attachmentIds) } }
+      }
+    }
+
     const rawAttachments = await prisma.attachment.findMany({
-      where,
+      where: visibleWhere,
       orderBy: { createdAt: 'desc' },
     })
     const attachments = rawAttachments.map((item) => ({
@@ -186,6 +196,33 @@ export async function POST(request: NextRequest) {
         uploadedById: user.id,
       },
     })
+
+    // A file added to a task that belongs to a job is added to that job too
+    // (its own copy, so removing it from one place doesn't remove it from the other).
+    if (entityTypeRaw === 'task') {
+      try {
+        const task = await prisma.task.findFirst({
+          where: { id: entityId, tenantId: user.tenantId },
+          select: { jobId: true },
+        })
+        if (task?.jobId) {
+          await prisma.attachment.create({
+            data: {
+              jobId: task.jobId,
+              fileName,
+              url: normalizedUrl,
+              key,
+              mimeType,
+              fileSize,
+              uploadedById: user.id,
+            },
+          })
+        }
+      } catch (jobAttachError) {
+        console.error('[Attachment] Failed to attach task file to its job:', jobAttachError)
+        // Don't fail the task attachment if the job copy fails.
+      }
+    }
 
     if (entityTypeRaw === 'request' || entityTypeRaw === 'lead') {
       const ipAddress = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown'

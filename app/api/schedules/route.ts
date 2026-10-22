@@ -5,6 +5,8 @@ import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth 
 import { createNotification } from '@/lib/notifications'
 import { hasMobilePermission, hasPermission, isMobileRequest, requireAnyPermission, requireMobilePermission, requirePermission } from '@/lib/authorization'
 import { resolveScheduleScope } from '@/lib/schedule/scope'
+import { ensureJobDescriptionNote } from '@/lib/jobs/description-note'
+import { canSetContentVisibility, cleanVisibilityForJob, parseVisibilityInput } from '@/lib/jobs/content-visibility'
 
 function normalizeScheduleDateTime(rawDate: unknown, rawTime: unknown, fallbackIso?: string): Date | null {
   if (typeof fallbackIso === 'string' && fallbackIso.trim().length > 0) {
@@ -280,6 +282,30 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
+    // What the scheduled person may see on the job (attachments + notes).
+    const visibility = parseVisibilityInput(body)
+    let visibilityData: { restrictContent: boolean; visibleAttachmentIds: string[]; visibleNoteIds: string[] } | null = null
+    if (visibility.provided && jobId) {
+      if (!(await canSetContentVisibility(user))) {
+        return NextResponse.json(
+          { error: 'You do not have permission to choose what scheduled people can see' },
+          { status: 403 }
+        )
+      }
+      const visibilityJob = await prisma.job.findFirst({
+        where: { id: jobId, tenantId: user.tenantId },
+        select: { id: true },
+      })
+      if (!visibilityJob) return NextResponse.json({ error: 'Job not found' }, { status: 404 })
+      await ensureJobDescriptionNote({ jobId, createdById: user.id })
+      const cleaned = await cleanVisibilityForJob(jobId, visibility)
+      visibilityData = {
+        restrictContent: visibility.restrictContent,
+        visibleAttachmentIds: cleaned.attachmentIds,
+        visibleNoteIds: cleaned.noteIds,
+      }
+    }
+
     // Check for conflicts
     const conflictingSchedules = await prisma.schedule.findMany({
       where: {
@@ -327,6 +353,7 @@ export async function POST(request: NextRequest) {
         userId: targetUserId,
         jobId: jobId || null,
         leadId: leadId || null,
+        ...(visibilityData || {}),
       },
       include: {
         user: {

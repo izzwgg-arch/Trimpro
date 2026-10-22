@@ -10,6 +10,7 @@ import { createNotificationsForUsers, notifyJobStatusChanged } from '@/lib/notif
 import { applyProductionAutomation } from '@/lib/production/automation'
 import { getJobBillingStatus } from '@/lib/jobs/billing-status'
 import { assertCanAccessJobType, resolveJobTypeForWrite } from '@/lib/jobs/job-type-scope'
+import { ensureJobDescriptionNote } from '@/lib/jobs/description-note'
 
 export async function GET(
   request: NextRequest,
@@ -74,6 +75,7 @@ export async function GET(
                 lastName: true,
                 email: true,
                 phone: true,
+                role: true,
               },
             },
           },
@@ -145,6 +147,17 @@ export async function GET(
 
     if (!job) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 })
+    }
+
+    // The description is kept as a note on the job; create it for jobs that predate this.
+    const descriptionNoteId = await ensureJobDescriptionNote({
+      jobId: job.id,
+      description: job.description,
+      createdById: user.id,
+    })
+    if (descriptionNoteId && !job.notes.some((n) => n.id === descriptionNoteId)) {
+      const created = await prisma.note.findUnique({ where: { id: descriptionNoteId } })
+      if (created) job.notes.unshift(created)
     }
 
     const typeAccess = await assertCanAccessJobType(user.id, user.tenantId, job.jobType)
@@ -410,6 +423,16 @@ export async function PUT(
             : existing.hourlyRateCents,
       },
     })
+
+    // Keep the description note in step with the description.
+    if (description !== undefined) {
+      await ensureJobDescriptionNote({
+        jobId: job.id,
+        description: job.description,
+        createdById: user.id,
+        syncContent: true,
+      })
+    }
 
     // Upsert job site address (type: job_site) when provided.
     // - jobSite: null => delete existing job_site address

@@ -28,6 +28,7 @@ import {
   isPersonalTasksListEnabled,
 } from '@/lib/tasks/list-scope'
 import { TaskStatusSelect, TaskStatusBadge } from '@/components/tasks/TaskStatusSelect'
+import { teamLabel, teamOf } from '@/components/assignments/TeamSummary'
 
 interface Task {
   id: string
@@ -43,7 +44,13 @@ interface Task {
     firstName: string
     lastName: string
     email: string
+    role?: string | null
   } | null
+  assignments?: Array<{
+    userId: string
+    role?: string | null
+    user: { id: string; firstName: string; lastName: string; role?: string | null }
+  }>
   creator: {
     firstName: string
     lastName: string
@@ -80,6 +87,10 @@ const priorityColors: Record<string, string> = {
   MEDIUM: 'text-blue-600',
   HIGH: 'text-orange-600',
   URGENT: 'text-red-600',
+}
+
+function taskTeamLabel(task: { assignments?: any; assignee?: any }) {
+  return teamLabel(teamOf(task.assignments, task.assignee))
 }
 
 export default function TasksPage() {
@@ -361,7 +372,7 @@ export default function TasksPage() {
                         </CardTitle>
                       </Link>
                       <CardDescription className="mt-1">
-                        Assigned to {task.assignee ? `${task.assignee.firstName} ${task.assignee.lastName}` : 'Unassigned'}
+                        Team: {taskTeamLabel(task)}
                         {task.client && ` • ${task.client.name}`}
                         {task.job && ` • Job ${task.job.jobNumber}`}
                         {task.invoice && ` • Invoice ${task.invoice.invoiceNumber}`}
@@ -460,7 +471,7 @@ export default function TasksPage() {
               key={task.id}
               href={`/dashboard/tasks/${task.id}`}
               primary={task.title}
-              secondary={`${task.assignee ? `${task.assignee.firstName} ${task.assignee.lastName}` : 'Unassigned'} • Created ${formatDate(task.createdAt)}`}
+              secondary={`${taskTeamLabel(task)} • Created ${formatDate(task.createdAt)}`}
               status={
                 canEditStatus ? (
                   <TaskStatusSelect
@@ -497,7 +508,7 @@ export default function TasksPage() {
                   <TaskStatusBadge status={task.status} />
                 )
               }
-              line2={`${task.assignee ? `${task.assignee.firstName} ${task.assignee.lastName}` : 'Unassigned'}${task.client ? ` • ${task.client.name}` : ''} • Created ${formatDate(task.createdAt)}`}
+              line2={`${taskTeamLabel(task)}${task.client ? ` • ${task.client.name}` : ''} • Created ${formatDate(task.createdAt)}`}
               rightTop={task.priority}
               rightBottom={task.dueDate ? formatDate(task.dueDate) : 'No due date'}
             />
@@ -538,11 +549,11 @@ export default function TasksPage() {
             },
             {
               key: 'assignee',
-              header: 'Assignee',
+              header: 'Team',
               sortValue: (task) =>
-                task.assignee ? `${task.assignee.firstName} ${task.assignee.lastName}` : 'Unassigned',
+                taskTeamLabel(task),
               render: (task) =>
-                task.assignee ? `${task.assignee.firstName} ${task.assignee.lastName}` : 'Unassigned',
+                taskTeamLabel(task),
             },
             {
               key: 'priority',

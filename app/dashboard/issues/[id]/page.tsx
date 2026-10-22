@@ -10,6 +10,9 @@ import { formatDate } from '@/lib/utils'
 import { AlertCircle, Calendar, CheckCircle, Clock, Trash2, User } from 'lucide-react'
 import { EditableNotesList } from '@/components/notes/editable-notes-list'
 import { EntityHistory } from '@/components/history/EntityHistory'
+import { TeamEditor, useAssignableUsers, type TeamEntry } from '@/components/assignments/TeamEditor'
+import { TeamSummary, teamOf } from '@/components/assignments/TeamSummary'
+import { usePermissions, hasPermission } from '@/hooks/usePermissions'
 
 interface IssueDetail {
   id: string
@@ -21,7 +24,12 @@ interface IssueDetail {
   firstResponseAt: string | null
   resolvedAt: string | null
   closedAt: string | null
-  assignee: { id: string; firstName: string; lastName: string; email: string; phone?: string | null } | null
+  assignee: { id: string; firstName: string; lastName: string; email: string; phone?: string | null; role?: string | null } | null
+  assignments?: Array<{
+    userId: string
+    role?: string | null
+    user: { id: string; firstName: string; lastName: string; role?: string | null }
+  }>
   creator: { id: string; firstName: string; lastName: string } | null
   client: { id: string; name: string; companyName: string | null } | null
   job: { id: string; jobNumber: string; title: string } | null
@@ -51,6 +59,43 @@ export default function IssueDetailPage() {
   const [deleting, setDeleting] = useState(false)
   const [noteText, setNoteText] = useState('')
   const [addingNote, setAddingNote] = useState(false)
+  const { permissions } = usePermissions()
+  const canEditTeam = hasPermission(permissions, 'issues.edit')
+  const { users: assignableUsers } = useAssignableUsers()
+  const [editingTeam, setEditingTeam] = useState(false)
+  const [teamDraft, setTeamDraft] = useState<TeamEntry[]>([])
+  const [savingTeam, setSavingTeam] = useState(false)
+
+  const startTeamEdit = () => {
+    if (!issue) return
+    setTeamDraft(teamOf(issue.assignments, issue.assignee).map((m) => ({ userId: m.userId, role: m.role })))
+    setEditingTeam(true)
+  }
+
+  const saveTeam = async () => {
+    if (!issue) return
+    setSavingTeam(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch(`/api/issues/${issue.id}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assignments: teamDraft }),
+      })
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({ error: 'Failed to update the team' }))
+        alert(payload.error || 'Failed to update the team')
+        return
+      }
+      setEditingTeam(false)
+      await fetchIssue()
+    } catch (e) {
+      console.error('Failed to update team:', e)
+      alert('Failed to update the team. Please try again.')
+    } finally {
+      setSavingTeam(false)
+    }
+  }
 
   const badgeClass = useMemo(() => {
     const s = issue?.status || ''
@@ -420,11 +465,30 @@ export default function IssueDetailPage() {
             <CardContent className="space-y-3 text-sm">
               <div className="flex items-start gap-2">
                 <User className="h-4 w-4 text-gray-400 mt-0.5" />
-                <div>
-                  <p className="text-gray-500">Assignee</p>
-                  <p className="font-medium text-gray-900">
-                    {issue.assignee ? `${issue.assignee.firstName} ${issue.assignee.lastName}` : 'Unassigned'}
-                  </p>
+                <div className="min-w-0 flex-1">
+                  <div className="mb-1 flex items-center justify-between">
+                    <p className="text-gray-500">Team</p>
+                    {canEditTeam && !editingTeam && (
+                      <button type="button" onClick={startTeamEdit} className="text-xs text-blue-600 hover:underline">
+                        Edit
+                      </button>
+                    )}
+                  </div>
+                  {editingTeam ? (
+                    <>
+                      <TeamEditor value={teamDraft} onChange={setTeamDraft} users={assignableUsers} />
+                      <div className="mt-2 flex gap-2">
+                        <Button size="sm" onClick={saveTeam} disabled={savingTeam}>
+                          {savingTeam ? 'Saving…' : 'Save team'}
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => setEditingTeam(false)} disabled={savingTeam}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <TeamSummary team={teamOf(issue.assignments, issue.assignee)} />
+                  )}
                 </div>
               </div>
 

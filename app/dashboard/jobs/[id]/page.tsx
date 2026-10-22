@@ -24,6 +24,10 @@ import { JobStatusSelect } from '@/components/jobs/JobStatusSelect'
 import { JobBillingStatusBadge } from '@/components/jobs/JobBillingStatusBadge'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { TeamEditor, useAssignableUsers, type TeamEntry } from '@/components/assignments/TeamEditor'
+import { teamOf } from '@/components/assignments/TeamSummary'
+import { ASSIGNMENT_ROLES } from '@/lib/assignments/roles'
+import { usePermissions, hasPermission } from '@/hooks/usePermissions'
 
 const JobSiteMap = dynamic(() => import('@/components/maps/JobSiteMap').then(mod => ({ default: mod.JobSiteMap })), {
   ssr: false,
@@ -87,6 +91,7 @@ interface JobDetail {
       lastName: string
       email: string
       phone: string | null
+      role?: string | null
     }
   }>
   tasks: Array<{
@@ -196,10 +201,12 @@ export default function JobDetailPage() {
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState(false)
   const [duplicating, setDuplicating] = useState(false)
-  const [availableCrew, setAvailableCrew] = useState<AssignableUser[]>([])
-  const [selectedCrewId, setSelectedCrewId] = useState('')
-  const [loadingCrew, setLoadingCrew] = useState(false)
-  const [assigningCrew, setAssigningCrew] = useState(false)
+  const { permissions } = usePermissions()
+  const canAssignTeam = hasPermission(permissions, 'jobs.assign')
+  const { users: assignableUsers } = useAssignableUsers()
+  const [editingTeam, setEditingTeam] = useState(false)
+  const [teamDraft, setTeamDraft] = useState<TeamEntry[]>([])
+  const [savingTeam, setSavingTeam] = useState(false)
   const [timeEntries, setTimeEntries] = useState<TimeEntryRow[]>([])
   const [loadingTimeEntries, setLoadingTimeEntries] = useState(false)
   const [billingSaving, setBillingSaving] = useState(false)
@@ -246,7 +253,6 @@ export default function JobDetailPage() {
 
   useEffect(() => {
     if (job) {
-      loadAvailableCrew()
       setChargeByHour(Boolean(job.chargeByHour))
       setHourlyRate(job.hourlyRateCents ? (job.hourlyRateCents / 100).toFixed(2) : '')
       fetchTimeEntries()
@@ -582,56 +588,17 @@ export default function JobDetailPage() {
     }
   }
 
-  const loadAvailableCrew = async () => {
-    if (!job) return
-    setLoadingCrew(true)
-    try {
-      const token = localStorage.getItem('accessToken')
-      if (!token) {
-        router.push('/auth/login')
-        return
-      }
+  const jobTeamMembers = () =>
+    job ? teamOf(job.assignments.map((a) => ({ userId: a.user.id, role: a.role, user: a.user })), null) : []
 
-      const response = await fetch('/api/users?limit=200', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-
-      if (response.status === 401) {
-        router.push('/auth/login')
-        return
-      }
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: 'Failed to load crew list' }))
-        alert(error.error || 'Failed to load crew list')
-        return
-      }
-
-      const data = await response.json()
-      const assignedIds = new Set(job.assignments.map((a) => a.user.id))
-      const users: AssignableUser[] = (Array.isArray(data.users) ? data.users : [])
-        .map((u: any) => ({
-          id: u.id,
-          firstName: u.firstName || '',
-          lastName: u.lastName || '',
-          email: u.email || null,
-          status: u.status || null,
-        }))
-        .filter((u: AssignableUser) => !assignedIds.has(u.id) && !['INACTIVE', 'SUSPENDED'].includes(String(u.status || '').toUpperCase()))
-
-      setAvailableCrew(users)
-      setSelectedCrewId('')
-    } catch (error) {
-      console.error('Failed to load crew:', error)
-      alert('Failed to load crew list')
-    } finally {
-      setLoadingCrew(false)
-    }
+  const startTeamEdit = () => {
+    setTeamDraft(jobTeamMembers().map((m) => ({ userId: m.userId, role: m.role })))
+    setEditingTeam(true)
   }
 
-  const handleAssignCrew = async () => {
-    if (!selectedCrewId || !job) return
-    setAssigningCrew(true)
+  const saveTeam = async () => {
+    if (!job) return
+    setSavingTeam(true)
     try {
       const token = localStorage.getItem('accessToken')
       if (!token) {
@@ -640,12 +607,12 @@ export default function JobDetailPage() {
       }
 
       const response = await fetch(`/api/jobs/${job.id}/assignments`, {
-        method: 'POST',
+        method: 'PUT',
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ userId: selectedCrewId }),
+        body: JSON.stringify({ assignments: teamDraft }),
       })
 
       if (response.status === 401) {
@@ -654,19 +621,18 @@ export default function JobDetailPage() {
       }
 
       if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: 'Failed to assign crew' }))
-        alert(error.error || 'Failed to assign crew')
+        const error = await response.json().catch(() => ({ error: 'Failed to update the team' }))
+        alert(error.error || 'Failed to update the team')
         return
       }
 
-      setSelectedCrewId('')
+      setEditingTeam(false)
       await fetchJob()
-      await loadAvailableCrew()
     } catch (error) {
-      console.error('Failed to assign crew:', error)
-      alert('Failed to assign crew')
+      console.error('Failed to update team:', error)
+      alert('Failed to update the team')
     } finally {
-      setAssigningCrew(false)
+      setSavingTeam(false)
     }
   }
 
@@ -1383,81 +1349,65 @@ export default function JobDetailPage() {
             </>
           )}
 
-          {/* Crew Assignments */}
+          {/* Team: site managers, office workers, field workers */}
           <Card className="relative z-20">
             <CardHeader>
               <div className="flex items-center justify-between">
-                <CardTitle>Crew Assignments</CardTitle>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => loadAvailableCrew()}
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Refresh Crew
-                </Button>
+                <CardTitle>Team</CardTitle>
+                {canAssignTeam && !editingTeam && (
+                  <Button type="button" variant="outline" size="sm" onClick={startTeamEdit}>
+                    <Edit className="mr-2 h-4 w-4" />
+                    Edit team
+                  </Button>
+                )}
               </div>
             </CardHeader>
             <CardContent>
-              <div className="mb-4 rounded-lg border p-3 space-y-3 bg-slate-50">
-                <p className="text-sm font-medium text-slate-700">Assign crew member</p>
-                <select
-                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
-                  value={selectedCrewId}
-                  onChange={(e) => setSelectedCrewId(e.target.value)}
-                  disabled={loadingCrew || assigningCrew}
-                >
-                  <option value="">{loadingCrew ? 'Loading crew...' : 'Select crew member'}</option>
-                  {availableCrew.map((member) => (
-                    <option key={member.id} value={member.id}>
-                      {member.firstName} {member.lastName}
-                      {member.email ? ` (${member.email})` : ''}
-                    </option>
-                  ))}
-                </select>
-                {!loadingCrew && availableCrew.length === 0 && (
-                  <p className="text-sm text-gray-500">No available crew members to assign.</p>
-                )}
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    onClick={handleAssignCrew}
-                    disabled={!selectedCrewId || assigningCrew || loadingCrew}
-                  >
-                    {assigningCrew ? 'Assigning...' : 'Assign Crew'}
-                  </Button>
-                </div>
-              </div>
-              {job.assignments.length === 0 ? (
-                <p className="text-center text-gray-500 py-4">No crew assigned</p>
+              {editingTeam ? (
+                <>
+                  <TeamEditor value={teamDraft} onChange={setTeamDraft} users={assignableUsers} />
+                  <div className="mt-4 flex items-center gap-2">
+                    <Button type="button" onClick={saveTeam} disabled={savingTeam}>
+                      {savingTeam ? 'Saving...' : 'Save team'}
+                    </Button>
+                    <Button type="button" variant="outline" onClick={() => setEditingTeam(false)} disabled={savingTeam}>
+                      Cancel
+                    </Button>
+                  </div>
+                </>
+              ) : jobTeamMembers().length === 0 ? (
+                <p className="text-center text-gray-500 py-4">No team assigned</p>
               ) : (
-                <div className="space-y-3">
-                  {job.assignments.map((assignment) => (
-                    <div key={assignment.id} className="flex items-center justify-between p-3 border rounded-lg">
-                      <div className="flex-1">
-                        <p className="font-medium">
-                          {assignment.user.firstName} {assignment.user.lastName}
-                        </p>
-                        {assignment.role && (
-                          <p className="text-sm text-gray-500">{assignment.role}</p>
-                        )}
-                        {assignment.notes && (
-                          <p className="text-xs text-gray-600 mt-1">{assignment.notes}</p>
-                        )}
+                <div className="space-y-4">
+                  {ASSIGNMENT_ROLES.map((role) => {
+                    const members = jobTeamMembers().filter((m) => m.role === role.value)
+                    if (members.length === 0) return null
+                    return (
+                      <div key={role.value}>
+                        <p className="mb-2 text-sm font-semibold text-gray-600">{role.label}</p>
+                        <div className="space-y-2">
+                          {members.map((m) => {
+                            const assignment = job.assignments.find((a) => a.user.id === m.userId)
+                            return (
+                              <div key={m.userId} className="flex items-center justify-between rounded-lg border p-3">
+                                <div className="flex-1">
+                                  <p className="font-medium">
+                                    {m.user.firstName} {m.user.lastName}
+                                  </p>
+                                  {assignment?.user.phone && (
+                                    <p className="text-sm text-gray-500">{assignment.user.phone}</p>
+                                  )}
+                                  {assignment?.notes && (
+                                    <p className="mt-1 text-xs text-gray-600">{assignment.notes}</p>
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
                       </div>
-                      <div className="flex items-center space-x-2">
-                        {assignment.user.phone && (
-                          <Button variant="ghost" size="sm">
-                            <Phone className="h-4 w-4" />
-                          </Button>
-                        )}
-                        <Button variant="ghost" size="sm">
-                          <Mail className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </CardContent>

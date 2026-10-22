@@ -11,6 +11,7 @@ import { ACTIVE_JOB_STATUSES } from '@/lib/jobs/statuses'
 import { getJobBillingStatus } from '@/lib/jobs/billing-status'
 import { applyJobTypeListFilter, jobTypeScopeWhere, resolveJobTypeForWrite } from '@/lib/jobs/job-type-scope'
 import { getUnreadJobThreadCounts } from '@/lib/chat/service'
+import { ensureJobDescriptionNote } from '@/lib/jobs/description-note'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -225,6 +226,7 @@ export async function GET(request: NextRequest) {
                       id: true,
                       firstName: true,
                       lastName: true,
+                  role: true,
                     },
                   },
                 },
@@ -352,6 +354,7 @@ export async function GET(request: NextRequest) {
               id: true,
               firstName: true,
               lastName: true,
+                  role: true,
             },
           },
         },
@@ -541,6 +544,9 @@ export async function POST(request: NextRequest) {
     }
 
     const jobNumber = job.jobNumber
+
+    // The description is also kept as a note on the job (shareable with scheduled people).
+    await ensureJobDescriptionNote({ jobId: job.id, description: job.description, createdById: user.id })
 
     // Create job site address if provided
     if (jobSite) {

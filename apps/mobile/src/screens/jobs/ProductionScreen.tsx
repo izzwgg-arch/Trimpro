@@ -115,6 +115,7 @@ interface TaskItem {
   priority?: string | number | null
   dueDate?: string | null
   assignee?: { firstName?: string | null; lastName?: string | null } | null
+  assignments?: Array<{ user?: { firstName?: string | null; lastName?: string | null } | null }>
   job?: { jobNumber?: string | null } | null
 }
 interface LeadItem {
@@ -619,7 +620,11 @@ function StatusBoard({
 const TASK_STATUS_HEX: Record<string, string> = { TODO: '#64748b', IN_PROGRESS: '#eab308', COMPLETED: '#22c55e' }
 
 function TaskCard({ task, onPress }: { task: TaskItem; onPress: () => void }) {
-  const assignee = task.assignee ? `${task.assignee.firstName || ''} ${task.assignee.lastName || ''}`.trim() : ''
+  const teamNames = (task.assignments || [])
+    .map((a) => `${a.user?.firstName || ''} ${a.user?.lastName || ''}`.trim())
+    .filter(Boolean)
+  const primaryName = task.assignee ? `${task.assignee.firstName || ''} ${task.assignee.lastName || ''}`.trim() : ''
+  const assignee = teamNames.length > 1 ? `${teamNames[0]} +${teamNames.length - 1}` : teamNames[0] || primaryName
   const overdue = isOverdue(task.dueDate)
   const accent = TASK_STATUS_HEX[String(task.status || '').toUpperCase()] || '#64748b'
   return (

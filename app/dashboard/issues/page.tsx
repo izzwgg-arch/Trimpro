@@ -21,6 +21,7 @@ import Link from 'next/link'
 import { useDocumentListAccess } from '@/hooks/useDocumentListAccess'
 import { CreateOnlyAccessCard } from '@/components/permissions/CreateOnlyAccessCard'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { teamLabel, teamOf } from '@/components/assignments/TeamSummary'
 
 interface Issue {
   id: string
@@ -38,7 +39,13 @@ interface Issue {
     firstName: string
     lastName: string
     email: string
+    role?: string | null
   } | null
+  assignments?: Array<{
+    userId: string
+    role?: string | null
+    user: { id: string; firstName: string; lastName: string; role?: string | null }
+  }>
   creator: {
     firstName: string
     lastName: string
@@ -87,6 +94,10 @@ const typeColors: Record<string, string> = {
   QUALITY: 'bg-orange-100 text-orange-800',
   SAFETY: 'bg-red-100 text-red-800',
   OTHER: 'bg-gray-100 text-gray-800',
+}
+
+function issueTeamLabel(issue: { assignments?: any; assignee?: any }) {
+  return teamLabel(teamOf(issue.assignments, issue.assignee))
 }
 
 export default function IssuesPage() {
@@ -368,9 +379,7 @@ export default function IssuesPage() {
                       <div className="flex items-center">
                         <User className="mr-1 h-3 w-3 text-gray-400" />
                         <span className="text-gray-600">
-                          {issue.assignee
-                            ? `${issue.assignee.firstName} ${issue.assignee.lastName}`
-                            : 'Unassigned'}
+                          {issueTeamLabel(issue)}
                         </span>
                       </div>
                       <span className={`font-medium ${priorityColors[issue.priority] || 'text-gray-600'}`}>
@@ -414,7 +423,7 @@ export default function IssuesPage() {
               key={issue.id}
               href={`/dashboard/issues/${issue.id}`}
               primary={issue.title}
-              secondary={`${issue.assignee ? `${issue.assignee.firstName} ${issue.assignee.lastName}` : 'Unassigned'}${issue.client?.name ? ` • ${issue.client.name}` : issue.job?.jobNumber ? ` • ${issue.job.jobNumber}` : ''}`}
+              secondary={`${issueTeamLabel(issue)}${issue.client?.name ? ` • ${issue.client.name}` : issue.job?.jobNumber ? ` • ${issue.job.jobNumber}` : ''}`}
               status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[issue.status] || 'bg-gray-100 text-gray-800'}`}>{issue.status.replace('_', ' ')}</span>}
               amount={issue.priority}
               date={issue.resolvedAt ? formatDate(issue.resolvedAt) : '-'}
@@ -429,7 +438,7 @@ export default function IssuesPage() {
               href={`/dashboard/issues/${issue.id}`}
               primary={issue.title}
               status={<span className={`px-2 py-1 text-xs rounded-full ${statusColors[issue.status] || 'bg-gray-100 text-gray-800'}`}>{issue.status.replace('_', ' ')}</span>}
-              line2={`${issue.type} \u2022 ${issue.assignee ? `${issue.assignee.firstName} ${issue.assignee.lastName}` : 'Unassigned'} \u2022 ${issue._count.notes} notes`}
+              line2={`${issue.type} \u2022 ${issueTeamLabel(issue)} \u2022 ${issue._count.notes} notes`}
               rightTop={issue.priority}
               rightBottom={issue.firstResponseAt ? formatDate(issue.firstResponseAt) : 'No response'}
             />
@@ -472,9 +481,9 @@ export default function IssuesPage() {
             },
             {
               key: 'assignee',
-              header: 'Assignee',
-              sortValue: (issue) => issue.assignee ? `${issue.assignee.firstName} ${issue.assignee.lastName}` : '',
-              render: (issue) => issue.assignee ? `${issue.assignee.firstName} ${issue.assignee.lastName}` : '-',
+              header: 'Team',
+              sortValue: (issue) => issueTeamLabel(issue),
+              render: (issue) => issueTeamLabel(issue),
             },
             {
               key: 'client',

@@ -4,6 +4,9 @@ import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { notifyIssueAssigned, createNotificationsForUsers, formatEntityStatusChangedMessage } from '@/lib/notifications'
 import { recordAuditLog, auditContextFromRequest } from '@/lib/audit/log'
+import { teamInclude } from '@/lib/assignments/where'
+import { defaultRoleForUser, parseTeamInput, type TeamInput } from '@/lib/assignments/roles'
+import { setIssueTeam, validateUsers } from '@/lib/assignments/team-service'
 
 function formatIssueStatus(status: string): string {
   return String(status || '')
@@ -37,6 +40,7 @@ export async function GET(
         tenantId: user.tenantId,
       },
       include: {
+        ...teamInclude,
         assignee: {
           select: {
             id: true,
@@ -44,6 +48,7 @@ export async function GET(
             lastName: true,
             email: true,
             phone: true,
+            role: true,
           },
         },
         creator: {
@@ -225,8 +230,16 @@ export async function PUT(
       closedAt = null
     }
 
-    // Verify assignee if changed
-    if (assigneeId && assigneeId !== existing.assigneeId) {
+    // The team: either sent whole (assignments), or derived from a changed legacy assigneeId.
+    let team: TeamInput | null = null
+    if (body.assignments !== undefined) {
+      const parsed = parseTeamInput(body.assignments)
+      if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 })
+      team = parsed.team
+      const invalid = await validateUsers(user.tenantId, team)
+      if (invalid) return NextResponse.json({ error: invalid }, { status: 400 })
+    } else if (assigneeId && assigneeId !== existing.assigneeId) {
+      // Older clients reassign by assigneeId: swap the old primary for the new person, keep the rest.
       const assignee = await prisma.user.findFirst({
         where: {
           id: assigneeId,
@@ -238,8 +251,13 @@ export async function PUT(
         return NextResponse.json({ error: 'Assignee not found' }, { status: 404 })
       }
 
-      // Notify new assignee with push notification
-      await notifyIssueAssigned(user.tenantId, assigneeId, existing.id, existing.title)
+      const current = await prisma.issueAssignment.findMany({ where: { issueId: existing.id } })
+      team = [
+        ...current
+          .filter((a) => a.userId !== existing.assigneeId && a.userId !== assigneeId)
+          .map((a) => ({ userId: a.userId, role: a.role as TeamInput[number]['role'] })),
+        { userId: assigneeId, role: defaultRoleForUser(assignee.role) },
+      ]
     }
 
     // Update issue
@@ -253,7 +271,8 @@ export async function PUT(
         priority: priority !== undefined ? priority : existing.priority,
         dueDate:
           resolvedDueDate !== undefined ? (resolvedDueDate ? new Date(resolvedDueDate) : null) : existing.dueDate,
-        assigneeId: assigneeId !== undefined ? assigneeId : existing.assigneeId,
+        // With a team, setIssueTeam below sets the primary assignee.
+        assigneeId: team ? existing.assigneeId : assigneeId !== undefined ? assigneeId : existing.assigneeId,
         firstResponseAt,
         resolvedAt,
         closedAt,
@@ -263,6 +282,17 @@ export async function PUT(
         creator: true,
       },
     })
+
+    // Save the team and notify anyone newly added.
+    let teamSaved: Awaited<ReturnType<typeof setIssueTeam>> | null = null
+    if (team) {
+      teamSaved = await setIssueTeam(user.tenantId, existing.id, team)
+      if (teamSaved.ok) {
+        for (const addedId of teamSaved.added) {
+          await notifyIssueAssigned(user.tenantId, addedId, existing.id, existing.title)
+        }
+      }
+    }
 
     // Update watchers if provided
     if (watchers && Array.isArray(watchers)) {
@@ -338,10 +368,13 @@ export async function PUT(
       })
     }
 
-    // Notify assignee and watchers about any update (including status changes and other field updates)
+    // Notify the team and watchers about any update (including status changes and other field updates)
     const notifyUserIds: string[] = []
-    if (issue.assigneeId) {
-      notifyUserIds.push(issue.assigneeId)
+    const teamRows = await prisma.issueAssignment.findMany({ where: { issueId: issue.id }, select: { userId: true } })
+    for (const row of teamRows) notifyUserIds.push(row.userId)
+    const primaryNow = teamSaved?.ok ? teamSaved.primaryAssigneeId : issue.assigneeId
+    if (primaryNow && !notifyUserIds.includes(primaryNow)) {
+      notifyUserIds.push(primaryNow)
     }
     
     // Get watchers from database
@@ -382,7 +415,11 @@ export async function PUT(
       })
     }
 
-    return NextResponse.json({ issue })
+    const withTeam = await prisma.issue.findFirst({
+      where: { id: issue.id },
+      include: { ...teamInclude, assignee: true, creator: true },
+    })
+    return NextResponse.json({ issue: withTeam || issue })
   } catch (error) {
     console.error('Update issue error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

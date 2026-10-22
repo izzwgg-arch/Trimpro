@@ -16,6 +16,9 @@ import { enqueueOutbox } from '../../offline/outbox'
 import { normalizeAttachmentUrl } from '../../services/open-attachment'
 import { AttachmentGalleryModal } from '../../components/attachments/AttachmentGalleryModal'
 import { AttachmentOpenPressable } from '../../components/attachments/AttachmentOpenPressable'
+import { TeamSection } from '../../components/team/TeamSection'
+import { buildTeam, type TeamEntry } from '../../lib/team'
+import { useMobilePermissions } from '../../hooks/useMobilePermissions'
 
 type Props = NativeStackScreenProps<TasksStackParamList, 'TaskDetail'>
 
@@ -50,6 +53,7 @@ export function TaskDetailScreen({ route }: Props) {
   const [galleryIndex, setGalleryIndex] = useState(0)
   const { token } = useAuth()
   const isOnline = useOnlineState()
+  const { hasWebPermission } = useMobilePermissions()
 
   const taskQuery = useQuery({
     queryKey: ['mobile-task-detail', taskId],
@@ -90,6 +94,14 @@ export function TaskDetailScreen({ route }: Props) {
       queryClient.invalidateQueries({ queryKey: ['mobile-assignments'] })
     },
   })
+
+  const saveTeam = async (entries: TeamEntry[]) => {
+    if (!isOnline) throw new Error('Cannot change the team while offline. Please reconnect and try again.')
+    await apiRequest(`/api/tasks/${taskId}`, 'PUT', { assignments: entries })
+    queryClient.invalidateQueries({ queryKey: ['mobile-task-detail', taskId] })
+    queryClient.invalidateQueries({ queryKey: ['mobile-tasks'] })
+    queryClient.invalidateQueries({ queryKey: ['mobile-assignments'] })
+  }
 
   const addNoteMutation = useMutation({
     mutationFn: async () => {
@@ -225,8 +237,13 @@ export function TaskDetailScreen({ route }: Props) {
             <StatusChip status={task.status} />
             <Text style={styles.meta}>Priority: {task.priority}</Text>
             <Text style={styles.meta}>Scheduled: {task.dueDate ? new Date(task.dueDate).toLocaleString() : 'Optional / Unscheduled'}</Text>
-            <Text style={styles.meta}>Assignee: {task.assignee ? `${task.assignee.firstName} ${task.assignee.lastName}` : 'N/A'}</Text>
             <Text style={styles.meta}>Client: {task.client?.name || 'Unattached'}</Text>
+
+            <TeamSection
+              team={buildTeam(task.assignments, task.assignee)}
+              canEdit={hasWebPermission('tasks.edit')}
+              onSave={saveTeam}
+            />
 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Description</Text>

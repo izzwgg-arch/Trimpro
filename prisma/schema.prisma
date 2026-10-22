@@ -153,6 +153,8 @@ model User {
   assignedTasks                Task[]                    @relation("TaskAssignee")
   createdTasks                 Task[]                    @relation("TaskCreator")
   assignedIssues               Issue[]                   @relation("IssueAssignee")
+  taskAssignments              TaskAssignment[]          @relation("TaskAssignments")
+  issueAssignments             IssueAssignment[]         @relation("IssueAssignments")
   createdIssues                Issue[]                   @relation("IssueCreator")
   watchedIssues                IssueWatcher[]
   assignedLeads                Lead[]                    @relation("LeadAssignee")
@@ -494,6 +496,42 @@ model JobAssignment {
   @@index([jobId])
   @@index([userId])
   @@map("job_assignments")
+}
+
+// Team members on a task. role: SITE_MANAGER | OFFICE_WORKER | FIELD_WORKER
+model TaskAssignment {
+  id     String @id @default(cuid())
+  taskId String
+  userId String
+  role   String
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation("TaskAssignments", fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([taskId, userId])
+  @@index([taskId])
+  @@index([userId])
+  @@map("task_assignments")
+}
+
+// Team members on an issue. role: SITE_MANAGER | OFFICE_WORKER | FIELD_WORKER
+model IssueAssignment {
+  id      String @id @default(cuid())
+  issueId String
+  userId  String
+  role    String
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  user  User  @relation("IssueAssignments", fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([issueId, userId])
+  @@index([issueId])
+  @@index([userId])
+  @@map("issue_assignments")
 }
 
 model TimeEntry {
@@ -1636,6 +1674,13 @@ model Schedule {
   endTime     DateTime
   allDay      Boolean      @default(false)
 
+  // What the scheduled person can see when they open the job. When restrictContent
+  // is true they see only the listed attachments/notes (plus the job description
+  // note); otherwise they see everything on the job, as before.
+  restrictContent    Boolean  @default(false)
+  visibleAttachmentIds String[] @default([])
+  visibleNoteIds       String[] @default([])
+
   // Relationships
   tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   jobId  String?
@@ -1702,8 +1747,12 @@ model Task {
   invoice Invoice? @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   issue   Issue?   @relation(fields: [issueId], references: [id], onDelete: Cascade)
 
+  // Primary assignee (kept for backward compatibility). The full team —
+  // site managers, office workers and field workers — lives in `assignments`.
   assigneeId String?
   assignee   User?  @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  assignments TaskAssignment[]
 
   createdById String
   creator     User   @relation("TaskCreator", fields: [createdById], references: [id], onDelete: Restrict)
@@ -1803,8 +1852,12 @@ model Issue {
   lead   Lead?   @relation(fields: [leadId], references: [id], onDelete: Cascade)
   job    Job?    @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
+  // Primary assignee (kept for backward compatibility). The full team —
+  // site managers, office workers and field workers — lives in `assignments`.
   assigneeId String?
   assignee   User?   @relation("IssueAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  assignments IssueAssignment[]
 
   createdById String
   creator     User   @relation("IssueCreator", fields: [createdById], references: [id], onDelete: Restrict)
@@ -2103,6 +2156,8 @@ model Note {
   id       String  @id @default(cuid())
   content  String  @db.Text
   isPinned Boolean @default(false)
+  // True for the note that mirrors the job's description.
+  isJobDescription Boolean @default(false)
 
   // Links
   clientId String?

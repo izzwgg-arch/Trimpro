@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { assignedToUserWhere } from '@/lib/assignments/where'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 
 function getUserLocalDayWindow(request: NextRequest) {
@@ -46,14 +47,14 @@ export async function GET(request: NextRequest) {
   try {
     const openTaskWhere = {
       tenantId: user.tenantId,
-      assigneeId: user.id,
-      status: { notIn: ['COMPLETED', 'CANCELLED'] as const },
+      ...assignedToUserWhere(user.id),
+      status: { notIn: ['COMPLETED', 'CANCELLED'] as any },
     }
 
     const openIssueWhere = {
       tenantId: user.tenantId,
-      assigneeId: user.id,
-      status: { notIn: ['RESOLVED', 'CLOSED', 'CANCELLED'] as const },
+      ...assignedToUserWhere(user.id),
+      status: { notIn: ['RESOLVED', 'CLOSED', 'CANCELLED'] as any },
     }
 
     const [jobs, tasks, issues, todaysJobs, todaysTasks, openIssues, openTasksCount, openIssuesCount] = await Promise.all([
@@ -80,7 +81,7 @@ export async function GET(request: NextRequest) {
       prisma.task.findMany({
         where: {
           tenantId: user.tenantId,
-          assigneeId: user.id,
+          ...assignedToUserWhere(user.id),
         },
         select: {
           id: true,
@@ -96,7 +97,7 @@ export async function GET(request: NextRequest) {
       prisma.issue.findMany({
         where: {
           tenantId: user.tenantId,
-          assigneeId: user.id,
+          ...assignedToUserWhere(user.id),
         },
         select: {
           id: true,

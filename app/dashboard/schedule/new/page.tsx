@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Save } from 'lucide-react'
 import Link from 'next/link'
+import { JobContentVisibility, type JobVisibilityValue } from '@/components/schedule/JobContentVisibility'
 
 interface User {
   id: string
@@ -30,6 +31,8 @@ export default function NewSchedulePage() {
   const [loading, setLoading] = useState(false)
   const [users, setUsers] = useState<User[]>([])
   const [jobs, setJobs] = useState<Job[]>([])
+  // null = not available (no job chosen, or no permission to choose what is shared)
+  const [visibility, setVisibility] = useState<JobVisibilityValue | null>(null)
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -91,6 +94,13 @@ export default function NewSchedulePage() {
         body: JSON.stringify({
           ...formData,
           jobId: formData.jobId || null,
+          ...(formData.jobId && visibility
+            ? {
+                restrictContent: visibility.restrictContent,
+                visibleAttachmentIds: visibility.attachmentIds,
+                visibleNoteIds: visibility.noteIds,
+              }
+            : {}),
         }),
       })
 
@@ -231,6 +241,10 @@ export default function NewSchedulePage() {
                 </SelectContent>
               </Select>
             </div>
+
+            {formData.jobId && (
+              <JobContentVisibility jobId={formData.jobId} value={visibility} onChange={setVisibility} />
+            )}
 
             <div className="flex items-center">
               <input

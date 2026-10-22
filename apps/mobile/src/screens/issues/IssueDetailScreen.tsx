@@ -16,6 +16,9 @@ import { enqueueOutbox } from '../../offline/outbox'
 import { AttachmentGalleryModal } from '../../components/attachments/AttachmentGalleryModal'
 import { AttachmentOpenPressable } from '../../components/attachments/AttachmentOpenPressable'
 import { normalizeAttachmentUrl } from '../../services/open-attachment'
+import { TeamSection } from '../../components/team/TeamSection'
+import { buildTeam, type TeamEntry } from '../../lib/team'
+import { useMobilePermissions } from '../../hooks/useMobilePermissions'
 
 type Props = NativeStackScreenProps<IssuesStackParamList, 'IssueDetail'>
 
@@ -51,6 +54,7 @@ export function IssueDetailScreen({ route, navigation }: Props) {
   const [galleryIndex, setGalleryIndex] = React.useState(0)
   const { token, user } = useAuth()
   const isOnline = useOnlineState()
+  const { hasWebPermission } = useMobilePermissions()
   const issueQuery = useQuery({
     queryKey: ['mobile-issue-detail', issueId],
     queryFn: () => apiRequest<IssueDetailResponse>(`/api/issues/${issueId}`),
@@ -87,6 +91,14 @@ export function IssueDetailScreen({ route, navigation }: Props) {
       queryClient.invalidateQueries({ queryKey: ['mobile-assignments'] })
     },
   })
+
+  const saveTeam = async (entries: TeamEntry[]) => {
+    if (!isOnline) throw new Error('Cannot change the team while offline. Please reconnect and try again.')
+    await apiRequest(`/api/issues/${issueId}`, 'PUT', { assignments: entries })
+    queryClient.invalidateQueries({ queryKey: ['mobile-issue-detail', issueId] })
+    queryClient.invalidateQueries({ queryKey: ['mobile-issues'] })
+    queryClient.invalidateQueries({ queryKey: ['mobile-assignments'] })
+  }
 
   const addNoteMutation = useMutation({
     mutationFn: async () => {
@@ -241,6 +253,11 @@ export function IssueDetailScreen({ route, navigation }: Props) {
             <Text style={styles.meta}>
               Job: {issue.job ? `${issue.job.jobNumber} - ${issue.job.title}` : 'No linked job'}
             </Text>
+            <TeamSection
+              team={buildTeam(issue.assignments, issue.assignee)}
+              canEdit={hasWebPermission('issues.edit')}
+              onSave={saveTeam}
+            />
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Description</Text>
               <Text style={styles.body}>{issue.description || 'No description'}</Text>

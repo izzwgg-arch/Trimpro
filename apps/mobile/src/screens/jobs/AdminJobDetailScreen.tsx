@@ -43,6 +43,7 @@ import {
   JobTasksIssuesSection,
   JobTimeEntriesSection,
 } from './jobDetailSections'
+import type { TeamEntry } from '../../lib/team'
 
 type Props = NativeStackScreenProps<JobsStackParamList, 'AdminJobDetail'>
 
@@ -71,7 +72,6 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
   } = perms
 
   const [statusPickerVisible, setStatusPickerVisible] = useState(false)
-  const [assignPickerVisible, setAssignPickerVisible] = useState(false)
   const [attachmentPickerVisible, setAttachmentPickerVisible] = useState(false)
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [galleryVisible, setGalleryVisible] = useState(false)
@@ -95,11 +95,6 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
     enabled: !!jobQuery.data?.job && canViewJobTimeEntries(),
     refetchInterval: 45_000,
   })
-  const usersQuery = useQuery({
-    queryKey: ['assignable-users', jobId],
-    queryFn: () => apiRequest<{ users: Array<{ id: string; firstName: string; lastName: string; role: string; status?: string | null }> }>('/api/users?limit=200'),
-    enabled: assignPickerVisible,
-  })
   const attachmentsQuery = useQuery({
     queryKey: ['admin-job-attachments', jobId],
     queryFn: () => apiRequest<AttachmentsResponse>(`/api/attachments?entityType=job&entityId=${jobId}`),
@@ -119,18 +114,14 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
     },
     onError: (error: any) => Alert.alert('Error', error?.message || 'Failed to update status'),
   })
-  const assignMutation = useMutation({
-    mutationFn: async (userId: string) => { await apiRequest(`/api/jobs/${jobId}/assignments`, 'POST', { userId }) },
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['admin-job', jobId] }),
-        queryClient.invalidateQueries({ queryKey: ['all-jobs'] }),
-        queryClient.invalidateQueries({ queryKey: ['mobile-assignments'] }),
-      ])
-      Alert.alert('Success', 'Crew member assigned to job.')
-    },
-    onError: (error: any) => Alert.alert('Assignment failed', error?.message || 'Unable to assign crew member.'),
-  })
+  const saveTeam = async (entries: TeamEntry[]) => {
+    await apiRequest(`/api/jobs/${jobId}/assignments`, 'PUT', { assignments: entries })
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['admin-job', jobId] }),
+      queryClient.invalidateQueries({ queryKey: ['all-jobs'] }),
+      queryClient.invalidateQueries({ queryKey: ['mobile-assignments'] }),
+    ])
+  }
 
   const jobUploadQueue = useAttachmentUploadQueue<{ attachment: Attachment }>({
     startUpload: (file, onProgress) => {
@@ -243,15 +234,6 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
       params: { screen: 'ScheduleCreate', params: { jobId: job.id, assignedUserId: assignments[0]?.user?.id, title: `${job.jobNumber} - ${job.title}` } },
     })
   }
-
-  const assignedUserIds = new Set(assignments.map((entry) => entry.user.id))
-  const assignableUsers = (usersQuery.data?.users || []).filter((entry) => {
-    if (assignedUserIds.has(entry.id)) return false
-    const status = String(entry.status || '').toUpperCase()
-    if (status && status !== 'ACTIVE') return false
-    const role = String(entry.role || '').toUpperCase()
-    return role === 'ADMIN' || role === 'OFFICE' || role === 'FIELD'
-  })
 
   const estCount = job.estimates?.length ?? 0
   const invCount = job.invoices?.length ?? 0
@@ -444,15 +426,7 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
             <JobTimeEntriesSection entries={asArray<TimeEntry>(timeQuery.data?.entries)} activeTimers={job.activeTimers} loading={timeQuery.isLoading} />
           ) : null}
           {canViewJobCrew() || canAssignJobs() ? (
-            <JobCrewSection
-              job={job}
-              right={canAssignJobs() ? (
-                <Pressable style={styles.assignButton} onPress={() => setAssignPickerVisible(true)}>
-                  <Ionicons name="person-add-outline" size={18} color={colors.brandPrimary} />
-                  <Text style={styles.assignButtonText}>Assign</Text>
-                </Pressable>
-              ) : undefined}
-            />
+            <JobCrewSection job={job} canEdit={canAssignJobs()} onSaveTeam={saveTeam} />
           ) : null}
           {canViewJobClientDetails() ? <JobClientSection job={job} /> : null}
           {canViewJobSchedules() ? <JobSchedulesSection job={job} /> : null}
@@ -490,29 +464,6 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
           </View>
         </Modal>
 
-        {/* Assign crew */}
-        <Modal visible={assignPickerVisible} transparent animationType="fade" onRequestClose={() => setAssignPickerVisible(false)}>
-          <View style={styles.modalBackdrop}>
-            <Pressable style={StyleSheet.absoluteFill} onPress={() => setAssignPickerVisible(false)} />
-            <View style={styles.modalCard}>
-              <Text style={styles.modalTitle}>Assign Crew</Text>
-              <ScrollView style={{ maxHeight: 360 }}>
-                {usersQuery.isLoading ? <Text style={styles.emptyText}>Loading users...</Text> : null}
-                {!usersQuery.isLoading && assignableUsers.length === 0 ? <Text style={styles.emptyText}>No available users to assign.</Text> : null}
-                {assignableUsers.map((member) => (
-                  <Pressable key={member.id} style={styles.modalRow} disabled={assignMutation.isPending} onPress={() => { setAssignPickerVisible(false); assignMutation.mutate(member.id) }}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.modalRowTitle}>{member.firstName} {member.lastName}</Text>
-                      <Text style={styles.modalRowMeta}>{member.role}</Text>
-                    </View>
-                    <Ionicons name="person-add-outline" size={18} color={colors.brandPrimary} />
-                  </Pressable>
-                ))}
-              </ScrollView>
-              <Pressable style={styles.modalCloseButton} onPress={() => setAssignPickerVisible(false)}><Text style={styles.modalCloseText}>Close</Text></Pressable>
-            </View>
-          </View>
-        </Modal>
       </ScrollView>
 
       <AttachmentPickerSheet visible={attachmentPickerVisible} onClose={() => setAttachmentPickerVisible(false)} onSelect={onSelectAttachment} />
@@ -653,8 +604,6 @@ const styles = StyleSheet.create({
 
   statusSelectTrigger: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: colors.divider, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   statusSelectValue: { ...typography.sub, color: colors.textPrimary, fontWeight: '700' },
-  assignButton: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  assignButtonText: { ...typography.caption, color: colors.brandPrimary, fontWeight: '700' },
 
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
   modalCard: { width: '100%', maxWidth: 420, backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md },
