@@ -135,6 +135,7 @@ interface JobDetail {
     id: string
     startTime: string
     endTime: string
+    description?: string | null
     user: {
       firstName: string
       lastName: string
@@ -1551,16 +1552,27 @@ export default function JobDetailPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  {job.schedules.map((schedule) => (
-                    <div key={schedule.id} className="p-3 rounded-lg border">
-                      <p className="text-sm font-medium">
-                        {formatDate(schedule.startTime)}
-                      </p>
-                      <p className="text-xs text-gray-600">
-                        {schedule.user.firstName} {schedule.user.lastName}
-                      </p>
-                    </div>
-                  ))}
+                  {job.schedules.map((schedule) => {
+                    const note = String(schedule.description || '')
+                    return (
+                      <div key={schedule.id} className="flex items-start justify-between gap-2 rounded-lg border p-3">
+                        <Link href={`/dashboard/schedule/${schedule.id}`} className="min-w-0 flex-1 hover:underline">
+                          <p className="text-sm font-medium">{formatDateTime(schedule.startTime)}</p>
+                          <p className="text-xs text-gray-600">
+                            {schedule.user.firstName} {schedule.user.lastName}
+                          </p>
+                          {note && !note.startsWith('[AUTO_JOB_SCHEDULE]') ? (
+                            <p className="mt-1 line-clamp-2 text-xs text-gray-500">{note}</p>
+                          ) : null}
+                        </Link>
+                        <Link href={`/dashboard/schedule/${schedule.id}/edit`}>
+                          <Button variant="outline" size="sm">
+                            Edit
+                          </Button>
+                        </Link>
+                      </div>
+                    )
+                  })}
                 </div>
               </CardContent>
             </Card>

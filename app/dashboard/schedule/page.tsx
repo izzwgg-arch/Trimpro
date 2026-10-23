@@ -831,14 +831,15 @@ export default function SchedulePage() {
                   canDragJob={canDragJob}
                   onOpenJob={(jobId) => router.push(`/dashboard/jobs/${jobId}`)}
                 />
-                {getSchedulesForDate(currentDate).filter((s) => !s.job).length > 0 && (
+                {/* Every schedule entry of the day (incl. job visits) so each one can be opened and edited. */}
+                {getSchedulesForDate(currentDate).filter((s) => !String(s.description || '').startsWith('[AUTO_JOB_SCHEDULE]')).length > 0 && (
                   <Card>
                     <CardHeader className="pb-3">
-                      <CardTitle className="text-base">Other Schedule Entries</CardTitle>
+                      <CardTitle className="text-base">Schedule Entries</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3">
                       {getSchedulesForDate(currentDate)
-                        .filter((s) => !s.job)
+                        .filter((s) => !String(s.description || '').startsWith('[AUTO_JOB_SCHEDULE]'))
                         .map((schedule) => (
                           <div
                             key={schedule.id}
