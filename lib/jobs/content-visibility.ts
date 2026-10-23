@@ -24,11 +24,8 @@ export type JobContentScope =
  *
  * When the job is opened from one of their schedules (`scheduleId`), that schedule governs.
  */
-export async function resolveJobContentScope(
-  userId: string,
-  jobId: string,
-  scheduleId?: string | null
-): Promise<JobContentScope> {
+/** The person's hand-made schedule on this job that governs what they see (see below), or null. */
+export async function findGoverningSchedule(userId: string, jobId: string, scheduleId?: string | null) {
   const rows = await prisma.schedule.findMany({
     where: { jobId, userId },
     select: { id: true, description: true, startTime: true, endTime: true, restrictContent: true, visibleAttachmentIds: true, visibleNoteIds: true },
@@ -47,6 +44,15 @@ export async function resolveJobContentScope(
       : upcoming.length > 0
         ? upcoming[0]
         : handMade[handMade.length - 1]
+  return governing ?? null
+}
+
+export async function resolveJobContentScope(
+  userId: string,
+  jobId: string,
+  scheduleId?: string | null
+): Promise<JobContentScope> {
+  const governing = await findGoverningSchedule(userId, jobId, scheduleId)
   const limiting = governing && governing.restrictContent ? [governing] : []
   if (limiting.length === 0) return { restricted: false }
 

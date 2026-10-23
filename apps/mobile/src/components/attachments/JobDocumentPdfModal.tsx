@@ -84,6 +84,7 @@ export function JobDocumentPdfModal({ documents, index, onIndexChange, onClose }
                 mimeType="application/pdf"
                 onOpenExternal={onOpenExternal}
                 openingExternal={opening}
+                onSwipe={(dir) => total > 1 && onIndexChange((((safeIndex + dir) % total) + total) % total)}
               />
             )}
           />

@@ -237,6 +237,6 @@ const styles = StyleSheet.create({
   notesBlock: { marginTop: spacing.md },
   notesEmpty: { opacity: 0.8 },
   notesLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: '700', marginBottom: 6 },
-  notesText: { ...typography.body, color: colors.textPrimary, lineHeight: 22 },
+  notesText: { ...typography.body, color: colors.textPrimary, fontSize: 20, lineHeight: 28, fontWeight: '500' },
 })
 

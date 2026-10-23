@@ -520,6 +520,26 @@ export function JobCrewSection({
   )
 }
 
+/** Big, highlighted notes from the viewer's schedule, shown first on the job. */
+export function JobVisitNotesCard({ job }: { job: Job }) {
+  const visit = job.visit
+  if (!visit || visit.notes.length === 0) return null
+  return (
+    <View style={styles.visitCard}>
+      <View style={styles.visitHeader}>
+        <Ionicons name="clipboard-outline" size={22} color="#92400e" />
+        <Text style={styles.visitTitle}>Notes for your visit</Text>
+      </View>
+      <Text style={styles.visitWhen}>{formatDateTime(visit.startTime)}</Text>
+      {visit.notes.map((n) => (
+        <Text key={n.id} style={styles.visitNote}>
+          {n.content}
+        </Text>
+      ))}
+    </View>
+  )
+}
+
 export function JobNotesHistorySection({
   job,
   children,
@@ -829,8 +849,22 @@ const styles = StyleSheet.create({
   noteContent: {
     ...typography.body,
     color: colors.textPrimary,
-    fontSize: 14,
+    fontSize: 17,
+    lineHeight: 24,
   },
+  visitCard: {
+    backgroundColor: '#fef3c7',
+    borderColor: '#f59e0b',
+    borderWidth: 2,
+    borderRadius: 10,
+    padding: spacing.md,
+    gap: 8,
+    marginTop: spacing.sm,
+  },
+  visitHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  visitTitle: { fontSize: 20, fontWeight: '700', color: '#92400e' },
+  visitWhen: { fontSize: 14, color: '#92400e' },
+  visitNote: { fontSize: 20, lineHeight: 28, fontWeight: '500', color: '#111827' },
   addressText: {
     ...typography.sub,
     color: colors.textPrimary,

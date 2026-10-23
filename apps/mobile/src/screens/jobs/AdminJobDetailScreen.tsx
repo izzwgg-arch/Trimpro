@@ -40,6 +40,7 @@ import {
   JobInformationSection,
   JobNotesHistorySection,
   JobSchedulesSection,
+  JobVisitNotesCard,
   JobTasksIssuesSection,
   JobTimeEntriesSection,
 } from './jobDetailSections'
@@ -276,6 +277,8 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
             <BillingStatusBadge status={job.billingStatus} />
           </View>
         </View>
+
+        <JobVisitNotesCard job={job} />
 
         {/* Quick actions */}
         {quickActions.length > 0 && (

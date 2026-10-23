@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
-import { WebView } from 'react-native-webview'
+import { WebView, type WebViewMessageEvent } from 'react-native-webview'
 import * as FileSystem from 'expo-file-system/legacy'
 import { downloadAttachmentToCache } from '../../services/open-attachment'
 import { BRAND } from '../../config/env'
@@ -11,6 +11,8 @@ type Props = {
   mimeType?: string | null
   onOpenExternal: () => void
   openingExternal?: boolean
+  /** A sideways flick on the (not zoomed) PDF: 1 = next, -1 = previous. */
+  onSwipe?: (dir: 1 | -1) => void
 }
 
 function buildPdfHtml(base64: string): string {
@@ -33,6 +35,31 @@ function buildPdfHtml(base64: string): string {
   <div id="status">Loading PDF…</div>
   <div id="pages"></div>
   <script>
+    // The WebView keeps the touch, so the app never sees a swipe: report flicks here.
+    (function () {
+      var sx = 0, sy = 0, st = 0, multi = false;
+      document.addEventListener('touchstart', function (e) {
+        multi = e.touches.length > 1;
+        if (multi) return;
+        sx = e.touches[0].clientX; sy = e.touches[0].clientY; st = Date.now();
+      }, { passive: true });
+      document.addEventListener('touchmove', function (e) {
+        if (e.touches.length > 1) multi = true;
+      }, { passive: true });
+      document.addEventListener('touchend', function (e) {
+        if (multi || !e.changedTouches.length) return;
+        var scale = (window.visualViewport && window.visualViewport.scale) || 1;
+        if (scale > 1.05) return;
+        var t = e.changedTouches[0];
+        var dx = t.clientX - sx, dy = t.clientY - sy;
+        var fast = Date.now() - st < 700;
+        if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5 && (fast || Math.abs(dx) > 140)) {
+          if (window.ReactNativeWebView) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'swipe', dir: dx < 0 ? 1 : -1 }));
+          }
+        }
+      }, { passive: true });
+    })();
     (function () {
       var statusEl = document.getElementById('status');
       var pagesEl = document.getElementById('pages');
@@ -81,6 +108,7 @@ export function PdfJsWebView({
   mimeType,
   onOpenExternal,
   openingExternal,
+  onSwipe,
 }: Props) {
   const [html, setHtml] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -154,6 +182,14 @@ export function PdfJsWebView({
         allowFileAccess
         mixedContentMode="always"
         setSupportMultipleWindows={false}
+        onMessage={(event: WebViewMessageEvent) => {
+          try {
+            const payload = JSON.parse(event.nativeEvent.data)
+            if (payload?.type === 'swipe') onSwipe?.(payload.dir === -1 ? -1 : 1)
+          } catch {
+            // ignore
+          }
+        }}
         startInLoadingState
         renderLoading={() => (
           <View style={styles.center}>

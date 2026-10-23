@@ -46,6 +46,7 @@ import {
   JobInformationSection,
   JobNotesHistorySection,
   JobOpenBalancesBanner,
+  JobVisitNotesCard,
   JobSchedulesSection,
   JobSiteSection,
   JobTasksIssuesSection,
@@ -123,6 +124,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
   const [noteText, setNoteText] = useState('')
   const [locationSharing, setLocationSharing] = useState(false)
   const [showAttachmentPicker, setShowAttachmentPicker] = useState(false)
+  const [showFullDetails, setShowFullDetails] = useState(false)
   const [localAttachments, setLocalAttachments] = useState<Attachment[]>([])
   const [galleryVisible, setGalleryVisible] = useState(false)
   const [galleryIndex, setGalleryIndex] = useState(0)
@@ -606,6 +608,82 @@ export function JobDetailScreen({ route, navigation }: Props) {
     </View>
   )
 
+  // Opened from a schedule: show what the visit needs first (notes, photos, address,
+  // status, timer) and fold the rest of the job behind one button.
+  const compact = Boolean(scheduleId)
+  const renderFilesSection = () => (
+            <DetailSection
+              title="Files and Media"
+              right={<Text style={styles.countBadge}>{attachmentRows.length}</Text>}
+            >
+              {canUploadMedia() ? (
+                <Pressable style={styles.secondaryButton} onPress={() => setShowAttachmentPicker(true)}>
+                  <Text style={styles.secondaryButtonText}>Add Attachment</Text>
+                </Pressable>
+              ) : null}
+                <AttachmentUploadQueue
+                  items={jobUploadQueue.items}
+                  onRetry={(item) => jobUploadQueue.retryItem(item.id)}
+                  onRemove={(item) => jobUploadQueue.removeItem(item.id)}
+                  onCancel={(item) => jobUploadQueue.cancelItem(item.id)}
+                />
+                {attachmentRows.length > 0 && (
+                  <View style={styles.mediaGrid}>
+                    {attachmentRows.map((a) => {
+                      const mime = String(a.mimeType || '').toLowerCase()
+                      const isImage = mime.startsWith('image/')
+                      const isVideo = mime.startsWith('video/')
+                      const isPdf = isPdfAttachment(a.mimeType, a.fileName)
+                      const previewUrl =
+                        String((a as any).thumbnailUrl || (a as any).previewUrl || '').trim() || null
+                      return (
+                        <View key={a.id} style={[styles.mediaTileWrap, { width: `${100 / tileColumns}%` }]}>
+                          <AttachmentOpenPressable
+                            attachment={a}
+                            onOpenGallery={() => {
+                              const idx = attachmentRows.findIndex((x) => x.id === a.id)
+                              setGalleryIndex(Math.max(0, idx))
+                              setGalleryVisible(true)
+                            }}
+                          >
+                            <View style={styles.mediaTile}>
+                              {isImage ? (
+                                <Image source={{ uri: a.url }} style={styles.mediaTileImage} />
+                              ) : isPdf && previewUrl ? (
+                                <Image source={{ uri: previewUrl }} style={styles.mediaTileImage} />
+                              ) : (
+                                <View style={styles.mediaTileIconWrap}>
+                                  <Ionicons
+                                    name={
+                                      isVideo
+                                        ? 'videocam-outline'
+                                        : isPdf
+                                          ? 'document-outline'
+                                          : 'document-text-outline'
+                                    }
+                                    size={22}
+                                    color={BRAND.text}
+                                  />
+                                  {!isVideo ? (
+                                    <Text style={styles.mediaFileBadge}>{isPdf ? 'PDF FILE' : 'FILE'}</Text>
+                                  ) : null}
+                                </View>
+                              )}
+                            </View>
+                            <Text style={styles.mediaFileName} numberOfLines={1}>
+                              {a.fileName || (isPdf ? 'PDF' : isVideo ? 'Video' : 'File')}
+                            </Text>
+                            <Text style={styles.mediaTapHint}>Tap to open</Text>
+                          </AttachmentOpenPressable>
+                        </View>
+                      )
+                    })}
+                  </View>
+                )}
+                {attachmentRows.length === 0 && <Text style={styles.meta}>No media for this job yet.</Text>}
+              </DetailSection>
+  )
+
   return (
     <Screen>
       <ScrollView
@@ -638,6 +716,15 @@ export function JobDetailScreen({ route, navigation }: Props) {
             {job.client?.phone ? <Text style={styles.meta}>Phone: {job.client.phone}</Text> : null}
             {canViewJobFinancials() ? <JobOpenBalancesBanner job={job} /> : null}
             {!isOnline ? <Text style={styles.offlineBadge}>Offline - showing last synced data</Text> : null}
+            <JobVisitNotesCard job={job} />
+
+            {compact ? (
+              <>
+                {renderFilesSection()}
+                <JobSiteSection job={job} onOpenMaps={openJobSiteMaps} />
+                {timeTrackerBlock ? <DetailSection title="Time Tracker">{timeTrackerBlock}</DetailSection> : null}
+              </>
+            ) : null}
 
             <DetailSection title="Status">
               <Pressable
@@ -656,6 +743,15 @@ export function JobDetailScreen({ route, navigation }: Props) {
               <Text style={styles.meta}>Select a status to update this job.</Text>
             </DetailSection>
 
+            {compact ? (
+              <Pressable style={styles.showAllButton} onPress={() => setShowFullDetails((v) => !v)}>
+                <Text style={styles.showAllButtonText}>{showFullDetails ? 'Hide full job details' : 'Show full job details'}</Text>
+                <Ionicons name={showFullDetails ? 'chevron-up' : 'chevron-down'} size={18} color={BRAND.primary} />
+              </Pressable>
+            ) : null}
+
+            {!compact || showFullDetails ? (
+            <>
             {/* Quick Actions */}
             <DetailSection title="Quick Actions">
               <View style={styles.row}>
@@ -828,7 +924,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
             {canViewJobDocuments() ? <JobDocumentsSection job={job} /> : null}
 
             {canViewJobBilling() ? (
-              <JobBillingSummarySection job={job}>{timeTrackerBlock}</JobBillingSummarySection>
+              <JobBillingSummarySection job={job}>{compact ? null : timeTrackerBlock}</JobBillingSummarySection>
             ) : null}
 
             {canViewJobTimeEntries() ? (
@@ -837,13 +933,13 @@ export function JobDetailScreen({ route, navigation }: Props) {
                 activeTimers={job.activeTimers}
                 loading={timeQuery.isLoading}
               >
-                {!canViewJobBilling() ? timeTrackerBlock : null}
+                {!compact && !canViewJobBilling() ? timeTrackerBlock : null}
               </JobTimeEntriesSection>
-            ) : !canViewJobBilling() && timeTrackerBlock ? (
+            ) : !compact && !canViewJobBilling() && timeTrackerBlock ? (
               <DetailSection title="Time Tracker">{timeTrackerBlock}</DetailSection>
             ) : null}
 
-            <JobSiteSection job={job} onOpenMaps={openJobSiteMaps} />
+            {compact ? null : <JobSiteSection job={job} onOpenMaps={openJobSiteMaps} />}
 
             {canViewJobCrew() ? <JobCrewSection job={job} /> : null}
 
@@ -867,76 +963,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
 
             {canViewJobSchedules() ? <JobSchedulesSection job={job} /> : null}
 
-            <DetailSection
-              title="Files and Media"
-              right={<Text style={styles.countBadge}>{attachmentRows.length}</Text>}
-            >
-              {canUploadMedia() ? (
-                <Pressable style={styles.secondaryButton} onPress={() => setShowAttachmentPicker(true)}>
-                  <Text style={styles.secondaryButtonText}>Add Attachment</Text>
-                </Pressable>
-              ) : null}
-                <AttachmentUploadQueue
-                  items={jobUploadQueue.items}
-                  onRetry={(item) => jobUploadQueue.retryItem(item.id)}
-                  onRemove={(item) => jobUploadQueue.removeItem(item.id)}
-                  onCancel={(item) => jobUploadQueue.cancelItem(item.id)}
-                />
-                {attachmentRows.length > 0 && (
-                  <View style={styles.mediaGrid}>
-                    {attachmentRows.map((a) => {
-                      const mime = String(a.mimeType || '').toLowerCase()
-                      const isImage = mime.startsWith('image/')
-                      const isVideo = mime.startsWith('video/')
-                      const isPdf = isPdfAttachment(a.mimeType, a.fileName)
-                      const previewUrl =
-                        String((a as any).thumbnailUrl || (a as any).previewUrl || '').trim() || null
-                      return (
-                        <View key={a.id} style={[styles.mediaTileWrap, { width: `${100 / tileColumns}%` }]}>
-                          <AttachmentOpenPressable
-                            attachment={a}
-                            onOpenGallery={() => {
-                              const idx = attachmentRows.findIndex((x) => x.id === a.id)
-                              setGalleryIndex(Math.max(0, idx))
-                              setGalleryVisible(true)
-                            }}
-                          >
-                            <View style={styles.mediaTile}>
-                              {isImage ? (
-                                <Image source={{ uri: a.url }} style={styles.mediaTileImage} />
-                              ) : isPdf && previewUrl ? (
-                                <Image source={{ uri: previewUrl }} style={styles.mediaTileImage} />
-                              ) : (
-                                <View style={styles.mediaTileIconWrap}>
-                                  <Ionicons
-                                    name={
-                                      isVideo
-                                        ? 'videocam-outline'
-                                        : isPdf
-                                          ? 'document-outline'
-                                          : 'document-text-outline'
-                                    }
-                                    size={22}
-                                    color={BRAND.text}
-                                  />
-                                  {!isVideo ? (
-                                    <Text style={styles.mediaFileBadge}>{isPdf ? 'PDF FILE' : 'FILE'}</Text>
-                                  ) : null}
-                                </View>
-                              )}
-                            </View>
-                            <Text style={styles.mediaFileName} numberOfLines={1}>
-                              {a.fileName || (isPdf ? 'PDF' : isVideo ? 'Video' : 'File')}
-                            </Text>
-                            <Text style={styles.mediaTapHint}>Tap to open</Text>
-                          </AttachmentOpenPressable>
-                        </View>
-                      )
-                    })}
-                  </View>
-                )}
-                {attachmentRows.length === 0 && <Text style={styles.meta}>No media for this job yet.</Text>}
-              </DetailSection>
+            {compact ? null : renderFilesSection()}
 
             <DetailSection title="Location">
               <View style={styles.row}>
@@ -944,6 +971,8 @@ export function JobDetailScreen({ route, navigation }: Props) {
                 <Switch value={locationSharing} onValueChange={onToggleLocation} />
               </View>
             </DetailSection>
+            </>
+            ) : null}
 
             <Modal visible={statusPickerVisible} transparent animationType="fade" onRequestClose={() => setStatusPickerVisible(false)}>
               <View style={styles.modalBackdrop}>
@@ -1026,6 +1055,18 @@ export function JobDetailScreen({ route, navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
+  showAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 14,
+    marginTop: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: BRAND.primary,
+  },
+  showAllButtonText: { fontSize: 16, fontWeight: '700', color: BRAND.primary },
   content: {
     padding: 14,
     gap: 10,

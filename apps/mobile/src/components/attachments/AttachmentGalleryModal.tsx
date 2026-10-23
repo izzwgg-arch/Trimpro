@@ -135,6 +135,7 @@ export function AttachmentGalleryModal({
           entityId={entityId}
           onSavedCopy={onAttachmentCreated}
           onSwipeLockChange={setSwipeLocked}
+          onSwipe={(dir) => total > 1 && onIndexChange((((safeIndex + dir) % total) + total) % total)}
         />
       )
     }
@@ -168,6 +169,7 @@ export function AttachmentGalleryModal({
           mimeType={att.mimeType || 'application/pdf'}
           onOpenExternal={onOpenExternal}
           openingExternal={opening}
+          onSwipe={(dir) => total > 1 && onIndexChange((((safeIndex + dir) % total) + total) % total)}
         />
       )
     }

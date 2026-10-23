@@ -147,6 +147,13 @@ export interface Job {
     endTime: string
     user?: { id: string; firstName: string; lastName: string } | null
   }>
+  /** Notes written/picked on the viewer's schedule for this job (shown at the top). */
+  visit?: {
+    scheduleId: string
+    startTime: string
+    endTime: string
+    notes: Array<{ id: string; content: string; createdAt: string }>
+  } | null
   activeTimers?: Array<{
     id: string
     startedAt: string

@@ -12,6 +12,8 @@ type Props = {
   onSavedCopy?: () => void
   /** True while the image is zoomed in or a drawing tool is active. */
   onSwipeLockChange?: (locked: boolean) => void
+  /** A sideways flick on the (not zoomed) picture: 1 = next, -1 = previous. */
+  onSwipe?: (dir: 1 | -1) => void
 }
 
 function buildMarkupHtml(src: string, fileName: string) {
@@ -417,7 +419,7 @@ function buildMarkupHtml(src: string, fileName: string) {
       return;
     }
     panning = true;
-    panStart = { x: event.clientX, y: event.clientY, ox: offset.x, oy: offset.y };
+    panStart = { x: event.clientX, y: event.clientY, ox: offset.x, oy: offset.y, t: Date.now() };
   });
 
   canvas.addEventListener('pointermove', (event) => {
@@ -449,7 +451,7 @@ function buildMarkupHtml(src: string, fileName: string) {
       redraw();
       return;
     }
-    if (panning && tool === 'pan') {
+    if (panning && tool === 'pan' && zoom > 1.05) {
       offset = {
         x: panStart.ox + (event.clientX - panStart.x),
         y: panStart.oy + (event.clientY - panStart.y),
@@ -460,6 +462,15 @@ function buildMarkupHtml(src: string, fileName: string) {
 
   function endPointer(event) {
     try { canvas.releasePointerCapture(event.pointerId); } catch (e) {}
+    // The WebView keeps the touch, so the app never sees the swipe: report it here.
+    if (panning && tool === 'pan' && zoom <= 1.05 && event.type === 'pointerup') {
+      const dx = event.clientX - panStart.x;
+      const dy = event.clientY - panStart.y;
+      const fast = Date.now() - (panStart.t || 0) < 600;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.4 && (fast || Math.abs(dx) > 120)) {
+        post({ type: 'swipe', dir: dx < 0 ? 1 : -1 });
+      }
+    }
     if (drawing && draft) {
       if (draft.type === 'pen' && draft.points.length >= 2) items.push(draft);
       else if ((draft.type === 'arrow' || draft.type === 'box') && Math.hypot(draft.end.x - draft.start.x, draft.end.y - draft.start.y) > 4) {
@@ -519,7 +530,7 @@ function buildMarkupHtml(src: string, fileName: string) {
 </html>`
 }
 
-export function ImageMarkupWebView({ src, fileName, active, entityType, entityId, onSavedCopy, onSwipeLockChange }: Props) {
+export function ImageMarkupWebView({ src, fileName, active, entityType, entityId, onSavedCopy, onSwipeLockChange, onSwipe }: Props) {
   const webRef = useRef<WebView>(null)
   const html = useMemo(() => buildMarkupHtml(src, fileName), [src, fileName])
 
@@ -554,6 +565,8 @@ export function ImageMarkupWebView({ src, fileName, active, entityType, entityId
         void handleSave(payload.dataUrl, payload.fileName || fileName)
       } else if (payload?.type === 'swipeLock') {
         onSwipeLockChange?.(Boolean(payload.locked))
+      } else if (payload?.type === 'swipe') {
+        onSwipe?.(payload.dir === -1 ? -1 : 1)
       }
     } catch {
       // ignore malformed messages

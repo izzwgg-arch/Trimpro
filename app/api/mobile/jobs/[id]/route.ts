@@ -6,7 +6,7 @@ import { normalizePublicFileUrl } from '@/lib/public-url'
 import { getJobTimeSummary } from '@/lib/time-tracking'
 import { getJobBillingStatus } from '@/lib/jobs/billing-status'
 import { buildTeam, normalizeAssignmentRole } from '@/lib/assignments/roles'
-import { resolveJobContentScope } from '@/lib/jobs/content-visibility'
+import { findGoverningSchedule, resolveJobContentScope } from '@/lib/jobs/content-visibility'
 import { ensureJobDescriptionNote } from '@/lib/jobs/description-note'
 import { andScope, isAssignedOnly, jobScopeWhere } from '@/lib/assignments/scope'
 
@@ -187,7 +187,29 @@ export async function GET(
       })
       if (created) job.notes.unshift(created)
     }
-    const scope = canViewAll ? ({ restricted: false } as const) : await resolveJobContentScope(user.id, job.id, request.nextUrl.searchParams.get('scheduleId'))
+    const openedScheduleId = request.nextUrl.searchParams.get('scheduleId')
+    const scope = canViewAll ? ({ restricted: false } as const) : await resolveJobContentScope(user.id, job.id, openedScheduleId)
+
+    // "Notes for your visit": the note written on this person's schedule plus the notes
+    // picked for it, shown big at the top of the job.
+    const visitSchedule = await findGoverningSchedule(user.id, job.id, openedScheduleId)
+    const visitNotes = visitSchedule
+      ? await prisma.note.findMany({
+          where: {
+            jobId: job.id,
+            OR: [
+              { scheduleId: visitSchedule.id },
+              ...(visitSchedule.restrictContent && visitSchedule.visibleNoteIds.length
+                ? [{ id: { in: visitSchedule.visibleNoteIds } }]
+                : []),
+            ],
+          },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, content: true, createdAt: true, scheduleId: true },
+        })
+      : []
+    // The schedule's own note first.
+    visitNotes.sort((a, b) => Number(Boolean(b.scheduleId)) - Number(Boolean(a.scheduleId)))
     if (scope.restricted) {
       job.notes = job.notes.filter((n) => scope.noteIds.has(n.id))
       job.schedules = job.schedules.filter((sch) => sch.user?.id === user.id)
@@ -514,6 +536,15 @@ export async function GET(
           : null,
         currentUserTodayMinutes: Number(todaySummary._sum.durationMinutes || 0),
         _count: job._count,
+        visit:
+          visitSchedule && visitNotes.length > 0
+            ? {
+                scheduleId: visitSchedule.id,
+                startTime: visitSchedule.startTime.toISOString(),
+                endTime: visitSchedule.endTime.toISOString(),
+                notes: visitNotes.map((n) => ({ id: n.id, content: n.content, createdAt: n.createdAt.toISOString() })),
+              }
+            : null,
       },
     })
   } catch (error) {
