@@ -14,9 +14,10 @@ export type JobContentScope =
 /**
  * What a person may see when they open a job.
  *
- * The schedule that governs is the person's latest hand-made schedule on this job that
- * has started; before the first one starts, the next one coming up. So what was chosen
- * on a schedule applies until their next schedule on the job takes over. If that schedule
+ * The schedule that governs is the one they are on right now; otherwise their next one
+ * coming up (so a note and photos picked for a visit are there as soon as it is
+ * scheduled); otherwise their most recent one. So what was chosen on a schedule applies
+ * until their next schedule on the job takes over. If that schedule
  * limits them, they see only the attachments and notes chosen on it (plus the note made
  * from its own description). Only attachments and notes are ever limited; everything
  * else comes from the person's permissions.
@@ -24,14 +25,20 @@ export type JobContentScope =
 export async function resolveJobContentScope(userId: string, jobId: string): Promise<JobContentScope> {
   const rows = await prisma.schedule.findMany({
     where: { jobId, userId },
-    select: { id: true, description: true, startTime: true, restrictContent: true, visibleAttachmentIds: true, visibleNoteIds: true },
+    select: { id: true, description: true, startTime: true, endTime: true, restrictContent: true, visibleAttachmentIds: true, visibleNoteIds: true },
   })
   const now = Date.now()
   const handMade = rows
     .filter((r) => !String(r.description || '').startsWith(AUTO_SCHEDULE_MARKER))
     .sort((x, y) => x.startTime.getTime() - y.startTime.getTime())
-  const started = handMade.filter((r) => r.startTime.getTime() <= now)
-  const governing = started.length > 0 ? started[started.length - 1] : handMade[0]
+  const inProgress = handMade.filter((r) => r.startTime.getTime() <= now && r.endTime.getTime() >= now)
+  const upcoming = handMade.filter((r) => r.startTime.getTime() > now)
+  const governing =
+    inProgress.length > 0
+      ? inProgress[inProgress.length - 1]
+      : upcoming.length > 0
+        ? upcoming[0]
+        : handMade[handMade.length - 1]
   const limiting = governing && governing.restrictContent ? [governing] : []
   if (limiting.length === 0) return { restricted: false }
 
