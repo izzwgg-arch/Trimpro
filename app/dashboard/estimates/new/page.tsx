@@ -1,4 +1,7 @@
 'use client'
+import { JobTypeCreateField } from '@/components/jobs/JobTypeCreateField'
+import { EMPTY_OPEN_JOBS_CHOICE, OpenJobsPrompt, type OpenJobsChoice } from '@/components/estimates/OpenJobsPrompt'
+import { JOB_TYPE_VALUES } from '@/lib/jobs/types'
 import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
@@ -125,6 +128,9 @@ export default function NewEstimatePage() {
   const clientIdParam = searchParams.get('clientId')
   const requestIdParam = searchParams.get('requestId')
   const jobIdParam = searchParams.get('jobId')
+  // Customer with open jobs: new job or one of theirs (see OpenJobsPrompt).
+  const [jobChoice, setJobChoice] = useState<OpenJobsChoice>(EMPTY_OPEN_JOBS_CHOICE)
+  const jobTypeParam = searchParams.get('jobType')
 
   const { prefillClientId, address: prefillAddress, noAddressWarning, applyDefaultsOnce } =
     useCreateContextPrefill('estimate')
@@ -152,7 +158,7 @@ export default function NewEstimatePage() {
     jobId: jobIdParam || '',
     estimateNumber: '',
     title: '',
-    jobType: 'CUSTOM',
+    jobType: jobTypeParam && (JOB_TYPE_VALUES as readonly string[]).includes(jobTypeParam) ? jobTypeParam : '',
     jobSiteAddress: '',
     taxRate: '0',
     discount: '0',
@@ -278,6 +284,7 @@ export default function NewEstimatePage() {
           clientId: resolvedClientId || prev.clientId,
           title: prev.title || `Estimate for ${lead.firstName} ${lead.lastName}`.trim(),
           jobSiteAddress: lead.jobSiteAddress || prev.jobSiteAddress,
+          jobType: prev.jobType || lead.jobType || '',
           notes: prev.notes || lead.notes || '',
         }))
       } catch (error) {
@@ -1002,6 +1009,10 @@ export default function NewEstimatePage() {
       alert('Please select a client')
       return
     }
+    if (jobChoice.required && !jobChoice.decision) {
+      alert('This customer has open jobs. Choose "Create new" or "Use existing" before saving.')
+      return
+    }
     if (!formData.title.trim()) {
       alert('Please enter a title')
       return
@@ -1098,9 +1109,10 @@ export default function NewEstimatePage() {
           clientId: formData.clientId,
           leadId: formData.leadId || null,
           jobId: formData.jobId || null,
+          createJob: !formData.jobId && jobChoice.decision === 'new',
           estimateNumber: formData.estimateNumber || null,
           title: formData.title,
-          jobType: formData.jobType || 'CUSTOM',
+          jobType: formData.jobType || null,
           jobSiteAddress: formData.jobSiteAddress || null,
           subtotal,
           taxRate: taxRate,
@@ -1213,6 +1225,18 @@ export default function NewEstimatePage() {
                   {jobIdParam && (
                     <p className="mt-1 text-xs text-gray-500">Client is locked because this estimate is being created from a job.</p>
                   )}
+                  <div className="mt-2">
+                    <OpenJobsPrompt
+                      clientId={formData.clientId}
+                      // Wait for the job type pop-up first so the two never open together.
+                      disabled={Boolean(jobIdParam) || (!formData.jobType && !requestIdParam)}
+                      value={jobChoice}
+                      onChange={(next) => {
+                        setJobChoice(next)
+                        setFormData((prev) => ({ ...prev, jobId: next.decision === 'existing' ? next.jobId : jobIdParam || '' }))
+                      }}
+                    />
+                  </div>
                 </div>
                 <div>
                   <Label htmlFor="estimateNumber">Estimate # (optional)</Label>
@@ -2308,9 +2332,12 @@ export default function NewEstimatePage() {
                     onChange={(e) => setFormData({ ...formData, validUntil: e.target.value })}
                   />
                 </div>
-                <JobTypeSelect
+                {/* Not from a request: ask which job type this estimate is for. */}
+                <JobTypeCreateField
+                  ask={!requestIdParam && !jobTypeParam}
+                  recordLabel="estimate"
                   value={formData.jobType}
-                  onValueChange={(value) => setFormData({ ...formData, jobType: value })}
+                  onValueChange={(value) => setFormData((prev) => ({ ...prev, jobType: value }))}
                 />
               </CardContent>
             </Card>

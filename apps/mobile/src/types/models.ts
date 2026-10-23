@@ -109,6 +109,7 @@ export interface Job {
     status: string
     total: string
     createdAt: string
+    jobType?: string | null
   }>
   invoices?: Array<{
     id: string
@@ -117,6 +118,7 @@ export interface Job {
     balance: string
     status: string
     createdAt?: string
+    jobType?: string | null
   }>
   purchaseOrders?: Array<{
     id: string
@@ -124,6 +126,7 @@ export interface Job {
     status: string
     total: string
     createdAt: string
+    jobType?: string | null
   }>
   payments?: Array<{
     id: string
@@ -134,6 +137,7 @@ export interface Job {
     reference?: string | null
     invoiceNumber?: string | null
     invoiceId?: string | null
+    jobType?: string | null
   }>
   notes?: Array<{
     id: string

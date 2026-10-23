@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import { requestDisplayName, requestSubtitle } from '@/lib/requests/display'
 
 export type UnifiedDocumentKind =
   | 'estimate'
@@ -25,6 +26,8 @@ export interface UnifiedDocumentRow {
   receiptEmailSentAt?: string | null
   clientId?: string | null
   clientName?: string | null
+  /** Job type of the document (estimates, invoices, POs; payments follow their invoice). */
+  jobType?: string | null
 }
 
 async function getDescendantClientIds(tenantId: string, parentIds: string[]): Promise<string[]> {
@@ -122,6 +125,7 @@ const requestSelect = {
   firstName: true,
   lastName: true,
   company: true,
+  jobSiteAddress: true,
   status: true,
   value: true,
   createdAt: true,
@@ -264,6 +268,7 @@ export async function fetchJobDocuments(tenantId: string, jobId: string) {
           status: true,
           total: true,
           createdAt: true,
+          jobType: true,
         },
       })
     ),
@@ -281,6 +286,7 @@ export async function fetchJobDocuments(tenantId: string, jobId: string) {
           balance: true,
           dueDate: true,
           createdAt: true,
+          jobType: true,
         },
       })
     ),
@@ -310,7 +316,7 @@ export async function fetchJobDocuments(tenantId: string, jobId: string) {
         orderBy: [{ processedAt: 'desc' }, { createdAt: 'desc' }],
         include: {
           invoice: {
-            select: { id: true, invoiceNumber: true },
+            select: { id: true, invoiceNumber: true, jobType: true },
           },
         },
       })
@@ -328,6 +334,7 @@ export async function fetchJobDocuments(tenantId: string, jobId: string) {
           total: true,
           orderDate: true,
           createdAt: true,
+          jobType: true,
         },
       })
     ),
@@ -360,6 +367,7 @@ function buildDocumentRows({
     total: { toString(): string } | number
     createdAt: Date
     client?: { id: string; name: string } | null
+    jobType?: string | null
   }>
   invoices: Array<{
     id: string
@@ -372,6 +380,7 @@ function buildDocumentRows({
     dueDate: Date | null
     createdAt: Date
     client?: { id: string; name: string } | null
+    jobType?: string | null
   }>
   creditMemos?: Array<{
     id: string
@@ -401,6 +410,7 @@ function buildDocumentRows({
       invoiceNumber: string
       clientId?: string
       client?: { id: string; name: string } | null
+      jobType?: string | null
     } | null
   }>
   purchaseOrders?: Array<{
@@ -413,6 +423,7 @@ function buildDocumentRows({
     orderDate: Date | null
     createdAt: Date
     client?: { id: string; name: string } | null
+    jobType?: string | null
   }>
   requests?: Array<{
     id: string
@@ -420,6 +431,7 @@ function buildDocumentRows({
     firstName: string
     lastName: string
     company: string | null
+    jobSiteAddress?: string | null
     status: string
     value: { toString(): string } | number | null
     createdAt: Date
@@ -454,6 +466,7 @@ function buildDocumentRows({
       href: `/dashboard/estimates/${estimate.id}`,
       clientId: estimate.clientId || estimate.client?.id || null,
       clientName: subClientLabel(rootClientId, estimate.clientId, estimate.client?.name),
+      jobType: estimate.jobType ?? null,
     })
   }
 
@@ -474,6 +487,7 @@ function buildDocumentRows({
       meta: balance > 0 ? `Balance ${balance.toFixed(2)}` : null,
       clientId: invoice.clientId || invoice.client?.id || null,
       clientName: subClientLabel(rootClientId, invoice.clientId, invoice.client?.name),
+      jobType: invoice.jobType ?? null,
     })
   }
 
@@ -518,6 +532,7 @@ function buildDocumentRows({
       receiptEmailSentAt: payment.receiptEmailSentAt?.toISOString() ?? null,
       clientId: paymentClientId,
       clientName: subClientLabel(rootClientId, payment.invoice?.clientId, payment.invoice?.client?.name),
+      jobType: payment.invoice?.jobType ?? null,
     })
   }
 
@@ -536,6 +551,7 @@ function buildDocumentRows({
       meta: po.vendor ? `Vendor ${po.vendor}` : null,
       clientId: po.clientId || po.client?.id || null,
       clientName: subClientLabel(rootClientId, po.clientId, po.client?.name),
+      jobType: po.jobType ?? null,
     })
   }
 
@@ -545,14 +561,14 @@ function buildDocumentRows({
       id: request.id,
       kind: 'request',
       number: `REQ-${request.id.slice(-6).toUpperCase()}`,
-      title: request.company || fullName || 'Request',
+      title: request.jobSiteAddress ? requestDisplayName(request) : request.company || fullName || 'Request',
       status: request.status,
       amount: request.value != null ? Number(request.value) : 0,
       balance: null,
       isPaid: null,
       date: request.createdAt.toISOString(),
       href: `/dashboard/requests/${request.id}`,
-      meta: fullName && request.company ? fullName : null,
+      meta: request.jobSiteAddress ? requestSubtitle(request) || null : fullName && request.company ? fullName : null,
       clientName: subClientLabel(rootClientId, request.convertedToClientId, request.client?.name),
     })
   }

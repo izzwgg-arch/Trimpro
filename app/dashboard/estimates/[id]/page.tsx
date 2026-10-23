@@ -1,5 +1,6 @@
 'use client'
 import { EntityBackButton } from '@/components/navigation/EntityBackButton'
+import { PhoneLink } from '@/components/common/PhoneLink'
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
@@ -1595,7 +1596,7 @@ export default function EstimateDetailPage() {
                     {primaryContact.phone && (
                       <p>
                         <FileText className="inline h-3 w-3 mr-1" />
-                        {primaryContact.phone}
+                        <PhoneLink phone={primaryContact.phone} />
                       </p>
                     )}
                   </div>

@@ -1,3 +1,4 @@
+import { callPhone } from '../../lib/phone'
 import React from 'react'
 import {
   ActivityIndicator,
@@ -604,7 +605,8 @@ export function RequestDetailScreen({ route }: Props) {
   }
   const statusHex = LEAD_STATUS_HEX[String(lead.status || '').toUpperCase()] || colors.brandPrimary
   const assignedName = lead.assignedTo ? personName(lead.assignedTo) : null
-  const name = `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || lead.company || 'Request'
+  // Named by its job site; the contact person is shown below.
+  const name = lead.jobSiteAddress?.trim() || `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || lead.company || 'Request'
   const commCount = (count.calls ?? calls.length) + (count.smsMessages ?? smsMessages.length) + (count.emails ?? emails.length)
   const taskCount = count.tasks ?? tasks.length
   const issueCount = count.issues ?? issues.length
@@ -883,7 +885,9 @@ export function RequestDetailScreen({ route }: Props) {
               <>
                 <DetailRow label="Name" value={assignedName} />
                 <DetailRow label="Email" value={lead.assignedTo.email} />
-                <DetailRow label="Phone" value={lead.assignedTo.phone} />
+                <Pressable onPress={() => callPhone(lead.assignedTo?.phone)}>
+                  <DetailRow label="Phone (tap to call)" value={lead.assignedTo.phone} />
+                </Pressable>
               </>
             ) : (
               <Text style={styles.emptyText}>Unassigned</Text>

@@ -1,5 +1,6 @@
 'use client'
 import { EntityBackButton } from '@/components/navigation/EntityBackButton'
+import { PhoneLink } from '@/components/common/PhoneLink'
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
@@ -180,7 +181,7 @@ export default function ScheduleDetailsPage() {
         <CardContent className="space-y-2 text-sm">
           <p>{schedule.user.firstName} {schedule.user.lastName}</p>
           <p className="text-gray-600">{schedule.user.email}</p>
-          {schedule.user.phone ? <p className="text-gray-600">{schedule.user.phone}</p> : null}
+          {schedule.user.phone ? <p><PhoneLink phone={schedule.user.phone} /></p> : null}
         </CardContent>
       </Card>
 

@@ -430,7 +430,7 @@ model Job {
   title       String
   description String?   @db.Text
   status      JobStatus @default(QUOTE)
-  jobType     JobType   @default(CUSTOM)
+  jobType     JobType? // empty until someone picks a type
   priority    Int       @default(3) // 1-5
 
   // Financials
@@ -596,7 +596,7 @@ model Estimate {
   jobId          String?
   estimateNumber String         @unique
   title          String
-  jobType        JobType        @default(CUSTOM)
+  jobType        JobType? // empty until someone picks a type
   jobSiteAddress String?        @db.Text
   status           EstimateStatus @default(DRAFT)
   convertedPercent Int?
@@ -846,7 +846,7 @@ model Invoice {
   estimateId    String?
   invoiceNumber String        @unique
   title         String
-  jobType       JobType       @default(CUSTOM)
+  jobType       JobType? // empty until someone picks a type
   status        InvoiceStatus @default(DRAFT)
 
   // Financials
@@ -1383,6 +1383,8 @@ model PurchaseOrder {
   vendor   String // Vendor name (for backward compatibility)
   vendorId String? // Optional relation to Vendor model
   status   PurchaseOrderStatus @default(DRAFT)
+  // Which kind of work this PO is for (job page groups documents by job type).
+  jobType  JobType? // empty until someone picks a type
 
   // Financials
   total Decimal @db.Decimal(10, 2)

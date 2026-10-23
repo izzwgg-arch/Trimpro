@@ -85,15 +85,12 @@ export function MeasuringRequestsScreen({ navigation }: Props) {
             onPress={() => navigation.navigate('MeasuringRequestDetail', { measuringRequestId: item.id })}
           >
             <View style={styles.cardTop}>
-              <Text style={styles.cardTitle}>Request #{item.request.id}</Text>
+              <Text style={styles.cardTitle} numberOfLines={1}>
+                {item.request.address || item.request.customerName || 'Request'}
+              </Text>
               <StatusBadge status={item.status.toUpperCase()} />
             </View>
-            <Text style={styles.cardMeta}>{item.request.customerName}</Text>
-            {item.request.address ? (
-              <Text style={styles.cardMeta} numberOfLines={1}>
-                {item.request.address}
-              </Text>
-            ) : null}
+            {item.request.address ? <Text style={styles.cardMeta}>{item.request.customerName}</Text> : null}
             <Text style={styles.cardMeta}>
               {new Date(item.createdAt).toLocaleDateString()}
               {item.createdByUser ? ` · Created by ${item.createdByUser.firstName} ${item.createdByUser.lastName}` : ''}

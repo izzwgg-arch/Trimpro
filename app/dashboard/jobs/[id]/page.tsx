@@ -1,5 +1,6 @@
 'use client'
 import { navigateWithReturn } from '@/lib/navigation/nav-stack'
+import { PhoneLink, telHref } from '@/components/common/PhoneLink'
 import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 
 import { useEffect, useRef, useState } from 'react'
@@ -10,6 +11,7 @@ import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils'
 import { Briefcase, Calendar, DollarSign, Users, MapPin, FileText, CheckSquare, AlertCircle, Phone, MessageSquare, Mail, Edit, Plus, Building2, Trash2, Copy, Clock, Link2, ShoppingCart } from 'lucide-react'
 import { JobThreadDialog } from '@/components/messages/JobThreadDialog'
 import Link from 'next/link'
+import { JOB_TYPES, formatJobType } from '@/lib/jobs/types'
 import { JobTakeoffsCard } from '@/components/takeoffs/JobTakeoffsCard'
 import dynamic from 'next/dynamic'
 import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
@@ -216,6 +218,8 @@ export default function JobDetailPage() {
   const [hourlyRate, setHourlyRate] = useState('')
   const [currentUserRole, setCurrentUserRole] = useState<string>('')
   const [documents, setDocuments] = useState<UnifiedDocumentRow[]>([])
+  // Job type buttons above the documents: 'ALL' or one job type.
+  const [docType, setDocType] = useState<string>('ALL')
   const [documentsLoading, setDocumentsLoading] = useState(false)
   const [documentsError, setDocumentsError] = useState<string | null>(null)
   const [noteText, setNoteText] = useState('')
@@ -1003,6 +1007,7 @@ export default function JobDetailPage() {
                     sourceType: 'job',
                     sourceId: jobId,
                     jobId,
+                    extra: { jobType: docType !== 'ALL' && docType !== 'NONE' ? docType : null },
                   })}`
                 )
               }
@@ -1022,6 +1027,7 @@ export default function JobDetailPage() {
                     sourceType: 'job',
                     sourceId: jobId,
                     jobId,
+                    extra: { jobType: docType !== 'ALL' && docType !== 'NONE' ? docType : null },
                   })}`
                 )
               }
@@ -1041,6 +1047,7 @@ export default function JobDetailPage() {
                     sourceType: 'job',
                     sourceId: jobId,
                     jobId,
+                    extra: { jobType: docType !== 'ALL' && docType !== 'NONE' ? docType : null },
                   })}`
                 )
               }
@@ -1070,8 +1077,45 @@ export default function JobDetailPage() {
         </CardContent>
       </Card>
 
+      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Show documents for job type">
+        {[
+          { value: 'ALL', label: 'All' },
+          ...JOB_TYPES,
+          ...(documents.some((d) => !d.jobType && d.kind !== 'credit_memo') ? [{ value: 'NONE', label: 'No type' }] : []),
+        ].map((t) => {
+          const count =
+            t.value === 'ALL'
+              ? documents.length
+              : t.value === 'NONE'
+                ? documents.filter((d) => !d.jobType).length
+                : documents.filter((d) => d.jobType === t.value).length
+          const active = docType === t.value
+          return (
+            <Button
+              key={t.value}
+              type="button"
+              size="sm"
+              variant={active ? 'default' : 'outline'}
+              className="h-9"
+              aria-pressed={active}
+              onClick={() => setDocType(t.value)}
+            >
+              {t.label}
+              <span className={`ml-1.5 rounded-full px-1.5 text-xs ${active ? 'bg-white/20' : 'bg-gray-100 text-gray-600'}`}>{count}</span>
+            </Button>
+          )
+        })}
+        {docType !== 'ALL' && docType !== 'NONE' ? (
+          <span className="text-xs text-gray-500">New estimates, invoices and POs you start here will be {formatJobType(docType)}.</span>
+        ) : null}
+      </div>
+
       <UnifiedDocumentsSection
-        documents={documents}
+        documents={
+          docType === 'ALL'
+            ? documents
+            : documents.filter((d) => (docType === 'NONE' ? !d.jobType : d.jobType === docType))
+        }
         loading={documentsLoading}
         error={documentsError}
         description={`${job._count.estimates ?? 0} estimates, ${job._count.invoices ?? 0} invoices, purchase orders, and related payments`}
@@ -1397,7 +1441,7 @@ export default function JobDetailPage() {
                                     {m.user.firstName} {m.user.lastName}
                                   </p>
                                   {assignment?.user.phone && (
-                                    <p className="text-sm text-gray-500">{assignment.user.phone}</p>
+                                    <p className="text-sm text-gray-500"><PhoneLink phone={assignment.user.phone} /></p>
                                   )}
                                   {assignment?.notes && (
                                     <p className="mt-1 text-xs text-gray-600">{assignment.notes}</p>
@@ -1475,9 +1519,11 @@ export default function JobDetailPage() {
               {primaryContact ? (
                 <div className="mt-3 space-y-2">
                   {primaryContact.phone && (
-                    <Button variant="outline" size="sm" className="w-full justify-start">
-                      <Phone className="mr-2 h-4 w-4" />
-                      {primaryContact.phone}
+                    <Button asChild variant="outline" size="sm" className="w-full justify-start">
+                      <a href={telHref(primaryContact.phone)}>
+                        <Phone className="mr-2 h-4 w-4" />
+                        {primaryContact.phone}
+                      </a>
                     </Button>
                   )}
                   {primaryContact.email && (

@@ -6,7 +6,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
@@ -17,11 +16,15 @@ type JobTypeCreateFieldProps = {
   value: string
   onValueChange: (value: string) => void
   className?: string
-  /**
-   * When true, uses invoice-specific copy in the prompt dialog.
-   * Prompting itself always happens whenever the user has more than one type to choose.
-   */
+  /** Kept for older callers; the prompt copy no longer depends on it. */
   forcePrompt?: boolean
+  /**
+   * Ask for the job type in a pop-up as soon as the form opens (default true). Pass
+   * false when the type is already known (e.g. it came from a request or estimate).
+   */
+  ask?: boolean
+  /** What is being created, for the pop-up text (e.g. "estimate"). */
+  recordLabel?: string
 }
 
 type ScopeState = {
@@ -30,85 +33,54 @@ type ScopeState = {
   assignedTypes: JobTypeValue[]
 }
 
+/**
+ * Job type field for create forms. Pops up "which job type?" with one button per
+ * type the person may use; someone limited to a single type gets it filled in.
+ */
 export function JobTypeCreateField({
   value,
   onValueChange,
   className,
-  forcePrompt = false,
+  ask = true,
+  recordLabel = 'record',
 }: JobTypeCreateFieldProps) {
-  const [scope, setScope] = useState<ScopeState>({
-    loading: true,
-    canAccessAll: true,
-    assignedTypes: [],
-  })
+  const [scope, setScope] = useState<ScopeState>({ loading: true, canAccessAll: true, assignedTypes: [] })
   const [choiceOpen, setChoiceOpen] = useState(false)
-  const [pendingChoice, setPendingChoice] = useState<string>('')
-  const [hasChosen, setHasChosen] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
+      let canAccessAll = true
+      let assignedTypes: JobTypeValue[] = []
       try {
         const token = localStorage.getItem('accessToken')
-        if (!token) {
-          if (!cancelled) {
-            setScope({ loading: false, canAccessAll: true, assignedTypes: [] })
-            setPendingChoice(value || 'CUSTOM')
-            setChoiceOpen(true)
-          }
-          return
+        const response = token
+          ? await fetch('/api/auth/permissions', { headers: { Authorization: `Bearer ${token}` } })
+          : null
+        if (response?.ok) {
+          const data = await response.json()
+          assignedTypes = Array.isArray(data.assignedJobTypes) ? (data.assignedJobTypes as JobTypeValue[]) : []
+          canAccessAll = Boolean(data.canAccessAllJobTypes)
         }
-        const response = await fetch('/api/auth/permissions', {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        if (!response.ok) {
-          if (!cancelled) {
-            setScope({ loading: false, canAccessAll: true, assignedTypes: [] })
-            setPendingChoice(value || 'CUSTOM')
-            setChoiceOpen(true)
-          }
-          return
-        }
-        const data = await response.json()
-        const assignedTypes = Array.isArray(data.assignedJobTypes)
-          ? (data.assignedJobTypes as JobTypeValue[])
-          : []
-        const canAccessAll = Boolean(data.canAccessAllJobTypes)
-        if (cancelled) return
-
-        setScope({ loading: false, canAccessAll, assignedTypes })
-
-        // Only skip the prompt when the user is locked to exactly one type.
-        if (!canAccessAll && assignedTypes.length === 1) {
-          onValueChange(assignedTypes[0])
-          setHasChosen(true)
-          return
-        }
-
-        // Ask whenever there is a choice:
-        // - access to all types
-        // - assigned to 2+ types
-        // - no assigned types yet (treated as all until set)
-        const initial =
-          !canAccessAll && assignedTypes.length > 0
-            ? assignedTypes[0]
-            : value || 'CUSTOM'
-        setPendingChoice(initial)
-        setChoiceOpen(true)
       } catch {
-        if (!cancelled) {
-          setScope({ loading: false, canAccessAll: true, assignedTypes: [] })
-          setPendingChoice(value || 'CUSTOM')
-          setChoiceOpen(true)
-        }
+        // Fall back to offering every type.
       }
+      if (cancelled) return
+      setScope({ loading: false, canAccessAll, assignedTypes })
+      if (!ask || value) return
+      // Locked to exactly one type: no need to ask.
+      if (!canAccessAll && assignedTypes.length === 1) {
+        onValueChange(assignedTypes[0])
+        return
+      }
+      setChoiceOpen(true)
     })()
     return () => {
       cancelled = true
     }
-    // Only resolve scope once on mount for create forms.
+    // Resolve once when the form opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [ask])
 
   const options = useMemo(() => {
     if (scope.canAccessAll || scope.assignedTypes.length === 0) return [...JOB_TYPES]
@@ -116,20 +88,6 @@ export function JobTypeCreateField({
   }, [scope.assignedTypes, scope.canAccessAll])
 
   const lockedToSingle = !scope.canAccessAll && scope.assignedTypes.length === 1
-  const awaitingChoice = !hasChosen && !lockedToSingle
-
-  const confirmChoice = () => {
-    if (!pendingChoice) return
-    onValueChange(pendingChoice)
-    setHasChosen(true)
-    setChoiceOpen(false)
-  }
-
-  const description = forcePrompt
-    ? 'This invoice will create a new job. Choose which job type it should use.'
-    : scope.canAccessAll || scope.assignedTypes.length === 0
-      ? 'Choose which job type this record should use.'
-      : 'You are assigned to more than one job type. Choose which type this record should use.'
 
   return (
     <>
@@ -138,33 +96,38 @@ export function JobTypeCreateField({
         value={value}
         onValueChange={onValueChange}
         options={options}
-        disabled={scope.loading || lockedToSingle || awaitingChoice}
+        disabled={scope.loading || lockedToSingle}
       />
 
       <Dialog
         open={choiceOpen}
         onOpenChange={(open) => {
-          // Require a choice when a prompt is required.
-          if (!open && !hasChosen) return
+          // A type has to be picked before the pop-up closes.
+          if (!open && !value) return
           setChoiceOpen(open)
         }}
       >
         <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader>
-            <DialogTitle>Please choose a job type</DialogTitle>
-            <DialogDescription>{description}</DialogDescription>
+            <DialogTitle>Which job type?</DialogTitle>
+            <DialogDescription>Choose the job type for this {recordLabel}.</DialogDescription>
           </DialogHeader>
-          <JobTypeSelect
-            value={pendingChoice || options[0]?.value || 'CUSTOM'}
-            onValueChange={setPendingChoice}
-            options={options}
-            showLabel={false}
-          />
-          <DialogFooter>
-            <Button type="button" onClick={confirmChoice} disabled={!pendingChoice}>
-              Continue
-            </Button>
-          </DialogFooter>
+          <div className="grid grid-cols-2 gap-2">
+            {options.map((item) => (
+              <Button
+                key={item.value}
+                type="button"
+                variant={value === item.value ? 'default' : 'outline'}
+                className="h-14 text-base"
+                onClick={() => {
+                  onValueChange(item.value)
+                  setChoiceOpen(false)
+                }}
+              >
+                {item.label}
+              </Button>
+            ))}
+          </div>
         </DialogContent>
       </Dialog>
     </>

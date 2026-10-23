@@ -1,6 +1,6 @@
 import { hasPermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
-import { JOB_TYPE_VALUES, parseJobType, type JobTypeValue } from '@/lib/jobs/types'
+import { JOB_TYPE_VALUES, parseOptionalJobType, type JobTypeValue } from '@/lib/jobs/types'
 
 export const ACCESS_ALL_JOB_TYPES_PERMISSION = 'jobs.access_all_types'
 
@@ -52,10 +52,24 @@ export async function canAccessJobType(
   tenantId: string,
   jobType: string | null | undefined
 ): Promise<boolean> {
+  // Records without a type are open to everyone.
+  const type = parseOptionalJobType(jobType)
+  if (!type) return true
   if (await canAccessAllJobTypes(userId, tenantId)) return true
   const types = await getUserAssignedJobTypes(userId, tenantId)
   if (types.length === 0) return true
-  return types.includes(parseJobType(jobType))
+  return types.includes(type)
+}
+
+/**
+ * Job-type scoping for jobs (whose type can be empty): the person's types, plus jobs
+ * without a type. AND-wrapped so it can be spread next to a where with its own OR.
+ */
+export async function jobTypeScopeWhereForJobs(userId: string, tenantId: string): Promise<Record<string, unknown>> {
+  if (await canAccessAllJobTypes(userId, tenantId)) return {}
+  const types = await getUserAssignedJobTypes(userId, tenantId)
+  if (types.length === 0) return {}
+  return { AND: [{ OR: [{ jobType: { in: types } }, { jobType: null }] }] }
 }
 
 export async function assertCanAccessJobType(
@@ -92,9 +106,10 @@ export async function resolveJobTypeForWrite(
   userId: string,
   tenantId: string,
   requested: unknown,
-  fallback: JobTypeValue = 'CUSTOM'
-): Promise<{ ok: true; jobType: JobTypeValue } | { ok: false; error: string }> {
-  const jobType = parseJobType(requested, fallback)
+  fallback: JobTypeValue | null = null
+): Promise<{ ok: true; jobType: JobTypeValue | null } | { ok: false; error: string }> {
+  // Nothing (or nothing valid) chosen: keep the fallback — null means "no type yet".
+  const jobType = parseOptionalJobType(requested) ?? fallback
   const allowed = await assertCanAccessJobType(userId, tenantId, jobType)
   if (!allowed.ok) return allowed
   return { ok: true, jobType }

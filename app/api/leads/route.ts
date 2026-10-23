@@ -188,7 +188,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'First name and last name are required' }, { status: 400 })
     }
 
-    const resolvedType = await resolveJobTypeForWrite(user.id, user.tenantId, jobType)
+    const resolvedType = await resolveJobTypeForWrite(user.id, user.tenantId, jobType, 'CUSTOM')
     if (!resolvedType.ok) {
       return NextResponse.json({ error: resolvedType.error }, { status: 403 })
     }
@@ -256,7 +256,7 @@ export async function POST(request: NextRequest) {
         jobSiteAddress: jobSiteAddress || null,
         source: source || 'OTHER',
         status: status || 'NEW',
-        jobType: resolvedType.jobType,
+        jobType: resolvedType.jobType ?? 'CUSTOM',
         value: value ? parseFloat(value) : null,
         probability: probability || 50,
         notes: notes || null,

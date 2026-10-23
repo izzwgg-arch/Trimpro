@@ -1,6 +1,8 @@
 'use client'
 
 import { openFromList } from '@/lib/navigation/nav-stack'
+import { PhoneLink } from '@/components/common/PhoneLink'
+import { requestDisplayName, requestSubtitle } from '@/lib/requests/display'
 import { useListRestore } from '@/hooks/useListRestore'
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -27,6 +29,7 @@ interface Request {
   id: string
   firstName: string
   lastName: string
+  jobSiteAddress?: string | null
   email: string | null
   phone: string | null
   company: string | null
@@ -630,9 +633,10 @@ export default function RequestsPage() {
                     <div className="flex-1">
                       <Link href={`/dashboard/requests/${request.id}`}>
                         <CardTitle className="text-lg hover:text-primary cursor-pointer">
-                          {request.firstName} {request.lastName}
+                          {requestDisplayName(request)}
                         </CardTitle>
                       </Link>
+                      {requestSubtitle(request) ? <p className="mt-0.5 text-sm text-gray-500">{requestSubtitle(request)}</p> : null}
                       {request.isUrgent ? (
                         <span className="mt-2 inline-flex rounded-full border border-red-300 bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700">
                           URGENT
@@ -672,7 +676,7 @@ export default function RequestsPage() {
                       {request.phone && (
                         <div className="flex items-center text-sm text-gray-600">
                           <Phone className="mr-2 h-3 w-3" />
-                          {request.phone}
+                          <PhoneLink phone={request.phone} />
                         </div>
                       )}
                     </div>
@@ -815,9 +819,9 @@ export default function RequestsPage() {
               />
               <RowCompactItem
                 href={`/dashboard/requests/${request.id}`}
-                primary={`${request.firstName} ${request.lastName}${request.isUrgent ? ' • URGENT' : ''}`.trim()}
+                primary={`${requestDisplayName(request)}${request.isUrgent ? ' • URGENT' : ''}`.trim()}
                 secondary={[
-                  request.company || request.email || request.phone || 'No contact info',
+                  requestSubtitle(request) || request.email || request.phone || 'No contact info',
                   request.assignedTo
                     ? `Assigned: ${request.assignedTo.firstName} ${request.assignedTo.lastName}`
                     : 'Assigned: Unassigned',
@@ -852,7 +856,7 @@ export default function RequestsPage() {
               />
               <RowDetailedItem
                 href={`/dashboard/requests/${request.id}`}
-                primary={`${request.firstName} ${request.lastName}${request.isUrgent ? ' • URGENT' : ''}`.trim()}
+                primary={`${requestDisplayName(request)}${request.isUrgent ? ' • URGENT' : ''}`.trim()}
                 status={
                   <div className="flex items-center gap-2">
                     <JobTypeBadge jobType={request.jobType} />
@@ -906,10 +910,11 @@ export default function RequestsPage() {
             {
               key: 'name',
               header: 'Request',
-              sortValue: (request) => `${request.firstName} ${request.lastName}`,
+              sortValue: (request) => requestDisplayName(request),
               render: (request) => (
                 <span className="font-medium">
-                  {request.firstName} {request.lastName}
+                  {requestDisplayName(request)}
+                  {requestSubtitle(request) ? <span className="block text-xs font-normal text-gray-500">{requestSubtitle(request)}</span> : null}
                   {request.isUrgent ? (
                     <span className="ml-2 rounded-full border border-red-300 bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">URGENT</span>
                   ) : null}

@@ -1,5 +1,6 @@
 'use client'
 import { EntityBackButton } from '@/components/navigation/EntityBackButton'
+import { PhoneLink } from '@/components/common/PhoneLink'
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
@@ -383,7 +384,7 @@ export default function ItemDetailPage() {
                     <p className="text-sm text-gray-600">{item.vendor.email}</p>
                   )}
                   {item.vendor.phone && (
-                    <p className="text-sm text-gray-600">{item.vendor.phone}</p>
+                    <p className="text-sm"><PhoneLink phone={item.vendor.phone} /></p>
                   )}
                 </div>
               </CardContent>

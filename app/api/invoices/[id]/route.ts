@@ -7,7 +7,7 @@ import { formatAddressParts, parseAddressParts } from '@/lib/address/parse'
 import { geocodeAddressPartsFromString } from '@/lib/geocoding'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { calculateOrderedSubtotalRows } from '@/lib/documents/subtotals'
-import { parseJobType } from '@/lib/jobs/types'
+import { parseJobType, parseOptionalJobType } from '@/lib/jobs/types'
 import { getBilledToDateByEstimateLine } from '@/lib/invoices/billed-to-date'
 import { recordAuditLog, auditContextFromRequest } from '@/lib/audit/log'
 import { summarizeLineItemChanges } from '@/lib/history/line-items'
@@ -502,7 +502,7 @@ export async function PUT(
               ? normalizedInvoiceNumber
               : undefined,
           title: title !== undefined ? title : existing.title,
-          jobType: jobType !== undefined ? parseJobType(jobType) : (existing as any).jobType,
+          jobType: jobType !== undefined ? parseOptionalJobType(jobType) : (existing as any).jobType,
           clientId: resolvedClientId !== undefined ? resolvedClientId : undefined,
           jobId:
             resolvedJobId !== undefined

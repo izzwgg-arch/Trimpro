@@ -136,7 +136,7 @@ export default function EditEstimatePage() {
   const [formData, setFormData] = useState({
     clientId: '',
     title: '',
-    jobType: 'CUSTOM',
+    jobType: '',
     jobSiteAddress: '',
     taxRate: '0',
     discount: '0',
@@ -231,7 +231,7 @@ export default function EditEstimatePage() {
       setFormData({
         clientId: est.client?.id || '',
         title: est.title || '',
-        jobType: (est as any).jobType || 'CUSTOM',
+        jobType: (est as any).jobType || '',
         jobSiteAddress: est.jobSiteAddress || '',
         taxRate: taxRatePercent,
         discount: est.discount || '0',
@@ -1056,7 +1056,7 @@ export default function EditEstimatePage() {
           clientId: formData.clientId || null,
           estimateNumber,
           title: formData.title,
-          jobType: formData.jobType || 'CUSTOM',
+          jobType: formData.jobType || null,
           jobSiteAddress: formData.jobSiteAddress || null,
           taxRate: taxRate,
           discount,

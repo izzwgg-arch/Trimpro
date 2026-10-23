@@ -1,3 +1,4 @@
+import { callPhone } from '../../lib/phone'
 import React, { useMemo, useState } from 'react'
 import {
   Linking,
@@ -46,7 +47,17 @@ type JobDocRow = {
   date: string
   subtitle?: string
   preview: JobDocumentPreview
+  jobType?: string | null
 }
+
+// Job type buttons above the documents (each estimate/invoice/PO has its own type).
+const JOB_TYPE_OPTIONS = [
+  { value: 'all', label: 'All' },
+  { value: 'CUSTOM', label: 'Custom' },
+  { value: 'STANDARD', label: 'Standard' },
+  { value: 'RAILING', label: 'Railing' },
+  { value: 'CLOSETS', label: 'Closets' },
+]
 
 const KIND_LABEL: Record<DocKind, string> = {
   estimate: 'Estimate',
@@ -91,6 +102,7 @@ function buildJobDocumentRows(job: Job): JobDocRow[] {
       amount: parseAmount(row.total),
       date: row.createdAt,
       subtitle: row.title || undefined,
+      jobType: row.jobType,
       preview: {
         id: row.id,
         title: `Estimate ${number}`,
@@ -112,6 +124,7 @@ function buildJobDocumentRows(job: Job): JobDocRow[] {
       amount: parseAmount(row.total),
       date: row.createdAt || '',
       subtitle: row.balance != null ? `Balance ${formatMoney(row.balance)}` : undefined,
+      jobType: row.jobType,
       preview: {
         id: row.id,
         title: `Invoice ${number}`,
@@ -132,6 +145,7 @@ function buildJobDocumentRows(job: Job): JobDocRow[] {
       status: row.status,
       amount: parseAmount(row.total),
       date: row.createdAt,
+      jobType: row.jobType,
       preview: {
         id: row.id,
         title: `PO ${number}`,
@@ -153,6 +167,7 @@ function buildJobDocumentRows(job: Job): JobDocRow[] {
       amount: parseAmount(row.amount),
       date: row.paymentDate || '',
       subtitle: [row.method, formatDate(row.paymentDate)].filter(Boolean).join(' · ') || undefined,
+      jobType: row.jobType,
       preview: {
         id: row.id,
         title: `Payment ${number}`,
@@ -183,6 +198,7 @@ export function JobDocumentsSection({ job }: { job: Job }) {
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<SortOption>('date-desc')
   const [typeFilter, setTypeFilter] = useState<'all' | DocKind>('all')
+  const [jobTypeFilter, setJobTypeFilter] = useState('all')
   const [previewIndex, setPreviewIndex] = useState<number | null>(null)
   const [expanded, setExpanded] = useState(true)
 
@@ -192,6 +208,7 @@ export function JobDocumentsSection({ job }: { job: Job }) {
     const q = search.trim().toLowerCase()
     return allRows
       .filter((row) => (typeFilter === 'all' ? true : row.kind === typeFilter))
+      .filter((row) => (jobTypeFilter === 'all' ? true : jobTypeFilter === 'none' ? !row.jobType : row.jobType === jobTypeFilter))
       .filter((row) => {
         if (!q) return true
         const haystack = [
@@ -207,7 +224,7 @@ export function JobDocumentsSection({ job }: { job: Job }) {
         return haystack.includes(q)
       })
       .sort((a, b) => compareDocs(a, b, sort))
-  }, [allRows, search, sort, typeFilter])
+  }, [allRows, search, sort, typeFilter, jobTypeFilter])
 
   return (
     <>
@@ -247,6 +264,30 @@ export function JobDocumentsSection({ job }: { job: Job }) {
               autoCapitalize="none"
               clearButtonMode="while-editing"
             />
+
+            <View style={styles.filterRow}>
+              {[...JOB_TYPE_OPTIONS, ...(allRows.some((r) => !r.jobType) ? [{ value: 'none', label: 'No type' }] : [])].map((opt) => {
+                const active = jobTypeFilter === opt.value
+                const count =
+                  opt.value === 'all'
+                    ? allRows.length
+                    : opt.value === 'none'
+                      ? allRows.filter((r) => !r.jobType).length
+                      : allRows.filter((r) => r.jobType === opt.value).length
+                return (
+                  <TouchableOpacity
+                    key={opt.value}
+                    style={[styles.chip, active && styles.chipActive]}
+                    activeOpacity={0.7}
+                    onPress={() => setJobTypeFilter(opt.value)}
+                  >
+                    <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                      {opt.label} ({count})
+                    </Text>
+                  </TouchableOpacity>
+                )
+              })}
+            </View>
 
             <View style={styles.filterRow}>
               {TYPE_OPTIONS.map((opt) => {
@@ -580,7 +621,13 @@ export function JobClientSection({ job }: { job: Job }) {
     <DetailSection title="Client">
       <DetailRow label="Name" value={client.name} />
       <DetailRow label="Company" value={client.companyName} />
-      <DetailRow label="Phone" value={client.phone} />
+      {client.phone ? (
+        <Pressable onPress={() => callPhone(client.phone)} accessibilityRole="link" accessibilityLabel={`Call ${client.phone}`}>
+          <DetailRow label="Phone (tap to call)" value={client.phone} />
+        </Pressable>
+      ) : (
+        <DetailRow label="Phone" value={client.phone} />
+      )}
       <DetailRow label="Email" value={client.email} />
       {contacts.length > 0 ? (
         <View style={styles.subBlock}>

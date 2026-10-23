@@ -1,5 +1,6 @@
 'use client'
 import { EntityBackButton } from '@/components/navigation/EntityBackButton'
+import { requestDisplayName, requestSubtitle } from '@/lib/requests/display'
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
@@ -550,9 +551,7 @@ export default function RequestDetailPage() {
             <EntityBackButton fallbackHref="/dashboard/requests" />
           </div>
           <div className="flex items-center space-x-3 mt-2">
-            <h1 className="text-3xl font-bold text-gray-900">
-              {request.firstName} {request.lastName}
-            </h1>
+            <h1 className="text-3xl font-bold text-gray-900">{requestDisplayName(request)}</h1>
             {request.isUrgent ? (
               <span className="px-3 py-1 text-sm rounded-full border border-red-300 bg-red-100 text-red-700 font-bold">
                 URGENT
@@ -566,6 +565,7 @@ export default function RequestDetailPage() {
               {request.source}
             </span>
           </div>
+          {requestSubtitle(request) ? <p className="mt-1 text-gray-600">{requestSubtitle(request)}</p> : null}
           {request.company && (
             <p className="text-gray-600 mt-1">{request.company}</p>
           )}

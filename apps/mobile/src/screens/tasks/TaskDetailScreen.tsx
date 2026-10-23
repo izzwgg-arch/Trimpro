@@ -19,6 +19,7 @@ import { AttachmentOpenPressable } from '../../components/attachments/Attachment
 import { TeamSection } from '../../components/team/TeamSection'
 import { buildTeam, type TeamEntry } from '../../lib/team'
 import { useMobilePermissions } from '../../hooks/useMobilePermissions'
+import { TaskChecklistSection } from '../../components/tasks/TaskChecklistSection'
 
 type Props = NativeStackScreenProps<TasksStackParamList, 'TaskDetail'>
 
@@ -249,6 +250,8 @@ export function TaskDetailScreen({ route }: Props) {
               <Text style={styles.sectionTitle}>Description</Text>
               <Text style={styles.body}>{task.description || 'No description'}</Text>
             </View>
+
+            <TaskChecklistSection taskId={task.id} />
 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Actions</Text>

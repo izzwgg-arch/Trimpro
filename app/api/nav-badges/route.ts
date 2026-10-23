@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { hasPermission } from '@/lib/authorization'
 import { getUserAssignedJobTypes } from '@/lib/jobs/job-type-scope'
+import { requestDisplayName, requestSubtitle } from '@/lib/requests/display'
 
 // Sidebar "New" badges: records still in their initial status that are meant for
 // this person — they are assigned to it, or nobody is assigned and it is in a job
@@ -48,7 +49,7 @@ export async function GET(request: NextRequest) {
             },
             orderBy: { createdAt: 'desc' },
             take: LIMIT,
-            select: { id: true, firstName: true, lastName: true, company: true, notes: true, createdAt: true },
+            select: { id: true, firstName: true, lastName: true, company: true, notes: true, jobSiteAddress: true, createdAt: true },
           })
         : [],
       canJobs
@@ -108,8 +109,8 @@ export async function GET(request: NextRequest) {
     const out: Record<string, Item[]> = {
       Requests: leads.map((r) => ({
         id: r.id,
-        title: `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim() || r.company || 'New request',
-        message: r.company || r.notes || null,
+        title: requestDisplayName(r),
+        message: requestSubtitle(r) || r.notes || null,
         linkUrl: `/dashboard/requests/${r.id}`,
         createdAt: r.createdAt,
       })),

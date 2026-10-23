@@ -1,4 +1,6 @@
 'use client'
+import { JobTypeCreateField } from '@/components/jobs/JobTypeCreateField'
+import { JOB_TYPE_VALUES } from '@/lib/jobs/types'
 import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
@@ -30,7 +32,6 @@ import {
 import { usePermissions } from '@/hooks/usePermissions'
 import { postCreateRedirectPath } from '@/hooks/useDocumentListAccess'
 import { reconcileEstimateConversionLineItems, toCents } from '@/lib/documents/progress-billing'
-import { JobTypeCreateField } from '@/components/jobs/JobTypeCreateField'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CustomerEstimatePanel } from '@/components/estimates/customer-estimate-panel'
 import {
@@ -137,6 +138,7 @@ export default function NewInvoicePage() {
   const { permissions } = usePermissions()
   const clientIdParam = searchParams.get('clientId')
   const jobIdParam = searchParams.get('jobId')
+  const jobTypeParam = searchParams.get('jobType')
   const estimateIdParam = searchParams.get('estimateId')
   const billingModeParam = (searchParams.get('billingMode') || '').toUpperCase()
   const percentageParam = searchParams.get('percentage')
@@ -178,7 +180,7 @@ export default function NewInvoicePage() {
     clientId: clientIdParam || '',
     jobId: jobIdParam || '',
     estimateId: estimateIdParam || '',
-    jobType: 'CUSTOM',
+    jobType: jobTypeParam && (JOB_TYPE_VALUES as readonly string[]).includes(jobTypeParam) ? jobTypeParam : '',
     invoiceNumber: '',
     title: '',
     taxRate: '0',
@@ -190,7 +192,6 @@ export default function NewInvoicePage() {
     memo: '',
   })
   const [estimateAlreadyHasJob, setEstimateAlreadyHasJob] = useState(false)
-  const [jobTypeChosen, setJobTypeChosen] = useState(false)
 
   // Quick "Add new item" modal launched from the line-item picker.
   const [quickItem, setQuickItem] = useState<{ open: boolean; name: string; index: number; optional: boolean }>({ open: false, name: '', index: 0, optional: false })
@@ -395,6 +396,7 @@ export default function NewInvoicePage() {
           ...prev,
           clientId: est.client?.id || prev.clientId,
           jobId: est.job?.id || prev.jobId || '',
+          jobType: prev.jobType || est.jobType || '',
           title:
             prev.title ||
             `${est.title} - ${
@@ -1413,10 +1415,6 @@ export default function NewInvoicePage() {
 
     const willCreateNewJob =
       Boolean(formData.estimateId) && !formData.jobId && !estimateAlreadyHasJob
-    if (willCreateNewJob && !jobTypeChosen) {
-      alert('Please choose a job type for the new job.')
-      return
-    }
     // Prevent double-submit (fast double-click before first re-render)
     if (submittingRef.current) return
     submittingRef.current = true
@@ -1523,7 +1521,7 @@ export default function NewInvoicePage() {
           clientId: formData.clientId,
           jobId: formData.jobId || null,
           estimateId: formData.estimateId || null,
-          jobType: formData.jobType || 'CUSTOM',
+          jobType: formData.jobType || null,
           invoiceNumber: formData.invoiceNumber || null,
           title: formData.title,
           subtotal,
@@ -1649,26 +1647,13 @@ export default function NewInvoicePage() {
                     </SelectContent>
                   </Select>
                 </div>
-                {Boolean(formData.estimateId) && !formData.jobId && !estimateAlreadyHasJob ? (
-                  <div>
-                    <JobTypeCreateField
-                      forcePrompt
-                      value={formData.jobType}
-                      onValueChange={(value) => {
-                        setFormData((prev) => ({ ...prev, jobType: value }))
-                        setJobTypeChosen(true)
-                      }}
-                    />
-                    <p className="mt-1 text-xs text-gray-500">
-                      This invoice will create a new job. Choose which job type it should use.
-                    </p>
-                  </div>
-                ) : (
-                  <JobTypeSelect
-                    value={formData.jobType}
-                    onValueChange={(value) => setFormData((prev) => ({ ...prev, jobType: value }))}
-                  />
-                )}
+                {/* Not from an estimate: ask which job type this invoice is for. */}
+                <JobTypeCreateField
+                  ask={!estimateIdParam && !jobTypeParam}
+                  recordLabel="invoice"
+                  value={formData.jobType}
+                  onValueChange={(value) => setFormData((prev) => ({ ...prev, jobType: value }))}
+                />
                 <div>
                   <Label htmlFor="invoiceNumber">Invoice # (optional)</Label>
                   <Input

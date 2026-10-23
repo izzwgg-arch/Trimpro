@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { PhoneLink } from '@/components/common/PhoneLink'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -476,7 +477,7 @@ export default function TeamsPage() {
                 {member.phone && (
                   <div className="flex items-center text-sm text-gray-600">
                     <Phone className="mr-2 h-4 w-4" />
-                    {member.phone}
+                    <PhoneLink phone={member.phone} />
                   </div>
                 )}
                 <div className="flex items-center text-sm text-gray-600">

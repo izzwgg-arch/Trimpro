@@ -114,6 +114,7 @@ export async function GET(
             status: true,
             total: true,
             createdAt: true,
+            jobType: true,
           },
         },
         invoices: {
@@ -125,6 +126,7 @@ export async function GET(
             balance: true,
             status: true,
             createdAt: true,
+            jobType: true,
           },
         },
         purchaseOrders: {
@@ -135,6 +137,7 @@ export async function GET(
             status: true,
             total: true,
             createdAt: true,
+            jobType: true,
           },
         },
         notes: {
@@ -334,6 +337,7 @@ export async function GET(
               select: {
                 id: true,
                 invoiceNumber: true,
+                jobType: true,
               },
             },
           },
@@ -431,6 +435,7 @@ export async function GET(
           status: est.status,
           total: est.total.toString(),
           createdAt: est.createdAt.toISOString(),
+          jobType: est.jobType,
         })),
         invoices: job.invoices.map((inv) => ({
           id: inv.id,
@@ -441,6 +446,7 @@ export async function GET(
           dueDate: inv.dueDate ? inv.dueDate.toISOString() : null,
           status: inv.status,
           createdAt: inv.createdAt.toISOString(),
+          jobType: inv.jobType,
         })),
         purchaseOrders: job.purchaseOrders.map((po) => ({
           id: po.id,
@@ -448,6 +454,7 @@ export async function GET(
           status: po.status,
           total: po.total?.toString?.() ?? String(po.total ?? '0'),
           createdAt: po.createdAt.toISOString(),
+          jobType: po.jobType,
         })),
         payments: payments.map((payment) => ({
           id: payment.id,
@@ -458,6 +465,7 @@ export async function GET(
           reference: payment.reference,
           invoiceNumber: payment.invoice?.invoiceNumber || null,
           invoiceId: payment.invoice?.id || null,
+          jobType: payment.invoice?.jobType || null,
         })),
         notes: job.notes.map((note) => {
           const author = note.createdById ? noteAuthorById.get(note.createdById) : null

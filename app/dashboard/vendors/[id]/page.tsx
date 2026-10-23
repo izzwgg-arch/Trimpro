@@ -1,5 +1,6 @@
 'use client'
 import { EntityBackButton } from '@/components/navigation/EntityBackButton'
+import { PhoneLink } from '@/components/common/PhoneLink'
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
@@ -282,7 +283,7 @@ export default function VendorDetailPage() {
                     {vendor.phone && (
                       <div className="flex items-center space-x-2">
                         <Phone className="h-4 w-4 text-gray-400" />
-                        <span className="text-sm text-gray-600">{vendor.phone}</span>
+                        <PhoneLink phone={vendor.phone} className="text-sm" />
                       </div>
                     )}
                     {vendor.website && (
@@ -305,7 +306,7 @@ export default function VendorDetailPage() {
                           <div className="text-sm text-gray-600">{primaryContact.email}</div>
                         )}
                         {primaryContact.phone && (
-                          <div className="text-sm text-gray-600">{primaryContact.phone}</div>
+                          <div className="text-sm"><PhoneLink phone={primaryContact.phone} /></div>
                         )}
                       </div>
                     </div>
@@ -429,7 +430,7 @@ export default function VendorDetailPage() {
                               {contact.phone && (
                                 <div className="text-sm text-gray-600 flex items-center space-x-2">
                                   <Phone className="h-3 w-3" />
-                                  <span>{contact.phone}</span>
+                                  <PhoneLink phone={contact.phone} />
                                 </div>
                               )}
                             </div>

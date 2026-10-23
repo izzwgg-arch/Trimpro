@@ -15,6 +15,7 @@ import { usePermissions, hasPermission } from '@/hooks/usePermissions'
 import { EntityHistory } from '@/components/history/EntityHistory'
 import { TeamSummary, teamOf } from '@/components/assignments/TeamSummary'
 import { DocumentAttachments } from '@/components/common/document-attachments'
+import { TaskChecklist } from '@/components/tasks/TaskChecklist'
 
 interface TaskDetail {
   id: string
@@ -419,23 +420,7 @@ export default function TaskDetailPage() {
             </CardContent>
           </Card>
 
-          {task.subtasks?.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Subtasks</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {task.subtasks.map((st) => (
-                    <div key={st.id} className="flex items-center gap-2 text-sm">
-                      <CheckSquare className={`h-4 w-4 ${st.isCompleted ? 'text-green-600' : 'text-gray-300'}`} />
-                      <span className={st.isCompleted ? 'line-through text-gray-400' : 'text-gray-700'}>{st.title}</span>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          <TaskChecklist taskId={task.id} initialItems={task.subtasks} />
 
           <Card>
             <CardHeader>

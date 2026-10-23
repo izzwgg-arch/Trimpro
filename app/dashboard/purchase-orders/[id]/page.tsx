@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { PhoneLink } from '@/components/common/PhoneLink'
 import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -578,7 +579,7 @@ export default function PurchaseOrderDetailPage() {
                   {po.vendorRef.phone && (
                     <p className="text-sm text-gray-600">
                       <Phone className="inline mr-1 h-4 w-4" />
-                      {po.vendorRef.phone}
+                      <PhoneLink phone={po.vendorRef.phone} />
                     </p>
                   )}
                   {(po.vendorRef.address || po.vendorRef.city) && (

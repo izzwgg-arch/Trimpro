@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { parseOptionalJobType } from '@/lib/jobs/types'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
@@ -139,6 +140,7 @@ export async function PUT(
       vendorId,
       poNumber,
       jobId,
+      jobType,
       status,
       expectedDate,
       orderDate,
@@ -224,6 +226,7 @@ export async function PUT(
             ? normalizedPoNumber
             : existing.poNumber,
         status: status !== undefined ? status : existing.status,
+        jobType: jobType !== undefined ? parseOptionalJobType(jobType) : existing.jobType,
         orderDate: orderDate !== undefined ? (orderDate ? new Date(orderDate) : null) : existing.orderDate,
         expectedDate: expectedDate !== undefined ? (expectedDate ? new Date(expectedDate) : null) : existing.expectedDate,
         notes: notes !== undefined ? (notes ? String(notes) : null) : existing.notes,

@@ -4,7 +4,7 @@ import { requirePermission } from '@/lib/authorization'
 import { prisma } from '@/lib/prisma'
 import { jobRecordJobSiteAddressSearchClauses } from '@/lib/search/job-site-address'
 import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
-import { jobTypeScopeWhere } from '@/lib/jobs/job-type-scope'
+import { jobTypeScopeWhereForJobs } from '@/lib/jobs/job-type-scope'
 import {
   ARCHIVE_JOB_STATUSES,
   PRODUCTION_STATUS_MAP,
@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
   try {
     const baseWhere: any = {
       tenantId: user.tenantId,
-      ...(await jobTypeScopeWhere(user.id, user.tenantId)),
+      ...(await jobTypeScopeWhereForJobs(user.id, user.tenantId)),
     }
 
     applySmartSearch(

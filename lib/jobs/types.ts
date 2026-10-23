@@ -24,6 +24,11 @@ export function formatJobType(type: string | null | undefined): string {
   return JOB_TYPES.find((item) => item.value === type)?.label ?? type.replaceAll('_', ' ')
 }
 
+/** A job type, or null when none (or an unknown value) was given — records start without a type. */
+export function parseOptionalJobType(value: unknown): JobTypeValue | null {
+  return typeof value === 'string' && (JOB_TYPE_VALUES as readonly string[]).includes(value) ? (value as JobTypeValue) : null
+}
+
 export function parseJobType(value: unknown, fallback: JobTypeValue = 'CUSTOM'): JobTypeValue {
   if (typeof value === 'string' && (JOB_TYPE_VALUES as readonly string[]).includes(value)) {
     return value as JobTypeValue

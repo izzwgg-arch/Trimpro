@@ -1,3 +1,4 @@
+import { callPhone } from '../../lib/phone'
 import React, { useEffect, useMemo, useState } from 'react'
 import {
   Dimensions,
@@ -686,7 +687,9 @@ function LeadCard({ lead, onPress }: { lead: LeadItem; onPress: () => void }) {
       {lead.phone ? (
         <View style={styles.iconRow}>
           <Ionicons name="call-outline" size={12} color={colors.muted} />
-          <Text style={[styles.metaMuted, { fontSize: 11 }]}>{lead.phone}</Text>
+          <Text style={[styles.metaMuted, { fontSize: 11, textDecorationLine: 'underline' }]} onPress={() => callPhone(lead.phone)}>
+            {lead.phone}
+          </Text>
         </View>
       ) : null}
       {amount ? (

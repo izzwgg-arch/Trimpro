@@ -1,5 +1,6 @@
 'use client'
 import { useListRestore } from '@/hooks/useListRestore'
+import { PhoneLink } from '@/components/common/PhoneLink'
 import { usePersistedSort } from '@/hooks/useListPreferences'
 import { openFromList } from '@/lib/navigation/nav-stack'
 
@@ -462,7 +463,7 @@ export default function ClientsPage() {
                       {client.phone && (
                         <div className="flex items-center text-sm text-gray-600">
                           <Phone className="mr-2 h-3 w-3" />
-                          {client.phone}
+                          <PhoneLink phone={client.phone} />
                         </div>
                       )}
                       {client.email && (

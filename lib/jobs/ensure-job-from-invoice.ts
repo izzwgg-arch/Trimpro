@@ -2,13 +2,13 @@ import { prisma } from '@/lib/prisma'
 import { getEstimateConversionSummary } from '@/lib/documents/conversion'
 import { copyRequestAttachmentsToJob } from '@/lib/jobs/copy-request-attachments-to-job'
 import { syncJobCostFromLinkedDocuments } from '@/lib/jobs/sync-job-cost'
-import { parseJobType } from '@/lib/jobs/types'
+import { parseOptionalJobType } from '@/lib/jobs/types'
 
 function normalizePhone(value: string | null | undefined) {
   return (value || '').replace(/\D/g, '')
 }
 
-function parseJobSiteAddress(address: string | null | undefined) {
+export function parseJobSiteAddress(address: string | null | undefined) {
   if (!address) return null
   const trimmed = address.trim()
   if (!trimmed) return null
@@ -28,7 +28,7 @@ function parseJobSiteAddress(address: string | null | undefined) {
   }
 }
 
-function formatJobNameFromEstimate(
+export function formatJobNameFromEstimate(
   jobNumber: string,
   jobSiteAddress: string | null | undefined,
   estimateTitle: string | null | undefined
@@ -213,7 +213,7 @@ export async function ensureJobFromInvoice(
             title: formatJobNameFromEstimate(jobNumber, estimate?.jobSiteAddress || estimate?.lead?.jobSiteAddress, estimate?.title),
             description: mergedDescription || null,
             status: 'QUOTE',
-            jobType: parseJobType(options?.jobType, 'CUSTOM'),
+            jobType: parseOptionalJobType(options?.jobType),
             priority: 3,
             estimateAmount: estimate?.total || invoice.total,
           },

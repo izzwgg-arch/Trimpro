@@ -1,3 +1,4 @@
+import { callPhone } from '../../lib/phone'
 import React, { useEffect, useMemo, useState } from 'react'
 import {
   Alert,
@@ -714,7 +715,11 @@ export function JobDetailScreen({ route, navigation }: Props) {
             <Text style={styles.meta}>
               {job.jobNumber} · {job.client?.name || 'N/A'}
             </Text>
-            {job.client?.phone ? <Text style={styles.meta}>Phone: {job.client.phone}</Text> : null}
+            {job.client?.phone ? (
+              <Text style={styles.meta} onPress={() => callPhone(job.client?.phone)}>
+                Phone: <Text style={{ color: BRAND.primary, textDecorationLine: 'underline' }}>{job.client.phone}</Text>
+              </Text>
+            ) : null}
             {canViewJobFinancials() ? <JobOpenBalancesBanner job={job} /> : null}
             {!isOnline ? <Text style={styles.offlineBadge}>Offline - showing last synced data</Text> : null}
             <JobVisitNotesCard job={job} />

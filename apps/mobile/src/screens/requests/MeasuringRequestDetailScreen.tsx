@@ -1,3 +1,4 @@
+import { callPhone } from '../../lib/phone'
 import React from 'react'
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -151,7 +152,11 @@ export function MeasuringRequestDetailScreen({ route, navigation }: Props) {
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Customer</Text>
           <Text style={styles.sectionBody}>{request.customerName}</Text>
-          {request.phone ? <Text style={styles.meta}>Phone: {request.phone}</Text> : null}
+          {request.phone ? (
+            <Text style={styles.meta} onPress={() => callPhone(request.phone)}>
+              Phone: <Text style={{ textDecorationLine: 'underline' }}>{request.phone}</Text>
+            </Text>
+          ) : null}
           {request.email ? <Text style={styles.meta}>Email: {request.email}</Text> : null}
         </View>
 

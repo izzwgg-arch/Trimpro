@@ -5,6 +5,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { JobTypeSelect } from '@/components/jobs/JobTypeSelect'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -95,6 +96,7 @@ export default function EditPurchaseOrderPage() {
   const [formData, setFormData] = useState({
     vendorId: '',
     jobId: '',
+    jobType: '',
     status: 'DRAFT',
     expectedDate: '',
     orderDate: '',
@@ -226,6 +228,7 @@ export default function EditPurchaseOrderPage() {
       setFormData({
         vendorId: po.vendorId || '',
         jobId: po.jobId || '',
+        jobType: po.jobType || '',
         status: po.status || 'DRAFT',
         expectedDate: po.expectedDate ? new Date(po.expectedDate).toISOString().split('T')[0] : '',
         orderDate: po.orderDate ? new Date(po.orderDate).toISOString().split('T')[0] : '',
@@ -678,6 +681,7 @@ export default function EditPurchaseOrderPage() {
           vendorId: formData.vendorId,
           poNumber,
           jobId: formData.jobId || null,
+          jobType: formData.jobType || null,
           status: formData.status,
           expectedDate: formData.expectedDate || null,
           orderDate: formData.orderDate || new Date().toISOString().split('T')[0],
@@ -823,6 +827,10 @@ export default function EditPurchaseOrderPage() {
                     noneLabel="No job"
                   />
                 </div>
+                <JobTypeSelect
+                  value={formData.jobType}
+                  onValueChange={(value) => setFormData((prev) => ({ ...prev, jobType: value }))}
+                />
                 <div>
                   <Label htmlFor="deliveryAddress">Delivery Address</Label>
                   <textarea

@@ -101,7 +101,7 @@ export default function NewRequestPage() {
     jobSiteZipCode: '',
     source: 'OTHER',
     status: 'NEW',
-    jobType: 'CUSTOM',
+    jobType: '',
     value: '',
     probability: '50',
     notes: '',

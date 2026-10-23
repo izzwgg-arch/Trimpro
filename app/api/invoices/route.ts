@@ -21,7 +21,7 @@ import {
 import { ensureJobFromInvoice } from '@/lib/jobs/ensure-job-from-invoice'
 import { syncJobCostFromLinkedDocuments } from '@/lib/jobs/sync-job-cost'
 import { resolveJobTypeForWrite } from '@/lib/jobs/job-type-scope'
-import { parseJobType } from '@/lib/jobs/types'
+import { parseJobType, parseOptionalJobType } from '@/lib/jobs/types'
 import { invoiceJobSiteAddressSearchClauses } from '@/lib/search/job-site-address'
 import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
 
@@ -373,7 +373,7 @@ export async function POST(request: NextRequest) {
       jobId: jobId || null,
       estimateId: estimateId || null,
       title,
-      jobType: parseJobType(requestedJobType),
+      jobType: parseOptionalJobType(requestedJobType),
       status: 'DRAFT' as const,
       subtotal: subtotal,
       taxRate: taxRateValue,
@@ -676,16 +676,15 @@ export async function POST(request: NextRequest) {
     let linkedJobId: string | null = jobId || invoice.jobId || null
     if (estimateId) {
       try {
-        let jobTypeForCreate: string | undefined
+        let jobTypeForCreate: string | null = null
         if (requestedJobType) {
           const resolved = await resolveJobTypeForWrite(
             user.id,
             user.tenantId,
-            requestedJobType,
-            'CUSTOM'
+            requestedJobType
           )
           if (!resolved.ok) {
-            console.warn('[invoice-create] invalid jobType for auto job, falling back to CUSTOM:', resolved.error)
+            console.warn('[invoice-create] jobType not allowed for auto job, leaving it empty:', resolved.error)
           } else {
             jobTypeForCreate = resolved.jobType
           }

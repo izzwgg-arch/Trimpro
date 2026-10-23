@@ -24,6 +24,7 @@ interface MobileRequestListItem {
   id: string
   firstName: string
   lastName: string
+  jobSiteAddress?: string | null
   status: string
   isUrgent?: boolean
   notes?: string | null
@@ -291,11 +292,15 @@ export function RequestsListScreen({ navigation }: Props) {
             onPress={() => navigation.navigate('RequestDetail', { requestId: item.id })}
           >
             <View style={styles.requestHeadRow}>
+              {/* A request is named by its job site; the person shows underneath. */}
               <Text style={styles.requestName}>
-                {item.firstName} {item.lastName}
+                {item.jobSiteAddress?.trim() || `${item.firstName} ${item.lastName}`.trim() || 'Request'}
               </Text>
               {item.isUrgent ? <Text style={styles.urgentBadge}>URGENT</Text> : null}
             </View>
+            {item.jobSiteAddress?.trim() ? (
+              <Text style={styles.requestMeta}>{`${item.firstName} ${item.lastName}`.trim()}</Text>
+            ) : null}
             <Text style={styles.requestMeta}>
               {item.status} · {new Date(item.createdAt).toLocaleDateString()}
               {item.createdBy ? ` · Created by ${item.createdBy.firstName} ${item.createdBy.lastName}` : ''}

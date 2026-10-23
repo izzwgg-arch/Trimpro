@@ -202,7 +202,7 @@ export async function PUT(
       if (!resolved.ok) {
         return NextResponse.json({ error: resolved.error }, { status: 403 })
       }
-      nextJobType = resolved.jobType
+      nextJobType = resolved.jobType ?? existing.jobType
     }
 
     // Verify assignee if changed

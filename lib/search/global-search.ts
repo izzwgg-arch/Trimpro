@@ -16,6 +16,7 @@ import { prisma } from '@/lib/prisma'
 import { formatAddressParts } from '@/lib/address/parse'
 import { hasPermissionKey } from '@/lib/permission-aliases'
 import { computeScore, topN, queryVariants } from './scoring'
+import { requestDisplayName, requestPersonName, requestSubtitle } from '@/lib/requests/display'
 import { issueScopeWhere, jobScopeWhere, leadScopeWhere, scheduleScopeWhere, taskScopeWhere } from '@/lib/assignments/scope'
 
 export type { RawResult as SearchResult } from './scoring'
@@ -1025,12 +1026,12 @@ export async function runGlobalSearch({
     'request',
     'Requests',
     (leadRows as any[]).map((l) => {
-      const name = `${l.firstName ?? ''} ${l.lastName ?? ''}`.trim()
+      const name = requestPersonName(l)
       return {
         id: l.id,
         entityType: 'request',
-        title: name || l.company || 'Request',
-        subtitle: [l.company, l.jobSiteAddress, l.phone, String(l.status).replace(/_/g, ' ')].filter(Boolean).join(' · '),
+        title: requestDisplayName(l),
+        subtitle: [requestSubtitle(l), l.phone, String(l.status).replace(/_/g, ' ')].filter(Boolean).join(' · '),
         url: `/dashboard/requests/${l.id}`,
         score: computeScore(q, [name, l.company], [l.email, l.phone, l.jobSiteAddress, l.notes], l.updatedAt),
         updatedAt: l.updatedAt,
@@ -1043,13 +1044,13 @@ export async function runGlobalSearch({
     'measuring',
     'Measuring Requests',
     (measuringRows as any[]).map((m) => {
-      const name = `${m.request?.firstName ?? ''} ${m.request?.lastName ?? ''}`.trim() || m.request?.company || 'Request'
+      const name = m.request ? requestDisplayName(m.request) : 'Request'
       const who = m.assignedUser ? `${m.assignedUser.firstName} ${m.assignedUser.lastName}`.trim() : ''
       return {
         id: m.id,
         entityType: 'measuring',
         title: `Measuring: ${name}`,
-        subtitle: [m.request?.jobSiteAddress, who, String(m.status).replace(/_/g, ' ')].filter(Boolean).join(' · '),
+        subtitle: [m.request ? requestSubtitle(m.request) : '', who, String(m.status).replace(/_/g, ' ')].filter(Boolean).join(' · '),
         url: '/dashboard/measuring-requests',
         score: computeScore(q, [name], [m.notes, m.request?.jobSiteAddress], m.createdAt),
         updatedAt: m.createdAt,

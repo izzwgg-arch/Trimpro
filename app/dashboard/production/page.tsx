@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { PhoneLink } from '@/components/common/PhoneLink'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -652,7 +653,7 @@ function LeadCard({ lead, onOpen }: { lead: any; onOpen: () => void }) {
       <div className="text-sm font-semibold text-gray-900 line-clamp-1">{name}</div>
       {lead.company ? <div className="text-[11px] text-gray-500 line-clamp-1">{lead.company}</div> : null}
       <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-gray-500">
-        {lead.phone ? <span>{lead.phone}</span> : null}
+        {lead.phone ? <PhoneLink phone={lead.phone} /> : null}
         {assignee ? <span>· {assignee}</span> : null}
       </div>
     </div>

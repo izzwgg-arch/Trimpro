@@ -1,3 +1,4 @@
+import { createJobForEstimate } from '@/lib/jobs/create-job-for-estimate'
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { requirePermission } from '@/lib/authorization'
@@ -5,7 +6,7 @@ import { prisma } from '@/lib/prisma'
 import { enqueueQboSync } from '@/lib/qbo/sync-queue'
 import { calculateOrderedSubtotalRows } from '@/lib/documents/subtotals'
 import { calculateEstimateConversionSummary } from '@/lib/documents/conversion'
-import { parseJobType } from '@/lib/jobs/types'
+import { parseJobType, parseOptionalJobType } from '@/lib/jobs/types'
 import {
   allocateNextEstimateNumber,
   assertEstimateNumberAvailableForCreate,
@@ -166,6 +167,7 @@ export async function POST(request: NextRequest) {
       isNotesVisibleToClient,
       terms,
       depositPercent,
+      createJob,
     } = body
 
     if (!title) {
@@ -193,13 +195,28 @@ export async function POST(request: NextRequest) {
 
     const estimateNumberOverrideTrimmed = normalizeEstimateNumber(estimateNumberOverride)
 
+    // "Create new" was chosen for a customer that already has open jobs: start its own job.
+    let resolvedJobId: string | null = jobId || null
+    if (!resolvedJobId && createJob === true && clientId) {
+      const ownClient = await prisma.client.findFirst({ where: { id: clientId, tenantId: user.tenantId }, select: { id: true } })
+      if (!ownClient) return NextResponse.json({ error: 'Client not found' }, { status: 404 })
+      resolvedJobId = await createJobForEstimate({
+        tenantId: user.tenantId,
+        clientId,
+        userId: user.id,
+        estimateTitle: title,
+        jobSiteAddress,
+        jobType,
+      })
+    }
+
     const baseEstimateData = {
       tenantId: user.tenantId,
       clientId: clientId || null,
       leadId: leadId || null,
-      jobId: jobId || null,
+      jobId: resolvedJobId,
       title,
-      jobType: parseJobType(jobType) || 'CUSTOM',
+      jobType: parseOptionalJobType(jobType),
       jobSiteAddress: jobSiteAddress || null,
       status: 'DRAFT' as const,
       subtotal: subtotal,

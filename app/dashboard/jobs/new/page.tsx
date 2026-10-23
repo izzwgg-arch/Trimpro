@@ -18,7 +18,6 @@ import { fetchClientPickerDetail, pickDefaultClientAddress } from '@/lib/clients
 import { useCreateContextPrefill } from '@/src/hooks/useCreateContextPrefill'
 import { refreshAccessToken } from '@/lib/auth/client'
 import { JOB_STATUSES } from '@/lib/jobs/statuses'
-import { JobTypeCreateField } from '@/components/jobs/JobTypeCreateField'
 
 export default function NewJobPage() {
   const router = useRouter()
@@ -179,7 +178,6 @@ export default function NewJobPage() {
           title: formData.title,
           description: formData.description,
           status: formData.status,
-          jobType: formData.jobType,
           priority: parseInt(formData.priority),
           scheduledStart: scheduledStart,
           scheduledEnd: scheduledEnd,
@@ -289,10 +287,6 @@ export default function NewJobPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <JobTypeCreateField
-                value={formData.jobType}
-                onValueChange={(value) => setFormData((prev) => ({ ...prev, jobType: value }))}
-              />
             </div>
 
             <div>

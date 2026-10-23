@@ -9,7 +9,7 @@ import { jobRecordJobSiteAddressSearchClauses } from '@/lib/search/job-site-addr
 import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
 import { ACTIVE_JOB_STATUSES } from '@/lib/jobs/statuses'
 import { getJobBillingStatus } from '@/lib/jobs/billing-status'
-import { applyJobTypeListFilter, jobTypeScopeWhere, resolveJobTypeForWrite } from '@/lib/jobs/job-type-scope'
+import { applyJobTypeListFilter, jobTypeScopeWhereForJobs, resolveJobTypeForWrite } from '@/lib/jobs/job-type-scope'
 import { getUnreadJobThreadCounts } from '@/lib/chat/service'
 import { ensureJobDescriptionNote } from '@/lib/jobs/description-note'
 import { andScope, isAssignedOnly, jobScopeWhere } from '@/lib/assignments/scope'
@@ -140,7 +140,7 @@ export async function GET(request: NextRequest) {
               userId: user.id,
             },
           },
-          ...(await jobTypeScopeWhere(user.id, user.tenantId)),
+          ...(await jobTypeScopeWhereForJobs(user.id, user.tenantId)),
         }
 
         applySmartSearch(
@@ -270,7 +270,7 @@ export async function GET(request: NextRequest) {
 
     const where: any = {
       tenantId: user.tenantId,
-      ...(await jobTypeScopeWhere(user.id, user.tenantId)),
+      ...(await jobTypeScopeWhereForJobs(user.id, user.tenantId)),
     }
 
     applySmartSearch(

@@ -4,6 +4,9 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { JOB_TYPES, formatJobType, jobTypeColors } from '@/lib/jobs/types'
 
+// Select can't hold an empty value, so "no type" travels as this placeholder.
+const NO_TYPE = '__none__'
+
 type JobTypeSelectProps = {
   value: string
   onValueChange: (value: string) => void
@@ -29,11 +32,12 @@ export function JobTypeSelect({
   return (
     <div className={className}>
       {showLabel ? <Label htmlFor={id}>{label}</Label> : null}
-      <Select value={value || items[0]?.value || 'CUSTOM'} onValueChange={onValueChange} disabled={disabled}>
+      <Select value={value || NO_TYPE} onValueChange={(v) => onValueChange(v === NO_TYPE ? '' : v)} disabled={disabled}>
         <SelectTrigger id={id} className="w-full">
-          <SelectValue placeholder="Select job type" />
+          <SelectValue placeholder="No type" />
         </SelectTrigger>
         <SelectContent>
+          <SelectItem value={NO_TYPE}>No type</SelectItem>
           {items.map((item) => (
             <SelectItem key={item.value} value={item.value}>
               {item.label}

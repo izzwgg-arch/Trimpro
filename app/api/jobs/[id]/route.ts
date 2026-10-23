@@ -382,7 +382,10 @@ export async function PUT(
     }
 
     let nextJobType = existing.jobType
-    if (jobType !== undefined) {
+    if (jobType === null || jobType === '') {
+      // Cleared on the edit page: the job has no type.
+      nextJobType = null
+    } else if (jobType !== undefined) {
       const nextTypeAccess = await resolveJobTypeForWrite(user.id, user.tenantId, jobType, existing.jobType)
       if (!nextTypeAccess.ok) {
         return NextResponse.json({ error: nextTypeAccess.error }, { status: 403 })

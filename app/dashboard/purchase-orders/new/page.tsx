@@ -20,6 +20,8 @@ import {
   bundleExpandedLineToPurchaseOrderLine,
 } from '@/lib/bundles/expand-line-items'
 import { formatAddressParts } from '@/lib/address/parse'
+import { JobTypeSelect } from '@/components/jobs/JobTypeSelect'
+import { JOB_TYPE_VALUES } from '@/lib/jobs/types'
 interface Vendor {
   id: string
   name: string
@@ -82,6 +84,7 @@ export default function NewPurchaseOrderPage() {
   const searchParams = useSearchParams()
   const jobIdParam = searchParams.get('jobId')
   const fromTakeoffParam = searchParams.get('fromTakeoff')
+  const jobTypeParam = searchParams.get('jobType')
   
   const [loading, setLoading] = useState(false)
   const [vendors, setVendors] = useState<Vendor[]>([])
@@ -100,6 +103,7 @@ export default function NewPurchaseOrderPage() {
   const [formData, setFormData] = useState({
     vendorId: '',
     jobId: jobIdParam || '',
+    jobType: jobTypeParam && (JOB_TYPE_VALUES as readonly string[]).includes(jobTypeParam) ? jobTypeParam : '',
     poNumber: '',
     status: 'DRAFT',
     expectedDate: '',
@@ -600,6 +604,7 @@ export default function NewPurchaseOrderPage() {
           vendorId: formData.vendorId,
           poNumber: formData.poNumber || null,
           jobId: formData.jobId || null,
+          jobType: formData.jobType || null,
           status: formData.status,
           expectedDate: formData.expectedDate || null,
           orderDate: formData.orderDate || new Date().toISOString().split('T')[0],
@@ -707,6 +712,10 @@ export default function NewPurchaseOrderPage() {
                     noneLabel="No job"
                   />
                 </div>
+                <JobTypeSelect
+                  value={formData.jobType}
+                  onValueChange={(value) => setFormData((prev) => ({ ...prev, jobType: value }))}
+                />
                 <div>
                   <Label htmlFor="deliveryAddress">Delivery Address</Label>
                   <textarea
