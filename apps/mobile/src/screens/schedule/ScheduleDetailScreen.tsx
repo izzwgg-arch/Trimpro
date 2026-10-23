@@ -55,7 +55,7 @@ function deriveStatusLabel(schedule: ScheduleDetailResponse['schedule']) {
 export function ScheduleDetailScreen({ navigation, route }: Props) {
   const { scheduleId } = route.params
   const { user } = useAuth()
-  const { canCreateSchedulesForOthers } = useMobilePermissions()
+  const { canCreateSchedulesForOthers, canAssignJobs } = useMobilePermissions()
   const queryClient = useQueryClient()
 
   const detailQuery = useQuery({
@@ -76,7 +76,7 @@ export function ScheduleDetailScreen({ navigation, route }: Props) {
   })
 
   const schedule = detailQuery.data?.schedule
-  const canManage = schedule ? user?.role === 'ADMIN' || canCreateSchedulesForOthers() || schedule.userId === user?.id : false
+  const canManage = schedule ? user?.role === 'ADMIN' || canCreateSchedulesForOthers() || canAssignJobs() || schedule.userId === user?.id : false
 
   const confirmDelete = () => {
     Alert.alert('Delete schedule', 'Are you sure you want to delete this schedule?', [
@@ -190,12 +190,44 @@ export function ScheduleDetailScreen({ navigation, route }: Props) {
             <Text style={styles.notesText}>{loaded.description?.trim() || 'No notes added.'}</Text>
           </View>
         </Card>
+
+        {canManage ? (
+          <View style={styles.actionsRow}>
+            <Pressable style={styles.editButton} onPress={() => navigation.navigate('ScheduleCreate', { scheduleId })}>
+              <Ionicons name="create-outline" size={20} color="#fff" />
+              <Text style={styles.editButtonText}>Edit schedule</Text>
+            </Pressable>
+            <Pressable style={styles.deleteButton} onPress={confirmDelete}>
+              <Ionicons name="trash-outline" size={20} color={colors.danger} />
+            </Pressable>
+          </View>
+        ) : null}
       </ScrollView>
     </AppScreen>
   )
 }
 
 const styles = StyleSheet.create({
+  actionsRow: { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.md },
+  editButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 10,
+    backgroundColor: colors.brandPrimary,
+  },
+  editButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  deleteButton: {
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#fecaca',
+  },
   content: { gap: spacing.sm, paddingTop: spacing.sm, paddingBottom: spacing.lg },
   headerMenuButton: {
     width: 34,

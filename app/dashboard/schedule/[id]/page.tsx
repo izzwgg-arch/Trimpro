@@ -4,7 +4,7 @@ import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Calendar, User, Briefcase } from 'lucide-react'
+import { ArrowLeft, Calendar, User, Briefcase, Pencil, Trash2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { formatDateTime } from '@/lib/utils'
@@ -49,6 +49,27 @@ export default function ScheduleDetailsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [schedule, setSchedule] = useState<ScheduleDetails | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
+  const handleDelete = async () => {
+    if (!confirm('Delete this schedule?')) return
+    setDeleting(true)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const res = await fetch(`/api/schedules/${scheduleId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        alert(data.error || 'Failed to delete schedule')
+        return
+      }
+      router.push('/dashboard/schedule')
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   useEffect(() => {
     if (!scheduleId) return
@@ -118,6 +139,18 @@ export default function ScheduleDetailsPage() {
             <h1 className="text-3xl font-bold text-gray-900">Schedule Details</h1>
             <p className="text-gray-600 mt-1">{schedule.title}</p>
           </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link href={`/dashboard/schedule/${schedule.id}/edit`}>
+            <Button>
+              <Pencil className="mr-2 h-4 w-4" />
+              Edit
+            </Button>
+          </Link>
+          <Button variant="outline" className="text-red-600 hover:text-red-700" onClick={handleDelete} disabled={deleting}>
+            <Trash2 className="mr-2 h-4 w-4" />
+            {deleting ? 'Deleting...' : 'Delete'}
+          </Button>
         </div>
       </div>
 
