@@ -38,6 +38,9 @@ export async function GET(request: NextRequest) {
       assignedOnly: {
         jobsUserId: (await isAssignedOnly(user, 'jobs')) ? user.id : undefined,
         tasksUserId: (await isAssignedOnly(user, 'tasks')) ? user.id : undefined,
+        leadsUserId: (await isAssignedOnly(user, 'leads')) ? user.id : undefined,
+        issuesUserId: (await isAssignedOnly(user, 'issues')) ? user.id : undefined,
+        scheduleUserId: (await isAssignedOnly(user, 'schedule')) ? user.id : undefined,
       },
     })
 

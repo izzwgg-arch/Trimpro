@@ -1,8 +1,10 @@
 /**
  * Global search — business/workflow data only.
  *
- * Searches: clients, contacts, vendors, estimates, invoices, payments,
- *           purchase orders, items, jobs, tasks, attachments, notes.
+ * Searches: clients, contacts, vendors, estimates, invoices, credit memos,
+ *           payments, purchase orders, items, jobs (incl. job site address),
+ *           requests, measuring requests, tasks, issues, schedules, team
+ *           members, calls, attachments, notes.
  *
  * Excludes: permissions, roles, integrations, logs, settings, system config.
  *
@@ -14,7 +16,7 @@ import { prisma } from '@/lib/prisma'
 import { formatAddressParts } from '@/lib/address/parse'
 import { hasPermissionKey } from '@/lib/permission-aliases'
 import { computeScore, topN, queryVariants } from './scoring'
-import { jobScopeWhere, taskScopeWhere } from '@/lib/assignments/scope'
+import { issueScopeWhere, jobScopeWhere, leadScopeWhere, scheduleScopeWhere, taskScopeWhere } from '@/lib/assignments/scope'
 
 export type { RawResult as SearchResult } from './scoring'
 
@@ -101,6 +103,22 @@ function resolveInvoiceAddress(invoice: {
   return invoice.estimate?.jobSiteAddress?.trim() || ''
 }
 
+/** Address match (street / city / zip) for an `addresses` relation. */
+function addressMatch(terms: string[]) {
+  return {
+    addresses: {
+      some: { OR: [...ilikeAny('street', terms), ...ilikeAny('city', terms), ...ilikeAny('zipCode', terms)] },
+    },
+  }
+}
+
+/** AND-wrap a scope fragment so it can sit next to a where that has its own OR. */
+function scoped(fragment: Record<string, unknown> | undefined) {
+  return fragment && Object.keys(fragment).length > 0 ? { AND: [fragment] } : {}
+}
+
+const AUTO_SCHEDULE_MARKER = '[AUTO_JOB_SCHEDULE]'
+
 const estimateInclude = {
   client: { select: { name: true, companyName: true } },
   job: {
@@ -142,7 +160,13 @@ export async function runGlobalSearch({
   permissions: string[]
   limitPerGroup?: number
   /** "See only assigned ..." restrictions for this person (user id when they apply). */
-  assignedOnly?: { jobsUserId?: string; tasksUserId?: string }
+  assignedOnly?: {
+    jobsUserId?: string
+    tasksUserId?: string
+    leadsUserId?: string
+    issuesUserId?: string
+    scheduleUserId?: string
+  }
 }): Promise<SearchGroup[]> {
   const q = query.trim()
   if (!q || q.length < 2) return []
@@ -151,7 +175,12 @@ export async function runGlobalSearch({
   const terms = queryVariants(q) // synonyms + digit forms
   const fetch = limitPerGroup * 2 // fetch 2× then score/slice
   const jobScope = assignedOnly?.jobsUserId ? jobScopeWhere(assignedOnly.jobsUserId) : {}
-  const taskScope = assignedOnly?.tasksUserId ? taskScopeWhere(assignedOnly.tasksUserId) : {}
+  const taskScope = scoped(assignedOnly?.tasksUserId ? taskScopeWhere(assignedOnly.tasksUserId) : undefined)
+  const leadScope = scoped(assignedOnly?.leadsUserId ? leadScopeWhere(assignedOnly.leadsUserId) : undefined)
+  const issueScope = scoped(assignedOnly?.issuesUserId ? issueScopeWhere(assignedOnly.issuesUserId) : undefined)
+  const scheduleScope = scoped(assignedOnly?.scheduleUserId ? scheduleScopeWhere(assignedOnly.scheduleUserId) : undefined)
+  const clientName = { client: { OR: [...ilikeAny('name', [q]), ...ilikeAny('companyName', [q])] } }
+  const jobRef = { job: { OR: [...ilikeAny('jobNumber', terms), ...ilikeAny('title', terms)] } }
 
   // ── parallel queries ──────────────────────────────────────────────────────
   const [
@@ -167,6 +196,13 @@ export async function runGlobalSearch({
     taskRows,
     attachmentRows,
     noteRows,
+    leadRows,
+    issueRows,
+    scheduleRows,
+    creditMemoRows,
+    measuringRows,
+    userRows,
+    callRows,
   ] = await Promise.all([
     // Clients
     can('clients.view')
@@ -179,6 +215,7 @@ export async function runGlobalSearch({
               ...ilikeAny('companyName', terms),
               ...ilikeAny('email', terms),
               ...ilikeAny('phone', terms),
+              addressMatch(terms),
             ],
           },
           take: fetch,
@@ -230,6 +267,8 @@ export async function runGlobalSearch({
               ...ilikeAny('estimateNumber', terms),
               ...ilikeAny('title', terms),
               ...ilikeAny('notes', terms),
+              ...ilikeAny('jobSiteAddress', terms),
+              { job: addressMatch(terms) },
               { client: { OR: [...ilikeAny('name', terms), ...ilikeAny('companyName', terms)] } },
               { job: { OR: [...ilikeAny('jobNumber', terms), ...ilikeAny('title', terms)] } },
             ],
@@ -252,6 +291,7 @@ export async function runGlobalSearch({
               ...ilikeAny('memo', terms),
               { client: { OR: [...ilikeAny('name', terms), ...ilikeAny('companyName', terms)] } },
               { job: { OR: [...ilikeAny('jobNumber', terms), ...ilikeAny('title', terms)] } },
+              { job: addressMatch(terms) },
             ],
           },
           include: invoiceInclude,
@@ -319,6 +359,7 @@ export async function runGlobalSearch({
               ...ilikeAny('jobNumber', terms),
               ...ilikeAny('title', terms),
               ...ilikeAny('description', terms),
+              addressMatch(terms),
               {
                 client: {
                   OR: [
@@ -351,8 +392,11 @@ export async function runGlobalSearch({
             OR: [
               ...ilikeAny('title', terms),
               ...ilikeAny('description', terms),
+              jobRef,
+              { job: clientName },
             ],
           },
+          include: { job: { select: { jobNumber: true, title: true } } },
           take: fetch,
           orderBy: { updatedAt: 'desc' },
         })
@@ -371,6 +415,9 @@ export async function runGlobalSearch({
               { invoice: { tenantId } },
               { purchaseOrder: { tenantId } },
               { vendor: { tenantId } },
+              { task: { tenantId } },
+              { issue: { tenantId } },
+              { lead: { tenantId } },
             ],
       },
       include: {
@@ -380,6 +427,9 @@ export async function runGlobalSearch({
         job: { select: { id: true, jobNumber: true } },
         purchaseOrder: { select: { id: true, poNumber: true } },
         vendor: { select: { id: true, name: true } },
+        task: { select: { id: true, title: true } },
+        issue: { select: { id: true, title: true } },
+        lead: { select: { id: true, firstName: true, lastName: true, company: true } },
       },
       take: fetch,
       orderBy: { createdAt: 'desc' },
@@ -400,6 +450,148 @@ export async function runGlobalSearch({
       take: fetch,
       orderBy: { updatedAt: 'desc' },
     }),
+
+    // Requests (leads)
+    can('leads.view')
+      ? prisma.lead.findMany({
+          where: {
+            tenantId,
+            ...leadScope,
+            OR: [
+              ...ilikeAny('firstName', terms),
+              ...ilikeAny('lastName', terms),
+              ...ilikeAny('company', terms),
+              ...ilikeAny('email', terms),
+              ...ilikeAny('phone', terms),
+              ...ilikeAny('notes', terms),
+              ...ilikeAny('jobSiteAddress', terms),
+            ],
+          },
+          take: fetch,
+          orderBy: { updatedAt: 'desc' },
+        })
+      : Promise.resolve([]),
+
+    // Issues
+    can('issues.view')
+      ? prisma.issue.findMany({
+          where: {
+            tenantId,
+            ...issueScope,
+            OR: [
+              ...ilikeAny('title', terms),
+              ...ilikeAny('description', terms),
+              jobRef,
+              clientName,
+            ],
+          },
+          include: { job: { select: { jobNumber: true, title: true } } },
+          take: fetch,
+          orderBy: { updatedAt: 'desc' },
+        })
+      : Promise.resolve([]),
+
+    // Schedules (made by hand; the automatic crew copies are left out)
+    can('schedule.view')
+      ? prisma.schedule.findMany({
+          where: {
+            tenantId,
+            ...scheduleScope,
+            NOT: { description: { startsWith: AUTO_SCHEDULE_MARKER } },
+            OR: [
+              ...ilikeAny('title', terms),
+              ...ilikeAny('description', terms),
+              jobRef,
+              { user: { OR: [...ilikeAny('firstName', terms), ...ilikeAny('lastName', terms)] } },
+            ],
+          },
+          include: {
+            user: { select: { firstName: true, lastName: true } },
+            job: { select: { jobNumber: true, title: true } },
+          },
+          take: fetch,
+          orderBy: { startTime: 'desc' },
+        })
+      : Promise.resolve([]),
+
+    // Credit memos
+    can('invoices.view')
+      ? prisma.creditMemo.findMany({
+          where: {
+            tenantId,
+            OR: [
+              ...ilikeAny('creditMemoNumber', terms),
+              ...ilikeAny('title', terms),
+              ...ilikeAny('notes', terms),
+              ...ilikeAny('memo', terms),
+              { client: { OR: [...ilikeAny('name', terms), ...ilikeAny('companyName', terms)] } },
+            ],
+          },
+          include: { client: { select: { name: true, companyName: true } } },
+          take: fetch,
+          orderBy: { updatedAt: 'desc' },
+        })
+      : Promise.resolve([]),
+
+    // Measuring requests (searched by their notes or the request they belong to)
+    can('leads.view')
+      ? prisma.measuringRequest.findMany({
+          where: {
+            tenantId,
+            ...(assignedOnly?.leadsUserId ? { assignedUserId: assignedOnly.leadsUserId } : {}),
+            OR: [
+              ...ilikeAny('notes', terms),
+              {
+                request: {
+                  OR: [
+                    ...ilikeAny('firstName', terms),
+                    ...ilikeAny('lastName', terms),
+                    ...ilikeAny('company', terms),
+                    ...ilikeAny('jobSiteAddress', terms),
+                  ],
+                },
+              },
+            ],
+          },
+          include: {
+            request: { select: { id: true, firstName: true, lastName: true, company: true, jobSiteAddress: true } },
+            assignedUser: { select: { firstName: true, lastName: true } },
+          },
+          take: fetch,
+          orderBy: { createdAt: 'desc' },
+        })
+      : Promise.resolve([]),
+
+    // Team members
+    can('users.view') || can('teams.view')
+      ? prisma.user.findMany({
+          where: {
+            tenantId,
+            OR: [
+              ...ilikeAny('firstName', terms),
+              ...ilikeAny('lastName', terms),
+              ...ilikeAny('email', terms),
+              ...ilikeAny('phone', terms),
+            ],
+          },
+          select: { id: true, firstName: true, lastName: true, email: true, phone: true, role: true, updatedAt: true },
+          take: fetch,
+          orderBy: { updatedAt: 'desc' },
+        })
+      : Promise.resolve([]),
+
+    // Calls (by phone number)
+    can('calls.view')
+      ? prisma.call.findMany({
+          where: {
+            tenantId,
+            OR: [...ilikeAny('fromNumber', terms), ...ilikeAny('toNumber', terms)],
+          },
+          include: { client: { select: { id: true, name: true } } },
+          take: fetch,
+          orderBy: { startedAt: 'desc' },
+        })
+      : Promise.resolve([]),
   ])
 
   // ── related entities for matched clients ──────────────────────────────────
@@ -732,9 +924,9 @@ export async function runGlobalSearch({
       id: task.id,
       entityType: 'task',
       title: task.title,
-      subtitle: `${task.status} · ${task.priority}`,
+      subtitle: [task.job ? `${task.job.jobNumber} — ${task.job.title}` : '', task.status, task.priority].filter(Boolean).join(' · '),
       url: `/dashboard/tasks/${task.id}`,
-      score: computeScore(q, [task.title], [task.description], task.updatedAt),
+      score: computeScore(q, [task.title], [task.description, task.job?.jobNumber, task.job?.title], task.updatedAt),
       updatedAt: task.updatedAt,
     })),
     limitPerGroup
@@ -766,6 +958,15 @@ export async function runGlobalSearch({
       } else if (att.vendor) {
         subtitle = `Vendor ${att.vendor.name}`
         url = `/dashboard/vendors/${att.vendor.id}`
+      } else if (att.task) {
+        subtitle = `Task: ${att.task.title}`
+        url = `/dashboard/tasks/${att.task.id}`
+      } else if (att.issue) {
+        subtitle = `Issue: ${att.issue.title}`
+        url = `/dashboard/issues/${att.issue.id}`
+      } else if (att.lead) {
+        subtitle = `Request: ${`${att.lead.firstName} ${att.lead.lastName}`.trim() || att.lead.company || ''}`
+        url = `/dashboard/requests/${att.lead.id}`
       }
       return {
         id: att.id,
@@ -813,6 +1014,132 @@ export async function runGlobalSearch({
   if (noteResults.length > 0) {
     groups.push({ type: 'note', label: 'Notes', results: noteResults })
   }
+
+  const pushGroup = (type: string, label: string, results: SearchGroup['results']) => {
+    const top = topN(results, limitPerGroup)
+    if (top.length > 0) groups.push({ type, label, results: top })
+  }
+
+  // --- Requests -------------------------------------------------------------
+  pushGroup(
+    'request',
+    'Requests',
+    (leadRows as any[]).map((l) => {
+      const name = `${l.firstName ?? ''} ${l.lastName ?? ''}`.trim()
+      return {
+        id: l.id,
+        entityType: 'request',
+        title: name || l.company || 'Request',
+        subtitle: [l.company, l.jobSiteAddress, l.phone, String(l.status).replace(/_/g, ' ')].filter(Boolean).join(' · '),
+        url: `/dashboard/requests/${l.id}`,
+        score: computeScore(q, [name, l.company], [l.email, l.phone, l.jobSiteAddress, l.notes], l.updatedAt),
+        updatedAt: l.updatedAt,
+      }
+    })
+  )
+
+  // --- Measuring requests ---------------------------------------------------
+  pushGroup(
+    'measuring',
+    'Measuring Requests',
+    (measuringRows as any[]).map((m) => {
+      const name = `${m.request?.firstName ?? ''} ${m.request?.lastName ?? ''}`.trim() || m.request?.company || 'Request'
+      const who = m.assignedUser ? `${m.assignedUser.firstName} ${m.assignedUser.lastName}`.trim() : ''
+      return {
+        id: m.id,
+        entityType: 'measuring',
+        title: `Measuring: ${name}`,
+        subtitle: [m.request?.jobSiteAddress, who, String(m.status).replace(/_/g, ' ')].filter(Boolean).join(' · '),
+        url: '/dashboard/measuring-requests',
+        score: computeScore(q, [name], [m.notes, m.request?.jobSiteAddress], m.createdAt),
+        updatedAt: m.createdAt,
+      }
+    })
+  )
+
+  // --- Issues ---------------------------------------------------------------
+  pushGroup(
+    'issue',
+    'Issues',
+    (issueRows as any[]).map((i) => ({
+      id: i.id,
+      entityType: 'issue',
+      title: i.title,
+      subtitle: [i.job ? `${i.job.jobNumber} — ${i.job.title}` : '', i.status, i.priority].filter(Boolean).join(' · '),
+      url: `/dashboard/issues/${i.id}`,
+      score: computeScore(q, [i.title], [i.description, i.job?.jobNumber, i.job?.title], i.updatedAt),
+      updatedAt: i.updatedAt,
+    }))
+  )
+
+  // --- Schedules ------------------------------------------------------------
+  pushGroup(
+    'schedule',
+    'Schedules',
+    (scheduleRows as any[]).map((s) => {
+      const who = s.user ? `${s.user.firstName} ${s.user.lastName}`.trim() : ''
+      const when = new Date(s.startTime).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+      return {
+        id: s.id,
+        entityType: 'schedule',
+        title: s.title,
+        subtitle: [when, who, s.job ? s.job.jobNumber : ''].filter(Boolean).join(' · '),
+        url: `/dashboard/schedule/${s.id}`,
+        score: computeScore(q, [s.title, who], [s.description, s.job?.jobNumber, s.job?.title], s.updatedAt),
+        updatedAt: s.updatedAt,
+      }
+    })
+  )
+
+  // --- Credit memos ---------------------------------------------------------
+  pushGroup(
+    'creditMemo',
+    'Credit Memos',
+    (creditMemoRows as any[]).map((c) => ({
+      id: c.id,
+      entityType: 'creditMemo',
+      title: `${c.creditMemoNumber} — ${c.title}`,
+      subtitle: [c.client?.companyName || c.client?.name, `$${Number(c.total).toFixed(2)}`, c.status].filter(Boolean).join(' · '),
+      url: `/dashboard/credit-memos/${c.id}`,
+      score: computeScore(q, [c.creditMemoNumber, c.title], [c.notes, c.memo, c.client?.name], c.updatedAt),
+      updatedAt: c.updatedAt,
+    }))
+  )
+
+  // --- Team members ---------------------------------------------------------
+  pushGroup(
+    'user',
+    'Team',
+    (userRows as any[]).map((u) => {
+      const name = `${u.firstName} ${u.lastName}`.trim()
+      return {
+        id: u.id,
+        entityType: 'user',
+        title: name || u.email,
+        subtitle: [u.role, u.email, u.phone].filter(Boolean).join(' · '),
+        url: '/dashboard/teams',
+        score: computeScore(q, [name, u.firstName, u.lastName], [u.email, u.phone], u.updatedAt),
+        updatedAt: u.updatedAt,
+      }
+    })
+  )
+
+  // --- Calls ----------------------------------------------------------------
+  pushGroup(
+    'call',
+    'Calls',
+    (callRows as any[]).map((c) => ({
+      id: c.id,
+      entityType: 'call',
+      title: `${String(c.direction).toLowerCase() === 'inbound' ? 'Call from' : 'Call to'} ${String(c.direction).toLowerCase() === 'inbound' ? c.fromNumber : c.toNumber}`,
+      subtitle: [c.client?.name, new Date(c.startedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }), c.status]
+        .filter(Boolean)
+        .join(' · '),
+      url: c.client?.id ? `/dashboard/clients/${c.client.id}` : '/dashboard/calls',
+      score: computeScore(q, [c.fromNumber, c.toNumber], [c.client?.name], c.startedAt),
+      updatedAt: c.startedAt,
+    }))
+  )
 
   return groups
 }

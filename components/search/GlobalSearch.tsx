@@ -23,6 +23,13 @@ import {
   CheckSquare,
   Paperclip,
   StickyNote,
+  Inbox,
+  AlertCircle,
+  Calendar,
+  Ruler,
+  UserCircle,
+  Phone,
+  FileMinus,
 } from 'lucide-react'
 import type { SearchGroup } from '@/lib/search/global-search'
 import { pushReturnTo } from '@/lib/navigation/nav-stack'
@@ -45,6 +52,13 @@ const ENTITY_META: Record<
   task:          { icon: CheckSquare,   colour: 'text-rose-600 bg-rose-50' },
   file:          { icon: Paperclip,     colour: 'text-slate-600 bg-slate-100' },
   note:          { icon: StickyNote,    colour: 'text-yellow-600 bg-yellow-50' },
+  request:       { icon: Inbox,         colour: 'text-sky-600 bg-sky-50' },
+  measuring:     { icon: Ruler,         colour: 'text-teal-600 bg-teal-50' },
+  issue:         { icon: AlertCircle,   colour: 'text-red-600 bg-red-50' },
+  schedule:      { icon: Calendar,      colour: 'text-violet-600 bg-violet-50' },
+  creditMemo:    { icon: FileMinus,     colour: 'text-lime-700 bg-lime-50' },
+  user:          { icon: UserCircle,    colour: 'text-gray-700 bg-gray-100' },
+  call:          { icon: Phone,         colour: 'text-green-700 bg-green-50' },
 }
 
 function EntityIcon({ type }: { type: string }) {
@@ -195,7 +209,7 @@ export function GlobalSearch() {
           onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
           onFocus={() => setOpen(true)}
           onKeyDown={handleKeyDown}
-          placeholder="Search customers, jobs, invoices…"
+          placeholder="Search anything: customers, jobs, addresses, requests…"
           autoComplete="off"
           spellCheck={false}
           className="w-full h-9 pl-9 pr-20 rounded-lg border border-gray-200 bg-gray-50 text-sm text-gray-900 placeholder:text-gray-400 outline-none focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100 transition-all"

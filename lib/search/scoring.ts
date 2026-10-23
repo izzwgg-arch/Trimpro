@@ -41,6 +41,16 @@ export function queryVariants(raw: string): string[] {
     terms.add(base)
     const digits = digitsOnly(base)
     if (digits.length >= 3) terms.add(digits)
+    // Stored phones look like "(845) 248-3973"; match them from "8452483973" too.
+    const ten = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits
+    if (ten.length === 10) {
+      const [a, b, c] = [ten.slice(0, 3), ten.slice(3, 6), ten.slice(6)]
+      terms.add(`(${a}) ${b}-${c}`)
+      terms.add(`${a}-${b}-${c}`)
+      terms.add(`${a}.${b}.${c}`)
+      terms.add(`${a} ${b} ${c}`)
+      terms.add(`${b}-${c}`)
+    }
   }
 
   // Also keep raw trimmed for exact case-insensitive contains
