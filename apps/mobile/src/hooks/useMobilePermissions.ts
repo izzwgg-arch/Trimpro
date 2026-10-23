@@ -42,6 +42,12 @@ export function useMobilePermissions() {
   const canUploadMedia = (): boolean => hasPermission('mobile.media.upload')
   const canUseMessaging = (): boolean => hasPermission('mobile.messaging.enabled')
   const canTrackTime = (): boolean => hasPermission('mobile.jobs.track_time')
+  // Material takeoffs: the mobile keys, or the matching web permission (admins get those).
+  const canViewTakeoffs = (): boolean =>
+    hasPermission('mobile.takeoffs.view') || hasPermission('mobile.takeoffs.edit') || hasWebPermission('jobs.takeoffs.view')
+  const canCreateTakeoffs = (): boolean => hasPermission('mobile.takeoffs.edit') || hasWebPermission('jobs.takeoffs.create')
+  const canEditTakeoffs = (): boolean => hasPermission('mobile.takeoffs.edit') || hasWebPermission('jobs.takeoffs.edit')
+  const canDeleteTakeoffs = (): boolean => hasPermission('mobile.takeoffs.delete') || hasWebPermission('jobs.takeoffs.delete')
   const canCreateSchedulesForOthers = (): boolean => hasPermission('canCreateSchedulesForOthers')
   const canViewEntireSchedule = (): boolean =>
     hasPermission('mobile.schedule.view_all') ||
@@ -99,6 +105,10 @@ export function useMobilePermissions() {
     canUseMessaging,
     canTrackTime,
     canCreateSchedulesForOthers,
+    canViewTakeoffs,
+    canCreateTakeoffs,
+    canEditTakeoffs,
+    canDeleteTakeoffs,
     canViewEntireSchedule,
     canEditOwnTimeEntries,
     canEditTeamTimeEntries,

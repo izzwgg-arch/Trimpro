@@ -25,6 +25,7 @@ import { AttachmentPickerSheet } from '../../components/attachments/AttachmentPi
 import { AttachmentUploadQueue } from '../../components/attachments/AttachmentUploadQueue'
 import { AttachmentOpenPressable } from '../../components/attachments/AttachmentOpenPressable'
 import { AttachmentGalleryModal } from '../../components/attachments/AttachmentGalleryModal'
+import { JobTakeoffsSection } from '../../components/takeoffs/JobTakeoffsSection'
 import { pickAttachmentsByAction, uploadFileWithProgress } from '../../services/attachment-upload'
 import { isPdfAttachment, normalizeAttachmentUrl } from '../../services/open-attachment'
 import { useAttachmentUploadQueue } from '../../hooks/useAttachmentUploadQueue'
@@ -407,6 +408,9 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
             <JobTasksIssuesSection job={job} showLists />
           </CollapsibleCard>
         )}
+
+        {/* Material takeoff */}
+        <JobTakeoffsSection jobId={job.id} onOpen={(takeoffId) => navigation.navigate('TakeoffEdit', { takeoffId, jobId: job.id })} />
 
         {/* Notes (collapsible) */}
         {canViewJobNotes() && (

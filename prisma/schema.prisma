@@ -77,6 +77,8 @@ model Tenant {
   estimateMaterialLines  EstimateMaterialLine[]
   brandingSettings       BrandingSettings?
   productionSettings     ProductionSettings?
+  takeoffSettings        TakeoffSettings?
+  materialTakeoffs       MaterialTakeoff[]
   measuringRequests      MeasuringRequest[]
 
   @@map("tenants")
@@ -456,6 +458,7 @@ model Job {
   invoices       Invoice[]
   creditMemos    CreditMemo[]
   purchaseOrders PurchaseOrder[]
+  materialTakeoffs MaterialTakeoff[]
   assignments    JobAssignment[]
   tasks          Task[]
   issues         Issue[]
@@ -3626,4 +3629,78 @@ model RecurringPaymentRun {
   @@index([recurringPaymentId])
   @@index([tenantId, runAt])
   @@map("recurring_payment_runs")
+}
+
+
+// ---- Material takeoff (per job: door schedule + other materials) -------------
+
+model MaterialTakeoff {
+  id          String   @id @default(cuid())
+  tenantId    String
+  jobId       String
+  title       String?
+  notes       String?  @db.Text
+  createdById String?
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  job    Job                   @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  doors  MaterialTakeoffDoor[]
+  items  MaterialTakeoffItem[]
+
+  @@index([tenantId])
+  @@index([jobId])
+  @@map("material_takeoffs")
+}
+
+model MaterialTakeoffDoor {
+  id         String  @id @default(cuid())
+  takeoffId  String
+  sortOrder  Int     @default(0)
+  doorNumber Int
+  location   String?
+  height     String?
+  width      String?
+  swing      String?
+  lock       String?
+  jamb       String?
+  hinge      String?
+  doorStyle  String?
+  notes      String? @db.Text
+
+  takeoff MaterialTakeoff @relation(fields: [takeoffId], references: [id], onDelete: Cascade)
+
+  @@index([takeoffId])
+  @@map("material_takeoff_doors")
+}
+
+model MaterialTakeoffItem {
+  id          String   @id @default(cuid())
+  takeoffId   String
+  category    String
+  sortOrder   Int      @default(0)
+  quantity    Decimal? @db.Decimal(10, 2)
+  unit        String?
+  description String?
+  notes       String?  @db.Text
+
+  takeoff MaterialTakeoff @relation(fields: [takeoffId], references: [id], onDelete: Cascade)
+
+  @@index([takeoffId])
+  @@map("material_takeoff_items")
+}
+
+// Company-wide dropdown options and categories for material takeoffs.
+model TakeoffSettings {
+  id        String   @id @default(cuid())
+  tenantId  String   @unique
+  config    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("takeoff_settings")
 }

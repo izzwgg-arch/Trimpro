@@ -81,6 +81,7 @@ export default function NewPurchaseOrderPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const jobIdParam = searchParams.get('jobId')
+  const fromTakeoffParam = searchParams.get('fromTakeoff')
   
   const [loading, setLoading] = useState(false)
   const [vendors, setVendors] = useState<Vendor[]>([])
@@ -135,6 +136,47 @@ export default function NewPurchaseOrderPage() {
     fetchPickerData()
     loadNextPoNumber()
   }, [loadNextPoNumber])
+
+  // "Convert to PO" from a material takeoff: start with its doors, locks and materials.
+  useEffect(() => {
+    if (!fromTakeoffParam) return
+    ;(async () => {
+      try {
+        const token = localStorage.getItem('accessToken')
+        const response = await fetch(`/api/takeoffs/${fromTakeoffParam}/purchase-order-lines`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const data = await response.json().catch(() => ({}))
+        if (!response.ok) {
+          alert(data.error || 'Could not load the material takeoff')
+          return
+        }
+        const lines: Array<{ description: string; details: string; quantity: string; notes: string }> = data.lines || []
+        if (lines.length > 0) {
+          setLineItems(
+            lines.map((l) => ({
+              description: l.description,
+              details: l.details,
+              quantity: l.quantity,
+              unitCost: '0',
+              notes: l.notes,
+              ...defaultPoVisibility,
+            }))
+          )
+        }
+        const from = [data.takeoffTitle ? `"${data.takeoffTitle}"` : '', data.jobNumber ? `on ${data.jobNumber}` : '']
+          .filter(Boolean)
+          .join(' ')
+        setFormData((prev) => ({
+          ...prev,
+          jobId: prev.jobId || data.jobId || '',
+          internalNotes: prev.internalNotes || `From material takeoff${from ? ` ${from}` : ''}`,
+        }))
+      } catch (error) {
+        console.error('Error loading takeoff for PO:', error)
+      }
+    })()
+  }, [fromTakeoffParam])
   const fetchVendors = async () => {
     try {
       const token = localStorage.getItem('accessToken')

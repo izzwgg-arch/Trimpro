@@ -15,6 +15,7 @@ import { JobDetailScreen } from '../screens/jobs/JobDetailScreen'
 import { AllJobsScreen } from '../screens/jobs/AllJobsScreen'
 import { ProductionScreen } from '../screens/jobs/ProductionScreen'
 import { AdminJobDetailScreen } from '../screens/jobs/AdminJobDetailScreen'
+import { TakeoffEditScreen } from '../screens/jobs/TakeoffEditScreen'
 import { CreateJobScreen } from '../screens/jobs/CreateJobScreen'
 import { EditJobScreen } from '../screens/jobs/EditJobScreen'
 import { ScheduleScreen } from '../screens/schedule/ScheduleScreen'
@@ -144,6 +145,7 @@ function JobsStackNavigator() {
       <JobsStack.Screen name="AllJobsList" component={AllJobsScreen} options={mainHeaderOptions('All Jobs')} />
       <JobsStack.Screen name="Production" component={ProductionScreen} options={mainHeaderOptions('Production')} />
       <JobsStack.Screen name="AdminJobDetail" component={AdminJobDetailScreen} options={detailsHeaderOptions('Job Details')} />
+      <JobsStack.Screen name="TakeoffEdit" component={TakeoffEditScreen} options={detailsHeaderOptions('Material Takeoff')} />
       <JobsStack.Screen name="CreateJob" component={CreateJobScreen} options={detailsHeaderOptions('Create Job')} />
       <JobsStack.Screen name="EditJob" component={EditJobScreen} options={detailsHeaderOptions('Edit Job')} />
       <JobsStack.Screen

@@ -35,6 +35,7 @@ import { useMobilePermissions } from '../../hooks/useMobilePermissions'
 import { AttachmentPickerSheet } from '../../components/attachments/AttachmentPickerSheet'
 import { AttachmentUploadQueue } from '../../components/attachments/AttachmentUploadQueue'
 import { AttachmentGalleryModal } from '../../components/attachments/AttachmentGalleryModal'
+import { JobTakeoffsSection } from '../../components/takeoffs/JobTakeoffsSection'
 import { pickAttachmentsByAction, uploadFileWithProgress } from '../../services/attachment-upload'
 import { useAttachmentUploadQueue } from '../../hooks/useAttachmentUploadQueue'
 import { formatCents, formatJobType, formatMinutes } from '../../utils/format'
@@ -962,6 +963,8 @@ export function JobDetailScreen({ route, navigation }: Props) {
             ) : null}
 
             {canViewJobSchedules() ? <JobSchedulesSection job={job} /> : null}
+
+            <JobTakeoffsSection jobId={job.id} onOpen={(takeoffId) => navigation.navigate('TakeoffEdit', { takeoffId, jobId: job.id })} />
 
             {compact ? null : renderFilesSection()}
 

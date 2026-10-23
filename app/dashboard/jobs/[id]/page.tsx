@@ -10,6 +10,7 @@ import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils'
 import { Briefcase, Calendar, DollarSign, Users, MapPin, FileText, CheckSquare, AlertCircle, Phone, MessageSquare, Mail, Edit, Plus, Building2, Trash2, Copy, Clock, Link2, ShoppingCart } from 'lucide-react'
 import { JobThreadDialog } from '@/components/messages/JobThreadDialog'
 import Link from 'next/link'
+import { JobTakeoffsCard } from '@/components/takeoffs/JobTakeoffsCard'
 import dynamic from 'next/dynamic'
 import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
 import { DocumentAttachments } from '@/components/common/document-attachments'
@@ -1543,6 +1544,8 @@ export default function JobDetailPage() {
               </div>
             </CardContent>
           </Card>
+
+          <JobTakeoffsCard jobId={jobId} />
 
           {/* Schedule */}
           {job.schedules.length > 0 && (

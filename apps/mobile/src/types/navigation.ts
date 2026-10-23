@@ -8,6 +8,7 @@ export type JobsStackParamList = {
   // scheduleId: opened from that schedule, so its chosen notes/photos apply.
   JobDetail: { jobId: string; scheduleId?: string }
   AdminJobDetail: { jobId: string; scheduleId?: string }
+  TakeoffEdit: { takeoffId: string; jobId: string }
   CreateJob: undefined
   EditJob: { jobId: string }
   NotificationsHome: undefined
