@@ -187,7 +187,7 @@ export async function GET(
       })
       if (created) job.notes.unshift(created)
     }
-    const scope = canViewAll ? ({ restricted: false } as const) : await resolveJobContentScope(user.id, job.id)
+    const scope = canViewAll ? ({ restricted: false } as const) : await resolveJobContentScope(user.id, job.id, request.nextUrl.searchParams.get('scheduleId'))
     if (scope.restricted) {
       job.notes = job.notes.filter((n) => scope.noteIds.has(n.id))
       job.schedules = job.schedules.filter((sch) => sch.user?.id === user.id)

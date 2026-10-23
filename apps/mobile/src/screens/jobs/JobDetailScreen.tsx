@@ -118,6 +118,8 @@ export function JobDetailScreen({ route, navigation }: Props) {
   const isOnline = useOnlineState()
   const queryClient = useQueryClient()
   const jobId = route.params.jobId
+  const scheduleId = route.params.scheduleId
+  const scheduleQs = scheduleId ? `scheduleId=${encodeURIComponent(scheduleId)}` : ''
   const [noteText, setNoteText] = useState('')
   const [locationSharing, setLocationSharing] = useState(false)
   const [showAttachmentPicker, setShowAttachmentPicker] = useState(false)
@@ -150,14 +152,15 @@ export function JobDetailScreen({ route, navigation }: Props) {
   } = useMobilePermissions()
 
   const jobQuery = useQuery({
-    queryKey: ['mobile-job', jobId],
-    queryFn: () => apiRequest<JobResponse>(`/api/mobile/jobs/${jobId}`),
+    queryKey: ['mobile-job', jobId, scheduleId ?? null],
+    queryFn: () => apiRequest<JobResponse>(`/api/mobile/jobs/${jobId}${scheduleQs ? `?${scheduleQs}` : ''}`),
     refetchInterval: 45_000,
   })
 
   const attachmentsQuery = useQuery({
-    queryKey: ['mobile-job-attachments', jobId],
-    queryFn: () => apiRequest<AttachmentsResponse>(`/api/attachments?entityType=job&entityId=${jobId}`),
+    queryKey: ['mobile-job-attachments', jobId, scheduleId ?? null],
+    queryFn: () =>
+      apiRequest<AttachmentsResponse>(`/api/attachments?entityType=job&entityId=${jobId}${scheduleQs ? `&${scheduleQs}` : ''}`),
     refetchInterval: 45_000,
   })
 

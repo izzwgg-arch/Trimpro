@@ -21,8 +21,14 @@ export type JobContentScope =
  * limits them, they see only the attachments and notes chosen on it (plus the note made
  * from its own description). Only attachments and notes are ever limited; everything
  * else comes from the person's permissions.
+ *
+ * When the job is opened from one of their schedules (`scheduleId`), that schedule governs.
  */
-export async function resolveJobContentScope(userId: string, jobId: string): Promise<JobContentScope> {
+export async function resolveJobContentScope(
+  userId: string,
+  jobId: string,
+  scheduleId?: string | null
+): Promise<JobContentScope> {
   const rows = await prisma.schedule.findMany({
     where: { jobId, userId },
     select: { id: true, description: true, startTime: true, endTime: true, restrictContent: true, visibleAttachmentIds: true, visibleNoteIds: true },
@@ -33,8 +39,10 @@ export async function resolveJobContentScope(userId: string, jobId: string): Pro
     .sort((x, y) => x.startTime.getTime() - y.startTime.getTime())
   const inProgress = handMade.filter((r) => r.startTime.getTime() <= now && r.endTime.getTime() >= now)
   const upcoming = handMade.filter((r) => r.startTime.getTime() > now)
-  const governing =
-    inProgress.length > 0
+  const opened = scheduleId ? handMade.find((r) => r.id === scheduleId) : undefined
+  const governing = opened
+    ? opened
+    : inProgress.length > 0
       ? inProgress[inProgress.length - 1]
       : upcoming.length > 0
         ? upcoming[0]

@@ -62,7 +62,8 @@ interface JobTimeResponse { entries: TimeEntry[]; activeEntries: TimeEntry[]; su
 interface AttachmentsResponse { attachments: Attachment[] }
 
 export function AdminJobDetailScreen({ route, navigation }: Props) {
-  const { jobId } = route.params
+  const { jobId, scheduleId } = route.params
+  const scheduleQs = scheduleId ? `scheduleId=${encodeURIComponent(scheduleId)}` : ''
   const queryClient = useQueryClient()
   const perms = useMobilePermissions()
   const {
@@ -85,8 +86,8 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
   const [openMore, setOpenMore] = useState(false)
 
   const jobQuery = useQuery({
-    queryKey: ['admin-job', jobId],
-    queryFn: () => apiRequest<JobResponse>(`/api/mobile/jobs/${jobId}`),
+    queryKey: ['admin-job', jobId, scheduleId ?? null],
+    queryFn: () => apiRequest<JobResponse>(`/api/mobile/jobs/${jobId}${scheduleQs ? `?${scheduleQs}` : ''}`),
     refetchInterval: 45_000,
   })
   const timeQuery = useQuery({
@@ -96,8 +97,9 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
     refetchInterval: 45_000,
   })
   const attachmentsQuery = useQuery({
-    queryKey: ['admin-job-attachments', jobId],
-    queryFn: () => apiRequest<AttachmentsResponse>(`/api/attachments?entityType=job&entityId=${jobId}`),
+    queryKey: ['admin-job-attachments', jobId, scheduleId ?? null],
+    queryFn: () =>
+      apiRequest<AttachmentsResponse>(`/api/attachments?entityType=job&entityId=${jobId}${scheduleQs ? `&${scheduleQs}` : ''}`),
     enabled: !!jobQuery.data?.job && canViewJobDocuments(),
   })
 

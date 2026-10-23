@@ -61,9 +61,8 @@ async function ensureEntityAccess(
     where: {
       id: entityId,
       tenantId,
-      assignments: {
-        some: { userId: options.userId },
-      },
+      // On the crew or scheduled on the job.
+      OR: [{ assignments: { some: { userId: options.userId } } }, { schedules: { some: { userId: options.userId } } }],
     },
     select: { id: true },
   })
@@ -121,7 +120,7 @@ export async function GET(request: NextRequest) {
     // A person scheduled with "limit what they see" only gets the attachments chosen for them.
     let visibleWhere: Record<string, unknown> = where
     if (entityTypeRaw === 'job' && mobileRequest && !canViewAllJobs) {
-      const scope = await resolveJobContentScope(user.id, entityId)
+      const scope = await resolveJobContentScope(user.id, entityId, request.nextUrl.searchParams.get('scheduleId'))
       if (scope.restricted) {
         visibleWhere = { ...where, id: { in: Array.from(scope.attachmentIds) } }
       }

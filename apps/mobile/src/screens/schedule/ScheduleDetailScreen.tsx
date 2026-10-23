@@ -171,7 +171,7 @@ export function ScheduleDetailScreen({ navigation, route }: Props) {
                 const parentNav = navigation.getParent() as any
                 parentNav?.navigate('MainTabs', {
                   screen: 'JobsTab',
-                  params: { screen: 'JobDetail', params: { jobId: loaded.job?.id } },
+                  params: { screen: 'JobDetail', params: { jobId: loaded.job?.id, scheduleId: loaded.id } },
                 })
               }}
             >
