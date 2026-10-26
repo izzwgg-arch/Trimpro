@@ -225,6 +225,8 @@ export const createInvoiceSchema = z.object({
     .transform((val) => (val ? String(val).trim() : null)),
   clientId: z.string().min(1),
   jobId: z.string().optional().nullable(),
+  // Not from an estimate: "Create new" chosen for a customer with open jobs.
+  createJob: z.boolean().optional(),
   estimateId: z.string().optional().nullable(),
   jobType: z.string().optional().nullable(),
   title: z.string().min(1).max(255),

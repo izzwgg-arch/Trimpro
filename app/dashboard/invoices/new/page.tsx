@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { EMPTY_OPEN_JOBS_CHOICE, OpenJobsPrompt, type OpenJobsChoice } from '@/components/estimates/OpenJobsPrompt'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Save, Plus, Trash2, Eye, EyeOff, Building2, User } from 'lucide-react'
 import { LineItemDragHandle } from '@/components/documents/line-item-drag-handle'
@@ -192,6 +193,8 @@ export default function NewInvoicePage() {
     memo: '',
   })
   const [estimateAlreadyHasJob, setEstimateAlreadyHasJob] = useState(false)
+  // Not from an estimate or job: customer with open jobs picks a new job or one of theirs.
+  const [jobChoice, setJobChoice] = useState<OpenJobsChoice>(EMPTY_OPEN_JOBS_CHOICE)
 
   // Quick "Add new item" modal launched from the line-item picker.
   const [quickItem, setQuickItem] = useState<{ open: boolean; name: string; index: number; optional: boolean }>({ open: false, name: '', index: 0, optional: false })
@@ -1408,6 +1411,10 @@ export default function NewInvoicePage() {
       alert('Please select a client')
       return
     }
+    if (jobChoice.required && !jobChoice.decision) {
+      alert('This customer has open jobs. Choose "Create new" or "Use existing" before saving.')
+      return
+    }
     if (!formData.title.trim()) {
       alert('Please enter a title')
       return
@@ -1520,6 +1527,7 @@ export default function NewInvoicePage() {
         body: JSON.stringify({
           clientId: formData.clientId,
           jobId: formData.jobId || null,
+          createJob: !formData.jobId && !formData.estimateId && jobChoice.decision === 'new',
           estimateId: formData.estimateId || null,
           jobType: formData.jobType || null,
           invoiceNumber: formData.invoiceNumber || null,
@@ -1646,6 +1654,20 @@ export default function NewInvoicePage() {
                       ))}
                     </SelectContent>
                   </Select>
+                  <div className="mt-2">
+                    <OpenJobsPrompt
+                      recordLabel="invoice"
+                      clientId={formData.clientId}
+                      // Only for invoices not made from an estimate or a job; waits for the
+                      // job type pop-up first so the two never open together.
+                      disabled={Boolean(jobIdParam) || Boolean(estimateIdParam) || Boolean(formData.estimateId) || !formData.jobType}
+                      value={jobChoice}
+                      onChange={(next) => {
+                        setJobChoice(next)
+                        setFormData((prev) => ({ ...prev, jobId: next.decision === 'existing' ? next.jobId : '' }))
+                      }}
+                    />
+                  </div>
                 </div>
                 {/* Not from an estimate: ask which job type this invoice is for. */}
                 <JobTypeCreateField

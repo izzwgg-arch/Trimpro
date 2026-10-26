@@ -14,6 +14,8 @@ export async function createJobForEstimate(params: {
   estimateTitle: string
   jobSiteAddress?: string | null
   jobType?: string | null
+  /** Shown in the job activity line; defaults to estimate. */
+  documentLabel?: 'estimate' | 'invoice'
 }): Promise<string> {
   for (let attempt = 0; attempt < 50; attempt++) {
     try {
@@ -46,7 +48,7 @@ export async function createJobForEstimate(params: {
             tenantId: params.tenantId,
             userId: params.userId,
             type: 'JOB_CREATED',
-            description: `Job ${job.jobNumber} created for a new estimate`,
+            description: `Job ${job.jobNumber} created for a new ${params.documentLabel || 'estimate'}`,
             jobId: job.id,
             clientId: params.clientId,
           },

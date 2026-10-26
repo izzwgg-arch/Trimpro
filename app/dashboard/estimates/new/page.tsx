@@ -1228,8 +1228,9 @@ export default function NewEstimatePage() {
                   <div className="mt-2">
                     <OpenJobsPrompt
                       clientId={formData.clientId}
-                      // Wait for the job type pop-up first so the two never open together.
-                      disabled={Boolean(jobIdParam) || (!formData.jobType && !requestIdParam)}
+                      // Only for estimates not started from a request or a job; waits for the
+                      // job type pop-up first so the two never open together.
+                      disabled={Boolean(jobIdParam) || Boolean(requestIdParam) || !formData.jobType}
                       value={jobChoice}
                       onChange={(next) => {
                         setJobChoice(next)

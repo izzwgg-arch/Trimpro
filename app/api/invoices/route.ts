@@ -19,6 +19,7 @@ import {
   normalizeInvoiceNumber,
 } from '@/lib/qbo/doc-numbers'
 import { ensureJobFromInvoice } from '@/lib/jobs/ensure-job-from-invoice'
+import { createJobForEstimate } from '@/lib/jobs/create-job-for-estimate'
 import { syncJobCostFromLinkedDocuments } from '@/lib/jobs/sync-job-cost'
 import { resolveJobTypeForWrite } from '@/lib/jobs/job-type-scope'
 import { parseJobType, parseOptionalJobType } from '@/lib/jobs/types'
@@ -210,7 +211,8 @@ export async function POST(request: NextRequest) {
   const {
     invoiceNumber: invoiceNumberOverride,
     clientId,
-    jobId,
+    jobId: jobIdFromBody,
+    createJob,
     estimateId,
     jobType: requestedJobType,
     title,
@@ -259,6 +261,19 @@ export async function POST(request: NextRequest) {
 
     if (!client) {
       return NextResponse.json({ error: 'Client not found' }, { status: 404 })
+    }
+
+    // Not from an estimate, and "Create new" was chosen for a customer that already has open jobs.
+    let jobId: string | null = jobIdFromBody || null
+    if (!jobId && createJob === true && !estimateId) {
+      jobId = await createJobForEstimate({
+        tenantId: user.tenantId,
+        clientId,
+        userId: user.id,
+        estimateTitle: title,
+        jobType: requestedJobType,
+        documentLabel: 'invoice',
+      })
     }
 
     let reusableEmptyInvoice: { id: string; invoiceNumber: string } | null = null

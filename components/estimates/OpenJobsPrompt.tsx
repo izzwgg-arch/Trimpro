@@ -31,7 +31,9 @@ export function OpenJobsPrompt({
   disabled,
   value,
   onChange,
+  recordLabel = 'estimate',
 }: {
+  recordLabel?: 'estimate' | 'invoice'
   clientId: string
   disabled?: boolean
   value: OpenJobsChoice
@@ -85,7 +87,7 @@ export function OpenJobsPrompt({
       <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
         <Briefcase className="h-4 w-4 text-amber-700" />
         {value.decision === 'new' ? (
-          <span>A new job will be created for this estimate.</span>
+          <span>A new job will be created for this {recordLabel}.</span>
         ) : value.decision === 'existing' ? (
           <span>
             Goes on existing job <b>{value.jobLabel}</b>.
