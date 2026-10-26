@@ -1,3 +1,4 @@
+import { useNavigation } from '@react-navigation/native'
 import { callPhone } from '../../lib/phone'
 import React, { useMemo, useState } from 'react'
 import {
@@ -727,6 +728,12 @@ export function JobTasksIssuesSection({
 
 export function JobSchedulesSection({ job }: { job: Job }) {
   const schedules = asArray<NonNullable<Job['schedules']>[number]>(job.schedules)
+  const navigation = useNavigation<any>()
+  // Open the visit screen for a schedule (it lives in the Schedule tab).
+  const openSchedule = (scheduleId: string) => {
+    const root: any = navigation.getParent()?.getParent() || navigation.getParent()
+    root?.navigate('MainTabs', { screen: 'ScheduleTab', params: { screen: 'ScheduleDetail', params: { scheduleId } } })
+  }
   return (
     <DetailSection
       title="Schedules"
@@ -734,13 +741,14 @@ export function JobSchedulesSection({ job }: { job: Job }) {
     >
       {schedules.length === 0 ? <Text style={styles.empty}>No schedules</Text> : null}
       {schedules.map((s) => (
-        <View key={s.id} style={styles.listRow}>
+        <Pressable key={s.id} style={styles.listRow} onPress={() => openSchedule(s.id)} accessibilityRole="button">
           <Text style={styles.listTitle}>{formatDateTime(s.startTime)}</Text>
           <Text style={styles.docMeta}>
             Until {formatDateTime(s.endTime)}
             {s.user ? ` · ${s.user.firstName} ${s.user.lastName}` : ''}
+            {' · Tap to open'}
           </Text>
-        </View>
+        </Pressable>
       ))}
     </DetailSection>
   )

@@ -513,6 +513,11 @@ export function ScheduleScreen({ navigation }: Props) {
         })
         return
       }
+      // Every schedule (old or new) opens the visit screen; it links on to the job.
+      if (event.entityType === 'schedule') {
+        navigation.navigate('ScheduleDetail', { scheduleId: event.scheduleId })
+        return
+      }
       if (event.jobId) {
         const jobsScreen = canViewAllJobs() ? 'AdminJobDetail' : 'JobDetail'
         const tabsNav = navigation.getParent() as any
