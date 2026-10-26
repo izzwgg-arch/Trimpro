@@ -15,6 +15,8 @@ import { useOnlineState } from './hooks/useOnlineState'
 import { apiRequest } from './api/client'
 import { NotificationPopup } from './components/NotificationPopup'
 import { openFromNotificationPayload } from './notifications/openFromNotification'
+import { VideoCallHost } from './calls/VideoCallHost'
+import { checkIncomingCalls, openVideoCall } from './calls/videoCallBus'
 
 // Never call preventAutoHideAsync — if JS stalls before hide, the native splash
 // stays forever. Hide as soon as this module loads, then again after mount.
@@ -88,6 +90,12 @@ function SyncAndPushBootstrap() {
   // Handle foreground notifications (show popup)
   useEffect(() => {
     const sub = Notifications.addNotificationReceivedListener((notification) => {
+      const data = (notification.request.content.data || {}) as Record<string, any>
+      // A call rings full screen instead of as a popup.
+      if (data.type === 'video_call') {
+        checkIncomingCalls()
+        return
+      }
       // Show popup for foreground notifications
       setCurrentNotification(notification)
       void setLastPushReceivedAtNow()
@@ -102,6 +110,10 @@ function SyncAndPushBootstrap() {
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
       const data = (response.notification.request.content.data || {}) as Record<string, any>
       void setLastPushReceivedAtNow()
+      if (data.type === 'video_call' && typeof data.callId === 'string') {
+        openVideoCall(data.callId)
+        return
+      }
       queryClient.invalidateQueries({ queryKey: ['mobile-notifications'] })
       queryClient.invalidateQueries({ queryKey: ['mobile-notifications-unread'] })
       const notificationId = typeof data.notificationId === 'string' ? data.notificationId : ''
@@ -236,6 +248,7 @@ function SyncAndPushBootstrap() {
   return (
     <>
       <RootNavigator />
+      {token ? <VideoCallHost /> : null}
       <NotificationPopup
         notification={currentNotification}
         onDismiss={() => setCurrentNotification(null)}

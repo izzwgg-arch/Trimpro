@@ -3725,3 +3725,50 @@ model TakeoffSettings {
 
   @@map("takeoff_settings")
 }
+
+// ─── Video calls (WebRTC, signalled through our own server) ───────────────────
+
+enum VideoCallStatus {
+  RINGING
+  ACTIVE
+  ENDED
+  DECLINED
+  MISSED
+  CANCELED
+}
+
+model VideoCall {
+  id             String          @id @default(cuid())
+  tenantId       String
+  callerId       String
+  calleeId       String
+  conversationId String?
+  video          Boolean         @default(true)
+  status         VideoCallStatus @default(RINGING)
+  answeredAt     DateTime?
+  endedAt        DateTime?
+  endedById      String?
+  // Heartbeats from each side's open call screen; a call nobody is watching gets closed.
+  callerSeenAt   DateTime?
+  calleeSeenAt   DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([tenantId, calleeId, status])
+  @@index([tenantId, callerId, status])
+  @@map("video_calls")
+}
+
+// Offer / answer / ICE candidates passed between the two sides of a call.
+model VideoCallSignal {
+  id         Int      @id @default(autoincrement())
+  callId     String
+  fromUserId String
+  toUserId   String
+  kind       String
+  payload    Json
+  createdAt  DateTime @default(now())
+
+  @@index([callId, toUserId, id])
+  @@map("video_call_signals")
+}

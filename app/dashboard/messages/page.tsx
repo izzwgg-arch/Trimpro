@@ -2,8 +2,9 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, Phone, Video } from 'lucide-react'
 import { refreshAccessToken } from '@/lib/auth/client'
+import { startVideoCall } from '@/lib/video-calls/client'
 import { smartMatch, scoreHaystack } from '@/lib/search/scoring'
 import {
   Composer,
@@ -185,6 +186,15 @@ export default function MessagesPage() {
     }
     return res
   }, [router])
+
+  const startCall = useCallback(async (video: boolean) => {
+    if (!selectedThread || selectedThread.convType !== 'DM') return
+    try {
+      await startVideoCall({ conversationId: selectedThread.id }, video)
+    } catch (error: any) {
+      alert(error?.message || 'Could not start the call')
+    }
+  }, [selectedThread])
 
   // ── Bootstrap ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -686,6 +696,28 @@ export default function MessagesPage() {
                   }
                 </div>
               </div>
+              {selectedThread.kind === 'team' && selectedThread.convType === 'DM' && (
+                <div className="flex-shrink-0 flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => void startCall(false)}
+                    title="Audio call"
+                    aria-label="Audio call"
+                    className="w-9 h-9 rounded-full flex items-center justify-center text-[#54656f] hover:bg-black/5 transition-colors"
+                  >
+                    <Phone className="w-[18px] h-[18px]" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void startCall(true)}
+                    title="Video call"
+                    aria-label="Video call"
+                    className="w-9 h-9 rounded-full flex items-center justify-center text-[#54656f] hover:bg-black/5 transition-colors"
+                  >
+                    <Video className="w-5 h-5" />
+                  </button>
+                </div>
+              )}
               {selectedThread.convType === 'JOB_THREAD' && selectedThread.jobId && (
                 <a
                   href={`/dashboard/jobs/${selectedThread.jobId}`}

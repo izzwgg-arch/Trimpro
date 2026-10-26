@@ -37,6 +37,7 @@ import { useOnlineState } from '../../hooks/useOnlineState'
 import { enqueueOutbox } from '../../offline/outbox'
 import { MessageBubble } from '../../components/chat/MessageBubble'
 import { Composer } from '../../components/chat/Composer'
+import { startVideoCall } from '../../calls/videoCallBus'
 import { DateSeparator } from '../../components/chat/DateSeparator'
 import { MediaViewer, type MediaViewerItem } from '../../components/chat/MediaViewer'
 import { resolveMediaUrl } from '../../components/chat/MessageBubble'
@@ -1293,6 +1294,26 @@ export function MessageThreadScreen({ route, navigation }: Props) {
             </Text>
           ) : null}
         </View>
+        {conversationType === 'DM' ? (
+          <View style={styles.callButtons}>
+            <Pressable
+              onPress={() => startVideoCall({ conversationId }, false)}
+              style={styles.callButton}
+              accessibilityLabel="Audio call"
+              hitSlop={6}
+            >
+              <Ionicons name="call-outline" size={21} color={colors.textPrimary} />
+            </Pressable>
+            <Pressable
+              onPress={() => startVideoCall({ conversationId }, true)}
+              style={styles.callButton}
+              accessibilityLabel="Video call"
+              hitSlop={6}
+            >
+              <Ionicons name="videocam-outline" size={23} color={colors.textPrimary} />
+            </Pressable>
+          </View>
+        ) : null}
       </View>
 
       {jobConversation?.jobId ? (
@@ -1661,6 +1682,18 @@ const styles = StyleSheet.create({
   },
   headerContent: {
     flex: 1,
+    justifyContent: 'center',
+  },
+  callButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  callButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
     justifyContent: 'center',
   },
   headerTitle: {

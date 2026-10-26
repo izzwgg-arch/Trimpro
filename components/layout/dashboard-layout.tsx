@@ -9,6 +9,7 @@ import { QboSyncFailureNotifier } from '@/components/qbo/QboSyncFailureNotifier'
 import { GlobalSearch } from '@/components/search/GlobalSearch'
 import { RoutePermissionGuard } from '@/components/permissions/RoutePermissionGuard'
 import { DashboardNavCapture } from '@/components/navigation/DashboardNavCapture'
+import { IncomingCallWatcher } from '@/components/video-call/IncomingCallWatcher'
 
 // Pages with their own fixed-height, self-scrolling app UI (chat panes, etc.)
 // opt out of the standard padded content shell + footer, which otherwise
@@ -59,6 +60,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-full min-h-screen bg-gray-100">
       <DashboardNavCapture />
+      <IncomingCallWatcher />
       {isAdmin && <QboSyncFailureNotifier />}
 
       <Sidebar
