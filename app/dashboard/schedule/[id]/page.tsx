@@ -1,4 +1,5 @@
 'use client'
+import { ScheduleWorkProgress } from '@/components/schedule/ScheduleWorkProgress'
 import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 import { PhoneLink } from '@/components/common/PhoneLink'
 
@@ -154,6 +155,8 @@ export default function ScheduleDetailsPage() {
           </Button>
         </div>
       </div>
+
+      <ScheduleWorkProgress scheduleId={schedule.id} />
 
       <Card>
         <CardHeader>

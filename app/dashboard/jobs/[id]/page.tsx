@@ -1,4 +1,5 @@
 'use client'
+import { WORK_STATUS_CLASS, WORK_STATUS_LABEL } from '@/components/schedule/ScheduleWorkProgress'
 import { navigateWithReturn } from '@/lib/navigation/nav-stack'
 import { PhoneLink, telHref } from '@/components/common/PhoneLink'
 import { EntityBackButton } from '@/components/navigation/EntityBackButton'
@@ -139,6 +140,7 @@ interface JobDetail {
     startTime: string
     endTime: string
     description?: string | null
+    workStatus?: string | null
     user: {
       firstName: string
       lastName: string
@@ -1606,7 +1608,14 @@ export default function JobDetailPage() {
                     return (
                       <div key={schedule.id} className="flex items-start justify-between gap-2 rounded-lg border p-3">
                         <Link href={`/dashboard/schedule/${schedule.id}`} className="min-w-0 flex-1 hover:underline">
-                          <p className="text-sm font-medium">{formatDateTime(schedule.startTime)}</p>
+                          <p className="text-sm font-medium">
+                            {formatDateTime(schedule.startTime)}
+                            {schedule.workStatus && schedule.workStatus !== 'NOT_STARTED' ? (
+                              <span className={`ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold ${WORK_STATUS_CLASS[schedule.workStatus] || ''}`}>
+                                {WORK_STATUS_LABEL[schedule.workStatus] || schedule.workStatus}
+                              </span>
+                            ) : null}
+                          </p>
                           <p className="text-xs text-gray-600">
                             {schedule.user.firstName} {schedule.user.lastName}
                           </p>

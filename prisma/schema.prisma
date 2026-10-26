@@ -541,6 +541,8 @@ model TimeEntry {
   id              String          @id @default(cuid())
   tenantId        String
   jobId           String
+  // Set when the time was worked on a schedule (Start / Resume … Pause / Finish).
+  scheduleId      String?
   workerId        String
   startedAt       DateTime?
   endedAt         DateTime?
@@ -558,6 +560,7 @@ model TimeEntry {
   tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   job        Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
   worker     User   @relation("TimeEntryWorker", fields: [workerId], references: [id], onDelete: Cascade)
+  schedule   Schedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
   createdBy  User   @relation("TimeEntryCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   updatedBy  User   @relation("TimeEntryUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
 
@@ -566,6 +569,7 @@ model TimeEntry {
   @@index([jobId, createdAt])
   @@index([tenantId, status])
   @@index([tenantId, deletedAt])
+  @@index([scheduleId])
   @@map("time_entries")
 }
 
@@ -1661,6 +1665,13 @@ model DocumentLineGroup {
 // SCHEDULING
 // ============================================
 
+enum ScheduleWorkStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  PAUSED
+  COMPLETED
+}
+
 enum ScheduleType {
   JOB
   ESTIMATE
@@ -1685,6 +1696,14 @@ model Schedule {
   restrictContent    Boolean  @default(false)
   visibleAttachmentIds String[] @default([])
   visibleNoteIds       String[] @default([])
+
+  // The scheduled person's work on this visit (Start / Pause / Resume / Finish). Kept
+  // separate from the job status. Work time is in the linked time entries.
+  workStatus      ScheduleWorkStatus @default(NOT_STARTED)
+  workStartedAt   DateTime?
+  workFinishedAt  DateTime?
+  completionNotes String?            @db.Text
+  timeEntries     TimeEntry[]
 
   // Relationships
   tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
