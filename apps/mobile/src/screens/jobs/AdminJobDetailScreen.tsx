@@ -202,24 +202,9 @@ export function AdminJobDetailScreen({ route, navigation }: Props) {
       Alert.alert('Error', error?.message || 'Failed to open job chat')
     } finally { setBusyAction(null) }
   }
-  const addTask = async () => {
-    if (busyAction) return
+  const addTask = () => {
     if (!canCreateTasks()) { Alert.alert('Permission denied', 'You do not have permission to create tasks.'); return }
-    setBusyAction('task')
-    try {
-      const usersResponse = await apiRequest<{ users: Array<{ id: string; role: string; firstName: string; lastName: string }> }>('/api/users?role=ADMIN&limit=10')
-      const adminUsers = usersResponse.users.filter((u) => u.role === 'ADMIN' || u.role === 'OFFICE')
-      if (adminUsers.length === 0) { Alert.alert('No admin users', 'No admin users found to assign the task to.'); return }
-      await apiRequest('/api/tasks?mobile=true', 'POST', {
-        title: `Task for ${job.jobNumber}`,
-        description: `Task created from job ${job.jobNumber}: ${job.title}`,
-        assigneeId: adminUsers[0].id, jobId: job.id, priority: 'MEDIUM', status: 'TODO',
-      })
-      Alert.alert('Success', `Task created and assigned to ${adminUsers[0].firstName} ${adminUsers[0].lastName}`)
-      queryClient.invalidateQueries({ queryKey: ['admin-job', jobId] })
-    } catch (error: any) {
-      Alert.alert('Error', error?.message || 'Failed to create task')
-    } finally { setBusyAction(null) }
+    navigation.navigate('TaskCreate', { jobId: job.id, jobNumber: job.jobNumber, jobTitle: job.title })
   }
   const onSelectAttachment = async (action: any) => {
     setAttachmentPickerVisible(false)

@@ -9,6 +9,7 @@ export type JobsStackParamList = {
   JobDetail: { jobId: string; scheduleId?: string }
   AdminJobDetail: { jobId: string; scheduleId?: string }
   TakeoffEdit: { takeoffId: string; jobId: string }
+  TaskCreate: { jobId?: string; jobNumber?: string; jobTitle?: string } | undefined
   CreateJob: undefined
   EditJob: { jobId: string }
   NotificationsHome: undefined
@@ -53,6 +54,7 @@ export type ScheduleStackParamList = {
 export type TasksStackParamList = {
   TasksList: undefined
   TaskDetail: { taskId: string }
+  TaskCreate: { jobId?: string; jobNumber?: string; jobTitle?: string } | undefined
 }
 
 export type MessagesStackParamList = {

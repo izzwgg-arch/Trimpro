@@ -46,6 +46,7 @@ import {
   RootDrawerParamList,
 } from '../types/navigation'
 import { TaskDetailScreen } from '../screens/tasks/TaskDetailScreen'
+import { TaskCreateScreen } from '../screens/tasks/TaskCreateScreen'
 import { useOutboxCount } from '../hooks/useOutboxCount'
 import { Card } from '../components/Card'
 import { useMobilePermissions } from '../hooks/useMobilePermissions'
@@ -146,6 +147,7 @@ function JobsStackNavigator() {
       <JobsStack.Screen name="Production" component={ProductionScreen} options={mainHeaderOptions('Production')} />
       <JobsStack.Screen name="AdminJobDetail" component={AdminJobDetailScreen} options={detailsHeaderOptions('Job Details')} />
       <JobsStack.Screen name="TakeoffEdit" component={TakeoffEditScreen} options={detailsHeaderOptions('Material Takeoff')} />
+      <JobsStack.Screen name="TaskCreate" component={TaskCreateScreen as any} options={detailsHeaderOptions('New Task')} />
       <JobsStack.Screen name="CreateJob" component={CreateJobScreen} options={detailsHeaderOptions('Create Job')} />
       <JobsStack.Screen name="EditJob" component={EditJobScreen} options={detailsHeaderOptions('Edit Job')} />
       <JobsStack.Screen
@@ -198,6 +200,7 @@ function TasksStackNavigator() {
     <TasksStack.Navigator screenOptions={stackOptions}>
       <TasksStack.Screen name="TasksList" component={TasksScreen} options={mainHeaderOptions('Tasks')} />
       <TasksStack.Screen name="TaskDetail" component={TaskDetailScreen} options={detailsHeaderOptions('Task Details')} />
+      <TasksStack.Screen name="TaskCreate" component={TaskCreateScreen as any} options={detailsHeaderOptions('New Task')} />
     </TasksStack.Navigator>
   )
 }

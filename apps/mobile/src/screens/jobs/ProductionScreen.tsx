@@ -101,6 +101,73 @@ interface ProductionConfig {
   columns: ColumnConfig[]
   stages: StageConfig[]
   card: CardConfig
+  filters?: Partial<Record<'search' | 'status' | 'assignedTo' | 'priority' | 'dueDate' | 'overdue', boolean>>
+}
+
+// ---- jobs filters (same choices as the web Production page, plus client / job type) ----
+type DueFilter = 'all' | 'overdue' | 'today' | 'week'
+interface JobFilters {
+  status: string
+  assignedTo: string
+  priority: string
+  due: DueFilter
+  client: string
+  jobType: string
+  // null = each column keeps its own configured sort (the web default).
+  sort: { key: SortKey; dir: SortDir } | null
+}
+const EMPTY_FILTERS: JobFilters = { status: 'all', assignedTo: 'all', priority: 'all', due: 'all', client: 'all', jobType: 'all', sort: null }
+const JOB_STATUS_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'QUOTE', label: 'Quote' },
+  { value: 'SCHEDULED', label: 'Scheduled' },
+  { value: 'IN_PROGRESS', label: 'In Progress' },
+  { value: 'MEASURED', label: 'Measured' },
+  { value: 'NEED_TO_ORDER', label: 'Need to order' },
+  { value: 'ORDERED', label: 'Ordered' },
+  { value: 'INSTALLATION_COMPLETE', label: 'Installation complete' },
+  { value: 'NEED_TOUCH_UPS', label: 'Need touch ups' },
+  { value: 'FINISHING_COMPLETE', label: 'Finishing complete' },
+  { value: 'ON_HOLD', label: 'On Hold' },
+  { value: 'COMPLETED', label: 'Completed' },
+  { value: 'CANCELLED', label: 'Cancelled' },
+  { value: 'INVOICED', label: 'Invoiced' },
+]
+const DUE_OPTIONS: Array<{ value: DueFilter; label: string }> = [
+  { value: 'all', label: 'Any due date' },
+  { value: 'overdue', label: 'Overdue' },
+  { value: 'today', label: 'Due today' },
+  { value: 'week', label: 'Due this week' },
+]
+const prettyType = (v: string) => v.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
+
+function sameDay(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+}
+
+/** Same rules as the web Production page's filters. */
+function jobMatchesFilters(job: ProductionJob, f: JobFilters, today: Date): boolean {
+  if (f.status !== 'all' && job.status !== f.status) return false
+  if (f.assignedTo !== 'all' && !job.assignments.some((a) => a.user?.id === f.assignedTo)) return false
+  if (f.priority !== 'all' && String(job.priority) !== f.priority) return false
+  if (f.client !== 'all' && job.client?.id !== f.client) return false
+  if (f.jobType !== 'all' && (job.jobType || '') !== f.jobType) return false
+  if (f.due !== 'all') {
+    if (!job.scheduledEnd) return false
+    const due = new Date(job.scheduledEnd)
+    if (Number.isNaN(due.getTime())) return false
+    if (f.due === 'overdue' && !(due < today && !sameDay(due, today))) return false
+    if (f.due === 'today' && !sameDay(due, today)) return false
+    if (f.due === 'week') {
+      const weekOut = new Date(today)
+      weekOut.setDate(weekOut.getDate() + 7)
+      if (due < today || due > weekOut) return false
+    }
+  }
+  return true
+}
+
+function activeFilterCount(f: JobFilters): number {
+  return (['status', 'assignedTo', 'priority', 'due', 'client', 'jobType'] as const).filter((k) => f[k] !== 'all').length + (f.sort ? 1 : 0)
 }
 interface ProductionResponse {
   jobs: ProductionJob[]
@@ -259,6 +326,8 @@ export function ProductionScreen({ navigation }: Props) {
   const [archiveView, setArchiveView] = useState(false)
   const [customizeOpen, setCustomizeOpen] = useState(false)
   const [sortOpen, setSortOpen] = useState(false)
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [filters, setFilters] = useState<JobFilters>(EMPTY_FILTERS)
 
   // ---- per-user view preferences ----
   const prefsQuery = useQuery({
@@ -307,13 +376,55 @@ export function ProductionScreen({ navigation }: Props) {
 
   const visibleJobs = useMemo(() => {
     const term = search.trim().toLowerCase()
-    if (!term) return jobs
-    return jobs.filter((job) => {
+    const today = new Date()
+    const list = jobs.filter((job) => {
+      if (!jobMatchesFilters(job, filters, today)) return false
+      if (!term) return true
       const a = job.addresses?.[0]
       return [job.jobNumber, job.title, job.client?.companyName, job.client?.name, a?.street, a?.city]
         .filter(Boolean).join(' ').toLowerCase().includes(term)
     })
-  }, [jobs, search])
+    // The archive list and On Hold strip follow a chosen sort too.
+    return filters.sort ? sortJobs(list, filters.sort.key, filters.sort.dir) : list
+  }, [jobs, search, filters])
+
+  // Choices for the filter sheet come from the jobs on the board.
+  const filterOptions = useMemo(() => {
+    const people = new Map<string, string>()
+    const clients = new Map<string, string>()
+    const types = new Set<string>()
+    for (const j of jobs) {
+      for (const a of j.assignments || []) {
+        if (a.user?.id) people.set(a.user.id, `${a.user.firstName || ''} ${a.user.lastName || ''}`.trim() || 'Unknown')
+      }
+      if (j.client?.id) clients.set(j.client.id, j.client.companyName || j.client.name || 'Client')
+      if (j.jobType) types.add(j.jobType)
+    }
+    const byLabel = (a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label)
+    return {
+      people: Array.from(people, ([value, label]) => ({ value, label })).sort(byLabel),
+      clients: Array.from(clients, ([value, label]) => ({ value, label })).sort(byLabel),
+      jobTypes: Array.from(types, (value) => ({ value, label: prettyType(value) })).sort(byLabel),
+    }
+  }, [jobs])
+  const filterCount = activeFilterCount(filters)
+
+  // Search also works on the Tasks and Requests tabs.
+  const searchTerm = search.trim().toLowerCase()
+  const matchesTask = (t: TaskItem) =>
+    !searchTerm ||
+    [
+      t.title,
+      t.job?.jobNumber,
+      t.assignee?.firstName,
+      t.assignee?.lastName,
+      ...(t.assignments || []).flatMap((a) => [a.user?.firstName, a.user?.lastName]),
+    ]
+      .filter(Boolean).join(' ').toLowerCase().includes(searchTerm)
+  const matchesLead = (l: LeadItem) =>
+    !searchTerm ||
+    [l.firstName, l.lastName, l.company, l.phone, l.email, l.jobSiteAddress, l.source, l.jobType]
+      .filter(Boolean).join(' ').toLowerCase().includes(searchTerm)
 
   const columns = useMemo(() => {
     const cols = (config?.columns || []).filter((c) => c.visible).sort((a, b) => a.order - b.order)
@@ -323,12 +434,12 @@ export function ProductionScreen({ navigation }: Props) {
       // Each column is sorted by its own configured sort, exactly like the web board.
       jobs: sortJobs(
         visibleJobs.filter((j) => j.status !== 'ON_HOLD' && col.statuses.includes(j.status)),
-        col.defaultSort || 'lastUpdated',
-        col.defaultSortDir || 'desc'
+        filters.sort?.key || col.defaultSort || 'lastUpdated',
+        filters.sort?.dir || col.defaultSortDir || 'desc'
       ),
     }))
     return applyBoardPref(withJobs, prefs.jobs) // user's personal order/hidden
-  }, [config, visibleJobs, prefs.jobs])
+  }, [config, visibleJobs, prefs.jobs, filters.sort])
 
   const onHoldStage = config?.stages?.find((s) => s.status === 'ON_HOLD')
   const onHoldJobs = useMemo(() => visibleJobs.filter((j) => j.status === 'ON_HOLD'), [visibleJobs])
@@ -339,9 +450,13 @@ export function ProductionScreen({ navigation }: Props) {
   const tasksByCol = useMemo(() => {
     const m: Record<string, TaskItem[]> = {}
     for (const c of TASK_BOARD_COLUMNS) m[c.id] = []
-    for (const t of tasks) { const s = String(t.status || '').toUpperCase(); (m[s] = m[s] || []).push(t) }
+    for (const t of tasks) {
+      if (!matchesTask(t)) continue
+      const s = String(t.status || '').toUpperCase(); (m[s] = m[s] || []).push(t)
+    }
     return m
-  }, [tasks])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks, searchTerm])
 
   // ---- leads grouped into columns ----
   const leads = leadsQuery.data?.leads ?? []
@@ -349,9 +464,13 @@ export function ProductionScreen({ navigation }: Props) {
   const leadsByCol = useMemo(() => {
     const m: Record<string, LeadItem[]> = {}
     for (const c of LEAD_BOARD_COLUMNS) m[c.id] = []
-    for (const l of leads) { const s = String(l.status || '').toUpperCase(); (m[s] = m[s] || []).push(l) }
+    for (const l of leads) {
+      if (!matchesLead(l)) continue
+      const s = String(l.status || '').toUpperCase(); (m[s] = m[s] || []).push(l)
+    }
     return m
-  }, [leads])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leads, searchTerm])
 
   // What the Customize modal edits for the active tab.
   const customizeCols: BoardColumnDef[] =
@@ -404,6 +523,19 @@ export function ProductionScreen({ navigation }: Props) {
             onChangeText={setSearch}
           />
         </View>
+        {tab === 'jobs' && (
+          <Pressable
+            style={[styles.iconButton, filterCount > 0 && styles.iconButtonActive]}
+            onPress={() => setFiltersOpen(true)}
+            hitSlop={8}
+            accessibilityLabel="Filter and sort"
+          >
+            <Ionicons name="funnel-outline" size={17} color={filterCount > 0 ? colors.surface : colors.brandPrimary} />
+            {filterCount > 0 ? (
+              <View style={styles.filterBadge}><Text style={styles.filterBadgeText}>{filterCount}</Text></View>
+            ) : null}
+          </Pressable>
+        )}
         {tab === 'jobs' && !archiveView && (
           <Pressable style={styles.iconButton} onPress={() => setSortOpen(true)} hitSlop={8} accessibilityLabel="Column sorting">
             <Ionicons name="swap-vertical-outline" size={18} color={colors.brandPrimary} />
@@ -419,6 +551,20 @@ export function ProductionScreen({ navigation }: Props) {
           </Pressable>
         )}
       </View>
+
+      {tab === 'jobs' && filterCount > 0 ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.activeFiltersScroll} contentContainerStyle={styles.activeFilters}>
+          {activeFilterChips(filters, filterOptions).map((chip) => (
+            <Pressable key={chip.key} style={styles.activeChip} onPress={() => setFilters((f) => ({ ...f, ...chip.clear }))}>
+              <Text style={styles.activeChipText} numberOfLines={1}>{chip.label}</Text>
+              <Ionicons name="close" size={13} color={colors.brandPrimary} />
+            </Pressable>
+          ))}
+          <Pressable style={styles.clearChip} onPress={() => setFilters(EMPTY_FILTERS)}>
+            <Text style={styles.clearChipText}>Clear all</Text>
+          </Pressable>
+        </ScrollView>
+      ) : null}
 
       {/* ---- JOBS TAB ---- */}
       {tab === 'jobs' && (
@@ -472,8 +618,8 @@ export function ProductionScreen({ navigation }: Props) {
                     )}
                   </View>
                   <View style={styles.sortBar}>
-                    <Ionicons name={col.defaultSortDir === 'asc' ? 'arrow-up' : 'arrow-down'} size={11} color={colors.textSecondary} />
-                    <Text style={styles.sortBarText} numberOfLines={1}>{sortLabel(col.defaultSort || 'lastUpdated')}</Text>
+                    <Ionicons name={(filters.sort?.dir || col.defaultSortDir) === 'asc' ? 'arrow-up' : 'arrow-down'} size={11} color={colors.textSecondary} />
+                    <Text style={styles.sortBarText} numberOfLines={1}>{sortLabel(filters.sort?.key || col.defaultSort || 'lastUpdated')}</Text>
                   </View>
                   <FlatList
                     data={colJobs}
@@ -546,6 +692,15 @@ export function ProductionScreen({ navigation }: Props) {
           emptyTitle="No requests assigned to you"
         />
       )}
+
+      <JobFiltersModal
+        open={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        value={filters}
+        onApply={setFilters}
+        options={filterOptions}
+        flags={config?.filters}
+      />
 
       <SortColumnsModal
         open={sortOpen}
@@ -704,6 +859,155 @@ function LeadCard({ lead, onPress }: { lead: LeadItem; onPress: () => void }) {
       </View>
       {meta ? <Text style={[styles.metaFaint, { fontSize: 11 }]} numberOfLines={1}>{meta}</Text> : null}
     </Pressable>
+  )
+}
+
+type FilterOption = { value: string; label: string }
+type FilterOptions = { people: FilterOption[]; clients: FilterOption[]; jobTypes: FilterOption[] }
+
+function activeFilterChips(f: JobFilters, o: FilterOptions): Array<{ key: string; label: string; clear: Partial<JobFilters> }> {
+  const chips: Array<{ key: string; label: string; clear: Partial<JobFilters> }> = []
+  const find = (list: FilterOption[], v: string) => list.find((x) => x.value === v)?.label || v
+  if (f.status !== 'all') chips.push({ key: 'status', label: find(JOB_STATUS_OPTIONS, f.status), clear: { status: 'all' } })
+  if (f.assignedTo !== 'all') chips.push({ key: 'assignedTo', label: find(o.people, f.assignedTo), clear: { assignedTo: 'all' } })
+  if (f.priority !== 'all') chips.push({ key: 'priority', label: `P${f.priority}`, clear: { priority: 'all' } })
+  if (f.due !== 'all') chips.push({ key: 'due', label: DUE_OPTIONS.find((d) => d.value === f.due)?.label || f.due, clear: { due: 'all' } })
+  if (f.client !== 'all') chips.push({ key: 'client', label: find(o.clients, f.client), clear: { client: 'all' } })
+  if (f.jobType !== 'all') chips.push({ key: 'jobType', label: prettyType(f.jobType), clear: { jobType: 'all' } })
+  if (f.sort) chips.push({ key: 'sort', label: `Sort: ${sortLabel(f.sort.key)} ${f.sort.dir === 'asc' ? '↑' : '↓'}`, clear: { sort: null } })
+  return chips
+}
+
+// Filter + sort sheet for the jobs board. Filters work like the web Production page;
+// "Sort by" here is just for you (the Column sorting button changes the company default).
+function JobFiltersModal({
+  open,
+  onClose,
+  value,
+  onApply,
+  options,
+  flags,
+}: {
+  open: boolean
+  onClose: () => void
+  value: JobFilters
+  onApply: (f: JobFilters) => void
+  options: FilterOptions
+  flags?: ProductionConfig['filters']
+}) {
+  const insets = useSafeAreaInsets()
+  const [draft, setDraft] = useState<JobFilters>(value)
+  useEffect(() => {
+    if (open) setDraft(value)
+  }, [open, value])
+  const set = (patch: Partial<JobFilters>) => setDraft((d) => ({ ...d, ...patch }))
+  const on = (k: keyof NonNullable<ProductionConfig['filters']>) => flags?.[k] !== false
+
+  const Chips = ({ items, current, onPick }: { items: FilterOption[]; current: string; onPick: (v: string) => void }) => (
+    <View style={styles.chipWrap}>
+      {items.map((it) => {
+        const active = current === it.value
+        return (
+          <Pressable key={it.value} style={[styles.choiceChip, active && styles.choiceChipActive]} onPress={() => onPick(it.value)}>
+            <Text style={[styles.choiceChipText, active && styles.choiceChipTextActive]} numberOfLines={1}>{it.label}</Text>
+          </Pressable>
+        )
+      })}
+    </View>
+  )
+
+  return (
+    <Modal visible={open} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={[styles.modalCard, { paddingBottom: Math.max(insets.bottom + spacing.lg, spacing.xl) }]}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Filter & sort</Text>
+            <Pressable onPress={onClose} hitSlop={8}><Ionicons name="close" size={22} color={colors.textSecondary} /></Pressable>
+          </View>
+          <ScrollView style={{ maxHeight: Dimensions.get('window').height * 0.62 }} contentContainerStyle={{ gap: spacing.xs, paddingVertical: spacing.xs }}>
+            <Text style={styles.filterHeading}>Sort by</Text>
+            <Chips
+              items={[{ value: 'column', label: 'Column default' }, ...SORT_OPTIONS]}
+              current={draft.sort?.key || 'column'}
+              onPick={(v) => set({ sort: v === 'column' ? null : { key: v as SortKey, dir: draft.sort?.dir || (v === 'lastUpdated' || v === 'priority' ? 'desc' : 'asc') } })}
+            />
+            {draft.sort ? (
+              <View style={styles.sortDirRow}>
+                {(['asc', 'desc'] as SortDir[]).map((dir) => (
+                  <Pressable
+                    key={dir}
+                    onPress={() => set({ sort: { key: draft.sort!.key, dir } })}
+                    style={[styles.sortDirBtn, draft.sort!.dir === dir && styles.sortDirBtnActive]}
+                  >
+                    <Ionicons name={dir === 'asc' ? 'arrow-up' : 'arrow-down'} size={14} color={draft.sort!.dir === dir ? colors.surface : colors.textSecondary} />
+                    <Text style={[styles.sortDirText, draft.sort!.dir === dir && styles.sortDirTextActive]}>{dir === 'asc' ? 'Ascending' : 'Descending'}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
+
+            {on('status') ? (
+              <>
+                <Text style={styles.filterHeading}>Status</Text>
+                <Chips items={[{ value: 'all', label: 'All Status' }, ...JOB_STATUS_OPTIONS]} current={draft.status} onPick={(v) => set({ status: v })} />
+              </>
+            ) : null}
+            {on('assignedTo') ? (
+              <>
+                <Text style={styles.filterHeading}>Assigned to</Text>
+                <Chips items={[{ value: 'all', label: 'Everyone' }, ...options.people]} current={draft.assignedTo} onPick={(v) => set({ assignedTo: v })} />
+              </>
+            ) : null}
+            {on('priority') ? (
+              <>
+                <Text style={styles.filterHeading}>Priority</Text>
+                <Chips
+                  items={[{ value: 'all', label: 'Any Priority' }, ...[5, 4, 3, 2, 1].map((n) => ({ value: String(n), label: `P${n}` }))]}
+                  current={draft.priority}
+                  onPick={(v) => set({ priority: v })}
+                />
+              </>
+            ) : null}
+            {on('dueDate') || on('overdue') ? (
+              <>
+                <Text style={styles.filterHeading}>Due date</Text>
+                <Chips
+                  items={DUE_OPTIONS.filter((d) => d.value === 'all' || d.value === 'overdue' || on('dueDate'))}
+                  current={draft.due}
+                  onPick={(v) => set({ due: v as DueFilter })}
+                />
+              </>
+            ) : null}
+            {options.clients.length > 0 ? (
+              <>
+                <Text style={styles.filterHeading}>Client</Text>
+                <Chips items={[{ value: 'all', label: 'All clients' }, ...options.clients]} current={draft.client} onPick={(v) => set({ client: v })} />
+              </>
+            ) : null}
+            {options.jobTypes.length > 0 ? (
+              <>
+                <Text style={styles.filterHeading}>Job type</Text>
+                <Chips items={[{ value: 'all', label: 'All types' }, ...options.jobTypes]} current={draft.jobType} onPick={(v) => set({ jobType: v })} />
+              </>
+            ) : null}
+          </ScrollView>
+          <View style={styles.modalFooter}>
+            <Pressable onPress={() => setDraft(EMPTY_FILTERS)} style={styles.modalCancel}>
+              <Text style={styles.modalCancelText}>Reset</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                onApply(draft)
+                onClose()
+              }}
+              style={styles.modalSave}
+            >
+              <Text style={styles.modalSaveText}>Show jobs</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
   )
 }
 
@@ -1103,6 +1407,21 @@ const styles = StyleSheet.create({
   searchBox: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.xs, backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.divider, paddingHorizontal: spacing.md, height: 42 },
   searchInput: { flex: 1, ...typography.sub, color: colors.textPrimary, padding: 0 },
   iconButton: { width: 42, height: 42, borderRadius: radius.md, borderWidth: 1, borderColor: colors.brandPrimary, alignItems: 'center', justifyContent: 'center' },
+  iconButtonActive: { backgroundColor: colors.brandPrimary },
+  filterBadge: { position: 'absolute', top: -6, right: -6, minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 4, backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center' },
+  filterBadgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  activeFiltersScroll: { flexGrow: 0, marginTop: spacing.xs },
+  activeFilters: { gap: 6, paddingHorizontal: spacing.md, alignItems: 'center' },
+  activeChip: { flexDirection: 'row', alignItems: 'center', gap: 4, maxWidth: 220, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.brandPrimary, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: colors.surface },
+  activeChipText: { fontSize: 12, fontWeight: '600', color: colors.brandPrimary, flexShrink: 1 },
+  clearChip: { paddingHorizontal: 10, paddingVertical: 5 },
+  clearChipText: { fontSize: 12, fontWeight: '700', color: colors.danger },
+  filterHeading: { ...typography.caption, color: colors.textSecondary, fontWeight: '700', textTransform: 'uppercase', marginTop: spacing.xs },
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  choiceChip: { borderRadius: radius.pill, borderWidth: 1, borderColor: colors.divider, paddingHorizontal: 12, paddingVertical: 7, backgroundColor: colors.surface, maxWidth: '100%' },
+  choiceChipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  choiceChipText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
+  choiceChipTextActive: { color: colors.surface },
   archiveButton: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: colors.brandPrimary, borderRadius: radius.md, paddingHorizontal: spacing.md, height: 42 },
   archiveButtonActive: { backgroundColor: colors.brandPrimary },
   archiveButtonText: { ...typography.caption, color: colors.brandPrimary, fontWeight: '700' },

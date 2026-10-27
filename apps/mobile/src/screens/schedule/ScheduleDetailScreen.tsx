@@ -4,7 +4,6 @@ import {
   Alert,
   Image,
   Linking,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -15,18 +14,21 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { Ionicons } from '@expo/vector-icons'
-import * as ImagePicker from 'expo-image-picker'
-import * as FileSystem from 'expo-file-system/legacy'
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller'
 import { AppScreen } from '../../components/AppScreen'
 import { apiRequest } from '../../api/client'
-import { API_BASE_URL } from '../../config/env'
 import { colors, radius, spacing, typography } from '../../theme/tokens'
 import { EmptyState } from '../../components/EmptyState'
-import { useAuth } from '../../auth/AuthContext'
 import { useMobilePermissions } from '../../hooks/useMobilePermissions'
 import { ScheduleStackParamList } from '../../types/navigation'
 import { AttachmentGalleryModal } from '../../components/attachments/AttachmentGalleryModal'
 import { callPhone } from '../../lib/phone'
+import {
+  pickAttachmentsByAction,
+  uploadFileWithProgress,
+  type AttachmentPickAction,
+  type LocalAttachmentFile,
+} from '../../services/attachment-upload'
 
 type Props = NativeStackScreenProps<ScheduleStackParamList, 'ScheduleDetail'>
 
@@ -95,7 +97,6 @@ function formatWhen(startIso: string, endIso: string, allDay: boolean) {
 
 export function ScheduleDetailScreen({ navigation, route }: Props) {
   const { scheduleId } = route.params
-  const { token } = useAuth()
   const { canCreateSchedulesForOthers, canAssignJobs } = useMobilePermissions()
   const queryClient = useQueryClient()
   const [fetchedAt, setFetchedAt] = useState(Date.now())
@@ -103,7 +104,8 @@ export function ScheduleDetailScreen({ navigation, route }: Props) {
   const [busy, setBusy] = useState(false)
   const [finishOpen, setFinishOpen] = useState(false)
   const [finishNotes, setFinishNotes] = useState('')
-  const [finishPhotos, setFinishPhotos] = useState<Array<{ uri: string; mimeType: string; fileName: string; fileSize: number }>>([])
+  const [finishMedia, setFinishMedia] = useState<LocalAttachmentFile[]>([])
+  const [uploadProgress, setUploadProgress] = useState<{ index: number; progress: number } | null>(null)
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null)
 
   const detailQuery = useQuery({
@@ -187,60 +189,46 @@ export function ScheduleDetailScreen({ navigation, route }: Props) {
     }
   }
 
-  const uploadCompletionPhoto = async (jobId: string, p: { uri: string; mimeType: string; fileName: string; fileSize: number }) => {
-    const upload = await FileSystem.uploadAsync(`${API_BASE_URL}/api/uploads`, p.uri, {
-      fieldName: 'file',
-      httpMethod: 'POST',
-      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-      mimeType: p.mimeType,
-    })
-    if (upload.status < 200 || upload.status >= 300) throw new Error('Photo upload failed')
-    const payload = JSON.parse(upload.body)
-    await apiRequest('/api/attachments', 'POST', {
-      entityType: 'job',
-      entityId: jobId,
-      fileName: p.fileName,
-      url: payload.url,
-      key: payload.filename || payload.url,
-      mimeType: p.mimeType,
-      fileSize: p.fileSize,
-    })
+  // Photos and videos from the finish panel go straight onto the job's files.
+  const addFinishMedia = async (action: AttachmentPickAction) => {
+    try {
+      const picked = await pickAttachmentsByAction(action)
+      if (picked.length) setFinishMedia((prev) => [...prev, ...picked])
+    } catch (error: any) {
+      Alert.alert('Could not add file', error?.message || 'Try again.')
+    }
   }
 
-  const addFinishPhoto = async (fromCamera: boolean) => {
-    const perm = fromCamera ? await ImagePicker.requestCameraPermissionsAsync() : await ImagePicker.requestMediaLibraryPermissionsAsync()
-    if (!perm.granted) return Alert.alert('Permission needed', 'Allow access to add photos.')
-    const result = fromCamera
-      ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.72 })
-      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.72, allowsMultipleSelection: true })
-    if (result.canceled) return
-    setFinishPhotos((prev) => [
-      ...prev,
-      ...result.assets.map((a, i) => ({
-        uri: a.uri,
-        mimeType: a.mimeType || 'image/jpeg',
-        fileName: a.fileName || `completion-${Date.now()}-${i}.jpg`,
-        fileSize: a.fileSize || 0,
-      })),
-    ])
+  const closeFinish = () => {
+    setFinishOpen(false)
+    setFinishNotes('')
+    setFinishMedia([])
   }
 
   const confirmFinish = async () => {
     if (!data?.job) return
     setBusy(true)
+    const remaining = [...finishMedia]
     try {
-      for (const p of finishPhotos) await uploadCompletionPhoto(data.job.id, p)
+      for (let i = 0; i < finishMedia.length; i++) {
+        setUploadProgress({ index: i, progress: 0 })
+        await uploadFileWithProgress(`/api/jobs/${data.job.id}/attachments`, finishMedia[i], (progress) =>
+          setUploadProgress({ index: i, progress })
+        ).promise
+        remaining.shift()
+      }
     } catch (error: any) {
+      // Keep only what didn't upload, so a retry doesn't add duplicates.
+      setFinishMedia(remaining)
       setBusy(false)
-      return Alert.alert('Photos not saved', error?.message || 'Try again, or finish without photos.')
+      setUploadProgress(null)
+      return Alert.alert('Files not saved', error?.message || 'Try again, or remove the files and finish without them.')
     }
+    setUploadProgress(null)
+    setFinishMedia([])
+    void queryClient.invalidateQueries({ queryKey: ['mobile-schedule-details', scheduleId] })
     const ok = await runAction('finish', finishNotes.trim() || undefined)
-    if (ok) {
-      setFinishOpen(false)
-      setFinishNotes('')
-      setFinishPhotos([])
-    }
+    if (ok) closeFinish()
   }
 
   const openMaps = (address: string) => {
@@ -305,8 +293,8 @@ export function ScheduleDetailScreen({ navigation, route }: Props) {
   const status = work!.status
 
   return (
-    <AppScreen>
-      <ScrollView contentContainerStyle={styles.content}>
+    <View style={styles.screen}>
+      <KeyboardAwareScrollView contentContainerStyle={styles.content} bottomOffset={spacing.lg} keyboardShouldPersistTaps="handled">
         {/* Visit header */}
         <View style={styles.card}>
           <Text style={styles.title}>{schedule.title || 'Visit'}</Text>
@@ -345,7 +333,7 @@ export function ScheduleDetailScreen({ navigation, route }: Props) {
           {work!.finishedAt ? <Text style={styles.meta}>Finished {new Date(work!.finishedAt).toLocaleString()}</Text> : null}
           {work!.completionNotes ? <Text style={styles.completion}>{work!.completionNotes}</Text> : null}
 
-          {data.canWork && status !== 'COMPLETED' ? (
+          {data.canWork && status !== 'COMPLETED' && !finishOpen ? (
             <View style={styles.controls}>
               {status === 'NOT_STARTED' ? (
                 <WorkButton icon="play" label="Start Job" color={colors.success} disabled={busy} onPress={() => runAction('start')} />
@@ -362,6 +350,79 @@ export function ScheduleDetailScreen({ navigation, route }: Props) {
             </View>
           ) : null}
           {!job ? <Text style={styles.meta}>This schedule is not linked to a job, so time can't be tracked.</Text> : null}
+
+          {/* Finish: confirm first (kept at the top so it's always reachable), then notes and media */}
+          {finishOpen && status !== 'COMPLETED' ? (
+            <View style={styles.finishPanel}>
+              <Text style={styles.sectionTitle}>Finish this job?</Text>
+              <Text style={styles.meta}>Active time: {formatClock(activeSeconds)}. This can't be undone.</Text>
+              <View style={styles.rowGap}>
+                <Pressable style={styles.cancelBtn} onPress={closeFinish} disabled={busy}>
+                  <Text style={styles.cancelText}>Cancel</Text>
+                </Pressable>
+                <Pressable style={[styles.finishBtn, busy && { opacity: 0.6 }]} onPress={confirmFinish} disabled={busy}>
+                  {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.finishText}>Finish Job</Text>}
+                </Pressable>
+              </View>
+              {uploadProgress ? (
+                <Text style={styles.meta}>
+                  Uploading {uploadProgress.index + 1} of {finishMedia.length} · {Math.round(uploadProgress.progress * 100)}%
+                </Text>
+              ) : null}
+
+              <Text style={[styles.label, { marginTop: spacing.sm }]}>Completion notes</Text>
+              <TextInput
+                style={styles.input}
+                value={finishNotes}
+                onChangeText={setFinishNotes}
+                placeholder="What was done, anything left open…"
+                placeholderTextColor={colors.muted}
+                multiline
+                editable={!busy}
+              />
+
+              <Text style={[styles.label, { marginTop: spacing.sm }]}>Photos & videos</Text>
+              <View style={styles.rowGap}>
+                <MediaButton icon="camera" label="Take photo" disabled={busy} onPress={() => addFinishMedia('take-photo')} />
+                <MediaButton icon="videocam" label="Record video" disabled={busy} onPress={() => addFinishMedia('record-video')} />
+              </View>
+              <View style={styles.rowGap}>
+                <MediaButton icon="images" label="Photos" disabled={busy} onPress={() => addFinishMedia('choose-photos')} />
+                <MediaButton icon="film" label="Videos" disabled={busy} onPress={() => addFinishMedia('choose-videos')} />
+              </View>
+              {finishMedia.length > 0 ? (
+                <>
+                  <ScrollView horizontal style={styles.thumbRow} keyboardShouldPersistTaps="handled">
+                    {finishMedia.map((file, i) => (
+                      <View key={file.localId} style={styles.finishThumbWrap}>
+                        {file.kind === 'image' ? (
+                          <Image source={{ uri: file.uri }} style={styles.finishThumb} />
+                        ) : (
+                          <View style={[styles.finishThumb, styles.videoThumb]}>
+                            <Ionicons name="videocam" size={26} color="#fff" />
+                            <Text style={styles.videoThumbText}>Video</Text>
+                          </View>
+                        )}
+                        {!busy ? (
+                          <Pressable
+                            style={styles.removeThumb}
+                            onPress={() => setFinishMedia((prev) => prev.filter((_, j) => j !== i))}
+                            hitSlop={8}
+                            accessibilityLabel="Remove"
+                          >
+                            <Ionicons name="close" size={14} color="#fff" />
+                          </Pressable>
+                        ) : null}
+                      </View>
+                    ))}
+                  </ScrollView>
+                  <Text style={styles.meta}>
+                    {finishMedia.length} file{finishMedia.length === 1 ? '' : 's'} will be added to the job when you finish.
+                  </Text>
+                </>
+              ) : null}
+            </View>
+          ) : null}
         </View>
 
         {/* Customer and site */}
@@ -465,7 +526,7 @@ export function ScheduleDetailScreen({ navigation, route }: Props) {
             </Pressable>
           </View>
         ) : null}
-      </ScrollView>
+      </KeyboardAwareScrollView>
 
       <AttachmentGalleryModal
         visible={galleryIndex !== null}
@@ -477,53 +538,16 @@ export function ScheduleDetailScreen({ navigation, route }: Props) {
         entityId={job?.id}
       />
 
-      {/* Finish: confirm, notes, photos */}
-      <Modal visible={finishOpen} transparent animationType="slide" onRequestClose={() => !busy && setFinishOpen(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalSheet}>
-            <Text style={styles.sectionTitle}>Finish this job?</Text>
-            <Text style={styles.meta}>Active time: {formatClock(activeSeconds)}. This can't be undone.</Text>
-            <Text style={[styles.label, { marginTop: spacing.sm }]}>Completion notes</Text>
-            <TextInput
-              style={styles.input}
-              value={finishNotes}
-              onChangeText={setFinishNotes}
-              placeholder="What was done, anything left open…"
-              placeholderTextColor={colors.muted}
-              multiline
-            />
-            <View style={styles.rowGap}>
-              <Pressable style={styles.photoBtn} onPress={() => addFinishPhoto(true)} disabled={busy}>
-                <Ionicons name="camera" size={18} color={colors.brandPrimary} />
-                <Text style={styles.photoBtnText}>Take photo</Text>
-              </Pressable>
-              <Pressable style={styles.photoBtn} onPress={() => addFinishPhoto(false)} disabled={busy}>
-                <Ionicons name="images" size={18} color={colors.brandPrimary} />
-                <Text style={styles.photoBtnText}>Add photos</Text>
-              </Pressable>
-            </View>
-            {finishPhotos.length > 0 ? (
-              <ScrollView horizontal style={{ maxHeight: 80 }}>
-                {finishPhotos.map((p, i) => (
-                  <Pressable key={`${p.uri}-${i}`} onLongPress={() => setFinishPhotos((prev) => prev.filter((_, j) => j !== i))}>
-                    <Image source={{ uri: p.uri }} style={styles.finishThumb} />
-                  </Pressable>
-                ))}
-              </ScrollView>
-            ) : null}
-            {finishPhotos.length > 0 ? <Text style={styles.meta}>Photos are added to the job. Hold one to remove it.</Text> : null}
-            <View style={styles.rowGap}>
-              <Pressable style={styles.cancelBtn} onPress={() => setFinishOpen(false)} disabled={busy}>
-                <Text style={styles.cancelText}>Cancel</Text>
-              </Pressable>
-              <Pressable style={[styles.finishBtn, busy && { opacity: 0.6 }]} onPress={confirmFinish} disabled={busy}>
-                {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.finishText}>Finish Job</Text>}
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    </AppScreen>
+    </View>
+  )
+}
+
+function MediaButton({ icon, label, onPress, disabled }: { icon: any; label: string; onPress: () => void; disabled?: boolean }) {
+  return (
+    <Pressable style={[styles.photoBtn, disabled && { opacity: 0.6 }]} onPress={onPress} disabled={disabled}>
+      <Ionicons name={icon} size={18} color={colors.brandPrimary} />
+      <Text style={styles.photoBtnText}>{label}</Text>
+    </Pressable>
   )
 }
 
@@ -546,6 +570,7 @@ function ActionButton({ icon, label, onPress }: { icon: any; label: string; onPr
 }
 
 const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.background, paddingHorizontal: spacing.md },
   content: { gap: spacing.sm, paddingTop: spacing.sm, paddingBottom: spacing.xl },
   card: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.divider, gap: 4 },
   title: { ...typography.h2, color: colors.textPrimary },
@@ -593,12 +618,16 @@ const styles = StyleSheet.create({
   editButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   deleteButton: { paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center', borderRadius: 10, borderWidth: 1, borderColor: '#fecaca' },
   headerMenuButton: { paddingHorizontal: 8, paddingVertical: 6 },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(15,23,42,0.45)', justifyContent: 'flex-end' },
-  modalSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, padding: spacing.lg, gap: spacing.xs },
+  finishPanel: { marginTop: spacing.sm, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.divider, gap: spacing.xs },
   input: { minHeight: 90, borderWidth: 1, borderColor: colors.divider, borderRadius: radius.sm, padding: spacing.sm, ...typography.body, color: colors.textPrimary, textAlignVertical: 'top' },
   photoBtn: { flex: 1, minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.brandPrimary },
   photoBtnText: { color: colors.brandPrimary, fontWeight: '700' },
-  finishThumb: { width: 72, height: 72, borderRadius: radius.sm, marginRight: spacing.xs },
+  thumbRow: { maxHeight: 84, marginTop: spacing.xs },
+  finishThumbWrap: { marginRight: spacing.xs, paddingTop: 6, paddingRight: 6 },
+  finishThumb: { width: 72, height: 72, borderRadius: radius.sm },
+  videoThumb: { backgroundColor: '#1f2937', alignItems: 'center', justifyContent: 'center' },
+  videoThumbText: { color: '#fff', fontSize: 11, fontWeight: '700', marginTop: 2 },
+  removeThumb: { position: 'absolute', top: 0, right: 0, width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(15,23,42,0.8)', alignItems: 'center', justifyContent: 'center' },
   cancelBtn: { flex: 1, minHeight: 52, alignItems: 'center', justifyContent: 'center', borderRadius: radius.sm, borderWidth: 1, borderColor: colors.divider },
   cancelText: { fontSize: 16, fontWeight: '700', color: colors.textSecondary },
   finishBtn: { flex: 2, minHeight: 52, alignItems: 'center', justifyContent: 'center', borderRadius: radius.sm, backgroundColor: colors.info },

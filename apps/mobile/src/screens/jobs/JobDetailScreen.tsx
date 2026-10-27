@@ -535,38 +535,12 @@ export function JobDetailScreen({ route, navigation }: Props) {
       {canCreateTasks() && (
         <Pressable
           style={styles.secondaryButton}
-          onPress={async () => {
+          onPress={() => {
             if (!job) return
-            try {
-              const usersResponse = await apiRequest<{
-                users: Array<{ id: string; role: string; firstName: string; lastName: string }>
-              }>('/api/users?role=ADMIN&limit=10')
-              const adminUsers = usersResponse.users.filter((u) => u.role === 'ADMIN' || u.role === 'OFFICE')
-              if (adminUsers.length === 0) {
-                Alert.alert('No Admin Users', 'No admin users found to assign the task to.')
-                return
-              }
-              const assigneeId = adminUsers[0].id
-              await apiRequest('/api/tasks?mobile=true', 'POST', {
-                title: `Task for ${job.jobNumber}`,
-                description: `Task created from job ${job.jobNumber}: ${job.title}`,
-                assigneeId,
-                jobId: job.id,
-                priority: 'MEDIUM',
-                status: 'TODO',
-              })
-              Alert.alert(
-                'Success',
-                `Task created and assigned to ${adminUsers[0].firstName} ${adminUsers[0].lastName}`
-              )
-              queryClient.invalidateQueries({ queryKey: ['mobile-assignments'] })
-              queryClient.invalidateQueries({ queryKey: ['mobile-job', jobId] })
-            } catch (error: any) {
-              Alert.alert('Error', error?.message || 'Failed to create task')
-            }
+            navigation.navigate('TaskCreate', { jobId: job.id, jobNumber: job.jobNumber, jobTitle: job.title })
           }}
         >
-          <Text style={styles.secondaryButtonText}>Create Task for Admin</Text>
+          <Text style={styles.secondaryButtonText}>Create Task</Text>
         </Pressable>
       )}
       {canCreateIssues() && (
@@ -826,38 +800,12 @@ export function JobDetailScreen({ route, navigation }: Props) {
                 {canCreateTasks() && (
                   <Pressable
                     style={styles.secondaryButton}
-                    onPress={async () => {
+                    onPress={() => {
                       if (!job) return
-                      try {
-                        const usersResponse = await apiRequest<{
-                          users: Array<{ id: string; role: string; firstName: string; lastName: string }>
-                        }>('/api/users?role=ADMIN&limit=10')
-                        const adminUsers = usersResponse.users.filter((u) => u.role === 'ADMIN' || u.role === 'OFFICE')
-                        if (adminUsers.length === 0) {
-                          Alert.alert('No Admin Users', 'No admin users found to assign the task to.')
-                          return
-                        }
-                        const assigneeId = adminUsers[0].id
-                        await apiRequest('/api/tasks?mobile=true', 'POST', {
-                          title: `Task for ${job.jobNumber}`,
-                          description: `Task created from job ${job.jobNumber}: ${job.title}`,
-                          assigneeId,
-                          jobId: job.id,
-                          priority: 'MEDIUM',
-                          status: 'TODO',
-                        })
-                        Alert.alert(
-                          'Success',
-                          `Task created and assigned to ${adminUsers[0].firstName} ${adminUsers[0].lastName}`
-                        )
-                        queryClient.invalidateQueries({ queryKey: ['mobile-assignments'] })
-                        queryClient.invalidateQueries({ queryKey: ['mobile-job', jobId] })
-                      } catch (error: any) {
-                        Alert.alert('Error', error?.message || 'Failed to create task')
-                      }
+                      navigation.navigate('TaskCreate', { jobId: job.id, jobNumber: job.jobNumber, jobTitle: job.title })
                     }}
                   >
-                    <Text style={styles.secondaryButtonText}>Create Task for Admin</Text>
+                    <Text style={styles.secondaryButtonText}>Create Task</Text>
                   </Pressable>
                 )}
                 {canCreateIssues() && (
