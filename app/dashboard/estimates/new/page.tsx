@@ -1,6 +1,7 @@
 'use client'
 import { JobTypeCreateField } from '@/components/jobs/JobTypeCreateField'
 import { EMPTY_OPEN_JOBS_CHOICE, OpenJobsPrompt, type OpenJobsChoice } from '@/components/estimates/OpenJobsPrompt'
+import { SaveJobChoiceDialog, type SaveJobDecision } from '@/components/estimates/SaveJobChoiceDialog'
 import { JOB_TYPE_VALUES } from '@/lib/jobs/types'
 import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 
@@ -130,6 +131,8 @@ export default function NewEstimatePage() {
   const jobIdParam = searchParams.get('jobId')
   // Customer with open jobs: new job or one of theirs (see OpenJobsPrompt).
   const [jobChoice, setJobChoice] = useState<OpenJobsChoice>(EMPTY_OPEN_JOBS_CHOICE)
+  // From a request the job question comes when saving (new job or one of the customer's open jobs).
+  const [saveJobDialogOpen, setSaveJobDialogOpen] = useState(false)
   const jobTypeParam = searchParams.get('jobType')
 
   const { prefillClientId, address: prefillAddress, noAddressWarning, applyDefaultsOnce } =
@@ -1003,7 +1006,7 @@ export default function NewEstimatePage() {
     setOptionalItems(updated)
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent, saveJob?: SaveJobDecision) => {
     e.preventDefault()
     if (!formData.clientId) {
       alert('Please select a client')
@@ -1017,6 +1020,12 @@ export default function NewEstimatePage() {
       alert('Please enter a title')
       return
     }
+    if (requestIdParam && !jobIdParam && !formData.jobId && !saveJob) {
+      setSaveJobDialogOpen(true)
+      return
+    }
+    const jobIdForSave = formData.jobId || (saveJob?.decision === 'existing' ? saveJob.jobId : '')
+    const createJobOnSave = !jobIdForSave && (jobChoice.decision === 'new' || saveJob?.decision === 'new')
 
     setLoading(true)
     try {
@@ -1108,8 +1117,8 @@ export default function NewEstimatePage() {
         body: JSON.stringify({
           clientId: formData.clientId,
           leadId: formData.leadId || null,
-          jobId: formData.jobId || null,
-          createJob: !formData.jobId && jobChoice.decision === 'new',
+          jobId: jobIdForSave || null,
+          createJob: createJobOnSave,
           estimateNumber: formData.estimateNumber || null,
           title: formData.title,
           jobType: formData.jobType || null,
@@ -1205,7 +1214,16 @@ export default function NewEstimatePage() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit}>
+      <SaveJobChoiceDialog
+        open={saveJobDialogOpen}
+        clientId={formData.clientId}
+        onCancel={() => setSaveJobDialogOpen(false)}
+        onChoose={(choice) => {
+          setSaveJobDialogOpen(false)
+          void handleSubmit({ preventDefault() {} } as React.FormEvent, choice)
+        }}
+      />
+      <form onSubmit={(e) => void handleSubmit(e)}>
         <div className="grid gap-6 md:grid-cols-3">
           <div className="md:col-span-2 space-y-6">
             <Card>

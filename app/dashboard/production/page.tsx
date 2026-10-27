@@ -23,9 +23,11 @@ import { StageIcon } from '@/components/production/StageIcon'
 import { StatusBoard } from '@/components/production/StatusBoard'
 import { CustomizeViewDialog } from '@/components/production/CustomizeViewDialog'
 import { TASK_BOARD_COLUMNS, LEAD_BOARD_COLUMNS } from '@/lib/production/boards'
-import { applyBoardPref, type ProductionViewPrefs, type BoardViewPref } from '@/lib/production/view-preferences'
+import { applyBoardPref, type ProductionViewPrefs, type BoardViewPref, type ProductionBoardKey } from '@/lib/production/view-preferences'
 import { formatCurrency } from '@/lib/utils'
 import { navigateWithReturn } from '@/lib/navigation/nav-stack'
+import { useDragScroll } from '@/components/production/useDragScroll'
+import { PipelinesView } from '@/components/production/PipelinesView'
 import {
   Factory,
   Search,
@@ -157,6 +159,8 @@ export default function ProductionPage() {
   const { permissions, loading: permissionsLoading } = usePermissions()
   const canView = hasPermission(permissions, 'production.view')
   const [jobs, setJobs] = useState<ProductionJob[]>([])
+  // Board pans left/right by dragging with the mouse, not only with the scrollbar.
+  const boardScrollRef = useDragScroll()
   const [counts, setCounts] = useState<ProductionCounts | null>(null)
   const [config, setConfig] = useState<ProductionConfig>(buildDefaultProductionConfig())
   const [loading, setLoading] = useState(true)
@@ -171,7 +175,8 @@ export default function ProductionPage() {
   const [archiveView, setArchiveView] = useState(false)
 
   // Tabs: Production (jobs) | Tasks | Requests (leads)
-  const [tab, setTab] = useState<'jobs' | 'tasks' | 'leads'>('jobs')
+  // Estimates / Invoices / All Work are separate views; the Jobs board stays the default.
+  const [tab, setTab] = useState<'jobs' | 'tasks' | 'leads' | 'estimates' | 'invoices' | 'all'>('jobs')
   const [tasks, setTasks] = useState<any[]>([])
   const [leads, setLeads] = useState<any[]>([])
   const [tabLoading, setTabLoading] = useState(false)
@@ -179,6 +184,9 @@ export default function ProductionPage() {
   const [customizeOpen, setCustomizeOpen] = useState(false)
   const canViewTasks = hasPermission(permissions, 'tasks.view')
   const canViewLeads = hasPermission(permissions, 'leads.view')
+  const canViewEstimates = hasPermission(permissions, 'estimates.view')
+  const canViewInvoices = hasPermission(permissions, 'invoices.view')
+  const canManageProduction = hasPermission(permissions, 'production.manage')
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300)
@@ -200,7 +208,7 @@ export default function ProductionPage() {
   // Fetch the active tab's items (scoped to the signed-in user).
   useEffect(() => {
     if (permissionsLoading || !canView) return
-    if (tab === 'jobs') return
+    if (tab !== 'tasks' && tab !== 'leads') return
     ;(async () => {
       setTabLoading(true)
       try {
@@ -220,7 +228,7 @@ export default function ProductionPage() {
     })()
   }, [tab, permissionsLoading, canView])
 
-  const saveViewPref = async (board: 'jobs' | 'tasks' | 'leads', pref: BoardViewPref) => {
+  const saveViewPref = async (board: ProductionBoardKey, pref: BoardViewPref) => {
     const next: ProductionViewPrefs = { ...viewPrefs, [board]: pref }
     setViewPrefs(next)
     try {
@@ -398,6 +406,9 @@ export default function ProductionPage() {
             { k: 'jobs', l: 'Production', show: true },
             { k: 'tasks', l: 'Tasks', show: canViewTasks },
             { k: 'leads', l: 'Requests', show: canViewLeads },
+            { k: 'estimates', l: 'Estimates', show: canViewEstimates },
+            { k: 'invoices', l: 'Invoices', show: canViewInvoices },
+            { k: 'all', l: 'All Work', show: true },
           ].filter((t) => t.show).map((t) => (
             <button
               key={t.k}
@@ -409,10 +420,10 @@ export default function ProductionPage() {
             </button>
           ))}
         </div>
-        <Button variant="ghost" size="sm" onClick={() => setCustomizeOpen(true)}>
+        {(tab === 'jobs' || tab === 'tasks' || tab === 'leads') && <Button variant="ghost" size="sm" onClick={() => setCustomizeOpen(true)}>
           <SlidersHorizontal className="mr-2 h-4 w-4" />
           Customize
-        </Button>
+        </Button>}
       </div>
 
       {tab === 'jobs' && (<>
@@ -550,7 +561,7 @@ export default function ProductionPage() {
               <LayoutGrid className="h-4 w-4" />
               Production Board
             </div>
-            <div className="scrollbar-visible-x flex gap-4 overflow-x-auto pb-3">
+            <div ref={boardScrollRef} className="scrollbar-visible-x flex cursor-grab gap-4 overflow-x-auto pb-3">
               {columns.map(({ col, jobs: colJobs }) => (
                 <div
                   key={col.id}
@@ -617,13 +628,23 @@ export default function ProductionPage() {
         )
       )}
 
+      {(tab === 'estimates' || tab === 'invoices' || tab === 'all') && (
+        <PipelinesView
+          tab={tab}
+          viewPrefs={viewPrefs}
+          onSavePref={(board, pref) => saveViewPref(board, pref)}
+          canManage={canManageProduction}
+          onOpen={(href) => navigateWithReturn(router, href)}
+        />
+      )}
+
       <CustomizeViewDialog
         open={customizeOpen}
         onOpenChange={setCustomizeOpen}
         title={tab === 'jobs' ? 'Production board' : tab === 'tasks' ? 'Tasks board' : 'Requests board'}
         columns={customizeCols}
-        pref={viewPrefs[tab] || { order: [], hidden: [] }}
-        onSave={(pref) => saveViewPref(tab, pref)}
+        pref={viewPrefs[tab as ProductionBoardKey] || { order: [], hidden: [] }}
+        onSave={(pref) => saveViewPref(tab as ProductionBoardKey, pref)}
       />
     </ResponsivePage>
   )

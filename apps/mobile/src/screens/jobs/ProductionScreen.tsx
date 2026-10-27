@@ -22,10 +22,19 @@ import { useMobilePermissions } from '../../hooks/useMobilePermissions'
 import { colors, radius, spacing, typography } from '../../theme/tokens'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { JobsStackParamList } from '../../types/navigation'
+import {
+  AllWorkList,
+  PipelineCard,
+  PipelineSheet,
+  type PipelineItem,
+  type PipelineResponse,
+} from '../../components/production/PipelineViews'
 
 type Props = NativeStackScreenProps<JobsStackParamList, 'Production'>
 
-type BoardKey = 'jobs' | 'tasks' | 'leads'
+// estimates / invoices / all are the Estimate & Invoice pipelines and the All Work overview.
+type BoardKey = 'jobs' | 'tasks' | 'leads' | 'estimates' | 'invoices' | 'all'
+const PIPELINE_TABS: BoardKey[] = ['estimates', 'invoices', 'all']
 
 // ---- types mirroring the /api/production response (same as the web board) ----
 interface ProductionJob {
@@ -320,6 +329,8 @@ export function ProductionScreen({ navigation }: Props) {
   const canViewTasks = hasWebPermission('tasks.view')
   const canViewLeads = canViewRequests()
   const canManageProduction = hasWebPermission('production.manage')
+  const canViewEstimates = hasWebPermission('estimates.view')
+  const canViewInvoices = hasWebPermission('invoices.view')
 
   const [tab, setTab] = useState<BoardKey>('jobs')
   const [search, setSearch] = useState('')
@@ -328,6 +339,7 @@ export function ProductionScreen({ navigation }: Props) {
   const [sortOpen, setSortOpen] = useState(false)
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [filters, setFilters] = useState<JobFilters>(EMPTY_FILTERS)
+  const [pipelineItem, setPipelineItem] = useState<PipelineItem | null>(null)
 
   // ---- per-user view preferences ----
   const prefsQuery = useQuery({
@@ -370,6 +382,25 @@ export function ProductionScreen({ navigation }: Props) {
     queryFn: () => apiRequest<{ leads: LeadItem[] }>(`/api/leads?mine=1&limit=500`),
     enabled: tab === 'leads' && canViewLeads,
   })
+
+  // ---- estimate / invoice pipelines and All Work (stages come from the records' real status) ----
+  const isPipelineTab = PIPELINE_TABS.includes(tab)
+  const pipelineQuery = useQuery({
+    queryKey: ['production-pipelines', tab],
+    queryFn: () => apiRequest<PipelineResponse>(`/api/production/pipelines?board=${tab}`),
+    enabled: isPipelineTab,
+    refetchInterval: 60_000,
+  })
+  const peopleQuery = useQuery({
+    queryKey: ['production-pipeline-people'],
+    queryFn: () => apiRequest<{ teamMembers: Array<{ id: string; firstName: string; lastName: string }> }>('/api/schedules/team'),
+    enabled: isPipelineTab,
+    staleTime: 5 * 60_000,
+  })
+  const savePipelineState = async (item: PipelineItem, changes: Record<string, unknown>) => {
+    await apiRequest('/api/production/pipelines/state', 'PUT', { recordType: item.type, recordId: item.id, ...changes })
+    await pipelineQuery.refetch()
+  }
 
   const jobs = query.data?.jobs ?? []
   const config = query.data?.config
@@ -472,13 +503,37 @@ export function ProductionScreen({ navigation }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leads, searchTerm])
 
+  const pipelineConfig = pipelineQuery.data?.config
+  const pipelineItems = useMemo(() => {
+    const all = pipelineQuery.data?.items ?? []
+    if (!searchTerm) return all
+    return all.filter((i) =>
+      [i.number, i.title, i.client?.name, i.jobSiteAddress, i.related.job?.jobNumber, i.responsible?.name]
+        .filter(Boolean).join(' ').toLowerCase().includes(searchTerm)
+    )
+  }, [pipelineQuery.data, searchTerm])
+  const pipelineStages = useMemo(() => {
+    if (tab !== 'estimates' && tab !== 'invoices') return [] as BoardColumnDef[]
+    const stages = (pipelineConfig?.[tab].stages || []).filter((st) => st.visible).sort((a, b) => a.order - b.order)
+    return stages.map((st) => ({ id: st.id, label: st.label, color: st.color, icon: st.icon }))
+  }, [pipelineConfig, tab])
+  const pipelineColumns = useMemo(() => applyBoardPref(pipelineStages, prefs[tab]), [pipelineStages, prefs, tab])
+  const pipelineByCol = useMemo(() => {
+    const m: Record<string, PipelineItem[]> = {}
+    for (const it of pipelineItems) (m[it.stage] = m[it.stage] || []).push(it)
+    for (const k of Object.keys(m)) m[k].sort((a, b) => Number(b.followUpOverdue) - Number(a.followUpOverdue) || (b.daysInStage ?? 0) - (a.daysInStage ?? 0))
+    return m
+  }, [pipelineItems])
+
   // What the Customize modal edits for the active tab.
   const customizeCols: BoardColumnDef[] =
     tab === 'jobs'
       ? (config?.columns || []).filter((c) => c.visible).sort((a, b) => a.order - b.order).map((c) => ({ id: c.id, label: c.displayName, color: c.color, icon: c.icon }))
       : tab === 'tasks'
         ? TASK_BOARD_COLUMNS
-        : LEAD_BOARD_COLUMNS
+        : tab === 'estimates' || tab === 'invoices'
+          ? pipelineStages
+          : LEAD_BOARD_COLUMNS
   const customizePref: BoardViewPref = prefs[tab] || { order: [], hidden: [] }
 
   const colWidth = config ? Math.min(config.card.width, SCREEN_W * 0.86) : SCREEN_W * 0.86
@@ -494,12 +549,15 @@ export function ProductionScreen({ navigation }: Props) {
     { key: 'jobs', label: 'Production', icon: 'construct-outline' },
     ...(canViewTasks ? [{ key: 'tasks' as BoardKey, label: 'Tasks', icon: 'checkbox-outline' as keyof typeof Ionicons.glyphMap }] : []),
     ...(canViewLeads ? [{ key: 'leads' as BoardKey, label: 'Requests', icon: 'megaphone-outline' as keyof typeof Ionicons.glyphMap }] : []),
+    ...(canViewEstimates ? [{ key: 'estimates' as BoardKey, label: 'Estimates', icon: 'document-text-outline' as keyof typeof Ionicons.glyphMap }] : []),
+    ...(canViewInvoices ? [{ key: 'invoices' as BoardKey, label: 'Invoices', icon: 'receipt-outline' as keyof typeof Ionicons.glyphMap }] : []),
+    { key: 'all', label: 'All Work', icon: 'layers-outline' },
   ]
 
   return (
     <AppScreen padded={false}>
       {/* Tab bar: Production | Tasks | Requests */}
-      <View style={styles.tabBar}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabBarScroll} contentContainerStyle={styles.tabBar}>
         {tabs.map((t) => {
           const active = tab === t.key
           return (
@@ -509,7 +567,7 @@ export function ProductionScreen({ navigation }: Props) {
             </Pressable>
           )
         })}
-      </View>
+      </ScrollView>
 
       {/* Controls (search + customize, and archive on the jobs tab) */}
       <View style={styles.controlsRow}>
@@ -517,7 +575,19 @@ export function ProductionScreen({ navigation }: Props) {
           <Ionicons name="search-outline" size={18} color={colors.textSecondary} />
           <TextInput
             style={styles.searchInput}
-            placeholder={tab === 'jobs' ? 'Search jobs…' : tab === 'tasks' ? 'Search tasks…' : 'Search requests…'}
+            placeholder={
+              tab === 'jobs'
+                ? 'Search jobs…'
+                : tab === 'tasks'
+                  ? 'Search tasks…'
+                  : tab === 'leads'
+                    ? 'Search requests…'
+                    : tab === 'estimates'
+                      ? 'Search estimates…'
+                      : tab === 'invoices'
+                        ? 'Search invoices…'
+                        : 'Search all work…'
+            }
             placeholderTextColor={colors.muted}
             value={search}
             onChangeText={setSearch}
@@ -541,9 +611,11 @@ export function ProductionScreen({ navigation }: Props) {
             <Ionicons name="swap-vertical-outline" size={18} color={colors.brandPrimary} />
           </Pressable>
         )}
-        <Pressable style={styles.iconButton} onPress={() => setCustomizeOpen(true)} hitSlop={8}>
-          <Ionicons name="options-outline" size={18} color={colors.brandPrimary} />
-        </Pressable>
+        {tab !== 'all' && (
+          <Pressable style={styles.iconButton} onPress={() => setCustomizeOpen(true)} hitSlop={8}>
+            <Ionicons name="options-outline" size={18} color={colors.brandPrimary} />
+          </Pressable>
+        )}
         {tab === 'jobs' && (
           <Pressable style={[styles.archiveButton, archiveView && styles.archiveButtonActive]} onPress={() => setArchiveView((v) => !v)}>
             <Ionicons name="archive-outline" size={16} color={archiveView ? colors.surface : colors.brandPrimary} />
@@ -693,6 +765,52 @@ export function ProductionScreen({ navigation }: Props) {
         />
       )}
 
+      {/* ---- ESTIMATES / INVOICES PIPELINES ---- */}
+      {(tab === 'estimates' || tab === 'invoices') && (
+        pipelineQuery.isError ? (
+          <View style={styles.loadingWrap}>
+            <EmptyState icon="alert-circle-outline" title="Could not load" description={(pipelineQuery.error as any)?.message || 'Pull to try again.'} />
+          </View>
+        ) : (
+          <StatusBoard
+            columns={pipelineColumns}
+            loading={pipelineQuery.isLoading}
+            refreshing={pipelineQuery.isRefetching}
+            onRefresh={() => pipelineQuery.refetch()}
+            colWidth={Math.min(300, SCREEN_W * 0.86)}
+            countFor={(id) => (pipelineByCol[id] || []).length}
+            renderColumn={(id) => (
+              <FlatList
+                data={pipelineByCol[id] || []}
+                keyExtractor={(i) => i.id}
+                style={styles.columnBody}
+                contentContainerStyle={styles.columnBodyContent}
+                nestedScrollEnabled
+                showsVerticalScrollIndicator
+                refreshControl={<RefreshControl refreshing={pipelineQuery.isRefetching} onRefresh={() => pipelineQuery.refetch()} />}
+                ListEmptyComponent={<Text style={styles.noJobs}>{tab === 'estimates' ? 'No estimates' : 'No invoices'}</Text>}
+                renderItem={({ item }) => <PipelineCard item={item} onPress={() => setPipelineItem(item)} />}
+              />
+            )}
+            emptyTitle={tab === 'estimates' ? 'No estimates' : 'No invoices'}
+          />
+        )
+      )}
+
+      {/* ---- ALL WORK ---- */}
+      {tab === 'all' && (
+        pipelineQuery.isLoading ? (
+          <View style={styles.loadingWrap}><Text style={styles.loadingText}>Loading…</Text></View>
+        ) : (
+          <AllWorkList
+            items={pipelineItems}
+            refreshing={pipelineQuery.isRefetching}
+            onRefresh={() => pipelineQuery.refetch()}
+            onPress={(item) => (item.type === 'JOB' ? openJob(item.id) : setPipelineItem(item))}
+          />
+        )
+      )}
+
       <JobFiltersModal
         open={filtersOpen}
         onClose={() => setFiltersOpen(false)}
@@ -713,10 +831,22 @@ export function ProductionScreen({ navigation }: Props) {
       <CustomizeViewModal
         open={customizeOpen}
         onClose={() => setCustomizeOpen(false)}
-        title={tab === 'jobs' ? 'Production' : tab === 'tasks' ? 'Tasks' : 'Requests'}
+        title={tab === 'jobs' ? 'Production' : tab === 'tasks' ? 'Tasks' : tab === 'estimates' ? 'Estimates' : tab === 'invoices' ? 'Invoices' : 'Requests'}
         columns={customizeCols}
         pref={customizePref}
         onSave={(p) => saveViewPref(tab, p)}
+      />
+
+      <PipelineSheet
+        item={pipelineItem}
+        config={pipelineConfig}
+        people={peopleQuery.data?.teamMembers ?? []}
+        onClose={() => setPipelineItem(null)}
+        onSave={savePipelineState}
+        onOpenJob={(jobId) => {
+          setPipelineItem(null)
+          openJob(jobId)
+        }}
       />
     </AppScreen>
   )
@@ -1397,6 +1527,7 @@ function ProductionCard({ job, config, stageColor, onPress }: { job: ProductionJ
 }
 
 const styles = StyleSheet.create({
+  tabBarScroll: { flexGrow: 0 },
   tabBar: { flexDirection: 'row', gap: spacing.xs, paddingHorizontal: spacing.md, paddingTop: spacing.sm },
   tabItem: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.divider },
   tabItemActive: { backgroundColor: '#EFF6FF', borderColor: colors.brandPrimary },

@@ -224,9 +224,12 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
 
     fetchUnreadNotifications()
     const interval = setInterval(fetchUnreadNotifications, 30000)
+    const onChanged = () => void fetchUnreadNotifications()
+    window.addEventListener('trimpro:notifications-changed', onChanged)
     return () => {
       cancelled = true
       clearInterval(interval)
+      window.removeEventListener('trimpro:notifications-changed', onChanged)
     }
   }, [])
 

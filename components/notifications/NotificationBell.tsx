@@ -61,8 +61,12 @@ export function NotificationBell() {
     fetchNotifications()
     // Refresh every 30 seconds
     const interval = setInterval(fetchNotifications, 30000)
+    // Pages that clear notifications themselves (e.g. opening a chat) ask for a refresh.
+    const onChanged = () => fetchNotifications()
+    window.addEventListener('trimpro:notifications-changed', onChanged)
     return () => {
       clearInterval(interval)
+      window.removeEventListener('trimpro:notifications-changed', onChanged)
       if (toastTimerRef.current) {
         window.clearTimeout(toastTimerRef.current)
       }

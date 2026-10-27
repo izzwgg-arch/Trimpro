@@ -400,6 +400,11 @@ export async function markConversationRead(tenantId: string, conversationId: str
     where: { tenantId, conversationId, userId },
     data: { lastReadAt: new Date() },
   })
+  // Opening the chat also clears its message notifications (the sidebar "New" badge and the bell).
+  await prisma.notification.updateMany({
+    where: { tenantId, userId, linkType: 'message', linkId: conversationId, status: 'UNREAD' },
+    data: { status: 'READ', readAt: new Date() },
+  })
 }
 
 export async function listConversationsForUser(tenantId: string, userId: string) {

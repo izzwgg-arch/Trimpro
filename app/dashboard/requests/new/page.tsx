@@ -701,10 +701,11 @@ export default function NewRequestPage() {
                   onValueChange={(value) => setFormData({ ...formData, assignedToId: value === '__none__' ? '' : value })}
                 >
                   <SelectTrigger id="assignedToId" className="w-full">
-                    <SelectValue placeholder="Unassigned" />
+                    <SelectValue placeholder="Me (default)" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__none__">Unassigned</SelectItem>
+                    {/* Saved with nobody picked, the request is assigned to whoever creates it. */}
+                    <SelectItem value="__none__">Me (default)</SelectItem>
                     {users.map((user) => (
                       <SelectItem key={user.id} value={user.id}>
                         {user.firstName} {user.lastName}

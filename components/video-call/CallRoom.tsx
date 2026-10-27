@@ -89,11 +89,17 @@ export function CallRoom({ callId }: { callId: string }) {
     let restartTimer: ReturnType<typeof setTimeout> | null = null
     let lostTimer: ReturnType<typeof setTimeout> | null = null
     let fallbackTimer: ReturnType<typeof setTimeout> | null = null
+    // Answered but the two devices can't reach each other yet (e.g. a network that blocks calls).
+    let slowTimer: ReturnType<typeof setTimeout> | null = null
+    let giveUpTimer: ReturnType<typeof setTimeout> | null = null
+    const STILL_CONNECTING_NOTICE = 'Still connecting… If this keeps happening, try Wi-Fi or mobile data instead.'
 
     const clearTimers = () => {
       if (restartTimer) clearTimeout(restartTimer)
       if (lostTimer) clearTimeout(lostTimer)
-      restartTimer = lostTimer = null
+      if (slowTimer) clearTimeout(slowTimer)
+      if (giveUpTimer) clearTimeout(giveUpTimer)
+      restartTimer = lostTimer = slowTimer = giveUpTimer = null
     }
 
     // Signals go out one at a time so the other side reads them in the order they were made.
@@ -136,6 +142,7 @@ export function CallRoom({ callId }: { callId: string }) {
       if (state === 'connected') {
         clearTimers()
         stopTone()
+        setNotice((n) => (n === STILL_CONNECTING_NOTICE ? '' : n))
         setPhase('connected')
         setConnectedAt((prev) => prev ?? Date.now())
         if (!camOnRef.current || !micOnRef.current) sendMediaRef.current()
@@ -268,6 +275,19 @@ export function CallRoom({ callId }: { callId: string }) {
       setPhase((p) => (p === 'connected' || p === 'reconnecting' ? p : 'connecting'))
       if (!sawActive) {
         sawActive = true
+        // Never sit on "Connecting…" forever: retry the network path, then end with a clear reason.
+        slowTimer = setTimeout(() => {
+          slowTimer = null
+          if (ended || pcRef.current?.connectionState === 'connected') return
+          setNotice(STILL_CONNECTING_NOTICE)
+          if (role === 'caller') void negotiate(!!pcRef.current)
+        }, 15_000)
+        giveUpTimer = setTimeout(() => {
+          giveUpTimer = null
+          if (ended || pcRef.current?.connectionState === 'connected') return
+          void callJson(`/api/video-calls/${callId}`, { action: 'end' }).catch(() => null)
+          finish('ENDED', "Couldn't connect the call. The network may be blocking it — please try again.")
+        }, 50_000)
         // If the other screen never says it's ready, offer anyway after a few seconds.
         if (role === 'caller') {
           void inChain.then(() => {

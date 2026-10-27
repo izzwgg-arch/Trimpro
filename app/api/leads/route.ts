@@ -260,7 +260,8 @@ export async function POST(request: NextRequest) {
         value: value ? parseFloat(value) : null,
         probability: probability || 50,
         notes: notes || null,
-        assignedToId: assignedToId || null,
+        // Nobody picked: the request belongs to the person creating it.
+        assignedToId: assignedToId || user.id,
         createdByUserId: user.id,
       },
       include: {

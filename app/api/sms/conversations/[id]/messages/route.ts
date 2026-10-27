@@ -37,6 +37,13 @@ export async function GET(
       data: { unreadCount: 0 },
     }).catch(() => {})
   }
+  // Clear this person's notifications for the thread too.
+  await prisma.notification
+    .updateMany({
+      where: { tenantId: user.tenantId, userId: user.id, linkType: 'conversation', linkId: params.id, status: 'UNREAD' },
+      data: { status: 'READ', readAt: new Date() },
+    })
+    .catch(() => {})
 
   return NextResponse.json({ messages, conversation })
 }

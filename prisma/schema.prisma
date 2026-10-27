@@ -3527,6 +3527,50 @@ model ProductionViewPreference {
   @@map("production_view_preferences")
 }
 
+// Estimate / Invoice pipelines (Production area). The stage itself is derived from the
+// record's real status (lib/production/pipelines.ts); this row only keeps what the
+// record doesn't already store: hold, responsible person, next action, follow-up,
+// notes, a review step while still a draft, and the invoice "disputed" flag.
+model PipelineRecordState {
+  id                String    @id @default(cuid())
+  tenantId          String
+  recordType        String // ESTIMATE | INVOICE
+  recordId          String
+  onHold            Boolean   @default(false)
+  holdReason        String?
+  heldAt            DateTime?
+  heldById          String?
+  releasedAt        DateTime?
+  reviewStage       String? // INTERNAL_REVIEW | READY_TO_SEND (only applies while DRAFT)
+  reviewStageAt     DateTime?
+  disputed          Boolean   @default(false)
+  disputedAt        DateTime?
+  responsibleUserId String?
+  nextAction        String?
+  followUpDate      DateTime?
+  notes             String?   @db.Text
+  updatedById       String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([tenantId, recordType, recordId])
+  @@index([tenantId, recordType])
+  @@map("pipeline_record_states")
+}
+
+// Company display settings for the Estimate / Invoice pipelines (stage names,
+// colors, order, default next actions, hold reasons). Separate from
+// ProductionSettings so the Jobs production line config is never touched.
+model PipelineSettings {
+  id        String   @id @default(cuid())
+  tenantId  String   @unique
+  config    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("pipeline_settings")
+}
+
 // ============================================
 // MEASURING REQUESTS
 // ============================================

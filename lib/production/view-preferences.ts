@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma'
 
-export type ProductionBoardKey = 'jobs' | 'tasks' | 'leads'
+export type ProductionBoardKey = 'jobs' | 'tasks' | 'leads' | 'estimates' | 'invoices'
 
 export interface BoardViewPref {
   /** Ordered column ids (statuses for tasks/leads, column ids for jobs). */
@@ -11,7 +11,7 @@ export interface BoardViewPref {
 
 export type ProductionViewPrefs = Partial<Record<ProductionBoardKey, BoardViewPref>>
 
-const KEYS: ProductionBoardKey[] = ['jobs', 'tasks', 'leads']
+const KEYS: ProductionBoardKey[] = ['jobs', 'tasks', 'leads', 'estimates', 'invoices']
 
 function normalizeBoard(input: any): BoardViewPref {
   const order = Array.isArray(input?.order) ? input.order.map((x: any) => String(x)).filter(Boolean) : []

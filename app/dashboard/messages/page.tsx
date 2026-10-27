@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ChevronDown, Phone, Video } from 'lucide-react'
 import { refreshAccessToken } from '@/lib/auth/client'
@@ -139,7 +139,7 @@ function AvatarCircle({ label, color }: { label: string; color: 'blue' | 'emeral
 export default function MessagesPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const deepLinkConversationId = searchParams.get('conversationId')
+  const deepLinkConversationId = searchParams.get('conversationId') || searchParams.get('conversation')
   const [myId, setMyId] = useState('')
   const [threads, setThreads] = useState<UnifiedThread[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(deepLinkConversationId)
@@ -168,6 +168,9 @@ export default function MessagesPage() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const lastMessageKeyRef = useRef<string | null>(null)
   const prevSelectedIdRef = useRef<string | null>(null)
+  // True while the view should follow the newest message (a chat opens at the bottom
+  // and stays there as images load); turns off once the person scrolls up to read.
+  const stickToBottomRef = useRef(true)
 
   const selectedThread = useMemo(() => threads.find((t) => t.id === selectedId) ?? null, [threads, selectedId])
 
@@ -240,25 +243,33 @@ export default function MessagesPage() {
         const data = await res.json()
         const rawMsgs: any[] = (data.messages || []).reverse()
         setMessages(rawMsgs.map((m) => normaliseTeamMsg(m, myId)))
-        // Mark read
+        // Mark read (also clears this chat's notifications on the server)
         fetchAuth(`/api/messages/conversations/${thread.id}/read`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
-        }).catch(() => {})
+        })
+          .then(() => window.dispatchEvent(new Event('trimpro:notifications-changed')))
+          .catch(() => {})
       } else {
         const res = await fetchAuth(`/api/sms/conversations/${thread.id}/messages`)
         if (!res.ok) return
         const data = await res.json()
         setMessages((data.messages || []).map(normaliseSmsMsg))
+        window.dispatchEvent(new Event('trimpro:notifications-changed'))
       }
+      // The open chat is read: drop its unread count in the list right away.
+      setThreads((prev) => prev.map((t) => (t.id === thread.id && t.unreadCount > 0 ? { ...t, unreadCount: 0 } : t)))
     } finally {
       setMsgsLoading(false)
     }
   }, [fetchAuth, myId])
 
+  // Keyed on the resolved thread, not just the id: a notification link sets the id
+  // before the thread list has loaded, and the messages must still load after it.
+  const selectedThreadKey = selectedThread ? selectedThread.id : null
   useEffect(() => {
     if (!selectedThread) return
     loadMessages(selectedThread)
-  }, [selectedId]) // eslint-disable-line
+  }, [selectedThreadKey]) // eslint-disable-line
 
   // Clear any pending reply / jump-highlight when switching threads
   useEffect(() => {
@@ -329,7 +340,7 @@ export default function MessagesPage() {
       loadThreads()
     })
     return () => src.close()
-  }, [selectedId]) // eslint-disable-line
+  }, [selectedThreadKey]) // eslint-disable-line
 
   // ── Poll SMS threads ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -340,33 +351,57 @@ export default function MessagesPage() {
       loadThreads()
     }, 5000)
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
-  }, [selectedId]) // eslint-disable-line
+  }, [selectedThreadKey]) // eslint-disable-line
 
   // ── Scroll bottom ──────────────────────────────────────────────────────────
-  // Only auto-scroll when a message actually arrived/changed (polling/SSE
-  // otherwise re-sets the array every few seconds with identical content,
-  // which was yanking the view back to the bottom while reading history) and
-  // only if the user is already near the bottom, so scrolling up to read
-  // stays put through background refreshes.
+  // A chat always opens at its newest message. While following the bottom, new
+  // messages and late-loading images/videos keep it there; once the person scrolls
+  // up to read history, background refreshes leave the view alone and the
+  // "jump to latest" button appears for new messages instead.
+  const pinToBottom = useCallback(() => {
+    const container = scrollAreaRef.current
+    if (container) container.scrollTop = container.scrollHeight
+  }, [])
+
   useEffect(() => {
+    if (prevSelectedIdRef.current !== selectedId) {
+      prevSelectedIdRef.current = selectedId
+      lastMessageKeyRef.current = null
+      stickToBottomRef.current = true
+      setShowScrollToBottom(false)
+    }
+  }, [selectedId])
+
+  useLayoutEffect(() => {
+    if (msgsLoading) return
     const last = messages[messages.length - 1]
     const key = last ? last.id : null
-    const threadChanged = prevSelectedIdRef.current !== selectedId
-    const hasNewMessage = key !== null && key !== lastMessageKeyRef.current
-    prevSelectedIdRef.current = selectedId
+    const hasNewMessage = key !== lastMessageKeyRef.current
     lastMessageKeyRef.current = key
-
-    if (!threadChanged && !hasNewMessage) return
-
-    const container = scrollAreaRef.current
-    const nearBottom = threadChanged || !container || container.scrollHeight - container.scrollTop - container.clientHeight < 150
-    if (nearBottom) {
-      bottomRef.current?.scrollIntoView({ behavior: threadChanged ? 'auto' : 'smooth' })
+    if (!hasNewMessage) return
+    if (stickToBottomRef.current || last?.isMine) {
+      stickToBottomRef.current = true
+      pinToBottom()
       setShowScrollToBottom(false)
     } else {
       setShowScrollToBottom(true)
     }
-  }, [messages, selectedId])
+  }, [messages, msgsLoading, pinToBottom])
+
+  // Images, videos and link previews grow the list after it first renders.
+  useEffect(() => {
+    const container = scrollAreaRef.current
+    if (!container) return
+    const onMediaLoad = () => {
+      if (stickToBottomRef.current) pinToBottom()
+    }
+    container.addEventListener('load', onMediaLoad, true)
+    container.addEventListener('loadedmetadata', onMediaLoad, true)
+    return () => {
+      container.removeEventListener('load', onMediaLoad, true)
+      container.removeEventListener('loadedmetadata', onMediaLoad, true)
+    }
+  }, [selectedThreadKey, pinToBottom])
 
   // Track manual scroll position so the "jump to bottom" button only shows
   // once the user has actually scrolled away from the latest message.
@@ -374,10 +409,12 @@ export default function MessagesPage() {
     const container = scrollAreaRef.current
     if (!container) return
     const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+    stickToBottomRef.current = distanceFromBottom <= 150
     setShowScrollToBottom(distanceFromBottom > 150)
   }, [])
 
   const scrollToBottom = useCallback(() => {
+    stickToBottomRef.current = true
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
     setShowScrollToBottom(false)
   }, [])

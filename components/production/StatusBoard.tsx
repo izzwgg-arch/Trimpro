@@ -2,6 +2,7 @@
 
 import React from 'react'
 import { StageIcon } from '@/components/production/StageIcon'
+import { useDragScroll } from '@/components/production/useDragScroll'
 
 interface BoardCol {
   id: string
@@ -25,8 +26,9 @@ export function StatusBoard<T extends { id: string }>({
   emptyLabel?: string
   columnWidth?: number
 }) {
+  const dragScrollRef = useDragScroll()
   return (
-    <div className="scrollbar-visible-x flex gap-4 overflow-x-auto pb-3">
+    <div ref={dragScrollRef} className="scrollbar-visible-x flex cursor-grab gap-4 overflow-x-auto pb-3">
       {columns.map((col) => {
         const items = itemsByColumn[col.id] || []
         return (
