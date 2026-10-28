@@ -210,6 +210,10 @@ export function DashboardScreen({ navigation }: Props) {
         }
         ListHeaderComponent={
           <View style={styles.listHeader}>
+            <Pressable style={styles.searchBar} onPress={() => navigation.navigate('GlobalSearch')}>
+              <Ionicons name="search-outline" size={18} color={colors.textSecondary} />
+              <Text style={styles.searchBarText}>Search jobs, clients, invoices…</Text>
+            </Pressable>
             <Card style={styles.hero}>
               <Text style={styles.heroGreeting}>
                 {greeting}, {user?.firstName || 'Crew'}
@@ -303,6 +307,8 @@ function GlanceStat({ label, value }: { label: string; value: number }) {
 
 const styles = StyleSheet.create({
   listHeader: { gap: spacing.sm, paddingTop: spacing.sm, paddingBottom: spacing.md },
+  searchBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.divider, paddingHorizontal: spacing.md, height: 44 },
+  searchBarText: { ...typography.sub, color: colors.muted },
   hero: {
     backgroundColor: '#EEF3F6',
     borderColor: '#DCE6EC',

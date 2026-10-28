@@ -2,6 +2,7 @@ import { NavigatorScreenParams } from '@react-navigation/native'
 
 export type JobsStackParamList = {
   DashboardHome: undefined
+  GlobalSearch: undefined
   JobsList: undefined
   AllJobsList: undefined
   Production: undefined

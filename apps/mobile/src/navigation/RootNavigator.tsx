@@ -10,6 +10,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '../auth/AuthContext'
 import { LoginScreen } from '../screens/auth/LoginScreen'
 import { DashboardScreen } from '../screens/dashboard/DashboardScreen'
+import { GlobalSearchScreen } from '../screens/search/GlobalSearchScreen'
 import { JobsScreen } from '../screens/jobs/JobsScreen'
 import { JobDetailScreen } from '../screens/jobs/JobDetailScreen'
 import { AllJobsScreen } from '../screens/jobs/AllJobsScreen'
@@ -142,6 +143,7 @@ function JobsStackNavigator() {
     >
       <JobsStack.Screen name="JobsList" component={JobsScreen} options={mainHeaderOptions('Production Line')} />
       <JobsStack.Screen name="DashboardHome" component={DashboardScreen} options={mainHeaderOptions('Dashboard')} />
+      <JobsStack.Screen name="GlobalSearch" component={GlobalSearchScreen} options={{ headerShown: false }} />
       <JobsStack.Screen name="JobDetail" component={JobDetailScreen} options={detailsHeaderOptions('Job Details')} />
       <JobsStack.Screen name="AllJobsList" component={AllJobsScreen} options={mainHeaderOptions('All Jobs')} />
       <JobsStack.Screen name="Production" component={ProductionScreen} options={mainHeaderOptions('Production')} />
