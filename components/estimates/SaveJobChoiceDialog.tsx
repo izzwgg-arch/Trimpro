@@ -9,37 +9,23 @@ import { authFetch } from '@/lib/auth/client'
 
 export type SaveJobDecision = { decision: 'new' | 'existing' | 'none'; jobId: string }
 
-type OpenJob = { id: string; jobNumber: string; title: string; status: string }
+export type OpenJob = { id: string; jobNumber: string; title: string; status: string }
 
 const CLOSED_STATUSES = new Set(['COMPLETED', 'CANCELLED'])
 
-/**
- * Asked when saving an estimate that came from a request: put it on a new job or on
- * one of the customer's open jobs. With no open jobs the choice is a new job or no
- * job (the same as before this question existed).
- */
-export function SaveJobChoiceDialog({
-  open,
-  clientId,
-  onCancel,
-  onChoose,
-}: {
-  open: boolean
-  clientId: string
-  onCancel: () => void
-  onChoose: (choice: SaveJobDecision) => void
-}) {
+/** The customer's open jobs (not completed or cancelled), newest first. */
+export function useClientOpenJobs(clientId: string, enabled = true) {
   const [jobs, setJobs] = useState<OpenJob[]>([])
   const [loading, setLoading] = useState(false)
-  const [picking, setPicking] = useState(false)
-  const [picked, setPicked] = useState('')
 
   useEffect(() => {
-    if (!open || !clientId) return
+    if (!enabled || !clientId) {
+      setJobs([])
+      setLoading(false)
+      return
+    }
     let cancelled = false
     setLoading(true)
-    setPicking(false)
-    setPicked('')
     ;(async () => {
       try {
         const res = await authFetch(`/api/jobs?clientId=${encodeURIComponent(clientId)}&limit=100&sortBy=updatedAt&sortDirection=desc`)
@@ -60,21 +46,75 @@ export function SaveJobChoiceDialog({
     return () => {
       cancelled = true
     }
-  }, [open, clientId])
+  }, [clientId, enabled])
+
+  return { jobs, loading }
+}
+
+/**
+ * Which job a document goes on.
+ * - `existing-only` (saving an estimate): add it to one of the customer's open jobs, or save without a job.
+ * - `new-or-existing` (an invoice from a request's estimate): create a new job, or use an open job.
+ */
+export function SaveJobChoiceDialog({
+  open,
+  mode,
+  recordLabel,
+  jobs,
+  loading,
+  busy,
+  description,
+  onCancel,
+  onChoose,
+}: {
+  open: boolean
+  mode: 'existing-only' | 'new-or-existing'
+  recordLabel: 'estimate' | 'invoice'
+  jobs: OpenJob[]
+  loading: boolean
+  busy?: boolean
+  description?: string
+  onCancel: () => void
+  onChoose: (choice: SaveJobDecision) => void
+}) {
+  const [picking, setPicking] = useState(false)
+  const [picked, setPicked] = useState('')
+
+  useEffect(() => {
+    if (!open) return
+    setPicking(false)
+    setPicked('')
+  }, [open])
 
   const label = (j: OpenJob) => `${j.jobNumber} — ${j.title}`
+  const count = jobs.length
+  const openJobsText = `This customer has ${count} open job${count === 1 ? '' : 's'}.`
+  const title =
+    mode === 'existing-only' ? `Add this ${recordLabel} to an existing job?` : `Which job is this ${recordLabel} for?`
+  const text = loading
+    ? 'Checking this customer’s jobs…'
+    : mode === 'existing-only'
+      ? count > 0
+        ? `${openJobsText} Put the ${recordLabel} on one of them, or save it without a job?`
+        : `This customer has no open jobs. The ${recordLabel} will be saved without a job.`
+      : count > 0
+        ? `${openJobsText} Create a new job, or add the ${recordLabel} to an existing one?`
+        : `This customer has no open jobs. Create a new job for this ${recordLabel}?`
+  const disabled = loading || Boolean(busy)
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
+    <Dialog open={open} onOpenChange={(o) => !o && !busy && onCancel()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Which job is this estimate for?</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            {loading
-              ? 'Checking this customer’s jobs…'
-              : jobs.length > 0
-                ? `This customer has ${jobs.length} open job${jobs.length === 1 ? '' : 's'}. Create a new job, or put the estimate on an existing one?`
-                : 'This customer has no open jobs. Create a new job for this estimate?'}
+            {description ? (
+              <>
+                {description}
+                <br />
+              </>
+            ) : null}
+            {text}
           </DialogDescription>
         </DialogHeader>
 
@@ -99,27 +139,34 @@ export function SaveJobChoiceDialog({
         <DialogFooter className="gap-2 sm:gap-2">
           {picking ? (
             <>
-              <Button type="button" variant="outline" onClick={() => setPicking(false)}>
+              <Button type="button" variant="outline" disabled={busy} onClick={() => setPicking(false)}>
                 Back
               </Button>
-              <Button type="button" disabled={!picked} onClick={() => onChoose({ decision: 'existing', jobId: picked })}>
-                Use this job and save
+              <Button type="button" disabled={!picked || busy} onClick={() => onChoose({ decision: 'existing', jobId: picked })}>
+                {busy ? 'Saving…' : 'Use this job'}
               </Button>
             </>
           ) : (
             <>
-              {jobs.length > 0 ? (
-                <Button type="button" variant="outline" disabled={loading} onClick={() => setPicking(true)}>
-                  Use existing job
-                </Button>
-              ) : (
-                <Button type="button" variant="outline" disabled={loading} onClick={() => onChoose({ decision: 'none', jobId: '' })}>
+              {mode === 'existing-only' ? (
+                <Button type="button" variant="outline" disabled={disabled} onClick={() => onChoose({ decision: 'none', jobId: '' })}>
                   Save without a job
                 </Button>
+              ) : (
+                <Button type="button" disabled={disabled} onClick={() => onChoose({ decision: 'new', jobId: '' })}>
+                  {busy ? 'Saving…' : 'Create new job'}
+                </Button>
               )}
-              <Button type="button" disabled={loading} onClick={() => onChoose({ decision: 'new', jobId: '' })}>
-                Create new job and save
-              </Button>
+              {count > 0 ? (
+                <Button
+                  type="button"
+                  variant={mode === 'existing-only' ? 'default' : 'outline'}
+                  disabled={disabled}
+                  onClick={() => setPicking(true)}
+                >
+                  Use existing job
+                </Button>
+              ) : null}
             </>
           )}
         </DialogFooter>

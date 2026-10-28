@@ -1,7 +1,6 @@
 'use client'
 import { JobTypeCreateField } from '@/components/jobs/JobTypeCreateField'
-import { EMPTY_OPEN_JOBS_CHOICE, OpenJobsPrompt, type OpenJobsChoice } from '@/components/estimates/OpenJobsPrompt'
-import { SaveJobChoiceDialog, type SaveJobDecision } from '@/components/estimates/SaveJobChoiceDialog'
+import { SaveJobChoiceDialog, useClientOpenJobs, type SaveJobDecision } from '@/components/estimates/SaveJobChoiceDialog'
 import { JOB_TYPE_VALUES } from '@/lib/jobs/types'
 import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 
@@ -129,9 +128,9 @@ export default function NewEstimatePage() {
   const clientIdParam = searchParams.get('clientId')
   const requestIdParam = searchParams.get('requestId')
   const jobIdParam = searchParams.get('jobId')
-  // Customer with open jobs: new job or one of theirs (see OpenJobsPrompt).
-  const [jobChoice, setJobChoice] = useState<OpenJobsChoice>(EMPTY_OPEN_JOBS_CHOICE)
-  // From a request the job question comes when saving (new job or one of the customer's open jobs).
+  // Not from a request or a job: when saving, offer to put the estimate on one of the
+  // customer's open jobs. From a request nothing is asked here; the job is chosen when
+  // the estimate becomes an invoice.
   const [saveJobDialogOpen, setSaveJobDialogOpen] = useState(false)
   const jobTypeParam = searchParams.get('jobType')
 
@@ -169,6 +168,8 @@ export default function NewEstimatePage() {
     notes: '',
     terms: '',
   })
+  const askJobOnSave = !requestIdParam && !jobIdParam
+  const openJobs = useClientOpenJobs(formData.clientId, askJobOnSave)
 
   // Quick "Add new item" modal launched from the line-item picker.
   const [quickItem, setQuickItem] = useState<{ open: boolean; name: string; index: number; optional: boolean }>({ open: false, name: '', index: 0, optional: false })
@@ -1012,20 +1013,15 @@ export default function NewEstimatePage() {
       alert('Please select a client')
       return
     }
-    if (jobChoice.required && !jobChoice.decision) {
-      alert('This customer has open jobs. Choose "Create new" or "Use existing" before saving.')
-      return
-    }
     if (!formData.title.trim()) {
       alert('Please enter a title')
       return
     }
-    if (requestIdParam && !jobIdParam && !formData.jobId && !saveJob) {
+    if (askJobOnSave && !formData.jobId && !saveJob && (openJobs.loading || openJobs.jobs.length > 0)) {
       setSaveJobDialogOpen(true)
       return
     }
     const jobIdForSave = formData.jobId || (saveJob?.decision === 'existing' ? saveJob.jobId : '')
-    const createJobOnSave = !jobIdForSave && (jobChoice.decision === 'new' || saveJob?.decision === 'new')
 
     setLoading(true)
     try {
@@ -1118,7 +1114,7 @@ export default function NewEstimatePage() {
           clientId: formData.clientId,
           leadId: formData.leadId || null,
           jobId: jobIdForSave || null,
-          createJob: createJobOnSave,
+          createJob: false,
           estimateNumber: formData.estimateNumber || null,
           title: formData.title,
           jobType: formData.jobType || null,
@@ -1216,7 +1212,10 @@ export default function NewEstimatePage() {
 
       <SaveJobChoiceDialog
         open={saveJobDialogOpen}
-        clientId={formData.clientId}
+        mode="existing-only"
+        recordLabel="estimate"
+        jobs={openJobs.jobs}
+        loading={openJobs.loading}
         onCancel={() => setSaveJobDialogOpen(false)}
         onChoose={(choice) => {
           setSaveJobDialogOpen(false)
@@ -1243,19 +1242,6 @@ export default function NewEstimatePage() {
                   {jobIdParam && (
                     <p className="mt-1 text-xs text-gray-500">Client is locked because this estimate is being created from a job.</p>
                   )}
-                  <div className="mt-2">
-                    <OpenJobsPrompt
-                      clientId={formData.clientId}
-                      // Only for estimates not started from a request or a job; waits for the
-                      // job type pop-up first so the two never open together.
-                      disabled={Boolean(jobIdParam) || Boolean(requestIdParam) || !formData.jobType}
-                      value={jobChoice}
-                      onChange={(next) => {
-                        setJobChoice(next)
-                        setFormData((prev) => ({ ...prev, jobId: next.decision === 'existing' ? next.jobId : jobIdParam || '' }))
-                      }}
-                    />
-                  </div>
                 </div>
                 <div>
                   <Label htmlFor="estimateNumber">Estimate # (optional)</Label>

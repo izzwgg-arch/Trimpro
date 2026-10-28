@@ -7,6 +7,7 @@ import { hashApprovalToken } from '@/lib/estimate-approval'
 import { allocateNextInvoiceNumber, normalizeInvoiceNumber } from '@/lib/qbo/doc-numbers'
 import { getEstimateConversionSummary } from '@/lib/documents/conversion'
 import { ensureJobFromInvoice } from '@/lib/jobs/ensure-job-from-invoice'
+import { estimateWaitsForJobChoice, notifyInvoiceNeedsJob } from '@/lib/jobs/invoice-job-choice'
 
 export const runtime = 'nodejs'
 
@@ -244,10 +245,37 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
     // Auto-create (or link) a job for this invoice, exactly like the internal
     // estimate→invoice conversion does. Idempotent and best-effort: a failure
     // here must not fail the customer's invoice creation.
-    try {
-      await ensureJobFromInvoice(result.id)
-    } catch (jobErr) {
-      console.error('Failed to auto-create job from public estimate approval:', jobErr)
+    // From a request with no job yet: ask the estimate's creator to pick a new or existing job.
+    const sourceEstimate = await prisma.estimate.findFirst({
+      where: { id: tokenRow.estimateId, tenantId: tokenRow.tenantId },
+      select: {
+        id: true,
+        estimateNumber: true,
+        createdById: true,
+        leadId: true,
+        jobId: true,
+        client: { select: { name: true, companyName: true } },
+      },
+    })
+    if (sourceEstimate && estimateWaitsForJobChoice(sourceEstimate)) {
+      try {
+        const estimate = sourceEstimate
+        const client = sourceEstimate.client
+        await notifyInvoiceNeedsJob({
+          tenantId: tokenRow.tenantId,
+          estimate: { id: estimate.id, estimateNumber: estimate.estimateNumber, createdById: estimate.createdById },
+          invoice: { id: result.id, invoiceNumber: result.invoiceNumber },
+          clientName: client?.companyName || client?.name || 'Customer',
+        })
+      } catch (notifyErr) {
+        console.error('Failed to send choose-job alert after public invoice creation:', notifyErr)
+      }
+    } else {
+      try {
+        await ensureJobFromInvoice(result.id)
+      } catch (jobErr) {
+        console.error('Failed to auto-create job from public estimate approval:', jobErr)
+      }
     }
 
     return NextResponse.json({

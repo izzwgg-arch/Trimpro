@@ -261,6 +261,12 @@ export function NotificationBell() {
         for (const n of notifs) {
           seenNotificationIdsRef.current.add(n.id)
         }
+        // A pop-up whose notification was dealt with elsewhere (e.g. its job was chosen) closes.
+        setToastNotification((current) => {
+          if (!current) return current
+          const latest = notifs.find((n: Notification) => n.id === current.id)
+          return latest && latest.status !== 'UNREAD' ? null : current
+        })
 
         setNotifications(notifs)
         setUnreadCount(notifs.filter((n: Notification) => n.status === 'UNREAD').length)

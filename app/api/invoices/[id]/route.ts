@@ -65,6 +65,7 @@ export async function GET(
             estimateNumber: true,
             total: true,
             jobSiteAddress: true,
+            leadId: true,
           },
         },
         lineItems: {

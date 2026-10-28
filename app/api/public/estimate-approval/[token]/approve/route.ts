@@ -12,6 +12,7 @@ import { allocateNextInvoiceNumber } from '@/lib/qbo/doc-numbers'
 import { syncJobCostFromLinkedDocuments } from '@/lib/jobs/sync-job-cost'
 import { toCents, fromCents, reconcileEstimateConversionLineItems } from '@/lib/documents/progress-billing'
 import { sendInvoiceEmailForInvoice } from '@/lib/invoices/send-invoice-email'
+import { estimateWaitsForJobChoice, notifyInvoiceNeedsJob } from '@/lib/jobs/invoice-job-choice'
 
 export const runtime = 'nodejs'
 
@@ -179,11 +180,15 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
     let autoCreatedJob: any = null
     let autoCreatedInvoice: any = null
     let paymentUrl: string | null = null
+    // From a request with no job yet: the person who made the estimate picks a new or
+    // existing job (alert below) instead of a job being made here.
+    const waitsForJobChoice = estimateWaitsForJobChoice(estimate)
+    let jobChoiceAlerted: string[] = []
 
     if (approvedIds.length > 0 && estimate.clientId) {
       // Auto-create job if not already linked
       try {
-        if (!estimate.jobId) {
+        if (!estimate.jobId && !waitsForJobChoice) {
           autoCreatedJob = await prisma.$transaction(async (tx) => {
             const jobCount = await tx.job.count({ where: { tenantId: tokenRow.tenantId } })
             const jobNumber = `JOB-${String(jobCount + 1).padStart(6, '0')}`
@@ -423,6 +428,20 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
       }
     }
 
+    if (waitsForJobChoice && autoCreatedInvoice?.id) {
+      try {
+        jobChoiceAlerted = await notifyInvoiceNeedsJob({
+          tenantId: tokenRow.tenantId,
+          estimate: { id: estimate.id, estimateNumber: estimate.estimateNumber, createdById: estimate.createdById },
+          invoice: { id: autoCreatedInvoice.id, invoiceNumber: autoCreatedInvoice.invoiceNumber },
+          clientName: estimate.client?.companyName || estimate.client?.name || parsedBody.data.signerName,
+          approvedBy: parsedBody.data.signerName,
+        })
+      } catch (notifyErr) {
+        console.error('Failed to send choose-job alert after estimate approval:', notifyErr)
+      }
+    }
+
     // Notify admin/accounting/manager users
     if (approvedIds.length > 0) {
       try {
@@ -434,7 +453,9 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
           },
           select: { id: true },
         })
-        if (notifyUsers.length > 0) {
+        // Whoever got the choose-job alert already knows about this approval.
+        const otherUsers = notifyUsers.filter((u) => !jobChoiceAlerted.includes(u.id))
+        if (otherUsers.length > 0) {
           const clientName =
             estimate.client?.companyName || estimate.client?.name || parsedBody.data.signerName
           const extraInfo = [
@@ -443,7 +464,7 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
           ].filter(Boolean).join(' ')
           await createNotificationsForUsers(
             tokenRow.tenantId,
-            notifyUsers.map((u) => u.id),
+            otherUsers.map((u) => u.id),
             {
               type: 'SYSTEM',
               title: 'Estimate Approved',

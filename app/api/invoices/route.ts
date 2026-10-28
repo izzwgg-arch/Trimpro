@@ -20,6 +20,7 @@ import {
 } from '@/lib/qbo/doc-numbers'
 import { ensureJobFromInvoice } from '@/lib/jobs/ensure-job-from-invoice'
 import { createJobForEstimate } from '@/lib/jobs/create-job-for-estimate'
+import { linkInvoiceToExistingJob } from '@/lib/jobs/invoice-job-choice'
 import { syncJobCostFromLinkedDocuments } from '@/lib/jobs/sync-job-cost'
 import { resolveJobTypeForWrite } from '@/lib/jobs/job-type-scope'
 import { parseJobType, parseOptionalJobType } from '@/lib/jobs/types'
@@ -261,6 +262,16 @@ export async function POST(request: NextRequest) {
 
     if (!client) {
       return NextResponse.json({ error: 'Client not found' }, { status: 404 })
+    }
+
+    if (jobIdFromBody) {
+      const chosenJob = await prisma.job.findFirst({
+        where: { id: jobIdFromBody, tenantId: user.tenantId },
+        select: { id: true },
+      })
+      if (!chosenJob) {
+        return NextResponse.json({ error: 'Job not found' }, { status: 404 })
+      }
     }
 
     // Not from an estimate, and "Create new" was chosen for a customer that already has open jobs.
@@ -708,6 +719,11 @@ export async function POST(request: NextRequest) {
           jobType: jobTypeForCreate,
         })
         if (ensured.job?.id) linkedJobId = ensured.job.id
+        // An existing job was picked for the estimate's invoice: the estimate, its other
+        // invoices and its request follow that job.
+        if (jobIdFromBody) {
+          await linkInvoiceToExistingJob({ tenantId: user.tenantId, invoiceId: invoice.id, jobId: jobIdFromBody, userId: user.id })
+        }
       } catch (jobErr) {
         // Job creation failure must not fail the invoice — log and continue.
         console.error('Failed to auto-create job from invoice creation:', jobErr)

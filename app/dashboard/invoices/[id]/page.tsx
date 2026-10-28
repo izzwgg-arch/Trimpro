@@ -29,6 +29,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ContactRecipientPicker } from '@/components/email/contact-recipient-picker'
 import { CustomerEstimatePanel } from '@/components/estimates/customer-estimate-panel'
+import { InvoiceJobChoice } from '@/components/invoices/InvoiceJobChoice'
 import {
   buildCustomerLinesFromGroups,
   flatLineItemsToCompanyLines,
@@ -57,6 +58,7 @@ interface InvoiceDetail {
   memo: string | null
   jobSiteAddress?: string | null
   estimateId?: string | null
+  estimate?: { id: string; estimateNumber: string; leadId?: string | null } | null
   progressBillingMode?: string | null
   progressBillingPercent?: string | null
   paymentToken?: string | null
@@ -1155,6 +1157,14 @@ export default function InvoiceDetailPage() {
 
   return (
     <ResponsivePage>
+      {!invoice.job && invoice.estimate?.leadId && invoice.client ? (
+        <InvoiceJobChoice
+          invoiceId={invoice.id}
+          clientId={invoice.client.id}
+          canEdit={!permissionsLoading && hasPermission(userPermissions, 'invoices.edit')}
+          onDone={() => void fetchInvoice()}
+        />
+      ) : null}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex min-w-0 items-start gap-3 sm:items-center sm:gap-4">
           <EntityBackButton fallbackHref="/dashboard/invoices" />
