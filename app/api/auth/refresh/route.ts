@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
 
     // Replace old refresh token with new one
     await deleteRefreshToken(refreshToken)
-    await createRefreshToken(payload.userId, newRefreshToken, normalizedDeviceId)
+    await createRefreshToken(payload.userId, newRefreshToken, normalizedDeviceId, { revokeDeviceSessions: false })
     await prisma.refreshToken.updateMany({
       where: {
         userId: payload.userId,

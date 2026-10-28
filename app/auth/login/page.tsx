@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, Suspense } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { TrimProLoginBadge } from '@/components/branding/TrimProLogo'
 import { isDevEnvironment } from '@/lib/dev'
+import { refreshAccessToken } from '@/lib/auth/client'
 
 type LoginResponse = {
   accessToken: string
@@ -48,7 +49,36 @@ function LoginForm() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [devLoading, setDevLoading] = useState(false)
+  const [resuming, setResuming] = useState(false)
   const showDevLogin = isDevEnvironment()
+
+  // A page that got a "not logged in" answer sends the user here even when the session can
+  // still be renewed. If it can, renew it and go straight back to where they were.
+  useEffect(() => {
+    if (!localStorage.getItem('refreshToken') || !localStorage.getItem('user')) return
+    let cancelled = false
+    setResuming(true)
+    void refreshAccessToken()
+      .then((ok) => {
+        if (cancelled) return
+        if (!ok) {
+          setResuming(false)
+          return
+        }
+        let target = '/dashboard'
+        try {
+          const last = sessionStorage.getItem('trimpro:lastDashboardPath') || ''
+          if (last.startsWith('/dashboard')) target = last
+        } catch {}
+        window.location.replace(target)
+      })
+      .catch(() => {
+        if (!cancelled) setResuming(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const storeSessionAndRedirect = (data: LoginResponse) => {
     localStorage.setItem('accessToken', data.accessToken)
@@ -110,6 +140,17 @@ function LoginForm() {
     } finally {
       setDevLoading(false)
     }
+  }
+
+  if (resuming) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent"></div>
+          <p className="mt-4 text-gray-600">Signing you back in...</p>
+        </div>
+      </div>
+    )
   }
 
   return (

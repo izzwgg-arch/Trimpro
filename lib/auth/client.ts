@@ -6,6 +6,7 @@
 // fail with 401. Without a mutex + retry, the UI often redirects to /auth/login.
 
 let refreshInFlight: Promise<boolean> | null = null
+const REFRESHED_AT_KEY = 'trimpro:authRefreshedAt'
 
 async function refreshWithToken(refreshToken: string): Promise<boolean> {
   const response = await fetch('/api/auth/refresh', {
@@ -21,15 +22,32 @@ async function refreshWithToken(refreshToken: string): Promise<boolean> {
   if (!data?.accessToken || !data?.refreshToken) return false
   localStorage.setItem('accessToken', data.accessToken)
   localStorage.setItem('refreshToken', data.refreshToken)
+  localStorage.setItem(REFRESHED_AT_KEY, String(Date.now()))
   return true
+}
+
+// Tabs and the call window share localStorage. A cross-tab lock makes them take turns, and a
+// tab that waited just picks up the token the other tab stored instead of refreshing again.
+async function withRefreshLock(run: () => Promise<boolean>): Promise<boolean> {
+  const locks = typeof navigator !== 'undefined' ? (navigator as Navigator & { locks?: LockManager }).locks : undefined
+  if (!locks?.request) return run()
+  return locks.request('trimpro-auth-refresh', run)
 }
 
 export async function refreshAccessToken(): Promise<boolean> {
   if (refreshInFlight) return refreshInFlight
 
-  refreshInFlight = (async () => {
+  const tokenBeforeLock = localStorage.getItem('refreshToken')
+  refreshInFlight = withRefreshLock(async () => {
     const initialRefreshToken = localStorage.getItem('refreshToken')
     if (!initialRefreshToken) return false
+    if (tokenBeforeLock && initialRefreshToken !== tokenBeforeLock && localStorage.getItem('accessToken')) {
+      return true
+    }
+    // A 401 for a request sent with the old token just before another refresh finished:
+    // the stored token is already fresh, so retrying is enough.
+    const refreshedAt = Number(localStorage.getItem(REFRESHED_AT_KEY) || 0)
+    if (Date.now() - refreshedAt < 15_000 && accessTokenSecondsLeft() > 60) return true
 
     // Attempt refresh with the token we started with.
     let ok = false
@@ -60,11 +78,48 @@ export async function refreshAccessToken(): Promise<boolean> {
     }
 
     return false
-  })().finally(() => {
+  }).finally(() => {
     refreshInFlight = null
   })
 
   return refreshInFlight
+}
+
+/** Seconds until the stored access token expires (0 when missing or unreadable). */
+function accessTokenSecondsLeft(): number {
+  const token = localStorage.getItem('accessToken')
+  if (!token) return 0
+  try {
+    const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+    const { exp } = JSON.parse(atob(part)) as { exp?: number }
+    return typeof exp === 'number' ? exp - Date.now() / 1000 : 0
+  } catch {
+    return 0
+  }
+}
+
+/**
+ * Refreshes the access token shortly before it expires (and when the tab wakes up), so
+ * pages that call fetch directly never send an expired token and bounce to the login page.
+ * Returns a cleanup function.
+ */
+export function keepSessionFresh(): () => void {
+  const check = () => {
+    if (!localStorage.getItem('refreshToken')) return
+    if (accessTokenSecondsLeft() < 120) void refreshAccessToken()
+  }
+  const onVisible = () => {
+    if (document.visibilityState === 'visible') check()
+  }
+  check()
+  const timer = window.setInterval(check, 60_000)
+  document.addEventListener('visibilitychange', onVisible)
+  window.addEventListener('focus', check)
+  return () => {
+    window.clearInterval(timer)
+    document.removeEventListener('visibilitychange', onVisible)
+    window.removeEventListener('focus', check)
+  }
 }
 
 function buildAuthHeaders(init?: HeadersInit): Headers {

@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { prisma } from './prisma'
 import { User } from '@prisma/client'
-import { createHash } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production'
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'your-refresh-secret-change-in-production'
@@ -29,7 +29,9 @@ export function generateAccessToken(payload: JWTPayload): string {
 }
 
 export function generateRefreshToken(payload: JWTPayload): string {
-  return jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: JWT_REFRESH_EXPIRES_IN })
+  // jwtid keeps two tokens signed in the same second for the same user from being identical
+  // (the token column is unique, so a duplicate made the second refresh fail).
+  return jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: JWT_REFRESH_EXPIRES_IN, jwtid: randomUUID() })
 }
 
 export function verifyAccessToken(token: string): JWTPayload {
@@ -44,22 +46,31 @@ export function hashRefreshToken(token: string): string {
   return createHash('sha256').update(token).digest('hex')
 }
 
-export async function createRefreshToken(userId: string, token: string, deviceId: string): Promise<void> {
+export async function createRefreshToken(
+  userId: string,
+  token: string,
+  deviceId: string,
+  options: { revokeDeviceSessions?: boolean } = {}
+): Promise<void> {
   const tokenHash = hashRefreshToken(token)
   const expiresAt = new Date()
   expiresAt.setDate(expiresAt.getDate() + 30)
 
-  // Keep one active refresh session per user-device pair.
-  await prisma.refreshToken.updateMany({
-    where: {
-      userId,
-      deviceId,
-      revokedAt: null,
-    },
-    data: {
-      revokedAt: new Date(),
-    },
-  })
+  // On login, keep one active refresh session per user-device pair.
+  // Token rotation passes revokeDeviceSessions: false — two tabs refreshing at the same
+  // moment would otherwise revoke each other's brand-new token and log the user out.
+  if (options.revokeDeviceSessions !== false) {
+    await prisma.refreshToken.updateMany({
+      where: {
+        userId,
+        deviceId,
+        revokedAt: null,
+      },
+      data: {
+        revokedAt: new Date(),
+      },
+    })
+  }
 
   await prisma.refreshToken.create({
     data: {

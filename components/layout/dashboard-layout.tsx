@@ -10,6 +10,7 @@ import { GlobalSearch } from '@/components/search/GlobalSearch'
 import { RoutePermissionGuard } from '@/components/permissions/RoutePermissionGuard'
 import { DashboardNavCapture } from '@/components/navigation/DashboardNavCapture'
 import { IncomingCallWatcher } from '@/components/video-call/IncomingCallWatcher'
+import { keepSessionFresh } from '@/lib/auth/client'
 
 // Pages with their own fixed-height, self-scrolling app UI (chat panes, etc.)
 // opt out of the standard padded content shell + footer, which otherwise
@@ -28,6 +29,15 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setMobileMenuOpen(false)
   }, [pathname])
+
+  // Remember where the user is, so the login page can send them back after renewing the session.
+  useEffect(() => {
+    try {
+      if (pathname) sessionStorage.setItem('trimpro:lastDashboardPath', window.location.pathname + window.location.search)
+    } catch {}
+  }, [pathname])
+
+  useEffect(() => keepSessionFresh(), [])
 
   useEffect(() => {
     const accessToken = localStorage.getItem('accessToken')
