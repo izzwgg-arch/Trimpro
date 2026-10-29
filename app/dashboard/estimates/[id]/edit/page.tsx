@@ -1,5 +1,6 @@
 'use client'
 import { EntityBackButton } from '@/components/navigation/EntityBackButton'
+import { formatCurrency } from '@/lib/utils'
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
@@ -1358,7 +1359,7 @@ export default function EditEstimatePage() {
                           <LineItemDragHandle transferKey="text/line-index" index={index} />
                           <span className="text-sm font-semibold text-slate-700 flex-1">Subtotal</span>
                           <div className="flex items-center gap-3">
-                            <span className="font-bold text-slate-800">${subtotalDisplay.toFixed(2)}</span>
+                            <span className="font-bold text-slate-800">{formatCurrency(subtotalDisplay)}</span>
                             <Button
                               type="button"
                               variant="ghost"
@@ -1716,7 +1717,7 @@ export default function EditEstimatePage() {
                             <div className="line-item-field-numeric">
                               <Label className="text-xs text-gray-500 mb-1 block">Total</Label>
                               <div className="px-3 py-2 bg-gray-50 rounded border text-right font-medium">
-                                ${(parseFloat(item.quantity || '0') * parseFloat(item.unitPrice || '0')).toFixed(2)}
+                                {formatCurrency(parseFloat(item.quantity || '0') * parseFloat(item.unitPrice || '0'))}
                               </div>
                             </div>
                           </>
@@ -2108,7 +2109,7 @@ export default function EditEstimatePage() {
                               <div className="line-item-field-numeric">
                                 <Label className="text-xs text-gray-500 mb-1 block">Total</Label>
                                 <div className="px-3 py-2 bg-gray-50 rounded border text-right font-medium">
-                                  ${(parseFloat(item.quantity || '0') * parseFloat(item.unitPrice || '0')).toFixed(2)}
+                                  {formatCurrency(parseFloat(item.quantity || '0') * parseFloat(item.unitPrice || '0'))}
                                 </div>
                               </div>
                             </>
@@ -2229,7 +2230,7 @@ export default function EditEstimatePage() {
               <CardContent className="space-y-4">
                 <div className="flex justify-between">
                   <span>Subtotal:</span>
-                  <span>${subtotal.toFixed(2)}</span>
+                  <span>{formatCurrency(subtotal)}</span>
                 </div>
                 <div>
                   <Label htmlFor="discount">Discount ($)</Label>
@@ -2244,7 +2245,7 @@ export default function EditEstimatePage() {
                 </div>
                 <div className="flex justify-between">
                   <span>Subtotal after discount:</span>
-                  <span>${subtotalAfterDiscount.toFixed(2)}</span>
+                  <span>{formatCurrency(subtotalAfterDiscount)}</span>
                 </div>
                 <div>
                   <Label htmlFor="taxRate">Tax Rate (%)</Label>
@@ -2259,11 +2260,11 @@ export default function EditEstimatePage() {
                 </div>
                 <div className="flex justify-between">
                   <span>Tax:</span>
-                  <span>${tax.toFixed(2)}</span>
+                  <span>{formatCurrency(tax)}</span>
                 </div>
                 <div className="flex justify-between font-bold text-lg border-t pt-2">
                   <span>Total:</span>
-                  <span>${total.toFixed(2)}</span>
+                  <span>{formatCurrency(total)}</span>
                 </div>
               </CardContent>
             </Card>

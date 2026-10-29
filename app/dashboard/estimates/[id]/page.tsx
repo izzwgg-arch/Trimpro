@@ -1795,12 +1795,12 @@ export default function EstimateDetailPage() {
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0 flex-1">
                             <div className="truncate text-sm font-medium">{li.description || '—'}</div>
-                            <div className="text-xs text-gray-400">Qty {li.quantity} × ${Number(li.unitPrice).toFixed(2)}</div>
+                            <div className="text-xs text-gray-400">Qty {li.quantity} × {formatCurrency(Number(li.unitPrice))}</div>
                           </div>
                           <div className="shrink-0 text-right text-sm">
-                            <span className="text-gray-400">${baseTotal.toFixed(2)}</span>
+                            <span className="text-gray-400">{formatCurrency(baseTotal)}</span>
                             <span className="mx-1 text-gray-300">→</span>
-                            <span className="font-semibold text-green-700">${preview.toFixed(2)}</span>
+                            <span className="font-semibold text-green-700">{formatCurrency(preview)}</span>
                           </div>
                         </div>
 
@@ -1878,11 +1878,11 @@ export default function EstimateDetailPage() {
                     <div className="text-sm">
                       <div className="font-medium">{li.description}</div>
                       <div className="text-gray-500">
-                        Qty {li.quantity}{' • '}${Number(li.unitPrice).toFixed(2)}
+                        Qty {li.quantity}{' • '}{formatCurrency(Number(li.unitPrice))}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold">${Number(li.total).toFixed(2)}</span>
+                      <span className="text-sm font-semibold">{formatCurrency(Number(li.total))}</span>
                       <Checkbox
                         checked={selectedLineItemIds.includes(li.id)}
                         onCheckedChange={(checked) =>

@@ -12,6 +12,7 @@ import {
 import type { PdfBranding } from '@/lib/branding/pdf'
 import { prepareEstimateForPdfView } from '@/lib/estimates/estimate-pdf-view'
 import { prepareInvoiceForPdfView } from '@/lib/invoices/invoice-pdf-view'
+import { formatAmount } from '@/lib/utils'
 
 type AnyRecord = Record<string, any>
 
@@ -251,13 +252,13 @@ export function buildInvoicePdfHtml(
       const colSpan = (showNameCol ? 1 : 0) + (showNotesCol ? 1 : 0) + 1 + (showCostCol ? 1 : 0) + (showPriceCol ? 1 : 0)
       return `<tr style="background:#f8fafc;font-weight:700;">
         <td colspan="${colSpan}" style="text-align:right">Subtotal</td>
-        <td class="text-right">$${Number(item.calculatedSubtotalTotal).toFixed(2)}</td>
+        <td class="text-right">$${formatAmount(Number(item.calculatedSubtotalTotal))}</td>
       </tr>`
     }
     const nameCell = item.showDescriptionToCustomer !== false ? escapeHtmlMultiline(item.description) : ''
     const notesCell = item.showNotesToCustomer !== false ? escapeHtmlMultiline(item.notes || '') : ''
-    const costCell = item.showCostToCustomer === true ? `$${Number(item.unitCost || 0).toFixed(2)}` : ''
-    const priceCell = item.showPriceToCustomer !== false ? `$${Number(item.unitPrice).toFixed(2)}` : ''
+    const costCell = item.showCostToCustomer === true ? `$${formatAmount(Number(item.unitCost || 0))}` : ''
+    const priceCell = item.showPriceToCustomer !== false ? `$${formatAmount(Number(item.unitPrice))}` : ''
     const estTot = item.estimateLineTotal != null ? Number(item.estimateLineTotal) : NaN
     const billed = item.billedToDate != null ? Number(item.billedToDate) : NaN
     const pctLabel =
@@ -270,7 +271,7 @@ export function buildInvoicePdfHtml(
       <td class="text-right">${Number(item.quantity).toFixed(2)}</td>
       ${showCostCol ? `<td class="text-right">${costCell}</td>` : ''}
       ${showPriceCol ? `<td class="text-right">${priceCell}</td>` : ''}
-      <td class="text-right">$${Number(item.total).toFixed(2)}${pctLabel ? `<div style="font-size:10px;color:#9ca3af;font-weight:400;">${pctLabel}</div>` : ''}</td>
+      <td class="text-right">$${formatAmount(Number(item.total))}${pctLabel ? `<div style="font-size:10px;color:#9ca3af;font-weight:400;">${pctLabel}</div>` : ''}</td>
     </tr>`
   }
 
@@ -367,11 +368,11 @@ export function buildInvoicePdfHtml(
 
           <div class="summary">
             <h4>Summary</h4>
-            <div class="summary-row"><span>Subtotal</span><span>$${subtotal.toFixed(2)}</span></div>
-            <div class="summary-row"><span>Discount</span><span>-$${discount.toFixed(2)}</span></div>
-            <div class="summary-row"><span>Tax</span><span>$${tax.toFixed(2)}</span></div>
-            <div class="summary-row"><span>Paid</span><span>$${paid.toFixed(2)}</span></div>
-            <div class="summary-row total"><span>Balance Due</span><span>$${balance.toFixed(2)}</span></div>
+            <div class="summary-row"><span>Subtotal</span><span>$${formatAmount(subtotal)}</span></div>
+            <div class="summary-row"><span>Discount</span><span>-$${formatAmount(discount)}</span></div>
+            <div class="summary-row"><span>Tax</span><span>$${formatAmount(tax)}</span></div>
+            <div class="summary-row"><span>Paid</span><span>$${formatAmount(paid)}</span></div>
+            <div class="summary-row total"><span>Balance Due</span><span>$${formatAmount(balance)}</span></div>
           </div>
 
           ${showNotes ? `<div class="notes">${escapeHtml(preparedInvoice.notes)}</div>` : ''}
@@ -451,13 +452,13 @@ export function buildEstimatePdfHtml(
       const colSpan = (showNameCol ? 1 : 0) + (showNotesCol ? 1 : 0) + 1 + (showCostCol ? 1 : 0) + (showPriceCol ? 1 : 0)
       return `<tr style="background:#f8fafc;font-weight:700;">
         <td colspan="${colSpan}" style="text-align:right">Subtotal</td>
-        <td class="text-right">$${Number(item.calculatedSubtotalTotal).toFixed(2)}</td>
+        <td class="text-right">$${formatAmount(Number(item.calculatedSubtotalTotal))}</td>
       </tr>`
     }
     const nameCell = item.showDescriptionToCustomer !== false ? escapeHtmlMultiline(item.description) : ''
     const notesCell = item.showNotesToCustomer !== false ? escapeHtmlMultiline(item.notes || '') : ''
-    const costCell = item.showCostToCustomer === true ? `$${Number(item.unitCost || 0).toFixed(2)}` : ''
-    const priceCell = item.showPriceToCustomer !== false ? `$${Number(item.unitPrice).toFixed(2)}` : ''
+    const costCell = item.showCostToCustomer === true ? `$${formatAmount(Number(item.unitCost || 0))}` : ''
+    const priceCell = item.showPriceToCustomer !== false ? `$${formatAmount(Number(item.unitPrice))}` : ''
     const estTot = item.estimateLineTotal != null ? Number(item.estimateLineTotal) : NaN
     const billed = item.billedToDate != null ? Number(item.billedToDate) : NaN
     const pctLabel =
@@ -470,7 +471,7 @@ export function buildEstimatePdfHtml(
       <td class="text-right">${Number(item.quantity).toFixed(2)}</td>
       ${showCostCol ? `<td class="text-right">${costCell}</td>` : ''}
       ${showPriceCol ? `<td class="text-right">${priceCell}</td>` : ''}
-      <td class="text-right">$${Number(item.total).toFixed(2)}${pctLabel ? `<div style="font-size:10px;color:#9ca3af;font-weight:400;">${pctLabel}</div>` : ''}</td>
+      <td class="text-right">$${formatAmount(Number(item.total))}${pctLabel ? `<div style="font-size:10px;color:#9ca3af;font-weight:400;">${pctLabel}</div>` : ''}</td>
     </tr>`
   }
 
@@ -566,7 +567,7 @@ export function buildEstimatePdfHtml(
                   </table>
                   <div class="summary" style="margin-top:12px; width: 320px;">
                     <h4>Optional Subtotal</h4>
-                    <div class="summary-row total"><span>Optional Items</span><span>$${optionalSubtotal.toFixed(2)}</span></div>
+                    <div class="summary-row total"><span>Optional Items</span><span>$${formatAmount(optionalSubtotal)}</span></div>
                   </div>
                 </div>
               `
@@ -575,10 +576,10 @@ export function buildEstimatePdfHtml(
 
           <div class="summary">
             <h4>Summary</h4>
-            <div class="summary-row"><span>Subtotal</span><span>$${subtotal.toFixed(2)}</span></div>
-            <div class="summary-row"><span>Discount</span><span>-$${discount.toFixed(2)}</span></div>
-            <div class="summary-row"><span>Tax</span><span>$${tax.toFixed(2)}</span></div>
-            <div class="summary-row total"><span>Total</span><span>$${total.toFixed(2)}</span></div>
+            <div class="summary-row"><span>Subtotal</span><span>$${formatAmount(subtotal)}</span></div>
+            <div class="summary-row"><span>Discount</span><span>-$${formatAmount(discount)}</span></div>
+            <div class="summary-row"><span>Tax</span><span>$${formatAmount(tax)}</span></div>
+            <div class="summary-row total"><span>Total</span><span>$${formatAmount(total)}</span></div>
           </div>
 
           ${showNotes ? `
@@ -661,9 +662,9 @@ export function buildPurchaseOrderPdfHtml(
     const notesCell =
       item.showNotesToCustomer !== false ? escapeHtmlMultiline(item.notes || '') : ''
     const priceCell =
-      item.showPriceToCustomer !== false ? `$${Number(item.unitPrice).toFixed(2)}` : ''
+      item.showPriceToCustomer !== false ? `$${formatAmount(Number(item.unitPrice))}` : ''
     const totalCell =
-      item.showPriceToCustomer !== false ? `$${Number(item.total).toFixed(2)}` : ''
+      item.showPriceToCustomer !== false ? `$${formatAmount(Number(item.total))}` : ''
     return `<tr>
       ${showItemCol ? `<td>${itemCell}</td>` : ''}
       ${showDetailsCol ? `<td>${detailsCell}</td>` : ''}
@@ -773,8 +774,8 @@ export function buildPurchaseOrderPdfHtml(
 
           <div class="summary">
             <h4>Summary</h4>
-            <div class="summary-row"><span>Subtotal</span><span>$${subtotal.toFixed(2)}</span></div>
-            <div class="summary-row total"><span>Total</span><span>$${total.toFixed(2)}</span></div>
+            <div class="summary-row"><span>Subtotal</span><span>$${formatAmount(subtotal)}</span></div>
+            <div class="summary-row total"><span>Total</span><span>$${formatAmount(total)}</span></div>
           </div>
 
           <div class="footer">
@@ -865,8 +866,8 @@ export function buildCreditMemoPdfHtml(
                   (item: AnyRecord) => `<tr>
                 <td>${escapeHtmlMultiline(item.description)}${item.notes ? `<div class="muted" style="font-size:12px;margin-top:4px;">${escapeHtmlMultiline(item.notes)}</div>` : ''}</td>
                 <td class="text-right">${Number(item.quantity).toFixed(2)}</td>
-                <td class="text-right">$${Number(item.unitPrice).toFixed(2)}</td>
-                <td class="text-right">$${Number(item.total).toFixed(2)}</td>
+                <td class="text-right">$${formatAmount(Number(item.unitPrice))}</td>
+                <td class="text-right">$${formatAmount(Number(item.total))}</td>
               </tr>`
                 )
                 .join('')}
@@ -875,11 +876,11 @@ export function buildCreditMemoPdfHtml(
 
           <div class="summary">
             <h4>Summary</h4>
-            <div class="summary-row"><span>Subtotal</span><span>$${subtotal.toFixed(2)}</span></div>
-            ${tax ? `<div class="summary-row"><span>Tax</span><span>$${tax.toFixed(2)}</span></div>` : ''}
-            <div class="summary-row total"><span>Credit Total</span><span>$${total.toFixed(2)}</span></div>
-            <div class="summary-row"><span>Applied</span><span>$${applied.toFixed(2)}</span></div>
-            <div class="summary-row"><span>Remaining</span><span>$${remaining.toFixed(2)}</span></div>
+            <div class="summary-row"><span>Subtotal</span><span>$${formatAmount(subtotal)}</span></div>
+            ${tax ? `<div class="summary-row"><span>Tax</span><span>$${formatAmount(tax)}</span></div>` : ''}
+            <div class="summary-row total"><span>Credit Total</span><span>$${formatAmount(total)}</span></div>
+            <div class="summary-row"><span>Applied</span><span>$${formatAmount(applied)}</span></div>
+            <div class="summary-row"><span>Remaining</span><span>$${formatAmount(remaining)}</span></div>
           </div>
 
           <div class="footer">
@@ -941,9 +942,9 @@ export function buildCustomerStatementPdfHtml(
         <td>${escapeHtml(rowLabel[t.type])}</td>
         <td>${escapeHtml(t.reference)}</td>
         <td>${escapeHtml(t.description)}</td>
-        <td class="text-right">${t.debit ? `$${t.debit.toFixed(2)}` : ''}</td>
-        <td class="text-right">${t.credit ? `$${t.credit.toFixed(2)}` : ''}</td>
-        <td class="text-right" style="font-weight:600;">$${t.balance.toFixed(2)}</td>
+        <td class="text-right">${t.debit ? `$${formatAmount(t.debit)}` : ''}</td>
+        <td class="text-right">${t.credit ? `$${formatAmount(t.credit)}` : ''}</td>
+        <td class="text-right" style="font-weight:600;">$${formatAmount(t.balance)}</td>
       </tr>`
     )
     .join('')
@@ -985,7 +986,7 @@ export function buildCustomerStatementPdfHtml(
               <div class="muted">Invoices in period</div>
               <div>${summary.invoiceCount}</div>
               <div class="muted" style="margin-top:8px;">Total Invoiced</div>
-              <div>$${summary.totalInvoiced.toFixed(2)}</div>
+              <div>$${formatAmount(summary.totalInvoiced)}</div>
             </div>
           </div>
 
@@ -1008,10 +1009,10 @@ export function buildCustomerStatementPdfHtml(
 
           <div class="summary">
             <h4>Summary</h4>
-            <div class="summary-row"><span>Total Invoiced</span><span>$${summary.totalInvoiced.toFixed(2)}</span></div>
-            <div class="summary-row"><span>Total Paid</span><span>$${summary.totalPaid.toFixed(2)}</span></div>
-            <div class="summary-row"><span>Total Credited</span><span>$${summary.totalCredited.toFixed(2)}</span></div>
-            <div class="summary-row total"><span>Balance Due</span><span>$${summary.balance.toFixed(2)}</span></div>
+            <div class="summary-row"><span>Total Invoiced</span><span>$${formatAmount(summary.totalInvoiced)}</span></div>
+            <div class="summary-row"><span>Total Paid</span><span>$${formatAmount(summary.totalPaid)}</span></div>
+            <div class="summary-row"><span>Total Credited</span><span>$${formatAmount(summary.totalCredited)}</span></div>
+            <div class="summary-row total"><span>Balance Due</span><span>$${formatAmount(summary.balance)}</span></div>
           </div>
 
           ${brand.footerText ? `<div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:12px;color:#6b7280;text-align:center;">${escapeHtml(brand.footerText)}</div>` : ''}
@@ -1047,8 +1048,8 @@ export function buildAgingReportPdfHtml(
     .map(
       (c) => `<tr>
         <td>${escapeHtml(c.clientName)}</td>
-        ${AGING_BUCKETS.map((b) => `<td class="text-right">${c.buckets[b] ? `$${c.buckets[b].toFixed(2)}` : ''}</td>`).join('')}
-        <td class="text-right" style="font-weight:600;">$${c.total.toFixed(2)}</td>
+        ${AGING_BUCKETS.map((b) => `<td class="text-right">${c.buckets[b] ? `$${formatAmount(c.buckets[b])}` : ''}</td>`).join('')}
+        <td class="text-right" style="font-weight:600;">$${formatAmount(c.total)}</td>
       </tr>`
     )
     .join('')
@@ -1089,8 +1090,8 @@ export function buildAgingReportPdfHtml(
             <tfoot>
               <tr style="font-weight:700;background:#f8fafc;">
                 <td>Total</td>
-                ${AGING_BUCKETS.map((b) => `<td class="text-right">$${bucketTotals[b].toFixed(2)}</td>`).join('')}
-                <td class="text-right">$${grandTotal.toFixed(2)}</td>
+                ${AGING_BUCKETS.map((b) => `<td class="text-right">$${formatAmount(bucketTotals[b])}</td>`).join('')}
+                <td class="text-right">$${formatAmount(grandTotal)}</td>
               </tr>
             </tfoot>
           </table>
@@ -1118,8 +1119,8 @@ export function buildRevenueReportPdfHtml(
     .map(
       (r) => `<tr>
         <td>${escapeHtml(r.month)}</td>
-        <td class="text-right">$${r.invoiced.toFixed(2)}</td>
-        <td class="text-right">$${r.collected.toFixed(2)}</td>
+        <td class="text-right">$${formatAmount(r.invoiced)}</td>
+        <td class="text-right">$${formatAmount(r.collected)}</td>
       </tr>`
     )
     .join('')
@@ -1166,8 +1167,8 @@ export function buildRevenueReportPdfHtml(
 
           <div class="summary">
             <h4>Summary</h4>
-            <div class="summary-row"><span>Total Invoiced</span><span>$${summary.totalInvoiced.toFixed(2)}</span></div>
-            <div class="summary-row"><span>Total Collected</span><span>$${summary.totalCollected.toFixed(2)}</span></div>
+            <div class="summary-row"><span>Total Invoiced</span><span>$${formatAmount(summary.totalInvoiced)}</span></div>
+            <div class="summary-row"><span>Total Collected</span><span>$${formatAmount(summary.totalCollected)}</span></div>
             <div class="summary-row total"><span>Change vs Prior Period</span><span>${escapeHtml(changeText)}</span></div>
           </div>
 
@@ -1216,9 +1217,9 @@ export function buildJobProfitabilityPdfHtml(
       (r) => `<tr>
         <td>${escapeHtml(r.jobNumber)}</td>
         <td>${escapeHtml(r.clientName)}</td>
-        <td class="text-right">$${r.revenue.toFixed(2)}</td>
-        <td class="text-right">$${r.totalCost.toFixed(2)}</td>
-        <td class="text-right" style="font-weight:600;color:${r.profit < 0 ? '#dc2626' : '#111827'};">$${r.profit.toFixed(2)}</td>
+        <td class="text-right">$${formatAmount(r.revenue)}</td>
+        <td class="text-right">$${formatAmount(r.totalCost)}</td>
+        <td class="text-right" style="font-weight:600;color:${r.profit < 0 ? '#dc2626' : '#111827'};">$${formatAmount(r.profit)}</td>
         <td class="text-right">${r.marginPercent === null ? (r.hasCostData ? '' : '—') : `${r.marginPercent.toFixed(1)}%`}</td>
       </tr>`
     )
@@ -1264,10 +1265,10 @@ export function buildJobProfitabilityPdfHtml(
 
           <div class="summary">
             <h4>Summary</h4>
-            <div class="summary-row"><span>Total Revenue</span><span>$${totals.revenue.toFixed(2)}</span></div>
-            <div class="summary-row"><span>Total Labor Cost</span><span>$${totals.laborCost.toFixed(2)}</span></div>
-            <div class="summary-row"><span>Total Material Cost</span><span>$${totals.materialCost.toFixed(2)}</span></div>
-            <div class="summary-row total"><span>Total Profit</span><span>$${totals.profit.toFixed(2)}</span></div>
+            <div class="summary-row"><span>Total Revenue</span><span>$${formatAmount(totals.revenue)}</span></div>
+            <div class="summary-row"><span>Total Labor Cost</span><span>$${formatAmount(totals.laborCost)}</span></div>
+            <div class="summary-row"><span>Total Material Cost</span><span>$${formatAmount(totals.materialCost)}</span></div>
+            <div class="summary-row total"><span>Total Profit</span><span>$${formatAmount(totals.profit)}</span></div>
           </div>
 
           ${brand.footerText ? `<div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:12px;color:#6b7280;text-align:center;">${escapeHtml(brand.footerText)}</div>` : ''}
@@ -1298,7 +1299,7 @@ export function buildVendorSpendPdfHtml(
       (v) => `<tr>
         <td>${escapeHtml(v.vendorName)}</td>
         <td class="text-right">${v.poCount}</td>
-        <td class="text-right" style="font-weight:600;">$${v.total.toFixed(2)}</td>
+        <td class="text-right" style="font-weight:600;">$${formatAmount(v.total)}</td>
       </tr>`
     )
     .join('')
@@ -1340,7 +1341,7 @@ export function buildVendorSpendPdfHtml(
               <tr style="font-weight:700;background:#f8fafc;">
                 <td>Total</td>
                 <td class="text-right">${byVendor.reduce((s, v) => s + v.poCount, 0)}</td>
-                <td class="text-right">$${grandTotal.toFixed(2)}</td>
+                <td class="text-right">$${formatAmount(grandTotal)}</td>
               </tr>
             </tfoot>
           </table>
@@ -1389,8 +1390,8 @@ export function buildPaymentHistoryPdfHtml(
         <td>${escapeHtml(r.invoiceNumber)}</td>
         <td>${escapeHtml(r.paymentMethod)}</td>
         <td>${escapeHtml(r.status)}</td>
-        <td class="text-right">$${r.amount.toFixed(2)}</td>
-        <td class="text-right">${r.refundedAmount ? `$${r.refundedAmount.toFixed(2)}` : ''}</td>
+        <td class="text-right">$${formatAmount(r.amount)}</td>
+        <td class="text-right">${r.refundedAmount ? `$${formatAmount(r.refundedAmount)}` : ''}</td>
       </tr>`
     })
     .join('')
@@ -1436,8 +1437,8 @@ export function buildPaymentHistoryPdfHtml(
 
           <div class="summary">
             <h4>Summary</h4>
-            <div class="summary-row"><span>Total Amount</span><span>$${summary.totalAmount.toFixed(2)}</span></div>
-            <div class="summary-row"><span>Total Refunded</span><span>$${summary.totalRefunded.toFixed(2)}</span></div>
+            <div class="summary-row"><span>Total Amount</span><span>$${formatAmount(summary.totalAmount)}</span></div>
+            <div class="summary-row"><span>Total Refunded</span><span>$${formatAmount(summary.totalRefunded)}</span></div>
             <div class="summary-row"><span>Succeeded</span><span>${summary.succeededCount}</span></div>
             <div class="summary-row total"><span>Failed</span><span>${summary.failedCount}</span></div>
           </div>
