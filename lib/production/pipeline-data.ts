@@ -1,8 +1,8 @@
 import { prisma } from '@/lib/prisma'
 import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
 import { jobRecordJobSiteAddressSearchClauses } from '@/lib/search/job-site-address'
-import { jobTypeScopeWhereForJobs } from '@/lib/jobs/job-type-scope'
-import { andScope, isAssignedOnly, jobScopeWhere } from '@/lib/assignments/scope'
+import { jobTypeScopeWhereForJobs, jobTypeScopeWhere } from '@/lib/jobs/job-type-scope'
+import { andScope, isAssignedOnly, jobScopeWhere, taskScopeWhere, leadScopeWhere } from '@/lib/assignments/scope'
 import { ARCHIVE_JOB_STATUSES } from '@/lib/production/production-status'
 import { getProductionConfigForTenant } from '@/lib/production/settings'
 import { resolveProductionInfo } from '@/lib/production/config'
@@ -20,7 +20,7 @@ import {
   type PipelineRecordType,
 } from '@/lib/production/pipelines'
 
-export type PipelineItemType = 'JOB' | 'ESTIMATE' | 'INVOICE'
+export type PipelineItemType = 'JOB' | 'ESTIMATE' | 'INVOICE' | 'TASK' | 'REQUEST'
 
 /** One card / row on the Estimates, Invoices or All Work views. */
 export interface PipelineItem {
@@ -490,6 +490,164 @@ export async function loadJobsForAllWork(user: ScopeUser, q: PipelineQuery): Pro
       related: { job: null, estimate: null, invoices: j.invoices, estimates: j.estimates },
       href: `/dashboard/jobs/${j.id}`,
       updatedAt: j.updatedAt.toISOString(),
+    }
+  })
+}
+
+const TASK_STAGE: Record<string, { label: string; color: string; closed: boolean }> = {
+  TODO: { label: 'To do', color: '#94a3b8', closed: false },
+  IN_PROGRESS: { label: 'In progress', color: '#3b82f6', closed: false },
+  COMPLETED: { label: 'Completed', color: '#22c55e', closed: true },
+  CANCELLED: { label: 'Cancelled', color: '#ef4444', closed: true },
+}
+
+/** Tasks as All Work rows (read only; opens the task detail page). */
+export async function loadTasksForAllWork(user: ScopeUser, q: PipelineQuery): Promise<PipelineItem[]> {
+  const where: any = { tenantId: user.tenantId }
+  applySmartSearch(
+    where,
+    buildSmartSearchAnd(q.search || '', (term) => [
+      { title: ilike(term) },
+      { description: ilike(term) },
+      ...clientIdentityClauses(term),
+    ])
+  )
+  if (await isAssignedOnly(user, 'tasks')) andScope(where, taskScopeWhere(user.id))
+  const range = dateWindow(q, 'createdAt')
+  if (range) andScope(where, range)
+
+  const tasks = await prisma.task.findMany({
+    where,
+    orderBy: { updatedAt: 'desc' },
+    take: 1000,
+    select: {
+      id: true,
+      title: true,
+      status: true,
+      dueDate: true,
+      createdAt: true,
+      updatedAt: true,
+      client: { select: { id: true, name: true, companyName: true } },
+      assignee: { select: { id: true, firstName: true, lastName: true } },
+      job: { select: { id: true, jobNumber: true, title: true } },
+    },
+  })
+  const now = new Date()
+  return tasks.map((t) => {
+    const cfg = TASK_STAGE[t.status] || { label: t.status, color: '#94a3b8', closed: false }
+    const responsible = t.assignee ? { id: t.assignee.id, name: fullName(t.assignee), isDefault: true } : null
+    return {
+      type: 'TASK' as const,
+      id: t.id,
+      number: '',
+      title: t.title,
+      status: t.status,
+      stage: t.status,
+      stageLabel: cfg.label,
+      stageColor: cfg.color,
+      enteredAt: iso(t.updatedAt),
+      daysInStage: daysSince(t.updatedAt, now),
+      closed: cfg.closed,
+      client: clientOf(t.client),
+      jobSiteAddress: null,
+      amount: 0,
+      paidAmount: null,
+      balance: null,
+      date: iso(t.createdAt),
+      dueDate: iso(t.dueDate),
+      responsible,
+      nextAction: null,
+      nextActionIsDefault: true,
+      followUpDate: null,
+      followUpOverdue: !!t.dueDate && !cfg.closed && t.dueDate < new Date(now.toDateString()),
+      hold: { onHold: false, reason: null, heldAt: null, releasedAt: null },
+      notes: null,
+      reviewStage: null,
+      disputed: false,
+      ignoredManual: null,
+      allowed: { hold: false, review: false, dispute: false, edit: false },
+      related: { job: t.job || null, estimate: null, invoices: [], estimates: [] },
+      href: `/dashboard/tasks/${t.id}`,
+      updatedAt: t.updatedAt.toISOString(),
+    }
+  })
+}
+
+const LEAD_CLOSED = new Set(['WON', 'LOST', 'CONVERTED'])
+
+/** Requests (leads) as All Work rows (read only; opens the request detail page). */
+export async function loadRequestsForAllWork(user: ScopeUser, q: PipelineQuery): Promise<PipelineItem[]> {
+  const where: any = {
+    tenantId: user.tenantId,
+    ...(await jobTypeScopeWhere(user.id, user.tenantId)),
+  }
+  applySmartSearch(
+    where,
+    buildSmartSearchAnd(q.search || '', (term) => [
+      { firstName: ilike(term) },
+      { lastName: ilike(term) },
+      { company: ilike(term) },
+      { email: ilike(term) },
+      { phone: ilike(term) },
+    ])
+  )
+  if (await isAssignedOnly(user, 'leads')) andScope(where, leadScopeWhere(user.id))
+  const range = dateWindow(q, 'createdAt')
+  if (range) andScope(where, range)
+
+  const leads = await prisma.lead.findMany({
+    where,
+    orderBy: { updatedAt: 'desc' },
+    take: 1000,
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      company: true,
+      status: true,
+      createdAt: true,
+      updatedAt: true,
+      assignedTo: { select: { id: true, firstName: true, lastName: true } },
+    },
+  })
+  const now = new Date()
+  return leads.map((l) => {
+    const name = `${l.firstName} ${l.lastName}`.trim() || l.company || 'Request'
+    const closed = LEAD_CLOSED.has(l.status)
+    const responsible = l.assignedTo ? { id: l.assignedTo.id, name: fullName(l.assignedTo), isDefault: true } : null
+    return {
+      type: 'REQUEST' as const,
+      id: l.id,
+      number: '',
+      title: name,
+      status: l.status,
+      stage: l.status,
+      stageLabel: l.status.charAt(0) + l.status.slice(1).toLowerCase().replace(/_/g, ' '),
+      stageColor: closed ? '#22c55e' : '#a855f7',
+      enteredAt: iso(l.updatedAt),
+      daysInStage: daysSince(l.updatedAt, now),
+      closed,
+      client: null,
+      jobSiteAddress: null,
+      amount: 0,
+      paidAmount: null,
+      balance: null,
+      date: iso(l.createdAt),
+      dueDate: null,
+      responsible,
+      nextAction: null,
+      nextActionIsDefault: true,
+      followUpDate: null,
+      followUpOverdue: false,
+      hold: { onHold: false, reason: null, heldAt: null, releasedAt: null },
+      notes: null,
+      reviewStage: null,
+      disputed: false,
+      ignoredManual: null,
+      allowed: { hold: false, review: false, dispute: false, edit: false },
+      related: { job: null, estimate: null, invoices: [], estimates: [] },
+      href: `/dashboard/requests/${l.id}`,
+      updatedAt: l.updatedAt.toISOString(),
     }
   })
 }

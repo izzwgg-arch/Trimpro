@@ -41,6 +41,13 @@ type ScheduleDetails = {
     firstName: string
     lastName: string
   } | null
+  siteManager: {
+    id: string
+    firstName: string
+    lastName: string
+    phone: string | null
+  } | null
+  checklist: Array<{ id: string; title: string; isCompleted: boolean }>
 }
 
 export default function ScheduleDetailsPage() {
@@ -185,8 +192,33 @@ export default function ScheduleDetailsPage() {
           <p>{schedule.user.firstName} {schedule.user.lastName}</p>
           <p className="text-gray-600">{schedule.user.email}</p>
           {schedule.user.phone ? <p><PhoneLink phone={schedule.user.phone} /></p> : null}
+          {schedule.siteManager ? (
+            <p className="pt-1">
+              <span className="font-medium">Site Manager:</span> {schedule.siteManager.firstName} {schedule.siteManager.lastName}
+              {schedule.siteManager.phone ? <> · <PhoneLink phone={schedule.siteManager.phone} /></> : null}
+            </p>
+          ) : null}
         </CardContent>
       </Card>
+
+      {schedule.checklist && schedule.checklist.length > 0 ? (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Checklist</CardTitle>
+            <span className="text-sm text-gray-500">
+              {schedule.checklist.filter((c) => c.isCompleted).length}/{schedule.checklist.length} done
+            </span>
+          </CardHeader>
+          <CardContent className="space-y-1 text-sm">
+            {schedule.checklist.map((c) => (
+              <div key={c.id} className="flex items-center gap-2">
+                <span className={c.isCompleted ? 'text-green-600' : 'text-gray-400'}>{c.isCompleted ? '☑' : '☐'}</span>
+                <span className={c.isCompleted ? 'text-gray-400 line-through' : 'text-gray-800'}>{c.title}</span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
 
       {schedule.job ? (
         <Card>

@@ -1,6 +1,7 @@
 'use client'
 import { EntityBackButton } from '@/components/navigation/EntityBackButton'
 import { PhoneLink } from '@/components/common/PhoneLink'
+import { EstimateAssigneeControl } from '@/components/estimates/EstimateAssigneeControl'
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
@@ -69,6 +70,11 @@ interface EstimateDetail {
     }>
   } | null
   lead: {
+    id: string
+    firstName: string
+    lastName: string
+  } | null
+  assignedTo: {
     id: string
     firstName: string
     lastName: string
@@ -836,6 +842,13 @@ export default function EstimateDetailPage() {
             <p className="mt-1 text-sm text-gray-600 sm:text-base">
               {estimate.estimateNumber}{' \u2022 '}Created {formatDate(estimate.createdAt)}
             </p>
+            <div className="mt-2">
+              <EstimateAssigneeControl
+                estimateId={estimate.id}
+                value={estimate.assignedTo}
+                onChange={(next) => setEstimate((prev) => (prev ? { ...prev, assignedTo: next } : prev))}
+              />
+            </div>
           </div>
         </div>
         <MobileActionBar>

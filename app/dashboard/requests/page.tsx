@@ -24,6 +24,7 @@ import { CreateOnlyAccessCard } from '@/components/permissions/CreateOnlyAccessC
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { JOB_TYPES } from '@/lib/jobs/types'
 import { JobTypeBadge } from '@/components/jobs/JobTypeSelect'
+import { ScopeFilter, type ListScope } from '@/components/lists/ScopeFilter'
 
 interface Request {
   id: string
@@ -149,6 +150,7 @@ export default function RequestsPage() {
   const [isFetching, setIsFetching] = useState(false)
   const [listState, setListStateRaw] = useState<RequestsListState>(loadRequestsListState)
   const { status, source, jobType, search, sortKey, sortDirection } = listState
+  const [scope, setScope] = useState<ListScope>('all')
   const debouncedSearch = useDebouncedValue(search, 300)
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
@@ -176,7 +178,7 @@ export default function RequestsPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [debouncedSearch, status, source, jobType, sortKey, sortDirection])
+  }, [debouncedSearch, status, source, jobType, scope, sortKey, sortDirection])
 
   const fetchRequests = useCallback(async (silent = false) => {
     if (!canViewList) {
@@ -197,6 +199,7 @@ export default function RequestsPage() {
         page: String(page),
         limit: '50',
       })
+      if (scope !== 'all') params.set('scope', scope)
       if (sortKey) {
         params.set('sortBy', sortKey)
         params.set('sortDirection', sortDirection)
@@ -223,7 +226,7 @@ export default function RequestsPage() {
       setInitialLoading(false)
       if (!silent) setIsFetching(false)
     }
-  }, [page, router, debouncedSearch, sortDirection, sortKey, source, status, jobType, canViewList])
+  }, [page, router, debouncedSearch, sortDirection, sortKey, source, status, jobType, scope, canViewList])
 
   useEffect(() => {
     if (permissionsLoading) return
@@ -598,6 +601,11 @@ export default function RequestsPage() {
                   ))}
                 </SelectContent>
               </Select>
+              <ScopeFilter
+                value={scope}
+                onChange={setScope}
+                className="h-9 w-[180px] rounded-md border border-gray-200 bg-white px-2 text-sm text-gray-700"
+              />
             </div>
           </div>
         </CardContent>

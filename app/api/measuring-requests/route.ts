@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { createNotification } from '@/lib/notifications'
 import { applySmartSearch, buildSmartSearchAnd, ilike } from '@/lib/search/prisma-filters'
 import { andScope, isAssignedOnly, measuringRequestScopeWhere } from '@/lib/assignments/scope'
+import { normalizeScope, scopeWhere } from '@/lib/list-scope/created-assigned'
 
 function toApiStatus(status: 'PENDING' | 'OPENED' | 'COMPLETED') {
   return status.toLowerCase()
@@ -40,6 +41,20 @@ export async function GET(request: NextRequest) {
   }
   // "See only assigned ..." restriction: AND it in so no other filter can widen it.
   if (await isAssignedOnly(user, 'leads')) andScope(where, measuringRequestScopeWhere(user.id))
+
+  // Unified "created / assigned / both" scope.
+  const scopeParam = searchParams.get('scope')
+  if (scopeParam && scopeParam !== 'all') {
+    const scopeFrag = scopeWhere(
+      normalizeScope(scopeParam),
+      { createdByUserId: user.id },
+      { assignedUserId: user.id }
+    )
+    if (scopeFrag) {
+      where.AND = where.AND || []
+      where.AND.push(scopeFrag)
+    }
+  }
 
   applySmartSearch(
     where,

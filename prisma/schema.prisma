@@ -181,6 +181,9 @@ model User {
   requestedPaymentRefunds      PaymentRefund[]
   assignedMeasuringRequests    MeasuringRequest[]            @relation("MeasuringRequestAssignee")
   createdMeasuringRequests     MeasuringRequest[]            @relation("MeasuringRequestCreatedBy")
+  createdJobs                  Job[]                        @relation("JobCreator")
+  assignedEstimates            Estimate[]                   @relation("EstimateAssignee")
+  siteManagedSchedules         Schedule[]                   @relation("ScheduleSiteManager")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -473,12 +476,17 @@ model Job {
   conversations  Conversation[]
   timeEntries    TimeEntry[]
 
+  // Who created the job (null for jobs created before this was tracked).
+  createdById String?
+  creator     User?   @relation("JobCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([tenantId])
   @@index([tenantId, clientId])
   @@index([tenantId, status])
+  @@index([tenantId, createdById])
   @@index([jobNumber])
   @@map("jobs")
 }
@@ -646,12 +654,17 @@ model Estimate {
 
   createdById String?
 
+  // Who the estimate is assigned to (optional single owner).
+  assignedToId String?
+  assignedTo   User?   @relation("EstimateAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([tenantId])
   @@index([tenantId, clientId])
   @@index([tenantId, status])
+  @@index([tenantId, assignedToId])
   @@index([estimateNumber])
   @@index([jobId])
   @@map("estimates")
@@ -1715,6 +1728,14 @@ model Schedule {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  // Optional site manager for this visit (picked from the job's crew). Scoped to
+  // the schedule only — does not change the job's crew roles.
+  siteManagerId String?
+  siteManager   User?   @relation("ScheduleSiteManager", fields: [siteManagerId], references: [id], onDelete: SetNull)
+
+  // Per-visit checklist (own order, mirrors task subtasks).
+  checklist ScheduleChecklistItem[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1722,6 +1743,22 @@ model Schedule {
   @@index([tenantId, startTime])
   @@index([userId])
   @@map("schedules")
+}
+
+model ScheduleChecklistItem {
+  id          String  @id @default(cuid())
+  scheduleId  String
+  title       String
+  isCompleted Boolean @default(false)
+  sortOrder   Int     @default(0)
+
+  schedule Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([scheduleId])
+  @@map("schedule_checklist_items")
 }
 
 // ============================================
@@ -1751,6 +1788,10 @@ model Task {
   priority    TaskPriority @default(MEDIUM)
   dueDate     DateTime?
   completedAt DateTime?
+
+  // Manual row order within the task list (lower = higher). Only applied when the
+  // list is sorted by "Manual order"; otherwise priority/dueDate/createdAt is used.
+  sortOrder   Int          @default(0)
 
   // Links
   clientId   String?

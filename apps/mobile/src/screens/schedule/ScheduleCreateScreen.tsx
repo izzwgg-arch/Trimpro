@@ -88,11 +88,27 @@ export function ScheduleCreateScreen({ navigation, route }: Props) {
   const [jobSearch, setJobSearch] = useState('')
   // null = not available (no job chosen, or no permission to choose what is shared)
   const [visibility, setVisibility] = useState<JobVisibilityValue | null>(null)
+  const [siteManagerId, setSiteManagerId] = useState('')
+  const [checklist, setChecklist] = useState<string[]>([])
+  const [checklistDraft, setChecklistDraft] = useState('')
 
   const teamQuery = useQuery({
     queryKey: ['mobile-schedule-team-create'],
     queryFn: () => apiRequest<TeamMembersResponse>('/api/schedules/team'),
   })
+
+  // The chosen job's crew, so a site manager can be picked when several are assigned.
+  const crewQuery = useQuery({
+    queryKey: ['mobile-schedule-job-crew', jobId],
+    queryFn: () =>
+      apiRequest<{ assignments: Array<{ user: { id: string; firstName: string; lastName: string } | null } > }>(
+        `/api/jobs/${jobId}/assignments`
+      ),
+    enabled: Boolean(linkToJob && jobId),
+  })
+  const jobCrew = (crewQuery.data?.assignments || [])
+    .map((a) => a.user)
+    .filter((u): u is { id: string; firstName: string; lastName: string } => Boolean(u))
 
   const jobsQuery = useQuery({
     queryKey: ['mobile-schedule-jobs-create'],
@@ -189,6 +205,23 @@ export function ScheduleCreateScreen({ navigation, route }: Props) {
     })
   }, [jobSearch, jobsQuery.data?.jobs])
 
+  const addChecklist = () => {
+    const t = checklistDraft.trim()
+    if (!t) return
+    setChecklist((prev) => [...prev, t])
+    setChecklistDraft('')
+  }
+  const moveChecklist = (index: number, dir: -1 | 1) => {
+    const to = index + dir
+    if (to < 0 || to >= checklist.length) return
+    setChecklist((prev) => {
+      const next = prev.slice()
+      const [m] = next.splice(index, 1)
+      next.splice(to, 0, m)
+      return next
+    })
+  }
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       const payload = {
@@ -200,6 +233,8 @@ export function ScheduleCreateScreen({ navigation, route }: Props) {
         assignedUserId: allowedAssignedUserId,
         jobId: linkToJob ? jobId || null : null,
         leadId: leadId || null,
+        siteManagerId: siteManagerId || null,
+        ...(isEdit ? {} : { checklist: checklist.map((t) => t.trim()).filter(Boolean) }),
         ...(linkToJob && jobId && visibility
           ? {
               restrictContent: visibility.restrictContent,
@@ -379,6 +414,75 @@ export function ScheduleCreateScreen({ navigation, route }: Props) {
               />
             ) : null}
           </View>
+
+          {!isEdit && linkToJob && jobCrew.length >= 2 ? (
+            <View style={styles.field}>
+              <Text style={styles.label}>Site Manager</Text>
+              <Text style={styles.helpText}>Several people are on this job — pick who runs the site for this visit.</Text>
+              <View style={{ gap: 8 }}>
+                <Pressable onPress={() => setSiteManagerId('')} style={[styles.crewRow, !siteManagerId && styles.crewRowOn]}>
+                  <Text style={styles.crewText}>No site manager</Text>
+                  {!siteManagerId ? <Ionicons name="checkmark" size={18} color={colors.brandPrimary} /> : null}
+                </Pressable>
+                {jobCrew.map((u) => (
+                  <Pressable
+                    key={u.id}
+                    onPress={() => setSiteManagerId(u.id)}
+                    style={[styles.crewRow, siteManagerId === u.id && styles.crewRowOn]}
+                  >
+                    <Text style={styles.crewText}>
+                      {u.firstName} {u.lastName}
+                    </Text>
+                    {siteManagerId === u.id ? <Ionicons name="checkmark" size={18} color={colors.brandPrimary} /> : null}
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          ) : null}
+
+          {!isEdit ? (
+            <View style={styles.field}>
+              <Text style={styles.label}>Checklist</Text>
+              <Text style={styles.helpText}>Add items for this visit. Use the arrows to reorder.</Text>
+              {checklist.map((item, index) => (
+                <View key={index} style={styles.clRow}>
+                  <Text style={styles.clText}>{item}</Text>
+                  <Pressable disabled={index === 0} onPress={() => moveChecklist(index, -1)} style={styles.clBtn} hitSlop={6}>
+                    <Ionicons name="chevron-up" size={18} color={index === 0 ? colors.muted : colors.textSecondary} />
+                  </Pressable>
+                  <Pressable
+                    disabled={index === checklist.length - 1}
+                    onPress={() => moveChecklist(index, 1)}
+                    style={styles.clBtn}
+                    hitSlop={6}
+                  >
+                    <Ionicons name="chevron-down" size={18} color={index === checklist.length - 1 ? colors.muted : colors.textSecondary} />
+                  </Pressable>
+                  <Pressable onPress={() => setChecklist((prev) => prev.filter((_, i) => i !== index))} style={styles.clBtn} hitSlop={6}>
+                    <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                  </Pressable>
+                </View>
+              ))}
+              <View style={styles.clAddRow}>
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  value={checklistDraft}
+                  onChangeText={setChecklistDraft}
+                  placeholder="Add a checklist item"
+                  placeholderTextColor={colors.muted}
+                  returnKeyType="done"
+                  onSubmitEditing={addChecklist}
+                />
+                <Pressable
+                  style={[styles.clAddBtn, !checklistDraft.trim() && { opacity: 0.5 }]}
+                  disabled={!checklistDraft.trim()}
+                  onPress={addChecklist}
+                >
+                  <Ionicons name="add" size={22} color="#fff" />
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
         </Card>
 
         {iosPicker ? (
@@ -522,6 +626,25 @@ const styles = StyleSheet.create({
   sectionTitle: { ...typography.h3, color: colors.textPrimary, marginBottom: spacing.xs },
   field: { marginTop: spacing.sm },
   label: { ...typography.caption, color: colors.textSecondary, marginBottom: 6 },
+  helpText: { ...typography.caption, color: colors.muted, marginBottom: 8 },
+  crewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 44,
+    paddingHorizontal: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.divider,
+    borderRadius: 10,
+    backgroundColor: colors.surface,
+  },
+  crewRowOn: { borderColor: colors.brandPrimary, backgroundColor: '#EFF6FF' },
+  crewText: { ...typography.sub, color: colors.textPrimary },
+  clRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, minHeight: 44, paddingVertical: 2 },
+  clText: { ...typography.body, color: colors.textPrimary, flex: 1 },
+  clBtn: { width: 32, height: 40, alignItems: 'center', justifyContent: 'center' },
+  clAddRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: 6 },
+  clAddBtn: { width: 44, height: 44, borderRadius: 10, backgroundColor: colors.brandPrimary, alignItems: 'center', justifyContent: 'center' },
   input: {
     borderWidth: 1,
     borderColor: colors.divider,

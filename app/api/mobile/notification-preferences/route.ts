@@ -3,18 +3,11 @@ import { authenticateRequest, getAuthUser } from '@/lib/middleware'
 import { prisma } from '@/lib/prisma'
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
+  NOTIFICATION_PREFERENCE_KEYS,
   normalizeNotificationPreferences,
-  type NotificationPreferenceKey,
 } from '@/lib/notifications/preferences'
 
-const KEYS: NotificationPreferenceKey[] = [
-  'requestStatusChanges',
-  'jobStatusChanges',
-  'newMessage',
-  'newJobAssigned',
-  'paymentReceived',
-  'emailNotifications',
-]
+const KEYS = NOTIFICATION_PREFERENCE_KEYS
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)

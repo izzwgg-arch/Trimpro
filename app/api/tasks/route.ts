@@ -14,6 +14,7 @@ import {
 } from '@/lib/tasks/list-scope'
 import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
 import { assignedToUserWhere, teamInclude, teamMemberNameClauses } from '@/lib/assignments/where'
+import { normalizeScope, scopeWhere } from '@/lib/list-scope/created-assigned'
 import { defaultRoleForUser, parseTeamInput, primaryAssigneeId, type TeamInput } from '@/lib/assignments/roles'
 import { setTaskTeam, validateUsers } from '@/lib/assignments/team-service'
 import { andScope, isAssignedOnly, taskScopeWhere } from '@/lib/assignments/scope'
@@ -96,8 +97,21 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Filter: my tasks (created by me) or assigned to me — must AND with search
-    if (filter === 'my') {
+    // Unified "created / assigned / both" scope (new). Falls back to the legacy
+    // filter=my|assigned below when no scope is given (keeps old callers working).
+    const scopeParam = searchParams.get('scope')
+    if (scopeParam) {
+      const scopeFrag = scopeWhere(
+        normalizeScope(scopeParam),
+        { createdById: user.id },
+        assignedToUserWhere(user.id)
+      )
+      if (scopeFrag) {
+        where.AND = where.AND || []
+        where.AND.push(scopeFrag)
+      }
+    } else if (filter === 'my') {
+      // Filter: my tasks (created by me) or assigned to me — must AND with search
       where.AND = where.AND || []
       where.AND.push({
         OR: [
@@ -109,6 +123,13 @@ export async function GET(request: NextRequest) {
       where.AND = where.AND || []
       where.AND.push(assignedToUserWhere(user.id))
     }
+
+    // Manual drag order when requested; otherwise the default priority ordering.
+    const sortParam = searchParams.get('sort')
+    const orderBy: any =
+      sortParam === 'manual'
+        ? [{ sortOrder: 'asc' }, { createdAt: 'desc' }]
+        : [{ priority: 'desc' }, { dueDate: 'asc' }, { createdAt: 'desc' }]
 
     const [tasks, total] = await Promise.all([
       prisma.task.findMany({
@@ -165,11 +186,7 @@ export async function GET(request: NextRequest) {
             },
           },
         },
-        orderBy: [
-          { priority: 'desc' },
-          { dueDate: 'asc' },
-          { createdAt: 'desc' },
-        ],
+        orderBy,
         skip,
         take: limit,
       }),

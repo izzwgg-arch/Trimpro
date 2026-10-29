@@ -149,7 +149,7 @@ export function PipelineSettingsDialog({
               <div>
                 <Label>All Work shows</Label>
                 <div className="mt-1 space-y-1">
-                  {(['jobs', 'estimates', 'invoices'] as const).map((k) => (
+                  {(['jobs', 'estimates', 'invoices', 'tasks', 'requests'] as const).map((k) => (
                     <label key={k} className="flex items-center gap-2 capitalize">
                       <input
                         type="checkbox"

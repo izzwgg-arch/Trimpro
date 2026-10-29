@@ -246,7 +246,18 @@ export async function POST(request: NextRequest) {
       assignedUserId,
       jobId,
       leadId,
+      siteManagerId,
+      checklist,
     } = body
+
+    // Optional per-visit checklist: array of strings or { title } objects.
+    const checklistTitles: string[] = Array.isArray(checklist)
+      ? checklist
+          .map((c: any) => (typeof c === 'string' ? c : c?.title))
+          .map((t: any) => String(t ?? '').trim())
+          .filter((t: string) => t.length > 0)
+          .slice(0, 100)
+      : []
 
     const targetUserId =
       typeof assignedUserId === 'string' && assignedUserId.trim().length > 0
@@ -359,7 +370,18 @@ export async function POST(request: NextRequest) {
         userId: targetUserId,
         jobId: jobId || null,
         leadId: leadId || null,
+        siteManagerId:
+          typeof siteManagerId === 'string' && siteManagerId.trim().length > 0
+            ? siteManagerId.trim()
+            : null,
         ...(visibilityData || {}),
+        ...(checklistTitles.length > 0
+          ? {
+              checklist: {
+                create: checklistTitles.map((title, index) => ({ title, sortOrder: index })),
+              },
+            }
+          : {}),
       },
       include: {
         user: {
@@ -369,6 +391,16 @@ export async function POST(request: NextRequest) {
             lastName: true,
             email: true,
           },
+        },
+        siteManager: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+        checklist: {
+          orderBy: { sortOrder: 'asc' },
         },
         job: {
           select: {

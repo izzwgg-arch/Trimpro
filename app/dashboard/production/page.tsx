@@ -610,7 +610,7 @@ export default function ProductionPage() {
             columns={taskColumns}
             itemsByColumn={tasksByCol}
             emptyLabel="No tasks"
-            renderCard={(t: any) => <TaskCard task={t} />}
+            renderCard={(t: any) => <TaskCard task={t} onOpen={() => navigateWithReturn(router, `/dashboard/tasks/${t.id}`)} />}
           />
         )
       )}
@@ -650,11 +650,14 @@ export default function ProductionPage() {
   )
 }
 
-function TaskCard({ task }: { task: any }) {
+function TaskCard({ task, onOpen }: { task: any; onOpen?: () => void }) {
   const assignee = task.assignee ? `${task.assignee.firstName || ''} ${task.assignee.lastName || ''}`.trim() : task.assignedTo?.name
   const due = task.dueDate ? new Date(task.dueDate) : null
   return (
-    <div className="rounded-lg border bg-white p-3 shadow-sm">
+    <div
+      className="cursor-pointer rounded-lg border bg-white p-3 shadow-sm hover:shadow-md"
+      onClick={onOpen}
+    >
       <div className="text-sm font-semibold text-gray-900 line-clamp-2">{task.title}</div>
       <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-gray-500">
         {task.priority ? <span className="rounded bg-gray-100 px-1.5 py-0.5 font-semibold">{String(task.priority)}</span> : null}

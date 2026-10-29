@@ -48,6 +48,9 @@ export async function GET(
           },
         },
         lead: true,
+        assignedTo: {
+          select: { id: true, firstName: true, lastName: true },
+        },
         job: {
           select: {
             id: true,
@@ -242,6 +245,7 @@ export async function PUT(
       isNotesVisibleToClient,
       terms,
       depositPercent,
+      assignedToId,
     } = body
 
     const normalizedDepositPercent =
@@ -476,6 +480,7 @@ export async function PUT(
         isNotesVisibleToClient:
           isNotesVisibleToClient !== undefined ? Boolean(isNotesVisibleToClient) : existing.isNotesVisibleToClient,
         terms: terms !== undefined ? terms : existing.terms,
+        assignedToId: assignedToId !== undefined ? (assignedToId || null) : (existing as any).assignedToId,
         },
         include: {
           client: true,

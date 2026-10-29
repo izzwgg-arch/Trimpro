@@ -57,6 +57,7 @@ interface DetailsResponse {
   job: { id: string; jobNumber: string; title: string; status: string; siteAddress: string } | null
   customer: { name: string; phone: string | null; contactName: string | null } | null
   siteManagers: Array<{ id: string; name: string; phone: string | null }>
+  checklist: Array<{ id: string; title: string; isCompleted: boolean }>
   notes: Array<{ id: string; content: string; createdAt: string }>
   attachments: Array<{ id: string; fileName: string; mimeType: string; fileSize: number; url: string }>
   work: Work
@@ -290,7 +291,21 @@ export function ScheduleDetailScreen({ navigation, route }: Props) {
   }
 
   const { schedule, job, customer, siteManagers, notes, attachments } = data
+  const checklist = data.checklist || []
   const status = work!.status
+
+  const toggleChecklistItem = async (item: { id: string; isCompleted: boolean }) => {
+    queryClient.setQueryData<DetailsResponse>(['mobile-schedule-details', scheduleId], (old) =>
+      old
+        ? { ...old, checklist: old.checklist.map((c) => (c.id === item.id ? { ...c, isCompleted: !c.isCompleted } : c)) }
+        : old
+    )
+    try {
+      await apiRequest(`/api/schedules/${scheduleId}/checklist/${item.id}`, 'PATCH', { isCompleted: !item.isCompleted })
+    } catch {
+      void detailQuery.refetch()
+    }
+  }
 
   return (
     <View style={styles.screen}>
@@ -472,6 +487,25 @@ export function ScheduleDetailScreen({ navigation, route }: Props) {
           </View>
         ) : null}
 
+        {/* Visit checklist */}
+        {checklist.length > 0 ? (
+          <View style={styles.card}>
+            <Text style={styles.label}>
+              Checklist ({checklist.filter((c) => c.isCompleted).length}/{checklist.length})
+            </Text>
+            {checklist.map((c) => (
+              <Pressable key={c.id} style={styles.checkRow} onPress={() => void toggleChecklistItem(c)}>
+                <Ionicons
+                  name={c.isCompleted ? 'checkbox' : 'square-outline'}
+                  size={24}
+                  color={c.isCompleted ? colors.success : colors.textSecondary}
+                />
+                <Text style={[styles.checkText, c.isCompleted && styles.checkDone]}>{c.title}</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+
         {/* Instructions and notes */}
         <View style={[styles.card, styles.instructionsCard]}>
           <Text style={styles.instructionsTitle}>Work instructions</Text>
@@ -608,6 +642,9 @@ const styles = StyleSheet.create({
   instructionsTitle: { fontSize: 18, fontWeight: '700', color: '#92400e' },
   instructions: { fontSize: 19, lineHeight: 27, fontWeight: '500', color: '#111827' },
   note: { ...typography.body, color: colors.textPrimary, paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider },
+  checkRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
+  checkText: { ...typography.body, color: colors.textPrimary, flex: 1 },
+  checkDone: { color: colors.muted, textDecorationLine: 'line-through' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.xs },
   tile: { width: '31%' },
   tileImage: { width: '100%', aspectRatio: 1, borderRadius: radius.sm, backgroundColor: colors.background },

@@ -6,6 +6,8 @@ import {
   loadEstimatePipeline,
   loadInvoicePipeline,
   loadJobsForAllWork,
+  loadTasksForAllWork,
+  loadRequestsForAllWork,
   type PipelineItem,
 } from '@/lib/production/pipeline-data'
 
@@ -43,13 +45,16 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const [config, canViewEstimates, canViewInvoices, canEditEstimates, canEditInvoices] = await Promise.all([
-      getPipelineConfigForTenant(user.tenantId),
-      hasPermission(user.id, user.tenantId, 'estimates.view'),
-      hasPermission(user.id, user.tenantId, 'invoices.view'),
-      hasPermission(user.id, user.tenantId, 'estimates.edit'),
-      hasPermission(user.id, user.tenantId, 'invoices.edit'),
-    ])
+    const [config, canViewEstimates, canViewInvoices, canEditEstimates, canEditInvoices, canViewTasks, canViewRequests] =
+      await Promise.all([
+        getPipelineConfigForTenant(user.tenantId),
+        hasPermission(user.id, user.tenantId, 'estimates.view'),
+        hasPermission(user.id, user.tenantId, 'invoices.view'),
+        hasPermission(user.id, user.tenantId, 'estimates.edit'),
+        hasPermission(user.id, user.tenantId, 'invoices.edit'),
+        hasPermission(user.id, user.tenantId, 'tasks.view'),
+        hasPermission(user.id, user.tenantId, 'leads.view'),
+      ])
 
     if (board === 'estimates' && !canViewEstimates) {
       return NextResponse.json({ error: 'You do not have permission to view estimates' }, { status: 403 })
@@ -65,7 +70,7 @@ export async function GET(request: NextRequest) {
       items = await loadInvoicePipeline(user, query, config, canEditInvoices)
     } else {
       // All Work: only the record types this person may see, and the company chose to include.
-      const [jobs, estimates, invoices] = await Promise.all([
+      const [jobs, estimates, invoices, tasks, requests] = await Promise.all([
         config.allWork.jobs ? loadJobsForAllWork(user, query) : Promise.resolve([]),
         config.allWork.estimates && canViewEstimates
           ? loadEstimatePipeline(user, query, config, canEditEstimates)
@@ -73,14 +78,16 @@ export async function GET(request: NextRequest) {
         config.allWork.invoices && canViewInvoices
           ? loadInvoicePipeline(user, query, config, canEditInvoices)
           : Promise.resolve([]),
+        config.allWork.tasks && canViewTasks ? loadTasksForAllWork(user, query) : Promise.resolve([]),
+        config.allWork.requests && canViewRequests ? loadRequestsForAllWork(user, query) : Promise.resolve([]),
       ])
-      items = [...jobs, ...estimates, ...invoices]
+      items = [...jobs, ...estimates, ...invoices, ...tasks, ...requests]
     }
 
     return NextResponse.json({
       items,
       config,
-      access: { estimates: canViewEstimates, invoices: canViewInvoices },
+      access: { estimates: canViewEstimates, invoices: canViewInvoices, tasks: canViewTasks, requests: canViewRequests },
     })
   } catch (error) {
     console.error('Get production pipelines error:', error)

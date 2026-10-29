@@ -5,6 +5,7 @@ import { notifyIssueAssigned } from '@/lib/notifications'
 import { hasMobilePermission, requireMobilePermission, requirePermission } from '@/lib/authorization'
 import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
 import { assignedToUserWhere, teamInclude, teamMemberNameClauses } from '@/lib/assignments/where'
+import { normalizeScope, scopeWhere } from '@/lib/list-scope/created-assigned'
 import { defaultRoleForUser, parseTeamInput, primaryAssigneeId, type TeamInput } from '@/lib/assignments/roles'
 import { setIssueTeam, validateUsers } from '@/lib/assignments/team-service'
 import { andScope, isAssignedOnly, issueScopeWhere } from '@/lib/assignments/scope'
@@ -77,6 +78,20 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Unified "created / assigned / both" scope (new). Takes precedence over the
+    // legacy `filter` values when present; `watched` still comes through `filter`.
+    const scopeParam = searchParams.get('scope')
+    if (scopeParam && scopeParam !== 'all') {
+      const scopeFrag = scopeWhere(
+        normalizeScope(scopeParam),
+        { createdById: user.id },
+        assignedToUserWhere(user.id)
+      )
+      if (scopeFrag) {
+        where.AND = where.AND || []
+        where.AND.push(scopeFrag)
+      }
+    }
     // Filter: my issues (created by me), assigned to me, watched, or assigned/created combined.
     if (filter === 'my') {
       where.createdById = user.id

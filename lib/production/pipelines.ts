@@ -67,7 +67,7 @@ export interface PipelineConfig {
   /** Follow-up date suggested when placing a record on hold (days from today). */
   holdFollowUpDays: number
   /** Which record types the All Work overview shows. */
-  allWork: { jobs: boolean; estimates: boolean; invoices: boolean }
+  allWork: { jobs: boolean; estimates: boolean; invoices: boolean; tasks: boolean; requests: boolean }
 }
 
 // Stages that end the record's workflow. Holds don't apply to these, and the
@@ -122,7 +122,7 @@ export function buildDefaultPipelineConfig(): PipelineConfig {
     invoices: { stages: withOrder(INVOICE_DEFAULTS) },
     holdReasons: [...DEFAULT_HOLD_REASONS],
     holdFollowUpDays: 3,
-    allWork: { jobs: true, estimates: true, invoices: true },
+    allWork: { jobs: true, estimates: true, invoices: true, tasks: true, requests: true },
   }
 }
 
@@ -167,6 +167,8 @@ export function mergePipelineConfig(stored: any): PipelineConfig {
       jobs: stored.allWork?.jobs !== false,
       estimates: stored.allWork?.estimates !== false,
       invoices: stored.allWork?.invoices !== false,
+      tasks: stored.allWork?.tasks !== false,
+      requests: stored.allWork?.requests !== false,
     },
   }
 }

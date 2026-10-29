@@ -37,6 +37,7 @@ interface TaskDetail {
   job: { id: string; jobNumber: string; title: string } | null
   invoice: { id: string; invoiceNumber: string; title: string } | null
   issue: { id: string; title: string; status: string } | null
+  lead: { id: string; firstName: string; lastName: string; company: string | null; status: string } | null
   subtasks: Array<{ id: string; title: string; isCompleted: boolean }>
   attachments: Array<{ id: string; filename: string | null; url: string; type: string; createdAt: string }>
 }
@@ -490,6 +491,15 @@ export default function TaskDetailPage() {
                   <p className="text-gray-500">Related Issue</p>
                   <Link href={`/dashboard/issues/${task.issue.id}`} className="text-blue-600 hover:underline font-medium">
                     {task.issue.title}
+                  </Link>
+                </div>
+              )}
+
+              {task.lead && (
+                <div>
+                  <p className="text-gray-500">From Request</p>
+                  <Link href={`/dashboard/requests/${task.lead.id}`} className="text-blue-600 hover:underline font-medium">
+                    {[task.lead.firstName, task.lead.lastName].filter(Boolean).join(' ') || task.lead.company || 'View request'}
                   </Link>
                 </div>
               )}

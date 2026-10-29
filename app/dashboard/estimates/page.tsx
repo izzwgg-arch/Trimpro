@@ -19,6 +19,7 @@ import { Plus, Search, Filter, FileText, Calendar, Trash2, Briefcase, Copy } fro
 import Link from 'next/link'
 import { usePermissions, hasPermission } from '@/hooks/usePermissions'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { ScopeFilter, type ListScope } from '@/components/lists/ScopeFilter'
 
 interface Estimate {
   id: string
@@ -131,6 +132,7 @@ export default function EstimatesPage() {
   const [isFetching, setIsFetching] = useState(false)
   const [listState, setListStateRaw] = useState<EstimatesListState>(loadEstimatesListState)
   const { status, search, sortKey, sortDirection } = listState
+  const [scope, setScope] = useState<ListScope>('all')
   const debouncedSearch = useDebouncedValue(search, 300)
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
@@ -156,7 +158,7 @@ export default function EstimatesPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [debouncedSearch, status, sortKey, sortDirection])
+  }, [debouncedSearch, status, scope, sortKey, sortDirection])
 
   const fetchEstimates = useCallback(async () => {
     if (!canViewList) {
@@ -175,6 +177,7 @@ export default function EstimatesPage() {
         page: String(page),
         limit: '50',
       })
+      if (scope !== 'all') params.set('scope', scope)
       if (sortKey) {
         params.set('sortBy', sortKey)
         params.set('sortDirection', sortDirection)
@@ -199,7 +202,7 @@ export default function EstimatesPage() {
       setInitialLoading(false)
       setIsFetching(false)
     }
-  }, [page, router, debouncedSearch, sortDirection, sortKey, status, canViewList])
+  }, [page, router, debouncedSearch, sortDirection, sortKey, status, scope, canViewList])
 
   useEffect(() => {
     if (permissionsLoading) return
@@ -420,6 +423,11 @@ export default function EstimatesPage() {
                   <SelectItem value="CONVERTED">Converted</SelectItem>
                 </SelectContent>
               </Select>
+              <ScopeFilter
+                value={scope}
+                onChange={setScope}
+                className="h-9 w-[180px] rounded-md border border-gray-200 bg-white px-2 text-sm text-gray-700"
+              />
             </div>
           </div>
         </CardContent>

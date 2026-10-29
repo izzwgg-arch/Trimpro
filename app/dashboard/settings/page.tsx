@@ -10,45 +10,11 @@ import { User, Bell, Link as LinkIcon, Users, Palette, Factory, ClipboardList } 
 import { useRouter } from 'next/navigation'
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
+  NOTIFICATION_PREFERENCE_META,
   type UserNotificationPreferences,
 } from '@/lib/notifications/preferences'
 
-const PREF_ROWS: Array<{
-  key: keyof UserNotificationPreferences
-  title: string
-  description: string
-}> = [
-  {
-    key: 'emailNotifications',
-    title: 'Email Notifications',
-    description: 'Also send in-app alerts to your account email (off by default)',
-  },
-  {
-    key: 'newJobAssigned',
-    title: 'New Job Assigned',
-    description: 'When a job is assigned to you',
-  },
-  {
-    key: 'jobStatusChanges',
-    title: 'Job Updates',
-    description: 'When a job you are on changes status or schedule',
-  },
-  {
-    key: 'requestStatusChanges',
-    title: 'Request Updates',
-    description: 'When a request you created or are assigned to changes',
-  },
-  {
-    key: 'newMessage',
-    title: 'New Messages',
-    description: 'When you receive a chat or job message',
-  },
-  {
-    key: 'paymentReceived',
-    title: 'Payment Alerts',
-    description: 'When a payment is received',
-  },
-]
+const PREF_ROWS = NOTIFICATION_PREFERENCE_META
 
 export default function SettingsPage() {
   const router = useRouter()

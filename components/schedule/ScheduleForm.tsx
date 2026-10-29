@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Save } from 'lucide-react'
 import { JobContentVisibility, type JobVisibilityValue } from '@/components/schedule/JobContentVisibility'
+import { DraftChecklistEditor } from '@/components/lists/DraftChecklistEditor'
 
 interface User {
   id: string
@@ -49,6 +50,9 @@ export function ScheduleForm({ scheduleId, initialJobId }: { scheduleId?: string
   const [visibility, setVisibility] = useState<JobVisibilityValue | null>(null)
   // What was saved on the schedule being edited (for the picker's starting state).
   const [savedVisibility, setSavedVisibility] = useState<{ jobId: string; value: JobVisibilityValue } | null>(null)
+  const [checklist, setChecklist] = useState<string[]>([])
+  const [jobCrew, setJobCrew] = useState<User[]>([])
+  const [siteManagerId, setSiteManagerId] = useState('')
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -64,6 +68,37 @@ export function ScheduleForm({ scheduleId, initialJobId }: { scheduleId?: string
     fetchUsers()
     fetchJobs()
   }, [])
+
+  // When a job is chosen, load its crew so a site manager can be picked from it.
+  useEffect(() => {
+    if (!formData.jobId) {
+      setJobCrew([])
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const token = localStorage.getItem('accessToken')
+        const res = await fetch(`/api/jobs/${formData.jobId}/assignments`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (!res.ok) {
+          if (!cancelled) setJobCrew([])
+          return
+        }
+        const data = await res.json()
+        const crew: User[] = (data.assignments || [])
+          .filter((a: any) => a?.user?.id)
+          .map((a: any) => ({ id: a.user.id, firstName: a.user.firstName, lastName: a.user.lastName }))
+        if (!cancelled) setJobCrew(crew)
+      } catch {
+        if (!cancelled) setJobCrew([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [formData.jobId])
 
   useEffect(() => {
     if (!scheduleId) return
@@ -91,6 +126,7 @@ export function ScheduleForm({ scheduleId, initialJobId }: { scheduleId?: string
           userId: s.userId || '',
           jobId: s.jobId || '',
         })
+        setSiteManagerId(s.siteManagerId || '')
         if (s.jobId) {
           setSavedVisibility({
             jobId: s.jobId,
@@ -157,6 +193,8 @@ export function ScheduleForm({ scheduleId, initialJobId }: { scheduleId?: string
           startTime: localInputToIso(formData.startTime),
           endTime: localInputToIso(formData.endTime),
           jobId: formData.jobId || null,
+          siteManagerId: siteManagerId || null,
+          ...(isEdit ? {} : { checklist: checklist.map((t) => t.trim()).filter(Boolean) }),
           ...(formData.jobId && visibility
             ? {
                 restrictContent: visibility.restrictContent,
@@ -312,6 +350,26 @@ export function ScheduleForm({ scheduleId, initialJobId }: { scheduleId?: string
               </Select>
             </div>
 
+            {formData.jobId && jobCrew.length >= 2 && (
+              <div>
+                <Label htmlFor="siteManagerId">Site Manager</Label>
+                <p className="mb-1 text-xs text-gray-500">This job has several people assigned — pick who runs the site for this visit.</p>
+                <Select value={siteManagerId || '__none__'} onValueChange={(v) => setSiteManagerId(v === '__none__' ? '' : v)}>
+                  <SelectTrigger id="siteManagerId" className="w-full">
+                    <SelectValue placeholder="Choose site manager" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">No site manager</SelectItem>
+                    {jobCrew.map((u) => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.firstName} {u.lastName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             {formData.jobId && (
               <JobContentVisibility
                 key={formData.jobId}
@@ -320,6 +378,14 @@ export function ScheduleForm({ scheduleId, initialJobId }: { scheduleId?: string
                 onChange={setVisibility}
                 initial={savedVisibility && savedVisibility.jobId === formData.jobId ? savedVisibility.value : undefined}
               />
+            )}
+
+            {!isEdit && (
+              <div>
+                <Label>Checklist (Optional)</Label>
+                <p className="mb-2 text-xs text-gray-500">Add items for this visit and drag to order them.</p>
+                <DraftChecklistEditor value={checklist} onChange={setChecklist} label="" />
+              </div>
             )}
 
             <div className="flex items-center">

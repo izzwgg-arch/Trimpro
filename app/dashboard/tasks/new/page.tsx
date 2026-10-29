@@ -14,6 +14,7 @@ import Link from 'next/link'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
 import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
 import { useCreateContextPrefill } from '@/src/hooks/useCreateContextPrefill'
+import { DraftChecklistEditor } from '@/components/lists/DraftChecklistEditor'
 
 interface User {
   id: string
@@ -50,6 +51,7 @@ export default function NewTaskPage() {
   const [clients, setClients] = useState<PickerClient[]>([])
   const [jobs, setJobs] = useState<Job[]>([])
   const [jobContext, setJobContext] = useState<Job | null>(null)
+  const [checklist, setChecklist] = useState<string[]>([])
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -187,6 +189,7 @@ export default function NewTaskPage() {
           clientId: formData.clientId || null,
           leadId: formData.leadId || null,
           jobId: formData.jobId || null,
+          subtasks: checklist.map((t) => t.trim()).filter(Boolean).map((title) => ({ title })),
         }),
       })
 
@@ -269,6 +272,12 @@ export default function NewTaskPage() {
                 Add site managers, office workers and field workers. Everyone added is notified.
               </p>
               <TeamEditor value={team} onChange={setTeam} users={assignableUsers} />
+            </div>
+
+            <div>
+              <Label>Checklist</Label>
+              <p className="mb-2 text-xs text-gray-500">Add items and drag to order them. Saved with the task.</p>
+              <DraftChecklistEditor value={checklist} onChange={setChecklist} label="" />
             </div>
 
             <div className="grid grid-cols-2 gap-4">

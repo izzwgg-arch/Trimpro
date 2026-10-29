@@ -16,6 +16,7 @@ import {
 } from '@/lib/qbo/doc-numbers'
 import { estimateJobSiteAddressSearchClauses } from '@/lib/search/job-site-address'
 import { applySmartSearch, buildSmartSearchAnd, clientIdentityClauses, ilike } from '@/lib/search/prisma-filters'
+import { normalizeScope, scopeWhere } from '@/lib/list-scope/created-assigned'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -68,6 +69,20 @@ export async function GET(request: NextRequest) {
       where.clientId = clientId
     }
 
+    // Unified "created / assigned / both" scope.
+    const scopeParam = searchParams.get('scope')
+    if (scopeParam && scopeParam !== 'all') {
+      const scopeFrag = scopeWhere(
+        normalizeScope(scopeParam),
+        { createdById: user.id },
+        { assignedToId: user.id }
+      )
+      if (scopeFrag) {
+        where.AND = where.AND || []
+        where.AND.push(scopeFrag)
+      }
+    }
+
     const [estimates, total] = await Promise.all([
       prisma.estimate.findMany({
         where,
@@ -80,6 +95,13 @@ export async function GET(request: NextRequest) {
             },
           },
           lead: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+          assignedTo: {
             select: {
               id: true,
               firstName: true,
@@ -168,6 +190,7 @@ export async function POST(request: NextRequest) {
       terms,
       depositPercent,
       createJob,
+      assignedToId,
     } = body
 
     if (!title) {
@@ -230,6 +253,7 @@ export async function POST(request: NextRequest) {
       isNotesVisibleToClient: isNotesVisibleToClient !== undefined ? Boolean(isNotesVisibleToClient) : true,
       terms: terms || null,
       createdById: user.id,
+      assignedToId: assignedToId || null,
     }
 
     let estimate: any = null

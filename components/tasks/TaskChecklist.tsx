@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { CheckSquare, Plus, Square, Trash2 } from 'lucide-react'
+import { CheckSquare, GripVertical, Plus, Square, Trash2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,6 +16,7 @@ export function TaskChecklist({ taskId, initialItems }: { taskId: string; initia
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
 
   const load = useCallback(async () => {
     const res = await authFetch(`/api/tasks/${taskId}/checklist`)
@@ -74,6 +75,23 @@ export function TaskChecklist({ taskId, initialItems }: { taskId: string; initia
     if (data) setItems((prev) => prev.filter((i) => i.id !== item.id))
   }
 
+  const moveItem = (from: number, to: number) => {
+    setItems((prev) => {
+      if (from === to || from < 0 || to < 0 || from >= prev.length || to >= prev.length) return prev
+      const next = prev.slice()
+      const [m] = next.splice(from, 1)
+      next.splice(to, 0, m)
+      return next
+    })
+  }
+
+  const persistOrder = async () => {
+    setDragIndex(null)
+    const ids = items.map((i) => i.id)
+    const data = await call(`/api/tasks/${taskId}/checklist/reorder`, { method: 'POST', body: JSON.stringify({ ids }) })
+    if (data?.items) setItems(data.items)
+  }
+
   const done = items.filter((i) => i.isCompleted).length
 
   return (
@@ -92,8 +110,25 @@ export function TaskChecklist({ taskId, initialItems }: { taskId: string; initia
             <div className="h-full bg-green-500 transition-all" style={{ width: `${(done / items.length) * 100}%` }} />
           </div>
         ) : null}
-        {items.map((item) => (
-          <div key={item.id} className="group flex items-center gap-2 rounded-md px-1 py-1 hover:bg-gray-50">
+        {items.map((item, index) => (
+          <div
+            key={item.id}
+            draggable={editing?.id !== item.id}
+            onDragStart={() => setDragIndex(index)}
+            onDragOver={(e) => {
+              e.preventDefault()
+              if (dragIndex !== null && dragIndex !== index) {
+                moveItem(dragIndex, index)
+                setDragIndex(index)
+              }
+            }}
+            onDragEnd={() => void persistOrder()}
+            onDrop={() => void persistOrder()}
+            className={`group flex items-center gap-2 rounded-md px-1 py-1 hover:bg-gray-50 ${dragIndex === index ? 'bg-blue-50' : ''}`}
+          >
+            <span className="flex h-9 w-5 shrink-0 cursor-grab items-center justify-center text-gray-300 active:cursor-grabbing" aria-hidden>
+              <GripVertical className="h-4 w-4" />
+            </span>
             <button
               type="button"
               aria-label={item.isCompleted ? `Mark “${item.title}” not done` : `Mark “${item.title}” done`}

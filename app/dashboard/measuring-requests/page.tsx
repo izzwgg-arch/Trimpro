@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { PaginationControls } from '@/components/ui/PaginationControls'
 import { TableView, type TableColumn } from '@/components/lists/TableView'
 import { Filter, Ruler, Search } from 'lucide-react'
+import { ScopeFilter, type ListScope } from '@/components/lists/ScopeFilter'
 
 type MeasuringRequestRow = {
   id: string
@@ -58,6 +59,7 @@ export default function MeasuringRequestsAdminPage() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('ALL')
   const [assignedUserId, setAssignedUserId] = useState('all')
+  const [scope, setScope] = useState<ListScope>('all')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
@@ -69,12 +71,12 @@ export default function MeasuringRequestsAdminPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [search, status, assignedUserId])
+  }, [search, status, assignedUserId, scope])
 
   useEffect(() => {
     void fetchRows()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, status, assignedUserId, page])
+  }, [search, status, assignedUserId, scope, page])
 
   const fetchAssignableUsers = async () => {
     try {
@@ -106,6 +108,7 @@ export default function MeasuringRequestsAdminPage() {
         limit: '50',
       })
       if (assignedUserId !== 'all') params.set('assignedUserId', assignedUserId)
+      if (scope !== 'all') params.set('scope', scope)
       const response = await fetch(`/api/measuring-requests?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -363,6 +366,11 @@ export default function MeasuringRequestsAdminPage() {
                   ))}
                 </SelectContent>
               </Select>
+              <ScopeFilter
+                value={scope}
+                onChange={setScope}
+                className="h-9 w-[200px] rounded-md border border-gray-200 bg-white px-2 text-sm text-gray-700"
+              />
             </div>
           </div>
         </CardContent>

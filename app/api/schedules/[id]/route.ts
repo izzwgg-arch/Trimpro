@@ -42,6 +42,18 @@ export async function GET(
             phone: true,
           },
         },
+        siteManager: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phone: true,
+          },
+        },
+        checklist: {
+          orderBy: { sortOrder: 'asc' },
+          select: { id: true, title: true, isCompleted: true },
+        },
         job: {
           include: {
             client: {
@@ -103,6 +115,7 @@ export async function PUT(
       assignedUserId,
       jobId,
       leadId,
+      siteManagerId,
     } = body
     // The mobile app sends `assignedUserId`, the web form `userId`.
     const userId = userIdField ?? assignedUserId
@@ -223,6 +236,10 @@ export async function PUT(
         userId: targetUserId,
         jobId: jobId !== undefined ? (jobId || null) : existing.jobId,
         leadId: leadId !== undefined ? (leadId || null) : existing.leadId,
+        siteManagerId:
+          siteManagerId !== undefined
+            ? (siteManagerId && String(siteManagerId).trim().length > 0 ? String(siteManagerId).trim() : null)
+            : (existing as any).siteManagerId,
         ...(visibilityData || {}),
       },
       include: {

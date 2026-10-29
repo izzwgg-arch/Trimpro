@@ -10,56 +10,49 @@ import { JobsStackParamList } from '../../types/navigation'
 type Props = NativeStackScreenProps<JobsStackParamList, 'NotificationSettings'>
 
 type PrefKey =
-  | 'requestStatusChanges'
-  | 'jobStatusChanges'
-  | 'newMessage'
-  | 'newJobAssigned'
-  | 'paymentReceived'
   | 'emailNotifications'
+  | 'newJobAssigned'
+  | 'jobStatusChanges'
+  | 'requestStatusChanges'
+  | 'newMessage'
+  | 'paymentReceived'
+  | 'taskAssigned'
+  | 'taskUpdated'
+  | 'taskOverdue'
+  | 'issueAssigned'
+  | 'issueUpdated'
+  | 'attachmentUploaded'
+  | 'scheduleReminder'
+  | 'invoiceOverdue'
+  | 'incomingCall'
+  | 'incomingSms'
 
 type Prefs = Record<PrefKey, boolean>
 
-const ROWS: Array<{ key: PrefKey; title: string; description: string }> = [
-  {
-    key: 'emailNotifications',
-    title: 'Email notifications',
-    description: 'Also send alerts to your account email (off by default).',
-  },
-  {
-    key: 'requestStatusChanges',
-    title: 'Request status changes',
-    description: 'When a request you created or are assigned to changes status.',
-  },
-  {
-    key: 'jobStatusChanges',
-    title: 'Job status changes',
-    description: 'When a job you created or are assigned to changes status.',
-  },
-  {
-    key: 'newMessage',
-    title: 'New message',
-    description: 'When you receive a new chat or job message.',
-  },
-  {
-    key: 'newJobAssigned',
-    title: 'New job assigned',
-    description: 'When a new job is assigned to you.',
-  },
-  {
-    key: 'paymentReceived',
-    title: 'Payment received',
-    description: 'When a payment is received on a job assigned to you.',
-  },
+// Keep in sync with lib/notifications/preferences.ts (NOTIFICATION_PREFERENCE_META).
+const ROWS: Array<{ key: PrefKey; title: string; description: string; defaultOff?: boolean }> = [
+  { key: 'emailNotifications', title: 'Email notifications', description: 'Also send alerts to your account email (off by default).', defaultOff: true },
+  { key: 'newJobAssigned', title: 'New job assigned', description: 'When a job is assigned to you.' },
+  { key: 'jobStatusChanges', title: 'Job updates', description: 'When a job you are on changes status or schedule.' },
+  { key: 'requestStatusChanges', title: 'Request updates', description: 'When a request you created or are assigned to changes.' },
+  { key: 'newMessage', title: 'New messages', description: 'When you receive a chat or job message.' },
+  { key: 'paymentReceived', title: 'Payment alerts', description: 'When a payment is received.' },
+  { key: 'taskAssigned', title: 'Task assigned', description: 'When a task is assigned to you.' },
+  { key: 'taskUpdated', title: 'Task updates', description: 'When a task you are on changes.' },
+  { key: 'taskOverdue', title: 'Task overdue', description: 'When one of your tasks becomes overdue.' },
+  { key: 'issueAssigned', title: 'Issue assigned', description: 'When an issue is assigned to you.' },
+  { key: 'issueUpdated', title: 'Issue updates', description: 'When an issue you are on changes.' },
+  { key: 'attachmentUploaded', title: 'Attachment uploaded', description: 'When a photo or file is added to a job you are on.' },
+  { key: 'scheduleReminder', title: 'Schedule reminders', description: 'Reminders for your upcoming scheduled visits.' },
+  { key: 'invoiceOverdue', title: 'Invoice overdue', description: 'When an invoice becomes overdue.' },
+  { key: 'incomingCall', title: 'Incoming calls', description: 'When a call comes in for you.' },
+  { key: 'incomingSms', title: 'Incoming texts', description: 'When a text message comes in for you.' },
 ]
 
-const DEFAULTS: Prefs = {
-  requestStatusChanges: true,
-  jobStatusChanges: true,
-  newMessage: true,
-  newJobAssigned: true,
-  paymentReceived: true,
-  emailNotifications: false,
-}
+const DEFAULTS: Prefs = ROWS.reduce((acc, r) => {
+  acc[r.key] = !r.defaultOff
+  return acc
+}, {} as Prefs)
 
 export function NotificationSettingsScreen({}: Props) {
   const queryClient = useQueryClient()

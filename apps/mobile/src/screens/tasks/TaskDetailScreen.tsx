@@ -1,5 +1,7 @@
-import React, { useState } from 'react'
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import React, { useCallback, useState } from 'react'
+import { Alert, BackHandler, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
+import { useFocusEffect } from '@react-navigation/native'
 import { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import * as ImagePicker from 'expo-image-picker'
@@ -46,9 +48,34 @@ interface TaskNotesResponse {
   }>
 }
 
-export function TaskDetailScreen({ route }: Props) {
+export function TaskDetailScreen({ route, navigation }: Props) {
   const { taskId } = route.params
   const queryClient = useQueryClient()
+
+  // Back from a task always returns to the full task list (header + hardware back).
+  const goToAllTasks = useCallback(() => {
+    navigation.navigate('TasksList')
+  }, [navigation])
+
+  React.useLayoutEffect(() => {
+    navigation.setOptions({
+      headerLeft: () => (
+        <Pressable onPress={goToAllTasks} hitSlop={12} style={{ paddingHorizontal: 4 }}>
+          <Ionicons name="chevron-back" size={26} color={BRAND.primary} />
+        </Pressable>
+      ),
+    })
+  }, [navigation, goToAllTasks])
+
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        goToAllTasks()
+        return true
+      })
+      return () => sub.remove()
+    }, [goToAllTasks])
+  )
   const [noteText, setNoteText] = useState('')
   const [galleryVisible, setGalleryVisible] = useState(false)
   const [galleryIndex, setGalleryIndex] = useState(0)
@@ -239,6 +266,21 @@ export function TaskDetailScreen({ route }: Props) {
             <Text style={styles.meta}>Priority: {task.priority}</Text>
             <Text style={styles.meta}>Scheduled: {task.dueDate ? new Date(task.dueDate).toLocaleString() : 'Optional / Unscheduled'}</Text>
             <Text style={styles.meta}>Client: {task.client?.name || 'Unattached'}</Text>
+            {task.lead ? (
+              <Pressable
+                onPress={() =>
+                  navigation
+                    .getParent()
+                    ?.navigate('JobsTab', { screen: 'RequestDetail', params: { requestId: task.lead.id } })
+                }
+                hitSlop={6}
+              >
+                <Text style={[styles.meta, { color: BRAND.primary, fontWeight: '600' }]}>
+                  From Request:{' '}
+                  {`${task.lead.firstName || ''} ${task.lead.lastName || ''}`.trim() || task.lead.company || 'View request'} ›
+                </Text>
+              </Pressable>
+            ) : null}
 
             <TeamSection
               team={buildTeam(task.assignments, task.assignee)}

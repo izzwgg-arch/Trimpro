@@ -13,6 +13,7 @@ import {
   assertCanAccessJobType,
 } from '@/lib/jobs/job-type-scope'
 import { andScope, isAssignedOnly, leadScopeWhere } from '@/lib/assignments/scope'
+import { normalizeScope, scopeWhere } from '@/lib/list-scope/created-assigned'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -96,6 +97,20 @@ export async function GET(request: NextRequest) {
     // production-line "Requests" tab so each user sees only their own).
     if (searchParams.get('mine') === '1') {
       where.assignedToId = user.id
+    }
+
+    // Unified "created / assigned / both" scope.
+    const scopeParam = searchParams.get('scope')
+    if (scopeParam && scopeParam !== 'all') {
+      const scopeFrag = scopeWhere(
+        normalizeScope(scopeParam),
+        { createdByUserId: user.id },
+        { assignedToId: user.id }
+      )
+      if (scopeFrag) {
+        where.AND = where.AND || []
+        where.AND.push(scopeFrag)
+      }
     }
 
     const [leads, total] = await Promise.all([

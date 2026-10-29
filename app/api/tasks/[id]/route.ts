@@ -76,6 +76,16 @@ export async function GET(
             status: true,
           },
         },
+        // Source request (requests are Leads) this task was created from.
+        lead: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            company: true,
+            status: true,
+          },
+        },
         subtasks: {
           orderBy: { sortOrder: 'asc' },
         },

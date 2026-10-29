@@ -14,6 +14,7 @@ import { useViewMode } from '@/hooks/useViewMode'
 import { RowCompactItem } from '@/components/lists/RowCompactItem'
 import { RowDetailedItem } from '@/components/lists/RowDetailedItem'
 import { TableView } from '@/components/lists/TableView'
+import { TaskReorderList } from '@/components/tasks/TaskReorderList'
 import { PaginationControls } from '@/components/ui/PaginationControls'
 import { formatDate } from '@/lib/utils'
 import { Plus, Search, Filter, CheckSquare, Calendar, User, AlertCircle } from 'lucide-react'
@@ -24,7 +25,6 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { usePermissions, hasPermission } from '@/hooks/usePermissions'
 import {
   canViewAllTasksList,
-  defaultTasksListFilter,
   isPersonalTasksListEnabled,
 } from '@/lib/tasks/list-scope'
 import { TaskStatusSelect, TaskStatusBadge } from '@/components/tasks/TaskStatusSelect'
@@ -106,7 +106,8 @@ export default function TasksPage() {
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebouncedValue(search, 300)
   const [status, setStatus] = useState('all')
-  const [filter, setFilter] = useState(defaultTasksListFilter)
+  const [scope, setScope] = useState<'all' | 'created' | 'assigned' | 'both'>('all')
+  const [reorderMode, setReorderMode] = useState(false)
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
@@ -141,20 +142,21 @@ export default function TasksPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [debouncedSearch, status, filter])
+  }, [debouncedSearch, status, scope])
 
   useEffect(() => {
     if (permissionsFetchLoading) return
-    if (filter === 'all' && personalTasksEnabled && !canViewAll) {
-      setFilter(defaultTasksListFilter())
+    // Restricted users can't see everyone's tasks — default them to their own.
+    if (scope === 'all' && personalTasksEnabled && !canViewAll) {
+      setScope('both')
     }
-  }, [permissionsFetchLoading, filter, personalTasksEnabled, canViewAll])
+  }, [permissionsFetchLoading, scope, personalTasksEnabled, canViewAll])
 
   useEffect(() => {
     if (permissionsLoading) return
     fetchTasks()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch, status, filter, page, permissionsLoading, canViewList])
+  }, [debouncedSearch, status, scope, page, permissionsLoading, canViewList, reorderMode])
 
   const fetchTasks = async () => {
     if (!canViewList) {
@@ -170,9 +172,10 @@ export default function TasksPage() {
       const params = new URLSearchParams({
         search: debouncedSearch,
         status,
-        filter,
+        scope,
         page: String(page),
-        limit: '50',
+        // Reorder mode shows the saved manual order so dragging starts from it.
+        ...(reorderMode ? { sort: 'manual', limit: '200' } : { limit: '50' }),
       })
 
       const response = await fetch(`/api/tasks?${params}`, {
@@ -195,6 +198,20 @@ export default function TasksPage() {
     } finally {
       setInitialLoading(false)
       setIsFetching(false)
+    }
+  }
+
+  const persistTaskOrder = async (ordered: Task[]) => {
+    setTasks(ordered)
+    try {
+      const token = localStorage.getItem('accessToken')
+      await fetch('/api/tasks/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ids: ordered.map((t) => t.id) }),
+      })
+    } catch (error) {
+      console.error('Failed to save task order:', error)
     }
   }
 
@@ -228,6 +245,14 @@ export default function TasksPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {canEditStatus && (
+            <Button
+              variant={reorderMode ? 'default' : 'outline'}
+              onClick={() => setReorderMode((v) => !v)}
+            >
+              {reorderMode ? 'Done reordering' : 'Reorder'}
+            </Button>
+          )}
           <ViewModeSelector value={viewMode} onChange={setViewMode} />
           {canCreate && (
             <Button onClick={() => router.push('/dashboard/tasks/new')}>
@@ -299,14 +324,15 @@ export default function TasksPage() {
             </div>
             <div className="flex items-center space-x-2">
               <Filter className="h-4 w-4 text-gray-400" />
-              <Select value={filter} onValueChange={setFilter}>
-                <SelectTrigger className="w-[160px]">
-                  <SelectValue placeholder="My Tasks" />
+              <Select value={scope} onValueChange={(v) => setScope(v as typeof scope)}>
+                <SelectTrigger className="w-[190px]">
+                  <SelectValue placeholder="All Tasks" />
                 </SelectTrigger>
                 <SelectContent>
                   {canViewAll && <SelectItem value="all">All Tasks</SelectItem>}
-                  <SelectItem value="my">My Tasks</SelectItem>
+                  <SelectItem value="created">Created by Me</SelectItem>
                   <SelectItem value="assigned">Assigned to Me</SelectItem>
+                  <SelectItem value="both">Created &amp; Assigned to Me</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={status} onValueChange={setStatus}>
@@ -328,6 +354,15 @@ export default function TasksPage() {
       </Card>
 
       {/* Tasks List */}
+      {reorderMode ? (
+        <TaskReorderList
+          tasks={tasks}
+          onPersist={persistTaskOrder}
+          onDone={() => setReorderMode(false)}
+          loading={isFetching}
+        />
+      ) : (
+      <>
       {viewMode === 'grid' ? (
       <div className="space-y-4">
         {tasks.length === 0 ? (
@@ -635,6 +670,8 @@ export default function TasksPage() {
         onPrev={() => setPage((p) => Math.max(1, p - 1))}
         onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
       />
+      </>
+      )}
         </>
       )}
     </div>

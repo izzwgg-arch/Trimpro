@@ -1,6 +1,6 @@
 'use client'
 
-import { AlertTriangle, Briefcase, Calendar, FileText, MapPin, PauseCircle, Receipt, User } from 'lucide-react'
+import { AlertTriangle, Briefcase, Calendar, CheckSquare, FileText, Inbox, MapPin, PauseCircle, Receipt, User } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import type { PipelineItem } from '@/lib/production/pipeline-data'
 
@@ -8,6 +8,8 @@ export const RECORD_TYPE_META: Record<PipelineItem['type'], { label: string; cla
   JOB: { label: 'Job', className: 'bg-slate-100 text-slate-700 border-slate-200', Icon: Briefcase },
   ESTIMATE: { label: 'Estimate', className: 'bg-violet-50 text-violet-700 border-violet-200', Icon: FileText },
   INVOICE: { label: 'Invoice', className: 'bg-emerald-50 text-emerald-700 border-emerald-200', Icon: Receipt },
+  TASK: { label: 'Task', className: 'bg-blue-50 text-blue-700 border-blue-200', Icon: CheckSquare },
+  REQUEST: { label: 'Request', className: 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200', Icon: Inbox },
 }
 
 export function RecordTypeBadge({ type }: { type: PipelineItem['type'] }) {

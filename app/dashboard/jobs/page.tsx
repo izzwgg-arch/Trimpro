@@ -27,6 +27,7 @@ import { JobTypeBadge } from '@/components/jobs/JobTypeSelect'
 import { JobBillingStatusBadge } from '@/components/jobs/JobBillingStatusBadge'
 import { formatJobBillingStatus } from '@/lib/jobs/billing-status'
 import { assignmentRoleLabel, normalizeAssignmentRole } from '@/lib/assignments/roles'
+import { ScopeFilter, type ListScope } from '@/components/lists/ScopeFilter'
 
 interface Job {
   id: string
@@ -144,6 +145,7 @@ export default function JobsPage() {
   const debouncedSearch = useDebouncedValue(search, 300)
   const [status, setStatus] = useState('all')
   const [jobType, setJobType] = useState('all')
+  const [scope, setScope] = useState<ListScope>('all')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [page, setPage] = useState(() => {
@@ -186,13 +188,13 @@ export default function JobsPage() {
       return
     }
     setPage(1)
-  }, [debouncedSearch, status, jobType, startDate, endDate, persistedSortKey, persistedSortDirection])
+  }, [debouncedSearch, status, jobType, scope, startDate, endDate, persistedSortKey, persistedSortDirection])
 
   useEffect(() => {
     if (permissionsLoading) return
     fetchJobs()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch, status, jobType, startDate, endDate, page, permissionsLoading, canViewList, persistedSortKey, persistedSortDirection])
+  }, [debouncedSearch, status, jobType, scope, startDate, endDate, page, permissionsLoading, canViewList, persistedSortKey, persistedSortDirection])
 
   const fetchJobs = async () => {
     if (!canViewList) {
@@ -212,6 +214,7 @@ export default function JobsPage() {
         page: String(page),
         limit: '50',
       })
+      if (scope !== 'all') params.set('scope', scope)
       if (startDate) params.set('startDate', startDate)
       if (endDate) params.set('endDate', endDate)
       const apiSortKey = persistedSortKey ? JOB_SORT_KEY_MAP[persistedSortKey] : null
@@ -421,6 +424,11 @@ export default function JobsPage() {
                   ))}
                 </SelectContent>
               </Select>
+              <ScopeFilter
+                value={scope}
+                onChange={setScope}
+                className="h-9 w-[180px] rounded-md border border-gray-200 bg-white px-2 text-sm text-gray-700"
+              />
             </div>
           </div>
           <div className="flex flex-wrap items-end gap-3">

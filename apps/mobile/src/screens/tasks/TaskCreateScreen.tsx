@@ -50,8 +50,27 @@ export function TaskCreateScreen({ navigation, route }: { navigation: any; route
   const [showIosDate, setShowIosDate] = useState(false)
   const [showIosTime, setShowIosTime] = useState(false)
   const [team, setTeam] = useState<TeamMember[]>([])
+  const [checklist, setChecklist] = useState<string[]>([])
+  const [checklistDraft, setChecklistDraft] = useState('')
   const [saving, setSaving] = useState(false)
   const teamTouched = useRef(false)
+
+  const addChecklist = () => {
+    const t = checklistDraft.trim()
+    if (!t) return
+    setChecklist((prev) => [...prev, t])
+    setChecklistDraft('')
+  }
+  const moveChecklist = (index: number, dir: -1 | 1) => {
+    const to = index + dir
+    if (to < 0 || to >= checklist.length) return
+    setChecklist((prev) => {
+      const next = prev.slice()
+      const [m] = next.splice(index, 1)
+      next.splice(to, 0, m)
+      return next
+    })
+  }
 
   // Same list (and cache) the team sheet uses, so picked people get their names.
   const usersQuery = useQuery({
@@ -130,6 +149,8 @@ export function TaskCreateScreen({ navigation, route }: { navigation: any; route
         jobId: params.jobId || null,
       }
       if (team.length > 0) body.assignments = team.map((m) => ({ userId: m.userId, role: m.role }))
+      const cleanChecklist = checklist.map((t) => t.trim()).filter(Boolean)
+      if (cleanChecklist.length > 0) body.subtasks = cleanChecklist.map((title) => ({ title }))
       const res = await apiRequest<{ task?: { id: string } }>('/api/tasks?mobile=true', 'POST', body)
       queryClient.invalidateQueries({ queryKey: ['mobile-tasks'] })
       queryClient.invalidateQueries({ queryKey: ['mobile-assignments'] })
@@ -236,6 +257,45 @@ export function TaskCreateScreen({ navigation, route }: { navigation: any; route
 
         <TeamSection title="Assigned team" team={team} canEdit={canPickTeam} onSave={saveTeam} />
 
+        <Text style={styles.label}>Checklist</Text>
+        {checklist.map((item, index) => (
+          <View key={index} style={styles.clRow}>
+            <Text style={styles.clText}>{item}</Text>
+            <Pressable disabled={index === 0} onPress={() => moveChecklist(index, -1)} style={styles.clBtn} hitSlop={6}>
+              <Ionicons name="chevron-up" size={18} color={index === 0 ? colors.muted : colors.textSecondary} />
+            </Pressable>
+            <Pressable
+              disabled={index === checklist.length - 1}
+              onPress={() => moveChecklist(index, 1)}
+              style={styles.clBtn}
+              hitSlop={6}
+            >
+              <Ionicons name="chevron-down" size={18} color={index === checklist.length - 1 ? colors.muted : colors.textSecondary} />
+            </Pressable>
+            <Pressable onPress={() => setChecklist((prev) => prev.filter((_, i) => i !== index))} style={styles.clBtn} hitSlop={6}>
+              <Ionicons name="trash-outline" size={18} color={colors.danger} />
+            </Pressable>
+          </View>
+        ))}
+        <View style={styles.clAddRow}>
+          <TextInput
+            style={[styles.input, { flex: 1 }]}
+            value={checklistDraft}
+            onChangeText={setChecklistDraft}
+            placeholder="Add a checklist item"
+            placeholderTextColor={colors.muted}
+            returnKeyType="done"
+            onSubmitEditing={addChecklist}
+          />
+          <Pressable
+            style={[styles.clAddBtn, !checklistDraft.trim() && styles.disabled]}
+            disabled={!checklistDraft.trim()}
+            onPress={addChecklist}
+          >
+            <Ionicons name="add" size={22} color="#fff" />
+          </Pressable>
+        </View>
+
         <View style={[styles.row, { marginTop: spacing.sm }]}>
           <Pressable style={styles.cancelButton} onPress={() => navigation.goBack()} disabled={saving}>
             <Text style={styles.cancelText}>Cancel</Text>
@@ -283,6 +343,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   multiline: { minHeight: 110, textAlignVertical: 'top' },
+  clRow: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 44 },
+  clText: { ...typography.body, color: colors.textPrimary, flex: 1 },
+  clBtn: { width: 32, height: 40, alignItems: 'center', justifyContent: 'center' },
+  clAddRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
+  clAddBtn: { width: 44, height: 44, borderRadius: radius.sm, backgroundColor: colors.brandPrimary, alignItems: 'center', justifyContent: 'center' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
     borderWidth: 1,

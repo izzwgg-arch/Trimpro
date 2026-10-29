@@ -30,6 +30,8 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       where: { id: params.id, tenantId: user.tenantId },
       include: {
         user: { select: { id: true, firstName: true, lastName: true, phone: true } },
+        siteManager: { select: { id: true, firstName: true, lastName: true, phone: true } },
+        checklist: { orderBy: { sortOrder: 'asc' }, select: { id: true, title: true, isCompleted: true, sortOrder: true } },
         timeEntries: { where: { deletedAt: null }, select: { startedAt: true, endedAt: true, status: true, createdAt: true } },
         job: {
           select: {
@@ -97,9 +99,16 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
     const client = job?.client
     const contact = client?.contacts?.[0]
+    // Site managers from the job crew, plus this visit's own chosen site manager (if any).
     const siteManagers = (job?.assignments || [])
       .filter((a) => normalizeAssignmentRole(a.role, a.user.role) === 'SITE_MANAGER')
       .map((a) => ({ id: a.user.id, name: personName(a.user), phone: a.user.phone || null }))
+    const visitSiteManager = schedule.siteManager
+      ? { id: schedule.siteManager.id, name: personName(schedule.siteManager), phone: schedule.siteManager.phone || null }
+      : null
+    if (visitSiteManager && !siteManagers.some((s) => s.id === visitSiteManager.id)) {
+      siteManagers.unshift(visitSiteManager)
+    }
 
     return NextResponse.json({
       schedule: {
@@ -129,6 +138,8 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
           }
         : null,
       siteManagers,
+      visitSiteManager,
+      checklist: schedule.checklist.map((c) => ({ id: c.id, title: c.title, isCompleted: c.isCompleted })),
       notes,
       attachments,
       work: summarizeWork(schedule, schedule.timeEntries),

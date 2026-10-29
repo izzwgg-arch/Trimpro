@@ -78,6 +78,28 @@ export function TaskChecklistSection({ taskId }: { taskId: string }) {
       },
     ])
 
+  const persistOrder = async (ordered: Item[]) => {
+    setItems(() => ordered)
+    try {
+      const res = await apiRequest<{ items: Item[] }>(`/api/tasks/${taskId}/checklist/reorder`, 'POST', {
+        ids: ordered.map((i) => i.id),
+      })
+      if (res?.items) setItems(() => res.items)
+    } catch (error: any) {
+      Alert.alert('Could not reorder', error?.message || 'Try again.')
+      query.refetch()
+    }
+  }
+
+  const move = (index: number, dir: -1 | 1) => {
+    const to = index + dir
+    if (to < 0 || to >= items.length) return
+    const next = items.slice()
+    const [m] = next.splice(index, 1)
+    next.splice(to, 0, m)
+    void persistOrder(next)
+  }
+
   const done = items.filter((i) => i.isCompleted).length
 
   return (
@@ -87,7 +109,7 @@ export function TaskChecklistSection({ taskId }: { taskId: string }) {
         {items.length > 0 ? <Text style={styles.count}>{done}/{items.length} done</Text> : null}
       </View>
       {query.isLoading ? <ActivityIndicator color={colors.brandPrimary} /> : null}
-      {items.map((item) =>
+      {items.map((item, index) =>
         editing?.id === item.id ? (
           <View key={item.id} style={styles.editRow}>
             <TextInput
@@ -104,22 +126,34 @@ export function TaskChecklistSection({ taskId }: { taskId: string }) {
             </Pressable>
           </View>
         ) : (
-          <Pressable
-            key={item.id}
-            style={styles.row}
-            onPress={() => toggle(item)}
-            onLongPress={() => setEditing({ id: item.id, text: item.title })}
-          >
-            <Ionicons
-              name={item.isCompleted ? 'checkbox' : 'square-outline'}
-              size={26}
-              color={item.isCompleted ? colors.success : colors.textSecondary}
-            />
-            <Text style={[styles.itemText, item.isCompleted && styles.itemDone]}>{item.title}</Text>
-          </Pressable>
+          <View key={item.id} style={styles.row}>
+            <Pressable
+              style={styles.rowMain}
+              onPress={() => toggle(item)}
+              onLongPress={() => setEditing({ id: item.id, text: item.title })}
+            >
+              <Ionicons
+                name={item.isCompleted ? 'checkbox' : 'square-outline'}
+                size={26}
+                color={item.isCompleted ? colors.success : colors.textSecondary}
+              />
+              <Text style={[styles.itemText, item.isCompleted && styles.itemDone]}>{item.title}</Text>
+            </Pressable>
+            <Pressable style={styles.moveBtn} onPress={() => move(index, -1)} disabled={index === 0} hitSlop={6}>
+              <Ionicons name="chevron-up" size={20} color={index === 0 ? colors.muted : colors.textSecondary} />
+            </Pressable>
+            <Pressable
+              style={styles.moveBtn}
+              onPress={() => move(index, 1)}
+              disabled={index === items.length - 1}
+              hitSlop={6}
+            >
+              <Ionicons name="chevron-down" size={20} color={index === items.length - 1 ? colors.muted : colors.textSecondary} />
+            </Pressable>
+          </View>
         )
       )}
-      {items.length > 0 ? <Text style={styles.hint}>Tap to tick · hold to edit or remove</Text> : null}
+      {items.length > 0 ? <Text style={styles.hint}>Tap to tick · hold to edit · arrows to reorder</Text> : null}
       <View style={styles.editRow}>
         <TextInput
           style={[styles.input, { flex: 1 }]}
@@ -143,7 +177,9 @@ const styles = StyleSheet.create({
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   title: { ...typography.h3, color: colors.textPrimary },
   count: { ...typography.sub, color: colors.textSecondary },
-  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: 48, paddingVertical: 4 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, minHeight: 48, paddingVertical: 4 },
+  rowMain: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 },
+  moveBtn: { width: 32, height: 44, alignItems: 'center', justifyContent: 'center' },
   itemText: { ...typography.body, color: colors.textPrimary, flex: 1 },
   itemDone: { color: colors.muted, textDecorationLine: 'line-through' },
   hint: { ...typography.caption, color: colors.muted },

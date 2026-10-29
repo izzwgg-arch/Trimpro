@@ -232,6 +232,8 @@ export function PipelinesView({
                 <option value="JOB">Jobs</option>
                 <option value="ESTIMATE">Estimates</option>
                 <option value="INVOICE">Invoices</option>
+                <option value="TASK">Tasks</option>
+                <option value="REQUEST">Requests</option>
               </select>
             ) : null}
             <select aria-label="Stage" value={filters.stage} onChange={(e) => set({ stage: e.target.value })} className={selectClass}>
@@ -469,7 +471,7 @@ function AllWorkList({
                 ) : null}
               </div>
               <div className="lg:text-right">
-                {it.type !== 'JOB' ? (
+                {it.type === 'ESTIMATE' || it.type === 'INVOICE' ? (
                   <button
                     type="button"
                     onClick={(e) => {

@@ -13,6 +13,7 @@ import { applyJobTypeListFilter, jobTypeScopeWhereForJobs, resolveJobTypeForWrit
 import { getUnreadJobThreadCounts } from '@/lib/chat/service'
 import { ensureJobDescriptionNote } from '@/lib/jobs/description-note'
 import { andScope, isAssignedOnly, jobScopeWhere } from '@/lib/assignments/scope'
+import { normalizeScope, scopeWhere } from '@/lib/list-scope/created-assigned'
 
 export async function GET(request: NextRequest) {
   const authError = await authenticateRequest(request)
@@ -343,6 +344,20 @@ export async function GET(request: NextRequest) {
 
     applyJobTypeListFilter(where, jobTypeParam)
 
+    // Unified "created / assigned / both" scope.
+    const scopeParam = searchParams.get('scope')
+    if (scopeParam && scopeParam !== 'all') {
+      const scopeFrag = scopeWhere(
+        normalizeScope(scopeParam),
+        { createdById: user.id },
+        { assignments: { some: { userId: user.id } } }
+      )
+      if (scopeFrag) {
+        where.AND = where.AND || []
+        where.AND.push(scopeFrag)
+      }
+    }
+
     // "See only assigned jobs" restriction: AND it in so no other filter can widen it.
     if (await isAssignedOnly(user, 'jobs')) andScope(where, jobScopeWhere(user.id))
 
@@ -534,6 +549,7 @@ export async function POST(request: NextRequest) {
             scheduledStart: scheduledStart ? new Date(scheduledStart) : null,
             scheduledEnd: scheduledEnd ? new Date(scheduledEnd) : null,
             estimateAmount: estimateAmount ? (typeof estimateAmount === 'string' ? parseFloat(estimateAmount) : estimateAmount) : null,
+            createdById: user.id,
           },
           include: {
             client: true,

@@ -22,6 +22,7 @@ import { useDocumentListAccess } from '@/hooks/useDocumentListAccess'
 import { CreateOnlyAccessCard } from '@/components/permissions/CreateOnlyAccessCard'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { teamLabel, teamOf } from '@/components/assignments/TeamSummary'
+import { ScopeFilter, type ListScope } from '@/components/lists/ScopeFilter'
 
 interface Issue {
   id: string
@@ -114,6 +115,7 @@ export default function IssuesPage() {
   const [status, setStatus] = useState('all')
   const [type, setType] = useState('all')
   const [filter, setFilter] = useState('all') // all, my, assigned, watched
+  const [scope, setScope] = useState<ListScope>('all')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
@@ -128,13 +130,13 @@ export default function IssuesPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [debouncedSearch, status, type, filter])
+  }, [debouncedSearch, status, type, filter, scope])
 
   useEffect(() => {
     if (permissionsLoading) return
     fetchIssues()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch, status, type, filter, page, permissionsLoading, canViewList])
+  }, [debouncedSearch, status, type, filter, scope, page, permissionsLoading, canViewList])
 
   const fetchIssues = async () => {
     if (!canViewList) {
@@ -155,6 +157,7 @@ export default function IssuesPage() {
         page: String(page),
         limit: '50',
       })
+      if (scope !== 'all') params.set('scope', scope)
 
       const response = await fetch(`/api/issues?${params}`, {
         headers: {
@@ -310,6 +313,11 @@ export default function IssuesPage() {
                   <SelectItem value="OTHER">Other</SelectItem>
                 </SelectContent>
               </Select>
+              <ScopeFilter
+                value={scope}
+                onChange={setScope}
+                className="h-9 w-[180px] rounded-md border border-gray-200 bg-white px-2 text-sm text-gray-700"
+              />
             </div>
           </div>
         </CardContent>
