@@ -761,6 +761,40 @@ export async function sendMessageToConversation(
   return message
 }
 
+/**
+ * Send a short reference message about a work item (task / request) as a direct
+ * message to one or more recipients. Each recipient gets a DM whose body leads
+ * with `referenceLine` so it is always clear which task/request the message is
+ * about. Returns the per-recipient conversation + message ids.
+ */
+export async function sendEntityReferenceDm(
+  sender: AuthLikeUser,
+  recipientIds: string[],
+  referenceLine: string,
+  text?: string | null
+) {
+  const recipients = Array.from(
+    new Set((recipientIds || []).filter((id) => typeof id === 'string' && id && id !== sender.id))
+  )
+  if (recipients.length === 0) {
+    throw new Error('Select at least one recipient')
+  }
+
+  const trimmed = typeof text === 'string' ? text.trim() : ''
+  const body = trimmed ? `${referenceLine}\n\n${trimmed}` : referenceLine
+
+  const results: Array<{ recipientId: string; conversationId: string; messageId: string }> = []
+  for (const recipientId of recipients) {
+    const conversation = await createOrGetDmConversation(sender.tenantId, sender.id, recipientId)
+    const message = await sendMessageToConversation(sender, conversation.id, {
+      text: body,
+      notifyUserIds: [recipientId],
+    })
+    results.push({ recipientId, conversationId: conversation.id, messageId: message.id })
+  }
+  return results
+}
+
 type DeleteMode = 'ME' | 'EVERYONE'
 
 export async function editMessageInConversation(

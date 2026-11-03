@@ -10,6 +10,7 @@ import { formatDate } from '@/lib/utils'
 import { AlertCircle, Calendar, CheckSquare, Pencil, Trash2, User } from 'lucide-react'
 import { TaskStatusSelect } from '@/components/tasks/TaskStatusSelect'
 import { EditableNotesList } from '@/components/notes/editable-notes-list'
+import { SendEntityMessageDialog } from '@/components/messages/SendEntityMessageDialog'
 import { taskStatusColors, formatTaskStatus } from '@/lib/tasks/statuses'
 import { usePermissions, hasPermission } from '@/hooks/usePermissions'
 import { EntityHistory } from '@/components/history/EntityHistory'
@@ -349,6 +350,20 @@ export default function TaskDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <SendEntityMessageDialog
+            entityType="task"
+            entityId={task.id}
+            entityLabel={task.title}
+            defaultRecipientIds={Array.from(
+              new Set(
+                [
+                  task.assignee?.id,
+                  ...(task.assignments?.map((a) => a.userId) || []),
+                  task.creator?.id,
+                ].filter((id): id is string => Boolean(id))
+              )
+            )}
+          />
           <Button
             variant="outline"
             onClick={() => router.push(`/dashboard/tasks/${task.id}/edit`)}

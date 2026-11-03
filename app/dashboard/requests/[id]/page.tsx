@@ -16,6 +16,7 @@ import Link from 'next/link'
 import { parseAddressParts } from '@/lib/address/parse'
 import { buildCreateContextQuery } from '@/src/lib/create-context'
 import { DocumentAttachments } from '@/components/common/document-attachments'
+import { SendEntityMessageDialog } from '@/components/messages/SendEntityMessageDialog'
 import { usePermissions, hasPermission } from '@/hooks/usePermissions'
 import { JobTypeBadge } from '@/components/jobs/JobTypeSelect'
 
@@ -571,6 +572,12 @@ export default function RequestDetailPage() {
           )}
         </div>
         <div className="flex items-center space-x-2">
+          <SendEntityMessageDialog
+            entityType="request"
+            entityId={request.id}
+            entityLabel={requestDisplayName(request)}
+            defaultRecipientIds={request.assignedTo?.id ? [request.assignedTo.id] : []}
+          />
           {canEditRequest && (
             <Button variant="outline" onClick={() => router.push(`/dashboard/requests/${requestId}/edit`)}>
               <Edit className="mr-2 h-4 w-4" />
