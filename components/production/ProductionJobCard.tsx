@@ -3,7 +3,7 @@
 import { MapPin, Calendar, User, DollarSign, Package, Clock } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import { jobStatusColors, formatJobStatus } from '@/lib/jobs/statuses'
-import type { ProductionConfig, ProductionCardFieldKey } from '@/lib/production/config'
+import { jobStatusCatalog, type ProductionConfig, type ProductionCardFieldKey } from '@/lib/production/config'
 
 export interface ProductionJobCardData {
   id: string
@@ -18,6 +18,7 @@ export interface ProductionJobCardData {
   poCount?: number | null
   scheduledEnd?: string | null
   createdAt?: string | null
+  updatedAt?: string | null
   clientName?: string | null
   address?: string | null
   assignedNames?: string[]
@@ -38,18 +39,30 @@ function isOverdue(scheduledEnd?: string | null): boolean {
   return !Number.isNaN(d.getTime()) && d.getTime() < Date.now()
 }
 
+function daysSinceIso(v?: string | null): number | null {
+  if (!v) return null
+  const d = new Date(v)
+  if (Number.isNaN(d.getTime())) return null
+  return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86_400_000))
+}
+
 export function ProductionJobCard({
   job,
   config,
   stageColor,
   onClick,
+  aging,
 }: {
   job: ProductionJobCardData
   config: ProductionConfig
   stageColor?: string
   onClick?: () => void
+  /** When this column enables the stale-card alert, blink once past `days`. */
+  aging?: { enabled: boolean; days: number } | null
 }) {
   const card = config.card
+  const staleDays = daysSinceIso(job.updatedAt)
+  const stale = !!aging?.enabled && staleDays != null && staleDays > aging.days
   const density = card.density
   const pad = density === 'compact' ? 'p-2' : density === 'detailed' ? 'p-4' : 'p-3'
   const gap = density === 'compact' ? 'space-y-0.5' : density === 'detailed' ? 'space-y-2' : 'space-y-1'
@@ -109,7 +122,7 @@ export function ProductionJobCard({
         rows.push(
           <div key="status" className="flex flex-wrap items-center gap-1">
             <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${jobStatusColors[job.status] || 'bg-gray-100 text-gray-700'}`}>
-              {formatJobStatus(job.status)}
+              {jobStatusCatalog(config).find((s) => s.value === job.status)?.label || formatJobStatus(job.status)}
             </span>
             {overdue && <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">Overdue</span>}
           </div>
@@ -175,9 +188,10 @@ export function ProductionJobCard({
 
   return (
     <div
-      className={`${borderClass} ${pad} rounded-lg bg-white shadow-sm hover:shadow-md transition-shadow ${onClick ? 'cursor-pointer' : ''} ${gap} flex flex-col`}
+      className={`${borderClass} ${pad} rounded-lg bg-white shadow-sm hover:shadow-md transition-shadow ${onClick ? 'cursor-pointer' : ''} ${gap} flex flex-col ${stale ? 'aging-blink' : ''}`}
       style={borderLeft}
       onClick={onClick}
+      title={stale ? `In this column ${staleDays} days` : undefined}
     >
       {rows}
     </div>

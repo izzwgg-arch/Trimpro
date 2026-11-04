@@ -56,6 +56,7 @@ interface ProductionJob {
   actualAmount: string | null
   jobType?: string | null
   createdAt?: string | null
+  updatedAt?: string | null
   invoiceAmount?: number | null
   billingStatus?: string | null
   poCount?: number | null
@@ -89,6 +90,7 @@ function toCardData(job: ProductionJob): ProductionJobCardData {
     poCount: job.poCount ?? null,
     scheduledEnd: job.scheduledEnd,
     createdAt: job.createdAt ?? null,
+    updatedAt: job.updatedAt ?? null,
     clientName: job.client?.companyName || job.client?.name || null,
     address,
     assignedNames: job.assignments.map((a) => a.user.firstName).filter(Boolean),
@@ -589,6 +591,7 @@ export default function ProductionPage() {
                           job={toCardData(job)}
                           config={config}
                           stageColor={col.color}
+                          aging={{ enabled: col.agingEnabled, days: col.agingDays }}
                           onClick={() => navigateWithReturn(router, `/dashboard/jobs/${job.id}`)}
                         />
                       ))

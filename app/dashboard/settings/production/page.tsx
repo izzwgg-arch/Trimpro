@@ -14,6 +14,7 @@ import {
   buildDefaultProductionConfig,
   mergeProductionConfig,
   activeColumnStatuses,
+  jobStatusCatalog,
   jobStatusLabelFor,
   slugifyStatusValue,
   PRODUCTION_CARD_FIELDS,
@@ -184,6 +185,7 @@ export default function ProductionSettingsPage() {
       id: `col_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       displayName: 'New Column', color: '#64748b', icon: 'Circle', order,
       visible: true, showJobCount: true, defaultSort: 'lastUpdated', defaultSortDir: 'desc', statuses: [],
+      agingEnabled: false, agingDays: 7,
     }]
     return c
   })
@@ -247,6 +249,44 @@ export default function ProductionSettingsPage() {
       return c
     })
 
+  const isBuiltinStatus = (value: string) => JOB_STATUSES.some((s) => s.value === value)
+
+  const setBuiltinOverride = (value: string, patch: { label?: string; color?: string }) =>
+    update((c) => {
+      const prev = (c.builtinStatusOverrides || {})[value] || {}
+      c.builtinStatusOverrides = { ...(c.builtinStatusOverrides || {}), [value]: { ...prev, ...patch } }
+      return c
+    })
+
+  // Rename / recolor / remove any status (built-in or custom).
+  const renameStatus = (value: string, label: string) => {
+    if (isBuiltinStatus(value)) setBuiltinOverride(value, { label })
+    else updateCustomStatus(value, { label })
+  }
+
+  const recolorStatus = (value: string, color: string) => {
+    if (isBuiltinStatus(value)) setBuiltinOverride(value, { color })
+    else updateCustomStatus(value, { color })
+  }
+
+  const removeStatus = (value: string) => {
+    if (isBuiltinStatus(value)) {
+      update((c) => {
+        c.hiddenBuiltinStatuses = Array.from(new Set([...(c.hiddenBuiltinStatuses || []), value]))
+        c.columns = c.columns.map((col) => ({ ...col, statuses: col.statuses.filter((s) => s !== value) }))
+        return c
+      })
+    } else {
+      deleteCustomStatus(value)
+    }
+  }
+
+  const restoreBuiltinStatus = (value: string) =>
+    update((c) => {
+      c.hiddenBuiltinStatuses = (c.hiddenBuiltinStatuses || []).filter((v) => v !== value)
+      return c
+    })
+
   const stageColorForPreview = useMemo(() => {
     const s = config?.stages.find((x) => x.status === SAMPLE_JOB.status)
     return s?.color || '#64748b'
@@ -293,61 +333,66 @@ export default function ProductionSettingsPage() {
             <CardHeader>
               <CardTitle>Job Statuses</CardTitle>
               <CardDescription>
-                Add your own job statuses or remove ones you added. A job’s status decides which board column it
-                appears in (group statuses into columns below). Built-in statuses can’t be deleted, but you can hide
-                their column.
+                Add, rename, recolor or remove job statuses. A job’s status decides which board column it appears in
+                (group statuses into columns below). Removing a status hides it from pickers and the board — jobs still
+                keep the value and reappear if you restore it.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div>
-                <div className="mb-1 text-xs font-medium text-gray-500">Built-in statuses</div>
-                <div className="flex flex-wrap gap-1">
-                  {JOB_STATUSES.map((s) => (
-                    <span key={s.value} className="rounded bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">
-                      {s.label}
-                    </span>
-                  ))}
-                </div>
+              <div className="space-y-2">
+                {jobStatusCatalog(config).map((s) => {
+                  const builtin = isBuiltinStatus(s.value)
+                  return (
+                    <div key={s.value} className="flex items-center gap-2">
+                      <input
+                        disabled={ro}
+                        type="color"
+                        value={s.color}
+                        onChange={(e) => recolorStatus(s.value, e.target.value)}
+                        className="h-8 w-9 rounded border"
+                        aria-label={`${s.label} color`}
+                      />
+                      <Input
+                        disabled={ro}
+                        value={s.label}
+                        onChange={(e) => renameStatus(s.value, e.target.value)}
+                        className="w-56"
+                        aria-label="Status name"
+                      />
+                      <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] text-gray-400">
+                        {builtin ? 'built-in' : s.value}
+                      </span>
+                      {!ro && (
+                        <button
+                          onClick={() => removeStatus(s.value)}
+                          className="ml-auto text-gray-400 hover:text-red-600"
+                          title={builtin ? 'Remove (hide) this status' : 'Delete status'}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
 
-              <div>
-                <div className="mb-1 text-xs font-medium text-gray-500">Your custom statuses</div>
-                {config.customStatuses.length === 0 ? (
-                  <p className="text-xs text-gray-400">None yet. Add one below.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {config.customStatuses.map((s) => (
-                      <div key={s.value} className="flex items-center gap-2">
-                        <input
-                          disabled={ro}
-                          type="color"
-                          value={s.color}
-                          onChange={(e) => updateCustomStatus(s.value, { color: e.target.value })}
-                          className="h-8 w-9 rounded border"
-                          aria-label={`${s.label} color`}
-                        />
-                        <Input
-                          disabled={ro}
-                          value={s.label}
-                          onChange={(e) => updateCustomStatus(s.value, { label: e.target.value })}
-                          className="w-56"
-                          aria-label="Status name"
-                        />
-                        <span className="font-mono text-[10px] text-gray-400">{s.value}</span>
+              {config.hiddenBuiltinStatuses.length > 0 && (
+                <div className="border-t pt-3">
+                  <div className="mb-1 text-xs font-medium text-gray-500">Removed statuses</div>
+                  <div className="flex flex-wrap gap-2">
+                    {config.hiddenBuiltinStatuses.map((v) => (
+                      <span key={v} className="inline-flex items-center gap-1 rounded bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600">
+                        {JOB_STATUSES.find((s) => s.value === v)?.label || v}
                         {!ro && (
-                          <button
-                            onClick={() => deleteCustomStatus(s.value)}
-                            className="ml-auto text-gray-400 hover:text-red-600"
-                            title="Delete status"
-                          >
-                            <Trash2 className="h-4 w-4" />
+                          <button onClick={() => restoreBuiltinStatus(v)} className="text-blue-600 hover:underline" title="Restore">
+                            restore
                           </button>
                         )}
-                      </div>
+                      </span>
                     ))}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
 
               {!ro && (
                 <div className="flex items-center gap-2 border-t pt-3">
@@ -410,6 +455,30 @@ export default function ProductionSettingsPage() {
                         <select disabled={ro} value={col.defaultSortDir} onChange={(e) => setColumn(col.id, { defaultSortDir: e.target.value as 'asc' | 'desc' })} className="rounded border px-2 py-1 text-sm">
                           <option value="asc">Asc</option><option value="desc">Desc</option>
                         </select>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 rounded bg-gray-50 px-2 py-1.5 text-sm">
+                        <label className="flex items-center gap-1 font-medium text-gray-700">
+                          <input
+                            disabled={ro}
+                            type="checkbox"
+                            checked={col.agingEnabled}
+                            onChange={(e) => setColumn(col.id, { agingEnabled: e.target.checked })}
+                          />
+                          Blink stale cards red
+                        </label>
+                        <span className={`flex items-center gap-1 ${col.agingEnabled ? '' : 'opacity-50'}`}>
+                          after
+                          <Input
+                            disabled={ro || !col.agingEnabled}
+                            type="number"
+                            min={1}
+                            max={365}
+                            value={col.agingDays}
+                            onChange={(e) => setColumn(col.id, { agingDays: Math.max(1, Math.min(365, Number(e.target.value) || 1)) })}
+                            className="h-8 w-16"
+                          />
+                          days in this column
+                        </span>
                       </div>
                       <div>
                         <div className="mb-1 text-xs text-gray-500">Job Statuses in this column (click a status to move it here):</div>

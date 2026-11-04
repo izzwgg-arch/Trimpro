@@ -152,6 +152,7 @@ export async function GET(request: NextRequest) {
         scheduledStart: job.scheduledStart,
         scheduledEnd: job.scheduledEnd,
         createdAt: job.createdAt,
+        updatedAt: job.updatedAt,
         estimateAmount: job.estimateAmount != null ? job.estimateAmount.toString() : null,
         actualAmount: job.actualAmount != null ? job.actualAmount.toString() : null,
         invoiceAmount: invoiceTotal,

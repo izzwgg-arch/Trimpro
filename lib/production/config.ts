@@ -69,6 +69,9 @@ export interface ProductionColumnConfig {
   defaultSortDir: ProductionSortDir
   /** Existing Job Statuses that feed this column (never archive statuses). */
   statuses: JobStatusValue[]
+  /** Blink a card red once it has sat in this column longer than `agingDays`. */
+  agingEnabled: boolean
+  agingDays: number
 }
 
 /** The card fields an admin can show/hide/reorder. Keys are stable. */
@@ -149,6 +152,10 @@ export interface ProductionConfig {
   stages: ProductionStageConfig[]
   /** Tenant-added Job Statuses (beyond the built-in ones). */
   customStatuses: JobStatusOption[]
+  /** Built-in statuses the tenant removed (hidden from pickers and the board). */
+  hiddenBuiltinStatuses: string[]
+  /** Per built-in status: renamed label and/or custom color. */
+  builtinStatusOverrides: Record<string, { label?: string; color?: string }>
   card: ProductionCardConfig
   filters: Record<ProductionFilterKey, boolean>
   automation: Record<string, ProductionAutomationConfig>
@@ -166,19 +173,35 @@ export function slugifyStatusValue(input: string): string {
     .slice(0, 40)
 }
 
-/** Built-in statuses plus the tenant's custom ones (value/label/color), de-duplicated. */
-export function jobStatusCatalog(config?: { customStatuses?: JobStatusOption[] } | null): JobStatusOption[] {
-  const builtin: JobStatusOption[] = JOB_STATUSES.map((s) => ({
-    value: s.value,
-    label: s.label,
-    color: jobStatusHexColors[s.value] || '#64748b',
-  }))
-  const seen = new Set(builtin.map((b) => b.value))
+type BuiltinStatusOverride = { label?: string; color?: string }
+type CatalogConfig = {
+  customStatuses?: JobStatusOption[]
+  builtinStatusOverrides?: Record<string, BuiltinStatusOverride>
+  hiddenBuiltinStatuses?: string[]
+} | null
+
+/**
+ * Built-in statuses plus the tenant's custom ones (value/label/color).
+ * Built-ins can be renamed/recolored (via overrides) and removed (hidden),
+ * so this applies those overrides and drops hidden built-ins.
+ */
+export function jobStatusCatalog(config?: CatalogConfig): JobStatusOption[] {
+  const hidden = new Set(config?.hiddenBuiltinStatuses || [])
+  const overrides = config?.builtinStatusOverrides || {}
+  const builtin: JobStatusOption[] = JOB_STATUSES.filter((s) => !hidden.has(s.value)).map((s) => {
+    const o = overrides[s.value] || {}
+    return {
+      value: s.value,
+      label: typeof o.label === 'string' && o.label.trim() ? o.label.trim() : s.label,
+      color: typeof o.color === 'string' ? o.color : jobStatusHexColors[s.value] || '#64748b',
+    }
+  })
+  const seen = new Set<string>(JOB_STATUSES.map((s) => s.value))
   const extra: JobStatusOption[] = []
   for (const c of config?.customStatuses || []) {
     if (!c || typeof c.value !== 'string') continue
     const value = c.value
-    if (!STATUS_VALUE_RE.test(value) || seen.has(value)) continue
+    if (!STATUS_VALUE_RE.test(value) || extra.some((e) => e.value === value)) continue
     seen.add(value)
     extra.push({ value, label: String(c.label || value), color: typeof c.color === 'string' ? c.color : '#64748b' })
   }
@@ -190,9 +213,10 @@ export function jobStatusLabelFor(value: string, config?: { customStatuses?: Job
   return jobStatusCatalog(config).find((s) => s.value === value)?.label || String(value || '').replaceAll('_', ' ')
 }
 
-/** Active statuses that can be placed into board columns (not On Hold/archive). Includes custom statuses. */
-export function activeColumnStatuses(config?: { customStatuses?: JobStatusOption[] } | null): string[] {
-  const builtin = ALL_STATUSES.filter((s) => s !== 'ON_HOLD' && !isArchiveStatus(s))
+/** Active statuses that can be placed into board columns (not On Hold/archive/removed). Includes custom statuses. */
+export function activeColumnStatuses(config?: CatalogConfig): string[] {
+  const hidden = new Set(config?.hiddenBuiltinStatuses || [])
+  const builtin = ALL_STATUSES.filter((s) => s !== 'ON_HOLD' && !isArchiveStatus(s) && !hidden.has(s))
   const custom = (config?.customStatuses || [])
     .map((c) => c?.value)
     .filter((v): v is string => typeof v === 'string' && STATUS_VALUE_RE.test(v) && !(ALL_STATUSES as string[]).includes(v))
@@ -298,6 +322,8 @@ function buildColumnsFromStages(stages: ProductionStageConfig[], activeStatuses:
       defaultSort: s.defaultSort,
       defaultSortDir: s.defaultSortDir,
       statuses: [s.status],
+      agingEnabled: false,
+      agingDays: 7,
     }))
 }
 
@@ -327,6 +353,8 @@ function sanitizeColumns(stored: any[], fallbackStages: ProductionStageConfig[],
       defaultSort: typeof c.defaultSort === 'string' ? c.defaultSort : 'lastUpdated',
       defaultSortDir: c.defaultSortDir === 'asc' || c.defaultSortDir === 'desc' ? c.defaultSortDir : 'desc',
       statuses,
+      agingEnabled: typeof c.agingEnabled === 'boolean' ? c.agingEnabled : false,
+      agingDays: Number.isFinite(Number(c.agingDays)) ? Math.min(365, Math.max(1, Math.round(Number(c.agingDays)))) : 7,
     })
     order++
   }
@@ -337,6 +365,7 @@ function sanitizeColumns(stored: any[], fallbackStages: ProductionStageConfig[],
       id: `col_${s.status}`, displayName: s.displayName, color: s.color, icon: s.icon,
       order: order++, visible: s.visible, showJobCount: s.showJobCount,
       defaultSort: s.defaultSort, defaultSortDir: s.defaultSortDir, statuses: [s.status],
+      agingEnabled: false, agingDays: 7,
     })
     seen.add(s.status)
   }
@@ -377,7 +406,7 @@ export function buildDefaultProductionConfig(): ProductionConfig {
     overdue: true,
   }
 
-  return { version: PRODUCTION_CONFIG_VERSION, columns: buildColumnsFromStages(stages), stages, customStatuses: [], card: defaultCard(), filters, automation }
+  return { version: PRODUCTION_CONFIG_VERSION, columns: buildColumnsFromStages(stages), stages, customStatuses: [], hiddenBuiltinStatuses: [], builtinStatusOverrides: {}, card: defaultCard(), filters, automation }
 }
 
 /** A board stage synthesized from a tenant-defined custom status. */
@@ -466,7 +495,32 @@ export function mergeProductionConfig(stored: any): ProductionConfig {
     }
   })
   const stages = [...builtinStages, ...customStages].sort((a, b) => a.order - b.order)
-  const activeStatuses = activeColumnStatuses({ customStatuses })
+
+  // Removed built-in statuses (only real built-in values count).
+  const hiddenBuiltinStatuses: string[] = Array.isArray(stored.hiddenBuiltinStatuses)
+    ? Array.from(
+        new Set(
+          stored.hiddenBuiltinStatuses.filter(
+            (v: any) => typeof v === 'string' && (ALL_STATUSES as string[]).includes(v)
+          )
+        )
+      )
+    : []
+
+  // Per built-in status label/color overrides (only real built-in values).
+  const builtinStatusOverrides: Record<string, { label?: string; color?: string }> = {}
+  if (stored.builtinStatusOverrides && typeof stored.builtinStatusOverrides === 'object') {
+    for (const value of ALL_STATUSES as string[]) {
+      const o = stored.builtinStatusOverrides[value]
+      if (!o || typeof o !== 'object') continue
+      const entry: { label?: string; color?: string } = {}
+      if (typeof o.label === 'string' && o.label.trim()) entry.label = o.label.trim().slice(0, 40)
+      if (typeof o.color === 'string') entry.color = o.color
+      if (entry.label || entry.color) builtinStatusOverrides[value] = entry
+    }
+  }
+
+  const activeStatuses = activeColumnStatuses({ customStatuses, hiddenBuiltinStatuses })
 
   // Card
   const sc = stored.card && typeof stored.card === 'object' ? stored.card : {}
@@ -529,7 +583,7 @@ export function mergeProductionConfig(stored: any): ProductionConfig {
     ? sanitizeColumns(stored.columns, stages, activeStatuses)
     : buildColumnsFromStages(stages, activeStatuses)
 
-  return { version: PRODUCTION_CONFIG_VERSION, columns, stages, customStatuses, card, filters, automation }
+  return { version: PRODUCTION_CONFIG_VERSION, columns, stages, customStatuses, hiddenBuiltinStatuses, builtinStatusOverrides, card, filters, automation }
 }
 
 /** Effective production info for a status, with tenant display overrides applied. */

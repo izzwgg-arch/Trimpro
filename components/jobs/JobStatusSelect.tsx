@@ -96,9 +96,11 @@ export function JobStatusSelect({
 }
 
 export function JobStatusBadge({ status }: { status: string }) {
+  const statuses = useJobStatuses()
+  const label = statuses.find((s) => s.value === status)?.label || formatJobStatus(status)
   return (
     <span className={`px-2 py-1 text-xs rounded-full ${jobStatusColors[status] || 'bg-gray-100 text-gray-800'}`}>
-      {formatJobStatus(status)}
+      {label}
     </span>
   )
 }
