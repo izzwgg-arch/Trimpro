@@ -17,7 +17,7 @@ import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-al
 import { fetchClientPickerDetail, pickDefaultClientAddress } from '@/lib/clients/client-picker-api'
 import { useCreateContextPrefill } from '@/src/hooks/useCreateContextPrefill'
 import { refreshAccessToken } from '@/lib/auth/client'
-import { JOB_STATUSES } from '@/lib/jobs/statuses'
+import { useJobStatuses } from '@/lib/jobs/status-catalog-client'
 
 export default function NewJobPage() {
   const router = useRouter()
@@ -28,6 +28,7 @@ export default function NewJobPage() {
   const [loading, setLoading] = useState(false)
   const [clients, setClients] = useState<PickerClient[]>([])
   const [jobSitePlaceId, setJobSitePlaceId] = useState<string | null>(null)
+  const jobStatuses = useJobStatuses()
   const [formData, setFormData] = useState({
     clientId: clientIdParam || '',
     title: '',
@@ -279,7 +280,7 @@ export default function NewJobPage() {
                     <SelectValue placeholder="Select status" />
                   </SelectTrigger>
                   <SelectContent>
-                    {JOB_STATUSES.map((s) => (
+                    {jobStatuses.map((s) => (
                       <SelectItem key={s.value} value={s.value}>
                         {s.label}
                       </SelectItem>

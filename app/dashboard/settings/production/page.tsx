@@ -14,6 +14,8 @@ import {
   buildDefaultProductionConfig,
   mergeProductionConfig,
   activeColumnStatuses,
+  jobStatusLabelFor,
+  slugifyStatusValue,
   PRODUCTION_CARD_FIELDS,
   PRODUCTION_ICONS,
   type ProductionConfig,
@@ -21,8 +23,10 @@ import {
   type ProductionColumnConfig,
   type ProductionCardFieldKey,
   type ProductionSortKey,
+  type JobStatusOption,
 } from '@/lib/production/config'
-import { formatJobStatus, type JobStatusValue } from '@/lib/jobs/statuses'
+import { JOB_STATUSES } from '@/lib/jobs/statuses'
+import { invalidateJobStatuses } from '@/lib/jobs/status-catalog-client'
 import { Plus, Trash2 } from 'lucide-react'
 
 const SORT_OPTIONS: Array<{ value: ProductionSortKey; label: string }> = [
@@ -108,6 +112,7 @@ export default function ProductionSettingsPage() {
       if (!res.ok) { setError(data.error || 'Failed to save'); return }
       setConfig(mergeProductionConfig(data.config))
       setDirty(false)
+      invalidateJobStatuses()
       setNotice('Production settings saved.')
     } catch {
       setError('Failed to save settings.')
@@ -196,15 +201,51 @@ export default function ProductionSettingsPage() {
   })
 
   // Assign a status to a column (each status belongs to exactly one column).
-  const assignStatus = (columnId: string, status: JobStatusValue) => update((c) => {
+  const assignStatus = (columnId: string, status: string) => update((c) => {
     c.columns = c.columns.map((col) => {
       if (col.id === columnId) {
-        return col.statuses.includes(status) ? col : { ...col, statuses: [...col.statuses, status] }
+        return col.statuses.includes(status as any) ? col : { ...col, statuses: [...col.statuses, status as any] }
       }
       return { ...col, statuses: col.statuses.filter((s) => s !== status) }
     })
     return c
   })
+
+  // --- Custom Job Statuses (tenant-defined) ---------------------------------
+  const [newStatusLabel, setNewStatusLabel] = useState('')
+
+  const addCustomStatus = () => {
+    const label = newStatusLabel.trim()
+    const value = slugifyStatusValue(label)
+    if (!label || !value) return
+    update((c) => {
+      const taken =
+        JOB_STATUSES.some((s) => s.value === value) || (c.customStatuses || []).some((s) => s.value === value)
+      if (taken) return c
+      c.customStatuses = [...(c.customStatuses || []), { value, label, color: '#64748b' }]
+      return c
+    })
+    setNewStatusLabel('')
+  }
+
+  const updateCustomStatus = (value: string, patch: Partial<JobStatusOption>) =>
+    update((c) => {
+      c.customStatuses = (c.customStatuses || []).map((s) => (s.value === value ? { ...s, ...patch } : s))
+      c.stages = c.stages.map((st) =>
+        st.status === value
+          ? { ...st, displayName: patch.label ?? st.displayName, color: patch.color ?? st.color }
+          : st
+      )
+      return c
+    })
+
+  const deleteCustomStatus = (value: string) =>
+    update((c) => {
+      c.customStatuses = (c.customStatuses || []).filter((s) => s.value !== value)
+      c.columns = c.columns.map((col) => ({ ...col, statuses: col.statuses.filter((s) => s !== value) }))
+      c.stages = c.stages.filter((st) => st.status !== value)
+      return c
+    })
 
   const stageColorForPreview = useMemo(() => {
     const s = config?.stages.find((x) => x.status === SAMPLE_JOB.status)
@@ -247,6 +288,90 @@ export default function ProductionSettingsPage() {
 
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <div className="space-y-6">
+          {/* JOB STATUSES */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Job Statuses</CardTitle>
+              <CardDescription>
+                Add your own job statuses or remove ones you added. A job’s status decides which board column it
+                appears in (group statuses into columns below). Built-in statuses can’t be deleted, but you can hide
+                their column.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div>
+                <div className="mb-1 text-xs font-medium text-gray-500">Built-in statuses</div>
+                <div className="flex flex-wrap gap-1">
+                  {JOB_STATUSES.map((s) => (
+                    <span key={s.value} className="rounded bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">
+                      {s.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-1 text-xs font-medium text-gray-500">Your custom statuses</div>
+                {config.customStatuses.length === 0 ? (
+                  <p className="text-xs text-gray-400">None yet. Add one below.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {config.customStatuses.map((s) => (
+                      <div key={s.value} className="flex items-center gap-2">
+                        <input
+                          disabled={ro}
+                          type="color"
+                          value={s.color}
+                          onChange={(e) => updateCustomStatus(s.value, { color: e.target.value })}
+                          className="h-8 w-9 rounded border"
+                          aria-label={`${s.label} color`}
+                        />
+                        <Input
+                          disabled={ro}
+                          value={s.label}
+                          onChange={(e) => updateCustomStatus(s.value, { label: e.target.value })}
+                          className="w-56"
+                          aria-label="Status name"
+                        />
+                        <span className="font-mono text-[10px] text-gray-400">{s.value}</span>
+                        {!ro && (
+                          <button
+                            onClick={() => deleteCustomStatus(s.value)}
+                            className="ml-auto text-gray-400 hover:text-red-600"
+                            title="Delete status"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {!ro && (
+                <div className="flex items-center gap-2 border-t pt-3">
+                  <Input
+                    value={newStatusLabel}
+                    onChange={(e) => setNewStatusLabel(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        addCustomStatus()
+                      }
+                    }}
+                    placeholder="New status name (e.g. Awaiting paint)"
+                    className="w-64"
+                  />
+                  <Button variant="outline" onClick={addCustomStatus} disabled={!newStatusLabel.trim()}>
+                    <Plus className="mr-1 h-4 w-4" />
+                    Add Status
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* BOARD COLUMNS */}
           <Card>
             <CardHeader>
@@ -289,13 +414,13 @@ export default function ProductionSettingsPage() {
                       <div>
                         <div className="mb-1 text-xs text-gray-500">Job Statuses in this column (click a status to move it here):</div>
                         <div className="flex flex-wrap gap-1">
-                          {activeColumnStatuses().map((st) => {
-                            const inThis = col.statuses.includes(st)
+                          {activeColumnStatuses(config).map((st) => {
+                            const inThis = col.statuses.includes(st as any)
                             return (
                               <button key={st} disabled={ro} onClick={() => assignStatus(col.id, st)}
                                 className={`rounded px-2 py-0.5 text-[11px] font-medium ${inThis ? 'text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
                                 style={inThis ? { backgroundColor: col.color } : undefined}>
-                                {formatJobStatus(st)}
+                                {jobStatusLabelFor(st, config)}
                               </button>
                             )
                           })}
@@ -320,7 +445,7 @@ export default function ProductionSettingsPage() {
                 <div key={s.status} className="grid gap-3 rounded-lg border p-3 sm:grid-cols-3">
                   <div>
                     <Label className="text-xs text-gray-500">Status</Label>
-                    <div className="pt-1"><span className="rounded bg-gray-100 px-2 py-1 font-mono text-[11px] text-gray-600">{formatJobStatus(s.status)}</span></div>
+                    <div className="pt-1"><span className="rounded bg-gray-100 px-2 py-1 font-mono text-[11px] text-gray-600">{jobStatusLabelFor(s.status, config)}</span></div>
                   </div>
                   <div>
                     <Label className="text-xs text-gray-500">Stage label (card)</Label>
@@ -413,7 +538,7 @@ export default function ProductionSettingsPage() {
                 if (!a) return null
                 return (
                   <div key={s.status} className="flex flex-wrap items-center gap-3 rounded-md border px-3 py-2 text-sm">
-                    <span className="min-w-[120px] font-medium text-gray-700">{s.displayName} <span className="font-mono text-[10px] text-gray-400">{formatJobStatus(s.status)}</span></span>
+                    <span className="min-w-[120px] font-medium text-gray-700">{s.displayName} <span className="font-mono text-[10px] text-gray-400">{jobStatusLabelFor(s.status, config)}</span></span>
                     <label className="flex items-center gap-1"><input disabled={ro} type="checkbox" checked={a.createTask} onChange={(e) => update((c) => { c.automation[s.status] = { ...c.automation[s.status], createTask: e.target.checked }; return c })} /> Create task</label>
                     {a.createTask && <Input disabled={ro} placeholder="Task title (optional)" value={a.createTaskTitle || ''} onChange={(e) => update((c) => { c.automation[s.status] = { ...c.automation[s.status], createTaskTitle: e.target.value }; return c })} className="h-8 w-56" />}
                     <label className="flex items-center gap-1"><input disabled={ro} type="checkbox" checked={a.notifyAssignedUser} onChange={(e) => update((c) => { c.automation[s.status] = { ...c.automation[s.status], notifyAssignedUser: e.target.checked }; return c })} /> Notify assigned user</label>

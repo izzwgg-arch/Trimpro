@@ -134,20 +134,69 @@ export interface ProductionAutomationConfig {
   notifyAssignedUser: boolean
 }
 
+/** A tenant-defined Job Status added on top of the built-in ones. */
+export interface JobStatusOption {
+  value: string
+  label: string
+  color: string // hex
+}
+
 export interface ProductionConfig {
   version: number
   /** Board columns (custom groupings of statuses). */
   columns: ProductionColumnConfig[]
   /** Per-status settings: card "Stage" label + Next Action (+ On Hold/archive display). */
   stages: ProductionStageConfig[]
+  /** Tenant-added Job Statuses (beyond the built-in ones). */
+  customStatuses: JobStatusOption[]
   card: ProductionCardConfig
   filters: Record<ProductionFilterKey, boolean>
-  automation: Record<JobStatusValue, ProductionAutomationConfig>
+  automation: Record<string, ProductionAutomationConfig>
 }
 
-/** Active statuses that can be placed into board columns (not On Hold/archive). */
-export function activeColumnStatuses(): JobStatusValue[] {
-  return ALL_STATUSES.filter((s) => s !== 'ON_HOLD' && !isArchiveStatus(s))
+const STATUS_VALUE_RE = /^[A-Z0-9_]+$/
+
+/** Turn a free-text label into a stable status value (e.g. "Awaiting paint" -> "AWAITING_PAINT"). */
+export function slugifyStatusValue(input: string): string {
+  return String(input || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40)
+}
+
+/** Built-in statuses plus the tenant's custom ones (value/label/color), de-duplicated. */
+export function jobStatusCatalog(config?: { customStatuses?: JobStatusOption[] } | null): JobStatusOption[] {
+  const builtin: JobStatusOption[] = JOB_STATUSES.map((s) => ({
+    value: s.value,
+    label: s.label,
+    color: jobStatusHexColors[s.value] || '#64748b',
+  }))
+  const seen = new Set(builtin.map((b) => b.value))
+  const extra: JobStatusOption[] = []
+  for (const c of config?.customStatuses || []) {
+    if (!c || typeof c.value !== 'string') continue
+    const value = c.value
+    if (!STATUS_VALUE_RE.test(value) || seen.has(value)) continue
+    seen.add(value)
+    extra.push({ value, label: String(c.label || value), color: typeof c.color === 'string' ? c.color : '#64748b' })
+  }
+  return [...builtin, ...extra]
+}
+
+/** Display label for any status value (built-in or custom). */
+export function jobStatusLabelFor(value: string, config?: { customStatuses?: JobStatusOption[] } | null): string {
+  return jobStatusCatalog(config).find((s) => s.value === value)?.label || String(value || '').replaceAll('_', ' ')
+}
+
+/** Active statuses that can be placed into board columns (not On Hold/archive). Includes custom statuses. */
+export function activeColumnStatuses(config?: { customStatuses?: JobStatusOption[] } | null): string[] {
+  const builtin = ALL_STATUSES.filter((s) => s !== 'ON_HOLD' && !isArchiveStatus(s))
+  const custom = (config?.customStatuses || [])
+    .map((c) => c?.value)
+    .filter((v): v is string => typeof v === 'string' && STATUS_VALUE_RE.test(v) && !(ALL_STATUSES as string[]).includes(v))
+  return [...builtin, ...custom]
 }
 
 /** Card-field catalog: key → label + whether it renders by default. */
@@ -233,8 +282,8 @@ function defaultAutomation(): ProductionAutomationConfig {
 }
 
 /** Default columns: one per active status, seeded from the stage display. */
-function buildColumnsFromStages(stages: ProductionStageConfig[]): ProductionColumnConfig[] {
-  const active = activeColumnStatuses()
+function buildColumnsFromStages(stages: ProductionStageConfig[], activeStatuses: string[] = activeColumnStatuses()): ProductionColumnConfig[] {
+  const active = activeStatuses
   return stages
     .filter((s) => active.includes(s.status))
     .sort((a, b) => a.order - b.order)
@@ -257,8 +306,8 @@ function buildColumnsFromStages(stages: ProductionStageConfig[]): ProductionColu
  * to exactly one column (first wins), and append a default column for any
  * active status left uncovered so no jobs can silently vanish.
  */
-function sanitizeColumns(stored: any[], fallbackStages: ProductionStageConfig[]): ProductionColumnConfig[] {
-  const active = new Set<string>(activeColumnStatuses())
+function sanitizeColumns(stored: any[], fallbackStages: ProductionStageConfig[], activeStatuses: string[] = activeColumnStatuses()): ProductionColumnConfig[] {
+  const active = new Set<string>(activeStatuses)
   const seen = new Set<string>()
   const columns: ProductionColumnConfig[] = []
   let order = 0
@@ -328,7 +377,24 @@ export function buildDefaultProductionConfig(): ProductionConfig {
     overdue: true,
   }
 
-  return { version: PRODUCTION_CONFIG_VERSION, columns: buildColumnsFromStages(stages), stages, card: defaultCard(), filters, automation }
+  return { version: PRODUCTION_CONFIG_VERSION, columns: buildColumnsFromStages(stages), stages, customStatuses: [], card: defaultCard(), filters, automation }
+}
+
+/** A board stage synthesized from a tenant-defined custom status. */
+function stageFromCustom(opt: JobStatusOption, order: number): ProductionStageConfig {
+  return {
+    status: opt.value as JobStatusValue,
+    displayName: opt.label,
+    description: opt.label,
+    color: opt.color,
+    icon: 'Circle',
+    order,
+    visible: true,
+    showJobCount: true,
+    defaultSort: 'lastUpdated',
+    defaultSortDir: 'desc',
+    nextAction: '',
+  }
 }
 
 /**
@@ -346,7 +412,27 @@ export function mergeProductionConfig(stored: any): ProductionConfig {
   const storedByStatus = new Map<string, any>()
   for (const s of storedStages) if (s && typeof s.status === 'string') storedByStatus.set(s.status, s)
 
-  const stages = base.stages.map((def) => {
+  // Tenant-defined custom statuses (validated + de-duplicated against built-ins).
+  const customStatuses: JobStatusOption[] = (() => {
+    const raw = Array.isArray(stored.customStatuses) ? stored.customStatuses : []
+    const seen = new Set<string>(ALL_STATUSES as string[])
+    const out: JobStatusOption[] = []
+    for (const c of raw) {
+      if (!c || typeof c !== 'object') continue
+      const value = typeof c.value === 'string' ? c.value : ''
+      if (!STATUS_VALUE_RE.test(value) || seen.has(value)) continue
+      seen.add(value)
+      out.push({
+        value,
+        label: typeof c.label === 'string' && c.label.trim() ? c.label.trim().slice(0, 40) : value.replaceAll('_', ' '),
+        color: typeof c.color === 'string' ? c.color : '#64748b',
+      })
+      if (out.length >= 50) break
+    }
+    return out
+  })()
+
+  const builtinStages = base.stages.map((def) => {
     const s = storedByStatus.get(def.status)
     if (!s) return def
     return {
@@ -362,7 +448,25 @@ export function mergeProductionConfig(stored: any): ProductionConfig {
       defaultSortDir: s.defaultSortDir === 'asc' || s.defaultSortDir === 'desc' ? s.defaultSortDir : def.defaultSortDir,
       nextAction: typeof s.nextAction === 'string' ? s.nextAction : def.nextAction,
     }
-  }).sort((a, b) => a.order - b.order)
+  })
+  // Append a stage for each custom status, applying any stored overrides (label/color/order/visible).
+  const customStages = customStatuses.map((opt, i) => {
+    const s = storedByStatus.get(opt.value)
+    const base = stageFromCustom(opt, builtinStages.length + i)
+    if (!s) return base
+    return {
+      ...base,
+      displayName: typeof s.displayName === 'string' ? s.displayName : base.displayName,
+      color: typeof s.color === 'string' ? s.color : base.color,
+      icon: typeof s.icon === 'string' ? s.icon : base.icon,
+      order: Number.isFinite(s.order) ? Number(s.order) : base.order,
+      visible: typeof s.visible === 'boolean' ? s.visible : base.visible,
+      showJobCount: typeof s.showJobCount === 'boolean' ? s.showJobCount : base.showJobCount,
+      nextAction: typeof s.nextAction === 'string' ? s.nextAction : base.nextAction,
+    }
+  })
+  const stages = [...builtinStages, ...customStages].sort((a, b) => a.order - b.order)
+  const activeStatuses = activeColumnStatuses({ customStatuses })
 
   // Card
   const sc = stored.card && typeof stored.card === 'object' ? stored.card : {}
@@ -402,35 +506,35 @@ export function mergeProductionConfig(stored: any): ProductionConfig {
   }
 
   // Automation
-  const automation = { ...base.automation }
-  if (stored.automation && typeof stored.automation === 'object') {
-    for (const status of ALL_STATUSES) {
-      const a = stored.automation[status]
-      if (a && typeof a === 'object') {
-        automation[status] = {
-          moveToColumn: true,
-          updateStage: true,
-          updateNextAction: true,
-          createTask: typeof a.createTask === 'boolean' ? a.createTask : false,
-          createTaskTitle: typeof a.createTaskTitle === 'string' ? a.createTaskTitle : '',
-          notifyAssignedUser: typeof a.notifyAssignedUser === 'boolean' ? a.notifyAssignedUser : false,
-        }
+  const automation: Record<string, ProductionAutomationConfig> = { ...base.automation }
+  for (const status of [...(ALL_STATUSES as string[]), ...customStatuses.map((c) => c.value)]) {
+    const a = stored.automation && typeof stored.automation === 'object' ? stored.automation[status] : null
+    if (a && typeof a === 'object') {
+      automation[status] = {
+        moveToColumn: true,
+        updateStage: true,
+        updateNextAction: true,
+        createTask: typeof a.createTask === 'boolean' ? a.createTask : false,
+        createTaskTitle: typeof a.createTaskTitle === 'string' ? a.createTaskTitle : '',
+        notifyAssignedUser: typeof a.notifyAssignedUser === 'boolean' ? a.notifyAssignedUser : false,
       }
+    } else if (!automation[status]) {
+      automation[status] = defaultAutomation()
     }
   }
 
   // Columns: use stored columns when present (sanitized/partitioned); otherwise
   // derive one column per active stage (also migrates older v1 configs).
   const columns = Array.isArray(stored.columns) && stored.columns.length
-    ? sanitizeColumns(stored.columns, stages)
-    : buildColumnsFromStages(stages)
+    ? sanitizeColumns(stored.columns, stages, activeStatuses)
+    : buildColumnsFromStages(stages, activeStatuses)
 
-  return { version: PRODUCTION_CONFIG_VERSION, columns, stages, card, filters, automation }
+  return { version: PRODUCTION_CONFIG_VERSION, columns, stages, customStatuses, card, filters, automation }
 }
 
 /** Effective production info for a status, with tenant display overrides applied. */
-export function resolveProductionInfo(status: JobStatusValue, config: ProductionConfig) {
-  const base = PRODUCTION_STATUS_MAP[status] || PRODUCTION_STATUS_MAP.QUOTE
+export function resolveProductionInfo(status: string, config: ProductionConfig) {
+  const base = PRODUCTION_STATUS_MAP[status as JobStatusValue] || PRODUCTION_STATUS_MAP.QUOTE
   const stage = config.stages.find((s) => s.status === status)
   return {
     ...base,

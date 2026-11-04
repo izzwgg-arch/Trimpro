@@ -399,21 +399,9 @@ model Lead {
 // JOBS
 // ============================================
 
-enum JobStatus {
-  QUOTE
-  SCHEDULED
-  IN_PROGRESS
-  MEASURED
-  NEED_TO_ORDER
-  ORDERED
-  INSTALLATION_COMPLETE
-  NEED_TOUCH_UPS
-  FINISHING_COMPLETE
-  ON_HOLD
-  COMPLETED
-  CANCELLED
-  INVOICED
-}
+// Job.status is a free-form string so tenants can add/remove their own statuses
+// in Production settings. The built-in values (QUOTE, SCHEDULED, …) live in
+// lib/jobs/statuses.ts and remain the defaults.
 
 enum TimeEntrySource {
   TIMER
@@ -432,7 +420,7 @@ model Job {
   jobNumber   String    @unique
   title       String
   description String?   @db.Text
-  status      JobStatus @default(QUOTE)
+  status      String    @default("QUOTE")
   jobType     JobType? // empty until someone picks a type
   priority    Int       @default(3) // 1-5
 

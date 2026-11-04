@@ -20,7 +20,7 @@ import { Plus, Search, Filter, Briefcase, Calendar, DollarSign, Trash2, Copy, Ma
 import { useDocumentListAccess } from '@/hooks/useDocumentListAccess'
 import { CreateOnlyAccessCard } from '@/components/permissions/CreateOnlyAccessCard'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
-import { JOB_STATUSES } from '@/lib/jobs/statuses'
+import { useJobStatuses } from '@/lib/jobs/status-catalog-client'
 import { JOB_TYPES } from '@/lib/jobs/types'
 import { JobStatusSelect } from '@/components/jobs/JobStatusSelect'
 import { JobTypeBadge } from '@/components/jobs/JobTypeSelect'
@@ -138,6 +138,7 @@ export default function JobsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { permissionsLoading, canViewList, canCreate } = useDocumentListAccess('jobs.view', 'jobs.create')
+  const jobStatuses = useJobStatuses()
   const [jobs, setJobs] = useState<Job[]>([])
   const [initialLoading, setInitialLoading] = useState(true)
   const [isFetching, setIsFetching] = useState(false)
@@ -404,7 +405,7 @@ export default function JobsPage() {
                 <SelectContent>
                   <SelectItem value="all">All Status</SelectItem>
                   <SelectItem value="ACTIVE">Active</SelectItem>
-                  {JOB_STATUSES.map((s) => (
+                  {jobStatuses.map((s) => (
                     <SelectItem key={s.value} value={s.value}>
                       {s.label}
                     </SelectItem>

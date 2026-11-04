@@ -1,6 +1,5 @@
 import { z } from 'zod'
 import { normalizeEmailList, splitEmailList } from '@/lib/email'
-import { JOB_STATUS_VALUES } from '@/lib/jobs/statuses'
 import { JOB_TYPE_VALUES } from '@/lib/jobs/types'
 
 /**
@@ -92,9 +91,17 @@ export const jobAssignmentSchema = z.object({
   notes: z.string().optional().nullable(),
 })
 
+// Job status: a built-in or tenant-defined custom status value (UPPER_SNAKE).
+const jobStatusValue = z
+  .string()
+  .trim()
+  .min(1)
+  .max(40)
+  .regex(/^[A-Z0-9_]+$/, 'Invalid status')
+
 // Job status update
 export const jobStatusSchema = z.object({
-  status: z.enum(JOB_STATUS_VALUES),
+  status: jobStatusValue,
   notes: z.string().optional().nullable(),
 })
 
@@ -167,7 +174,7 @@ export const createJobSchema = z.object({
   clientId: z.string().min(1),
   title: singleLineString(z.string().min(1).max(255)),
   description: z.string().max(5000).optional().nullable(),
-  status: z.enum(JOB_STATUS_VALUES).optional(),
+  status: jobStatusValue.optional(),
   jobType: z.enum(JOB_TYPE_VALUES).optional(),
   priority: z.union([
     z.number().int().min(1).max(5),

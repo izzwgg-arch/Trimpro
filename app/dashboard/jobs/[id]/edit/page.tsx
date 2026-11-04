@@ -13,7 +13,7 @@ import { GoogleMapsLoader } from '@/components/maps/GoogleMapsLoader'
 import { PlaceAutocompleteInput } from '@/components/maps/PlaceAutocompleteInput'
 import { SearchableClientSelect } from '@/components/ui/searchable-client-select'
 import { fetchAllPickerClients, type PickerClient } from '@/lib/clients/fetch-all-picker-clients'
-import { JOB_STATUSES } from '@/lib/jobs/statuses'
+import { useJobStatuses } from '@/lib/jobs/status-catalog-client'
 import { JobTypeSelect } from '@/components/jobs/JobTypeSelect'
 
 type JobResponse = {
@@ -53,6 +53,7 @@ export default function EditJobPage() {
   const params = useParams()
   const jobId = params?.id as string | undefined
 
+  const jobStatuses = useJobStatuses()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [duplicating, setDuplicating] = useState(false)
@@ -392,7 +393,7 @@ export default function EditJobPage() {
                     <SelectValue placeholder="Select status" />
                   </SelectTrigger>
                   <SelectContent>
-                    {JOB_STATUSES.map((s) => (
+                    {jobStatuses.map((s) => (
                       <SelectItem key={s.value} value={s.value}>
                         {s.label}
                       </SelectItem>

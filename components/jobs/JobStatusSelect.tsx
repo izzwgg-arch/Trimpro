@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { JOB_STATUSES, formatJobStatus, jobStatusColors } from '@/lib/jobs/statuses'
+import { formatJobStatus, jobStatusColors } from '@/lib/jobs/statuses'
+import { useJobStatuses } from '@/lib/jobs/status-catalog-client'
 
 type JobStatusSelectProps = {
   jobId: string
@@ -21,8 +22,10 @@ export function JobStatusSelect({
   onUpdated,
 }: JobStatusSelectProps) {
   const router = useRouter()
+  const statuses = useJobStatuses()
   const [value, setValue] = useState(status)
   const [updating, setUpdating] = useState(false)
+  const labelFor = (v: string) => statuses.find((s) => s.value === v)?.label || formatJobStatus(v)
 
   useEffect(() => {
     setValue(status)
@@ -78,10 +81,10 @@ export function JobStatusSelect({
           className={`${compact ? 'h-8 min-w-[150px] max-w-[200px] text-xs' : 'h-9 min-w-[170px] max-w-[220px] text-sm'} border-0 shadow-none focus:ring-0 ${jobStatusColors[value] || 'bg-gray-100 text-gray-800'}`}
           aria-label="Job status"
         >
-          <SelectValue>{updating ? 'Saving...' : formatJobStatus(value)}</SelectValue>
+          <SelectValue>{updating ? 'Saving...' : labelFor(value)}</SelectValue>
         </SelectTrigger>
         <SelectContent>
-          {JOB_STATUSES.map((item) => (
+          {statuses.map((item) => (
             <SelectItem key={item.value} value={item.value}>
               {item.label}
             </SelectItem>
