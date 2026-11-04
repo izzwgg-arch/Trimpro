@@ -59,6 +59,16 @@ export interface PipelineStageConfig {
   defaultNextAction: string
 }
 
+/** Blink a card red once it has sat in the same stage too long. */
+export interface PipelineAgingConfig {
+  /** Off by default — must be switched on in Production settings. */
+  enabled: boolean
+  /** Blink once a card has been in its stage longer than this many days. */
+  days: number
+  /** Who sees the blink: everyone, or only the card's responsible/assigned person. */
+  audience: 'everyone' | 'assigned'
+}
+
 export interface PipelineConfig {
   estimates: { stages: PipelineStageConfig[] }
   invoices: { stages: PipelineStageConfig[] }
@@ -68,6 +78,8 @@ export interface PipelineConfig {
   holdFollowUpDays: number
   /** Which record types the All Work overview shows. */
   allWork: { jobs: boolean; estimates: boolean; invoices: boolean; tasks: boolean; requests: boolean }
+  /** Stale-card blink alert. */
+  aging: PipelineAgingConfig
 }
 
 // Stages that end the record's workflow. Holds don't apply to these, and the
@@ -123,6 +135,7 @@ export function buildDefaultPipelineConfig(): PipelineConfig {
     holdReasons: [...DEFAULT_HOLD_REASONS],
     holdFollowUpDays: 3,
     allWork: { jobs: true, estimates: true, invoices: true, tasks: true, requests: true },
+    aging: { enabled: false, days: 7, audience: 'everyone' },
   }
 }
 
@@ -169,6 +182,14 @@ export function mergePipelineConfig(stored: any): PipelineConfig {
       invoices: stored.allWork?.invoices !== false,
       tasks: stored.allWork?.tasks !== false,
       requests: stored.allWork?.requests !== false,
+    },
+    aging: {
+      enabled: stored.aging?.enabled === true,
+      days: (() => {
+        const d = Number(stored.aging?.days)
+        return Number.isFinite(d) && d >= 1 && d <= 365 ? Math.round(d) : base.aging.days
+      })(),
+      audience: stored.aging?.audience === 'assigned' ? 'assigned' : 'everyone',
     },
   }
 }

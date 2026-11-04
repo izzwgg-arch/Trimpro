@@ -163,6 +163,50 @@ export function PipelineSettingsDialog({
               </div>
             </div>
           </div>
+
+          <div className="rounded-md border p-3">
+            <label className="flex items-center gap-2 font-medium">
+              <input
+                type="checkbox"
+                checked={draft.aging.enabled}
+                onChange={(e) => setDraft((d) => ({ ...d, aging: { ...d.aging, enabled: e.target.checked } }))}
+              />
+              Blink stale cards red
+            </label>
+            <p className="mt-1 text-xs text-gray-500">
+              A card blinks red once it has sat in the same stage too long, so nothing gets forgotten.
+            </p>
+            <div className={`mt-3 grid gap-4 sm:grid-cols-2 ${draft.aging.enabled ? '' : 'pointer-events-none opacity-50'}`}>
+              <div>
+                <Label htmlFor="pl-aging-days">Blink after this many days in a stage</Label>
+                <Input
+                  id="pl-aging-days"
+                  type="number"
+                  min={1}
+                  max={365}
+                  value={draft.aging.days}
+                  onChange={(e) => setDraft((d) => ({ ...d, aging: { ...d.aging, days: Number(e.target.value) } }))}
+                  className="mt-1 w-28"
+                  disabled={!draft.aging.enabled}
+                />
+              </div>
+              <div>
+                <Label htmlFor="pl-aging-audience">Who sees the blink</Label>
+                <select
+                  id="pl-aging-audience"
+                  value={draft.aging.audience}
+                  onChange={(e) =>
+                    setDraft((d) => ({ ...d, aging: { ...d.aging, audience: e.target.value === 'assigned' ? 'assigned' : 'everyone' } }))
+                  }
+                  disabled={!draft.aging.enabled}
+                  className="mt-1 w-full rounded border px-2 py-1.5 text-sm"
+                >
+                  <option value="everyone">Everyone</option>
+                  <option value="assigned">Only the responsible person</option>
+                </select>
+              </div>
+            </div>
+          </div>
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
         </div>
 

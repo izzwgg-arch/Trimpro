@@ -3,6 +3,22 @@
 import { AlertTriangle, Briefcase, Calendar, CheckSquare, FileText, Inbox, MapPin, PauseCircle, Receipt, User } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import type { PipelineItem } from '@/lib/production/pipeline-data'
+import type { PipelineAgingConfig } from '@/lib/production/pipelines'
+
+/** Should this card blink red because it has sat in its stage too long? */
+export function isCardAging(
+  item: PipelineItem,
+  aging?: PipelineAgingConfig | null,
+  currentUserId?: string | null
+): boolean {
+  if (!aging?.enabled) return false
+  if (item.closed) return false
+  if (item.daysInStage == null || item.daysInStage <= aging.days) return false
+  if (aging.audience === 'assigned') {
+    return !!currentUserId && item.responsible?.id === currentUserId
+  }
+  return true
+}
 
 export const RECORD_TYPE_META: Record<PipelineItem['type'], { label: string; className: string; Icon: typeof Briefcase }> = {
   JOB: { label: 'Job', className: 'bg-slate-100 text-slate-700 border-slate-200', Icon: Briefcase },
@@ -45,14 +61,19 @@ export function PipelineCard({
   onOpen,
   onManage,
   onOpenRelated,
+  aging,
+  currentUserId,
 }: {
   item: PipelineItem
   onOpen: () => void
   onManage?: () => void
   onOpenRelated: (href: string) => void
+  aging?: PipelineAgingConfig | null
+  currentUserId?: string | null
 }) {
   const isInvoice = item.type === 'INVOICE'
   const overdueDue = isInvoice && item.stage === 'OVERDUE'
+  const stale = isCardAging(item, aging, currentUserId)
   return (
     <div
       role="button"
@@ -61,8 +82,11 @@ export function PipelineCard({
       onKeyDown={(e) => {
         if (e.key === 'Enter') onOpen()
       }}
-      className="cursor-pointer rounded-lg border border-l-4 bg-white p-3 shadow-sm transition-shadow hover:shadow-md"
+      className={`cursor-pointer rounded-lg border border-l-4 bg-white p-3 shadow-sm transition-shadow hover:shadow-md ${
+        stale ? 'aging-blink' : ''
+      }`}
       style={{ borderLeftColor: item.stageColor }}
+      title={stale ? `In this stage ${item.daysInStage} days` : undefined}
     >
       <div className="flex items-start justify-between gap-2">
         <span className="font-mono text-xs font-semibold text-blue-700">{item.number}</span>

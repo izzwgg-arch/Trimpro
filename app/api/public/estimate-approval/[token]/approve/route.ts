@@ -243,6 +243,13 @@ export async function POST(request: NextRequest, ctx: { params: { token: string 
       // convention as the staff-facing "convert estimate to invoice" flow
       // (app/api/invoices/route.ts), so titles/fields stay consistent.
       const depositPct = (() => {
+        // Small estimates are billed in full on approval (a single 100% invoice)
+        // instead of the partial deposit invoice.
+        const FULL_INVOICE_MAX_TOTAL = 5000
+        const estimateTotalNum = toNumber(estimate.total)
+        if (Number.isFinite(estimateTotalNum) && estimateTotalNum > 0 && estimateTotalNum <= FULL_INVOICE_MAX_TOTAL) {
+          return 100
+        }
         const raw = Number((estimate as any).depositPercent)
         // Default deposit billing is 65% when the estimate has no explicit deposit %.
         if (!Number.isFinite(raw) || raw <= 0 || raw > 100) return 65

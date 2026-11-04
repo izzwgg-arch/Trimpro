@@ -7,7 +7,8 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { StatusBoard } from '@/components/production/StatusBoard'
 import { CustomizeViewDialog } from '@/components/production/CustomizeViewDialog'
-import { PipelineCard, RecordTypeBadge, RelatedChip, daysLabel, shortDate, statusWord } from '@/components/production/PipelineCard'
+import { PipelineCard, RecordTypeBadge, RelatedChip, daysLabel, shortDate, statusWord, isCardAging } from '@/components/production/PipelineCard'
+import type { PipelineAgingConfig } from '@/lib/production/pipelines'
 import { PipelineDetailsDialog } from '@/components/production/PipelineDetailsDialog'
 import { PipelineSettingsDialog } from '@/components/production/PipelineSettingsDialog'
 import { authFetch } from '@/lib/auth/client'
@@ -62,6 +63,16 @@ export function PipelinesView({
   const [managing, setManaging] = useState<PipelineItem | null>(null)
   const [customizeOpen, setCustomizeOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+
+  // Who's looking — used when the stale-card blink is limited to the assigned person.
+  const currentUserId = useMemo(() => {
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem('user') : null
+      return raw ? (JSON.parse(raw)?.id ?? null) : null
+    } catch {
+      return null
+    }
+  }, [])
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(search), 300)
@@ -335,12 +346,12 @@ export function PipelinesView({
             emptyLabel={tab === 'estimates' ? 'No estimates' : 'No invoices'}
             columnWidth={290}
             renderCard={(it: PipelineItem) => (
-              <PipelineCard item={it} onOpen={() => onOpen(it.href)} onOpenRelated={onOpen} onManage={() => setManaging(it)} />
+              <PipelineCard item={it} onOpen={() => onOpen(it.href)} onOpenRelated={onOpen} onManage={() => setManaging(it)} aging={config.aging} currentUserId={currentUserId} />
             )}
           />
         )
       ) : (
-        <AllWorkList items={visible} onOpen={onOpen} onManage={setManaging} />
+        <AllWorkList items={visible} onOpen={onOpen} onManage={setManaging} aging={config.aging} currentUserId={currentUserId} />
       )}
 
       <PipelineDetailsDialog
@@ -389,10 +400,14 @@ function AllWorkList({
   items,
   onOpen,
   onManage,
+  aging,
+  currentUserId,
 }: {
   items: PipelineItem[]
   onOpen: (href: string) => void
   onManage: (item: PipelineItem) => void
+  aging?: PipelineAgingConfig | null
+  currentUserId?: string | null
 }) {
   const sorted = useMemo(
     () =>
@@ -427,7 +442,10 @@ function AllWorkList({
           {sorted.map((it) => (
             <li
               key={`${it.type}-${it.id}`}
-              className="grid cursor-pointer grid-cols-1 gap-1 px-4 py-3 hover:bg-gray-50 lg:grid-cols-[110px_1.3fr_1.2fr_1fr_1fr_1.3fr_90px] lg:items-center lg:gap-3"
+              className={`grid cursor-pointer grid-cols-1 gap-1 px-4 py-3 hover:bg-gray-50 lg:grid-cols-[110px_1.3fr_1.2fr_1fr_1fr_1.3fr_90px] lg:items-center lg:gap-3 ${
+                isCardAging(it, aging, currentUserId) ? 'aging-blink' : ''
+              }`}
+              title={isCardAging(it, aging, currentUserId) ? `In this stage ${it.daysInStage} days` : undefined}
               onClick={() => onOpen(it.href)}
             >
               <div className="flex flex-wrap items-center gap-2 lg:block">
