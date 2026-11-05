@@ -6,6 +6,8 @@
  * - list session restore (last opened row + scroll)
  */
 
+import { unsavedChanges } from '@/lib/navigation/unsaved'
+
 const RETURN_STACK_KEY = 'trimpro.nav.returnStack'
 const LIST_SESSION_PREFIX = 'trimpro.list.session.'
 const MAX_STACK = 40
@@ -156,7 +158,7 @@ export function openFromList(
  * Edit/new pages should pass parentHref and use mode "parent" so they
  * replace to the parent detail without consuming the return stack.
  */
-export function smartBack(
+export async function smartBack(
   router: RouterLike,
   opts: {
     fallbackHref: string
@@ -165,6 +167,16 @@ export function smartBack(
     mode?: 'default' | 'parent'
   }
 ) {
+  // Honor the unsaved-changes guard: the in-app Back button navigates with
+  // router.push/replace (not a history pop), so it bypasses the popstate guard
+  // unless we ask here. When there are no unsaved edits this resolves instantly.
+  const wasDirty = unsavedChanges.isDirty()
+  if (wasDirty) {
+    const leave = await unsavedChanges.confirmLeave()
+    if (!leave) return
+    unsavedChanges.setDirty(false)
+  }
+
   if (!canUseStorage()) {
     router.push(opts.fallbackHref)
     return
@@ -205,8 +217,10 @@ export function smartBack(
     return
   }
 
-  // Skip landing on edit/new if history would bounce there: prefer fallback when no stamp
-  if (window.history.length > 1) {
+  // Skip landing on edit/new if history would bounce there: prefer fallback when no stamp.
+  // When we just cleared unsaved edits, a sentinel history entry may still be in
+  // place, so avoid router.back() (it would land back on this page) and push instead.
+  if (window.history.length > 1 && !wasDirty) {
     router.back()
     return
   }

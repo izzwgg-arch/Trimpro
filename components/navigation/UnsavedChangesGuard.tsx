@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
-import { usePathname } from 'next/navigation'
+import { useEffect, useRef, useSyncExternalStore } from 'react'
+import { usePathname, useRouter } from 'next/navigation'
+import { unsavedChanges } from '@/lib/navigation/unsaved'
 
 /**
  * Warns before leaving a create/edit page with unsaved edits.
@@ -10,16 +11,16 @@ import { usePathname } from 'next/navigation'
  * and only after the user actually changes something — so a page the user merely
  * opened and left untouched never prompts.
  *
- * Covered exit paths (all ask "Leave without saving?"):
- *  - Closing the tab / reloading / typing a new URL  → native beforeunload.
- *  - Clicking any in-app link (sidebar, search, breadcrumbs, logo).
- *  - The browser Back/Forward button and in-page Back/Cancel (history popstate).
+ * Covered exit paths:
+ *  - In-app links (sidebar, search, breadcrumbs, logo)       → centered dialog.
+ *  - Browser Back/Forward button                             → centered dialog.
+ *  - In-app Back button / Cancel (smartBack, router.back)    → centered dialog.
+ *  - Closing the tab / reloading / typing a new URL          → native prompt
+ *    (the one case a custom dialog cannot intercept in time).
  *
  * A successful Save navigates forward via router.push, which is neither an
- * anchor click nor a history pop, so it is NOT blocked.
+ * anchor click nor a history pop, so it is never blocked.
  */
-const MESSAGE = 'You have unsaved changes on this page.\n\nLeave without saving? Your changes will be lost.'
-
 function isGuardedRoute(pathname: string | null): boolean {
   if (!pathname) return false
   return /\/new(\/|$)/.test(pathname) || /\/edit(\/|$)/.test(pathname)
@@ -27,17 +28,22 @@ function isGuardedRoute(pathname: string | null): boolean {
 
 export function UnsavedChangesGuard() {
   const pathname = usePathname()
+  const router = useRouter()
 
-  // Synchronous source of truth for the native listeners below.
-  const dirtyRef = useRef(false)
   const activeRef = useRef(false)
   // True while our extra "sentinel" history entry is in place to catch Back.
   const sentinelRef = useRef(false)
 
+  const promptOpen = useSyncExternalStore(
+    unsavedChanges.subscribe,
+    () => unsavedChanges.isPromptOpen(),
+    () => false
+  )
+
   // Every navigation lands on a fresh page: recompute arm-state, start clean.
   useEffect(() => {
     activeRef.current = isGuardedRoute(pathname)
-    dirtyRef.current = false
+    unsavedChanges.setDirty(false)
     sentinelRef.current = false
   }, [pathname])
 
@@ -45,8 +51,8 @@ export function UnsavedChangesGuard() {
   // sentinel history entry so the browser Back button becomes interceptable.
   useEffect(() => {
     const arm = () => {
-      if (dirtyRef.current) return
-      dirtyRef.current = true
+      if (unsavedChanges.isDirty()) return
+      unsavedChanges.setDirty(true)
       if (!sentinelRef.current) {
         try {
           window.history.pushState({ __unsavedGuard: true }, '', window.location.href)
@@ -60,7 +66,7 @@ export function UnsavedChangesGuard() {
 
     // Native form controls: typing, textarea, native <select>, contenteditable.
     const onEdit = (event: Event) => {
-      if (!activeRef.current || dirtyRef.current) return
+      if (!activeRef.current || unsavedChanges.isDirty()) return
       const t = event.target as HTMLElement | null
       if (!t) return
       const tag = t.tagName
@@ -74,7 +80,7 @@ export function UnsavedChangesGuard() {
     const SELECTION_SELECTOR =
       '[role="option"],[role="switch"],[role="radio"],[role="menuitemradio"],[role="menuitemcheckbox"]'
     const onSelect = (event: Event) => {
-      if (!activeRef.current || dirtyRef.current) return
+      if (!activeRef.current || unsavedChanges.isDirty()) return
       const t = event.target as HTMLElement | null
       const control = t?.closest?.(SELECTION_SELECTOR) as HTMLElement | null
       if (control && inContent(control)) arm()
@@ -90,10 +96,10 @@ export function UnsavedChangesGuard() {
     }
   }, [])
 
-  // Tab close / reload / external URL — native browser prompt.
+  // Tab close / reload / external URL — native browser prompt (unavoidable).
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!dirtyRef.current) return
+      if (!unsavedChanges.isDirty()) return
       event.preventDefault()
       event.returnValue = ''
     }
@@ -104,7 +110,7 @@ export function UnsavedChangesGuard() {
   // In-app link clicks (capture phase, before Next's own Link handler).
   useEffect(() => {
     const onClick = (event: MouseEvent) => {
-      if (!dirtyRef.current) return
+      if (!unsavedChanges.isDirty()) return
       if (event.defaultPrevented || event.button !== 0) return
       if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
 
@@ -128,41 +134,79 @@ export function UnsavedChangesGuard() {
       const current = `${window.location.pathname}${window.location.search}`
       if (next === current) return
 
-      if (window.confirm(MESSAGE)) {
-        dirtyRef.current = false // allow the navigation to proceed
-      } else {
-        event.preventDefault()
-        event.stopPropagation()
-      }
+      // Hold the navigation and ask with our dialog.
+      event.preventDefault()
+      event.stopPropagation()
+      void unsavedChanges.confirmLeave().then((leave) => {
+        if (leave) {
+          unsavedChanges.setDirty(false)
+          router.push(next)
+        }
+      })
     }
     document.addEventListener('click', onClick, true)
     return () => document.removeEventListener('click', onClick, true)
-  }, [])
+  }, [router])
 
-  // Browser/in-page Back & Forward. The sentinel entry we pushed on arming is
-  // what gets popped here, so the URL has not really changed yet when we ask.
+  // Browser/in-page Back & Forward. The sentinel we pushed on arming is what
+  // gets popped here, so the page is still shown (same URL) while we ask.
   useEffect(() => {
     const onPopState = () => {
-      if (!dirtyRef.current) {
+      if (!unsavedChanges.isDirty()) {
         sentinelRef.current = false
         return
       }
-      if (window.confirm(MESSAGE)) {
-        // Leave: drop the guard and go back one more (past the edit page).
-        dirtyRef.current = false
-        sentinelRef.current = false
-        window.history.back()
-      } else {
-        // Stay: re-arm the sentinel so the next Back is caught too.
-        try {
-          window.history.pushState({ __unsavedGuard: true }, '', window.location.href)
-          sentinelRef.current = true
-        } catch {}
-      }
+      sentinelRef.current = false
+      void unsavedChanges.confirmLeave().then((leave) => {
+        if (leave) {
+          unsavedChanges.setDirty(false)
+          window.history.back()
+        } else {
+          // Stay: re-arm the sentinel so the next Back is caught too.
+          try {
+            window.history.pushState({ __unsavedGuard: true }, '', window.location.href)
+            sentinelRef.current = true
+          } catch {}
+        }
+      })
     }
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
   }, [])
 
-  return null
+  if (!promptOpen) return null
+
+  return (
+    <div
+      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="unsaved-title"
+    >
+      <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl text-center">
+        <h2 id="unsaved-title" className="text-xl font-bold text-gray-900">
+          Leave without saving?
+        </h2>
+        <p className="mt-2 text-sm text-gray-600">
+          You have unsaved changes on this page. If you leave now they will be lost.
+        </p>
+        <div className="mt-6 flex items-center justify-center gap-3">
+          <button
+            type="button"
+            onClick={() => unsavedChanges.resolvePrompt(false)}
+            className="rounded-md bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+          >
+            Stay on page
+          </button>
+          <button
+            type="button"
+            onClick={() => unsavedChanges.resolvePrompt(true)}
+            className="rounded-md border border-gray-300 px-5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Leave without saving
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
