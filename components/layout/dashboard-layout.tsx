@@ -9,6 +9,7 @@ import { QboSyncFailureNotifier } from '@/components/qbo/QboSyncFailureNotifier'
 import { GlobalSearch } from '@/components/search/GlobalSearch'
 import { RoutePermissionGuard } from '@/components/permissions/RoutePermissionGuard'
 import { DashboardNavCapture } from '@/components/navigation/DashboardNavCapture'
+import { UnsavedChangesGuard } from '@/components/navigation/UnsavedChangesGuard'
 import { IncomingCallWatcher } from '@/components/video-call/IncomingCallWatcher'
 import { IdleLogoutWatcher } from '@/components/session/IdleLogoutWatcher'
 import { keepSessionFresh } from '@/lib/auth/client'
@@ -71,6 +72,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-full min-h-screen bg-gray-100">
       <DashboardNavCapture />
+      <UnsavedChangesGuard />
       <IdleLogoutWatcher />
       <IncomingCallWatcher />
       {isAdmin && <QboSyncFailureNotifier />}
