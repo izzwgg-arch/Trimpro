@@ -60,6 +60,7 @@ export async function POST(request: NextRequest) {
     token,
     pendingConfirmations: [],
     images: [],
+    navigation: null,
   }
 
   try {

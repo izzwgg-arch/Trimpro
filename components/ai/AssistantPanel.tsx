@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Sparkles, Send, X, Loader2, Mail, Check, AlertCircle } from 'lucide-react'
 import { authFetch } from '@/lib/auth/client'
 
@@ -23,12 +24,14 @@ type Bubble = {
 }
 
 const EXAMPLES = [
+  'Open the production board',
   'Look up the customer John Smith',
   'Create an estimate for 40ft of oak railing at $95/ft',
   'Generate a concept image of a modern cable railing on a deck',
 ]
 
 export function AssistantPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const router = useRouter()
   // `thread` is the raw Anthropic message history we resend each turn for context.
   const [thread, setThread] = useState<any[]>([])
   const [bubbles, setBubbles] = useState<Bubble[]>([])
@@ -74,6 +77,11 @@ export function AssistantPanel({ open, onClose }: { open: boolean; onClose: () =
           confirmations: data.pendingConfirmations,
         },
       ])
+      // If the assistant opened a screen, navigate and close the panel.
+      if (data.navigation?.path) {
+        router.push(data.navigation.path)
+        setTimeout(() => onClose(), 150)
+      }
     } catch {
       setBubbles((b) => [...b, { role: 'assistant', text: 'Network error. Please try again.' }])
     } finally {
@@ -110,7 +118,7 @@ export function AssistantPanel({ open, onClose }: { open: boolean; onClose: () =
           </div>
           <div className="flex-1">
             <div className="text-sm font-semibold text-gray-900">Trimpro Assistant</div>
-            <div className="text-[11px] text-gray-500">Looks up customers, drafts estimates, schedules jobs</div>
+            <div className="text-[11px] text-gray-500">Opens screens, looks up customers, drafts estimates, schedules jobs</div>
           </div>
           <button
             onClick={onClose}

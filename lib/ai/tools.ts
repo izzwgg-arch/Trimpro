@@ -24,11 +24,46 @@ export interface GeneratedImage {
   prompt: string
 }
 
+export interface Navigation {
+  path: string
+  label: string
+}
+
 export interface ToolContext {
   baseUrl: string
   token: string
   pendingConfirmations: PendingConfirmation[]
   images: GeneratedImage[]
+  navigation: Navigation | null
+}
+
+/** Main app sections the assistant can open. Keep paths in sync with the sidebar. */
+const SECTION_PATHS: Record<string, { path: string; label: string }> = {
+  dashboard: { path: '/dashboard', label: 'Dashboard' },
+  production: { path: '/dashboard/production', label: 'Production' },
+  estimates: { path: '/dashboard/estimates', label: 'Estimates' },
+  invoices: { path: '/dashboard/invoices', label: 'Invoices' },
+  credit_memos: { path: '/dashboard/credit-memos', label: 'Credit Memos' },
+  jobs: { path: '/dashboard/jobs', label: 'Jobs' },
+  clients: { path: '/dashboard/clients', label: 'Customers' },
+  schedule: { path: '/dashboard/schedule', label: 'Schedule' },
+  requests: { path: '/dashboard/requests', label: 'Requests' },
+  tasks: { path: '/dashboard/tasks', label: 'Tasks' },
+  purchase_orders: { path: '/dashboard/purchase-orders', label: 'Purchase Orders' },
+  vendors: { path: '/dashboard/vendors', label: 'Vendors' },
+  items: { path: '/dashboard/items', label: 'Items' },
+  issues: { path: '/dashboard/issues', label: 'Issues' },
+  teams: { path: '/dashboard/teams', label: 'Teams' },
+  messages: { path: '/dashboard/messages', label: 'Messages' },
+  settings: { path: '/dashboard/settings', label: 'Settings' },
+}
+
+const RECORD_PATHS: Record<string, (id: string) => string> = {
+  estimate: (id) => `/dashboard/estimates/${id}`,
+  invoice: (id) => `/dashboard/invoices/${id}`,
+  job: (id) => `/dashboard/jobs/${id}`,
+  client: (id) => `/dashboard/clients/${id}`,
+  purchase_order: (id) => `/dashboard/purchase-orders/${id}`,
 }
 
 type ToolResult = { content: string; isError?: boolean }
@@ -156,6 +191,27 @@ export const TOOL_DEFS: Anthropic.Tool[] = [
         prompt: { type: 'string', description: 'What to depict.' },
       },
       required: ['prompt'],
+    },
+  },
+  {
+    name: 'navigate',
+    description:
+      "Open a screen in the app for the user. Either pass a `section` to open a main screen (e.g. production, estimates, jobs, customers, schedule), OR pass recordType + recordId to open a specific record's page (e.g. an estimate or job you just created or looked up). The app navigates immediately. Use this when the user asks to open, go to, show, or pull up a screen or record.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        section: {
+          type: 'string',
+          enum: Object.keys(SECTION_PATHS),
+          description: 'The main screen to open.',
+        },
+        recordType: {
+          type: 'string',
+          enum: Object.keys(RECORD_PATHS),
+          description: 'Open a specific record of this type (requires recordId).',
+        },
+        recordId: { type: 'string', description: 'The id of the record to open.' },
+      },
     },
   },
 ]
@@ -340,6 +396,40 @@ export async function executeTool(
             note: 'The image is displayed to the user in the panel.',
           }),
         }
+      }
+
+      case 'navigate': {
+        const recordType = input.recordType ? String(input.recordType) : ''
+        const recordId = input.recordId ? String(input.recordId) : ''
+        const section = input.section ? String(input.section) : ''
+
+        if (recordType && recordId) {
+          const builder = RECORD_PATHS[recordType]
+          if (!builder) {
+            return {
+              content: JSON.stringify({ error: 'unknown_record_type', recordType }),
+              isError: true,
+            }
+          }
+          const path = builder(encodeURIComponent(recordId))
+          const label = `${recordType} ${recordId}`
+          ctx.navigation = { path, label }
+          return { content: JSON.stringify({ navigated: true, path, note: 'The app is opening this page now.' }) }
+        }
+
+        const dest = SECTION_PATHS[section]
+        if (!dest) {
+          return {
+            content: JSON.stringify({
+              error: 'unknown_section',
+              message: 'Provide a known section, or recordType + recordId.',
+              availableSections: Object.keys(SECTION_PATHS),
+            }),
+            isError: true,
+          }
+        }
+        ctx.navigation = { path: dest.path, label: dest.label }
+        return { content: JSON.stringify({ navigated: true, path: dest.path, section: dest.label, note: 'The app is opening this screen now.' }) }
       }
 
       default:

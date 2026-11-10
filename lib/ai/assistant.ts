@@ -1,6 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { getAnthropic, ANTHROPIC_MODEL } from './config'
-import { TOOL_DEFS, executeTool, type ToolContext, type PendingConfirmation, type GeneratedImage } from './tools'
+import { TOOL_DEFS, executeTool, type ToolContext, type PendingConfirmation, type GeneratedImage, type Navigation } from './tools'
 
 const SYSTEM_PROMPT = `You are the Trimpro Assistant, an AI helper inside the Trimpro field-service app for a trim-carpentry / railings / closets business. You help office staff get things done by using tools.
 
@@ -10,6 +10,7 @@ What you can do via tools:
 - prepare_send_estimate: prepare to send an estimate — this only queues a confirmation; the user must click Send.
 - schedule_job: set a job's scheduled date/time.
 - generate_image: make a concept/marketing image to show a customer.
+- navigate: open a screen in the app for the user (a main section like production, estimates, jobs, customers, schedule — or a specific record you have the id for). Use it whenever the user asks to open, go to, show, or pull up a screen or record. "Customers" is the clients screen.
 
 Rules:
 - To create or send an estimate you need the customer's clientId — call find_customer first if you only have a name. If several customers match, ask the user which one.
@@ -25,6 +26,7 @@ export interface AssistantResult {
   reply: string
   pendingConfirmations: PendingConfirmation[]
   images: GeneratedImage[]
+  navigation: Navigation | null
 }
 
 const MAX_ITERATIONS = 8
@@ -109,5 +111,6 @@ export async function runAssistant(
     reply: lastAssistantText(clean) || "Sorry — I couldn't complete that. Please try rephrasing.",
     pendingConfirmations: ctx.pendingConfirmations,
     images: ctx.images,
+    navigation: ctx.navigation,
   }
 }
