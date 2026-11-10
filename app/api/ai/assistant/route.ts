@@ -55,8 +55,15 @@ export async function POST(request: NextRequest) {
   const token = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
   if (!token) return NextResponse.json({ error: 'Missing bearer token' }, { status: 401 })
 
+  // The tool layer calls Trimpro's own routes server-to-server. Go straight to
+  // loopback rather than new URL(request.url).origin: behind a proxy that origin
+  // is the public HTTPS host, which the server often can't call back into
+  // (DNS/SSL/proxy loop) — causing "connection error" in production.
+  const internalBaseUrl =
+    process.env.AI_INTERNAL_BASE_URL || `http://127.0.0.1:${process.env.PORT || 3000}`
+
   const ctx: ToolContext = {
-    baseUrl: new URL(request.url).origin,
+    baseUrl: internalBaseUrl,
     token,
     pendingConfirmations: [],
     images: [],
