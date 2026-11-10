@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { Sparkles, Send, X, Loader2, Mail, Check, AlertCircle } from 'lucide-react'
+import { useRouter, usePathname } from 'next/navigation'
+import { Sparkles, Send, X, Loader2, Mail, Check, AlertCircle, ImagePlus } from 'lucide-react'
 import { authFetch } from '@/lib/auth/client'
 
 interface PendingConfirmation {
@@ -16,10 +16,18 @@ interface GeneratedImage {
   url: string
   prompt: string
 }
+/** A photo the user attached to a message (held client-side as a data URL + raw base64). */
+interface Attachment {
+  dataUrl: string
+  base64: string
+  mediaType: string
+  name: string
+}
 type Bubble = {
   role: 'user' | 'assistant'
   text: string
   images?: GeneratedImage[]
+  attachments?: string[] // data URLs, for display on the user's own bubble
   confirmations?: PendingConfirmation[]
 }
 
@@ -27,35 +35,114 @@ const EXAMPLES = [
   'Open the production board',
   'Look up the customer John Smith',
   'Create an estimate for 40ft of oak railing at $95/ft',
-  'Generate a concept image of a modern cable railing on a deck',
+  'Attach a photo of a supplier quote and say "add these to this estimate"',
 ]
+
+const MAX_IMAGE_DIM = 1536
+
+/** Downscale a picked image and return its base64 (JPEG) so payloads/token use stay reasonable. */
+async function fileToAttachment(file: File): Promise<Attachment> {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const el = new Image()
+    el.onload = () => resolve(el)
+    el.onerror = reject
+    el.src = dataUrl
+  })
+  let { width, height } = img
+  if (width > MAX_IMAGE_DIM || height > MAX_IMAGE_DIM) {
+    const scale = MAX_IMAGE_DIM / Math.max(width, height)
+    width = Math.round(width * scale)
+    height = Math.round(height * scale)
+  }
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')
+  let outUrl = dataUrl
+  if (ctx) {
+    ctx.drawImage(img, 0, 0, width, height)
+    outUrl = canvas.toDataURL('image/jpeg', 0.85)
+  }
+  const base64 = outUrl.includes(',') ? outUrl.split(',')[1] : outUrl
+  const mediaType = outUrl.startsWith('data:') ? outUrl.slice(5, outUrl.indexOf(';')) : 'image/jpeg'
+  return { dataUrl: outUrl, base64, mediaType, name: file.name }
+}
+
+/** Figure out whether the user is currently viewing a specific estimate or invoice. */
+function openRecordContext(pathname: string | null): { openEstimateId?: string; openInvoiceId?: string } {
+  if (!pathname) return {}
+  const seg = pathname.split('/').filter(Boolean) // ['dashboard','estimates','<id>']
+  if (seg[0] !== 'dashboard' || !seg[2] || seg[2] === 'new') return {}
+  if (seg[1] === 'estimates') return { openEstimateId: seg[2] }
+  if (seg[1] === 'invoices') return { openInvoiceId: seg[2] }
+  return {}
+}
 
 export function AssistantPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const router = useRouter()
+  const pathname = usePathname()
   // `thread` is the raw Anthropic message history we resend each turn for context.
   const [thread, setThread] = useState<any[]>([])
   const [bubbles, setBubbles] = useState<Bubble[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [attachments, setAttachments] = useState<Attachment[]>([])
+  const [attaching, setAttaching] = useState(false)
   const [sendState, setSendState] = useState<Record<string, 'sending' | 'sent' | 'error'>>({})
   const scrollRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [bubbles, loading])
 
+  const onPickFiles = async (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return
+    setAttaching(true)
+    try {
+      const picked = Array.from(fileList).filter((f) => f.type.startsWith('image/')).slice(0, 4)
+      const mapped = await Promise.all(picked.map((f) => fileToAttachment(f)))
+      setAttachments((a) => [...a, ...mapped].slice(0, 4))
+    } catch {
+      /* ignore bad files */
+    } finally {
+      setAttaching(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
   const send = async (presetText?: string) => {
     const text = (presetText ?? input).trim()
-    if (!text || loading) return
+    const imgs = attachments
+    if ((!text && imgs.length === 0) || loading) return
     setInput('')
-    setBubbles((b) => [...b, { role: 'user', text }])
+    setAttachments([])
+    setBubbles((b) => [...b, { role: 'user', text, attachments: imgs.map((a) => a.dataUrl) }])
     setLoading(true)
-    const nextThread = [...thread, { role: 'user', content: text }]
+
+    // Build this turn's content: plain string when no images, else text + image blocks.
+    const content: any =
+      imgs.length === 0
+        ? text
+        : [
+            ...(text ? [{ type: 'text', text }] : []),
+            ...imgs.map((a) => ({
+              type: 'image',
+              source: { type: 'base64', media_type: a.mediaType, data: a.base64 },
+            })),
+          ]
+    const nextThread = [...thread, { role: 'user', content }]
     try {
       const res = await authFetch('/api/ai/assistant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: nextThread }),
+        body: JSON.stringify({ messages: nextThread, context: openRecordContext(pathname) }),
       })
       if (res.status === 503) {
         const j = await res.json().catch(() => ({}))
@@ -118,7 +205,7 @@ export function AssistantPanel({ open, onClose }: { open: boolean; onClose: () =
           </div>
           <div className="flex-1">
             <div className="text-sm font-semibold text-gray-900">Trimpro Assistant</div>
-            <div className="text-[11px] text-gray-500">Opens screens, looks up customers, drafts estimates, schedules jobs</div>
+            <div className="text-[11px] text-gray-500">Reads photos, drafts & adds to estimates/invoices, looks up customers, opens screens</div>
           </div>
           <button
             onClick={onClose}
@@ -161,7 +248,21 @@ export function AssistantPanel({ open, onClose }: { open: boolean; onClose: () =
                     : 'rounded-bl-md border border-gray-200 bg-white text-gray-800'
                 }`}
               >
-                <div className="whitespace-pre-wrap break-words">{b.text}</div>
+                {b.text && <div className="whitespace-pre-wrap break-words">{b.text}</div>}
+
+                {b.attachments && b.attachments.length > 0 && (
+                  <div className={`flex flex-wrap gap-1.5 ${b.text ? 'mt-2' : ''}`}>
+                    {b.attachments.map((src, k) => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        key={k}
+                        src={src}
+                        alt="attachment"
+                        className="h-20 w-20 rounded-lg border border-white/30 object-cover"
+                      />
+                    ))}
+                  </div>
+                )}
 
                 {b.images?.map((img, k) => (
                   <figure key={k} className="mt-2">
@@ -223,7 +324,49 @@ export function AssistantPanel({ open, onClose }: { open: boolean; onClose: () =
 
         {/* Composer */}
         <div className="border-t border-gray-200 bg-white p-3">
+          {/* Pending photo attachments */}
+          {(attachments.length > 0 || attaching) && (
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              {attachments.map((a, i) => (
+                <div key={i} className="relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={a.dataUrl} alt={a.name} className="h-14 w-14 rounded-lg border border-gray-200 object-cover" />
+                  <button
+                    onClick={() => setAttachments((arr) => arr.filter((_, k) => k !== i))}
+                    className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-gray-700 text-white hover:bg-gray-900"
+                    aria-label="Remove photo"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+              {attaching && (
+                <div className="flex h-14 w-14 items-center justify-center rounded-lg border border-dashed border-gray-300 text-gray-400">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                </div>
+              )}
+            </div>
+          )}
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(e) => void onPickFiles(e.target.files)}
+          />
+
           <div className="flex items-end gap-2">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={loading || attachments.length >= 4}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-300 text-gray-500 hover:bg-gray-50 hover:text-indigo-600 disabled:opacity-50"
+              aria-label="Attach a photo"
+              title="Attach a photo"
+            >
+              <ImagePlus className="h-4 w-4" />
+            </button>
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -234,12 +377,12 @@ export function AssistantPanel({ open, onClose }: { open: boolean; onClose: () =
                 }
               }}
               rows={1}
-              placeholder="Ask the assistant…"
+              placeholder="Ask the assistant, or attach a photo…"
               className="max-h-32 flex-1 resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
             <button
               onClick={() => void send()}
-              disabled={loading || !input.trim()}
+              disabled={loading || (!input.trim() && attachments.length === 0)}
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
               aria-label="Send"
             >
@@ -247,7 +390,7 @@ export function AssistantPanel({ open, onClose }: { open: boolean; onClose: () =
             </button>
           </div>
           <p className="mt-1.5 px-1 text-[10px] text-gray-400">
-            The assistant can act on your behalf within your Trimpro permissions. It won’t send anything to a customer without your confirmation.
+            Attach a photo (a quote, a parts list, a sketch) and tell me what to add. I act within your Trimpro permissions and won’t send anything to a customer without your confirmation.
           </p>
         </div>
       </div>

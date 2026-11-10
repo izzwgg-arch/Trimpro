@@ -107,6 +107,94 @@ function permissionError(status: number, json: any): ToolResult | null {
   return null
 }
 
+/**
+ * The estimate/invoice PUT routes REPLACE the whole line-item list. To *append*
+ * items we must re-send every existing line (preserving its fields, group and
+ * customer-visibility flags) and add the new ones at the end. These helpers map
+ * a GET response's line items back into the shape the PUT route expects, and
+ * rebuild the `groups` array so existing grouped/subtotal rows survive untouched.
+ */
+function mapExistingLineItems(items: any[]): any[] {
+  return (items || []).map((it: any) => ({
+    description: it.description,
+    quantity: it.quantity,
+    unitPrice: it.unitPrice,
+    unitCost: it.unitCost ?? null,
+    isSubtotal: Boolean(it.isSubtotal),
+    isVisibleToClient: it.isVisibleToClient,
+    showDescriptionToCustomer: it.showDescriptionToCustomer,
+    showCostToCustomer: it.showCostToCustomer,
+    showPriceToCustomer: it.showPriceToCustomer,
+    showTaxToCustomer: it.showTaxToCustomer,
+    showNotesToCustomer: it.showNotesToCustomer,
+    vendorId: it.vendorId ?? null,
+    taxable: it.taxable,
+    taxRate: it.taxRate ?? null,
+    notes: it.notes ?? null,
+    groupId: it.groupId ?? null,
+    sourceItemId: it.sourceItemId ?? null,
+    sourceBundleId: it.sourceBundleId ?? null,
+    // Invoice-only fields; harmless/ignored on estimates.
+    estimateLineTotal: it.estimateLineTotal ?? null,
+    sourceEstimateLineItemId: it.sourceEstimateLineItemId ?? null,
+  }))
+}
+
+/** Optional (customer-choice) items are also wiped by the PUT, so re-send them verbatim. */
+function mapExistingOptionalItems(items: any[]): any[] {
+  return (items || []).map((it: any) => ({
+    description: it.description,
+    quantity: it.quantity,
+    unitPrice: it.unitPrice,
+    unitCost: it.unitCost ?? null,
+    isVisibleToClient: it.isVisibleToClient,
+    showDescriptionToCustomer: it.showDescriptionToCustomer,
+    showCostToCustomer: it.showCostToCustomer,
+    showPriceToCustomer: it.showPriceToCustomer,
+    showTaxToCustomer: it.showTaxToCustomer,
+    showNotesToCustomer: it.showNotesToCustomer,
+    vendorId: it.vendorId ?? null,
+    taxable: it.taxable,
+    taxRate: it.taxRate ?? null,
+    notes: it.notes ?? null,
+    groupId: it.groupId ?? null,
+    sourceItemId: it.sourceItemId ?? null,
+    sourceBundleId: it.sourceBundleId ?? null,
+  }))
+}
+
+function reconstructGroups(items: any[], optionalItems: any[] = []): any[] {
+  const seen = new Map<string, any>()
+  for (const it of [...(items || []), ...(optionalItems || [])]) {
+    if (it.groupId && it.group && !seen.has(it.groupId)) {
+      seen.set(it.groupId, {
+        groupId: it.groupId,
+        name: it.group.name,
+        sourceBundleId: it.group.sourceBundleId ?? null,
+        customerDescription: it.group.customerDescription ?? null,
+        customerTotal: it.group.customerTotal ?? null,
+        customerEdited: Boolean(it.group.customerEdited),
+      })
+    }
+  }
+  return Array.from(seen.values())
+}
+
+function normalizeNewItems(raw: unknown): any[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map((li: any) => {
+    const item: any = {
+      description: String(li?.description ?? ''),
+      quantity: Number(li?.quantity ?? 0),
+      unitPrice: Number(li?.unitPrice ?? 0),
+    }
+    if (li?.taxable != null) item.taxable = Boolean(li.taxable)
+    if (li?.unitCost != null) item.unitCost = Number(li.unitCost)
+    if (li?.notes) item.notes = String(li.notes)
+    return item
+  })
+}
+
 export const TOOL_DEFS: Anthropic.Tool[] = [
   {
     name: 'find_customer',
@@ -148,6 +236,60 @@ export const TOOL_DEFS: Anthropic.Tool[] = [
         notes: { type: 'string', description: 'Optional internal notes.' },
       },
       required: ['clientId', 'title', 'lineItems'],
+    },
+  },
+  {
+    name: 'add_estimate_items',
+    description:
+      "Append one or more line items to an EXISTING estimate (does not create a new one). Use this when the user wants to add items to an estimate they already have — for example items you read from an attached photo (a supplier quote, a handwritten list, a product label). Existing line items, groups and totals are preserved; the new items are added at the end and totals recalculated. You need the estimateId (the one the user currently has open is provided in context, or use find_customer/navigation context).",
+    input_schema: {
+      type: 'object',
+      properties: {
+        estimateId: { type: 'string', description: 'The id of the existing estimate to add items to.' },
+        lineItems: {
+          type: 'array',
+          description: 'The line items to append.',
+          items: {
+            type: 'object',
+            properties: {
+              description: { type: 'string' },
+              quantity: { type: 'number' },
+              unitPrice: { type: 'number', description: 'Price per unit, in dollars.' },
+              taxable: { type: 'boolean', description: 'Optional. Defaults to taxable.' },
+              notes: { type: 'string', description: 'Optional internal note for the line.' },
+            },
+            required: ['description', 'quantity', 'unitPrice'],
+          },
+        },
+      },
+      required: ['estimateId', 'lineItems'],
+    },
+  },
+  {
+    name: 'add_invoice_items',
+    description:
+      "Append one or more line items to an EXISTING invoice. Use this when the user wants to add items to an invoice they already have — for example items you read from an attached photo. Existing line items, groups and totals are preserved; the new items are added at the end and totals recalculated. Paid invoices cannot be edited. You need the invoiceId (the one the user currently has open is provided in context).",
+    input_schema: {
+      type: 'object',
+      properties: {
+        invoiceId: { type: 'string', description: 'The id of the existing invoice to add items to.' },
+        lineItems: {
+          type: 'array',
+          description: 'The line items to append.',
+          items: {
+            type: 'object',
+            properties: {
+              description: { type: 'string' },
+              quantity: { type: 'number' },
+              unitPrice: { type: 'number', description: 'Price per unit, in dollars.' },
+              taxable: { type: 'boolean', description: 'Optional. Defaults to taxable.' },
+              notes: { type: 'string', description: 'Optional internal note for the line.' },
+            },
+            required: ['description', 'quantity', 'unitPrice'],
+          },
+        },
+      },
+      required: ['invoiceId', 'lineItems'],
     },
   },
   {
@@ -279,6 +421,101 @@ export async function executeTool(
             estimateNumber: est.estimateNumber ?? null,
             total: est.total != null ? String(est.total) : null,
             status: est.status ?? 'DRAFT',
+          }),
+        }
+      }
+
+      case 'add_estimate_items': {
+        const estimateId = String(input.estimateId ?? '').trim()
+        if (!estimateId) return { content: JSON.stringify({ error: 'estimateId is required' }), isError: true }
+        const newItems = normalizeNewItems(input.lineItems)
+        if (newItems.length === 0) {
+          return { content: JSON.stringify({ error: 'lineItems is required and must not be empty' }), isError: true }
+        }
+        // Fetch current estimate so we can re-send all lines + append.
+        const get = await api(ctx, 'GET', `/api/estimates/${encodeURIComponent(estimateId)}`)
+        const permErr = permissionError(get.status, get.json)
+        if (permErr) return permErr
+        if (!get.ok || !get.json?.estimate) {
+          return { content: JSON.stringify({ error: 'estimate_not_found', status: get.status }), isError: true }
+        }
+        const est = get.json.estimate
+        const existingItems = Array.isArray(est.lineItems) ? est.lineItems : []
+        const existingOptional = Array.isArray(est.optionalItems) ? est.optionalItems : []
+        const body = {
+          lineItems: [...mapExistingLineItems(existingItems), ...newItems],
+          optionalItems: mapExistingOptionalItems(existingOptional),
+          groups: reconstructGroups(existingItems, existingOptional),
+        }
+        const put = await api(ctx, 'PUT', `/api/estimates/${encodeURIComponent(estimateId)}`, body)
+        const putPermErr = permissionError(put.status, put.json)
+        if (putPermErr) return putPermErr
+        if (!put.ok) {
+          return {
+            content: JSON.stringify({ error: 'add_items_failed', status: put.status, detail: put.json?.error ?? null }),
+            isError: true,
+          }
+        }
+        const updated = put.json?.estimate ?? {}
+        return {
+          content: JSON.stringify({
+            added: true,
+            estimateId,
+            estimateNumber: updated.estimateNumber ?? est.estimateNumber ?? null,
+            itemsAdded: newItems.length,
+            newTotal: updated.total != null ? String(updated.total) : null,
+            note: 'Items were added to the estimate. Tell the user what you added and the new total. Offer to open the estimate (navigate recordType=estimate).',
+          }),
+        }
+      }
+
+      case 'add_invoice_items': {
+        const invoiceId = String(input.invoiceId ?? '').trim()
+        if (!invoiceId) return { content: JSON.stringify({ error: 'invoiceId is required' }), isError: true }
+        const newItems = normalizeNewItems(input.lineItems)
+        if (newItems.length === 0) {
+          return { content: JSON.stringify({ error: 'lineItems is required and must not be empty' }), isError: true }
+        }
+        const get = await api(ctx, 'GET', `/api/invoices/${encodeURIComponent(invoiceId)}`)
+        const permErr = permissionError(get.status, get.json)
+        if (permErr) return permErr
+        if (!get.ok || !get.json?.invoice) {
+          return { content: JSON.stringify({ error: 'invoice_not_found', status: get.status }), isError: true }
+        }
+        const inv = get.json.invoice
+        const existingItems = Array.isArray(inv.lineItems) ? inv.lineItems : []
+        const existingOptional = Array.isArray(inv.optionalItems) ? inv.optionalItems : []
+        const body = {
+          lineItems: [...mapExistingLineItems(existingItems), ...newItems],
+          optionalItems: mapExistingOptionalItems(existingOptional),
+          groups: reconstructGroups(existingItems, existingOptional),
+        }
+        const put = await api(ctx, 'PUT', `/api/invoices/${encodeURIComponent(invoiceId)}`, body)
+        const putPermErr = permissionError(put.status, put.json)
+        if (putPermErr) return putPermErr
+        if (put.status === 400 && /paid/i.test(String(put.json?.error ?? ''))) {
+          return {
+            content: JSON.stringify({
+              error: 'invoice_paid',
+              message: 'This invoice is already paid and cannot be edited. Tell the user.',
+            }),
+          }
+        }
+        if (!put.ok) {
+          return {
+            content: JSON.stringify({ error: 'add_items_failed', status: put.status, detail: put.json?.error ?? null }),
+            isError: true,
+          }
+        }
+        const updated = put.json?.invoice ?? {}
+        return {
+          content: JSON.stringify({
+            added: true,
+            invoiceId,
+            invoiceNumber: updated.invoiceNumber ?? inv.invoiceNumber ?? null,
+            itemsAdded: newItems.length,
+            newTotal: updated.total != null ? String(updated.total) : null,
+            note: 'Items were added to the invoice. Tell the user what you added and the new total. Offer to open the invoice (navigate recordType=invoice).',
           }),
         }
       }

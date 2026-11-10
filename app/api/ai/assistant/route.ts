@@ -70,8 +70,20 @@ export async function POST(request: NextRequest) {
     navigation: null,
   }
 
+  // The panel tells us which record the user currently has open, so "add this to
+  // the estimate/invoice" resolves to the right document without the user pasting an id.
+  const context = body?.context || {}
+  const noteParts: string[] = []
+  if (context.openEstimateId) {
+    noteParts.push(`The user currently has estimate ${context.openEstimateId} open. If they ask to add items to "the estimate" / "this estimate", use add_estimate_items with estimateId "${context.openEstimateId}".`)
+  }
+  if (context.openInvoiceId) {
+    noteParts.push(`The user currently has invoice ${context.openInvoiceId} open. If they ask to add items to "the invoice" / "this invoice", use add_invoice_items with invoiceId "${context.openInvoiceId}".`)
+  }
+  const contextNote = noteParts.length ? noteParts.join('\n') : undefined
+
   try {
-    const result = await runAssistant(messages, ctx)
+    const result = await runAssistant(messages, ctx, contextNote)
     return NextResponse.json(result)
   } catch (error: any) {
     console.error('AI assistant error:', error)
