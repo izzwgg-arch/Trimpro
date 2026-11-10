@@ -12,6 +12,7 @@ import { DashboardNavCapture } from '@/components/navigation/DashboardNavCapture
 import { UnsavedChangesGuard } from '@/components/navigation/UnsavedChangesGuard'
 import { IncomingCallWatcher } from '@/components/video-call/IncomingCallWatcher'
 import { IdleLogoutWatcher } from '@/components/session/IdleLogoutWatcher'
+import { AssistantLauncher } from '@/components/ai/AssistantLauncher'
 import { keepSessionFresh } from '@/lib/auth/client'
 
 // Pages with their own fixed-height, self-scrolling app UI (chat panes, etc.)
@@ -73,6 +74,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     <div className="flex h-full min-h-screen bg-gray-100">
       <DashboardNavCapture />
       <UnsavedChangesGuard />
+      <AssistantLauncher />
       <IdleLogoutWatcher />
       <IncomingCallWatcher />
       {isAdmin && <QboSyncFailureNotifier />}
