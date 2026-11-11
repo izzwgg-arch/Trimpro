@@ -180,6 +180,50 @@ function reconstructGroups(items: any[], optionalItems: any[] = []): any[] {
   return Array.from(seen.values())
 }
 
+/**
+ * Resolve whatever the user typed for an estimate/invoice to its real database id.
+ * Employees see the document NUMBER (e.g. "EST-000012" or "839886"), which is NOT
+ * the internal id. We try the value as a direct id first, then fall back to a
+ * number search so a typed document number always lands on the right record.
+ */
+function digitsOnly(s: string): string {
+  return String(s ?? '').replace(/\D/g, '').replace(/^0+/, '')
+}
+
+async function resolveDocId(
+  ctx: ToolContext,
+  kind: 'estimate' | 'invoice',
+  value: string
+): Promise<{ id?: string; candidates?: any[]; status?: number; error?: string }> {
+  const v = String(value ?? '').trim()
+  if (!v) return { error: 'empty' }
+  const base = kind === 'estimate' ? 'estimates' : 'invoices'
+  const numField = kind === 'estimate' ? 'estimateNumber' : 'invoiceNumber'
+
+  // 1) Try as a direct database id.
+  const direct = await api(ctx, 'GET', `/api/${base}/${encodeURIComponent(v)}`)
+  if (direct.status === 401 || direct.status === 403) return { status: direct.status, error: 'permission_denied' }
+  if (direct.ok && (direct.json?.estimate || direct.json?.invoice)) return { id: v }
+
+  // 2) Resolve by the visible document number via search.
+  const list = await api(ctx, 'GET', `/api/${base}?search=${encodeURIComponent(v)}&limit=20`)
+  if (list.status === 401 || list.status === 403) return { status: list.status, error: 'permission_denied' }
+  const rows: any[] = (kind === 'estimate' ? list.json?.estimates : list.json?.invoices) || []
+  const norm = (s: any) => String(s ?? '').trim().toLowerCase()
+
+  // Exact number match (case-insensitive), then digits-only match (ignores EST-/INV- prefixes and leading zeros).
+  let matches = rows.filter((r) => norm(r[numField]) === norm(v))
+  if (matches.length === 0 && digitsOnly(v)) {
+    matches = rows.filter((r) => digitsOnly(r[numField]) === digitsOnly(v))
+  }
+  const toCard = (m: any) => ({ id: m.id, number: m[numField], client: m.client?.name ?? null, total: m.total != null ? String(m.total) : null, status: m.status ?? null })
+
+  if (matches.length === 1) return { id: matches[0].id }
+  if (matches.length > 1) return { candidates: matches.map(toCard) }
+  if (rows.length) return { candidates: rows.slice(0, 8).map(toCard) }
+  return { error: 'not_found' }
+}
+
 function normalizeNewItems(raw: unknown): any[] {
   if (!Array.isArray(raw)) return []
   return raw.map((li: any) => {
@@ -206,6 +250,19 @@ export const TOOL_DEFS: Anthropic.Tool[] = [
         query: { type: 'string', description: 'Name, company, email or phone to search for.' },
       },
       required: ['query'],
+    },
+  },
+  {
+    name: 'find_document',
+    description:
+      "Look up an estimate or invoice by the DOCUMENT NUMBER an employee sees (e.g. \"EST-000012\", \"839886\", \"INV-1042\") and get its real id, customer and total. ALWAYS use this to turn a number the user says into an id before add_estimate_items / add_invoice_items / prepare_send_estimate — the typed number is NOT the internal id. Returns matching records; if more than one matches, ask the user which.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', enum: ['estimate', 'invoice'], description: 'Which kind of document.' },
+        number: { type: 'string', description: 'The document number the user gave (as shown to employees).' },
+      },
+      required: ['type', 'number'],
     },
   },
   {
@@ -387,6 +444,33 @@ export async function executeTool(
         return { content: JSON.stringify({ count: clients.length, clients }) }
       }
 
+      case 'find_document': {
+        const kind = input.type === 'invoice' ? 'invoice' : 'estimate'
+        const number = String(input.number ?? '').trim()
+        if (!number) return { content: JSON.stringify({ error: 'number is required' }), isError: true }
+        const resolved = await resolveDocId(ctx, kind, number)
+        if (resolved.error === 'permission_denied') {
+          return permissionError(resolved.status ?? 403, null) as ToolResult
+        }
+        if (resolved.id) {
+          return { content: JSON.stringify({ found: true, type: kind, id: resolved.id, number }) }
+        }
+        if (resolved.candidates && resolved.candidates.length) {
+          return {
+            content: JSON.stringify({
+              found: true,
+              type: kind,
+              multiple: resolved.candidates.length > 1,
+              candidates: resolved.candidates,
+              note: 'If more than one, ask the user which document they mean before acting.',
+            }),
+          }
+        }
+        return {
+          content: JSON.stringify({ found: false, type: kind, number, message: `No ${kind} found matching "${number}".` }),
+        }
+      }
+
       case 'create_estimate': {
         const clientId = String(input.clientId ?? '').trim()
         const title = String(input.title ?? '').trim()
@@ -426,12 +510,26 @@ export async function executeTool(
       }
 
       case 'add_estimate_items': {
-        const estimateId = String(input.estimateId ?? '').trim()
-        if (!estimateId) return { content: JSON.stringify({ error: 'estimateId is required' }), isError: true }
+        const estimateRef = String(input.estimateId ?? '').trim()
+        if (!estimateRef) return { content: JSON.stringify({ error: 'estimateId is required' }), isError: true }
         const newItems = normalizeNewItems(input.lineItems)
         if (newItems.length === 0) {
           return { content: JSON.stringify({ error: 'lineItems is required and must not be empty' }), isError: true }
         }
+        // The user may have passed a document NUMBER instead of the id — resolve it.
+        const resolved = await resolveDocId(ctx, 'estimate', estimateRef)
+        if (resolved.error === 'permission_denied') return permissionError(resolved.status ?? 403, null) as ToolResult
+        if (!resolved.id) {
+          return {
+            content: JSON.stringify(
+              resolved.candidates?.length
+                ? { error: 'ambiguous_estimate', candidates: resolved.candidates, message: 'Multiple estimates match. Ask the user which one, then call again with its id.' }
+                : { error: 'estimate_not_found', message: `No estimate found matching "${estimateRef}".` }
+            ),
+            isError: !resolved.candidates?.length,
+          }
+        }
+        const estimateId = resolved.id
         // Fetch current estimate so we can re-send all lines + append.
         const get = await api(ctx, 'GET', `/api/estimates/${encodeURIComponent(estimateId)}`)
         const permErr = permissionError(get.status, get.json)
@@ -470,12 +568,25 @@ export async function executeTool(
       }
 
       case 'add_invoice_items': {
-        const invoiceId = String(input.invoiceId ?? '').trim()
-        if (!invoiceId) return { content: JSON.stringify({ error: 'invoiceId is required' }), isError: true }
+        const invoiceRef = String(input.invoiceId ?? '').trim()
+        if (!invoiceRef) return { content: JSON.stringify({ error: 'invoiceId is required' }), isError: true }
         const newItems = normalizeNewItems(input.lineItems)
         if (newItems.length === 0) {
           return { content: JSON.stringify({ error: 'lineItems is required and must not be empty' }), isError: true }
         }
+        const resolved = await resolveDocId(ctx, 'invoice', invoiceRef)
+        if (resolved.error === 'permission_denied') return permissionError(resolved.status ?? 403, null) as ToolResult
+        if (!resolved.id) {
+          return {
+            content: JSON.stringify(
+              resolved.candidates?.length
+                ? { error: 'ambiguous_invoice', candidates: resolved.candidates, message: 'Multiple invoices match. Ask the user which one, then call again with its id.' }
+                : { error: 'invoice_not_found', message: `No invoice found matching "${invoiceRef}".` }
+            ),
+            isError: !resolved.candidates?.length,
+          }
+        }
+        const invoiceId = resolved.id
         const get = await api(ctx, 'GET', `/api/invoices/${encodeURIComponent(invoiceId)}`)
         const permErr = permissionError(get.status, get.json)
         if (permErr) return permErr
@@ -521,8 +632,22 @@ export async function executeTool(
       }
 
       case 'prepare_send_estimate': {
-        const estimateId = String(input.estimateId ?? '').trim()
-        if (!estimateId) return { content: JSON.stringify({ error: 'estimateId is required' }), isError: true }
+        const estimateRef = String(input.estimateId ?? '').trim()
+        if (!estimateRef) return { content: JSON.stringify({ error: 'estimateId is required' }), isError: true }
+        // The user may have given a document NUMBER — resolve it to the real id.
+        const resolvedSend = await resolveDocId(ctx, 'estimate', estimateRef)
+        if (resolvedSend.error === 'permission_denied') return permissionError(resolvedSend.status ?? 403, null) as ToolResult
+        if (!resolvedSend.id) {
+          return {
+            content: JSON.stringify(
+              resolvedSend.candidates?.length
+                ? { error: 'ambiguous_estimate', candidates: resolvedSend.candidates, message: 'Multiple estimates match. Ask the user which one.' }
+                : { error: 'estimate_not_found', message: `No estimate found matching "${estimateRef}".` }
+            ),
+            isError: !resolvedSend.candidates?.length,
+          }
+        }
+        const estimateId = resolvedSend.id
         // Best-effort fetch of details for the confirmation card (don't fail if it 404s).
         let estimateNumber: string | null = null
         let total: string | null = null

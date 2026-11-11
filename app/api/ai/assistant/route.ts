@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import type Anthropic from '@anthropic-ai/sdk'
 import { authenticateRequest, getAuthUser } from '@/lib/middleware'
-import { assistantConfigured, imageGenConfigured } from '@/lib/ai/config'
+import { assistantConfigured, imageGenConfigured, voiceInputConfigured } from '@/lib/ai/config'
 import { runAssistant } from '@/lib/ai/assistant'
 import type { ToolContext } from '@/lib/ai/tools'
 
@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     configured: assistantConfigured(),
     imageGeneration: imageGenConfigured(),
+    voiceInput: voiceInputConfigured(),
   })
 }
 

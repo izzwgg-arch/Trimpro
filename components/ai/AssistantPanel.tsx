@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { Sparkles, Send, X, Loader2, Mail, Check, AlertCircle, ImagePlus } from 'lucide-react'
+import { Sparkles, Send, X, Loader2, Mail, Check, AlertCircle, ImagePlus, Mic, Square } from 'lucide-react'
 import { authFetch } from '@/lib/auth/client'
 
 interface PendingConfirmation {
@@ -84,7 +84,15 @@ function openRecordContext(pathname: string | null): { openEstimateId?: string; 
   return {}
 }
 
-export function AssistantPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function AssistantPanel({
+  open,
+  onClose,
+  voiceInput = false,
+}: {
+  open: boolean
+  onClose: () => void
+  voiceInput?: boolean
+}) {
   const router = useRouter()
   const pathname = usePathname()
   // `thread` is the raw Anthropic message history we resend each turn for context.
@@ -95,8 +103,13 @@ export function AssistantPanel({ open, onClose }: { open: boolean; onClose: () =
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [attaching, setAttaching] = useState(false)
   const [sendState, setSendState] = useState<Record<string, 'sending' | 'sent' | 'error'>>({})
+  const [recording, setRecording] = useState(false)
+  const [transcribing, setTranscribing] = useState(false)
+  const [voiceError, setVoiceError] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
@@ -115,6 +128,68 @@ export function AssistantPanel({ open, onClose }: { open: boolean; onClose: () =
       setAttaching(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
+  }
+
+  const transcribe = async (blob: Blob) => {
+    setTranscribing(true)
+    setVoiceError(null)
+    try {
+      const form = new FormData()
+      form.append('audio', blob, 'voice-note.webm')
+      const res = await authFetch('/api/ai/transcribe', { method: 'POST', body: form })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        setVoiceError(j.message || "Couldn't transcribe that. Try again.")
+        return
+      }
+      const data = await res.json()
+      const text = String(data.text || '').trim()
+      if (text) setInput((v) => (v ? `${v} ${text}` : text))
+      else setVoiceError("Didn't catch anything — try again.")
+    } catch {
+      setVoiceError('Network error while transcribing.')
+    } finally {
+      setTranscribing(false)
+    }
+  }
+
+  const startRecording = async () => {
+    setVoiceError(null)
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setVoiceError('Voice recording is not supported in this browser.')
+      return
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const rec = new MediaRecorder(stream)
+      audioChunksRef.current = []
+      rec.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data)
+      }
+      rec.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop())
+        const blob = new Blob(audioChunksRef.current, { type: rec.mimeType || 'audio/webm' })
+        audioChunksRef.current = []
+        if (blob.size > 0) void transcribe(blob)
+      }
+      mediaRecorderRef.current = rec
+      rec.start()
+      setRecording(true)
+    } catch {
+      setVoiceError('Microphone access was blocked. Allow mic access to use voice notes.')
+    }
+  }
+
+  const stopRecording = () => {
+    const rec = mediaRecorderRef.current
+    if (rec && rec.state !== 'inactive') rec.stop()
+    mediaRecorderRef.current = null
+    setRecording(false)
+  }
+
+  const toggleRecording = () => {
+    if (recording) stopRecording()
+    else void startRecording()
   }
 
   const send = async (presetText?: string) => {
@@ -357,6 +432,14 @@ export function AssistantPanel({ open, onClose }: { open: boolean; onClose: () =
             onChange={(e) => void onPickFiles(e.target.files)}
           />
 
+          {(recording || transcribing || voiceError) && (
+            <div className="mb-1.5 px-1 text-[11px]">
+              {recording && <span className="font-medium text-red-600">● Recording… tap the stop button when done.</span>}
+              {transcribing && <span className="text-gray-500">Transcribing your voice note…</span>}
+              {voiceError && !recording && !transcribing && <span className="text-red-600">{voiceError}</span>}
+            </div>
+          )}
+
           <div className="flex items-end gap-2">
             <button
               onClick={() => fileInputRef.current?.click()}
@@ -367,6 +450,27 @@ export function AssistantPanel({ open, onClose }: { open: boolean; onClose: () =
             >
               <ImagePlus className="h-4 w-4" />
             </button>
+            {voiceInput && (
+              <button
+                onClick={toggleRecording}
+                disabled={loading || transcribing}
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border disabled:opacity-50 ${
+                  recording
+                    ? 'border-red-300 bg-red-50 text-red-600 animate-pulse'
+                    : 'border-gray-300 text-gray-500 hover:bg-gray-50 hover:text-indigo-600'
+                }`}
+                aria-label={recording ? 'Stop recording' : 'Record a voice note'}
+                title={recording ? 'Stop recording' : 'Record a voice note'}
+              >
+                {transcribing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : recording ? (
+                  <Square className="h-4 w-4" />
+                ) : (
+                  <Mic className="h-4 w-4" />
+                )}
+              </button>
+            )}
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}

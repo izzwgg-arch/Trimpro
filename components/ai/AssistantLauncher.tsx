@@ -12,6 +12,7 @@ import { AssistantPanel } from './AssistantPanel'
  */
 export function AssistantLauncher() {
   const [configured, setConfigured] = useState(false)
+  const [voiceInput, setVoiceInput] = useState(false)
   const [open, setOpen] = useState(false)
 
   useEffect(() => {
@@ -19,7 +20,10 @@ export function AssistantLauncher() {
     authFetch('/api/ai/assistant')
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (alive && d?.configured) setConfigured(true)
+        if (alive && d?.configured) {
+          setConfigured(true)
+          setVoiceInput(Boolean(d.voiceInput))
+        }
       })
       .catch(() => {})
     return () => {
@@ -41,7 +45,7 @@ export function AssistantLauncher() {
           <Sparkles className="h-6 w-6" />
         </button>
       )}
-      <AssistantPanel open={open} onClose={() => setOpen(false)} />
+      <AssistantPanel open={open} onClose={() => setOpen(false)} voiceInput={voiceInput} />
     </>
   )
 }

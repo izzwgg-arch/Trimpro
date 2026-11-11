@@ -12,6 +12,8 @@ import OpenAI from 'openai'
  */
 export const ANTHROPIC_MODEL = 'claude-opus-5-5'
 export const IMAGE_MODEL = 'gpt-image-1'
+// Speech-to-text for voice notes (uses the same OpenAI key as image generation).
+export const TRANSCRIBE_MODEL = 'whisper-1'
 
 export function getAnthropic(): Anthropic | null {
   const apiKey = process.env.ANTHROPIC_API_KEY
@@ -31,4 +33,14 @@ export function assistantConfigured(): boolean {
 
 export function imageGenConfigured(): boolean {
   return !!process.env.OPENAI_API_KEY
+}
+
+/** Voice notes are transcribed with OpenAI, so they need the same key. */
+export function voiceInputConfigured(): boolean {
+  return !!process.env.OPENAI_API_KEY
+}
+
+/** OpenAI client for audio transcription (same key as images). */
+export function getOpenAIForAudio(): OpenAI | null {
+  return getOpenAIForImages()
 }
