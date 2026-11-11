@@ -198,6 +198,8 @@ Approve estimate: ${approveUrl}`.trim()
     const sendResult = await sendEmailWithAttachments({
       secrets: emailSecrets,
       to: uniqueRecipientEmails,
+      // Always CC the staff member who sent it so they keep a copy.
+      cc: user.email ? [user.email] : undefined,
       subject: effectiveSubject,
       html,
       text,

@@ -177,6 +177,8 @@ The complete version has been provided as an attachment to this email.
     const sendResult = await sendEmailWithAttachments({
       secrets: emailSecrets,
       to: recipients,
+      // Always CC the staff member who sent it so they keep a copy.
+      cc: user.email ? [user.email] : undefined,
       subject: subject || `Purchase Order ${purchaseOrder.poNumber} from ${companyName}`,
       html,
       text,

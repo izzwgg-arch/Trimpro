@@ -108,6 +108,8 @@ export async function POST(
     const sendResult = await sendEmailWithAttachments({
       secrets: emailSecrets,
       to: recipients,
+      // Always CC the staff member who sent it so they keep a copy.
+      cc: user.email ? [user.email] : undefined,
       subject: subject || `Credit Memo ${creditMemo.creditMemoNumber} from ${companyName}`,
       html,
       text: `Credit Memo ${creditMemo.creditMemoNumber}\nTotal: $${formatAmount(Number(creditMemo.total))}\nRemaining: $${formatAmount(Number(creditMemo.remainingCredit))}`,

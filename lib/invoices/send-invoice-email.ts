@@ -162,6 +162,8 @@ ${paymentLink ? `Pay Online: ${paymentLink}` : ''}`.trim()
   const sendResult = await sendEmailWithAttachments({
     secrets: emailSecrets,
     to: uniqueRecipientEmails,
+    // Always CC the staff member who sent it so they keep a copy.
+    cc: userEmail ? [userEmail] : undefined,
     subject: effectiveSubject,
     html,
     text,
